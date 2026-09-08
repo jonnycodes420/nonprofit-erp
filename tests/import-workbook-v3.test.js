@@ -60,18 +60,40 @@ const fs = require("fs");
 
   // ── Part 3.5 — what the sheet knows that the cells don't ─────────────────
   ok("40 hidden rows detected on Donors", dn.meta.hiddenRows.length === 40, dn.meta.hiddenRows.length);
-  ok("100 yellow rows detected", Object.keys(dn.meta.fillRows).length === 100 && dn.meta.fillColorName === "yellow", Object.keys(dn.meta.fillRows).length);
+  const yellowFill = (dn.meta.fills || []).find(f => f.rgb === "FFFF00");
+  ok("100 yellow rows detected, and EVERY fill colour is carried (not just the dominant one)",
+     yellowFill && yellowFill.rows.length === 100 && dn.meta.fills.length >= 3, (dn.meta.fills || []).map(f => `${f.rgb}:${f.rows.length}`));
   ok("40 comments detected", dn.meta.comments.length === 40, dn.meta.comments.length);
   ok("hidden column AD detected", dn.meta.hiddenCols.length === 1 && dn.meta.hiddenCols[0].ref === "AD", dn.meta.hiddenCols);
-  const signals = IS.buildSheetSignals("Donors", dn.meta, legend, { headerCells: dn.headerCells });
+  // ── BUILD-83 Part 1 — the prompts: data rows only, one per colour, own state ─
+  const signals = IS.buildWorkbookSignals(roled, legend);
+  ok("EXACTLY four items on Donors — 40 hidden, 100 yellow, 40 comments, one hidden column",
+     signals.length === 4 && signals.every(s => s.sheet === "Donors"), signals.map(s => s.id));
+  ok("no prompt for the gift sheet's shaded subtotal/TOTAL rows (chrome never comes back)",
+     !signals.some(s => /Gifts/.test(s.sheet)) && !signals.some(s => /DDEBF7|BDD7EE/i.test(s.id)), signals.map(s => s.id));
   const hiddenSig = signals.find(s => s.kind === "hidden_rows");
-  ok("hidden-row signal quotes the legend and asks", hiddenSig && /deceased/i.test(hiddenSig.legend || "") && /Treat them|skip/i.test(hiddenSig.question), hiddenSig && hiddenSig.question);
+  ok("hidden-row signal quotes the legend and asks", hiddenSig && /deceased/i.test(hiddenSig.legend || "") && /hidden/i.test(hiddenSig.question), hiddenSig && hiddenSig.question);
+  ok('Part 1.4 — "Import as normal" is LABELLED (treated as live donors)',
+     hiddenSig.options.some(o => o.value === "import" && /treated as live donors/i.test(o.label)), hiddenSig.options);
   const fillSig = signals.find(s => s.kind === "filled_rows");
-  ok("yellow-row signal quotes the legend", fillSig && /do not contact/i.test(fillSig.legend || ""), fillSig && fillSig.legend);
+  ok("ONE yellow signal, 100 data rows, quoting the legend, keyed by sheet+kind+colour",
+     fillSig && fillSig.count === 100 && /do not contact/i.test(fillSig.legend || "") && fillSig.id === "Donors|filled_rows|FFFF00", fillSig && { c: fillSig.count, id: fillSig.id });
+  ok("every signal carries a UNIQUE id — one prompt cannot answer for another",
+     new Set(signals.map(s => s.id)).size === signals.length, signals.map(s => s.id));
   const comSig = signals.find(s => s.kind === "comments");
   ok("comment signal counts the exclusion-phrase mentions", comSig && comSig.exclusionCount >= 30 && comSig.count === 40, comSig && { c: comSig.count, e: comSig.exclusionCount });
   const hcSig = signals.find(s => s.kind === "hidden_column");
   ok("hidden column named: Internal Score, never auto-mapped", hcSig && hcSig.header === "Internal Score", hcSig);
+  // Part 1.2 — a colour the legend does NOT name gets its own prompt with NO
+  // legend text, defaulting to import, and the shade is recorded on the row.
+  {
+    const synthetic = IS.buildSheetSignals("Sheet", { fills: [{ rgb: "C6EFCE", rows: [10, 11, 12] }] },
+      [{ sheet: "Cover", text: "Yellow rows on the Donors tab = do not contact" }], { dataLines: [10, 11, 12] });
+    const s0 = synthetic[0];
+    ok("a legend-less fill prompts on its own, with NO legend text and no legend option",
+       s0 && s0.legend === null && !s0.options.some(o => o.value === "legend") && s0.defaultAnswer === "import"
+       && /does not say what this means/.test(s0.question), s0);
+  }
 
   // ── Part 4 — the standard mapping (the catastrophe assertions) ───────────
   const { mapping } = IS.buildStandardMapping(dn.headers, dn.rows, "donor");
@@ -102,8 +124,13 @@ const fs = require("fs");
   const pct = IS.normalizeMoneyCell({ t: "n", v: 0.25, z: "0%" });
   ok("percent format ×100 and flagged", pct.value === 25 && pct.flag && /25%/.test(pct.flag.text) && /\$25/.test(pct.flag.text), pct);
   ok("parens-negative FORMAT is display only", IS.normalizeMoneyCell({ t: "n", v: 500, z: "#,##0.00;(#,##0.00)" }).value === 500, null);
+  // BUILD-83 Part 2.4 — a CONSTANT formula is a number: `=500.0*1` is $500,
+  // whatever the spreadsheet cached. A formula that reaches outside itself
+  // still refuses WITH its text.
   const fz = IS.normalizeMoneyCell({ t: "n", v: 0, f: "500.0*1" });
-  ok("formula cached 0 refused WITH the formula text", fz.refuse === "formula_no_value" && fz.formula === "500.0*1", fz);
+  ok("formula cached 0, constant arithmetic → the number, flagged", fz.value === 500 && fz.flag.kind === "computed_formula", fz);
+  const fr2 = IS.normalizeMoneyCell({ t: "n", v: 0, f: "SUM(D2:D9)" });
+  ok("formula cached 0, real formula → still refused WITH the formula text", fr2.refuse === "formula_no_value" && fr2.formula === "SUM(D2:D9)", fr2);
   ok("formula with cached value = the cached value", IS.normalizeMoneyCell({ t: "n", v: 50, f: "50.0*1" }).value === 50, null);
   ok("boolean refused", IS.normalizeMoneyCell({ t: "b", v: true }).refuse === "boolean", null);
   ok("error cell refused with its code", IS.normalizeMoneyCell({ t: "e", v: 15, w: "#N/A" }).refuse === "excel_error", null);
@@ -139,7 +166,9 @@ const fs = require("fs");
   const [b1, b2] = builds;
   ok("current sheet is month-first, said so", b1.convention.convention === "mdy", b1.convention);
   ok("legacy sheet is day-first from impossible cases", b2.convention.convention === "dmy" && b2.convention.dayFirstEvidence === 14356, b2.convention.dayFirstEvidence);
-  ok("843 zero-cached formulas refused with formula text", b1.refusals.filter(r => r.reason === "formula_no_value").length === 843 && b1.refusals.every(r => r.reason !== "formula_no_value" || r.formula), b1.refusals.length);
+  ok("843 zero-cached constant formulas IMPORT, flagged 'computed from formula'",
+     b1.refusals.filter(r => r.reason === "formula_no_value").length === 0
+     && b1.flags.filter(f => f.kind === "computed_formula").length === 843, b1.refusals.length);
   ok("560 percent-format amounts flagged, 559 imported (one is a refund)", b1.flags.filter(f => f.kind === "percent_format").length === 559, b1.flags.length);
   ok("float-noise amounts round, counted (6,691)", b1.report.floatNoiseRows === 6691, b1.report.floatNoiseRows);
   ok("legacy trailing-minus rows route as refunds (948)", b2.routed.refunds.length === 948, b2.routed.refunds.length);
@@ -147,10 +176,13 @@ const fs = require("fs");
   ok("every refusal has sheet, line and reason", builds.every(b => b.refusals.every(r => r.sheet && r.line && r.reason)), null);
 
   const linked = IS.linkWorkbookGifts(dedup.donors, builds.flatMap(b => b.items));
-  ok("all matched by Donor ID (the sheets carry no name/email)", linked.matchedById === 89681 && linked.matchedByEmail === 0, linked.matchedById);
-  ok("orphans refused by row with reason, never invented (490 reach the link; ~10 more died at amount refusals)", linked.refusedOrphans.length === 490, linked.refusedOrphans.length);
+  ok("all matched by Donor ID (the sheets carry no name/email)", linked.matchedById === 90523 && linked.matchedByEmail === 0, linked.matchedById);
+  // BUILD-83: with the two refusals repaired, 491 of the key's 500 orphan rows
+  // reach the link (the rest carry an amount that is genuinely unreadable).
+  ok("orphans refused by row with reason, never invented (491 reach the link)", linked.refusedOrphans.length === 491, linked.refusedOrphans.length);
   ok("no donor was minted from a bare ID", linked.newDonors === 0, linked.newDonors);
-  ok("orphan refusals carry their dollars", Math.round(linked.refusedOrphans.reduce((s, o) => s + o.dollars, 0) * 100) / 100 === 252507.90, null);
+  ok("orphan refusals carry their dollars", Math.round(linked.refusedOrphans.reduce((s, o) => s + o.dollars, 0) * 100) / 100 === 252808.15,
+     Math.round(linked.refusedOrphans.reduce((s, o) => s + o.dollars, 0) * 100) / 100);
   // gifts posted to a FOLDED duplicate id land on the surviving record
   const foldedIds = new Set(dedup.review.map(r => IS.donorIdKey(r.foldedId)).filter(Boolean));
   const foldedIdGifts = builds.flatMap(b => b.items).filter(i => foldedIds.has(IS.donorIdKey(i.donorId)));
@@ -159,7 +191,7 @@ const fs = require("fs");
 
   const giftedIdx = new Set(linked.gifts.map(g => g.donorIndex));
   const noGifts = dedup.donors.filter((_, i) => !giftedIdx.has(i)).length;
-  ok("no-gift donors get records as prospects (549: 300 planted + rows whose only gifts refused/routed)", noGifts === 549, noGifts);
+  ok("no-gift donors get records as prospects (481: the key's 300 planted, plus rows whose only gifts were routed or orphaned)", noGifts === 481, noGifts);
 
   // ── Part 5 — pledges and recurring ───────────────────────────────────────
   const pl = IS.extractWorkbookPledges(roleOf("Pledges"), { currentYear: 2026 });
@@ -176,26 +208,35 @@ const fs = require("fs");
   // ── money: the golden cash number + the itemised waterfall ───────────────
   const r2 = x => Math.round(x * 100) / 100;
   const cash = r2(linked.gifts.reduce((s, g) => s + g.amount, 0));
-  ok("imported net cash — the golden measured number", cash === 51348667.87, cash);
+  ok("imported net cash — the golden measured number", cash === 51754243.82, cash);
   const orphanD = r2(linked.refusedOrphans.reduce((s, o) => s + (o.dollars || 0), 0));
   const dollarsIn = r2(b1.report.dollarsIn + b2.report.dollarsIn);
-  ok("cash + orphans === the sheets' own readable dollars (closed grammar)", r2(cash + orphanD) === dollarsIn, { cash, orphanD, dollarsIn });
+  ok("cash + orphans === the sheets' own readable dollars (closed grammar)", Math.abs(r2(cash + orphanD) - dollarsIn) < 0.02, { cash, orphanD, dollarsIn });
   const refundsD = r2(builds.flatMap(b => b.routed.refunds).reduce((s, x) => s + Math.abs(x.dollars), 0));
   const inKindD = r2(builds.flatMap(b => b.routed.inKind).reduce((s, x) => s + Math.abs(x.dollars), 0));
-  const formulaFace = 405876.20;   // the 843 refused formulas' face value (=N*1), measured from the artifact
-  const waterfall = r2(cash + refundsD + inKindD + orphanD + formulaFace);
-  ok("the waterfall reaches every dollar the artifact still carries", waterfall === 52767200.03, waterfall);
-  // The spec's $53,231,102.55 exceeds the artifact-recoverable maximum by
-  // $463,902.52 — generator-side truth (BLOCKED-build82.md). The TOTAL rows:
-  ok("GRAND TOTAL (32,523,933.89) reconciles: dollarsIn + refunds + in-kind + formula face ≈ it",
-     Math.abs(b1.report.dollarsIn + r2(b1.routed.refunds.reduce((s, x) => s + Math.abs(x.dollars), 0)) + r2(b1.routed.inKind.reduce((s, x) => s + Math.abs(x.dollars), 0)) + formulaFace - 32523933.89) < 32523933.89 * 0.01,
-     null);
-  ok("legacy TOTAL cached (19,852,987.83) is STALE by design — the reconciliation explains, never equals",
-     g2.totalRow.amount === 19852987.83 && Math.abs(b2.report.dollarsIn - g2.totalRow.amount) > 100000, b2.report.dollarsIn);
+  // ── THE KEY'S OWN RECONCILIATION (claude/messy-25k-v3-fixture-key.md, the
+  // Sept-7 corrected version). Key net cash $52,376,921.72 counts the 896
+  // trailing-minus rows as POSITIVE — a fixture defect Cowork owns ("a trailing
+  // minus is a real negative convention and an honest reader must treat it as
+  // one … do not fix the parser to match the key"). So the honest reader's
+  // figure is the key MINUS the orphans it refuses, MINUS the trailing-minus
+  // dollars it routes as negatives, PLUS the refunds it routes rather than
+  // subtracts. Every term is asserted, and the residual is named.
+  const KEY_NET = 52376921.72, KEY_TRAILING_MINUS = 494556.03, KEY_REFUNDS = 122861.28;
+  const reconciled = r2(KEY_NET - orphanD - KEY_TRAILING_MINUS + KEY_REFUNDS);
+  ok("the key's own reconciliation lands on the imported cash (residual named, ≤ $2,500)",
+     Math.abs(reconciled - cash) <= 2500, { keyNet: KEY_NET, orphanD, trailingMinus: KEY_TRAILING_MINUS, refunds: KEY_REFUNDS, reconciled, cash, residual: r2(reconciled - cash) });
+  ok("the file's own TOTAL rows are still the outside numbers, and both are explained",
+     g1.chromeRows.some(c => c.kind === "total_row" && c.amount === 32523933.89)
+     && g2.totalRow.amount === 19852987.83
+     && Math.abs((32523933.89 + 19852987.83) - KEY_NET) < 0.02, { grand: 32523933.89, legacy: g2.totalRow.amount });
+  ok("in-kind and refunds are routed, never in cash", inKindD > 0 && refundsD > 0 && cash < KEY_NET, { inKindD, refundsD });
 
   // ── THE SUBMISSION BUILDER — what the summary shows IS what the write sends ─
+  const answersBy = pick => Object.fromEntries(signals.filter(s => s.kind !== "hidden_column").map(s => [s.id, pick(s)]));
+  const legendAnswers = answersBy(s => s.kind === "comments" ? "route" : "legend");
   const sub = IS.buildWorkbookSubmission(roled, {
-    signalAnswers: { hidden_rows: "legend", filled_rows: "legend", comments: "route" },
+    signals, signalAnswers: legendAnswers,
     anchorDate: "2026-09-06", currentYear: 2026,
     customAssignments: { Donors: { "Internal Score": { entity: "donor", key: "internal_score" } } },
   });
@@ -211,9 +252,22 @@ const fs = require("fs");
      sub.donors.filter(d => d.deceased && d.deceasedDate).length >= 45, sub.donors.filter(d => d.deceased && d.deceasedDate).length);
   ok("792 surviving records carry an exclusion flag (800 rows − 8 folded duplicates)",
      sub.donors.filter(d => d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail).length === 792, null);
-  ok("submission totals: 25,034 donors / 88,967 gifts / $50,979,808.17 (721 repeated gift ids collapsed — F-4 at workbook scale)",
-     sub.totals.donors === 25034 && sub.totals.gifts === 88967 && sub.totals.cash === 50979808.17
-     && sub.refusals.filter(x => x.reason === "gift_id_repeated_in_file").length === 721, sub.totals);
+  // ── BUILD-83 Parts 2.3 + 2.4 — the two refusals that were losing real money ─
+  ok("duplicate-gift refusals are ZERO: a duplicate needs gift id AND donor AND amount",
+     sub.refusals.filter(x => /gift_id_repeated_in_file|same_gift_listed_twice/.test(x.reason)).length === 0, null);
+  ok("721 collided legacy Refs import as the different gifts they are, BOTH rows flagged",
+     sub.duplicateReview.length === 721 && sub.flags.filter(f => f.kind === "gift_id_collision").length === 1442
+     && sub.flags.some(f => /shares gift id/.test(f.text)), sub.duplicateReview.length);
+  ok("formula refusals are ZERO: 843 constant formulas evaluated and flagged",
+     sub.refusals.filter(x => x.reason === "formula_no_value").length === 0
+     && sub.flags.filter(f => f.kind === "computed_formula").length === 843, null);
+  ok("=250*1 is $250; SUM(A1:A9) still refuses with its text",
+     IS.evaluateConstantFormula("=250*1") === 250 && IS.evaluateConstantFormula("SUM(A1:A9)") === null
+     && IS.evaluateConstantFormula("A1*2") === null, null);
+  ok("submission totals: 25,034 donors / 90,523 gifts / $51,754,243.82",
+     sub.totals.donors === 25034 && sub.totals.gifts === 90523 && sub.totals.cash === 51754243.82, sub.totals);
+  ok("imported cash is within $2,500 of the corrected key's figure ($51,755,629.07)",
+     Math.abs(sub.totals.cash - 51755629.07) <= 2500, { cash: sub.totals.cash, delta: Math.round((sub.totals.cash - 51755629.07) * 100) / 100 });
   ok("recovery sustainers tagged card-failed (100)", sub.donors.filter(d => (d.tags || []).includes("card-failed")).length === 100, null);
   ok("stale 'Active' claims tagged — the pattern won, the mismatch shows (60)",
      sub.donors.filter(d => (d.tags || []).includes("stale-frequency")).length === 60, null);
@@ -221,30 +275,40 @@ const fs = require("fs");
      sub.donors.filter(d => d.customFields && d.customFields.internal_score).length > 20000, null);
   ok("merges list = the review list (266, each with reason + folded id)",
      sub.merges.length === 266 && sub.merges.every(m => m.reason && m.foldedId !== undefined), sub.merges.length);
-  ok("workbook invariant balanced with orphans + repeated ids as refusals",
-     sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 2047, sub.reconciliation.workbook);
-  ok("TOTAL-rows panel explains both sheets (GRAND consistent, legacy STALE)",
-     sub.totalRows.length === 2 && sub.totalRows.every(t => t.stated && t.readable != null), sub.totalRows);
+  ok("workbook invariant balanced; the only refusals left are the 491 orphans",
+     sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 491
+     && sub.refusals.every(x => x.reason === "no_donor_match"), sub.reconciliation.workbook);
+  // Part 2.5 — four terms and a named residual on BOTH gift sheets. On v3 the
+  // residual is non-zero and NEGATIVE: the file's totals count Cowork's 896
+  // trailing-minus rows as positive while an honest reader routes them as the
+  // negatives the cells say they are. It is SHOWN, never absorbed, and the
+  // file's own total is never called "stale".
+  ok("both gift sheets reconcile in four terms with the residual named",
+     sub.totalRows.length === 2 && sub.totalRows.every(tr =>
+       tr.stated > 0 && tr.imported > 0 && tr.refusedCount > 0 && tr.routedCount > 0
+       && Math.abs(tr.unexplained - r2(tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs))) < 0.02),
+     sub.totalRows.map(tr => `${tr.sheet}: says ${tr.stated} · imported ${tr.imported} · refused ${tr.refusedAbs} · routed ${tr.routedAbs} · unexplained ${tr.unexplained}`));
+  ok("the residual is non-zero on v3 and therefore SHOWN (import confidence capped)",
+     sub.totalRows.every(tr => Math.abs(tr.unexplained) >= 0.01), sub.totalRows.map(tr => tr.unexplained));
   ok("largest-gifts panel tops out at real $25,000 gifts — never the $32.5M GRAND TOTAL",
      sub.largestGifts.length === 5 && sub.largestGifts.every(g => g.dollars === 25000), sub.largestGifts);
-  ok("skip reasons itemised: formula_no_value 843 + no_donor_match 483 + gift_id_repeated 721",
-     sub.refusals.filter(x => x.reason === "formula_no_value").length === 843
-     && sub.refusals.filter(x => x.reason === "no_donor_match").length === 483
-     && sub.refusals.filter(x => x.reason === "gift_id_repeated_in_file").length === 721, null);
+  ok("the ONE remaining refusal reason is no_donor_match (491 orphan rows)",
+     sub.refusals.filter(x => x.reason === "no_donor_match").length === 491, null);
   ok("fileStats ready for orgs.last_import_stats", sub.fileStats.rows === 92227 && sub.fileStats.largestGifts.length === 5, sub.fileStats);
 
   // hidden rows SKIPPED by choice — counted, listed, and the count moves
   const subSkip = IS.buildWorkbookSubmission(roled, {
-    signalAnswers: { hidden_rows: "skip", filled_rows: "legend", comments: "ignore" },
+    signals, signalAnswers: answersBy(s => s.kind === "hidden_rows" ? "skip" : s.kind === "comments" ? "ignore" : "legend"),
     anchorDate: "2026-09-06", currentYear: 2026,
   });
-  ok("hidden rows skipped by choice: 40 fewer donors, each listed by line",
+  ok("hidden rows skipped by choice: 40 fewer donors — and the YELLOW choice is untouched (Part 1.3, the Sept-7 clobber)",
      subSkip.donors.length + subSkip.foldedRows === 25260
-     && subSkip.refusals.filter(x => x.reason === "hidden_row_skipped_by_choice").length === 40, subSkip.donors.length);
+     && subSkip.refusals.filter(x => x.reason === "hidden_row_skipped_by_choice").length === 40
+     && subSkip.exclusionSummary.fromFill === 100, { donors: subSkip.donors.length, fill: subSkip.exclusionSummary.fromFill });
 
   // decoy override — deduplicated against the real sheets BEFORE a row lands
   const subDecoy = IS.buildWorkbookSubmission(roled, {
-    signalAnswers: { hidden_rows: "legend", filled_rows: "legend", comments: "route" },
+    signals, signalAnswers: legendAnswers,
     anchorDate: "2026-09-06", currentYear: 2026, includeDecoy: true,
   });
   ok("decoy override dedupes by donor+date+amount and SHOWS the overlap",

@@ -2290,6 +2290,25 @@ export function normalizeIdCell(cell, opts = {}) {
   return { value: s };
 }
 
+// BUILD-83 Part 2.4 — evaluate a CONSTANT formula (arithmetic over literals and
+// nothing else: no cell reference, no range, no function, no defined name, no
+// sheet reference). Returns the number, or null when the formula reaches
+// outside itself and must stay refused with its text shown.
+const CONSTANT_FORMULA_RE = /^[\s0-9.+\-*/()]+$/;
+export function evaluateConstantFormula(formula) {
+  let s = String(formula == null ? "" : formula).trim().replace(/^=/, "").trim();
+  if (!s || !CONSTANT_FORMULA_RE.test(s)) return null;   // any letter, !, :, $, , or " disqualifies it
+  if (!/\d/.test(s)) return null;
+  if (/\/\s*0(?![.\d])/.test(s)) return null;             // divide by zero is not a number
+  let out;
+  try {
+    // eslint-disable-next-line no-new-func
+    out = Function(`"use strict";return (${s});`)();       // input already restricted to digits and + - * / ( )
+  } catch { return null; }
+  if (typeof out !== "number" || !isFinite(out)) return null;
+  return out;
+}
+
 // ── Part 3.1 — MONEY THROUGH THE TYPED SEAM. A cell is {t,v,z,f} from the
 // xlsx reader (t: n/s/b/e/d, z: number format, f: formula text) or a bare
 // string from a CSV. Every typed shape lands on the table in the spec:
@@ -2309,6 +2328,16 @@ export function normalizeMoneyCell(cell, opts = {}) {
   if (t === "b") return { value: null, refuse: "boolean", warn: `cell is TRUE/FALSE, not an amount` };
   if (t === "n" || typeof v === "number") {
     if (f !== undefined && (v === 0 || v === null || v === undefined)) {
+      // BUILD-83 Part 2.4 — a formula with no cell reference, function or name
+      // is a NUMBER written with arithmetic. `=250*1` is $250; a spreadsheet
+      // that cached 0 doesn't change what the cell says. Anything that reaches
+      // outside itself stays refused WITH its formula text.
+      const konst = evaluateConstantFormula(f);
+      if (konst !== null) {
+        const cents0 = Math.round(konst * 100);
+        return { value: cents0 / 100, warn: null, fromFormula: true,
+                 flag: { kind: "computed_formula", text: `computed from formula =${f}` } };
+      }
       return { value: null, refuse: "formula_no_value", formula: f,
                warn: `formula =${f} has no computed value — refusing to import $0` };
     }
@@ -2585,39 +2614,103 @@ export function extractWorkbookLegend(sheets = []) {
 // comments:[{row, col, header, text}]} from the workbook reader; rowToLine
 // maps a physical sheet row to the analyzed body row (or null for chrome).
 const EXCLUSION_COMMENT_RE = /deceas|passed away|\bd\.\s*\d{4}|do not (call|contact|mail|solicit|email)|dnc\b/i;
+
+// BUILD-83 Part 1.2 — a legend line is about ONE colour. The yellow family is
+// the set a human calling something "yellow" means; anything else is a colour
+// the legend did not name, and it gets its own prompt with NO legend text.
+export const YELLOW_FAMILY = ["FFFF00", "FFFF99", "FFF2CC", "FFEB9C"];
+const COLOUR_WORDS = { FFFF00: "yellow", FFFF99: "pale yellow", FFF2CC: "cream yellow", FFEB9C: "amber yellow" };
+export function colourName(rgb) {
+  const k = String(rgb || "").toUpperCase().replace(/^FF(?=[0-9A-F]{6}$)/, "");
+  return COLOUR_WORDS[k] || COLOUR_WORDS[String(rgb || "").toUpperCase()] || `#${String(rgb || "").toUpperCase()}`;
+}
+const inYellowFamily = rgb => YELLOW_FAMILY.includes(String(rgb || "").toUpperCase().replace(/^FF(?=[0-9A-F]{6}$)/, ""))
+  || YELLOW_FAMILY.includes(String(rgb || "").toUpperCase());
+
+// ── Part 3.5 (BUILD-82) + Part 1 (BUILD-83) — WHAT THE SHEET KNOWS THAT THE
+// CELLS DON'T. Hidden rows, hidden columns, fill colours and cell comments are
+// detected and SURFACED as questions, never silently included or excluded.
+// BUILD-83 adds three rules:
+//   1.1 chrome never comes back — a title/header/subtotal/TOTAL/note row is
+//       formatting, not a highlight convention, so every group is computed
+//       over DATA ROWS ONLY (opts.dataLines, from the analyzed sheet).
+//   1.2 one prompt per colour per sheet; the legend's sentence is attached
+//       ONLY to the colour the legend actually names.
+//   1.3 each prompt owns its state, keyed (sheet, kind, colour) — answering
+//       one can never change another. (The BUILD-82 shared `filled_rows` key
+//       is what silently discarded 100 do-not-contact rows on Sept 7.)
 export function buildSheetSignals(sheetName, meta = {}, legend = [], opts = {}) {
   const signals = [];
-  const legendFor = re => legend.filter(l => re.test(l.text)).map(l => `The ${l.sheet} sheet says: “${l.text}”`).join(" ");
-  const hr = meta.hiddenRows || [];
+  const dataLines = opts.dataLines instanceof Set ? opts.dataLines
+    : Array.isArray(opts.dataLines) ? new Set(opts.dataLines) : null;
+  const isData = row => !dataLines || dataLines.has(row);
+  const legendLine = re => legend.find(l => re.test(l.text)) || null;
+  const legendSentence = l => l ? `The ${l.sheet} sheet says: \u201c${l.text}\u201d` : null;
+  const sid = (kind, colour) => `${sheetName}|${kind}${colour ? "|" + String(colour).toUpperCase() : ""}`;
+
+  // hidden rows — data rows only
+  const hr = (meta.hiddenRows || []).filter(isData);
   if (hr.length) {
-    signals.push({ kind: "hidden_rows", sheet: sheetName, count: hr.length, rows: hr,
-      legend: legendFor(/hidden/i) || null,
-      question: `${hr.length} rows on ${sheetName} are hidden.` + (legendFor(/hidden/i) ? ` ${legendFor(/hidden/i)}` : "") + ` Treat them per the legend / import as normal / skip?`,
-      options: ["legend", "import", "skip"] });
+    const l = legendLine(/hidden/i);
+    signals.push({ id: sid("hidden_rows"), kind: "hidden_rows", sheet: sheetName, count: hr.length, rows: hr,
+      legend: legendSentence(l), legendText: l ? l.text : null,
+      question: `${hr.length} rows on ${sheetName} are hidden.` + (l ? ` ${legendSentence(l)}` : " The file's legend doesn't say why."),
+      // Part 1.4 — mailing the dead is allowed; it is not allowed to be the unlabelled option.
+      options: [
+        ...(l ? [{ value: "legend", label: "Treat them per the legend" }] : []),
+        { value: "import", label: "Import as normal (treated as live donors)" },
+        { value: "skip", label: "Skip these rows" },
+      ] });
   }
-  const fillRows = Object.keys(meta.fillRows || {});
-  if (fillRows.length) {
-    signals.push({ kind: "filled_rows", sheet: sheetName, count: fillRows.length, rows: fillRows.map(Number),
-      color: meta.fillColor || "yellow",
-      legend: legendFor(/yellow|colou?r|highlight/i) || null,
-      question: `${fillRows.length} rows are highlighted ${meta.fillColorName || "yellow"}.` + (legendFor(/yellow|colou?r|highlight/i) ? ` ${legendFor(/yellow|colou?r|highlight/i)}` : " The file's legend doesn't say why."),
-      options: ["legend", "import", "skip"] });
+
+  // fills — one signal per colour, data rows only, legend only where named
+  for (const f of (meta.fills || [])) {
+    const rows = (f.rows || []).filter(isData);
+    if (!rows.length) continue;
+    const named = inYellowFamily(f.rgb) ? legendLine(/yellow/i) : legendLine(new RegExp(colourName(f.rgb).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    const cname = colourName(f.rgb);
+    signals.push({ id: sid("filled_rows", f.rgb), kind: "filled_rows", sheet: sheetName, colour: f.rgb, colourName: cname,
+      count: rows.length, rows,
+      legend: named ? legendSentence(named) : null, legendText: named ? named.text : null,
+      question: named
+        ? `${rows.length} rows on ${sheetName} are shaded ${cname}. ${legendSentence(named)}`
+        : `${rows.length} rows on ${sheetName} are shaded ${cname}. The legend does not say what this means.`,
+      options: named
+        ? [{ value: "legend", label: "Treat them per the legend" }, { value: "import", label: "Import as normal" }, { value: "skip", label: "Skip these rows" }]
+        : [{ value: "import", label: "Import as normal" }, { value: "skip", label: "Skip these rows" }, { value: "flag", label: "Mark with a flag" }],
+      defaultAnswer: named ? null : "import" });
   }
-  const comments = meta.comments || [];
+
+  // comments — data rows only
+  const comments = (meta.comments || []).filter(c => isData(c.row));
   if (comments.length) {
     const excl = comments.filter(c => EXCLUSION_COMMENT_RE.test(String(c.text || "")));
-    signals.push({ kind: "comments", sheet: sheetName, count: comments.length, exclusionCount: excl.length,
-      comments: comments.slice(0, 60),
+    signals.push({ id: sid("comments"), kind: "comments", sheet: sheetName, count: comments.length,
+      exclusionCount: excl.length, comments: comments.slice(0, 60), rows: comments.map(c => c.row),
       question: `${comments.length} names carry a comment. ${excl.length} of them mention deceased or do-not-contact. Here they are.`,
-      options: ["route", "ignore"] });
+      options: [{ value: "route", label: `Flag the ${excl.length} that match the exclusion family (deceased / do-not-contact)` },
+                { value: "ignore", label: "Keep as note text only" }] });
   }
+
   for (const hc of (meta.hiddenCols || [])) {
     const header = hc.header || (opts.headerCells ? opts.headerCells[hc.index] : null);
-    signals.push({ kind: "hidden_column", sheet: sheetName, index: hc.index, header,
+    signals.push({ id: sid("hidden_column", hc.ref || hc.index), kind: "hidden_column", sheet: sheetName, index: hc.index, header,
       question: `Column ${hc.ref || ""} is hidden. It's called ${header || "(no header)"}. It was not auto-mapped.`,
-      options: ["map", "ignore"] });
+      options: [{ value: "ignore", label: "Leave it unmapped" }] });
   }
   return signals;
+}
+
+// Every signal a workbook raises, across its DATA sheets only (Part 1.1: a
+// chrome sheet's formatting is not a question).
+export function buildWorkbookSignals(roled = [], legend = []) {
+  const out = [];
+  for (const s of roled) {
+    if (!["donors", "gifts", "pledges", "recurring"].includes(s.role)) continue;
+    const dataLines = new Set(s.rowLines || []);
+    out.push(...buildSheetSignals(s.name, s.meta || {}, legend, { dataLines, headerCells: s.headerCells }));
+  }
+  return out;
 }
 
 // ── Part 4.2 — THE STANDARD LIST IS COMPLETE. One entry per standard field,
@@ -3110,7 +3203,7 @@ export function extractWorkbookFromSheetJS(wb, XLSX) {
       records.push(rec);
     }
     // Part 3.5 meta — hidden rows/cols, fills, comments
-    const meta = { hiddenRows: [], hiddenCols: [], fillRows: {}, comments: [] };
+    const meta = { hiddenRows: [], hiddenCols: [], fills: [], comments: [] };
     (ws["!rows"] || []).forEach((rw, i) => { if (rw && rw.hidden) meta.hiddenRows.push(i + 1); });
     (ws["!cols"] || []).forEach((cl, i) => {
       if (cl && cl.hidden) meta.hiddenCols.push({ index: i, ref: XLSX.utils.encode_col(i), header: null });
@@ -3123,26 +3216,22 @@ export function extractWorkbookFromSheetJS(wb, XLSX) {
       if (!m) continue;
       const row = +m[2];
       if (cell.s && cell.s.patternType === "solid" && cell.s.fgColor && cell.s.fgColor.rgb) {
-        const rgb = cell.s.fgColor.rgb;
+        const rgb = String(cell.s.fgColor.rgb).toUpperCase();
         (fillCount[rgb] = fillCount[rgb] || new Set()).add(row);
       }
       if (cell.c && cell.c.length) {
         meta.comments.push({ row, col: m[1], text: cell.c.map(x => String(x.t || "")).join(" ").trim() });
       }
     }
-    // dominant body fill (a header band styles a row or two; a highlight
-    // convention styles many) — pick the colour covering the most rows,
-    // ignoring colours confined to the top 3 lines.
-    let best = null;
-    for (const [rgb, rowsSet] of Object.entries(fillCount)) {
-      const bodyRows = [...rowsSet].filter(r => r > 3);
-      if (bodyRows.length >= 3 && (!best || bodyRows.length > best.rows.length)) best = { rgb, rows: bodyRows };
-    }
-    if (best) {
-      for (const r of best.rows) meta.fillRows[r] = true;
-      meta.fillColor = best.rgb;
-      meta.fillColorName = /^FFFF/i.test(best.rgb) ? "yellow" : /^FF/i.test(best.rgb) ? "red-ish" : `#${best.rgb}`;
-    }
+    // BUILD-83 Part 1.2 — EVERY fill colour is carried with its own row list.
+    // The old code picked one "dominant body fill" by row count and threw the
+    // rest away, which is why a header band could stand in for a highlight
+    // convention. Which rows are DATA (and therefore which fills are a reader's
+    // business at all) is decided later, by buildSheetSignals, from the
+    // analyzed sheet — the reader hasn't found the header row yet.
+    meta.fills = Object.entries(fillCount)
+      .map(([rgb, rowsSet]) => ({ rgb, rows: [...rowsSet].sort((a, b) => a - b) }))
+      .sort((a, b) => b.rows.length - a.rows.length);
     out.push({ name, records, meta, formulaCellRatio: totalCells ? formulaCells / totalCells : 0 });
   }
   return out;
@@ -3161,11 +3250,35 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
   const { rows = [], typedRows = [], rowLines = [], meta = {} } = sheet;
   const answers = opts.signalAnswers || {};
   const legend = opts.legend || [];
-  const legendSays = re => legend.some(l => re.test(l.text));
-  const hiddenMeansDeceased = legendSays(/hidden/i) && legendSays(/deceased/i);
-  const fillMeansNoContact = legendSays(/yellow|colou?r|highlight/i) && legendSays(/do not contact/i);
-  const hiddenSet = new Set(meta.hiddenRows || []);
-  const fillSet = new Set(Object.keys(meta.fillRows || {}).map(Number));
+  // BUILD-83 Part 1.3 — decisions come from the SIGNALS the user actually
+  // answered, keyed by signal id, so one prompt's answer can never leak onto
+  // another's rows. Each signal already knows its own row list (data rows only).
+  const signals = (opts.signals || []).filter(s => !s.sheet || s.sheet === sheet.name);
+  const answerOf = s => answers[s.id] !== undefined ? answers[s.id] : (s.defaultAnswer || null);
+  const skipRows = new Set();              // line → skipped by choice, with its reason
+  const skipReason = new Map();
+  const deceasedFromHidden = new Set();
+  const noContactFromFill = new Set();
+  const flagFromFill = new Map();          // line → colour note
+  const noteFromFill = new Map();          // line → colour note (import-as-normal on an unnamed colour)
+  let commentsRouted = false;
+  const legendMeans = (text, re) => !!(text && re.test(text));
+  for (const s of signals) {
+    const a = answerOf(s);
+    if (s.kind === "hidden_rows") {
+      if (a === "skip") for (const r of s.rows) { skipRows.add(r); skipReason.set(r, "hidden_row_skipped_by_choice"); }
+      else if (a === "legend" && legendMeans(s.legendText, /deceased/i)) for (const r of s.rows) deceasedFromHidden.add(r);
+    } else if (s.kind === "filled_rows") {
+      if (a === "skip") for (const r of s.rows) { skipRows.add(r); skipReason.set(r, "highlighted_row_skipped_by_choice"); }
+      else if (a === "legend" && legendMeans(s.legendText, /do not contact|do-not-contact|dnc/i)) for (const r of s.rows) noContactFromFill.add(r);
+      else if (a === "flag") for (const r of s.rows) flagFromFill.set(r, s.colourName);
+      // Part 1.2 — an unnamed colour imported as normal still lands on the row
+      // as a note, so the fact the sheet carried it is never lost.
+      else if (!s.legendText) for (const r of s.rows) noteFromFill.set(r, s.colourName);
+    } else if (s.kind === "comments") {
+      commentsRouted = a === "route";
+    }
+  }
   const commentByRow = new Map();
   for (const c of (meta.comments || [])) commentByRow.set(c.row, c.text);
 
@@ -3180,10 +3293,9 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     const get = key => { const h = col(key); return h ? String(row[h] ?? "").trim() : ""; };
     const cellOf = key => { const h = col(key); return h ? (typed[h] !== undefined ? typed[h] : row[h]) : null; };
 
-    // hidden / filled rows the user chose to SKIP — counted, listed, gone
-    const isHidden = hiddenSet.has(line), isFilled = fillSet.has(line);
-    if ((isHidden && answers.hidden_rows === "skip") || (isFilled && answers.filled_rows === "skip")) {
-      skippedByChoice.push({ line, reason: isHidden ? "hidden_row_skipped_by_choice" : "highlighted_row_skipped_by_choice" });
+    // rows the user chose to SKIP — counted, listed, gone
+    if (skipRows.has(line)) {
+      skippedByChoice.push({ line, reason: skipReason.get(line) || "skipped_by_choice" });
       return;
     }
 
@@ -3247,9 +3359,15 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
       if (nm.doNotEmail) mark("doNotEmail", "fromNotes");
     }
     // Part 3.5 — only as answered, never silently
-    if (isHidden && answers.hidden_rows === "legend" && hiddenMeansDeceased) mark("deceased", "fromHidden");
-    if (isFilled && answers.filled_rows === "legend" && fillMeansNoContact) mark("doNotContact", "fromFill");
-    if (answers.comments === "route" && commentByRow.has(line)) {
+    if (deceasedFromHidden.has(line)) mark("deceased", "fromHidden");
+    if (noContactFromFill.has(line)) mark("doNotContact", "fromFill");
+    if (flagFromFill.has(line)) {
+      d.tags = [...new Set([...(Array.isArray(d.tags) ? d.tags : []), `shaded-${String(flagFromFill.get(line)).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`])];
+      d.notes = [d.notes, `[shaded ${flagFromFill.get(line)} in the file]`].filter(Boolean).join(" \u00b7 ");
+    } else if (noteFromFill.has(line)) {
+      d.notes = [d.notes, `[shaded ${noteFromFill.get(line)} in the file]`].filter(Boolean).join(" \u00b7 ");
+    }
+    if (commentsRouted && commentByRow.has(line)) {
       const txt = commentByRow.get(line);
       if (/deceas|passed away|\bd\.\s*\d{4}/i.test(txt)) { mark("deceased", "fromComments"); }
       else if (/do not (call|contact|mail|solicit)/i.test(txt)) { mark("doNotContact", "fromComments"); }
@@ -3283,12 +3401,15 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
   const recurringSheet = roled.find(s => s.role === "recurring") || null;
 
   // donors
+  // BUILD-83 Part 1 — signals are computed ONCE, over data rows only, one per
+  // (sheet, kind, colour); the caller's answers are keyed by signal id.
+  const signals = opts.signals || buildWorkbookSignals(roled, legend);
   let donors = [], skippedByChoice = [], exclusionSummary = null, donorMapping = {};
   if (donorsSheet) {
     const auto = buildStandardMapping(donorsSheet.headers, donorsSheet.rows, "donor");
     donorMapping = { ...auto.mapping, ...((opts.mappingOverrides || {})[donorsSheet.name] || {}) };
     for (const [h, k] of Object.entries(donorMapping)) if (!k) delete donorMapping[h];
-    const built = buildWorkbookDonors(donorsSheet, donorMapping, { signalAnswers: opts.signalAnswers, legend, currentYear: opts.currentYear });
+    const built = buildWorkbookDonors(donorsSheet, donorMapping, { signals, signalAnswers: opts.signalAnswers, legend, currentYear: opts.currentYear });
     donors = built.donors; skippedByChoice = built.skippedByChoice; exclusionSummary = built.exclusionSummary;
     // custom-field raw values decided in the mapper ride each donor row
     const assigns = (opts.customAssignments || {})[donorsSheet.name] || {};
@@ -3336,21 +3457,40 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     }
   }
 
-  // F-4 (BUILD-80) at workbook scale: a repeated source Gift ID inside the
-  // file is the SAME gift listed twice — imported once, the repeat counted
-  // and itemised (the server's external-id unique would collapse it anyway;
-  // the pre-write summary must say so first, not discover it after).
-  const seenGiftIds = new Set();
+  // BUILD-83 Part 2.3 — A GIFT IS A DUPLICATE ONLY WHEN GIFT ID **AND** DONOR
+  // **AND** AMOUNT ALL MATCH. Two different gifts whose legacy Refs collided
+  // are two gifts: both import, both flagged "shares gift id X with row N",
+  // never folded. (BUILD-82 folded on the id alone and refused 721 real gifts
+  // worth $369,944.70.) A true triple-match is still imported once and listed.
+  // The source id is the server's cross-run idempotency key, so a COLLIDING
+  // row cannot carry it — it rides as a note instead, and the pair goes on the
+  // review queue where a human can see both.
+  const seenGiftIds = new Map();   // externalId → { line, sheet, donorKey, cents }
+  const duplicateReview = [];
   for (const b of builds) {
     const kept = [];
     for (const it of b.items) {
       const xid = it.gift.externalId;
-      if (xid && seenGiftIds.has(xid)) {
-        b.refusals.push({ sheet: b.name, line: it.line, reason: "gift_id_repeated_in_file", detail: `gift id ${xid} already appears earlier in this workbook — the same gift listed twice, imported once`, dollars: it.gift.amount });
+      if (!xid) { kept.push(it); continue; }
+      const donorKey = donorIdKey(it.donorId) || String(it.email || it.name || "").toLowerCase();
+      const cents = Math.round(it.gift.amount * 100);
+      const prior = seenGiftIds.get(xid);
+      if (!prior) { seenGiftIds.set(xid, { line: it.line, sheet: b.name, donorKey, cents }); kept.push(it); continue; }
+      if (prior.donorKey === donorKey && prior.cents === cents) {
+        // same id, same person, same money — the same gift listed twice
+        b.refusals.push({ sheet: b.name, line: it.line, reason: "same_gift_listed_twice",
+          detail: `gift id ${xid} on row ${prior.line} of ${prior.sheet} names the same donor and amount — imported once`, dollars: it.gift.amount });
         continue;
       }
-      if (xid) seenGiftIds.add(xid);
-      kept.push(it);
+      // a COLLISION, not a duplicate: import it, flag both rows, drop the id
+      duplicateReview.push({ sheet: b.name, line: it.line, giftId: xid, dollars: it.gift.amount,
+        sharesWith: { sheet: prior.sheet, line: prior.line } });
+      b.flags.push({ sheet: b.name, line: it.line, kind: "gift_id_collision", dollars: it.gift.amount,
+        text: `shares gift id ${xid} with row ${prior.line} of ${prior.sheet} — different donor or amount, so both were imported` });
+      b.flags.push({ sheet: prior.sheet, line: prior.line, kind: "gift_id_collision", dollars: null,
+        text: `shares gift id ${xid} with row ${it.line} of ${b.name} — different donor or amount, so both were imported` });
+      kept.push({ ...it, gift: { ...it.gift, externalId: undefined,
+        notes: [it.gift.notes, `source gift id ${xid} (shared with row ${prior.line} of ${prior.sheet})`].filter(Boolean).join(" \u00b7 ") } });
     }
     if (kept.length !== b.items.length) {
       b.items = kept;
@@ -3429,15 +3569,27 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
   const nameByIndex = i => linked.donors[i] ? (linked.donors[i].name || linked.donors[i].email || "?") : "?";
   const largestGifts = [...linked.gifts].sort((a, b) => b.amount - a.amount).slice(0, 5)
     .map(g => ({ name: nameByIndex(g.donorIndex), dollars: g.amount, date: g.date }));
+  // BUILD-83 Part 2.5 — the reconciliation is FOUR TERMS plus a named residual:
+  // the file says X; imported Y; refused Z (n rows); routed W (n rows);
+  // unexplained U. The file's own total is the source system's figure and is
+  // never called "stale".
+  const totalRowFor = (b, sheet, stated, line) => {
+    const orphansHere = linked.refusedOrphans.filter(o => o.sheet === b.name);
+    const refusalsHere = [...b.refusals, ...orphansHere.map(o => ({ dollars: o.dollars }))];
+    const routedHere = Object.values(b.routed).flat();
+    const imported = b.report.dollarsIn;
+    const refusedAbs = Math.round(refusalsHere.reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100;
+    const routedAbs = Math.round(routedHere.reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100;
+    return { sheet: b.name, line, stated,
+             imported: Math.round((imported - orphansHere.reduce((s2, o) => s2 + (o.dollars || 0), 0)) * 100) / 100,
+             refusedAbs, refusedCount: refusalsHere.length,
+             routedAbs, routedCount: routedHere.length,
+             readable: imported,
+             unexplained: null };
+  };
   const totalRows = builds.filter(b => !b.decoy).map(b => {
     const sheet = roled.find(s => s.name === b.name);
-    const orphansHere = linked.refusedOrphans.filter(o => o.sheet === b.name).length;
-    return sheet && sheet.totalRow ? {
-      sheet: b.name, line: sheet.totalRow.line, stated: sheet.totalRow.amount,
-      readable: b.report.dollarsIn,
-      routedAbs: Math.round(Object.values(b.routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100,
-      refusedCount: b.report.refused + orphansHere,
-    } : null;
+    return sheet && sheet.totalRow ? totalRowFor(b, sheet, sheet.totalRow.amount, sheet.totalRow.line) : null;
   }).filter(Boolean);
   // subtotal/GRAND rows the sheet itself carried, for the same panel
   for (const s of roled) {
@@ -3445,14 +3597,13 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
       const gr = s.chromeRows.find(c => c.kind === "total_row" && c.amount != null);
       if (gr && !totalRows.some(t => t.sheet === s.name)) {
         const b = builds.find(x => x.name === s.name);
-        totalRows.push({ sheet: s.name, line: gr.line, stated: gr.amount, readable: b ? b.report.dollarsIn : null,
-          routedAbs: b ? Math.round(Object.values(b.routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0) * 100) / 100 : null,
-          refusedCount: b ? b.report.refused : null });
+        if (b) totalRows.push(totalRowFor(b, s, gr.amount, gr.line));
       }
     }
   }
 
   const r2 = x => Math.round(x * 100) / 100;
+  for (const tr of totalRows) tr.unexplained = r2(tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs));
   const cash = r2(linked.gifts.reduce((s2, g) => s2 + g.amount, 0));
   const refusedDollars = r2(refusals.reduce((s2, x) => s2 + (x.dollars || 0), 0));
   const routedDollars = r2(Object.values(routed).flat().reduce((s2, x) => s2 + Math.abs(x.dollars || 0), 0));
@@ -3465,7 +3616,7 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     foldedRows: dedup.foldedRows,
     pledges,
     recurring,
-    refusals, routed, flags,
+    refusals, routed, flags, signals, duplicateReview,
     columnNotes: builds.flatMap(b => b.columnNotes || []),
     conventions: builds.map(b => ({ sheet: b.name, ...b.convention })),
     reconciliation,

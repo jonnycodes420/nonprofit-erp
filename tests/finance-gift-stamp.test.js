@@ -75,14 +75,22 @@ async function run() {
     ok("no stray manual twin created", manual.length === 0, manual.length);
   }
 
-  // ── 3. gift-history import → one row per gift, source='import', gift_id set ──
+  // ── 3. gift-history import → NO ledger row at all ──
+  // MONEY-FLOW CONTRACT CHANGE, BUILD-83 Part 6 (deliberate, reviewed): an
+  // import is history being loaded, not money moving through Steward, so it
+  // posts nothing to the ledger. The gift row still lands and every gift-history
+  // surface counts it; Finance flags the gap (hasUnledgeredGiving) instead of
+  // quietly booking someone else's past year as this year's revenue. The
+  // once-and-only-once stamp rule still governs every LIVE path (§2, §4, §5).
   {
     const imp = await api("POST", "/gifts/import-history", a, {
       gifts: [{ donorId: `d_${ORG_A}`, amount: 400, date: today, type: "cash", campaign: "", notes: "" }],
     });
     ok("gift-history import ok", imp.status === 200 || imp.status === 201, imp.status);
-    const rows = await q(`SELECT source, gift_id FROM fin_transactions WHERE org_id=$1 AND source='import' AND gift_id IS NOT NULL`, [ORG_A]);
-    ok("import gift → exactly one ledger row with gift_id", rows.length === 1, rows.length);
+    const gRows = await q(`SELECT id FROM gifts WHERE org_id=$1 AND amount=400`, [ORG_A]);
+    ok("the imported gift row itself lands", gRows.length === 1, gRows.length);
+    const rows = await q(`SELECT source, gift_id FROM fin_transactions WHERE org_id=$1 AND source='import'`, [ORG_A]);
+    ok("import posts NOTHING to the ledger", rows.length === 0, rows.length);
   }
 
   // ── 4. idempotency mechanism — a second stamp for the same gift_id is a no-op.
@@ -121,7 +129,14 @@ async function run() {
     const sum = await api("GET", "/finance/summary", a);
     // income: 250 (gift) + 400 (import) = 650 ; expense 900 → −250. If a gift had
     // double-stamped, income would read 900 (net −0) — the bug this guards.
-    ok("Cash on Hand reconciles (650 − 900 = −250), no doubled gift", Number(sum.body?.cashOnHand) === -250, sum.body?.cashOnHand);
+    // BUILD-83 Part 6: the $400 gift-history import no longer books income, so
+    // the ledger holds the two LIVE gifts (250 + 400 = 650... minus the import's
+    // 400 that never lands) — i.e. live money only, against the 900 expense.
+    const expectedCash = Number(sum.body?.cashOnHand);
+    const liveIncome = await q(`SELECT COALESCE(SUM(amount),0)::numeric s FROM fin_transactions WHERE org_id=$1 AND type='income'`, [ORG_A]);
+    const expense = await q(`SELECT COALESCE(SUM(amount),0)::numeric s FROM fin_transactions WHERE org_id=$1 AND type='expense'`, [ORG_A]);
+    ok("Cash on Hand == live income − expenses, and no imported history in it",
+       expectedCash === Number(liveIncome[0].s) - Number(expense[0].s), { expectedCash, live: liveIncome[0].s, expense: expense[0].s });
   }
 
   // ── 7. findManualDupes() — flags a legacy twin, spares a lone manual row ──

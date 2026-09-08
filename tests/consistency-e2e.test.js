@@ -97,10 +97,12 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
   await seedDonor(A, "ce_d1", "Alice Donor");
   let expectedTotal = 0; // running Σ of every gift added to org A
 
-  // Cross-surface reconciliation: on a fresh org with only today's gifts and no
-  // expenses, Finance Cash-on-Hand (all-time ledger net) == Reports FY gift total
-  // == Fundraising this-period raised == Σ(donor lifetime). Asserts they AGREE.
-  async function assertSurfacesAgree(label, expected) {
+  // BUILD-83 Part 6: gift history that will never reach the ledger (imports).
+  let importedNotLedgered = 0;
+  // Cross-surface reconciliation. Gift-history surfaces (Reports, Fundraising)
+  // carry EVERY gift; Finance Cash-on-Hand carries the LIVE money only (see the
+  // contract note inside). `liveExpected` is the live figure when they differ.
+  async function assertSurfacesAgree(label, expected, liveExpected = null) {
     const [sum, gs, fr, home] = await Promise.all([
       api("GET", "/finance/summary?yearMode=fiscal", tA),
       api("GET", "/reports/giving-summary?yearMode=fiscal", tA),
@@ -111,10 +113,29 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     const repTotal = num(gs.body?.total);
     const frRaised = num(fr.body?.period?.raised);
     const pipeVal = num(home.body?.pipeline?.value);
-    ok(`${label}: Finance Cash-on-Hand == expected ${expected}`, close(cash, expected), { cash });
+    // ── MONEY-FLOW CONTRACT CHANGE, BUILD-83 Part 6 (deliberate, reviewed) ──
+    // Before: every gift path stamped the ledger, so Cash on Hand == Reports ==
+    // Fundraising. Now IMPORT POSTS NOTHING to the ledger — imported history is
+    // what the org already raised, not money moving through Steward — while a
+    // LIVE gift (logged here, or an online Stripe gift) still stamps exactly
+    // once. So the invariant splits in two, and both halves are asserted:
+    //   • gift-history surfaces (Reports, Fundraising) == every gift, always;
+    //   • Finance Cash on Hand == the LIVE money only;
+    //   • and the gap is never silent — /finance/summary must flag it
+    //     (hasUnledgeredGiving + unledgeredGiving == the difference).
+    // The caller passes `expectedLive` when they differ. This is the assertion
+    // that would have caught the Sept-7 books: FY revenue $1,010,106.39 from an
+    // import, expenses $0, "all-time" cash equal to the FY figure.
+    const expectedLive = liveExpected == null ? expected : liveExpected;
     ok(`${label}: Reports FY total == expected`, close(repTotal, expected), { repTotal });
     ok(`${label}: Fundraising raised == expected`, close(frRaised, expected), { frRaised });
-    ok(`${label}: all surfaces AGREE (cash==reports==fundraising)`, close(cash, repTotal) && close(repTotal, frRaised), { cash, repTotal, frRaised });
+    ok(`${label}: gift-history surfaces agree (reports == fundraising)`, close(repTotal, frRaised), { repTotal, frRaised });
+    ok(`${label}: Finance Cash-on-Hand == LIVE money only (${expectedLive})`, close(cash, expectedLive), { cash, expectedLive });
+    const unledgered = num(sum.body?.unledgeredGiving);
+    const flagged = !!sum.body?.hasUnledgeredGiving;
+    ok(`${label}: any gift history outside the ledger is FLAGGED, never a silent gap`,
+       close(expected, expectedLive) ? true : (flagged && close(unledgered, expected - expectedLive)),
+       { flagged, unledgered, gap: expected - expectedLive });
     // BUILD-30: pipeline = portfolio = the board = ASSIGNED donors only (the
     // board is NOT the whole donor list). An online gift can create a NEW,
     // UNASSIGNED donor (Directory-only), so the Home pipeline value sums the
@@ -156,9 +177,12 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     expectedTotal += 300;
     const after = await giftsFor("ce_d1");
     ok("import: exactly ONE new gift row", after.length === before + 1, { before, after: after.length });
+    // BUILD-83 Part 6 — an import posts NOTHING to the ledger, so there is no
+    // "one row per imported gift" to count any more; the assertion is zero.
     const importTxns = await q(`SELECT gift_id, COUNT(*)::int n FROM fin_transactions WHERE org_id=$1 AND source='import' GROUP BY gift_id`, [A]);
-    ok("import: exactly one ledger row per imported gift (no dupes)", importTxns.every(r => r.n === 1) && importTxns.length === 1, importTxns);
-    await assertSurfacesAgree("after import", expectedTotal);
+    ok("import posts NOTHING to the ledger (gift history is CRM data)", importTxns.length === 0, importTxns);
+    importedNotLedgered += 300;
+    await assertSurfacesAgree("after import", expectedTotal, expectedTotal - importedNotLedgered);
   }
 
   // ════ 1c. Entry point: online / Stripe webhook — AND its idempotency ════
@@ -182,7 +206,7 @@ const giftIntsFor = donor => q(`SELECT id FROM interactions WHERE donor_id=$1 AN
     ok("webhook idempotent: still exactly ONE ledger row", (await q(`SELECT id FROM fin_transactions WHERE gift_id=$1`, [gifts1[0]?.id])).length === 1);
     const d = await q(`SELECT total_giving,gift_count FROM donors WHERE id=$1`, [donor.id]);
     ok("webhook idempotent: donor total not doubled ($700, 1 gift)", close(d[0].total_giving, 700) && num(d[0].gift_count) === 1, d[0]);
-    await assertSurfacesAgree("after online gift (+ idempotent retry)", expectedTotal);
+    await assertSurfacesAgree("after online gift (+ idempotent retry)", expectedTotal, expectedTotal - importedNotLedgered);
   }
 
   // ════ 2. Digest idempotency: run twice → same rows, zero new ════

@@ -4609,8 +4609,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 
   // BUILD-58 W-3: the ONE ledger helper — self-heals a chartless org loudly.
   const ledgerC = await ensureOrgLedger(orgId, { heal: true });
-  const contribAcctId = ledgerC.contribAcctId;
-  const genFundId     = ledgerC.genFundId;
+  // BUILD-83 Part 6: the chart is still PROVISIONED on import (an org must have
+  // its accounts), but the import posts nothing to it. See the note below.
+  void ledgerC;
   // Donor names map: built from the already-prepared donorsToInsert list (no extra query)
   const donorNameMap = Object.fromEntries(donorsToInsert.map(d => [d._id, String(d.name).trim()]));
 
@@ -4654,14 +4655,15 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
         intParams.push(importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
         intTuples.push("(?,?,?,?,?,?,?,?)");
-        // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
-        // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
-        if (contribAcctId && g.date >= fyStart) {
-          const dName = donorNameMap[g.donorId] || "Donor";
-          ftParams.push(importId("ft_"), orgId, g.date,
-            `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", r.id, actor(req).id, actor(req).name);
-          ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-        }
+        // BUILD-83 Part 6 — IMPORT NEVER POSTS TO THE LEDGER. Gift history is
+        // CRM data: it is what the org already raised, not money moving through
+        // Steward. Ledger entries are created by the org, or by LIVE gifts
+        // (Stripe webhook / a gift logged here), from an opening balance the
+        // org sets. Posting an imported history made Finance open on FY revenue
+        // $1,010,106.39, expenses $0, and a "Cash on hand, all-time" equal to
+        // the FY figure — a set of books an accountant can disprove in a
+        // minute. The gift rows are untouched; Reports still show every dollar,
+        // and Finance's unledgered-giving explainer (BUILD-26 B1) says so.
       }
       if (intTuples.length) {
         await runTx(txc,
@@ -4707,6 +4709,36 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   ledger.assertBalanced();
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
+
+  // ── BUILD-83 Part 2.1 — THE RECEIPT. The pre-write summary is a promise;
+  // this is what the database actually holds, read back over the ids THIS
+  // request inserted (never org-wide totals — an existing org would drown the
+  // comparison). The completion screen puts promise and receipt side by side
+  // and goes red on any mismatch: a choice the screen quoted the legend for
+  // and then did not apply is data loss of the same class as a 200 on a
+  // destroyed gift, and this is what catches it.
+  let writtenReadback = null;
+  try {
+    const insertedIds = donorsToInsert.map(d => d._id).filter(id => !failedIds.has(id));
+    if (insertedIds.length) {
+      const rb = await query(
+        `SELECT COUNT(*)::int AS donors,
+                COUNT(*) FILTER (WHERE deceased)::int AS deceased,
+                COUNT(*) FILTER (WHERE do_not_contact)::int AS do_not_contact,
+                COUNT(*) FILTER (WHERE do_not_solicit)::int AS do_not_solicit,
+                COUNT(*) FILTER (WHERE do_not_mail)::int AS do_not_mail,
+                COUNT(*) FILTER (WHERE do_not_email)::int AS do_not_email,
+                COUNT(*) FILTER (WHERE deceased OR do_not_contact OR do_not_solicit OR do_not_mail OR do_not_email)::int AS excluded,
+                COUNT(*) FILTER (WHERE imported_sustainer)::int AS sustainers
+           FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`,
+        [orgId, insertedIds]);
+      const gb = await query(
+        `SELECT COUNT(*)::int AS gifts, COALESCE(SUM(amount),0)::numeric AS cash
+           FROM gifts WHERE org_id=? AND donor_id = ANY(?)`, [orgId, insertedIds]);
+      writtenReadback = { ...(rb[0] || {}), gifts: gb[0] ? Number(gb[0].gifts) : 0,
+                          cash: gb[0] ? Math.round(Number(gb[0].cash) * 100) / 100 : 0 };
+    } else writtenReadback = { donors: 0, excluded: 0, gifts: 0, cash: 0 };
+  } catch (e) { console.error("[import] read-back failed:", e.message); writtenReadback = { error: e.message }; }
 
   // Recalc every donor that had gifts inserted — ONE set-based query (import
   // hang fix), not a per-donor loop.
@@ -4815,6 +4847,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   } catch (e) { console.error("[combined-import] custom-field audit event failed:", e.message); }
 
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
+             written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              duplicateCandidates, externalIdDupes,
              columns: columnSummary,
              // BUILD-72 Part 1 — matched donors are now reported, and their
@@ -6766,8 +6799,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // Same account + fund the single-gift route uses — through the ONE ledger
   // helper (BUILD-58 W-3): a chartless org is provisioned loudly, never skipped.
   const ledgerH = await ensureOrgLedger(orgId, { heal: true });
-  const contribAcctId = ledgerH.contribAcctId;
-  const genFundId     = ledgerH.genFundId;
+  void ledgerH;   // BUILD-83 Part 6: chart provisioned, nothing posted by import
 
   const BATCH = 200;
   let inserted = 0, financeSynced = 0;
@@ -6803,14 +6835,15 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
             [importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
           );
           affectedDonorIds.add(g.donorId);
-          // Accumulate fin_transactions for current-FY gifts — same shape as single-gift
-          // route, carrying gift_id so the stamp is idempotent (BUILD-21 Part 3).
-          if (contribAcctId && g.date >= fyStart) {
-            const dName = donorNameMap[g.donorId] || "Donor";
-            ftParams.push(importId("ft_"), orgId, g.date,
-              `Gift from ${dName}`, dName, g.amount, "income", contribAcctId, genFundId, g.donorId, "import", id, actor(req).id, actor(req).name);
-            ftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-          }
+          // BUILD-83 Part 6 — IMPORT NEVER POSTS TO THE LEDGER. Gift history is
+          // CRM data: it is what the org already raised, not money moving through
+          // Steward. Ledger entries are created by the org, or by LIVE gifts
+          // (Stripe webhook / a gift logged here), from an opening balance the
+          // org sets. Posting an imported history made Finance open on FY revenue
+          // $1,010,106.39, expenses $0, and a "Cash on hand, all-time" equal to
+          // the FY figure — a set of books an accountant can disprove in a
+          // minute. The gift rows are untouched; Reports still show every dollar,
+          // and Finance's unledgered-giving explainer (BUILD-26 B1) says so.
         }
         // One bulk INSERT for all FY fin_transactions in this batch — same tx as gifts
         if (ftTuples.length) {

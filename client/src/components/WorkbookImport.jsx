@@ -11,7 +11,7 @@ import { useState, useMemo, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, Spin } from "./shared";
 import {
-  buildWorkbookSubmission, buildStandardMapping, buildSheetSignals, extractWorkbookLegend,
+  buildWorkbookSubmission, buildStandardMapping, buildWorkbookSignals, extractWorkbookLegend,
   STANDARD_DONOR_FIELDS, STANDARD_GIFT_FIELDS, inferDateConventionCells,
 } from "../../../shared/importShape";
 import { detectExclusionColumn, proposeCustomField, proposalEvidenceText, CF_TYPES } from "../../../shared/customFieldShape";
@@ -19,6 +19,8 @@ import { detectExclusionColumn, proposeCustomField, proposalEvidenceText, CF_TYP
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? (T.green600 || "#1e6b45") : r === "pledges" || r === "recurring" ? (T.gold600 || "#a97f22") : T.ink3;
 const fmtN = n => Number(n || 0).toLocaleString();
+// Part 2.5 — a review list shows the NORMALISED id; the raw cell rides the tooltip.
+const normalisedId = v => { const s = String(v ?? "").trim().replace(/\.0+$/, "").replace(/^0+(?=[0-9])/, ""); return s || String(v ?? ""); };
 const fmt$ = n => "$" + Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // a client-side CSV download for the itemised refusal/skip lists
@@ -66,14 +68,12 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const recurringSheet = roled.find(s => s.role === "recurring") || null;
   const giftAlone = !donorsSheet && giftSheets.length > 0;   // Part 2.5 — link to the org's existing records
 
-  const signals = useMemo(() => {
-    const out = [];
-    for (const s of roled) {
-      if (s.role !== "donors" && s.role !== "gifts") continue;
-      out.push(...buildSheetSignals(s.name, s.meta || {}, legend, { headerCells: s.headerCells }));
-    }
-    return out;
-  }, [roled, legend]);
+  // BUILD-83 Part 1 — one signal per (sheet, kind, colour), over DATA ROWS only.
+  const signals = useMemo(() => buildWorkbookSignals(roled, legend), [roled, legend]);
+  const answerable = useMemo(() => signals.filter(s => s.kind !== "hidden_column"), [signals]);
+  const unanswered = useMemo(
+    () => answerable.filter(s => signalAnswers[s.id] === undefined && !s.defaultAnswer),
+    [answerable, signalAnswers]);
 
   // ── the mapper model: one entry per column of each importable sheet ──────
   const mapperSheets = useMemo(() => {
@@ -172,7 +172,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         }
       }
       const sub = buildWorkbookSubmission(roled, {
-        signalAnswers, legend, includeDecoy,
+        signals, signalAnswers, legend, includeDecoy,
         currentYear: new Date().getFullYear(),
         mappingOverrides, customAssignments,
       });
@@ -288,7 +288,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {btn(giftAlone
             ? `Continue — link ${fmtN(giftsN)} gifts to your existing records →`
             : `Continue — one import: ${fmtN(donorsN)} donors + ${fmtN(giftsN)} gift rows${pledgeSheet ? ` + ${fmtN(pledgeSheet.rowCount)} pledges` : ""}${recurringSheet ? ` + ${fmtN(recurringSheet.rowCount)} recurring` : ""} →`,
-            () => setStep(signals.length ? "signals" : "mapper"), { disabled: !importables.length, testid: "wb-continue" })}
+            () => setStep(answerable.length ? "signals" : "mapper"), { disabled: !importables.length, testid: "wb-continue" })}
           {btn("← Back", onClose, { secondary: true })}
         </div>
       </div>
@@ -299,44 +299,42 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     return (
       <div data-testid="wb-signals">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 4 }}>What the sheet knows that the cells don't.</div>
-        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14 }}>Hidden rows, highlights and comments were detected — they are never silently included or excluded. The file's legend is quoted where it speaks.</div>
-        {signals.map((sig, i) => (
-          <div key={i} data-testid={`wb-signal-${sig.kind}`} style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
-            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.5, marginBottom: 8 }}>{sig.question}</div>
-            {sig.kind === "comments" && (
-              <div style={{ maxHeight: 130, overflowY: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>
-                {(sig.comments || []).map((c, j) => <div key={j} style={{ fontSize: 11.5, color: T.ink3 }}>row {c.row}: “{c.text}”</div>)}
-              </div>
-            )}
-            {(sig.kind === "hidden_rows" || sig.kind === "filled_rows") && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {[["legend", sig.legend ? "Treat them per the legend" : "Flag per the legend (none found)"], ["import", "Import as normal"], ["skip", "Skip these rows"]].map(([v, label]) => (
-                  <label key={v} style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", border: `1px solid ${signalAnswers[sig.kind] === v ? (T.green600 || "#1e6b45") : T.bg3}`, borderRadius: 8, padding: "6px 10px" }}>
-                    <input type="radio" name={sig.kind} checked={signalAnswers[sig.kind] === v} onChange={() => setSignalAnswers(p => ({ ...p, [sig.kind]: v }))} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            )}
-            {sig.kind === "comments" && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {[["route", `Flag the ${sig.exclusionCount} that match the exclusion family (deceased / do-not-contact)`], ["ignore", "Keep as note text only"]].map(([v, label]) => (
-                  <label key={v} style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 6, alignItems: "center", cursor: "pointer", border: `1px solid ${signalAnswers.comments === v ? (T.green600 || "#1e6b45") : T.bg3}`, borderRadius: 8, padding: "6px 10px" }}>
-                    <input type="radio" name="comments" checked={signalAnswers.comments === v} onChange={() => setSignalAnswers(p => ({ ...p, comments: v }))} />
-                    {label}
-                  </label>
-                ))}
-              </div>
-            )}
-            {sig.kind === "hidden_column" && (
-              <div style={{ fontSize: 12, color: T.ink3 }}>It stays unmapped unless you map it yourself on the next screen.</div>
-            )}
-          </div>
-        ))}
+        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14 }}>Hidden rows, highlights and comments were detected on your data rows — never on titles, headers or subtotal rows, and never silently included or excluded. The file's legend is quoted where it speaks.</div>
+        {signals.map(sig => {
+          const chosen = signalAnswers[sig.id] !== undefined ? signalAnswers[sig.id] : (sig.defaultAnswer || null);
+          return (
+            <div key={sig.id} data-testid={`wb-signal-${sig.kind}`} data-signal-id={sig.id}
+              style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.5, marginBottom: 8 }}>{sig.question}</div>
+              {sig.kind === "comments" && (
+                <div style={{ maxHeight: 130, overflowY: "auto", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", marginBottom: 8 }}>
+                  {(sig.comments || []).map((c2, j) => <div key={j} style={{ fontSize: 11.5, color: T.ink3 }}>row {c2.row}: “{c2.text}”</div>)}
+                </div>
+              )}
+              {sig.kind === "hidden_column"
+                ? <div style={{ fontSize: 12, color: T.ink3 }}>It stays unmapped unless you map it yourself on the next screen.</div>
+                : (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {(sig.options || []).map(o => (
+                      <label key={o.value} data-testid={`wb-opt-${sig.id}-${o.value}`}
+                        style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 6, alignItems: "center", cursor: "pointer",
+                                 border: `1px solid ${chosen === o.value ? (T.green600 || "#1e6b45") : T.bg3}`, borderRadius: 8, padding: "6px 10px",
+                                 background: chosen === o.value ? (T.green100 || "#edf3ee") : "transparent" }}>
+                        <input type="radio" name={sig.id} checked={chosen === o.value}
+                          onChange={() => setSignalAnswers(p => ({ ...p, [sig.id]: o.value }))} />
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              {sig.kind === "filled_rows" && !sig.legendText && (
+                <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 6 }}>Whatever you choose, the shade is recorded on each row so it isn't lost.</div>
+              )}
+            </div>
+          );
+        })}
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-          {btn("Continue to the mapping →", () => setStep("mapper"), {
-            disabled: signals.some(s => (s.kind === "hidden_rows" || s.kind === "filled_rows") && !signalAnswers[s.kind]) || (signals.some(s => s.kind === "comments") && !signalAnswers.comments),
-            testid: "wb-signals-continue" })}
+          {btn("Continue to the mapping →", () => setStep("mapper"), { disabled: unanswered.length > 0, testid: "wb-signals-continue" })}
           {btn("← Back", () => setStep("sheets"), { secondary: true })}
         </div>
       </div>
@@ -431,7 +429,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         })}
         <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
           {btn(building ? "Reading the workbook…" : "Review the import →", buildNow, { disabled: building, testid: "wb-review" })}
-          {btn("← Back", () => setStep(signals.length ? "signals" : "sheets"), { secondary: true, disabled: building })}
+          {btn("← Back", () => setStep(answerable.length ? "signals" : "sheets"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
         {err && <div style={{ color: "#b8593f", fontSize: 12.5, marginTop: 8 }}>{err}</div>}
@@ -443,6 +441,14 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     const s = submission;
     const reasonRows = {};
     for (const r of s.refusals) (reasonRows[r.reason] = reasonRows[r.reason] || []).push(r);
+    const flagGroups = {};
+    for (const f of s.flags) (flagGroups[f.kind] = flagGroups[f.kind] || []).push(f);
+    const FLAG_LABEL = {
+      percent_format: "amounts stored as a percentage, read as dollars",
+      computed_formula: "amounts written as a formula, computed",
+      gift_id_collision: "rows sharing a gift id with a different donor or amount — both imported",
+      id_note: "identifiers the spreadsheet reformatted",
+    };
     const REASON_LABEL = {
       no_donor_match: "no donor match — the ID matches nothing on any sheet",
       unreadable_amount: "unreadable amount", unreadable_date: "unreadable date",
@@ -494,6 +500,20 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
         </div>
 
+        {Object.keys(flagGroups).length > 0 && (<>
+          <SectionHead>Imported with a flag — review later</SectionHead>
+          <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>These rows LANDED. They're listed because the cell said something worth a second look.</div>
+            {Object.entries(flagGroups).sort((a, b) => b[1].length - a[1].length).map(([kind, rows]) => (
+              <div key={kind} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
+                <span>{FLAG_LABEL[kind] || kind} — <strong>{fmtN(rows.length)}</strong> <span style={{ color: T.ink3 }}>e.g. “{String(rows[0].text).slice(0, 70)}”</span></span>
+                <button onClick={() => downloadCsv(`flagged-${kind}.csv`, rows, ["sheet", "line", "kind", "text", "dollars"])}
+                  style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
+              </div>
+            ))}
+          </div>
+        </>)}
+
         <SectionHead>Set aside, by reason — every row has its sheet, row number and reason</SectionHead>
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
           {Object.entries(reasonRows).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
@@ -503,13 +523,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                 style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
             </div>
           ))}
-          {s.flags.length > 0 && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
-              <span>percent-format amounts, read as dollars and flagged (e.g. “{(s.flags.find(f => /^stored as \d{1,2}(\.|%)/.test(f.text)) || s.flags[0]).text}”) — <strong>{fmtN(s.flags.length)}</strong></span>
-              <button onClick={() => downloadCsv("flagged-percent-format.csv", s.flags, ["sheet", "line", "kind", "text", "dollars"])}
-                style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
-            </div>
-          )}
+
           {(s.routed.refunds.length + s.routed.inKind.length + s.routed.pledges.length + s.routed.softCredits.length + s.routed.reversals.length) > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink3, padding: "3px 0" }}>
               Routed to their own surfaces (never dropped): {[
@@ -527,13 +541,23 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           <SectionHead>The file's own totals, reconciled</SectionHead>
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
             {s.totalRows.map(tr => {
-              const gap = Math.round((tr.stated - tr.readable) * 100) / 100;
+              // Part 2.5 — four terms and a residual, and the file's own total is
+              // never called "stale": it is the source system's figure.
+              const unexplained = Math.round((tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs)) * 100) / 100;
               return (
-                <div key={tr.sheet} style={{ padding: "3px 0", lineHeight: 1.5 }}>
-                  <strong>{tr.sheet}</strong> row {fmtN(tr.line)} says {fmt$(tr.stated)}; the readable cells hold {fmt$(tr.readable)} — the {fmt$(Math.abs(gap))} difference is {tr.refusedCount ? `${fmtN(tr.refusedCount)} refused rows + ` : ""}{fmt$(tr.routedAbs)} routed{Math.abs(gap) > tr.routedAbs + 1 ? " + amounts the sheet itself no longer carries (its cached total is stale)" : ""}.
+                <div key={tr.sheet} style={{ padding: "4px 0", lineHeight: 1.55 }}>
+                  <strong>{tr.sheet}</strong>: the file says {fmt$(tr.stated)}; imported {fmt$(tr.imported)}; refused {fmt$(tr.refusedAbs)} ({fmtN(tr.refusedCount)} rows); routed {fmt$(tr.routedAbs)} ({fmtN(tr.routedCount)} rows)
+                  {Math.abs(unexplained) >= 0.01
+                    ? <span style={{ color: "#b8593f" }}>; unexplained {fmt$(unexplained)}</span>
+                    : <span style={{ color: T.ink3 }}>; nothing unexplained</span>}.
                 </div>
               );
             })}
+            {s.totalRows.some(tr => Math.abs(Math.round((tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs)) * 100) / 100) >= 0.01) && (
+              <div style={{ fontSize: 11.5, color: "#b8593f", marginTop: 6 }}>
+                Import confidence: reconciled within {fmt$(Math.max(...s.totalRows.map(tr => Math.abs(Math.round((tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs)) * 100) / 100))))}.
+              </div>
+            )}
           </div>
         </>)}
 
@@ -545,7 +569,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {s.merges.length > 0 && (<>
           <SectionHead>Duplicate people folded — review list ({fmtN(s.merges.length)}, undo after import)</SectionHead>
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, maxHeight: 140, overflowY: "auto" }}>
-            {s.merges.slice(0, 300).map((m, i) => <div key={i} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}><strong style={{ color: T.ink }}>{m.folded}</strong> (id {m.foldedId}) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> — {m.reason}; gifts posted to either id land on the surviving record.</div>)}
+            {s.merges.slice(0, 300).map((m, i) => <div key={i} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}><strong style={{ color: T.ink }}>{m.folded}</strong> (id <span title={`raw cell: ${m.foldedId}`}>{normalisedId(m.foldedId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> — {m.reason}; gifts posted to either id land on the surviving record.</div>)}
           </div>
         </>)}
 
@@ -563,11 +587,41 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   }
 
   if (step === "result" && result) {
+    // ── Part 2.1 — SHOWN IS APPLIED. The pre-write summary was a promise; the
+    // server read these back from the database after commit. Any mismatch is a
+    // data-loss bug and it says so here, in red, with both numbers.
+    const w = result.written || null;
+    const promised = submission ? {
+      donors: submission.totals.donors,
+      gifts: submission.totals.gifts,
+      excluded: submission.exclusionSummary ? submission.exclusionSummary.total : null,
+      sustainers: submission.recurring ? submission.donors.filter(d => d.importedSustainer).length : null,
+    } : null;
+    const checks = w && promised && !w.error ? [
+      { label: "donors", shown: promised.donors, written: Number(w.donors) },
+      { label: "gifts", shown: promised.gifts, written: Number(w.gifts) },
+      { label: "people excluded from every ask surface", shown: promised.excluded, written: Number(w.excluded) },
+      ...(promised.sustainers != null ? [{ label: "monthly donors from your file", shown: promised.sustainers, written: Number(w.sustainers) }] : []),
+    ].filter(c2 => c2.shown != null) : [];
+    const mismatches = checks.filter(c2 => c2.shown !== c2.written);
     return (
       <div data-testid="wb-result">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>
           {result.created != null ? `Imported: ${fmtN(result.created)} donors created, ${fmtN(result.giftsInserted || 0)} gifts recorded.` : "Import finished."}
         </div>
+        {checks.length > 0 && (
+          <div data-testid="wb-readback" style={{ background: mismatches.length ? "#f6e3dd" : T.bg, border: `1px solid ${mismatches.length ? "#eac6b8" : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: mismatches.length ? "#8a3a24" : T.ink3, marginBottom: 6 }}>
+              {mismatches.length ? "What we showed you does NOT match what was written" : "Checked against the database after writing"}
+            </div>
+            {checks.map(c2 => (
+              <div key={c2.label} style={{ fontSize: 12.5, color: c2.shown === c2.written ? T.ink : "#8a3a24", display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
+                <span>{c2.label}</span>
+                <span>{c2.shown === c2.written ? `${fmtN(c2.written)} ✓` : `shown ${fmtN(c2.shown)} · written ${fmtN(c2.written)}`}</span>
+              </div>
+            ))}
+          </div>
+        )}
         {elapsed && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8 }}>Click to summary: {elapsed}s for the write.</div>}
         {result.semantics && !result.semantics.error && (
           <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8 }}>
