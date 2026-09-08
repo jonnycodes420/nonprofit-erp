@@ -21,11 +21,18 @@
 
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, SINK_PORT, BASE } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, SINK_PORT, BASE , civilToday } = require("./helpers");
 
 const ORG = "org_b81ndg", ORG2 = "org_b81ndg2";
 const iso = d => new Date(d).toISOString().slice(0, 10);
-const daysAgo = n => iso(Date.now() - n * 86400000);
+// BUILD-83 — civil-date arithmetic from the ORG's today, never UTC's. After
+// 8pm Eastern UTC has already rolled over, so a UTC-derived `daysAgo(23)` is
+// 22 days ago in the org's calendar and every day-count assertion in this file
+// shifts by one. (The documented gotcha; this suite was reproducing it nightly.)
+const daysAgo = n => {
+  const [y, m, d] = civilToday().split("-").map(Number);
+  return iso(Date.UTC(y, m - 1, d) - n * 86400000);
+};
 const daysAhead = n => iso(Date.now() + n * 86400000);
 
 let captured = [];
@@ -157,7 +164,7 @@ async function reset() {
   // ── §5 · the subject escalates ───────────────────────────────────────────
   console.log("\n— §5 · escalation —");
   captured = [];
-  const later = iso(Date.now() + 8 * 86400000);
+  const later = daysAgo(-8);   // civil-date arithmetic (see daysAgo) — never UTC's clock
   const r5 = await api("POST", "/nudges/run", tok, { today: later, force: true });
   const m5 = mails()[0]?.body || {};
   ok("a week later the SAME thread carries a bigger number: day 32",

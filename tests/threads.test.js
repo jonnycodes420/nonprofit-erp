@@ -29,11 +29,18 @@
 // Local scratch server + Postgres (tests/README.md recipe).
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb , civilToday } = require("./helpers");
 
 const ORG = "org_b81thr";
 const iso = d => new Date(d).toISOString().slice(0, 10);
-const daysAgo = n => iso(Date.now() - n * 86400000);
+// BUILD-83 — civil-date arithmetic from the ORG's today, never UTC's. After
+// 8pm Eastern UTC has already rolled over, so a UTC-derived `daysAgo(23)` is
+// 22 days ago in the org's calendar and every day-count assertion in this file
+// shifts by one. (The documented gotcha; this suite was reproducing it nightly.)
+const daysAgo = n => {
+  const [y, m, d] = civilToday().split("-").map(Number);
+  return iso(Date.UTC(y, m - 1, d) - n * 86400000);
+};
 
 async function reset() {
   const CHILD = ["threads", "workflow_runs", "workflows", "digest_sends", "moves", "opportunities", "tasks",
