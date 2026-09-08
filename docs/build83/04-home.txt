@@ -31,7 +31,7 @@ Reports
 Finance
 ⚙
 Settings
-B83 Walk mtsqnxxd
+B83 Walk mtsr0890
 Good morning, B83
 Edit
 No goal set for this period.
@@ -72,13 +72,13 @@ w
 wyatt Carter
 Gave $20,000 on August 3 — not yet thanked
 Log thank-you →
-D
-Donna Patel
-Gave $12,500 on July 5 — not yet thanked
-Log thank-you →
 J
 Joe Ward
 Gave $12,500 on August 22 — not yet thanked
+Log thank-you →
+D
+Donna Patel
+Gave $12,500 on July 5 — not yet thanked
 Log thank-you →
 A
 Ava Moore
@@ -92,6 +92,13 @@ Send reconnect links →
 Drift
 $1,395,747.35 at risk — the sum of what these donors usually give · 1556 donors past their own pattern
 See all 1556 →
+P
+Prieto Farm Bureau
+Gave about once a year for 2 years — usually around $25,000. Nothing for 17 months.
+$25,000
+AT RISK
+Log the call
+Not drifting
 E
 Ellingsworth Bank
 Gave about once a year — usually around $25,000. Nothing for over a year.
@@ -120,13 +127,6 @@ $25,000
 AT RISK
 Log the call
 Not drifting
-P
-Prieto Farm Bureau
-Gave about once a year for 2 years — usually around $25,000. Nothing for 17 months.
-$25,000
-AT RISK
-Log the call
-Not drifting
 Y
 Yancey Realty
 Gave about once a year for 2 years — usually around $25,000. Nothing for 16 months.
@@ -141,16 +141,16 @@ $12,500
 AT RISK
 Log the call
 Not drifting
-L
-Lewis Fellowship
-Gave about once a year — usually around $10,000. Nothing for 17 months.
+R
+Richardson Ministries
+Gave about once a year for 2 years — usually around $10,000. Nothing for 16 months.
 $10,000
 AT RISK
 Log the call
 Not drifting
-R
-Richardson Ministries
-Gave about once a year for 2 years — usually around $10,000. Nothing for 16 months.
+L
+Lewis Fellowship
+Gave about once a year — usually around $10,000. Nothing for 17 months.
 $10,000
 AT RISK
 Log the call
@@ -176,12 +176,12 @@ Giving from donors quietly past their own pattern — each is on the Drifting li
 DONOR RETENTION RATE
 59%
 4,830 of 8,246 donors who gave in FY 2025 gave again (FY 2025 → FY 2026).
+Peter Parker
+$1,000
 Fatima Young
 $200
 Sarah Gallagher
 $500.25
-jerry Green
-$25
 +3413 more →
 FIRST-TOUCH DELAY
 —

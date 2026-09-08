@@ -2848,7 +2848,6 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   const sustainerSent = await query(
     `SELECT COUNT(*)::int AS n FROM donors d
       WHERE d.org_id=? AND d.deleted_at IS NULL AND d.imported_sustainer IS TRUE
-        AND (COALESCE(d.tags::text,'') LIKE '%card-failed%' OR COALESCE(d.tags::text,'') LIKE '%stale-frequency%')
         AND EXISTS (SELECT 1 FROM reconnect_sends rs WHERE rs.org_id = d.org_id AND rs.donor_id = d.id)`, [orgId]);
   const sustainerRow = [{ total: sustainerFacts.fromFile, stopped: sustainerFacts.stopped, stopped_sent: sustainerSent[0]?.n || 0 }];
   const items = [
@@ -17306,12 +17305,14 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
   // BUILD-83 Part 5.2 — the file's own stopped monthly donors are an exception
   // too. Without them the tab could say "nothing needs you" while 160 people
   // Steward had already detected had stopped giving.
+  const stoppedCutoff = orgTime.addDays(orgToday(await orgTz(orgId)), -60);   // ORG_TZ_SEAM_OK — same window as sustainerFileFacts
   const stoppedFile = await query(
     `SELECT id, name, imported_sustainer_amount AS amount, imported_sustainer_last_gift AS last_gift, email
        FROM donors
       WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
-        AND (COALESCE(tags::text,'') LIKE '%card-failed%' OR COALESCE(tags::text,'') LIKE '%stale-frequency%')
-      ORDER BY imported_sustainer_amount DESC NULLS LAST LIMIT 500`, [orgId]);
+        AND (COALESCE(tags::text,'') LIKE '%card-failed%' OR COALESCE(tags::text,'') LIKE '%stale-frequency%'
+             OR (imported_sustainer_last_gift IS NOT NULL AND imported_sustainer_last_gift < ?))
+      ORDER BY imported_sustainer_amount DESC NULLS LAST LIMIT 500`, [orgId, stoppedCutoff]);
 
   res.json({
     counts: {
@@ -17871,16 +17872,26 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
 //             Active" claim the gift pattern contradicts (the file's Status
 //             column is stale; the pattern is the truth — BUILD-82 Part 5)
 //   giving    the rest. Connection to a payment method HERE is a separate axis.
-async function sustainerFileFacts(orgId) {
+async function sustainerFileFacts(orgId, today) {
+  // ONE definition of "stopped giving": a monthly donor whose giving has
+  // actually stopped — their last sustainer gift is older than the window — or
+  // whom the file itself flags as stopped (a failed card, or a "still Active"
+  // claim the gift pattern contradicts). The two halves agree on real files;
+  // keeping both means neither a flagless silence nor a flagged-but-recent row
+  // can slip past. STOPPED_DAYS is the same 60-day window /recurring/unlinked
+  // has always used.
+  const STOPPED_DAYS = 60;
+  const cutoff = orgTime.addDays(today || orgToday(await orgTz(orgId)), -STOPPED_DAYS);   // ORG_TZ_SEAM_OK
+  const STOPPED_SQL = `(COALESCE(tags::text,'') LIKE '%card-failed%'
+                     OR COALESCE(tags::text,'') LIKE '%stale-frequency%'
+                     OR (imported_sustainer_last_gift IS NOT NULL AND imported_sustainer_last_gift < ?))`;
   const rows = await query(
     `SELECT COUNT(*)::int AS from_file,
-            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%'
-                                OR COALESCE(tags::text,'') LIKE '%stale-frequency%')::int AS stopped,
+            COUNT(*) FILTER (WHERE ${STOPPED_SQL})::int AS stopped,
             COUNT(*) FILTER (WHERE stripe_subscription_id IS NOT NULL)::int AS connected,
-            COUNT(*) FILTER (WHERE (COALESCE(tags::text,'') LIKE '%card-failed%'
-                                OR COALESCE(tags::text,'') LIKE '%stale-frequency%')
-                               AND COALESCE(email,'') = '')::int AS stopped_no_email
-       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`, [orgId]);
+            COUNT(*) FILTER (WHERE ${STOPPED_SQL} AND COALESCE(email,'') = '')::int AS stopped_no_email
+       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`,
+    [cutoff, cutoff, orgId]);
   const f = rows[0] || {};
   const fromFile = f.from_file || 0, stopped = f.stopped || 0;
   return { fromFile, stopped, giving: Math.max(0, fromFile - stopped),

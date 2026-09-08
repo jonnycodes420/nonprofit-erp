@@ -50,7 +50,7 @@ people excluded from every ask surface
 792 ✓
 monthly donors from your file
 600 ✓
-Click to summary: 15.4s for the write.
+Click to summary: 17.5s for the write.
 60 pledges recorded as commitments · 0 merges logged for undo.
 Done
 Directory
