@@ -1,3 +1,6 @@
+// BUILD-83 VERIFICATION WALK (was the Part 0 repro; same script, same answers,
+// now asserting the fixed behaviour). Set B83_REPRO=1 to run it as the repro.
+// ORIGINAL HEADER —
 // BUILD-83 Part 0 — REPRODUCE. Fresh org, v3, Jonathan's Sept-7 answer pattern:
 // Treat-per-legend on hidden and yellow, Flag-the-40 on comments, and
 // Import-as-normal on the BOGUS blue prompt (the gift sheet's shaded subtotal

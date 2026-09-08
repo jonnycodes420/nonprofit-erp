@@ -1,0 +1,69 @@
+Steward
+⌕
+?
+B
+B83 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-messy-25k-v3.xlsx
+7.3 MB · 9 sheets · one import
+Replace
+Remove
+Imported: 25,034 donors created, 90,523 gifts recorded.
+CHECKED AGAINST THE DATABASE AFTER WRITING
+donors
+25,034 ✓
+gifts
+90,523 ✓
+people excluded from every ask surface
+792 ✓
+monthly donors from your file
+600 ✓
+Click to summary: 15.4s for the write.
+60 pledges recorded as commitments · 0 merges logged for undo.
+Done
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

@@ -240,24 +240,40 @@ const fs = require("fs");
     anchorDate: "2026-09-06", currentYear: 2026,
     customAssignments: { Donors: { "Internal Score": { entity: "donor", key: "internal_score" } } },
   });
-  ok("ALL 800 exclusions found (flags + status + notes + hidden + yellow + comments)",
-     sub.exclusionSummary.total === 800, sub.exclusionSummary);
+  // BUILD-83 Part 2.1 — the summary promises what the DATABASE will hold: 800
+  // ROWS carry an exclusion, 8 of them fold into a surviving duplicate, so 792
+  // PEOPLE end up excluded. Both numbers are said, and the read-back compares
+  // against the one that lands.
+  ok("ALL 800 exclusion ROWS found (flags + status + notes + hidden + yellow + comments)",
+     sub.exclusionSummary.rowsFound === 800, sub.exclusionSummary);
+  ok("…and the figure the screen promises is the 792 PEOPLE who will carry one",
+     sub.exclusionSummary.total === 792 && sub.exclusionSummary.foldedIntoSurvivors === 8, sub.exclusionSummary);
   ok("the 40 hidden, 100 yellow and 40 comment rows are among them",
      sub.exclusionSummary.fromHidden === 40 && sub.exclusionSummary.fromFill === 100 && sub.exclusionSummary.fromComments === 40, sub.exclusionSummary);
   ok("'Do not include in vendor mailing' (331 rows) excluded NOTHING",
-     sub.exclusionSummary.total === 800 && !IS.detectNoteMarkers("Do not include in vendor mailing").doNotSolicit
+     sub.exclusionSummary.rowsFound === 800 && !IS.detectNoteMarkers("Do not include in vendor mailing").doNotSolicit
      && !IS.detectNoteMarkers("Do not include in vendor mailing").doNotMail, null);
   ok("'remove from appeals' IS a no-ask", IS.detectNoteMarkers("remove from appeals").doNotSolicit === true, null);
   ok("a DATE in the Deceased column means deceased (with the date), never FALSE",
      sub.donors.filter(d => d.deceased && d.deceasedDate).length >= 45, sub.donors.filter(d => d.deceased && d.deceasedDate).length);
   ok("792 surviving records carry an exclusion flag (800 rows − 8 folded duplicates)",
-     sub.donors.filter(d => d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail).length === 792, null);
+     sub.donors.filter(d => d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail).length === 792
+     && sub.exclusionSummary.total === 792, null);
   // ── BUILD-83 Parts 2.3 + 2.4 — the two refusals that were losing real money ─
   ok("duplicate-gift refusals are ZERO: a duplicate needs gift id AND donor AND amount",
      sub.refusals.filter(x => /gift_id_repeated_in_file|same_gift_listed_twice/.test(x.reason)).length === 0, null);
   ok("721 collided legacy Refs import as the different gifts they are, BOTH rows flagged",
      sub.duplicateReview.length === 721 && sub.flags.filter(f => f.kind === "gift_id_collision").length === 1442
      && sub.flags.some(f => /shares gift id/.test(f.text)), sub.duplicateReview.length);
+  // SHOWN IS APPLIED: a colliding row keeps its money but drops the source id,
+  // so nothing the screen counted can be collapsed by the database's own
+  // idempotency key on the way in. (709 gifts were, until the walk's read-back
+  // caught it: "shown 90,523 · written 89,814".)
+  {
+    const seenX = new Set(); let dupX = 0;
+    for (const g of sub.gifts) { if (!g.externalId) continue; if (seenX.has(g.externalId)) dupX++; else seenX.add(g.externalId); }
+    ok("no two gifts in the payload share a source id — what is shown is what can land", dupX === 0, dupX);
+  }
   ok("formula refusals are ZERO: 843 constant formulas evaluated and flagged",
      sub.refusals.filter(x => x.reason === "formula_no_value").length === 0
      && sub.flags.filter(f => f.kind === "computed_formula").length === 843, null);

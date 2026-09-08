@@ -476,7 +476,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
           {s.exclusionSummary && s.exclusionSummary.total > 0 && (
             <div style={{ fontSize: 12.5, color: T.ink, marginTop: 6 }}>
-              <strong>{fmtN(s.exclusionSummary.total)}</strong> rows carry an exclusion (deceased / do-not-contact family) — those people stay off every ask surface — including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
+              <strong>{fmtN(s.exclusionSummary.total)}</strong> people carry an exclusion (deceased / do-not-contact family) and stay off every ask surface — from {fmtN(s.exclusionSummary.rowsFound || s.exclusionSummary.total)} rows{(s.exclusionSummary.foldedIntoSurvivors || 0) > 0 ? ` (${fmtN(s.exclusionSummary.foldedIntoSurvivors)} of them fold into a duplicate)` : ""}, including {s.exclusionSummary.fromHidden} hidden rows, {s.exclusionSummary.fromFill} highlighted, {s.exclusionSummary.fromComments} from comments.
             </div>
           )}
         </div>

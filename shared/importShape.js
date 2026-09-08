@@ -3430,6 +3430,17 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
 
   // duplicate fold (identity pass — the server is told identityResolved)
   const dedup = resolveDonorSheetDuplicates(donors);
+  // BUILD-83 Part 2.1/2.2 — SHOWN IS APPLIED, so the exclusion figure the screen
+  // shows must be the figure the database will hold. 800 ROWS carry an
+  // exclusion on the v3 sheet, but 8 of those rows fold into a surviving
+  // duplicate, so 792 RECORDS carry one after the write. Both are true and the
+  // summary says both: the rows we found, and the people who end up excluded.
+  if (exclusionSummary) {
+    const excluded = d => !!(d.deceased || d.doNotContact || d.doNotSolicit || d.doNotMail || d.doNotEmail);
+    exclusionSummary.rowsFound = exclusionSummary.total;
+    exclusionSummary.total = dedup.donors.filter(excluded).length;
+    exclusionSummary.foldedIntoSurvivors = Math.max(0, exclusionSummary.rowsFound - exclusionSummary.total);
+  }
 
   // gift sheets — typed seams, one disposition per row
   const builds = giftSheets.map(s => {
@@ -3492,12 +3503,17 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
       kept.push({ ...it, gift: { ...it.gift, externalId: undefined,
         notes: [it.gift.notes, `source gift id ${xid} (shared with row ${prior.line} of ${prior.sheet})`].filter(Boolean).join(" \u00b7 ") } });
     }
-    if (kept.length !== b.items.length) {
-      b.items = kept;
-      b.report.builtGifts = kept.length;
-      b.report.refused = b.refusals.length;
-      b.report.dollarsIn = Math.round(kept.reduce((s2, it) => s2 + it.gift.amount, 0) * 100) / 100;
-    }
+    // ALWAYS take the rewritten list. A COLLISION keeps its row — with the
+    // source id dropped, so it cannot collide at the database's idempotency
+    // key — WITHOUT changing the row count, so a `length !== length` guard here
+    // silently threw the rewrite away: 709 gifts reached the server still
+    // sharing an external id, its unique collapsed them, and the completion
+    // screen's read-back caught the gap between "90,523 shown" and "89,814
+    // written". Shown is applied; this is the line that makes it true.
+    b.items = kept;
+    b.report.builtGifts = kept.length;
+    b.report.refused = b.refusals.length;
+    b.report.dollarsIn = Math.round(kept.reduce((s2, it) => s2 + it.gift.amount, 0) * 100) / 100;
   }
 
   // Part 2.5 — no donors sheet in the workbook: the gifts link to the org's

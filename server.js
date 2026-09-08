@@ -2844,12 +2844,13 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   // In value order. `key` is stable (the client owns labels/why-lines/deep
   // links); `done` is the live computation. The invite item exists only on
   // Team tier — plan-graceful means HIDDEN on Core, not shown-and-locked.
-  const sustainerRow = await query(
-    `SELECT COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%')::int AS stopped,
-            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%'
-                               AND EXISTS (SELECT 1 FROM reconnect_sends rs WHERE rs.org_id = donors.org_id AND rs.donor_id = donors.id))::int AS stopped_sent
-       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`, [orgId]);
+  const sustainerFacts = await sustainerFileFacts(orgId);   // BUILD-83 Part 5.1 — the ONE definition
+  const sustainerSent = await query(
+    `SELECT COUNT(*)::int AS n FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.imported_sustainer IS TRUE
+        AND (COALESCE(d.tags::text,'') LIKE '%card-failed%' OR COALESCE(d.tags::text,'') LIKE '%stale-frequency%')
+        AND EXISTS (SELECT 1 FROM reconnect_sends rs WHERE rs.org_id = d.org_id AND rs.donor_id = d.id)`, [orgId]);
+  const sustainerRow = [{ total: sustainerFacts.fromFile, stopped: sustainerFacts.stopped, stopped_sent: sustainerSent[0]?.n || 0 }];
   const items = [
     // BUILD-79 Part 6 — donors without a single gift do not tick the box: an
     // import that dropped every dollar is not "done". A human can confirm the
@@ -17309,8 +17310,8 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
     `SELECT id, name, imported_sustainer_amount AS amount, imported_sustainer_last_gift AS last_gift, email
        FROM donors
       WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
-        AND COALESCE(tags::text,'') LIKE '%card-failed%'
-      ORDER BY imported_sustainer_amount DESC NULLS LAST LIMIT 200`, [orgId]);
+        AND (COALESCE(tags::text,'') LIKE '%card-failed%' OR COALESCE(tags::text,'') LIKE '%stale-frequency%')
+      ORDER BY imported_sustainer_amount DESC NULLS LAST LIMIT 500`, [orgId]);
 
   res.json({
     counts: {
@@ -17383,11 +17384,16 @@ app.get("/recurring/unlinked", requireAuth, wrap(async (req, res) => {
             COUNT(*) FILTER (WHERE reconnected_at IS NOT NULL)::int reconnected,
             COALESCE(SUM(reconnected_amount) FILTER (WHERE reconnected_at IS NOT NULL),0)::float monthly_back
        FROM reconnect_sends WHERE org_id=?`, [orgId]);
+  const facts = await sustainerFileFacts(orgId);
   res.json({
     counts: {
       activeLinked: active.n,
-      stopped: list.filter(u => u.stopped).length,
+      stopped: facts.stopped,          // BUILD-83 Part 5.1 — the ONE definition
       unlinked: list.filter(u => !u.reconnectedAt).length,
+      fromFile: facts.fromFile,
+      givingFromFile: facts.giving,
+      stoppedFromFile: facts.stopped,
+      connectedFromFile: facts.connected,
     },
     stats: { sent: stats.sent, reconnected: stats.reconnected, monthlyBack: Math.round(stats.monthly_back * 100) / 100 },
     list,
@@ -17855,6 +17861,32 @@ app.post("/recurring/proposal/confirm", donateLimiter, express.urlencoded({ exte
 }));
 
 // ── Recurring gift recovery: staff-facing routes ────────────────────────────
+// ── BUILD-83 Part 5.1 — ONE DEFINITION OF THE FILE'S OWN SUSTAINER FACTS. ──
+// Home, the Recurring tab's headline, its exception tiles and the setup
+// checklist all read THIS. Before it, Home said "100 stopped" while the tab
+// said "160" and "0 giving" on the same file — three code paths for one fact,
+// which is the thing this build forbids.
+//   fromFile  every sustainer the org's own file names
+//   stopped   the ones who have stopped giving: a failed card OR a "still
+//             Active" claim the gift pattern contradicts (the file's Status
+//             column is stale; the pattern is the truth — BUILD-82 Part 5)
+//   giving    the rest. Connection to a payment method HERE is a separate axis.
+async function sustainerFileFacts(orgId) {
+  const rows = await query(
+    `SELECT COUNT(*)::int AS from_file,
+            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%'
+                                OR COALESCE(tags::text,'') LIKE '%stale-frequency%')::int AS stopped,
+            COUNT(*) FILTER (WHERE stripe_subscription_id IS NOT NULL)::int AS connected,
+            COUNT(*) FILTER (WHERE (COALESCE(tags::text,'') LIKE '%card-failed%'
+                                OR COALESCE(tags::text,'') LIKE '%stale-frequency%')
+                               AND COALESCE(email,'') = '')::int AS stopped_no_email
+       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`, [orgId]);
+  const f = rows[0] || {};
+  const fromFile = f.from_file || 0, stopped = f.stopped || 0;
+  return { fromFile, stopped, giving: Math.max(0, fromFile - stopped),
+           connected: f.connected || 0, stoppedWithoutEmail: f.stopped_no_email || 0 };
+}
+
 app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
@@ -17886,19 +17918,7 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   // one of them. Giving and connected-to-a-payment-method-here are SEPARATE
   // axes: `fromFile` is what the org's own records say; `connected` is what
   // Stripe knows. Neither may stand in for the other.
-  const fileRows = await query(
-    `SELECT COUNT(*)::int AS from_file,
-            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%')::int AS stopped,
-            COUNT(*) FILTER (WHERE stripe_subscription_id IS NOT NULL)::int AS connected
-       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`,
-    [orgId]);
-  const f = fileRows[0] || {};
-  const fromFile = f.from_file || 0, stopped = f.stopped || 0;
-  const sendable = await query(
-    `SELECT COUNT(*)::int AS c FROM donors
-       WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
-         AND COALESCE(tags::text,'') LIKE '%card-failed%'
-         AND COALESCE(email,'') = ''`, [orgId]);
+  const facts = await sustainerFileFacts(orgId);
 
   res.json({
     activeCount: s.active_count || 0,
@@ -17907,14 +17927,14 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
     recoveredThisMonth,
     lostThisMonth,
     recoveryRate,
-    // the org's OWN file — three facts on one line
-    fromFile,
-    givingFromFile: Math.max(0, fromFile - stopped),
-    stoppedFromFile: stopped,
-    connectedFromFile: f.connected || 0,
+    // the org's OWN file — three facts on one line, ONE definition
+    fromFile: facts.fromFile,
+    givingFromFile: facts.giving,
+    stoppedFromFile: facts.stopped,
+    connectedFromFile: facts.connected,
     // Part 5.4 — rows with no email are excluded from a reconnect send and said
     // so on screen, never silently dropped from the count.
-    stoppedWithoutEmail: sendable[0]?.c || 0,
+    stoppedWithoutEmail: facts.stoppedWithoutEmail,
   });
 }));
 
