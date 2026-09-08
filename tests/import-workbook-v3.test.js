@@ -289,8 +289,17 @@ const fs = require("fs");
      sub.donors.filter(d => (d.tags || []).includes("stale-frequency")).length === 60, null);
   ok("custom assignment rides the donor rows (Internal Score)",
      sub.donors.filter(d => d.customFields && d.customFields.internal_score).length > 20000, null);
-  ok("merges list = the review list (266, each with reason + folded id)",
-     sub.merges.length === 266 && sub.merges.every(m => m.reason && m.foldedId !== undefined), sub.merges.length);
+  // The review list is written in the shape the PERSIST path stores (an ARRAY
+  // of folded identities carrying their source id and their gift ids), because
+  // the flat string shape was silently skipped and 266 folds went unlogged.
+  ok("merges list = the review list (266), in the shape the undo can store and reverse",
+     sub.merges.length === 266
+     && sub.merges.every(m => Array.isArray(m.folded) && m.folded.length
+        && m.folded.every(f => f.label && f.via && f.externalDonorId !== undefined && Array.isArray(f.giftIds))),
+     sub.merges[0]);
+  ok("a folded identity carries the gifts posted to its own source id",
+     sub.merges.some(m => m.folded.some(f => f.giftIds.length > 0)),
+     sub.merges.slice(0, 2).map(m => m.folded.map(f => f.giftIds.length)));
   ok("workbook invariant balanced; the only refusals left are the 491 orphans",
      sub.reconciliation.workbook.balanced && sub.reconciliation.workbook.refused === 491
      && sub.refusals.every(x => x.reason === "no_donor_match"), sub.reconciliation.workbook);
@@ -310,6 +319,46 @@ const fs = require("fs");
      sub.largestGifts.length === 5 && sub.largestGifts.every(g => g.dollars === 25000), sub.largestGifts);
   ok("the ONE remaining refusal reason is no_donor_match (491 orphan rows)",
      sub.refusals.filter(x => x.reason === "no_donor_match").length === 491, null);
+  // ── THE PROMISE AND THE RECEIPT CANNOT DRIFT (FIX item 2) ────────────────
+  // The pre-write screen renders from IMPORT_PROMISE_FIELDS and the completion
+  // screen compares against the same list, so a figure cannot be shown without
+  // a way to read it back. This asserts the list COVERS what the summary shows
+  // — a new headline number added without a read-back fails here, at the point
+  // it is added, instead of reaching a screen that quietly says nothing.
+  {
+    const promise = IS.buildImportPromise(sub);
+    const keys = IS.IMPORT_PROMISE_FIELDS.map(f => f.key);
+    ok("every field the promise declares resolves to a real number on v3",
+       keys.every(k => promise.fields[k] === undefined || Number.isFinite(Number(promise.fields[k]))), promise.fields);
+    for (const [k, v] of [["donors", sub.totals.donors], ["gifts", sub.totals.gifts], ["cash", sub.totals.cash],
+                          ["excluded", sub.exclusionSummary.total], ["merges", sub.merges.length],
+                          ["pledges", sub.pledges.pledges.length],
+                          ["giftRowsAccounted", sub.reconciliation.workbook.rowsInFile]]) {
+      ok(`the promise's ${k} is the figure the summary shows`, promise.fields[k] === v, { promised: promise.fields[k], shown: v });
+    }
+    ok("the promise carries CASH — a receipt without the amount is not a receipt",
+       promise.fields.cash === 51754243.82, promise.fields.cash);
+    ok("the promise carries the merge count, so '0 merges logged' cannot pass unnoticed",
+       promise.fields.merges === 266, promise.fields.merges);
+    ok("pledges and their payments are promised SEPARATELY, never as one number",
+       promise.fields.pledges === 60 && promise.fields.pledgePayments === sub.pledgePaymentCount
+       && promise.fields.pledgePayments > 0 && promise.fields.pledges !== promise.fields.pledgePayments, { pledges: promise.fields.pledges, payments: promise.fields.pledgePayments });
+    ok("refusals are promised BY REASON, not just in total",
+       Object.keys(promise.refusalsByReason).length > 0
+       && Object.values(promise.refusalsByReason).reduce((a, b) => a + b, 0) === sub.refusals.length,
+       promise.refusalsByReason);
+    // Refusals are absences, so the receipt checks an IDENTITY against what the
+    // database actually holds: written + refused + routed === rows in the file.
+    {
+      const f = IS.IMPORT_PROMISE_FIELDS.find(x => x.key === "giftRowsAccounted");
+      ok("the gift-row identity closes against the written count",
+         IS.importReceiptValue(f, sub, { gifts: sub.totals.gifts }) === sub.reconciliation.workbook.rowsInFile,
+         { computed: IS.importReceiptValue(f, sub, { gifts: sub.totals.gifts }), rows: sub.reconciliation.workbook.rowsInFile });
+    }
+    ok("a pledge payment that never lands is not promised (post-link count)",
+       promise.fields.pledgePayments === 210, promise.fields.pledgePayments);
+  }
+
   ok("fileStats ready for orgs.last_import_stats", sub.fileStats.rows === 92227 && sub.fileStats.largestGifts.length === 5, sub.fileStats);
 
   // hidden rows SKIPPED by choice — counted, listed, and the count moves

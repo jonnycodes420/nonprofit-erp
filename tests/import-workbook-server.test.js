@@ -111,6 +111,61 @@ const countGifts = async () => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   ok("mid-request kill leaves the org at ZERO of the file's donors or ALL — never a slice",
      after6 === before6 || after6 === before6 + 5000, { before6, after6 });
 
+  // ── 7) THE FOLD IS REVERSIBLE — the regression this FIX exists for ───────
+  // 25,300 rows became 25,034 donors and the screen said "0 merges logged for
+  // undo": the workbook sent `folded` as a bare string and the persist path's
+  // `Array.isArray(m.folded)` guard skipped every one with a silent `continue`.
+  // A fold with no undo record is a destroyed record. This folds two donors,
+  // stores the fold, and unfolds them back through the real routes.
+  {
+    const foldOrg = A;
+    // two rows for one person, gifts posted to BOTH source ids
+    await api("POST", "/donors/import-combined", tok, {
+      donors: [{ name: "Marguerite Delacroix", email: "marg@x.org", externalDonorId: "5001",
+                 externalDonorIds: ["5001", "5002"], stage: "prospect" }],
+      gifts: [{ donorIndex: 0, amount: 400, date: "2024-03-01", type: "check", campaign: "", notes: "", externalId: "GX-5001-A" },
+              { donorIndex: 0, amount: 250, date: "2024-06-01", type: "check", campaign: "", notes: "", externalId: "GX-5002-A" }],
+      identityResolved: true,
+    });
+    const before = (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [foldOrg]))[0].n;
+    const sem = await api("POST", "/donors/import-semantics", tok, {
+      merges: [{ surviving: "Marguerite Delacroix", survivingEmail: "marg@x.org",
+                 folded: [{ label: "M. Delacroix", via: "same email marg@x.org", rows: 1,
+                            externalDonorId: "5002", giftIds: ["GX-5002-A"] }] }],
+    });
+    ok("the fold is STORED (not skipped) and counted", sem.status === 200 && sem.body.counts.merges === 1
+       && !sem.body.counts.mergesUnstorable, sem.body.counts);
+    ok("the semantics route reads its own write back", sem.body.written && sem.body.written.merges >= 1, sem.body.written);
+    const listed = await api("GET", "/import-merges", tok);
+    const row = (listed.body.merges || []).find(m => m.surviving === "Marguerite Delacroix");
+    ok("the fold appears on the review list with its folded identity + gift ids",
+       row && Array.isArray(row.folded) && row.folded[0].label === "M. Delacroix"
+       && row.folded[0].giftIds.includes("GX-5002-A"), row);
+
+    // …and it UNFOLDS: the split donor comes back with exactly their gifts.
+    const undo = await api("POST", `/import-merges/${row.id}/undo`, tok, {});
+    ok("undo splits the folded identity back out", undo.status === 200 && undo.body.created.length === 1
+       && undo.body.created[0].giftsMoved === 1, undo.body);
+    const after = (await q(`SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL`, [foldOrg]))[0].n;
+    ok("the org has one more donor than before the undo", after === before + 1, { before, after });
+    const moved = (await q(`SELECT d.name FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.external_id=$2`, [foldOrg, "GX-5002-A"]))[0];
+    ok("that identity's gift went WITH them, and only theirs", moved && moved.name === "M. Delacroix", moved);
+    const stayed = (await q(`SELECT d.name FROM gifts g JOIN donors d ON d.id=g.donor_id WHERE g.org_id=$1 AND g.external_id=$2`, [foldOrg, "GX-5001-A"]))[0];
+    ok("the surviving donor keeps their own gift", stayed && stayed.name === "Marguerite Delacroix", stayed);
+    const again = await api("POST", `/import-merges/${row.id}/undo`, tok, {});
+    ok("a second undo is refused, not repeated", again.status === 409, again.status);
+  }
+
+  // ── 8) a shape the route cannot store is REPORTED, never silently dropped ─
+  {
+    const bad = await api("POST", "/donors/import-semantics", tok, {
+      merges: [{ surviving: "Someone", folded: "a bare string — the BUILD-82 shape" }],
+    });
+    ok("an unstorable merge shape is counted and sampled, not skipped in silence",
+       bad.status === 200 && bad.body.counts.mergesUnstorable === 1
+       && (bad.body.counts.mergeShapeSamples || []).length === 1, bad.body.counts);
+  }
+
   await closeDb();
   summary("import-workbook-server");
 })();

@@ -108,8 +108,21 @@ const shoot = async (page, name, mobile) => {
   body = await page.innerText("body");
   fs.writeFileSync(OUT + "/03-result.txt", body);
   ok("the completion screen shows the database read-back, and it MATCHES",
-     /checked against the database after writing/i.test(body) && !/does not match/i.test(body),
-     (body.match(/What we showed you[^\n]*/) || [])[0]);
+     /checked against the database after writing/i.test(body) && !/does not match/i.test(body)
+     && !/not read back/i.test(body),
+     (body.match(/[^\n]*does not match[^\n]*|[^\n]*not read back[^\n]*/i) || [])[0]);
+  ok("the receipt carries the MONEY, read back from the database",
+     /imported cash\s*\n?\s*\$51,754,243\.82 ✓/i.test(body.replace(/\n/g, " ")) || /imported cash[\s\S]{0,40}\$51,754,243\.82/i.test(body),
+     (body.match(/imported cash[^\n]*\n?[^\n]*/i) || [])[0]);
+  ok("the receipt carries the merge count — 266 folds, each with an undo record",
+     /duplicate people folded \(undo recorded\)[\s\S]{0,30}266 ✓/i.test(body), (body.match(/duplicate people folded[^\n]*\n?[^\n]*/i) || [])[0]);
+  ok("the receipt states pledges and their payments separately",
+     /pledges recorded as commitments/i.test(body) && /pledge payments imported as gifts/i.test(body), null);
+  ok("the receipt carries the set-aside list with downloads",
+     /set aside, by reason/i.test(body) && /no donor match/i.test(body) && /download/i.test(body), null);
+  ok("the two timings are named separately (item 5)",
+     /time to summary:/i.test(body) && /time in the write:/i.test(body) && !/click to summary[^\n]*for the write/i.test(body),
+     (body.match(/time (to summary|in the write)[^\n]*/gi) || []).join(" | "));
   ok("792 people excluded, read back from the database", /people excluded from every ask surface\s*792 ✓/.test(body.replace(/\n/g, " ")), (body.match(/people excluded[^\n]*\n?[^\n]*/) || [])[0]);
   await shoot(page, "03-result", false);
 
@@ -189,8 +202,10 @@ const shoot = async (page, name, mobile) => {
   ok("Part 6: Finance shows no revenue from an import", !/\$1,010,106\.39/.test(body), (body.match(/\$1,0[\d,]+\.\d\d/) || [])[0]);
   await shoot(page, "06-finance", false);
 
-  fs.writeFileSync(OUT + "/timing.json", JSON.stringify({ clickToSummary: +tSummary, write: +tWrite }, null, 2));
-  console.log("timing:", JSON.stringify({ clickToSummary: +tSummary, write: +tWrite }));
+  // Two different measurements, recorded separately (FIX item 5).
+  fs.writeFileSync(OUT + "/timing.json", JSON.stringify({ timeToSummary: +tSummary, timeInWrite: +tWrite }, null, 2));
+  console.log("timing:", JSON.stringify({ timeToSummary: +tSummary, timeInWrite: +tWrite }));
+  ok("time to summary is under the 60s target", +tSummary < 60, tSummary);
   await browser.close();
   console.log(failures ? `\n${failures} FAILURES` : "\nALL GREEN");
   process.exit(failures ? 1 : 0);

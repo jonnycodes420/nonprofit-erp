@@ -31,8 +31,8 @@ Reports
 Finance
 ⚙
 Settings
-B83 Walk mtsr0890
-Good morning, B83
+B83 Walk mtt0padx
+Good afternoon, B83
 Edit
 No goal set for this period.
 Set a fundraising target to track progress here.
@@ -72,13 +72,13 @@ w
 wyatt Carter
 Gave $20,000 on August 3 — not yet thanked
 Log thank-you →
-J
-Joe Ward
-Gave $12,500 on August 22 — not yet thanked
-Log thank-you →
 D
 Donna Patel
 Gave $12,500 on July 5 — not yet thanked
+Log thank-you →
+J
+Joe Ward
+Gave $12,500 on August 22 — not yet thanked
 Log thank-you →
 A
 Ava Moore
@@ -176,12 +176,12 @@ Giving from donors quietly past their own pattern — each is on the Drifting li
 DONOR RETENTION RATE
 59%
 4,830 of 8,246 donors who gave in FY 2025 gave again (FY 2025 → FY 2026).
-Peter Parker
-$1,000
-Fatima Young
-$200
-Sarah Gallagher
-$500.25
+Sarah Perry
+$1,500
+Mark Walker
+$500
+Bradley Stoddard
+$1,500
 +3413 more →
 FIRST-TOUCH DELAY
 —

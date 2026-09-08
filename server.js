@@ -4233,6 +4233,19 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
 // them without a round trip. Both donor and gift inserts are bulk (one statement
 // per batch), matching the pattern in /donors/import and matching the gift+
 // interaction format that /gifts/import-history and the single-gift route use.
+// BUILD-83 FIX — THE ROUND-TRIP BUDGET. Batch size is not a memory knob, it is
+// the number of times an import talks to the database, and at workbook scale
+// that is the whole cost: every gift batch costs four trips (SAVEPOINT · INSERT
+// gifts RETURNING · INSERT interactions · RELEASE). 90,523 gifts at 200/batch
+// was 453 batches ≈ 1,800 trips — invisible on a local socket (the write
+// measured 16s) and three to four minutes against a hosted database, which is
+// the 221.4s measured on production against the same file. Postgres caps a
+// statement at 65,535 bound parameters; donors bind 46 and gifts 13, so these
+// sizes sit at 46,000 and 26,000 — inside the cap with room, and ~10× fewer
+// trips. Raise them only against that cap, and re-measure.
+const IMPORT_DONOR_BATCH = Number(process.env.IMPORT_DONOR_BATCH) || 1000;
+const IMPORT_GIFT_BATCH = Number(process.env.IMPORT_GIFT_BATCH) || 2000;
+
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
   const { donors, gifts } = req.body;
   // BUILD-82 Part 2.5 — a gift sheet imported ALONE links to the donors the
@@ -4403,7 +4416,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   const explicitStageIds = []; // donors whose file had an explicit stage column — never re-inferred over
   const batchErrors = [];
   const failedIds = new Set(); // IDs whose batch failed — drop their gifts too
-  const DONOR_BATCH = 500;
+  // 46 params/row → 46,000 of Postgres's 65,535 bound-parameter cap. Halves the
+  // donor round trips (51 batches → 26) for the same reason as GIFT_BATCH.
+  const DONOR_BATCH = IMPORT_DONOR_BATCH;
 
   // BUILD-72 Part 1 — ONE transaction for the whole request. The reconciliation
   // invariant is asserted before it commits, so an import that does not balance
@@ -4672,8 +4687,18 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // Donor names map: built from the already-prepared donorsToInsert list (no extra query)
   const donorNameMap = Object.fromEntries(donorsToInsert.map(d => [d._id, String(d.name).trim()]));
 
-  // ── Bulk-insert gifts + interactions (200/batch, both in same transaction) ──
-  const GIFT_BATCH = 200;
+  // ── Bulk-insert gifts + interactions (both in the same transaction) ────────
+  // BUILD-83 FIX — BATCH SIZE IS A ROUND-TRIP BUDGET, and at workbook scale the
+  // round trips ARE the import. Every batch costs four trips to the database
+  // (SAVEPOINT · INSERT gifts RETURNING · INSERT interactions · RELEASE), so
+  // 90,523 gifts at 200/batch was 453 batches ≈ 1,800 trips. On a local socket
+  // (~0.1ms) that is invisible — the write measured 16s. Against a hosted
+  // database (~50-100ms round trip) it is three to four minutes, which is
+  // exactly the 221.4s Jonathan measured on production against the same file.
+  // Postgres caps a statement at 65,535 bound parameters: gifts bind 13 each,
+  // interactions 8, so 2,000 rows/batch is 26,000 and 16,000 — comfortably
+  // inside it — and takes the trip count from ~1,800 to ~185.
+  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 13 params/row → 26,000 of the 65,535 cap
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -4767,6 +4792,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   }); // end withTransaction — nothing above has committed until here
   }); // end withAdvisoryLock(import:orgId)
 
+  // BUILD-83 — the round-trip budget, logged: batch counts are the number that
+  // moves when this import is slow on a hosted database.
+  console.log(`[combined-import] org=${orgId} donors=${created} (${Math.ceil(created / IMPORT_DONOR_BATCH)} batches) gifts=${giftsInserted} (${Math.ceil(giftsInserted / IMPORT_GIFT_BATCH)} batches) — ~${Math.ceil(created / IMPORT_DONOR_BATCH) * 2 + Math.ceil(giftsInserted / IMPORT_GIFT_BATCH) * 4} write round trips`);
+
   // ── BUILD-83 Part 2.1 — THE RECEIPT. The pre-write summary is a promise;
   // this is what the database actually holds, read back over the ids THIS
   // request inserted (never org-wide totals — an existing org would drown the
@@ -4792,9 +4821,21 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       const gb = await query(
         `SELECT COUNT(*)::int AS gifts, COALESCE(SUM(amount),0)::numeric AS cash
            FROM gifts WHERE org_id=? AND donor_id = ANY(?)`, [orgId, insertedIds]);
+      // BUILD-83 FIX (item 2) — the receipt answers EVERY field the promise
+      // declares (shared/importShape.js IMPORT_PROMISE_FIELDS), and each one is
+      // an aggregate over the ids this request inserted — never a query per row.
+      const pl = await query(
+        `SELECT COUNT(*)::int AS pledges FROM pledges WHERE org_id=? AND donor_id = ANY(?)`, [orgId, insertedIds]);
+      const pp = await query(
+        `SELECT COUNT(*)::int AS c FROM gifts WHERE org_id=? AND donor_id = ANY(?) AND LOWER(COALESCE(type,'')) LIKE '%pledge payment%'`,
+        [orgId, insertedIds]);
+      // Merges and pledge COMMITMENTS are written by /donors/import-semantics,
+      // which reads its own writes back — this route reports only what it wrote.
       writtenReadback = { ...(rb[0] || {}), gifts: gb[0] ? Number(gb[0].gifts) : 0,
-                          cash: gb[0] ? Math.round(Number(gb[0].cash) * 100) / 100 : 0 };
-    } else writtenReadback = { donors: 0, excluded: 0, gifts: 0, cash: 0 };
+                          cash: gb[0] ? Math.round(Number(gb[0].cash) * 100) / 100 : 0,
+                          pledgePayments: pp[0] ? Number(pp[0].c) : 0 };
+      void pl;
+    } else writtenReadback = { donors: 0, excluded: 0, gifts: 0, cash: 0, pledgePayments: 0 };
   } catch (e) { console.error("[import] read-back failed:", e.message); writtenReadback = { error: e.message }; }
 
   // Recalc every donor that had gifts inserted — ONE set-based query (import
@@ -6684,22 +6725,75 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
 
   // BUILD-80 Part 6.2 — the merge review list, persisted: surviving donor,
   // folded identity variants (with their gift ids), reviewable and undoable.
+  // BUILD-83 FIX — a merge this route cannot store is REPORTED, never skipped
+  // in silence. The BUILD-82 workbook sent `folded` as a string and every one
+  // of 266 folds hit a bare `continue`: the donors were merged, no undo record
+  // was written, and the completion screen said "0 merges logged" while 25,300
+  // rows became 25,034 donors. A shape this route does not understand is a
+  // defect that must be visible on the screen that reports the import.
+  //
+  // It is also written in ONE round trip per import, not three per merge: 266
+  // folds × (lookup + existence check + insert) is ~800 trips to the database,
+  // which is minutes on a hosted one. Everything below is set-based.
+  const usableMerges = [], unstorable = [];
   for (const m of merges) {
-    if (!m || !m.surviving || !Array.isArray(m.folded) || !m.folded.length) continue;
-    const donor = await findDonor(m.survivingEmail, m.surviving);
-    const existing = await query(
-      "SELECT id FROM import_merges WHERE org_id=? AND surviving=? AND folded::text=?",
-      [orgId, m.surviving, JSON.stringify(m.folded)]);
-    if (existing.length) { mergeRows.push({ id: existing[0].id, surviving: m.surviving, folded: m.folded }); continue; }
-    const id = importId("mrg_");
-    await run(
-      `INSERT INTO import_merges (id,org_id,donor_id,surviving,folded) VALUES (?,?,?,?,?)`,
-      [id, orgId, donor ? donor.id : null, m.surviving, JSON.stringify(m.folded)]);
-    counts.merges++;
-    mergeRows.push({ id, surviving: m.surviving, folded: m.folded });
+    if (!m || !m.surviving || !Array.isArray(m.folded) || !m.folded.length) unstorable.push(m);
+    else usableMerges.push(m);
+  }
+  if (unstorable.length) {
+    counts.mergesUnstorable = unstorable.length;
+    counts.mergeShapeSamples = unstorable.slice(0, 3).map(m => JSON.stringify(m).slice(0, 160));
+    console.error(`[import-semantics] ${unstorable.length} merge(s) could not be stored (unrecognised shape):`,
+                  counts.mergeShapeSamples.join(" | "));
+  }
+  if (usableMerges.length) {
+    // one read for what is already stored…
+    const already = new Set((await query(
+      "SELECT surviving, folded::text AS folded FROM import_merges WHERE org_id=?", [orgId]))
+      .map(r => r.surviving + "\u0000" + r.folded));
+    // …one read to resolve every surviving donor by name or email at once…
+    const wantEmails = [...new Set(usableMerges.map(m => String(m.survivingEmail || "").trim().toLowerCase()).filter(e => e.includes("@")))];
+    const wantNames = [...new Set(usableMerges.map(m => String(m.surviving || "").trim().toLowerCase()).filter(Boolean))];
+    const survRows = (wantEmails.length || wantNames.length) ? await query(
+      `SELECT id, LOWER(email) AS e, LOWER(name) AS n FROM donors
+        WHERE org_id=? AND deleted_at IS NULL AND (LOWER(email) = ANY(?) OR LOWER(name) = ANY(?))
+        ORDER BY created_at, id`, [orgId, wantEmails, wantNames]) : [];
+    const byEmail = new Map(), byName = new Map();
+    for (const r of survRows) {
+      if (r.e && !byEmail.has(r.e)) byEmail.set(r.e, r.id);
+      if (r.n && !byName.has(r.n)) byName.set(r.n, r.id);
+    }
+    // …and one INSERT for all of them.
+    const rows = [], params = [], tuples = [];
+    for (const m of usableMerges) {
+      const foldedJson = JSON.stringify(m.folded);
+      if (already.has(m.surviving + "\u0000" + foldedJson)) { mergeRows.push({ surviving: m.surviving, folded: m.folded, existing: true }); continue; }
+      const donorId = byEmail.get(String(m.survivingEmail || "").trim().toLowerCase())
+        || byName.get(String(m.surviving || "").trim().toLowerCase()) || null;
+      const id = importId("mrg_");
+      params.push(id, orgId, donorId, m.surviving, foldedJson);
+      tuples.push("(?,?,?,?,?)");
+      rows.push({ id, surviving: m.surviving, folded: m.folded });
+    }
+    for (let i = 0; i < tuples.length; i += 500) {
+      const slice = tuples.slice(i, i + 500);
+      await run(`INSERT INTO import_merges (id,org_id,donor_id,surviving,folded) VALUES ${slice.join(",")}`,
+                params.slice(i * 5, (i + slice.length) * 5));
+    }
+    counts.merges = rows.length;
+    mergeRows.push(...rows);
   }
 
-  res.json({ ok: true, counts, merges: mergeRows });
+  // BUILD-83 FIX (item 2) — this route reads ITS OWN writes back, so the
+  // completion screen can compare every promised figure against the database
+  // rather than against what the request believed it did.
+  let written = null;
+  try {
+    const [mg] = await query("SELECT COUNT(*)::int AS c FROM import_merges WHERE org_id=? AND undone_at IS NULL", [orgId]);
+    const [pg2] = await query("SELECT COUNT(*)::int AS c FROM pledges WHERE org_id=?", [orgId]);
+    written = { merges: Number(mg?.c) || 0, pledges: Number(pg2?.c) || 0 };
+  } catch (e) { console.error("[import-semantics] read-back failed:", e.message); written = { error: e.message }; }
+  res.json({ ok: true, counts, written, merges: mergeRows });
 }));
 
 // The merge review list — every fold the importer made, newest import first.
@@ -6861,7 +6955,9 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   const ledgerH = await ensureOrgLedger(orgId, { heal: true });
   void ledgerH;   // BUILD-83 Part 6: chart provisioned, nothing posted by import
 
-  const BATCH = 200;
+  // BUILD-83 FIX — same round-trip budget as /donors/import-combined: batches
+  // are trips to the database, and 200 was costing four trips per 200 gifts.
+  const BATCH = IMPORT_GIFT_BATCH;
   let inserted = 0, financeSynced = 0;
   const affectedDonorIds = new Set();
   const batchErrors = [];

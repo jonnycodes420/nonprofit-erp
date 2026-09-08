@@ -174,3 +174,96 @@ minute for 25,300 donors and 92,227 gift rows. (The Sept-7 run was not timed;
 BUILD-82's 6.2s parse became 43.8s because the pre-write pass now reads every
 fill, comment and hidden row on every data sheet and computes the fold, the
 four-term reconciliation and the flags before it will show a number.)
+
+---
+
+# FIX (Sept 8) — merges not logged · receipt missing the money · the write
+
+## 1. 266 folds, no undo record — found, fixed, pinned
+
+`POST /donors/import-semantics` stores a fold as `{surviving, folded: [...]}`
+where **folded is an ARRAY** of identities (BUILD-80 Part 6.2 — each carries the
+label, the reason, the source id and the gift ids the undo moves back). BUILD-82's
+workbook wrote the review list as `{surviving, folded: "<a name>", reason}` — a
+STRING — and the persist loop's `Array.isArray(m.folded)` guard skipped every one
+with a bare `continue`. So 25,300 rows became 25,034 donors, 266 merges were
+performed, and the screen said "0 merges logged for undo". The merge itself was
+correct; the *reversibility* was gone, silently.
+
+Three changes: `resolveDonorSheetDuplicates` now emits the persist shape;
+`buildWorkbookSubmission` attaches each folded identity's gift ids (so the undo
+takes exactly their gifts with them); and the route **reports what it cannot
+store** — `counts.mergesUnstorable` plus a sample of the shape, on the response
+and in the server log. A shape this route does not understand can never again be
+invisible.
+
+Pinned in `tests/import-workbook-server.test.js` §7–8: two donors fold, the fold
+is stored and listed with its gift ids, `POST /import-merges/:id/undo` splits the
+identity back out, **that identity's gift goes with them and only theirs**, the
+surviving donor keeps their own, a second undo is refused (409), and a
+bare-string merge is counted as unstorable rather than dropped.
+
+## 2. The read-back was hand-written, so it could not catch this
+
+The promise is now a DECLARED FIELD LIST — `IMPORT_PROMISE_FIELDS` in
+`shared/importShape.js` — and both screens derive from it: the pre-write summary
+shows those figures, the completion screen reads the same keys back from the
+database. A figure added to the summary with no way to read it back renders as
+**"shown N · not read back"** in red rather than as silence. Nine fields:
+donors · gifts · **imported cash** · people excluded · monthly donors ·
+**merges** · **pledges** · **pledge payments** · the gift-row identity. Refusals
+are compared **by reason** (`refusalsByReason`), and because a refusal is an
+absence with no row to count, the receipt checks the identity instead: written +
+refused + routed === gift rows in the file (92,227 on v3).
+
+**Extending it immediately caught two more:** pledge payments read "shown 216 ·
+written 210" — the promise was counting rows before the join, and six were
+orphans that never landed; and "rows set aside · not read back" was a figure the
+database structurally cannot hold. Both fixed: the promise counts what lands, and
+the refusal check became the identity above.
+
+## 3. The receipt carries the money and the set-aside list
+
+The completion screen shows imported cash read back from the database
+(**$51,754,243.82 ✓** on v3), the merge count, pledges and payments separately,
+and the full set-aside-by-reason list with its downloads — the same reason
+vocabulary as the pre-write screen, from one table. A receipt without the amount
+is not a receipt.
+
+## 4. The write — profiled, and the cause named
+
+**Batch size is a round-trip budget.** Every gift batch costs four trips to the
+database (SAVEPOINT · INSERT gifts RETURNING · INSERT interactions · RELEASE),
+so 90,523 gifts at `GIFT_BATCH = 200` was 453 batches ≈ **1,914 round trips**.
+On a local socket (~0.1ms) that is invisible — the write measured 16s here.
+Against a hosted database it is the whole cost, which is why the same file
+measured **221.4s on production**.
+
+Measured, not assumed: a TCP proxy in front of the scratch Postgres adding 2ms
+each way (4ms round trip), same file, same machine —
+
+| | round trips | import-combined |
+|---|---|---|
+| before (500 / 200) | ~1,914 | **35.3s** |
+| after (1,000 / 2,000) | **~236** | **27.9s** |
+
+7.4s saved at 4ms RTT ≈ 1,678 fewer trips × 4ms, which matches the model and
+confirms the diagnosis. Prod's round trip is an order of magnitude larger, so
+this is where the minutes were. Batch sizes are bounded by Postgres's 65,535
+bound-parameter cap (donors bind 46 → 46,000; gifts 13 → 26,000) and are now
+named constants with that reasoning, overridable by env for measurement. The
+merge write, which my own fix had made ~800 trips (three per fold), is now
+set-based: one existence read, one survivor read, one batched INSERT.
+
+Every import logs its budget: `[combined-import] … 26 batches … 46 batches —
+~236 write round trips`.
+
+**Numbers recorded either way:** time to summary **44.3s** (target <60s, met);
+time in the write **25.1s** locally. The production figure needs a production
+run — the honest claim here is the trip count, which is machine-independent.
+
+## 5. Two measurements, two names
+
+The label said "Click to summary: 221.4s for the write", which is two different
+things wearing one name. The receipt now reads: **"Time to summary: 44.3s
+(reading the file and reconciling it). Time in the write: 25.1s."**

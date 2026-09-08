@@ -2955,11 +2955,36 @@ export function resolveDonorSheetDuplicates(donors = []) {
       if (!surv.phone && d.phone) surv.phone = d.phone;
     }
   });
+  // BUILD-83 FIX — the review list is written in the shape the PERSIST path
+  // takes (BUILD-80 Part 6.2): one row per surviving donor, `folded` an ARRAY
+  // of the identities that folded into them, each carrying the source id and
+  // (filled in by the submission builder) the gift ids that came with it — the
+  // undo creates the split donor and moves exactly those gifts back. The
+  // BUILD-82 shape sent `folded` as a bare STRING, which the server's
+  // `Array.isArray(m.folded)` guard skipped with a `continue`, so 266 folds
+  // were performed with no undo record and the screen said "0 merges logged".
+  const byRoot = new Map();
   for (const f of folds) {
-    review.push({ surviving: donors[f.surviving].name || donors[f.surviving].email || `row ${f.surviving}`,
-                  folded: donors[f.folded].name || donors[f.folded].email || `row ${f.folded}`,
-                  foldedId: String(donors[f.folded].externalDonorId ?? donors[f.folded]._donorId ?? ""),
-                  reason: f.reason });
+    const survivingIdx = f.surviving;
+    if (!byRoot.has(survivingIdx)) byRoot.set(survivingIdx, []);
+    byRoot.get(survivingIdx).push({
+      label: donors[f.folded].name || donors[f.folded].email || `row ${f.folded}`,
+      via: f.reason,
+      rows: 1,
+      externalDonorId: String(donors[f.folded].externalDonorId ?? donors[f.folded]._donorId ?? ""),
+      giftIds: [],                       // filled by buildWorkbookSubmission
+    });
+  }
+  for (const [survivingIdx, foldedList] of byRoot) {
+    review.push({
+      surviving: donors[survivingIdx].name || donors[survivingIdx].email || `row ${survivingIdx}`,
+      survivingEmail: donors[survivingIdx].email || "",
+      survivingId: String(donors[survivingIdx].externalDonorId ?? donors[survivingIdx]._donorId ?? ""),
+      folded: foldedList,
+      // kept flat for the screen, which shows one line per folded identity
+      foldedId: foldedList[0].externalDonorId,
+      reason: foldedList[0].via,
+    });
   }
   return { donors: out, indexMap, review, foldedRows: donors.length - out.length };
 }
@@ -3385,6 +3410,56 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
            exclusionSummary: { ...exclCounts, total: exclRowSet.size } };
 }
 
+// ── BUILD-83 FIX (item 2) — THE PROMISE, AS A FIELD LIST. ─────────────────
+// Every count and every dollar figure the pre-write screen shows is declared
+// HERE, once, with the query that reads it back after commit. The screen
+// renders from this list and the receipt is checked against this list, so the
+// two cannot drift: adding a figure to the summary without a way to read it
+// back is a build error, not a silent gap. (The Sept-8 run shipped a read-back
+// covering four of them, which is why "0 merges logged" and a missing cash
+// figure reached the screen at all.)
+//   key       what the receipt compares
+//   label     how the completion screen names it
+//   money     format as dollars, not a count
+//   from(sub) the number the PRE-WRITE summary promised
+export const IMPORT_PROMISE_FIELDS = [
+  { key: "donors",     label: "donors",                                   from: s => s.totals.donors },
+  { key: "gifts",      label: "gifts",                                    from: s => s.totals.gifts },
+  { key: "cash",       label: "imported cash", money: true,               from: s => s.totals.cash },
+  { key: "excluded",   label: "people excluded from every ask surface",   from: s => (s.exclusionSummary ? s.exclusionSummary.total : null) },
+  { key: "sustainers", label: "monthly donors from your file",            from: s => s.donors.filter(d => d.importedSustainer).length },
+  { key: "merges",     label: "duplicate people folded (undo recorded)",  from: s => s.merges.length },
+  { key: "pledges",    label: "pledges recorded as commitments",          from: s => s.pledges.pledges.length },
+  { key: "pledgePayments", label: "pledge payments imported as gifts",    from: s => s.routed.pledgePayments ? s.routed.pledgePayments.length : (s.pledgePaymentCount || 0) },
+  // Refusals are ABSENCES — there is no row in the database to count, so the
+  // receipt checks the identity instead: every gift row in the file is either
+  // written, refused, or routed. `expect` derives the figure the receipt must
+  // reach from what was actually written plus what the screen set aside.
+  { key: "giftRowsAccounted", label: "every gift row in the file accounted for",
+    from: s => s.reconciliation.workbook.rowsInFile,
+    expect: (s, written) => Number(written.gifts || 0)
+      + s.refusals.filter(r => r.sheet && /gift/i.test(r.sheet)).length
+      + Object.values(s.routed).reduce((n, arr) => n + arr.length, 0) },
+];
+// Refusals are compared BY REASON, not just in total: a receipt that agrees on
+// the sum while disagreeing on why is not agreement.
+export const importPromisedRefusalsByReason = sub =>
+  sub.refusals.reduce((m, r) => (m[r.reason] = (m[r.reason] || 0) + 1, m), {});
+// The promise, as the completion screen will compare it.
+export function buildImportPromise(sub) {
+  const out = {};
+  for (const f of IMPORT_PROMISE_FIELDS) {
+    const v = f.from(sub);
+    if (v !== null && v !== undefined) out[f.key] = v;
+  }
+  return { fields: out, refusalsByReason: importPromisedRefusalsByReason(sub) };
+}
+// What the receipt must reach for a field, given what the database reported.
+// Most fields compare directly; a derived field (the gift-row identity) says so.
+export function importReceiptValue(field, sub, written) {
+  return field.expect ? field.expect(sub, written || {}) : (written || {})[field.key];
+}
+
 // ── THE ONE SUBMISSION BUILDER. Everything the pre-write summary shows and
 // everything the submit sends comes from THIS function, so the screen and the
 // write can never disagree. Pure: sheets in, payload + accounting out.
@@ -3576,12 +3651,34 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
   const routed = { pledges: [], softCredits: [], inKind: [], refunds: [], reversals: [] };
   for (const b of builds) for (const k of Object.keys(routed)) routed[k].push(...b.routed[k]);
   const flags = builds.flatMap(b => b.flags);
+  // Pledge PAYMENTS are gifts (they convert a commitment into cash as it
+  // arrives); the promise states them beside the commitments so the two are
+  // never read as the same number.
+  // …counted AFTER the link, because an orphaned pledge payment never lands and
+  // a promise must state what the database will hold (the receipt caught this:
+  // "shown 216 · written 210" — six were orphans refused at the join).
+  const pledgePaymentCount = linked.gifts.filter(g => /pledge payment/i.test(String(g.type || ""))).length;
   const orphanSet = new Set(linked.refusedOrphans.map(o => `${o.sheet}|${o.line}`));
   const reconciliation = reconcileWorkbook(builds.map(b => {
     // orphaned rows are refusals of THIS sheet for the per-sheet equation
     const orphansHere = linked.refusedOrphans.filter(o => o.sheet === b.name).length;
     return { ...b.report, builtGifts: b.report.builtGifts - orphansHere, refused: b.report.refused + orphansHere };
   }));
+  // BUILD-83 FIX — every folded identity carries the gift ids that were posted
+  // to its source id, so `POST /import-merges/:id/undo` can split the donor
+  // back out AND take exactly their gifts with them.
+  {
+    const giftIdsByDonorKey = new Map();
+    for (const b of builds) for (const it of b.items) {
+      const k = donorIdKey(it.donorId);
+      if (!k || !it.gift.externalId) continue;
+      if (!giftIdsByDonorKey.has(k)) giftIdsByDonorKey.set(k, []);
+      giftIdsByDonorKey.get(k).push(it.gift.externalId);
+    }
+    for (const m of dedup.review) for (const f of (m.folded || [])) {
+      f.giftIds = giftIdsByDonorKey.get(donorIdKey(f.externalDonorId)) || [];
+    }
+  }
   const nameByIndex = i => linked.donors[i] ? (linked.donors[i].name || linked.donors[i].email || "?") : "?";
   const largestGifts = [...linked.gifts].sort((a, b) => b.amount - a.amount).slice(0, 5)
     .map(g => ({ name: nameByIndex(g.donorIndex), dollars: g.amount, date: g.date }));
@@ -3632,7 +3729,7 @@ export function buildWorkbookSubmission(roled = [], opts = {}) {
     foldedRows: dedup.foldedRows,
     pledges,
     recurring,
-    refusals, routed, flags, signals, duplicateReview,
+    refusals, routed, flags, signals, duplicateReview, pledgePaymentCount,
     columnNotes: builds.flatMap(b => b.columnNotes || []),
     conventions: builds.map(b => ({ sheet: b.name, ...b.convention })),
     reconciliation,

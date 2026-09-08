@@ -13,6 +13,7 @@ import { T, Spin } from "./shared";
 import {
   buildWorkbookSubmission, buildStandardMapping, buildWorkbookSignals, extractWorkbookLegend,
   STANDARD_DONOR_FIELDS, STANDARD_GIFT_FIELDS, inferDateConventionCells,
+  IMPORT_PROMISE_FIELDS, buildImportPromise, importReceiptValue,
 } from "../../../shared/importShape";
 import { detectExclusionColumn, proposeCustomField, proposalEvidenceText, CF_TYPES } from "../../../shared/customFieldShape";
 
@@ -32,6 +33,21 @@ function downloadCsv(name, rows, cols) {
   a.href = url; a.download = name; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
+
+// ONE reason vocabulary, used by the pre-write summary AND the receipt — the
+// two screens must name the same refusal the same way.
+const REASON_LABEL_RESULT = {
+  no_donor_match: "no donor match — the ID matches nothing on any sheet",
+  unreadable_amount: "unreadable amount", unreadable_date: "unreadable date",
+  formula_no_value: "formula without a computed value (shown with its formula — never imported as $0)",
+  zero_amount: "amount is $0", no_amount: "no amount",
+  same_gift_listed_twice: "the same gift listed twice in the file — imported once",
+  subtotal_row: "subtotal row", decoy_duplicate: "superseded-copy duplicate",
+  hidden_row_skipped_by_choice: "hidden row — skipped by your choice",
+  highlighted_row_skipped_by_choice: "highlighted row — skipped by your choice",
+  excel_error: "spreadsheet error cell (#N/A, #REF!)", boolean: "TRUE/FALSE in the amount column",
+};
+const _REASON_LABELS_MOVED_TO_MODULE_SCOPE = true;
 
 const SectionHead = ({ children }) => (
   <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, margin: "18px 0 8px" }}>{children}</div>
@@ -53,7 +69,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const [progressText, setProgressText] = useState("");
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
-  const [elapsed, setElapsed] = useState(null);
+  const [timing, setTiming] = useState(null);   // { toSummary, write } — two different measurements, both named
 
   useEffect(() => {
     apiFetch("/custom-fields?entity=donor").then(r => setCfDefs(p => ({ ...p, donor: Array.isArray(r) ? r : [] }))).catch(() => {});
@@ -171,12 +187,14 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           if (c && c.key) (customAssignments[sheet] = customAssignments[sheet] || {})[header] = { entity: c.entity, key: c.key };
         }
       }
+      const tBuild0 = Date.now();
       const sub = buildWorkbookSubmission(roled, {
         signals, signalAnswers, legend, includeDecoy,
         currentYear: new Date().getFullYear(),
         mappingOverrides, customAssignments,
       });
       setSubmission(sub);
+      setTiming(t => ({ ...(t || {}), toSummary: (Date.now() - tBuild0) / 1000 }));
       // gift-alone: ask the server how the link would land BEFORE the write —
       // the pre-write summary never guesses ("map a name or email" is dead;
       // a Donor ID column is a first-class link key).
@@ -197,7 +215,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const doImport = async () => {
     if (!submission) return;
     setBuilding(true); setErr("");
-    const t0 = Date.now();
+    const tWrite0 = Date.now();
     try {
       if (giftAlone) {
         // Part 2.5 — gifts alone, linked to the org's existing records
@@ -215,12 +233,18 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         setProgressText("Routing pledges, merges and the import record…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
           pledges: submission.pledges.pledges.map(p => ({ donorExternalId: p.donorExternalId, amount: p.amount, date: p.date, externalId: p.externalId, status: p.status })),
-          merges: submission.merges.map(m => ({ surviving: m.surviving, folded: m.folded, reason: m.reason })),
+          // BUILD-83 FIX — send the fold in the shape the persist path stores:
+          // surviving + an ARRAY of folded identities with their source ids and
+          // gift ids, so every fold gets an undo record. (The old flat string
+          // was silently skipped and 266 folds went unlogged.)
+          merges: submission.merges.map(m => ({
+            surviving: m.surviving, survivingEmail: m.survivingEmail || "", folded: m.folded,
+          })),
           fileStats: submission.fileStats,
         })}).catch(e => ({ error: e.message }));
         setResult({ ...res, semantics: sem });
       }
-      setElapsed(((Date.now() - t0) / 1000).toFixed(1));
+      setTiming(t => ({ ...(t || {}), write: (Date.now() - tWrite0) / 1000 }));
       setStep("result");   // the Done button hands control back (onImported closes the modal + reloads)
     } catch (e) {
       console.error("workbook import failed:", e);
@@ -449,17 +473,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       gift_id_collision: "rows sharing a gift id with a different donor or amount — both imported",
       id_note: "identifiers the spreadsheet reformatted",
     };
-    const REASON_LABEL = {
-      no_donor_match: "no donor match — the ID matches nothing on any sheet",
-      unreadable_amount: "unreadable amount", unreadable_date: "unreadable date",
-      formula_no_value: "formula without a computed value (shown with its formula — never imported as $0)",
-      zero_amount: "amount is $0", no_amount: "no amount",
-      subtotal_row: "subtotal row", decoy_duplicate: "superseded-copy duplicate",
-      gift_id_repeated_in_file: "the same gift id listed twice in the file — imported once",
-      hidden_row_skipped_by_choice: "hidden row — skipped by your choice",
-      highlighted_row_skipped_by_choice: "highlighted row — skipped by your choice",
-      excel_error: "spreadsheet error cell (#N/A, #REF!)", boolean: "TRUE/FALSE in the amount column",
-    };
+    const REASON_LABEL = REASON_LABEL_RESULT;
+    void _REASON_LABELS_MOVED_TO_MODULE_SCOPE;
     return (
       <div data-testid="wb-summary">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 10 }}>One import, fully accounted — before anything is written.</div>
@@ -569,7 +584,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         {s.merges.length > 0 && (<>
           <SectionHead>Duplicate people folded — review list ({fmtN(s.merges.length)}, undo after import)</SectionHead>
           <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, maxHeight: 140, overflowY: "auto" }}>
-            {s.merges.slice(0, 300).map((m, i) => <div key={i} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}><strong style={{ color: T.ink }}>{m.folded}</strong> (id <span title={`raw cell: ${m.foldedId}`}>{normalisedId(m.foldedId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> — {m.reason}; gifts posted to either id land on the surviving record.</div>)}
+            {s.merges.slice(0, 300).flatMap((m, i) => (m.folded || []).map((f, j) => (
+              <div key={`${i}-${j}`} style={{ fontSize: 11.5, color: T.ink3, padding: "1px 0" }}>
+                <strong style={{ color: T.ink }}>{f.label}</strong> (id <span title={`raw cell: ${f.externalDonorId}`}>{normalisedId(f.externalDonorId)}</span>) folds into <strong style={{ color: T.ink }}>{m.surviving}</strong> — {f.via}; {f.giftIds && f.giftIds.length ? `${f.giftIds.length} gift${f.giftIds.length === 1 ? "" : "s"} come with them and can be split back out.` : "gifts posted to either id land on the surviving record."}
+              </div>
+            )))}
           </div>
         </>)}
 
@@ -590,39 +609,80 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     // ── Part 2.1 — SHOWN IS APPLIED. The pre-write summary was a promise; the
     // server read these back from the database after commit. Any mismatch is a
     // data-loss bug and it says so here, in red, with both numbers.
-    const w = result.written || null;
-    const promised = submission ? {
-      donors: submission.totals.donors,
-      gifts: submission.totals.gifts,
-      excluded: submission.exclusionSummary ? submission.exclusionSummary.total : null,
-      sustainers: submission.recurring ? submission.donors.filter(d => d.importedSustainer).length : null,
-    } : null;
-    const checks = w && promised && !w.error ? [
-      { label: "donors", shown: promised.donors, written: Number(w.donors) },
-      { label: "gifts", shown: promised.gifts, written: Number(w.gifts) },
-      { label: "people excluded from every ask surface", shown: promised.excluded, written: Number(w.excluded) },
-      ...(promised.sustainers != null ? [{ label: "monthly donors from your file", shown: promised.sustainers, written: Number(w.sustainers) }] : []),
-    ].filter(c2 => c2.shown != null) : [];
-    const mismatches = checks.filter(c2 => c2.shown !== c2.written);
+    // ── The receipt (items 2 + 3). The promise is a DECLARED FIELD LIST
+    // (shared/importShape.js IMPORT_PROMISE_FIELDS); the receipt is that same
+    // list read back from the database after commit. Deriving both from one
+    // list is what stops them drifting — a figure added to the summary with no
+    // way to read it back shows up here as "not read back", not as silence.
+    const written = { ...(result.written || {}), ...((result.semantics && result.semantics.written) || {}) };
+    const promise = submission ? buildImportPromise(submission) : null;
+    const checks = promise ? IMPORT_PROMISE_FIELDS
+      .filter(f => promise.fields[f.key] !== undefined)
+      .map(f => {
+        const got = importReceiptValue(f, submission, written);
+        return { key: f.key, label: f.label, money: !!f.money,
+                 shown: promise.fields[f.key], written: got,
+                 readBack: got !== undefined && got !== null };
+      })
+      : [];
+    const comparable = checks.filter(c2 => c2.readBack);
+    const mismatches = comparable.filter(c2 => (c2.money
+      ? Math.abs(Number(c2.shown) - Number(c2.written)) > 0.005
+      : Number(c2.shown) !== Number(c2.written)));
+    const notReadBack = checks.filter(c2 => !c2.readBack);
+    const fmtVal = (c2, v) => c2.money ? fmt$(v) : fmtN(v);
+    const refusalRows = submission ? submission.refusals : [];
+    const refusalsByReason = {};
+    for (const r of refusalRows) (refusalsByReason[r.reason] = refusalsByReason[r.reason] || []).push(r);
     return (
       <div data-testid="wb-result">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>
           {result.created != null ? `Imported: ${fmtN(result.created)} donors created, ${fmtN(result.giftsInserted || 0)} gifts recorded.` : "Import finished."}
         </div>
         {checks.length > 0 && (
-          <div data-testid="wb-readback" style={{ background: mismatches.length ? "#f6e3dd" : T.bg, border: `1px solid ${mismatches.length ? "#eac6b8" : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: mismatches.length ? "#8a3a24" : T.ink3, marginBottom: 6 }}>
-              {mismatches.length ? "What we showed you does NOT match what was written" : "Checked against the database after writing"}
+          <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? "#f6e3dd" : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? "#eac6b8" : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? "#8a3a24" : T.ink3, marginBottom: 6 }}>
+              {mismatches.length ? "What we showed you does NOT match what was written"
+                : notReadBack.length ? "Checked against the database — some figures could not be read back"
+                : "Checked against the database after writing"}
             </div>
-            {checks.map(c2 => (
-              <div key={c2.label} style={{ fontSize: 12.5, color: c2.shown === c2.written ? T.ink : "#8a3a24", display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
-                <span>{c2.label}</span>
-                <span>{c2.shown === c2.written ? `${fmtN(c2.written)} ✓` : `shown ${fmtN(c2.shown)} · written ${fmtN(c2.written)}`}</span>
+            {checks.map(c2 => {
+              const bad = c2.readBack && (c2.money ? Math.abs(Number(c2.shown) - Number(c2.written)) > 0.005 : Number(c2.shown) !== Number(c2.written));
+              return (
+                <div key={c2.key} style={{ fontSize: 12.5, color: bad || !c2.readBack ? "#8a3a24" : T.ink, display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
+                  <span>{c2.label}</span>
+                  <span>{!c2.readBack ? `shown ${fmtVal(c2, c2.shown)} · not read back`
+                    : bad ? `shown ${fmtVal(c2, c2.shown)} · written ${fmtVal(c2, c2.written)}`
+                    : `${fmtVal(c2, c2.written)} ✓`}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* item 3 — the set-aside list belongs on the receipt too, with its
+            downloads: the pre-write screen is the promise, this is what
+            actually happened, and a row nobody can list is a row nobody can
+            chase. */}
+        {Object.keys(refusalsByReason).length > 0 && (
+          <div data-testid="wb-result-refusals" style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 6 }}>Set aside, by reason — every row has its sheet, row number and reason</div>
+            {Object.entries(refusalsByReason).sort((a, b) => b[1].length - a[1].length).map(([reason, rows]) => (
+              <div key={reason} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
+                <span>{REASON_LABEL_RESULT[reason] || reason} — <strong>{fmtN(rows.length)}</strong>{rows.some(r => r.dollars) ? ` (${fmt$(rows.reduce((a, r) => a + (r.dollars || 0), 0))})` : ""}</span>
+                <button onClick={() => downloadCsv(`refused-${reason}.csv`, rows, ["sheet", "line", "id", "reason", "detail", "dollars", "formula"])}
+                  style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "3px 10px", fontSize: 11.5, color: T.ink3, cursor: "pointer" }}>Download</button>
               </div>
             ))}
           </div>
         )}
-        {elapsed && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8 }}>Click to summary: {elapsed}s for the write.</div>}
+        {timing && (
+          // BUILD-83 FIX (item 5) — two different measurements, each named.
+          <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8 }}>
+            {timing.toSummary != null && <>Time to summary: {timing.toSummary.toFixed(1)}s (reading the file and reconciling it). </>}
+            {timing.write != null && <>Time in the write: {timing.write.toFixed(1)}s.</>}
+          </div>
+        )}
         {result.semantics && !result.semantics.error && (
           <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8 }}>
             {fmtN(result.semantics.counts?.pledges || 0)} pledges recorded as commitments · {fmtN(result.semantics.counts?.merges || 0)} merges logged for undo.

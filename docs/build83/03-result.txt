@@ -46,12 +46,25 @@ donors
 25,034 ✓
 gifts
 90,523 ✓
+imported cash
+$51,754,243.82 ✓
 people excluded from every ask surface
 792 ✓
 monthly donors from your file
 600 ✓
-Click to summary: 17.5s for the write.
-60 pledges recorded as commitments · 0 merges logged for undo.
+duplicate people folded (undo recorded)
+266 ✓
+pledges recorded as commitments
+60 ✓
+pledge payments imported as gifts
+210 ✓
+every gift row in the file accounted for
+92,227 ✓
+SET ASIDE, BY REASON — EVERY ROW HAS ITS SHEET, ROW NUMBER AND REASON
+no donor match — the ID matches nothing on any sheet — 491 ($252,808.15)
+Download
+Time to summary: 1.2s (reading the file and reconciling it). Time in the write: 24.4s.
+60 pledges recorded as commitments · 266 merges logged for undo.
 Done
 Directory
 Team
