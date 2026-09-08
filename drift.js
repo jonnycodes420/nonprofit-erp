@@ -202,6 +202,13 @@ function assessDrift(gifts, today, opts = {}) {
     daysSinceLast, overdueRatio, expectedNext, driftStartDate,
     lastGiftDate: last.date, firstGiftDate: first.date,
     valueAtRisk: Math.round(valueAtRisk * 100) / 100,
+    // BUILD-83 Part 3.3/4 — AT RISK IS THE NEXT GIFT, NOT THE LIFETIME. The
+    // figure a fundraiser acts on is the gift this donor usually gives — the
+    // amount named in the row's own sentence — not the trailing-24-month total
+    // and never the lifetime. Baker Community Foundation shows $2,500, not the
+    // one $25,000 it gave once. `valueAtRisk` stays for the ranking history
+    // that already reads it; `usualGift` is what Home and the list display.
+    usualGift: Math.round(median(events.map(e => e.amount)) * 100) / 100,
     seasonal: seasonal ? { kind: seasonal.kind, month: seasonal.month || null, quarter: seasonal.quarter || null, years: seasonal.years } : null,
     refusedRows: refusedRows || 0,
   };

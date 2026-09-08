@@ -447,9 +447,13 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
       {toast && <div style={{ fontSize: 12, color: T.greenDk, padding: "0 10px 8px" }}>{toast}</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 10px 8px", flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Sustainers · not yet connected here</div>
+          {/* BUILD-83 Part 5.1 — THREE FACTS, NOT THREE BUCKETS. Giving and
+              connected-to-a-payment-method-here are separate axes: this read
+              "0 giving · 160 stopped · 600 not yet connected" for a file whose
+              own sheet says 440 are giving and which Steward had detected. */}
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>Sustainers from your file</div>
           <div style={{ fontSize: 13, color: T.ink2, marginTop: 3 }}>
-            <strong style={{ color: T.ink }}>{counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> whose giving stopped · <strong style={{ color: T.ink }}>{counts.unlinked}</strong> not yet connected to a payment method here
+            <strong style={{ color: T.ink }}>{(counts.fromFile != null ? counts.fromFile : counts.unlinked)}</strong> sustainers from your file · <strong style={{ color: T.ink }}>{counts.givingFromFile != null ? counts.givingFromFile : counts.activeLinked}</strong> giving · <strong style={{ color: counts.stopped ? (T.terra700) : T.ink }}>{counts.stopped}</strong> stopped · <strong style={{ color: T.ink }}>{counts.connectedFromFile || "none"}</strong>{counts.connectedFromFile ? " connected to a payment method here" : " connected to a payment method here yet"}
           </div>
           {stats.sent > 0 && (
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 3 }}>
@@ -698,7 +702,12 @@ export function DashboardRecurring({ onNavigate }) {
   if (loading) return <div style={{ padding: 40, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>;
   if (!data) return null;
   const { counts } = data;
-  const nothing = !counts.failedCards && !counts.aboutToLapse && !counts.pendingProposals && !counts.anniversaries;
+  // BUILD-83 Part 5.2 — "Nothing needs you" is FALSE while 160 monthly donors
+  // have stopped. The banner and the tiles only knew Stripe; the org's own file
+  // is the other half, and the banner can only say nothing when every tile is
+  // zero — including the file's own stopped-giving tile.
+  const stoppedFromFile = counts.stoppedFromFile || 0;
+  const nothing = !counts.failedCards && !counts.aboutToLapse && !counts.pendingProposals && !counts.anniversaries && !stoppedFromFile;
 
   const donorRow = (item, detail, danger = false) => (
     <div key={(item.subId || item.id) + (item.date || "")} {...interactive(() => onNavigate("donors", { selectDonorId: item.donorId }), { label: `Open ${item.donorName}` })}
@@ -725,7 +734,16 @@ export function DashboardRecurring({ onNavigate }) {
           Nothing needs you — no failed cards, nothing about to lapse, no proposals waiting on a donor.
         </div>
       )}
+      {!nothing && stoppedFromFile > 0 && (
+        <div data-testid="rec-stopped-banner" style={{ background: T.gold100 || "#f6eccf", border: `1px solid ${T.gold300 || "#e7cf91"}`, borderRadius: 12, padding: "14px 18px", fontSize: 13.5, color: T.ink, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+          <span><strong>{stoppedFromFile}</strong> monthly donors stopped. Send reconnect links.</span>
+          <button onClick={() => onNavigate("fundraising", { frSection: "recurring" })}
+            style={{ background: T.gold500, border: "none", borderRadius: 9, padding: "8px 14px", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Open Recurring Giving →</button>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }} className="dash-rec-grid">
+        {section("Stopped giving (from your file)", stoppedFromFile, T.gold300 || "#e7cf91",
+          (data.stoppedFromFileList || []).map(s => donorRow(s, s.detail || "monthly giving stopped", true)))}
         {section("Cards just failed", counts.failedCards, T.terra200,
           data.failedCards.map(s => donorRow(s, `${money(s.amount)}${per(s.interval)} · failed ${s.lastFailedAt ? fmtDate(s.lastFailedAt) : "recently"}`, true)))}
         {section("About to lapse", counts.aboutToLapse, T.terra200,

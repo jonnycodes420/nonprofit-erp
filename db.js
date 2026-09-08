@@ -1414,6 +1414,12 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS board_member BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_household_id TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_donor_ids JSONB`);
+  // BUILD-83 Part 3.5 — A PIPELINE STAGE IS A DECISION. Giving history can
+  // SUGGEST one; it cannot make one. Everything inferred on import lands in
+  // suggested_stage and `stage` stays NULL until a human places the donor, so
+  // a funnel reading "Cultivate 3,143 · Solicit 926 · Steward 2,719" the minute
+  // a file lands can say plainly that nobody decided any of it.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS suggested_stage TEXT`);
   // BUILD-80 Part 9 — derived surfaces must not outrun the import: the last
   // import's row/refusal counts and largest gifts, read by every headline
   // stat while refusals exceed 5% of rows.

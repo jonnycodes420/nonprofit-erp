@@ -144,16 +144,15 @@ export default function WelcomePage() {
     // BUILD-80 Part 9 — no goal is auto-set from an unbalanced import. "Win
     // back $604,337 in lapsed giving" was once computed from a file where
     // half the gifts were refused and one was a hundred times too large.
-    if (importHealth?.caveat) return null;
-    const lapsed = donorsSnapshot.filter(d => d.stage === "lapsed");
-    const lapsedTotal = Math.round(lapsed.reduce((s, d) => s + (Number(d.total_giving) || 0), 0));
-    if (lapsedTotal > 0) {
-      return { goalType: "lapsed_recovery", amount: lapsedTotal, label: `Win back $${lapsedTotal.toLocaleString()} in lapsed giving` };
-    }
-    const total = Math.round(donorsSnapshot.reduce((s, d) => s + (Number(d.total_giving) || 0), 0));
-    if (total > 0) {
-      return { goalType: "total_raised", amount: total, label: `Raise $${total.toLocaleString()} this quarter` };
-    }
+    // ── BUILD-83 Part 3.2 — NO GOAL UNTIL SHE SETS ONE. ────────────────────
+    // This is the second code path that set a goal nobody chose (BUILD-80 shut
+    // the first). It pre-filled the AMOUNT from the file — "Win back
+    // $29,955,207 in lapsed giving · 0% · 89 days left" was Home's headline on
+    // a fresh org, computed by summing the lifetime giving of everyone the
+    // import had just labelled lapsed. A goal is a commitment a human makes.
+    // The step still SUGGESTS a shape (what kind of goal, and why) and leaves
+    // the number empty; nothing is created until she types one.
+    void importHealth; void donorsSnapshot;
     return null;
   }, [donorsSnapshot, importHealth]);
 

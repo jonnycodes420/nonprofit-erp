@@ -357,9 +357,13 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
   const dmap2 = await donorsByEmail(tok);
   ok("her badge cleared in the same moment", dmap2[email("quarterly-past")].drift === null);
   const headAfter = (await getDrift(tok)).atRiskAmount;
-  ok("the at-risk headline decreased by her value at risk",
-    Math.abs(headAfter - (headBefore - paula.valueAtRisk)) < 0.01,
-    { before: headBefore, after: headAfter, hers: paula.valueAtRisk });
+  // BUILD-83 Part 3.3 — the headline is the sum of each drifting donor's USUAL
+  // GIFT (the amount their own sentence names), not their trailing-24-month
+  // total: at risk is the next gift, never the lifetime. So her departure takes
+  // her usual gift out of the headline, and that is what is asserted.
+  ok("the at-risk headline decreased by her USUAL GIFT (the next gift, not the lifetime)",
+    Math.abs(headAfter - (headBefore - paula.usualGift)) < 0.01,
+    { before: headBefore, after: headAfter, usual: paula.usualGift, valueAtRisk: paula.valueAtRisk });
 
   // ── §6 · webhook gift clears; full refund brings it BACK ────────────────
   console.log("\n— §6 · webhook in, refund back out —");

@@ -2838,6 +2838,12 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   // In value order. `key` is stable (the client owns labels/why-lines/deep
   // links); `done` is the live computation. The invite item exists only on
   // Team tier — plan-graceful means HIDDEN on Core, not shown-and-locked.
+  const sustainerRow = await query(
+    `SELECT COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%')::int AS stopped,
+            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%'
+                               AND EXISTS (SELECT 1 FROM reconnect_sends rs WHERE rs.org_id = donors.org_id AND rs.donor_id = donors.id))::int AS stopped_sent
+       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`, [orgId]);
   const items = [
     // BUILD-79 Part 6 — donors without a single gift do not tick the box: an
     // import that dropped every dollar is not "done". A human can confirm the
@@ -2854,6 +2860,14 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     // logged conversation (or a live gift) can create. The old workflow item
     // ticked on a fresh org that had done nothing.
     { key: "conversation", done: threadRow[0].n > 0 },
+    // BUILD-83 Part 5.3 — MOVE YOUR MONTHLY DONORS, after the first
+    // conversation. This is the closer from the Sept-6 positioning and it was
+    // nowhere in the product: the org's file names its sustainers, Steward
+    // detects them, and moving them here is the thing only Steward asks for.
+    // The step exists only for an org whose file actually HAS sustainers, and
+    // it is done when every stopped one has been sent a reconnect link.
+    ...(sustainerRow[0].total > 0 ? [{ key: "sustainers", done: sustainerRow[0].stopped === 0 || sustainerRow[0].stopped_sent >= sustainerRow[0].stopped,
+        detail: { total: sustainerRow[0].total, stopped: sustainerRow[0].stopped } }] : []),
     ...(tier === "team" ? [{ key: "team", done: userRow[0].n >= 2 || inviteRow[0].n > 0 }] : []),
   ];
   const doneCount = items.filter(i => i.done).length;
@@ -3726,12 +3740,36 @@ app.get("/donors/custom-field-values/all", requireAuth, wrap(async (req, res) =>
 
 // Pipeline stage counts — reuses the same grouping the Dashboard's Donor
 // Pipeline/funnel widgets compute, exposed as its own callable endpoint.
+// BUILD-83 Part 3.5 — PLACED vs SUGGESTED, side by side and never conflated.
+// `placed` counts donors a human actually put in a stage; `suggested` counts
+// what the giving history proposes for the ones nobody has touched. A caller
+// that shows the suggestion must say it is one (Home does).
 app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
   const rows = await query(
-    "SELECT stage, COUNT(*) as count, COALESCE(SUM(total_giving),0) as total FROM donors WHERE org_id = ? AND deleted_at IS NULL GROUP BY stage",
+    `SELECT COALESCE(stage, suggested_stage) AS stage,
+            (stage IS NOT NULL) AS placed,
+            COUNT(*) AS count, COALESCE(SUM(total_giving),0) AS total
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL
+        AND COALESCE(stage, suggested_stage) IS NOT NULL
+      GROUP BY 1, 2`,
     [req.user.orgId]
   );
-  res.json(rows.map(r => ({ stage: r.stage || "cultivate", count: parseInt(r.count, 10), total: parseFloat(r.total) || 0 })));
+  const merge = (acc, r) => {
+    const k = r.stage;
+    acc[k] = acc[k] || { stage: k, count: 0, total: 0 };
+    acc[k].count += parseInt(r.count, 10);
+    acc[k].total += parseFloat(r.total) || 0;
+    return acc;
+  };
+  const placedRows = rows.filter(r => r.placed === true || r.placed === "t");
+  const suggestedRows = rows.filter(r => !(r.placed === true || r.placed === "t"));
+  const placed = Object.values(placedRows.reduce(merge, {}));
+  const suggested = Object.values(suggestedRows.reduce(merge, {}));
+  const anyPlaced = placed.reduce((n, r) => n + r.count, 0) > 0;
+  // An OBJECT, deliberately: the caller must know whether it is holding the
+  // board a human built or a suggestion the file proposed, and an array cannot
+  // carry that without a caller that silently ignores it.
+  res.json({ counts: anyPlaced ? placed : suggested, placed, suggested, anyPlaced });
 }));
 
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
@@ -4427,7 +4465,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       const a = resolveAssignee(d);
       params.push(
         d._id, orgId, normalizeName(d.name), d.email||"", d.phone||"",
-        d.status||"new", d.stage||"prospect",
+        d.status||"new",
+        // BUILD-83 Part 3.5 — only a stage the FILE stated is a stage; anything
+        // inferred is a suggestion and `stage` stays NULL until a human places
+        // them. (The post-insert pass below fills suggested_stage from history.)
+        d._stageExplicit ? (d.stage || null) : null,
         toDollars(toCents(d.total)||0), toDollars(toCents(d.lastAmount)||0),  // BUILD-73: cents preserved
         d.lastGift||null, parseInt(d.gifts)||(d.total?1:0),
         JSON.stringify(Array.isArray(d.tags)?d.tags:[]),
@@ -4787,8 +4829,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       let excludeClause = "";
       if (explicitStageIds.length) { excludeClause = " AND id <> ALL(?)"; stageParams.push(explicitStageIds); }
       await run(
+        // BUILD-83 Part 3.5 — writes SUGGESTED_STAGE, never stage. A donor the
+        // file placed explicitly (_stageExplicit) keeps their real stage and is
+        // excluded from this update, exactly as before.
         `UPDATE donors
-         SET stage = CASE
+         SET suggested_stage = CASE
            WHEN total_giving = 0 AND last_gift_date IS NULL
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
@@ -9087,15 +9132,21 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   // The headline: dollars at risk from drift, in this organisation's own
   // file — the same sentence the landing page makes. High confidence only:
   // a number that includes guesses is not a number a director repeats.
-  const atRiskAmount = toDollars(high.reduce((s, a) => s + toCents(a.valueAtRisk), 0));
+  // BUILD-83 Parts 3.3 + 4 — AT RISK IS THE NEXT GIFT. The headline is the sum
+  // of each drifting donor's USUAL gift (the amount their own sentence names),
+  // not their trailing-24-month total and never their lifetime. The list is
+  // sorted by that same figure, so what ranks a row is what the row displays.
+  const atRiskAmount = toDollars(high.reduce((s, a) => s + toCents(a.usualGift || 0), 0));
 
   const surfaced = (includeMedium ? drifting : high)
     .filter(a => !a.handled)
-    .sort((x, y) => y.valueAtRisk - x.valueAtRisk);
+    .sort((x, y) => (y.usualGift || 0) - (x.usualGift || 0));
   const cap = driftEngine.DRIFT.HOME_LIST_CAP;
   const row = a => ({
     donorId: a.donorId, donorName: a.donorName, reason: a.reason,
     confidence: a.confidence, valueAtRisk: a.valueAtRisk,
+    usualGift: a.usualGift || 0,          // the labelled "at risk" figure on the row
+    kind: a.kind || null, contactName: a.contactName || null,
     lastGiftDate: a.lastGiftDate, assignedTo: a.assignedTo, assignedToName: a.assignedToName,
     basis: a.basis, seasonal: !!a.seasonal,
   });
@@ -9113,7 +9164,7 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
     institutional,
     importCaveat,
     atRiskAmount,
-    atRiskBasis: "trailing24mo",
+    atRiskBasis: "usualGift",   // BUILD-83 Part 3.3 — the next gift, not the lifetime
     counts: {
       driftingHigh: high.length,
       driftingMedium: medium.length,
@@ -9124,7 +9175,10 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
     giftedDonorCount,             // BUILD-79 Part 6 — donors with ≥1 gift: the only count "patterns checked" may claim
     onPattern,                    // inside their own pattern (state 'ok')
     excluded: excludedTally,      // and exactly why the rest can never drift
-    lapsedAmount: toDollars(lapsed.reduce((s, a) => s + toCents(a.valueAtRisk || 0), 0)),
+    // BUILD-83 Part 3.3 — the funnel's "Lapsed, window closed" keeps its COUNT
+    // and loses its dollars: lifetime giving of people who stopped is history,
+    // not risk. Kept on the payload as null so a stale client renders nothing.
+    lapsedAmount: null,
     cap,
     total: surfaced.length,
     list: (uncapped ? surfaced : surfaced.slice(0, cap)).map(row),
@@ -17229,11 +17283,26 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
     amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
     lastFailedAt: s.last_failed_at || null, dunningStep: s.dunning_step, failureCount: s.failure_count,
   });
+  // BUILD-83 Part 5.2 — the file's own stopped monthly donors are an exception
+  // too. Without them the tab could say "nothing needs you" while 160 people
+  // Steward had already detected had stopped giving.
+  const stoppedFile = await query(
+    `SELECT id, name, imported_sustainer_amount AS amount, imported_sustainer_last_gift AS last_gift, email
+       FROM donors
+      WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
+        AND COALESCE(tags::text,'') LIKE '%card-failed%'
+      ORDER BY imported_sustainer_amount DESC NULLS LAST LIMIT 200`, [orgId]);
+
   res.json({
     counts: {
       failedCards: failed.length, aboutToLapse: exhausted.length,
       pendingProposals: proposals.length, anniversaries: anniversaries.length,
+      stoppedFromFile: stoppedFile.length,
     },
+    stoppedFromFileList: stoppedFile.slice(0, 8).map(r => ({
+      id: r.id, donorId: r.id, donorName: r.name,
+      detail: `${r.amount ? "$" + Number(r.amount).toLocaleString() + "/mo" : "monthly giving"}${r.last_gift ? " · nothing since " + r.last_gift : ""}${r.email ? "" : " · no email on file"}`,
+    })),
     failedCards: failed.slice(0, 8).map(mapSub),
     aboutToLapse: exhausted.slice(0, 8).map(mapSub),
     pendingProposals: proposals.slice(0, 8).map(p => ({
@@ -17792,6 +17861,26 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   const recoveredThisMonth = recMonthRows[0]?.c || 0;
   const lostThisMonth = lostMonthRows[0]?.c || 0;
 
+  // ── BUILD-83 Part 5.1 — THREE FACTS, NOT THREE BUCKETS. The tab read
+  // "0 giving · 160 whose giving stopped · 600 not yet connected" for a file
+  // whose own Recurring sheet says 440 are giving and Steward detected every
+  // one of them. Giving and connected-to-a-payment-method-here are SEPARATE
+  // axes: `fromFile` is what the org's own records say; `connected` is what
+  // Stripe knows. Neither may stand in for the other.
+  const fileRows = await query(
+    `SELECT COUNT(*)::int AS from_file,
+            COUNT(*) FILTER (WHERE COALESCE(tags::text,'') LIKE '%card-failed%')::int AS stopped,
+            COUNT(*) FILTER (WHERE stripe_subscription_id IS NOT NULL)::int AS connected
+       FROM donors WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE`,
+    [orgId]);
+  const f = fileRows[0] || {};
+  const fromFile = f.from_file || 0, stopped = f.stopped || 0;
+  const sendable = await query(
+    `SELECT COUNT(*)::int AS c FROM donors
+       WHERE org_id=? AND deleted_at IS NULL AND imported_sustainer IS TRUE
+         AND COALESCE(tags::text,'') LIKE '%card-failed%'
+         AND COALESCE(email,'') = ''`, [orgId]);
+
   res.json({
     activeCount: s.active_count || 0,
     atRiskCount: s.at_risk_count || 0,
@@ -17799,6 +17888,14 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
     recoveredThisMonth,
     lostThisMonth,
     recoveryRate,
+    // the org's OWN file — three facts on one line
+    fromFile,
+    givingFromFile: Math.max(0, fromFile - stopped),
+    stoppedFromFile: stopped,
+    connectedFromFile: f.connected || 0,
+    // Part 5.4 — rows with no email are excluded from a reconnect send and said
+    // so on screen, never silently dropped from the count.
+    stoppedWithoutEmail: sendable[0]?.c || 0,
   });
 }));
 
@@ -17969,15 +18066,21 @@ app.get("/impact", requireAuth, wrap(async (req, res) => {
   const plan = orgRows[0]?.plan || "trial";
   const planMonthlyCost = PLAN_MONTHLY_COST[plan] ?? null;
 
-  const atRiskAmount = parseFloat(atRiskRows[0]?.amt) || 0;
-  const quietDonorCount = atRiskRows[0]?.donors || 0;
+  // ── BUILD-83 Part 3.3 — THE "QUIET DONORS" COHORT IS DELETED. ────────────
+  // It was Σ LIFETIME giving of every donor with no gift in six months, which
+  // on a real file is most of the file: "$38,748,624.17 at risk across 19,855
+  // quiet donors" is 79% of a 25,000-donor import, and it is the number that
+  // makes an ED close the laptop. At risk is the NEXT gift, not the lifetime,
+  // and the donors at risk are the ones past their OWN pattern — which is
+  // exactly what Drift already computes, donor by donor, with a sentence.
+  // Home reads Drift; nothing reads this any more. `atRiskDonors` stays (it is
+  // the re-engagement LIST, not a headline dollar figure) but is renamed on the
+  // response to say what it is.
+  void atRiskRows;
 
   res.json({
-    // BUILD-73 Part 3 — THE LEAD FIGURE. Money at risk, never money recovered.
-    atRiskAmount,                  // Σ lifetime giving of donors quiet > LAPSE_DAYS
-    quietDonorCount,
     quietSinceDays: QUIET_DAYS,
-    atRiskDonors: atRiskDonors.map(r => ({
+    reengageCandidates: atRiskDonors.map(r => ({
       id: r.id, name: r.name, amount: parseFloat(r.amount) || 0, lastGiftDate: r.last_gift_date,
     })),
     recoveredAmount,               // internal: the failed-card retry workflow's tracked total

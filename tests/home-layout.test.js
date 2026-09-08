@@ -109,24 +109,28 @@ async function seedUser(o, id, tag) {
   // contains a retired id — the new sections must appear (visible, appended in
   // canonical order) and the retired id must drop.
   const stale = [
+    // BUILD-83: `work`, `commandCenter`, `goalCards` and `retention` were
+    // RETIRED with the Home reorder, so this stale config exercises the real
+    // thing — a saved layout written before the sections changed.
+    { id: "drift", visible: true },
     { id: "work", visible: true },
     { id: "retiredSection", visible: true },
     { id: "hero", visible: true },
-    { id: "commandCenter", visible: false },
-    { id: "myPortfolio", visible: true },
+    { id: "myPortfolio", visible: false },
     { id: "goalCards", visible: true },
   ];
   const m1 = mergeLayout(stale);
-  ok("merge keeps the user's order for known ids", m1.slice(0, 5).map(x => x.id).join(",") === "work,hero,commandCenter,myPortfolio,goalCards", m1);
-  ok("merge drops retired/unknown ids", !m1.some(x => x.id === "retiredSection"));
-  ok("NEW section ids appear for a stale config, visible, in canonical order", m1.slice(5).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,retention:true,impact:true", m1);
-  ok("merge preserves saved hidden flags", m1.find(x => x.id === "commandCenter").visible === false);
+  ok("merge keeps the user's order for known ids", m1.slice(0, 3).map(x => x.id).join(",") === "drift,hero,myPortfolio", m1);
+  ok("merge drops retired/unknown ids", !m1.some(x => ["retiredSection", "work", "commandCenter", "goalCards", "retention"].includes(x.id)), m1.map(x => x.id));
+  ok("NEW section ids appear for a stale config, visible, in canonical order",
+     m1.slice(3).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,thread:true,monthly:true,retentionPipeline:true,impact:true", m1);
+  ok("merge preserves saved hidden flags", m1.find(x => x.id === "myPortfolio").visible === false);
   ok("merged stale config is a full layout", m1.length === DEFAULT_LAYOUT.length);
 
   const m2 = mergeLayout([{ id: "hero", visible: false }]);
   ok("merge forces the hero visible even if a saved config hid it", m2.find(x => x.id === "hero").visible === true);
-  const m3 = mergeLayout([{ id: "work", visible: false }, { id: "work", visible: true }, { id: 7 }, "junk", null]);
-  ok("merge survives garbage rows + dedupes (first wins)", m3.length === DEFAULT_LAYOUT.length && m3.find(x => x.id === "work").visible === false, m3);
+  const m3 = mergeLayout([{ id: "drift", visible: false }, { id: "drift", visible: true }, { id: 7 }, "junk", null]);
+  ok("merge survives garbage rows + dedupes (first wins)", m3.length === DEFAULT_LAYOUT.length && m3.find(x => x.id === "drift").visible === false, m3);
   ok("isDefaultLayout flags a reorder as non-default", !isDefaultLayout(mergeLayout(stale)));
   ok("sectionMeta resolves labels for the tray", sectionMeta("myPortfolio")?.label === "My Portfolio" && sectionMeta("nope") === null);
 
@@ -143,7 +147,7 @@ async function seedUser(o, id, tag) {
   ok("hero itself at position 1 → its Top affordance is a no-op", moveToTop(heroFirst, "hero") === heroFirst);
 
   const heroDown = mergeLayout([
-    { id: "work", visible: true }, { id: "goalCards", visible: true }, { id: "hero", visible: true },
+    { id: "drift", visible: true }, { id: "monthly", visible: true }, { id: "hero", visible: true },
   ]);
   const t3 = moveToTop(heroDown, "impact");
   ok("hero moved down → moved section goes GENUINELY first", t3[0].id === "impact" && t3.map(x => x.id).indexOf("hero") > 0, t3.map(x => x.id));

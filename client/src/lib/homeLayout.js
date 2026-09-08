@@ -13,17 +13,25 @@ export const HERO_ID = "hero";
 
 // Canonical Home stack, top to bottom = the default order (today's design).
 // `label` is what edit mode + the hidden tray call the section.
+// BUILD-83 Part 3.1 — HOME IS THE THREAD FIRST, THE SUSTAINERS SECOND, DRIFT
+// THIRD, AND THE NUMBERS LAST. That was BUILD-81's order and it is not what
+// rendered: a fresh org opened on an auto-set goal, a six-step checklist, four
+// zero tiles and a $38.7M at-risk card, with the Thread on the second screen.
+// Retired here (the merge rule drops unknown ids, so saved layouts follow):
+//   goalCards      — the roll-up breakdown; the hero line carries it
+//   commandCenter  — Portfolio / Tasks / Need to do / Pipeline, four tiles whose
+//                    contents are in the cards below or in the checklist, and
+//                    which contradicted them (0 prospects beside 634)
+//   work           — split into `thread` and `retentionPipeline`
+//   retention      — folded into `retentionPipeline`, demoted
 export const HOME_SECTIONS = [
   { id: "hero", label: "Fundraising goal", hideable: false },
-  // BUILD-35: the activation checklist — renders nothing once the org is set
-  // up (or has hidden it), so for activated orgs this slot simply doesn't
-  // exist on screen. Normal hideable rules (don't fight the layout system).
   { id: "setup", label: "Set up Steward", hideable: true },
-  { id: "goalCards", label: "Goal breakdown", hideable: true },
-  { id: "commandCenter", label: "Today at a glance", hideable: true },
+  { id: "thread", label: "The Thread", hideable: true },
+  { id: "monthly", label: "Your monthly donors", hideable: true },
+  { id: "drift", label: "Drift", hideable: true },
+  { id: "retentionPipeline", label: "Retention & pipeline", hideable: true },
   { id: "myPortfolio", label: "My Portfolio", hideable: true },
-  { id: "retention", label: "Donor retention & signals", hideable: true },
-  { id: "work", label: "Needs attention & outreach", hideable: true },
   { id: "impact", label: "What Steward has done", hideable: true },
 ];
 

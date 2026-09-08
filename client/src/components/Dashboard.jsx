@@ -55,21 +55,20 @@ const PORTFOLIO_BREAKDOWNS = {
 function ImpactLine({ impact }) {
   const [open, setOpen] = useState(false);
   if (!impact) return null;
-  const atRisk = impact.atRiskAmount || 0;
-  const quiet = impact.quietDonorCount || 0;
+  // BUILD-83 Part 3.1/3.3 — the footer no longer opens with a risk figure, and
+  // it never staples "$38.7M at risk" to "No platform fee, no donor tip." Those
+  // were two unrelated sentences, and the second one is marketing inside the
+  // product. The quiet-donor cohort is gone entirely (see /impact).
   const retried = impact.recoveredAmount || 0;
   const returned = impact.reengagedAmount || 0;
   const returnedDonors = impact.reengagedDonorCount || 0;
   const watching = impact.watchingRecurringCount || 0;
   const online = impact.onlineGivingProcessed || 0;
   const hasRetried = retried > 0;
-  const hasAtRisk = atRisk > 0 && quiet > 0;
   // Nothing to say yet → stay silent rather than manufacture a line.
-  if (!hasAtRisk && !hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
+  if (!hasRetried && returned <= 0 && watching <= 0 && online <= 0) return null;
 
-  const head = hasAtRisk
-    ? <><strong style={{ color: T.ink }}>{fmt(atRisk)}</strong> at risk across <strong style={{ color: T.ink }}>{quiet.toLocaleString()}</strong> quiet donor{quiet === 1 ? "" : "s"} — no gift in over {quietPhrase(impact.quietSinceDays)}. No platform fee, no donor tip.</>
-    : watching > 0
+  const head = watching > 0
       ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — no platform fee, no donor tip, gifts settle in your own Stripe.</>
       : <>No platform fee, no donor tip — <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
 
@@ -93,11 +92,6 @@ function ImpactLine({ impact }) {
       </div>
       {open && (
         <div style={{ padding: "2px 18px 14px", background: T.green100 }}>
-          {hasAtRisk && row(
-            "At risk right now",
-            fmt(atRisk),
-            `Lifetime giving of ${quiet.toLocaleString()} donor${quiet === 1 ? "" : "s"} with no gift in over ${quietPhrase(impact.quietSinceDays)} — drifting, but not yet lapsed. This is your file's own history, not anything Steward did: it is the size of the problem, measured.`
-          )}
           {hasRetried && row(
             "Failed cards, retried automatically",
             fmt(retried),
@@ -141,6 +135,8 @@ const SETUP_ITEM_META = {
   // thread, and the next step comes back to you.
   conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
   team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
+  // BUILD-83 Part 5.3 — the closer.
+  sustainers: { label: "Move your monthly donors",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
 };
 
 function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
@@ -183,6 +179,9 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
       </div>
       {items.map(item => {
         const meta = SETUP_ITEM_META[item.key];
+        const detailLine = item.key === "sustainers" && item.detail
+          ? `${item.detail.total} in your file · ${item.detail.stopped} stopped`
+          : null;
         if (!meta) return null;
         if (item.done) {
           return (
@@ -204,7 +203,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
                 <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>
-                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving — an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : meta.why}
+                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving — an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine} — ${meta.why}` : meta.why)}
                 </span>
               </span>
               <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{giftGap ? "Re-import" : meta.cta} →</span>
@@ -279,7 +278,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [goalForm,setGoalForm]=useState({label:"",goalAmount:"",goalType:"total_raised",periodStart:"",periodEnd:""});
   const [savingGoal,setSavingGoal]=useState(false);
 
-  const [stageCounts,setStageCounts]=useState([]);
+  const [stageCounts,setStageCounts]=useState({counts:[],placed:[],suggested:[],anyPlaced:true});
   const [stewardMetrics,setStewardMetrics]=useState(null);
   const [recurringHealth,setRecurringHealth]=useState(null);
   const [impact,setImpact]=useState(null);
@@ -487,7 +486,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       // picked (guarded by the `prev===undefined` check).
       setScope(prev=>prev!==undefined?prev:((r?.portfolioCount||0)>0?"mine":"all"));
     }).catch(()=>{setMyStats(null);setScope(prev=>prev!==undefined?prev:"all");});
-    apiFetch("/donors/stage-counts").then(r=>setStageCounts(r||[])).catch(()=>{});
+    apiFetch("/donors/stage-counts").then(r=>setStageCounts(r&&r.counts?r:{counts:Array.isArray(r)?r:[],placed:[],suggested:[],anyPlaced:true})).catch(()=>{});
     apiFetch("/recurring/health").then(r=>setRecurringHealth(r)).catch(()=>{});
     apiFetch("/impact").then(r=>setImpact(r)).catch(()=>{});
     apiFetch("/fundraising/overview").then(r=>setFundOverview(r||null)).catch(()=>setFundOverview(null));
@@ -730,7 +729,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{STAT_PATHS[name]}</svg>
   );
 
-  const countsByStage=Object.fromEntries(stageCounts.map(s=>[s.stage,s]));
+  // BUILD-83 Part 3.5 — the funnel shows PLACED donors; with nobody placed it
+  // shows the suggestion and says so.
+  const stagesArePlaced=stageCounts.anyPlaced!==false;
+  const countsByStage=Object.fromEntries((stageCounts.counts||[]).map(s=>[s.stage,s]));
 
   // Above sector average reads positive (green); below reads as needing
   // attention (gold-tinted brown) — visually honest, not falsely encouraging,
@@ -1100,6 +1102,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         );
       })():null;
 
+  // BUILD-83 Part 3.4 — an unassigned org reads "no one assigned to you yet",
+  // never "0 donors · $0 lifetime giving" the screen after importing 25,034.
+  const portfolioEmpty=!!myStats&&!(myStats.portfolioCount>0);
   const myPortfolioSection=myStats?(
         // De-emphasized wrapper (BUILD-31 Part 5.3): no colored left-accent box —
         // the "MY PORTFOLIO" heading + spacing define the group. A neutral hairline
@@ -1180,8 +1185,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                     past {quietPhrase}) is the outer number; drifting is the
                     high-confidence, still-reachable subset; lapsed is the
                     window-closed subset — never three competing figures. */}
-                {impact&&impact.atRiskAmount>0&&impact.quietDonorCount>0
-                  ?<>Of <strong style={{color:T.ink}}>{fmtFull(impact.atRiskAmount)}</strong> at risk across {impact.quietDonorCount.toLocaleString()} quiet donor{impact.quietDonorCount===1?"":"s"} (no gift in over {quietPhrase(impact.quietSinceDays)}), this <strong style={{color:T.ink}}>{fmtFull(driftData.atRiskAmount)}</strong> is drifting — past their own pattern, still reachable with a call now.</>
+                {false
+                  ?null
                   :<>Giving from donors quietly past their own pattern — each is on the Drifting list below, with the reason, while a call still works.</>}
               </div>
             </div>
@@ -1370,7 +1375,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             <ProductMark product="drift" on="cream"/>
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
-                ?`${fmtFull(driftData.atRiskAmount)} at risk · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
+                ?`${fmtFull(driftData.atRiskAmount)} at risk — the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
               {driftData.importCaveat && <span style={{color:T.gold700||"#8a6d1f"}}> · {driftData.importCaveat}</span>}
             </span>
@@ -1407,14 +1412,29 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                       <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donorName}</div>
                       <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
                     </div>
-                    <div style={{fontSize:13.5,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink,whiteSpace:"nowrap",paddingTop:2}}>{fmtFull(r.valueAtRisk)}</div>
+                    {/* BUILD-83 Part 4 — the figure is the donor's USUAL gift, the
+                        amount their own sentence names, and it carries its label.
+                        Baker Community Foundation shows $2,500, not the one
+                        $25,000 it gave once. */}
+                    <div style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2}}>
+                      <div style={{fontSize:13.5,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{fmtFull(r.usualGift||0)}</div>
+                      <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>at risk</div>
+                    </div>
                   </a>
                   {!lineOpen&&(
                     <div style={{display:"flex",alignItems:"center",padding:"8px 20px 8px 8px",flexShrink:0}}>
-                      <button onClick={()=>{setDriftLineFor(r.donorId);setDriftLine("");}} disabled={isReadOnly}
-                        title={isReadOnly?"Reactivate your subscription to make changes.":"Reached out? Mark it done"}
+                      {/* BUILD-83 Part 4 — "Log the call" opens the Thread's log
+                          step for this donor: nothing on this list ends without a
+                          record. Dismiss is secondary and writes its reason. */}
+                      <button onClick={()=>onNavigate("donors",{selectDonorId:r.donorId,openConversation:true})} disabled={isReadOnly}
+                        title={isReadOnly?"Reactivate your subscription to make changes.":"Log the call and the next step comes back"}
                         className="attn-row-action" style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
-                        Done
+                        Log the call
+                      </button>
+                      <button onClick={()=>{setDriftLineFor(r.donorId);setDriftLine("");}} disabled={isReadOnly}
+                        title="Not drifting? Say why and it stops asking"
+                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",marginLeft:8,color:T.ink3,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
+                        Not drifting
                       </button>
                     </div>
                   )}
@@ -1422,13 +1442,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                 {lineOpen&&(
                   <div style={{display:"flex",gap:8,alignItems:"center",padding:"0 20px 13px 72px"}}>
                     <input autoFocus value={driftLine} onChange={e=>setDriftLine(e.target.value)}
-                      onKeyDown={e=>{if(e.key==="Enter")submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")submitDriftDone(r.donorId,"");}}
-                      placeholder="One line — what happened? (Enter saves · Esc skips)"
+                      onKeyDown={e=>{if(e.key==="Enter"&&driftLine.trim())submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")setDriftLineFor(null);}}
+                      placeholder="Why isn't this drifting? One line (Enter saves · Esc cancels)"
                       style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
-                    <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy}
-                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Save</button>
-                    <button onClick={()=>submitDriftDone(r.donorId,"")} disabled={driftBusy}
-                      style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Skip</button>
+                    <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy||!driftLine.trim()}
+                      title={!driftLine.trim()?"A reason is what makes this a record instead of a disappearance":""}
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:(driftBusy||!driftLine.trim())?"not-allowed":"pointer",opacity:driftLine.trim()?1:0.45}}>Save</button>
+                    <button onClick={()=>setDriftLineFor(null)} disabled={driftBusy}
+                      style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Cancel</button>
                   </div>
                 )}
               </li>
@@ -1498,10 +1519,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const threadDonorIds=new Set(threadList.map(t=>t.donorId));
   const foldedQueue=visibleQueue.filter(item=>!(item.action==="thank"&&threadDonorIds.has(item.donorId)));
 
-  const workSection=(
-      <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
-        {/* LEFT: the Thread is the hero (the "Need to Do" command card scrolls here) */}
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+  // BUILD-83 Part 3.1 — THE THREAD, with Needs Your Attention folded in, is
+  // the first thing on Home after the greeting and the setup card.
+  const threadSection=(
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div id="dash-thread" style={{...cardWrap,borderColor:threadStat?.overdue>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
               <span style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1593,47 +1614,53 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           </div>
           </div>
 
-          {driftSection}
+          {/* BUILD-83 Part 3.1 — "Today's Suggested Outreach" is GONE. The
+              Thread and Drift are the outreach; a button that generates a third
+              list of names is noise beside two lists the product already stands
+              behind. */}
+      </div>
+  );
 
-          {/* Today's Suggested Outreach */}
-          <div style={{...cardWrap}}>
-            <div className="dash-briefing-hdr dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:11,color:T.ink,textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:700}}>Today's Suggested Outreach</span>
-                <span style={{fontSize:11,color:T.ink3}}>· {todayStr}</span>
-              </div>
-              {!briefing&&!briefLoading&&<AIBtn onClick={generateBriefing} label="✦ Suggest today's outreach" small/>}
-              {briefLoading&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink3}}><Spin/>Thinking…</div>}
-            </div>
-            <div className="dash-briefing-body" style={{padding:"18px 24px"}}>
-              {!briefing&&!briefLoading&&(
-                <div style={{fontSize:13,color:T.ink3,fontStyle:"italic",lineHeight:1.7}}>
-                  See who to call, what's urgent, milestone thank-yous ready to review, and one priority action for today.
-                </div>
-              )}
-              {briefLoading&&!briefing&&(
-                <div style={{fontSize:13,color:T.ink3,fontStyle:"italic"}}>Reading your org context…</div>
-              )}
-              {(briefing||briefLoading)&&pullQuote&&(
-                <>
-                  <blockquote style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,fontStyle:"italic",color:T.ink,lineHeight:1.55,margin:"0 0 14px 0",paddingLeft:16,borderLeft:"3px solid #c9a84c"}}>
-                    "{pullQuote}"
-                  </blockquote>
-                  {briefOpen&&briefRest&&(
-                    <div style={{fontSize:13,color:T.ink2,lineHeight:1.85,whiteSpace:"pre-wrap",marginBottom:14}}>
-                      {briefRest}
-                    </div>
-                  )}
-                  {briefRest&&<button onClick={()=>setBriefOpen(!briefOpen)} style={{background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    {briefOpen?"▲ Collapse":"▼ Read full briefing"}
-                  </button>}
-                </>
-              )}
-            </div>
-          </div>
+  // ── BUILD-83 Part 5.3 — YOUR MONTHLY DONORS, between the Thread and Drift.
+  // The closer from the Sept-6 positioning, and it was not on Home at all: the
+  // org's own file says how many monthly donors it has and how many stopped,
+  // and that is a fact Stripe never needed to confirm.
+  const monthlySection=(recurringHealth&&(recurringHealth.fromFile||0)>0)?(
+    <div style={{...cardWrap}}>
+      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+        <span style={sTitle}>Your monthly donors</span>
+        <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
+      </div>
+      <div style={{padding:"14px 20px",display:"flex",alignItems:"baseline",gap:18,flexWrap:"wrap"}}>
+        <div style={{fontSize:13.5,color:T.ink,lineHeight:1.6}}>
+          <strong style={{fontSize:22,fontFamily:"'DM Serif Display',serif"}}>{(recurringHealth.fromFile||0).toLocaleString()}</strong> in your file
+          {" · "}<strong>{(recurringHealth.givingFromFile||0).toLocaleString()}</strong> giving
+          {(recurringHealth.stoppedFromFile||0)>0&&<> · <strong style={{color:T.terracotta}}>{recurringHealth.stoppedFromFile.toLocaleString()}</strong> stopped</>}
         </div>
+        {(recurringHealth.stoppedFromFile||0)>0&&(
+          <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})}
+            style={{background:T.gold500,border:"none",borderRadius:9,padding:"9px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            Send reconnect links →
+          </button>
+        )}
+      </div>
+      {(recurringHealth.stoppedWithoutEmail||0)>0&&(
+        <div style={{padding:"0 20px 12px",fontSize:11.5,color:T.ink3}}>{recurringHealth.stoppedWithoutEmail} have no email on file and can't be sent a link.</div>
+      )}
+    </div>
+  ):null;
 
-        {/* RIGHT: funnel + next grant deadline */}
+  // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
+  const driftHomeSection=driftSection;
+
+  // BUILD-83 Part 3.1/3.4 — retention and the pipeline funnel, ONE demoted card
+  // at the bottom of Home. The funnel labels itself a SUGGESTION until a human
+  // has placed anybody (Part 3.5).
+  const retentionPipelineSection=(
+      <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {retentionSection}
+        </div>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{...cardWrap}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
@@ -1805,7 +1832,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           }
           return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
         })();
-        const sections={hero:heroSection,setup:setupSection,goalCards:goalCardsSection,commandCenter:commandCenterSection,myPortfolio:myPortfolioSection,retention:retentionSection,work:workSection,impact:impactSection};
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,retentionPipeline:retentionPipelineSection,myPortfolio:myPortfolioSection,impact:impactSection};
         const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null);
         const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
         const hiddenRows=layout.filter(r=>!r.visible);
