@@ -169,8 +169,38 @@ async function fixture() {
   ok("public impact = ORG-WIDE only (targeted needs attribution)",
     wImpact.updates?.length === 1 && wImpact.updates[0].title === "Org-wide news", wImpact.updates);
   const cfgJson = JSON.stringify(cfg);
-  ok("public config carries ZERO donor data", !cfgJson.includes(DONOR_EMAIL) && !cfgJson.includes("Rowan")
-    && !cfgJson.includes('"ytd"') && !cfgJson.includes("600"), null);
+  // The donor's giving figure must never reach the public config. It used to
+  // be checked as a bare "600" substring anywhere in the JSON — which also
+  // matches a server-minted id ("imp_6e5600…"), a millisecond timestamp and
+  // base64 image bytes, and red-lit roughly one battery run in three while
+  // proving nothing about donor data. This walks the payload instead: NO leaf
+  // may BE the figure, and no leaf may CONTAIN it except the two kinds of
+  // value that legitimately carry random digits (an id, and a data: URI).
+  // Strictly stronger on donor data than the substring it replaces.
+  const offenders = [];
+  const scanForDonorData = (root) => {
+    const found = [];
+    (function walk(v, key, path) {
+      if (v && typeof v === "object") { for (const [k, x] of Object.entries(v)) walk(x, k, path + "." + k); return; }
+      if (typeof v === "number") { if (String(v) === "600") found.push([path, v]); return; }
+      if (typeof v !== "string") return;
+      const isId = /^id$|Id$|_id$/.test(String(key || "")) || /^[a-z]{2,6}_[0-9a-f]{6,}$/.test(v);
+      if (isId || v.startsWith("data:")) return;
+      if (v === "600" || v.includes(DONOR_EMAIL) || v.includes("Rowan")) found.push([path, v.slice(0, 60)]);
+    })(root, null, "cfg");
+    return found;
+  };
+  // The guard can FIRE: planted leaks of each shape are caught, and the noise
+  // that used to red-light it (an id carrying "600") is not a leak.
+  ok("the leak scan catches a planted figure, email and name — and ignores an id",
+     scanForDonorData({ w: { ytd: 600 } }).length === 1 &&
+     scanForDonorData({ w: { sub: `Thanks ${DONOR_EMAIL}` } }).length === 1 &&
+     scanForDonorData({ w: { heading: "Rowan Idle gave again" } }).length === 1 &&
+     scanForDonorData({ w: { id: "imp_6e5600ab" } }).length === 0, null);
+  offenders.push(...scanForDonorData(cfg));
+  ok("public config carries ZERO donor data",
+    offenders.length === 0 && !cfgJson.includes(DONOR_EMAIL) && !cfgJson.includes("Rowan") && !cfgJson.includes('"ytd"'),
+    offenders.slice(0, 3));
   // goal opt-out flips the public payload off
   await api("PUT", `/fundraising/campaigns/${camp.body.id}`, tokA, { goalProgressPublic: false });
   cfg = (await pub(`/portal/${SLUG_A}/config`)).body;
