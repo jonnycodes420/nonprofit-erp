@@ -761,8 +761,8 @@ export function TpYesNo({val,set}){
 // Grants renders grant_interactions through this too and passes nothing.
 export function TouchpointTimeline({interactions,onDelete}){
   if(!interactions?.length)return<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:"16px 0"}}>No touchpoints logged yet.</div>;
-  const typeColor={call:T.green500,email:T.greenDk,meeting:T.greenMid,gift:T.gold600,event:T.gold500,note:T.ink3,stewardship:T.gold,voice_memo:T.green500,pledge_reminder:T.terracotta};
-  const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder"};
+  const typeColor={call:T.green500,email:T.greenDk,meeting:T.greenMid,gift:T.gold600,event:T.gold500,note:T.ink3,stewardship:T.gold,ask:T.gold500,voice_memo:T.green500,pledge_reminder:T.terracotta};
+  const typeLabel={voice_memo:"Voice Memo",pledge_reminder:"Pledge Reminder",ask:"Ask made"};
   const sorted=[...interactions].sort((a,b)=>new Date(b.date)-new Date(a.date));
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0}}>

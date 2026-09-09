@@ -16,26 +16,45 @@
 // vocabulary — call/meeting/email/other — so timelines and filters keep
 // working unchanged).
 export const TOUCH_TYPES = [
-  { key: "call_reached",   label: "Call · reached",    interactionType: "call" },
-  { key: "call_no_answer", label: "Call · no answer",  interactionType: "call" },
-  { key: "meeting",        label: "Meeting",           interactionType: "meeting" },
-  { key: "visit",          label: "Visit",             interactionType: "meeting" },
-  { key: "email",          label: "Email sent",        interactionType: "email" },
-  { key: "gift",           label: "Gift received",     interactionType: "other" },
+  { key: "call_reached",   label: "Call · reached",        interactionType: "call" },
+  { key: "call_no_answer", label: "Call · no answer",      interactionType: "call" },
+  { key: "meeting",        label: "Meeting",               interactionType: "meeting" },
+  { key: "visit",          label: "Visit",                 interactionType: "meeting" },
+  { key: "email",          label: "Email sent",            interactionType: "email" },
+  { key: "ask",            label: "Ask or proposal made",  interactionType: "ask" },
+  { key: "gift",           label: "Gift received",         interactionType: "other" },
+  { key: "note_only",      label: "Note (no touch)",       interactionType: "note" },
 ];
 
-// The defaults table from the BUILD-81 spec, verbatim. `followon` is the
-// meeting/visit chain: closing the thank-you thread with an outcome opens a
-// second thread (Follow up) dated from the ORIGINAL touch, not the close.
+// FIX (2026-09-09) — the defaults table, rewritten.
+//
+// A thank-you is what you send when someone GIVES. It was the default for
+// meetings and visits too, which made the most common touch in a fundraiser's
+// week propose the one step it almost never needs. Thank-you now belongs to
+// the gift row alone; every other touch proposes the thing that touch actually
+// leads to, on its own cadence.
+//
+// `subject: true` means the label completes itself from the note ("Follow up
+// on the gala"); with no subject to find it stays the bare verb, never a
+// literal placeholder. A key ABSENT from this table has no automatic step —
+// a note with no touch is the one such row, deliberately: the flow asks.
+//
+// `followon` (the BUILD-81 meeting/visit chain) is still read on both sides
+// and still lives on old threads, but no default defines one any more — it
+// existed to walk a meeting from its thank-you to the real follow-up, and the
+// meeting row now IS the follow-up.
 export const NEXT_STEP_DEFAULTS = {
-  call_reached:   { type: "follow_up", label: "Follow up",           plusDays: 7 },
-  call_no_answer: { type: "try_again", label: "Try again",           plusDays: 2 },
-  meeting:        { type: "thank_you_note", label: "Send thank-you note", plusDays: 2,
-                    followon: { type: "follow_up", label: "Follow up", plusDays: 14 } },
-  visit:          { type: "thank_you_note", label: "Send thank-you note", plusDays: 2,
-                    followon: { type: "follow_up", label: "Follow up", plusDays: 14 } },
-  email:          { type: "follow_up", label: "Follow up",           plusDays: 5 },
-  gift:           { type: "thank",     label: "Thank",               plusDays: 2 },
+  gift:           { type: "thank_you_note",     label: "Send thank-you note",    plusDays: 2 },
+  meeting:        { type: "follow_up",          label: "Follow up",              plusDays: 5, subject: true },
+  visit:          { type: "follow_up",          label: "Follow up",              plusDays: 5, subject: true },
+  call_reached:   { type: "follow_up",          label: "Follow up",              plusDays: 5 },
+  // Not in the spec's six rows, kept on its own merit: a call nobody answered
+  // leads to another call, not to a follow-up on a conversation that did not
+  // happen. Collapse it into `call_reached` if that ever stops being true.
+  call_no_answer: { type: "try_again",          label: "Try again",              plusDays: 2 },
+  email:          { type: "follow_up_no_reply", label: "Follow up if no reply",  plusDays: 4 },
+  ask:            { type: "check_in_ask",       label: "Check in on the ask",    plusDays: 14 },
+  // note_only: deliberately absent — no automatic step.
 };
 
 // Every next-step type a thread may carry (the defaults plus the user's own
@@ -45,7 +64,9 @@ export const NEXT_STEP_TYPES = [
   { type: "try_again",      label: "Try again" },
   { type: "thank_you_note", label: "Send thank-you note" },
   { type: "thank",          label: "Thank" },
-  { type: "send",           label: "Send" },
+  { type: "send",               label: "Send" },
+  { type: "follow_up_no_reply", label: "Follow up if no reply" },
+  { type: "check_in_ask",       label: "Check in on the ask" },
 ];
 
 // Pure civil-date addition (YYYY-MM-DD + n days), no Date-object timezone
@@ -150,6 +171,31 @@ export function stepFromNote(note) {
   return { label: best.label, rule: best.rule, matched: best.matched };
 }
 
+// What a meeting was ABOUT — the weaker sibling of stepFromNote, used only to
+// complete a `subject: true` label ("Follow up on the gala"). An ask in the
+// note outranks this; a note with no subject leaves the label bare rather than
+// rendering a placeholder nobody can read.
+export const NOTE_SUBJECT_RULES = [
+  /\b(?:talked|spoke|chatted|caught\s+up)\s+(?:with\s+[\w'’-]+\s+)?about\s+(.+)/i,
+  /\b(?:conversation|call|meeting|visit|discussion|chat)\s+about\s+(.+)/i,
+  /\b(?:discussed|revisited|walked\s+(?:her|him|them)\s+through|went\s+(?:over|through))\s+(.+)/i,
+  /\bre:\s*(.+)/i,
+  /\babout\s+(.+)/i,
+];
+
+export function subjectFromNote(note) {
+  const text = String(note || "").trim();
+  if (!text) return null;
+  for (const re of NOTE_SUBJECT_RULES) {
+    const m = re.exec(text);
+    if (!m) continue;
+    const obj = trimNoteObject(m[1]);
+    if (obj.length < 3 || NOTE_STOP_OBJECTS.has(obj.toLowerCase())) continue;
+    return obj;
+  }
+  return null;
+}
+
 // The suggestion for one logged touch: {type, label, due, source, followon?}
 // or null for an unknown touch key. `today` is the org's civil today.
 //
@@ -174,10 +220,13 @@ export function nextStepSuggestion(touchKey, today, note) {
     };
   }
 
-  if (!def) return null;
+  if (!def) return null;                 // no default: the flow asks for one
+  const subject = def.subject ? subjectFromNote(note) : null;
   const out = {
-    type: def.type, label: def.label, due: addCivilDays(today, def.plusDays),
-    source: { from: "touch", touch: touchKey, why: (touchTypeFor(touchKey)?.label || "This touch type") + " default" },
+    type: def.type, label: subject ? `${def.label} on ${subject}` : def.label,
+    due: addCivilDays(today, def.plusDays),
+    source: { from: "touch", touch: touchKey, subject: subject || undefined,
+              why: (touchTypeFor(touchKey)?.label || "This touch type") + " default" },
   };
   if (def.followon) {
     out.followon = {

@@ -93,16 +93,32 @@ async function reset() {
   // ── §1 · the defaults table, verbatim ────────────────────────────────────
   console.log("\n— §1 · the defaults table —");
   const D = shape.NEXT_STEP_DEFAULTS;
-  ok("call reached → Follow up, +7", D.call_reached.type === "follow_up" && D.call_reached.plusDays === 7, D.call_reached);
-  ok("call no answer → Try again, +2", D.call_no_answer.type === "try_again" && D.call_no_answer.plusDays === 2, D.call_no_answer);
-  ok("meeting → thank-you note +2, THEN a second thread Follow up +14",
-     D.meeting.type === "thank_you_note" && D.meeting.plusDays === 2 &&
-     D.meeting.followon?.type === "follow_up" && D.meeting.followon?.plusDays === 14, D.meeting);
-  ok("visit carries the same chain as meeting", JSON.stringify(D.visit) === JSON.stringify(D.meeting), D.visit);
-  ok("email sent → Follow up, +5", D.email.type === "follow_up" && D.email.plusDays === 5, D.email);
-  ok("gift received → Thank, +2", D.gift.type === "thank" && D.gift.plusDays === 2, D.gift);
+  // MANIFEST EDIT (FIX 2026-09-09, item 2): the table was rewritten. A
+  // thank-you is what you send when someone GIVES — it was the default for
+  // meetings and visits too, which made the most common touch in a week
+  // propose the one step it almost never needs. Every row below is the
+  // product's promise; changing one changes what Steward tells you to do.
+  ok("gift received → Send thank-you note, +2 (the ONLY thank-you row)",
+     D.gift.type === "thank_you_note" && D.gift.label === "Send thank-you note" && D.gift.plusDays === 2, D.gift);
+  ok("meeting → Follow up, +5 (completing itself from the note's subject)",
+     D.meeting.type === "follow_up" && D.meeting.plusDays === 5 && D.meeting.subject === true, D.meeting);
+  ok("visit carries the same default as meeting", JSON.stringify(D.visit) === JSON.stringify(D.meeting), D.visit);
+  ok("call reached → Follow up, +5", D.call_reached.type === "follow_up" && D.call_reached.plusDays === 5, D.call_reached);
+  ok("call no answer → Try again, +2 (kept: an unanswered call leads to another call)",
+     D.call_no_answer.type === "try_again" && D.call_no_answer.plusDays === 2, D.call_no_answer);
+  ok("email sent → Follow up if no reply, +4",
+     D.email.type === "follow_up_no_reply" && D.email.plusDays === 4, D.email);
+  ok("ask or proposal made → Check in on the ask, +14",
+     D.ask.type === "check_in_ask" && D.ask.plusDays === 14, D.ask);
+  ok("a note with no touch has NO default — the flow asks for one", D.note_only === undefined, D.note_only);
+  // The BUILD-81 meeting/visit chain (thank-you +2 → Follow up +14) is
+  // RETIRED: it existed to walk a meeting from its thank-you to the real
+  // follow-up, and the meeting row now IS the follow-up. The mechanism stays
+  // on both sides (old threads still carry one); no default defines one.
+  ok("no default opens a follow-on chain any more",
+     Object.values(D).every(d => !d.followon), D);
   const sug = shape.nextStepSuggestion("call_reached", "2026-03-03");
-  ok("the suggestion computes the civil due date", sug.due === "2026-03-10", sug);
+  ok("the suggestion computes the civil due date", sug.due === "2026-03-08", sug);
 
   // ── §2 · logging a conversation ──────────────────────────────────────────
   console.log("\n— §2 · logging a conversation —");
@@ -149,14 +165,16 @@ async function reset() {
   ok("the closed thread is an OUTCOME pointing at the new interaction",
      th1After.closed_at !== null && th1After.close_kind === "outcome" && th1After.closing_interaction_id === c2.body.interactionId, th1After);
   const [th2] = await q(`SELECT * FROM threads WHERE id=$1`, [c2.body.thread.id]);
-  ok("the meeting default carries the follow-on chain (Follow up, +14 from the touch)",
-     th2.followon_type === "follow_up" && th2.followon_due === shape.addCivilDays(TODAY, 14), th2);
+  // MANIFEST EDIT (item 2): the chain is retired — a meeting opens ONE thread,
+  // the follow-up itself, not a thank-you that later becomes one.
+  ok("the meeting opens one thread and no follow-on chain",
+     th2.followon_type === null && th2.followon_due === null, th2);
   const openCount = await q(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id=$1 AND donor_id='d_b81_ruth' AND closed_at IS NULL`, [ORG]);
   ok("exactly ONE open thread on the donor", openCount[0].n === 1, openCount[0].n);
   const c3 = await api("POST", "/donors/d_b81_mei/conversations", tok,
     { touch: "meeting", line: "Site visit.", nextStep: { type: "follow_up", due: shape.addCivilDays(TODAY, 3) } });
   const [th3] = await q(`SELECT * FROM threads WHERE id=$1`, [c3.body.thread.id]);
-  ok("changing the type away from the default DROPS the follow-on (the user's decision replaced the plan)",
+  ok("a step the user chose still carries no chain (the mechanism is read, never planted)",
      th3.followon_type === null, th3.followon_type);
 
   // ── §4 · NO SILENT CLOSE — prove the red ─────────────────────────────────
@@ -197,8 +215,8 @@ async function reset() {
   ok("manual gift 201", g1.status === 201, g1.status);
   await new Promise(r => setTimeout(r, 500)); // the thread opens beside the response
   const [thGift] = await q(`SELECT * FROM threads WHERE org_id=$1 AND donor_id='d_b81_gary' AND closed_at IS NULL`, [ORG]);
-  ok("the gift opened a thread: next step Thank, due +2 days",
-     thGift && thGift.next_step_type === "thank" && thGift.due_date === shape.addCivilDays(TODAY, 2), thGift);
+  ok("the gift opened a thread: Send thank-you note, due +2 days",
+     thGift && thGift.next_step_type === "thank_you_note" && thGift.due_date === shape.addCivilDays(TODAY, 2), thGift);
   ok("the gift thread points at the GIFT, and the actor is the human who recorded it",
      thGift.opening_gift_id === g1.body.gift.id && thGift.created_by === "u_b81thr", thGift);
   const g2 = await api("POST", "/donors/d_b81_gary/gifts", tok, { amount: 100, date: TODAY, idempotencyKey: "b81-gift-2" });
@@ -265,8 +283,11 @@ async function reset() {
   const drift = (await api("GET", "/drift", tok)).body;
   ok("the drift fixture is on the list", (drift.list || []).some(r => r.donorId === "d_b81_drift"), drift.counts);
   const dd = await api("POST", "/drift/d_b81_drift/done", tok, { note: "Called him. He was traveling all spring, wants to talk in October." });
-  ok("drift-done with a line opens a thread with the call default (Follow up, +7)",
-     dd.body.thread && dd.body.thread.next_step_type === "follow_up" && dd.body.thread.due_date === shape.addCivilDays(TODAY, 7), dd.body);
+  // The drift line is a note like any other: it says he "wants to talk in
+  // October", so THAT is the step — not the bare call default (Follow up, +5).
+  ok("drift-done reads its own line: the step is what the line asks for",
+     dd.body.thread && dd.body.thread.next_step_label === "Talk in October" &&
+     dd.body.thread.due_date === shape.addCivilDays(TODAY, 5), dd.body.thread);
   await q(`DELETE FROM threads WHERE org_id=$1 AND donor_id='d_b81_drift'`, [ORG]);
   await q(`DELETE FROM interactions WHERE org_id=$1 AND donor_id='d_b81_drift' AND metadata->>'via'='drift_done'`, [ORG]);
   const ddSkip = await api("POST", "/drift/d_b81_drift/done", tok, { note: "" });

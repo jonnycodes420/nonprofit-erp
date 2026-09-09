@@ -8,7 +8,7 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import {
   TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
-  nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel,
+  nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel, NOTE_ONLY_PLUS_DAYS,
 } from "../../../shared/threadShape";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
@@ -20,7 +20,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
   const [line, setLine] = useState("");
   const [date, setDate] = useState(todayLocal());
   const [nsLabel, setNsLabel] = useState("Follow up");
-  const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 7));
+  const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 5));
   const [nsDirty, setNsDirty] = useState(false);
   const [nsSource, setNsSource] = useState(null);   // which rule proposed this
   const [ignoreNote, setIgnoreNote] = useState(false);
@@ -42,7 +42,12 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
       return;
     }
     const s = nextStepSuggestion(touch, todayLocal(), ignoreNote ? "" : line);
-    if (s) { setNsLabel(s.label); setNsDue(s.due); setNsSource(s.source || null); }
+    if (s) { setNsLabel(s.label); setNsDue(s.due); setNsSource(s.source || null); return; }
+    // No default for this touch (a note with no touch). Steward proposes
+    // nothing and asks — the date is workable, the step is the user's.
+    setNsLabel("");
+    setNsDue(addCivilDays(todayLocal(), NOTE_ONLY_PLUS_DAYS));
+    setNsSource({ from: "none", why: "A note on its own gets no automatic step — say what happens next, or skip it." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touch, thread, line, ignoreNote]);
 

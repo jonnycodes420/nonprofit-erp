@@ -9347,7 +9347,8 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
   // The next-step prompt runs in the same flow; {skipped:true} is recorded as
   // skipped on the interaction (never as nothing), an explicit {type,due} is
   // the user's decision, and an absent nextStep takes the call default
-  // (Follow up, +7 days) — the drift row was a call to make.
+  // (the call default, or whatever the line itself asks for) — the drift row
+  // was a call to make.
   let thread = null;
   if (!skipped) {
     const shape = await threadShapeMod();
@@ -9357,9 +9358,11 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
     } else {
       let step = null;
       if (ns && shape.nextStepLabelFor(ns.type) && /^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) {
-        step = { type: ns.type, label: shape.nextStepLabelFor(ns.type), due: ns.due };
+        step = { type: ns.type, label: shape.sanitizeStepLabel(ns.label) || shape.nextStepLabelFor(ns.type), due: ns.due };
       } else {
-        const s = shape.nextStepSuggestion("call_reached", todayStr);
+        // The drift line IS a note: if it names an ask or a promise, that is
+        // the next step — same precedence as the log flow.
+        const s = shape.nextStepSuggestion("call_reached", todayStr, note);
         step = { type: s.type, label: s.label, due: s.due };
       }
       const [dRow] = await query("SELECT assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ?", [req.params.donorId, orgId]);
