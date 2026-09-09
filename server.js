@@ -9519,11 +9519,18 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const nsSkipped = !!(ns && ns.skipped === true);
   let step = null;
   if (!nsSkipped) {
-    const label = shape.nextStepLabelFor(ns?.type);
-    if (!ns || !label) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true} — a skip is recorded, silence is not accepted" });
+    const typeLabel = shape.nextStepLabelFor(ns?.type);
+    if (!ns || !typeLabel) return res.status(400).json({ error: "nextStep must be {type, due} from the offered set, or {skipped:true} — a skip is recorded, silence is not accepted" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ns.due || ""))) return res.status(400).json({ error: "nextStep.due must be a date (YYYY-MM-DD)" });
+    // The label is the user's own sentence when they wrote one (a note-derived
+    // step, or one they retyped in the row); the type's label otherwise. A
+    // suggestion the user has to retype costs time instead of saving it.
+    const label = shape.sanitizeStepLabel(ns.label) || typeLabel;
     step = { type: ns.type, label, due: ns.due };
   }
+  // Which rule produced the proposal — "note" or "touch" — recorded with the
+  // conversation so a wrong guess can be found later, not just corrected once.
+  const nsSource = ["note", "touch"].includes(String(req.body?.nextStep?.source || "")) ? req.body.nextStep.source : null;
 
   const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRow[0]?.name || "";
@@ -9533,7 +9540,8 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     await runTx(client,
       "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
       [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName,
-       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set" })]);
+       JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set",
+                        ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}) })]);
 
     // An open thread on this donor closes on this conversation — the outcome.
     const closedRows = await queryTx(client,
@@ -9548,7 +9556,7 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
       // along and prefills the prompt when this one closes. A changed type
       // is the user's decision replacing the plan — no follow-on.
       const def = shape.NEXT_STEP_DEFAULTS[touch.key];
-      const followon = def?.followon && step.type === def.type
+      const followon = def?.followon && step.type === def.type && step.label === def.label
         ? { type: def.followon.type, label: def.followon.label, due: shape.addCivilDays(date, def.followon.plusDays) }
         : null;
       thread = await openThreadTx(client, {

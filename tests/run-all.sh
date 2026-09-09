@@ -87,7 +87,7 @@ CORE=(
   finance-reports-consistency name-normalize reserved-recovered concurrency
   demo-content
   script-guards deploy-shape import-header import-messy-v2 import-workbook-v3 import-workbook-server mapper-one-dropdown
-  threads thread-nudge
+  threads thread-nudge thread-next-step
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

@@ -7,9 +7,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import {
-  TOUCH_TYPES, NEXT_STEP_TYPES, DISMISS_REASONS,
-  nextStepSuggestion, addCivilDays,
+  TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
+  nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel,
 } from "../../../shared/threadShape";
+
+const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
 const todayLocal = () => new Date().toISOString().split("T")[0];
 
@@ -17,36 +19,46 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
   const [touch, setTouch] = useState("call_reached");
   const [line, setLine] = useState("");
   const [date, setDate] = useState(todayLocal());
-  const [nsType, setNsType] = useState("follow_up");
+  const [nsLabel, setNsLabel] = useState("Follow up");
   const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 7));
   const [nsDirty, setNsDirty] = useState(false);
+  const [nsSource, setNsSource] = useState(null);   // which rule proposed this
+  const [ignoreNote, setIgnoreNote] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const lineRef = useRef(null);
   useEffect(() => { lineRef.current?.focus(); }, []);
 
-  // The prompt is a decision, not a guess: it prefills from the defaults
-  // table for the chosen touch — or, when this conversation closes a thread
-  // that carries a follow-on (the meeting/visit chain), from that follow-on.
-  // A user's own edit sticks until they change the touch type again.
+  // The prompt is a decision, not a guess: it prefills from the note when the
+  // note names an ask or a promise, and from the defaults table for the chosen
+  // touch otherwise — or, when this conversation closes a thread that carries a
+  // follow-on (the meeting/visit chain), from that follow-on. A user's own edit
+  // sticks until they change the touch type again.
   useEffect(() => {
     if (nsDirty) return;
-    if (thread?.followon) { setNsType(thread.followon.type); setNsDue(thread.followon.due); return; }
-    const s = nextStepSuggestion(touch, todayLocal());
-    if (s) { setNsType(s.type); setNsDue(s.due); }
+    if (thread?.followon) {
+      setNsLabel(thread.followon.label); setNsDue(thread.followon.due);
+      setNsSource({ from: "touch", why: "From the plan you set" });
+      return;
+    }
+    const s = nextStepSuggestion(touch, todayLocal(), ignoreNote ? "" : line);
+    if (s) { setNsLabel(s.label); setNsDue(s.due); setNsSource(s.source || null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [touch, thread]);
+  }, [touch, thread, line, ignoreNote]);
 
   const save = async (skipped) => {
     if (busy) return;
     if (!line.trim()) { setErr("Write the one line first. What happened?"); return; }
+    if (!skipped && !sanitizeStepLabel(nsLabel)) { setErr("Say what the next step is, or skip it."); return; }
     setBusy(true); setErr("");
     try {
       const r = await apiFetch(`/donors/${donor.id}/conversations`, {
         method: "POST",
         body: JSON.stringify({
           touch, line: line.trim(), date,
-          nextStep: skipped ? { skipped: true } : { type: nsType, due: nsDue },
+          nextStep: skipped ? { skipped: true }
+            : { type: nextStepTypeForLabel(nsLabel), label: sanitizeStepLabel(nsLabel), due: nsDue,
+                source: nsSource?.from || null },
         }),
       });
       onSaved && onSaved({ ...r, touch, line: line.trim(), date });
@@ -88,13 +100,36 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
         </div>
 
         <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 14, marginBottom: 16 }}>
-          <span style={lbl}>Next step{thread?.followon ? " — from the plan you set" : ""}</span>
+          <span style={lbl}>Next step</span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <select value={nsType} onChange={e => { setNsType(e.target.value); setNsDirty(true); }} style={{ ...inp, width: "auto", flex: "1 1 180px" }}>
-              {NEXT_STEP_TYPES.map(o => <option key={o.type} value={o.type}>{o.label}</option>)}
-            </select>
-            <input type="date" value={nsDue} onChange={e => { setNsDue(e.target.value); setNsDirty(true); }} style={{ ...inp, width: "auto", flex: "0 1 150px" }} />
+            <input value={nsLabel} maxLength={NEXT_STEP_LABEL_MAX}
+              onChange={e => { setNsLabel(e.target.value); setNsDirty(true); }}
+              placeholder="What happens next?" aria-label="Next step"
+              style={{ ...inp, width: "auto", flex: "1 1 200px" }} />
+            <input type="date" value={nsDue} onChange={e => { setNsDue(e.target.value); setNsDirty(true); }}
+              aria-label="Next step due date" style={{ ...inp, width: "auto", flex: "0 1 150px" }} />
           </div>
+          {/* Which rule proposed this. A wrong guess has to be visible before
+              it can be corrected — and switching back is one click. */}
+          {nsSource && !nsDirty && (
+            <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+              <span className="ns-source">
+                {nsSource.why}{nsSource.matched ? <span style={{ fontStyle: "italic" }}>{" — \u201c" + nsSource.matched + "\u201d"}</span> : null}
+              </span>
+              {nsSource.from === "note" && (
+                <button type="button" onClick={() => setIgnoreNote(true)}
+                  style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                  Use the {touchTypeLabel(touch)} default instead
+                </button>
+              )}
+              {nsSource.from === "touch" && ignoreNote && (
+                <button type="button" onClick={() => setIgnoreNote(false)}
+                  style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                  Read my note again
+                </button>
+              )}
+            </div>
+          )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
             This comes back to find you when it is due. Skipping is recorded as skipped.
           </div>
