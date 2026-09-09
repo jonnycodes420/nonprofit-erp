@@ -1,0 +1,121 @@
+contact_name,contact_confidence,org_affiliation,match_score,source_list,last_touch_channel,segment_code,rfm_band,wealth_indicator,propensity,engagement_tier,household_key,preferred_pronoun,mail_pref,research_note,capacity_estimate,board_affinity,event_history,volunteer_hours,alma_mater,employer_match_eligible,region_code,acquisition_year,lifecycle_stage,referral_source,interest_area,comm_frequency,survey_score,data_vendor,record_confidence
+Desmond Okafor,high,Bell Trust,47,annual,email,B2,111,C,0.0,bronze,H8728,he/him,no,met at gala,$11000,no,5,55,State,yes,SW,2019,lapsed,web,food,monthly,8,iWave,high
+Ruth Delacroix,high,Ridge Foundation,69,annual,mail,C3,111,B,0.78,bronze,H1149,she/her,yes,met at gala,$50000,yes,2,16,—,no,NE,2018,lapsed,peer,housing,quarterly,8,WealthEngine,high
+Ruth Lindqvist,medium,Bell Trust,61,annual,email,B2,333,B,0.89,bronze,H4559,they/them,no,met at gala,$36000,no,3,33,—,no,NE,2011,prospect,peer,arts,quarterly,8,WealthEngine,low
+Marguerite Achebe,medium,—,79,referral,mail,A1,333,B,0.49,silver,H2909,they/them,yes,met at gala,$18000,yes,2,46,State,no,MW,2009,donor,web,arts,quarterly,8,iWave,low
+Camille Okafor,low,Ridge Foundation,89,annual,phone,B2,544,C,0.13,gold,H2345,she/her,yes,board intro,$13000,no,8,49,—,yes,SW,2017,donor,peer,arts,monthly,8,WealthEngine,low
+Theo Raman,medium,Ridge Foundation,44,gala2025,phone,B2,333,A,0.21,gold,H6724,they/them,yes,,$4000,no,9,38,Northfield,no,MW,2016,donor,web,arts,quarterly,8,iWave,high
+Elias Hartley,medium,Ridge Foundation,45,referral,email,C3,544,B,0.26,gold,H1439,she/her,no,,$27000,yes,3,65,State,yes,SW,2013,lapsed,event,housing,monthly,6,iWave,low
+Marguerite Raman,medium,—,60,gala2025,email,A1,111,C,0.9,silver,H6416,they/them,no,met at gala,$31000,no,4,38,—,yes,SW,2012,donor,event,arts,quarterly,2,WealthEngine,low
+Elias Barnes,medium,Bell Trust,52,gala2025,mail,C3,111,C,0.43,bronze,H8423,she/her,no,met at gala,$12000,yes,6,44,—,yes,NE,2020,lapsed,peer,food,quarterly,3,WealthEngine,high
+Desmond Lindqvist,high,—,82,referral,email,A1,544,A,0.16,bronze,H4600,she/her,yes,board intro,$40000,no,0,58,Northfield,no,NE,2016,prospect,event,food,quarterly,2,iWave,high
+Freya Okafor,low,Ridge Foundation,59,referral,mail,C3,333,A,0.12,bronze,H6266,he/him,yes,met at gala,$8000,no,5,22,State,yes,MW,2008,donor,event,food,quarterly,8,WealthEngine,high
+Ruth Lindqvist,medium,Bell Trust,50,gala2025,phone,C3,544,B,0.77,silver,H9334,they/them,yes,met at gala,$13000,no,0,51,—,no,MW,2020,prospect,peer,food,monthly,2,WealthEngine,low
+Theo Delacroix,low,Bell Trust,71,gala2025,mail,A1,544,A,0.21,silver,H5152,he/him,no,met at gala,$48000,no,3,71,—,no,SW,2017,lapsed,web,food,quarterly,2,iWave,low
+Nadia Hartley,low,—,76,referral,phone,B2,333,B,0.17,gold,H7794,she/her,no,board intro,$46000,yes,8,40,—,no,MW,2015,donor,web,food,monthly,8,WealthEngine,high
+Priya Sandoval,medium,Ridge Foundation,75,referral,phone,B2,111,C,0.27,bronze,H9820,he/him,yes,met at gala,$24000,yes,1,41,—,no,SW,2014,donor,event,food,monthly,3,iWave,high
+Idris Okafor,high,Bell Trust,57,annual,email,C3,544,B,0.99,bronze,H6196,she/her,yes,,$10000,yes,3,68,—,no,NE,2006,lapsed,event,housing,monthly,5,iWave,high
+Elias Whitfield,low,Ridge Foundation,64,gala2025,email,C3,333,A,0.69,silver,H9863,he/him,no,board intro,$5000,no,7,50,State,no,NE,2022,prospect,event,arts,quarterly,5,iWave,low
+Priya Okafor,high,—,53,annual,phone,C3,111,B,0.0,gold,H8113,he/him,yes,board intro,$27000,no,6,19,Northfield,yes,MW,2019,donor,event,housing,quarterly,5,iWave,high
+Desmond Hartley,low,Ridge Foundation,60,referral,phone,B2,333,B,0.64,gold,H6437,he/him,no,met at gala,$39000,yes,6,70,—,yes,NE,2009,prospect,web,food,monthly,5,WealthEngine,low
+Desmond Delacroix,medium,Ridge Foundation,78,gala2025,email,C3,333,B,0.55,bronze,H8979,she/her,no,met at gala,$48000,yes,6,68,Northfield,yes,MW,2012,prospect,peer,food,quarterly,9,WealthEngine,low
+Desmond Barnes,high,Ridge Foundation,72,referral,email,C3,111,B,0.6,gold,H5500,they/them,no,,$39000,no,3,79,State,no,MW,2014,donor,web,arts,quarterly,4,WealthEngine,low
+Desmond Moreau,low,Ridge Foundation,93,referral,phone,B2,333,B,0.97,gold,H3702,she/her,yes,met at gala,$39000,no,7,35,—,yes,NE,2006,donor,peer,arts,quarterly,8,iWave,high
+Theo Raman,medium,—,91,gala2025,mail,A1,333,C,0.19,silver,H1134,she/her,yes,,$42000,yes,0,72,State,no,SW,2025,prospect,event,food,quarterly,4,iWave,high
+Elias Moreau,low,Ridge Foundation,94,annual,mail,C3,333,A,0.49,gold,H3048,she/her,yes,met at gala,$19000,yes,1,31,State,yes,SW,2017,donor,peer,housing,monthly,7,WealthEngine,low
+Camille Moreau,medium,Ridge Foundation,74,gala2025,phone,A1,544,C,0.95,silver,H9312,he/him,no,board intro,$17000,no,2,53,Northfield,no,NE,2008,lapsed,event,food,quarterly,3,iWave,high
+Elias Whitfield,high,Ridge Foundation,83,gala2025,mail,A1,333,C,0.57,bronze,H3368,she/her,yes,board intro,$12000,no,5,69,State,no,SW,2012,lapsed,event,arts,quarterly,7,WealthEngine,high
+Theo Delacroix,high,—,83,gala2025,phone,B2,333,B,0.56,gold,H3805,she/her,yes,board intro,$21000,yes,2,40,State,yes,NE,2008,lapsed,event,food,monthly,3,WealthEngine,low
+Marguerite Whitfield,low,Ridge Foundation,98,gala2025,email,C3,333,A,0.22,gold,H9939,they/them,yes,met at gala,$21000,no,1,21,State,no,MW,2025,prospect,web,housing,monthly,10,iWave,low
+Theo Hartley,high,Ridge Foundation,65,referral,mail,C3,544,B,0.01,gold,H2850,they/them,no,met at gala,$7000,yes,2,57,—,no,MW,2009,lapsed,event,arts,quarterly,6,iWave,high
+Elias Lindqvist,low,Ridge Foundation,94,referral,phone,B2,333,A,0.46,gold,H8105,she/her,yes,,$4000,no,3,52,—,no,MW,2020,donor,event,food,monthly,6,WealthEngine,high
+Camille Barnes,low,—,93,referral,phone,A1,111,C,0.65,bronze,H1653,he/him,yes,,$26000,no,5,36,Northfield,yes,NE,2017,donor,event,arts,monthly,6,iWave,low
+Idris Sandoval,high,Ridge Foundation,61,gala2025,phone,C3,111,A,0.49,bronze,H8152,they/them,yes,board intro,$15000,yes,3,30,—,yes,MW,2016,lapsed,web,arts,quarterly,3,WealthEngine,high
+Marguerite Hartley,low,—,58,referral,mail,B2,544,C,0.31,gold,H8802,he/him,yes,board intro,$22000,no,2,67,Northfield,no,MW,2014,prospect,peer,food,monthly,2,WealthEngine,high
+Idris Raman,low,—,92,annual,mail,C3,333,A,0.49,gold,H1999,he/him,no,,$50000,yes,8,23,—,no,MW,2016,donor,web,food,quarterly,9,iWave,low
+Theo Sandoval,high,—,64,annual,mail,C3,111,C,0.98,bronze,H2012,he/him,yes,met at gala,$36000,yes,5,67,—,no,NE,2025,lapsed,web,housing,monthly,5,WealthEngine,high
+Elias Barnes,high,Bell Trust,90,referral,phone,A1,544,B,0.11,silver,H4467,they/them,yes,,$18000,no,3,34,Northfield,no,SW,2022,prospect,peer,food,monthly,2,WealthEngine,low
+Marguerite Achebe,medium,Bell Trust,82,referral,email,C3,333,A,0.7,silver,H3264,they/them,yes,,$41000,no,5,20,State,yes,NE,2016,prospect,event,food,monthly,7,iWave,high
+Idris Okafor,low,Bell Trust,71,referral,email,A1,111,C,0.66,silver,H2653,they/them,yes,,$22000,no,5,31,State,no,SW,2010,prospect,event,arts,quarterly,4,iWave,low
+Ruth Achebe,high,—,64,referral,phone,A1,333,C,0.89,silver,H8674,he/him,yes,met at gala,$5000,yes,4,27,State,yes,SW,2020,prospect,web,arts,monthly,6,WealthEngine,low
+Priya Sandoval,high,—,71,annual,mail,B2,333,B,0.53,silver,H8657,she/her,yes,,$40000,yes,1,14,State,yes,NE,2019,donor,web,food,quarterly,9,WealthEngine,low
+Ruth Lindqvist,low,Ridge Foundation,87,referral,email,A1,111,C,1.0,silver,H9947,they/them,no,met at gala,$36000,no,2,47,—,no,MW,2015,prospect,web,food,quarterly,2,WealthEngine,high
+Elias Barnes,high,Bell Trust,42,gala2025,mail,A1,111,C,0.83,bronze,H6665,they/them,yes,board intro,$23000,no,0,41,—,yes,NE,2016,lapsed,web,housing,monthly,4,iWave,low
+Priya Lindqvist,low,Ridge Foundation,66,gala2025,mail,B2,111,B,0.99,bronze,H9299,he/him,yes,board intro,$24000,no,3,59,—,yes,MW,2012,lapsed,event,arts,quarterly,8,iWave,high
+Priya Lindqvist,medium,—,40,gala2025,phone,A1,544,A,0.65,bronze,H8273,he/him,no,board intro,$1000,yes,5,42,Northfield,no,MW,2024,prospect,event,housing,monthly,8,iWave,high
+Camille Hartley,high,—,79,annual,phone,B2,333,C,0.34,silver,H2169,they/them,no,,$45000,yes,6,20,—,yes,SW,2019,lapsed,web,food,monthly,6,iWave,high
+Marguerite Whitfield,low,Ridge Foundation,48,referral,email,C3,333,B,0.12,silver,H6609,he/him,yes,board intro,$16000,yes,5,16,—,yes,NE,2024,prospect,web,housing,monthly,3,iWave,high
+Camille Hartley,high,Ridge Foundation,57,gala2025,phone,A1,333,A,0.26,silver,H1466,they/them,yes,,$23000,yes,8,7,—,yes,NE,2015,prospect,web,food,monthly,10,iWave,high
+Marguerite Hartley,medium,Ridge Foundation,44,referral,phone,C3,544,C,0.18,silver,H8968,they/them,yes,board intro,$46000,yes,1,17,Northfield,yes,SW,2012,donor,peer,food,quarterly,7,WealthEngine,low
+Idris Whitfield,low,Bell Trust,42,gala2025,phone,A1,544,B,0.12,bronze,H4086,she/her,no,met at gala,$39000,yes,8,31,—,yes,NE,2013,lapsed,event,housing,monthly,5,WealthEngine,high
+Idris Raman,medium,Ridge Foundation,82,gala2025,phone,B2,333,C,0.8,bronze,H4949,he/him,no,board intro,$33000,yes,7,71,—,no,NE,2020,prospect,peer,housing,quarterly,6,iWave,high
+Idris Sandoval,medium,Ridge Foundation,99,referral,mail,B2,333,A,0.29,bronze,H7636,she/her,yes,board intro,$24000,no,0,29,State,yes,NE,2005,lapsed,web,arts,quarterly,9,WealthEngine,high
+Idris Delacroix,low,Ridge Foundation,95,gala2025,mail,A1,333,C,0.21,silver,H7659,they/them,yes,board intro,$39000,no,8,36,Northfield,no,NE,2024,donor,web,housing,quarterly,10,iWave,low
+Freya Whitfield,low,—,55,annual,phone,B2,544,B,0.48,bronze,H9086,they/them,no,met at gala,$33000,yes,1,40,State,yes,MW,2012,donor,event,food,monthly,9,WealthEngine,low
+Nadia Achebe,high,Bell Trust,41,gala2025,email,C3,544,A,0.54,gold,H4990,she/her,no,met at gala,$20000,no,1,36,State,no,NE,2007,prospect,peer,arts,monthly,6,iWave,low
+Ruth Moreau,low,Bell Trust,49,annual,email,C3,544,A,0.01,gold,H1117,she/her,no,met at gala,$42000,no,3,8,State,no,MW,2008,donor,web,arts,quarterly,1,WealthEngine,high
+Ruth Lindqvist,low,—,80,gala2025,email,C3,544,A,0.29,gold,H5399,he/him,no,board intro,$22000,yes,8,20,—,yes,NE,2007,donor,peer,housing,quarterly,5,WealthEngine,low
+Idris Delacroix,high,Ridge Foundation,43,gala2025,phone,B2,111,A,0.83,gold,H4747,she/her,yes,board intro,$37000,yes,6,72,State,yes,MW,2008,donor,peer,housing,quarterly,8,iWave,low
+Theo Barnes,medium,Ridge Foundation,64,gala2025,email,B2,111,A,0.34,bronze,H2965,she/her,no,board intro,$16000,yes,0,36,State,no,MW,2018,donor,peer,arts,monthly,6,WealthEngine,low
+Nadia Okafor,medium,Bell Trust,71,annual,email,B2,111,C,0.92,bronze,H6034,they/them,no,met at gala,$40000,yes,5,21,State,yes,MW,2016,lapsed,web,food,monthly,1,WealthEngine,high
+Elias Hartley,medium,—,55,referral,phone,A1,111,B,0.16,gold,H1974,he/him,no,,$2000,yes,0,15,—,no,NE,2024,prospect,web,food,monthly,8,WealthEngine,low
+Ruth Okafor,high,Bell Trust,58,gala2025,phone,A1,333,A,0.8,silver,H8233,they/them,yes,met at gala,$16000,yes,8,20,State,no,MW,2014,prospect,peer,arts,monthly,1,iWave,low
+Idris Barnes,medium,Ridge Foundation,70,gala2025,mail,A1,111,B,0.47,silver,H2151,they/them,yes,met at gala,$48000,yes,9,19,—,no,SW,2013,donor,event,arts,quarterly,8,WealthEngine,high
+Priya Whitfield,low,Bell Trust,55,referral,mail,C3,544,B,0.51,bronze,H6203,he/him,yes,met at gala,$41000,yes,0,79,State,no,MW,2015,prospect,event,arts,quarterly,2,WealthEngine,high
+Desmond Hartley,high,—,74,referral,mail,B2,111,B,0.47,silver,H3270,she/her,no,,$41000,no,6,25,State,yes,NE,2023,donor,web,housing,monthly,7,iWave,low
+Desmond Whitfield,medium,Ridge Foundation,95,annual,phone,A1,544,C,0.18,bronze,H5774,he/him,no,,$39000,yes,8,37,Northfield,yes,SW,2010,prospect,event,food,quarterly,7,iWave,high
+Ruth Hartley,medium,—,71,referral,phone,B2,544,A,0.29,silver,H9485,he/him,yes,,$35000,no,5,74,State,yes,MW,2010,lapsed,peer,food,quarterly,5,iWave,high
+Priya Barnes,high,Ridge Foundation,65,referral,email,B2,333,B,0.63,bronze,H2760,he/him,no,board intro,$2000,no,7,18,State,no,SW,2016,lapsed,event,arts,monthly,5,WealthEngine,high
+Desmond Raman,high,Bell Trust,54,gala2025,phone,B2,544,C,0.79,silver,H3467,they/them,yes,met at gala,$35000,no,4,56,State,no,MW,2021,donor,web,food,quarterly,1,iWave,high
+Desmond Sandoval,low,Bell Trust,41,annual,email,B2,111,A,0.16,bronze,H1763,they/them,yes,met at gala,$16000,yes,9,17,State,yes,MW,2020,lapsed,peer,arts,monthly,1,WealthEngine,high
+Elias Whitfield,low,Bell Trust,90,referral,email,C3,544,B,0.36,gold,H7985,he/him,no,,$27000,no,1,54,—,yes,MW,2006,prospect,peer,food,quarterly,7,WealthEngine,low
+Elias Delacroix,high,Bell Trust,70,referral,mail,B2,111,A,0.02,bronze,H9162,they/them,yes,met at gala,$28000,no,4,72,Northfield,yes,NE,2012,donor,web,food,monthly,4,WealthEngine,high
+Idris Whitfield,medium,Bell Trust,61,gala2025,mail,B2,333,C,0.44,silver,H5437,they/them,yes,met at gala,$8000,no,6,8,—,yes,NE,2019,prospect,event,arts,quarterly,2,iWave,low
+Desmond Okafor,medium,—,97,annual,email,A1,544,A,0.18,silver,H5532,they/them,no,met at gala,$28000,no,5,16,—,yes,NE,2018,donor,event,food,quarterly,8,WealthEngine,high
+Theo Moreau,low,Bell Trust,91,gala2025,mail,A1,544,B,0.16,bronze,H1782,he/him,yes,board intro,$29000,yes,7,53,Northfield,no,MW,2021,prospect,web,housing,monthly,7,WealthEngine,high
+Theo Sandoval,high,—,47,gala2025,mail,B2,333,B,0.78,gold,H1000,they/them,no,met at gala,$10000,no,2,58,State,no,SW,2020,donor,peer,food,monthly,4,iWave,low
+Elias Delacroix,low,Ridge Foundation,81,referral,phone,C3,333,B,0.89,silver,H7202,she/her,yes,board intro,$30000,no,5,18,Northfield,no,MW,2024,lapsed,peer,housing,monthly,2,iWave,low
+Camille Hartley,medium,Ridge Foundation,41,gala2025,phone,C3,111,A,0.69,gold,H7656,she/her,yes,board intro,$12000,no,6,64,Northfield,no,SW,2011,lapsed,peer,arts,monthly,8,WealthEngine,high
+Theo Moreau,medium,Bell Trust,95,referral,email,A1,544,A,0.08,gold,H9242,they/them,no,met at gala,$48000,no,9,33,State,no,SW,2020,donor,peer,housing,quarterly,2,iWave,low
+Freya Barnes,high,Bell Trust,71,annual,email,B2,111,A,0.58,silver,H2692,they/them,yes,,$6000,no,4,14,State,no,SW,2023,prospect,web,arts,monthly,4,iWave,high
+Nadia Barnes,medium,Ridge Foundation,62,referral,mail,C3,544,C,0.6,gold,H5990,he/him,no,,$13000,no,6,26,Northfield,no,NE,2009,prospect,event,arts,quarterly,6,WealthEngine,high
+Elias Hartley,low,Bell Trust,57,referral,email,C3,111,A,0.61,bronze,H9959,he/him,no,board intro,$32000,no,9,78,Northfield,no,MW,2021,prospect,event,housing,quarterly,9,WealthEngine,low
+Elias Whitfield,low,—,59,referral,mail,A1,544,C,0.76,gold,H5019,she/her,yes,,$48000,yes,1,33,Northfield,yes,NE,2023,lapsed,peer,arts,quarterly,4,iWave,low
+Camille Achebe,high,Bell Trust,41,referral,email,A1,544,C,0.75,silver,H7066,she/her,no,met at gala,$49000,no,0,74,—,no,SW,2006,lapsed,event,arts,quarterly,3,iWave,high
+Priya Delacroix,low,Bell Trust,40,referral,email,C3,333,C,0.07,gold,H5202,she/her,no,met at gala,$48000,yes,6,44,Northfield,yes,MW,2005,prospect,peer,housing,monthly,9,iWave,low
+Freya Okafor,high,Bell Trust,90,annual,mail,A1,544,C,0.28,gold,H4703,they/them,yes,board intro,$7000,yes,1,42,State,yes,MW,2017,prospect,event,food,quarterly,8,iWave,low
+Theo Barnes,medium,Ridge Foundation,94,gala2025,phone,B2,544,A,0.32,bronze,H6753,they/them,yes,board intro,$23000,yes,3,59,—,yes,MW,2025,lapsed,event,food,monthly,9,iWave,high
+Nadia Okafor,low,—,79,referral,phone,C3,333,B,0.71,gold,H6507,she/her,no,board intro,$29000,yes,9,69,Northfield,no,NE,2018,prospect,peer,housing,monthly,4,WealthEngine,low
+Ruth Lindqvist,high,Bell Trust,94,referral,phone,A1,333,C,0.93,silver,H6746,she/her,no,,$28000,no,7,66,State,yes,SW,2022,lapsed,web,food,quarterly,3,WealthEngine,low
+Idris Hartley,low,—,90,gala2025,email,A1,111,C,0.18,bronze,H6303,he/him,no,met at gala,$47000,no,3,38,Northfield,yes,SW,2015,prospect,web,arts,monthly,1,iWave,low
+Camille Moreau,medium,Bell Trust,80,referral,phone,A1,333,B,0.27,bronze,H6446,he/him,no,met at gala,$32000,yes,0,63,Northfield,no,MW,2010,lapsed,peer,food,monthly,10,WealthEngine,high
+Camille Sandoval,high,Bell Trust,70,referral,email,B2,333,A,0.92,bronze,H7291,they/them,no,met at gala,$35000,yes,9,52,Northfield,no,MW,2011,lapsed,peer,arts,monthly,8,WealthEngine,low
+Ruth Achebe,high,—,88,annual,mail,C3,333,A,0.44,bronze,H1227,she/her,yes,,$17000,no,2,13,Northfield,yes,NE,2013,lapsed,peer,housing,monthly,3,WealthEngine,high
+Elias Okafor,medium,—,77,referral,email,A1,544,B,0.78,gold,H3049,they/them,yes,,$11000,yes,0,9,—,yes,SW,2016,prospect,web,food,quarterly,4,iWave,low
+Theo Lindqvist,medium,Ridge Foundation,98,referral,mail,C3,544,C,0.1,bronze,H6363,he/him,no,board intro,$31000,yes,8,17,—,yes,SW,2022,lapsed,event,housing,monthly,2,WealthEngine,high
+Ruth Achebe,low,Bell Trust,40,referral,mail,C3,333,C,0.63,bronze,H2104,she/her,no,met at gala,$22000,yes,3,70,Northfield,no,SW,2007,lapsed,web,arts,monthly,6,WealthEngine,low
+Ruth Okafor,medium,Bell Trust,57,annual,phone,C3,111,C,0.73,bronze,H5787,he/him,yes,,$43000,no,8,39,State,yes,MW,2025,donor,event,arts,monthly,4,iWave,high
+Marguerite Barnes,medium,—,72,referral,email,A1,333,B,0.67,silver,H2267,she/her,no,met at gala,$46000,yes,9,25,State,yes,NE,2015,lapsed,web,housing,quarterly,1,WealthEngine,high
+Marguerite Okafor,high,Bell Trust,84,referral,phone,A1,111,A,0.53,gold,H2936,she/her,yes,,$50000,no,7,57,State,no,SW,2016,lapsed,event,arts,monthly,3,iWave,high
+Freya Moreau,high,Ridge Foundation,48,annual,phone,A1,333,C,0.63,silver,H1765,he/him,no,met at gala,$48000,yes,2,44,Northfield,yes,SW,2023,prospect,web,arts,quarterly,9,WealthEngine,low
+Theo Whitfield,low,Bell Trust,67,referral,mail,A1,544,C,0.88,silver,H2415,he/him,no,,$19000,yes,3,14,State,yes,MW,2024,prospect,event,food,quarterly,9,iWave,high
+Freya Raman,medium,—,66,gala2025,email,B2,333,A,0.56,bronze,H9465,he/him,yes,met at gala,$34000,no,4,59,State,no,MW,2006,prospect,event,housing,quarterly,3,WealthEngine,low
+Idris Okafor,low,—,50,gala2025,email,B2,544,A,0.51,silver,H9266,he/him,yes,met at gala,$21000,no,0,27,Northfield,no,NE,2013,prospect,peer,arts,monthly,9,WealthEngine,high
+Marguerite Whitfield,medium,—,44,annual,email,C3,333,A,0.35,bronze,H9826,he/him,no,met at gala,$21000,yes,8,76,—,yes,NE,2014,donor,event,food,monthly,5,WealthEngine,high
+Idris Achebe,high,—,51,gala2025,email,C3,333,A,0.52,silver,H4098,he/him,no,met at gala,$45000,no,3,58,—,yes,MW,2015,lapsed,event,food,monthly,5,iWave,high
+Freya Moreau,low,—,48,gala2025,mail,A1,333,C,0.36,gold,H2236,she/her,no,board intro,$27000,yes,3,61,State,no,MW,2024,lapsed,peer,food,monthly,10,iWave,low
+Camille Lindqvist,high,Bell Trust,57,annual,email,A1,544,C,0.02,bronze,H5958,she/her,no,,$45000,no,2,6,State,no,SW,2007,donor,web,housing,monthly,7,WealthEngine,high
+Elias Hartley,medium,—,71,gala2025,phone,A1,111,A,0.22,bronze,H4952,she/her,yes,met at gala,$24000,no,0,77,State,yes,MW,2020,donor,peer,housing,quarterly,8,iWave,low
+Nadia Moreau,low,Ridge Foundation,72,gala2025,phone,C3,111,A,0.27,silver,H4292,she/her,no,board intro,$37000,no,6,58,—,no,NE,2024,lapsed,web,food,monthly,1,iWave,low
+Idris Barnes,low,Ridge Foundation,47,annual,phone,B2,333,A,0.28,bronze,H5259,he/him,no,,$37000,no,5,21,State,no,MW,2020,lapsed,event,food,quarterly,5,WealthEngine,high
+Idris Barnes,low,Bell Trust,84,referral,mail,B2,333,B,0.67,bronze,H8451,she/her,yes,met at gala,$34000,yes,9,69,State,yes,MW,2006,prospect,web,arts,quarterly,2,WealthEngine,low
+Elias Lindqvist,high,—,42,gala2025,email,A1,544,C,0.94,bronze,H1540,she/her,no,met at gala,$3000,no,1,1,—,yes,MW,2025,lapsed,web,housing,monthly,1,iWave,low
+Nadia Barnes,high,Ridge Foundation,62,gala2025,phone,C3,544,C,0.69,gold,H1589,they/them,no,board intro,$33000,yes,8,70,—,yes,NE,2012,lapsed,peer,arts,quarterly,2,iWave,high
+Priya Raman,medium,Bell Trust,63,gala2025,email,A1,111,C,0.28,silver,H9090,she/her,no,,$12000,yes,9,47,Northfield,no,NE,2007,prospect,web,housing,quarterly,7,WealthEngine,high
+Desmond Sandoval,low,Bell Trust,63,gala2025,mail,A1,333,C,0.9,bronze,H3737,she/her,no,met at gala,$15000,yes,8,11,—,no,NE,2005,prospect,event,food,monthly,4,WealthEngine,high
+Ruth Hartley,low,—,46,gala2025,mail,A1,111,B,0.98,bronze,H6125,he/him,no,met at gala,$23000,yes,7,38,—,no,NE,2008,lapsed,web,housing,monthly,2,iWave,low
+Priya Delacroix,low,—,88,referral,phone,A1,111,A,0.02,gold,H3346,he/him,yes,met at gala,$27000,no,3,51,—,no,NE,2020,prospect,peer,housing,monthly,6,WealthEngine,high
+Desmond Achebe,medium,—,63,referral,mail,A1,333,A,0.66,silver,H2345,she/her,no,,$50000,yes,6,33,State,no,MW,2022,prospect,event,arts,monthly,4,WealthEngine,low
+Nadia Raman,high,—,71,referral,mail,A1,544,A,0.6,gold,H6111,she/her,yes,board intro,$40000,no,4,65,State,no,SW,2011,lapsed,web,housing,quarterly,3,WealthEngine,high
+Freya Okafor,medium,Ridge Foundation,89,annual,mail,C3,333,C,0.28,gold,H1882,he/him,yes,met at gala,$46000,no,8,14,State,yes,SW,2018,donor,event,arts,quarterly,1,WealthEngine,low
+Elias Sandoval,medium,—,46,annual,phone,C3,333,A,0.13,silver,H5851,he/him,yes,,$26000,no,6,6,State,yes,SW,2012,prospect,peer,arts,quarterly,3,iWave,low

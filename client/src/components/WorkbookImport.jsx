@@ -15,7 +15,8 @@ import {
   STANDARD_DONOR_FIELDS, STANDARD_GIFT_FIELDS, inferDateConventionCells,
   IMPORT_PROMISE_FIELDS, buildImportPromise, importReceiptValue,
 } from "../../../shared/importShape";
-import { detectExclusionColumn, proposeCustomField, proposalEvidenceText, CF_TYPES } from "../../../shared/customFieldShape";
+import { detectExclusionColumn, proposeCustomField, proposalEvidenceText } from "../../../shared/customFieldShape";
+import { ColumnTargetSelect } from "./ColumnTargetSelect";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? (T.green600 || "#1e6b45") : r === "pledges" || r === "recurring" ? (T.gold600 || "#a97f22") : T.ink3;
@@ -61,7 +62,6 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const [signalAnswers, setSignalAnswers] = useState({});
   const [mappingOverrides, setMappingOverrides] = useState({});   // sheet → header → stdKey|""
   const [cfChoices, setCfChoices] = useState({});                  // sheet → header → {action, entity, key, fieldId, label}
-  const [newFieldDraft, setNewFieldDraft] = useState(null);        // {sheet, header, label, type, entity}
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [submission, setSubmission] = useState(null);
   const [linkPreview, setLinkPreview] = useState(null);            // gift-alone pre-write link counts (server dryRun)
@@ -139,12 +139,6 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   };
 
   const setTarget = (sheetName, col, value) => {
-    if (value === "__new__") {
-      setNewFieldDraft({ sheet: sheetName, header: col.header, label: String(col.header).trim().slice(0, 60),
-        type: col.proposal.type, entity: col.entity });
-      return;
-    }
-    setNewFieldDraft(null);
     if (value.startsWith("std:")) {
       setMappingOverrides(p => ({ ...p, [sheetName]: { ...(p[sheetName] || {}), [col.header]: value.slice(4) } }));
       setCfChoices(p => ({ ...p, [sheetName]: { ...(p[sheetName] || {}), [col.header]: undefined } }));
@@ -159,21 +153,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     }
   };
 
-  // Part 4.1 — the field exists the moment it's created, and the column maps to it.
-  const createField = async () => {
-    const d = newFieldDraft;
-    if (!d || !d.label.trim()) return;
-    try {
-      const created = await apiFetch("/custom-fields", { method: "POST", body: JSON.stringify({
-        entity: d.entity, label: d.label.trim(), type: d.type, options: [],
-        source: `import of ${fileName || "workbook"}`,
-      })});
-      setCfDefs(p => ({ ...p, [created.entity]: [...p[created.entity], created] }));
-      setMappingOverrides(p => ({ ...p, [d.sheet]: { ...(p[d.sheet] || {}), [d.header]: "" } }));
-      setCfChoices(p => ({ ...p, [d.sheet]: { ...(p[d.sheet] || {}), [d.header]: { action: "existing", entity: created.entity, key: created.key, fieldId: created.id, label: created.label } } }));
-      setNewFieldDraft(null);
-    } catch (e) { setErr(e.message || "Could not create the field."); }
-  };
+  // Part 4.1 — the field exists the moment it's created and the column maps to
+  // it. That flow lives in ColumnTargetSelect now (one copy, every mapper).
 
   // ── build the ONE submission (summary + write share it) ──────────────────
   const buildNow = async () => {
@@ -386,7 +367,6 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
               )}
               {ms.columns.map(col => {
                 const t = targetOf(ms.name, col);
-                const isDraft = newFieldDraft && newFieldDraft.sheet === ms.name && newFieldDraft.header === col.header;
                 return (
                   <div key={col.header} data-wb-col={col.header} style={{ borderTop: `1px solid ${T.bg3}`, padding: "8px 0" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -395,56 +375,38 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                         {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#b8593f", marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column — not auto-mapped</span>}
                         <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 8 }}>e.g. “{String(col.sample ?? "").slice(0, 28)}”</span>
                       </div>
-                      {col.excl ? (
-                        <div style={{ fontSize: 12, fontWeight: 700, color: T.gold600 || "#a97f22" }}>→ safety flags ({col.excl.flag}) — locked</div>
-                      ) : (
-                        <select value={t === "flag" ? "ignore" : t} onChange={e => setTarget(ms.name, col, e.target.value)}
-                          data-testid={`wb-map-${col.header}`}
-                          style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, color: T.ink, cursor: "pointer", maxWidth: 320 }}>
-                          <optgroup label="Standard fields">
-                            {stdList.filter(f => !f.flag).map(f => {
-                              const v = `std:${f.key}`;
-                              return <option key={f.key} value={v} disabled={takenStd.has(f.key) && t !== v}>{f.label}</option>;
-                            })}
-                          </optgroup>
-                          {cfDefs[ms.entity].filter(d => !d.archived_at && !d.archivedAt).length > 0 && (
-                            <optgroup label="Your custom fields">
-                              {cfDefs[ms.entity].filter(d => !d.archived_at && !d.archivedAt).map(d => <option key={d.id} value={`cf:${d.id}`}>{d.label}</option>)}
-                            </optgroup>
-                          )}
-                          <optgroup label="—">
-                            <option value="__new__">＋ New custom field…</option>
-                            <option value="ignore">Don't import this column</option>
-                          </optgroup>
-                        </select>
-                      )}
+                      {/* FIX (2026-09-09) — the ONE column-target dropdown. This
+                          screen's own copy was the only one that had all three
+                          groups; it is now the shared component every mapper
+                          renders. */}
+                      <ColumnTargetSelect
+                        testId={`wb-map-${col.header}`}
+                        header={col.header} entity={ms.entity}
+                        standardFields={stdList.filter(f => !f.flag).map(f => ({ key: f.key, label: f.label }))}
+                        cfDefs={cfDefs}
+                        proposal={col.proposal}
+                        value={t === "flag" ? "ignore" : t}
+                        takenStd={takenStd}
+                        locked={col.excl ? col.excl.flag : null}
+                        evidence={col.excl ? `Values match the exclusion family — routed to ${col.excl.flag}; never a custom field.`
+                          : t.startsWith("std:") ? (col.evidence || `mapped to ${t.slice(4)}`)
+                          : t.startsWith("cf:") || t.startsWith("new:") ? `→ custom field “${(cfChoices[ms.name] || {})[col.header]?.label}”`
+                          : proposalEvidenceText(col.proposal.type, col.proposal.evidence)}
+                        onChange={v => setTarget(ms.name, col, v === "ignore" ? "ignore" : v)}
+                        onCreateField={async draft => {
+                          const created = await apiFetch("/custom-fields", { method: "POST", body: JSON.stringify({
+                            entity: draft.entity, label: draft.label, type: draft.type, options: draft.options || [],
+                            source: `import of ${fileName || "workbook"}`,
+                          })});
+                          setCfDefs(p => ({ ...p, [created.entity]: [...p[created.entity], created] }));
+                          setMappingOverrides(p => ({ ...p, [ms.name]: { ...(p[ms.name] || {}), [col.header]: "" } }));
+                          setCfChoices(p => ({ ...p, [ms.name]: { ...(p[ms.name] || {}), [col.header]: { action: "existing", entity: created.entity, key: created.key, fieldId: created.id, label: created.label } } }));
+                          return created;
+                        }}
+                      />
                     </div>
-                    <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }}>
-                      {col.excl ? `Values match the exclusion family — routed to ${col.excl.flag}; never a custom field.`
-                        : t.startsWith("std:") ? (col.evidence || `mapped to ${t.slice(4)}`)
-                        : t.startsWith("cf:") || t.startsWith("new:") ? `→ custom field “${(cfChoices[ms.name] || {})[col.header]?.label}”`
-                        : proposalEvidenceText(col.proposal.type, col.proposal.evidence)}
-                    </div>
-                    {isDraft && (
-                      <div data-testid="wb-new-field" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", background: T.bg, borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
-                        <input value={newFieldDraft.label} onChange={e => setNewFieldDraft(p => ({ ...p, label: e.target.value }))}
-                          style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 8px", fontSize: 12.5, width: 180 }} />
-                        <select value={newFieldDraft.type} onChange={e => setNewFieldDraft(p => ({ ...p, type: e.target.value }))}
-                          style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 8px", fontSize: 12.5 }}>
-                          {CF_TYPES.map(tp => <option key={tp} value={tp}>{tp.replace("_", " ")}</option>)}
-                        </select>
-                        <select value={newFieldDraft.entity} onChange={e => setNewFieldDraft(p => ({ ...p, entity: e.target.value }))}
-                          style={{ border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 8px", fontSize: 12.5 }}>
-                          <option value="donor">on the donor</option>
-                          <option value="gift">on the gift</option>
-                        </select>
-                        <button onClick={createField} data-testid="wb-create-field"
-                          style={{ background: T.green600 || "#1e6b45", color: "#fff", border: "none", borderRadius: 7, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                          Create field
-                        </button>
-                        <span style={{ fontSize: 11, color: T.ink3 }}>{proposalEvidenceText(col.proposal.type, col.proposal.evidence)}</span>
-                      </div>
-                    )}
+                    {/* the old inline creator + evidence line lived here; both
+                        are inside ColumnTargetSelect now, so there is one copy. */}
                   </div>
                 );
               })}

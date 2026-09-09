@@ -6,7 +6,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
-import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
+import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -34,6 +34,7 @@ import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 import { DonorMap } from "./DonorMap";
 import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
+import { ColumnTargetSelect } from "./ColumnTargetSelect";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -60,6 +61,24 @@ const CSV_FIELDS = [
   { key:"doNotContact", labels:["do not contact","do not solicit","do not mail","do not email","dnc","dns","no contact"] },
 ];
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
+// FIX (2026-09-09) — the CSV donor shape's standard vocabulary in the shape the
+// ONE column-target dropdown takes. Labels are what a person reads, not the
+// internal key: "lastAmount" was rendered raw in the old flat list.
+const CSV_FIELD_LABELS = {
+  name: "Full name", email: "Email", phone: "Phone", total: "Lifetime giving",
+  lastAmount: "Last gift amount", lastGift: "Last gift date", gifts: "Gift count",
+  status: "Status", city: "City", state: "State", notes: "Notes", owner: "Owner",
+  deceased: "Deceased", doNotContact: "Do not contact",
+};
+const CSV_STANDARD_FIELDS = [
+  { key: "_firstName", label: "First name" },
+  { key: "_lastName", label: "Last name" },
+  ...CSV_FIELDS.map(f => ({ key: f.key, label: CSV_FIELD_LABELS[f.key] || f.key,
+                            flag: f.key === "deceased" || f.key === "doNotContact" })),
+  { key: "deceased", label: "Deceased" },
+  { key: "doNotContact", label: "Do not contact" },
+].filter((f, i, arr) => arr.findIndex(x => x.key === f.key) === i)
+ .map(f => ({ ...f, flag: false }));
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
 
 // Donor-to-donor relationship types (server.js's DONOR_RELATIONSHIP_TYPES) —
@@ -76,6 +95,39 @@ const DONOR_RELATIONSHIP_LABELS = [
 // Headers that negate a contact field — never map to that field
 const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe", "no email", "no phone", "no mail", "do not contact"];
 
+// FIX (2026-09-09) item 3 — WHOLE-HEADER MATCHING, never substring. The old
+// rule was `h.includes(label)`, which is how a 30-column prospect-research
+// export mapped `contact_confidence` to NAME (it contains "contact"),
+// `capacity_estimate` to CITY (it contains "capacity"→"city") and `region_code`
+// to STATE. This is the same defect BUILD-82 fixed for the workbook mapper
+// ("Unnamed: 31" became the name column and threw away 23,867 donors); the CSV
+// path still had it. A label now matches only as the WHOLE normalised header or
+// a whole word-run inside it — "last gift date" still matches "Last Gift Date",
+// "contact" no longer matches "contact_confidence".
+const _normHdr = h => String(h || "").toLowerCase().replace(/[?_.:#/\\-]+/g, " ").replace(/\s+/g, " ").trim();
+// Words that turn a SUBJECT into a MEASUREMENT ABOUT the subject. "Email
+// Address" is still an email; "contact confidence" is not a contact, and
+// "region code" is not a region. This list is the difference between the two,
+// and it is why a header may match a label at its leading edge at all.
+const _QUALIFIER_WORDS = new Set(["code", "confidence", "score", "estimate", "band", "tier",
+  "rank", "rating", "index", "level", "pref", "prefs", "preference", "indicator", "propensity",
+  "affinity", "eligible", "eligibility", "hours", "history", "key", "flag", "bucket", "segment",
+  "percentile", "decile", "grade", "quality", "match", "vendor", "source"]);
+function _headerMatchesLabel(header, label) {
+  const h = _normHdr(header), l = _normHdr(label);
+  if (!h || !l) return false;
+  if (h === l) return true;
+  const hw = h.split(" "), lw = l.split(" ");
+  if (lw.length >= hw.length) return false;
+  // TRAILING run: "contact name" is a name, "primary donor name" is a donor name.
+  if (hw.slice(-lw.length).join(" ") === l) return true;
+  // LEADING run: only when what follows is not a qualifier — "email address"
+  // is an email, "region code" is not a region.
+  if (hw.slice(0, lw.length).join(" ") === l) {
+    return !hw.slice(lw.length).some(w => _QUALIFIER_WORDS.has(w));
+  }
+  return false;
+}
 function guessField(header) {
   if (!header || !String(header).trim()) return "";
   const h = String(header).toLowerCase().trim();
@@ -90,7 +142,7 @@ function guessField(header) {
   if (h === "first" || h === "first name" || h === "firstname" || h === "given name") return "_firstName";
   if (h === "last"  || h === "last name"  || h === "lastname"  || h === "surname" || h === "family name") return "_lastName";
   for (const f of CSV_FIELDS) {
-    if (f.labels.some(l => h === l || h.includes(l))) return f.key;
+    if (f.labels.some(l => _headerMatchesLabel(header, l))) return f.key;
   }
   return "";
 }
@@ -230,13 +282,21 @@ function buildAutoMapping(headers, rows = []) {
   const guesses = headers.map(h => ({ h, g: guessField(h) }));
   const hasSingleName = guesses.some(x => x.g === "name");
   const auto = {};
+  // FIX (2026-09-09) item 3 — a guess that duplicates a target another column
+  // already took is DROPPED, not made. Two columns cannot become one field, and
+  // an automatic mapping is the last place that should be discovered: the
+  // 30-column export put contact_name and contact_confidence on `name` and the
+  // second silently won. First header wins; the rest are left for a human.
+  const taken = new Set();
   guesses.forEach(({ h, g }) => {
     if (!g) return;
     if (hasSingleName && (g === "_firstName" || g === "_lastName")) return;
+    if (taken.has(g)) return;
     // BUILD-79 Part 5 — every guess passes its own type check over the FULL
     // values (a 10-row sample once let phone-shaped columns map to email).
     if (!validateMappingChoice(headers, rows, h, g).ok) return;
     auto[h] = g;
+    taken.add(g);
   });
   return auto;
 }
@@ -574,6 +634,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const [physicalCols, setPhysicalCols] = useState(null);   // { headerCells, orphanColumns, overflowRows, total } — parse entry, never derived from the mapping
   const [parseReport, setParseReport] = useState(null);
   const [mapRefusal, setMapRefusal] = useState(null);       // BUILD-79 Part 5 — last refused mapping choice + its evidence
+  // FIX (2026-09-09) — a CSV donor column can now land in a custom field too,
+  // so the donor mapper carries the same two-axis decision the workbook does:
+  // `mapping` for standard targets, `donorCfChoices` for custom ones.
+  const [donorCfChoices, setDonorCfChoices] = useState({});  // header → {fieldId,key,entity,label}
   const [dateConventionChoice, setDateConventionChoice] = useState(null); // BUILD-80 Part 2.2 — a human's answer for a MIXED date column     // BUILD-79 Part 1 — { records, chromeAbove, chromeRows, totalRow, headerLine, cp1252Lines } from parse entry
   const [cfDefs, setCfDefs] = useState({ donor: [], gift: [] });
   const [savedCfMappings, setSavedCfMappings] = useState([]);
@@ -618,6 +682,32 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     apiFetch("/custom-fields?entity=gift").then(r=>setCfDefs(p=>({...p,gift:Array.isArray(r)?r:[]}))).catch(()=>{});
     apiFetch("/import-field-mappings").then(r=>setSavedCfMappings(Array.isArray(r)?r:[])).catch(()=>{});
   }, []);
+
+  // FIX (2026-09-09) item 2 — TWO COLUMNS CANNOT BECOME ONE FIELD. A standard
+  // target another column already claims is disabled in the dropdown, and the
+  // Import button refuses by name if one slips through (an AI/auto guess, a
+  // stale mapping). No standard donor field legitimately takes two sources:
+  // first/last name are two DIFFERENT fields, and a second email is `email2`
+  // on the workbook side — a shape that grows one gets an exception here, with
+  // its reason, not a silent overwrite.
+  const MULTI_SOURCE_DONOR_FIELDS = new Set();
+  const takenDonorTargets = (exceptHeader) => {
+    const taken = new Set();
+    for (const [h, f] of Object.entries(mapping)) {
+      if (!f || h === exceptHeader || MULTI_SOURCE_DONOR_FIELDS.has(f)) continue;
+      taken.add(f);
+    }
+    return taken;
+  };
+  const duplicateDonorTargets = useMemo(() => {
+    const byField = {};
+    for (const [h, f] of Object.entries(mapping)) {
+      if (!f || MULTI_SOURCE_DONOR_FIELDS.has(f)) continue;
+      (byField[f] = byField[f] || []).push(h);
+    }
+    return Object.entries(byField).filter(([, hs]) => hs.length > 1)
+      .map(([f, hs]) => ({ field: f, headers: hs }));
+  }, [mapping]);
 
   const effectiveShape = shapeOverride || shape;
   // BUILD-79 Part 2.2 — totals mode refuses when >1/3 of keyed rows collapse
@@ -704,13 +794,30 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       const sample = parsed.rows[0] || {};
       const res = await apiFetch("/ai/column-map", { method:"POST", body:JSON.stringify({ headers:parsed.headers, sample }) });
       if (res.mapping) {
+        // FIX (2026-09-09) item 3 — a CONTENTS-based guess is low confidence by
+        // construction: it is reading values, not a header anyone wrote. So it
+        // may only FILL a target nothing else claims — it never overwrites a
+        // mapping already made, and never duplicates a target another column
+        // took. Anything it cannot place safely defaults to skip, which is the
+        // honest outcome for a guess nobody can check.
         const merged = { ...mapping };
+        const taken = new Set(Object.values(merged).filter(Boolean));
+        const dropped = [];
         Object.entries(res.mapping).forEach(([h, f]) => {
+          if (!f || !VALID_IMPORT_KEYS.has(f)) return;
+          if (merged[h]) return;                                   // a human/auto choice stands
+          if (taken.has(f)) { dropped.push([h, f]); return; }      // never two columns → one field
           // BUILD-79 Part 5 — the model's guesses pass the same type checks a
           // human's choices do. Spouse→lastName and phone→email died here.
-          if (f && VALID_IMPORT_KEYS.has(f) && validateMappingChoice(parsed.headers, parsed.rows, h, f).ok) merged[h] = f;
+          if (!validateMappingChoice(parsed.headers, parsed.rows, h, f).ok) { dropped.push([h, f]); return; }
+          merged[h] = f;
+          taken.add(f);
         });
         setMapping(merged);
+        if (dropped.length) {
+          setMapRefusal({ header: dropped[0][0], field: dropped[0][1],
+            summary: `a contents guess can't take a field another column already has — ${dropped.length} guess${dropped.length === 1 ? "" : "es"} left for you to place` });
+        }
       }
     } catch { /* keep existing mapping on AI failure */ }
     setAiLoading(false);
@@ -826,6 +933,15 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const doImport = async () => {
     // BUILD-79 Part 2 — shape is a decision with evidence, or a question.
     if (effectiveShape === "unknown") { setErr("Choose how this file is shaped before importing — we couldn't tell from the columns."); return; }
+    // FIX (2026-09-09) item 2 — two columns mapped to one field is a refusal by
+    // name, never a silent last-one-wins. (Auto-mapping put contact_name AND
+    // contact_confidence on `name` and nothing objected.)
+    if (duplicateDonorTargets.length) {
+      const d = duplicateDonorTargets[0];
+      const label = (CSV_STANDARD_FIELDS.find(f => f.key === d.field) || {}).label || d.field;
+      setErr(`Two columns are mapped to ${label.toLowerCase()} — “${d.headers.join("” and “")}”. Pick one, or send the other somewhere else.`);
+      return;
+    }
     if (aggregateCollapse?.refuse) { setErr(`${aggregateCollapse.collapsed.toLocaleString()} of ${aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto the same donors — this file is one row per gift. Switch the shape to individual gifts.`); return; }
     // BUILD-80 Part 2.2 — a MIXED date column is a question, never a guess.
     if (dateConvEvidence?.convention === "mixed" && !dateConventionChoice) {
@@ -874,6 +990,25 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       console.error("IMPORT FIELD SETUP FAILED:", e);
       setErr(e.message || "Could not create the custom fields. Nothing was imported.");
       setLoading(false); return;
+    }
+    // FIX (2026-09-09) — a CSV donor column mapped to a custom field carries its
+    // raw value on the row; the server validates it through the ONE seam
+    // (BUILD-78) exactly as the workbook path does.
+    if (Object.keys(donorCfChoices).length && activePayload && Array.isArray(activePayload.donors)) {
+      const entries = Object.entries(donorCfChoices);
+      activePayload = {
+        ...activePayload,
+        donors: activePayload.donors.map((d, i) => {
+          const row = parsed.rows[d._rowIndex != null ? d._rowIndex - 2 : i];
+          if (!row) return d;
+          const cf = {};
+          for (const [h, choice] of entries) {
+            const v = String(row[h] ?? "").trim();
+            if (v && choice.entity === "donor") cf[choice.key] = v;
+          }
+          return Object.keys(cf).length ? { ...d, customFields: { ...(d.customFields || {}), ...cf } } : d;
+        }),
+      };
     }
     const { donors: rawDonors, gifts, warnedCount, skippedCount, error } = activePayload;
     if (error) { setErr("Failed to prepare import data — " + error + ". Check the browser console."); setLoading(false); return; }
@@ -2068,21 +2203,50 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                 {donorHeaders.map(h => (
                   <div key={h} style={{display:"flex",alignItems:"center",gap:6,background:mapping[h]?T.bg:"transparent",borderRadius:7,padding:"5px 8px",border:`1px solid ${mapping[h]?T.bg3:"transparent"}`}}>
                     <span style={{fontSize:12,color:mapping[h]?T.ink:T.ink3,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}} title={h||"(blank)"}>{h||"(blank)"}</span>
-                    <select value={mapping[h]||""} onChange={e=>{
-                      const field=e.target.value;
-                      // BUILD-79 Part 5 — a column that fails its own type
-                      // check cannot be mapped to that type, by anyone.
-                      const v=validateMappingChoice(parsed.headers,parsed.rows,h,field);
-                      if(!v.ok){setMapRefusal({header:h,field,summary:v.summary});return;}
-                      setMapRefusal(null);
-                      setMapping(p=>({...p,[h]:field}));
-                    }}
-                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 6px",color:T.ink,fontSize:11,outline:"none",flexShrink:0}}>
-                      <option value="">— skip —</option>
-                      <option value="_firstName">firstName</option>
-                      <option value="_lastName">lastName</option>
-                      {CSV_FIELDS.map(f=><option key={f.key} value={f.key}>{f.key}</option>)}
-                    </select>
+                    {/* FIX (2026-09-09) — the ONE column-target dropdown: standard
+                        fields, the org's existing custom fields, and a new one
+                        created right here. This screen used to show a flat list
+                        of 17 internal keys and no way to make a home for a column
+                        it didn't recognise. */}
+                    <ColumnTargetSelect
+                      testId={`donor-map-${h}`}
+                      header={h} entity="donor" compact
+                      standardFields={CSV_STANDARD_FIELDS}
+                      cfDefs={cfDefs}
+                      proposal={proposeCustomField(h, parsed.rows.map(r=>r[h]))}
+                      value={mapping[h] ? `std:${mapping[h]}` : (donorCfChoices[h] ? `cf:${donorCfChoices[h].fieldId}` : "ignore")}
+                      takenStd={takenDonorTargets(h)}
+                      onChange={v=>{
+                        if (v.startsWith("std:")) {
+                          const field=v.slice(4);
+                          // BUILD-79 Part 5 — a column that fails its own type
+                          // check cannot be mapped to that type, by anyone.
+                          const chk=validateMappingChoice(parsed.headers,parsed.rows,h,field);
+                          if(!chk.ok){setMapRefusal({header:h,field,summary:chk.summary});return;}
+                          setMapRefusal(null);
+                          setDonorCfChoices(p=>{const n={...p};delete n[h];return n;});
+                          setMapping(p=>({...p,[h]:field}));
+                        } else if (v.startsWith("cf:")) {
+                          const def=[...cfDefs.donor,...cfDefs.gift].find(d=>d.id===v.slice(3));
+                          setMapRefusal(null);
+                          setMapping(p=>{const n={...p};delete n[h];return n;});
+                          if(def) setDonorCfChoices(p=>({...p,[h]:{fieldId:def.id,key:def.key,entity:def.entity,label:def.label}}));
+                        } else {
+                          setMapRefusal(null);
+                          setMapping(p=>{const n={...p};delete n[h];return n;});
+                          setDonorCfChoices(p=>{const n={...p};delete n[h];return n;});
+                        }
+                      }}
+                      onCreateField={async d=>{
+                        const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({
+                          entity:d.entity,label:d.label,type:d.type,options:d.options||[],
+                          source:`import of ${srcFile?.name||"pasted data"}`})});
+                        setCfDefs(p=>({...p,[created.entity]:[...p[created.entity],created]}));
+                        setMapping(p=>{const n={...p};delete n[h];return n;});
+                        setDonorCfChoices(p=>({...p,[h]:{fieldId:created.id,key:created.key,entity:created.entity,label:created.label}}));
+                        return created;
+                      }}
+                    />
                   </div>
                 ))}
               </div>
@@ -2229,6 +2393,37 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                         <span style={{color:T.ink3}}>{proposalEvidenceText(c.proposal.type, c.proposal.evidence)}</span>
                         {failed>0 && d.action==="accept" && <span style={{color:"#b8593f"}}>{" "}{failed.toLocaleString()} row{failed===1?"":"s"} will be refused with line numbers.</span>}
                       </div>
+                      {/* FIX (2026-09-09) — the ONE column-target dropdown, on this
+                          card too. The rival "…or map to a standard field" select
+                          below it is gone: one control answers "what does this
+                          column become?", on every screen that asks. */}
+                      <div style={{marginBottom:6}}>
+                        <ColumnTargetSelect
+                          testId={`tx-map-${String(c.header).trim()}`}
+                          header={c.header} entity={entity} compact
+                          standardFields={openRoles.map(r=>({key:r,label:r}))
+                            .concat(d.action==="core"&&d.role?[{key:d.role,label:d.role}]:[])
+                            .filter((f,i,arr)=>arr.findIndex(x=>x.key===f.key)===i)}
+                          cfDefs={cfDefs}
+                          proposal={c.proposal}
+                          value={d.action==="core"&&d.role?`std:${d.role}`
+                            : d.action==="existing"&&d.fieldId?`cf:${d.fieldId}`
+                            : d.action==="accept"?"ignore":"ignore"}
+                          onChange={v=>{
+                            if(v.startsWith("std:")){const role=v.slice(4);setDecision(c.index,{action:"core",role});setTxMap(m=>({...m,[role]:c.field}));}
+                            else if(v.startsWith("cf:")){const def=[...cfDefs.donor,...cfDefs.gift].find(x=>x.id===v.slice(3));if(def)setDecision(c.index,{action:"existing",fieldId:def.id,entity:def.entity});}
+                            else setDecision(c.index,{action:"discard"});
+                          }}
+                          onCreateField={async draft=>{
+                            const created=await apiFetch("/custom-fields",{method:"POST",body:JSON.stringify({
+                              entity:draft.entity,label:draft.label,type:draft.type,options:draft.options||[],
+                              source:`import of ${srcFile?.name||"pasted data"}`})});
+                            setCfDefs(p=>({...p,[created.entity]:[...p[created.entity],created]}));
+                            setDecision(c.index,{action:"existing",fieldId:created.id,entity:created.entity});
+                            return created;
+                          }}
+                        />
+                      </div>
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                         {d.action!=="accept"&&d.action!=="discard"&&(
                           <button onClick={()=>setDecision(c.index,{...d,action:"accept"})}
@@ -2247,13 +2442,8 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                         </select>
                         <input value={label} onChange={e=>setDecision(c.index,{...d,label:e.target.value})}
                           style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 8px",fontSize:11,color:T.ink,width:140}}/>
-                        {openRoles.length>0&&(
-                          <select value={d.action==="core"?d.role:""} onChange={e=>e.target.value?(setDecision(c.index,{action:"core",role:e.target.value}),setTxMap(m=>({...m,[e.target.value]:c.field}))):null}
-                            style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 6px",fontSize:11,color:T.ink3}}>
-                            <option value="">…or map to a standard field</option>
-                            {openRoles.map(r=><option key={r} value={r}>{r}</option>)}
-                          </select>
-                        )}
+                        {/* the rival standard-field select lived here — see the
+                            ColumnTargetSelect above, which is the one control */}
                         {d.action!=="discard"&&(
                           <button onClick={()=>setDecision(c.index,{action:"discard"})}
                             style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Discard</button>

@@ -267,3 +267,74 @@ run — the honest claim here is the trip count, which is machine-independent.
 The label said "Click to summary: 221.4s for the write", which is two different
 things wearing one name. The receipt now reads: **"Time to summary: 44.3s
 (reading the file and reconciling it). Time in the write: 25.1s."**
+
+---
+
+# FIX (Sept 9) — one column-target dropdown, one guesser
+
+## Reproduced
+
+`tests/fixtures/mapper/prospect-research-30col.csv` (seed 20260909) — 30 headers
+from a prospect-research export, none of them Steward's vocabulary. On the
+"one row per donor (totals)" shape the column dropdown was a flat list of 17
+internal keys (`lastAmount`, `doNotContact`) with no custom-field groups and no
+way to make a home for the 26 columns it didn't recognise. The same dropdown in
+the workbook mapper had all three groups.
+
+## 1. Three dropdowns became one
+
+Census: the CSV donor mapper (flat, `Donors.jsx`), the BUILD-78 transaction
+mapper's card (proposal controls plus a rival "…or map to a standard field"
+select), and the BUILD-82 workbook mapper (the grouped one). The grouped one is
+now `client/src/components/ColumnTargetSelect.jsx` and **all three render it**;
+the rival select is deleted and the workbook's private copy of the inline
+creator is gone. Each shape supplies its own standard vocabulary as a prop —
+what a CSV donor import writes is unchanged — but the three groups, the inline
+creation and the "don't import this column" option are one implementation.
+
+`tests/mapper-one-dropdown.test.js` (32, in run-all) renders the mapper for
+**each entry shape in a real browser** — single CSV donor totals, single CSV
+report export, workbook donors sheet, workbook gift sheet — and asserts all four
+carry a Standard fields group, a "＋ New custom field" option and a "Don't
+import this column" option. It also drives the creation: the field is made from
+the mapper, prefilled from the header, and appears immediately as an existing
+custom field on every other column.
+
+**It caught a bug on its first run.** `wealth_indicator` (three distinct values)
+proposes as a `select`, and the create call sent `options: []` — which the
+custom-field seam correctly refuses with a 400. The proposal's options now ride
+with its type, switching type keeps or drops them honestly, and a choice field
+with no options can't be submitted at all.
+
+## 2. Two columns cannot become one field
+
+The dropdown disables a standard target another column already holds, and the
+Import button refuses by name — *"Two columns are mapped to full name —
+'contact_name' and 'contact_confidence'. Pick one, or send the other somewhere
+else."* No standard donor field legitimately takes two sources (first and last
+name are two different fields), so the exception list is empty and documented;
+a shape that grows one adds it there with its reason.
+
+## 3. The guess that caused it
+
+The collision came from header matching, not value matching: `guessField` used
+`header.includes(label)`, so **"contact_confidence" contains "contact" → name**.
+The same rule also mapped **"capacity_estimate" → city** (it contains the
+letters of "city") and **"region_code" → state**. This is the defect BUILD-82
+fixed for the workbook ("Unnamed: 31" became the name column and threw away
+23,867 donors); the CSV path still had it.
+
+Matching is now whole-header: a label matches the entire normalised header, a
+trailing word-run ("contact name" is a name), or a leading run **only when what
+follows is not a qualifier** — a word that turns a subject into a measurement
+about the subject (`code`, `confidence`, `score`, `estimate`, `band`, `tier`, …).
+"Email Address" is still an email; "region code" is not a region. Twenty cases
+are pinned.
+
+On the fixture the guesser now maps exactly two columns — `contact_name` → name,
+`research_note` → notes — and leaves 28 for a human, each with a dropdown that
+can give it a home. Two further rules: `buildAutoMapping` **drops** a guess whose
+target another column already took (first header wins), and the contents-based
+"Guess from contents" path may only FILL an unclaimed target — it never
+overwrites a mapping already made, never duplicates one, and says how many
+guesses it left for you to place. A guess nobody can check defaults to skip.
