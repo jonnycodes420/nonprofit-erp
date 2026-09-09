@@ -7,7 +7,12 @@ import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
+import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import { ProductMark } from "./ProductMark";
+
+// The same civil "today" the log flow uses (LogConversation's todayLocal), so
+// a step proposed from a drift row and one proposed in the modal never differ.
+const todayCivil=()=>new Date().toISOString().split("T")[0];
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
 // [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
@@ -297,6 +302,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const [driftLineFor,setDriftLineFor]=useState(null); // donorId with the one-line input open
   const [driftLine,setDriftLine]=useState("");
   const [driftBusy,setDriftBusy]=useState(false);
+  // FIX (2026-09-09) item 3 — the step this row is about to open is EDITABLE
+  // FROM THE ROW, before it is saved. It used to be derived server-side and
+  // never shown: a proposal nobody can see is a proposal nobody can correct.
+  const [driftStep,setDriftStep]=useState(null);      // {label,due,source}
+  const [driftStepDirty,setDriftStepDirty]=useState(false);
   const loadDrift=()=>apiFetch("/drift").then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
 
   // ── BUILD-81 — THE THREAD, the first section of the work column ──────────
@@ -1320,12 +1330,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // "Done" opens ONE inline line (Part 4 — the log is a byproduct of clearing
   // the item, never a form); Skip is one keypress and is recorded as skipped.
   const driftRows=driftAllData?driftAllData.list:(driftData?.list||[]);
+  const openDriftLine=donorId=>{
+    setDriftLineFor(donorId);setDriftLine("");setDriftStepDirty(false);
+    setDriftStep(null);
+  };
+  // The proposal follows the line as it is written (the note outranks the
+  // touch default, item 1), and stops following the moment the user edits it.
+  const proposeDriftStep=line=>{
+    if(driftStepDirty)return;
+    const s=nextStepSuggestion("call_reached",todayCivil(),line);
+    setDriftStep(s?{label:s.label,due:s.due,source:s.source}:null);
+  };
   const submitDriftDone=async(donorId,note)=>{
     if(driftBusy)return;
     setDriftBusy(true);
     try{
-      await apiFetch(`/drift/${donorId}/done`,{method:"POST",body:JSON.stringify({note:note||""})});
-      setDriftLineFor(null);setDriftLine("");
+      const label=sanitizeStepLabel(driftStep&&driftStep.label);
+      const nextStep=label?{type:nextStepTypeForLabel(label),label,due:driftStep.due,source:driftStep.source?.from||null}:{skipped:true};
+      await apiFetch(`/drift/${donorId}/done`,{method:"POST",body:JSON.stringify({note:note||"",nextStep})});
+      setDriftLineFor(null);setDriftLine("");setDriftStep(null);setDriftStepDirty(false);
       await loadDrift();
     }catch{/* leave the row; nothing was recorded */}
     finally{setDriftBusy(false);}
@@ -1431,7 +1454,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                         className="attn-row-action" style={{background:T.gold500,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Log the call
                       </button>
-                      <button onClick={()=>{setDriftLineFor(r.donorId);setDriftLine("");}} disabled={isReadOnly}
+                      <button onClick={()=>openDriftLine(r.donorId)} disabled={isReadOnly}
                         title="Not drifting? Say why and it stops asking"
                         style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",marginLeft:8,color:T.ink3,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>
                         Not drifting
@@ -1440,8 +1463,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                   )}
                 </div>
                 {lineOpen&&(
-                  <div style={{display:"flex",gap:8,alignItems:"center",padding:"0 20px 13px 72px"}}>
-                    <input autoFocus value={driftLine} onChange={e=>setDriftLine(e.target.value)}
+                  <div style={{padding:"0 20px 13px 72px"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input autoFocus value={driftLine} onChange={e=>{setDriftLine(e.target.value);proposeDriftStep(e.target.value);}}
                       onKeyDown={e=>{if(e.key==="Enter"&&driftLine.trim())submitDriftDone(r.donorId,driftLine);if(e.key==="Escape")setDriftLineFor(null);}}
                       placeholder="Why isn't this drifting? One line (Enter saves · Esc cancels)"
                       style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
@@ -1450,6 +1474,28 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
                       style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:(driftBusy||!driftLine.trim())?"not-allowed":"pointer",opacity:driftLine.trim()?1:0.45}}>Save</button>
                     <button onClick={()=>setDriftLineFor(null)} disabled={driftBusy}
                       style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Cancel</button>
+                  </div>
+                  {/* The step this line is about to open — an input, not a
+                      preview: one click into it and it is yours. Clearing it
+                      saves the line with no next step at all. */}
+                  {driftStep&&(
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginTop:8}}>
+                      <span style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ink3,whiteSpace:"nowrap"}}>Next step</span>
+                      <input className="drift-step-input" value={driftStep.label} maxLength={NEXT_STEP_LABEL_MAX}
+                        onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,label:e.target.value}));}}
+                        aria-label="Next step" placeholder="Leave blank for no next step"
+                        style={{flex:"1 1 180px",minWidth:0,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
+                      <input type="date" className="drift-step-due" value={driftStep.due||""}
+                        onChange={e=>{setDriftStepDirty(true);setDriftStep(st=>({...st,due:e.target.value}));}}
+                        aria-label="Next step due date"
+                        style={{flex:"0 0 auto",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",fontSize:12,color:T.ink,background:T.bg,outline:"none"}}/>
+                    </div>
+                  )}
+                  {driftStep?.source&&!driftStepDirty&&(
+                    <div style={{fontSize:11,color:T.ink3,marginTop:4}}>
+                      {driftStep.source.why}{driftStep.source.matched?<span style={{fontStyle:"italic"}}>{" \u2014 \u201c"+driftStep.source.matched+"\u201d"}</span>:null}
+                    </div>
+                  )}
                   </div>
                 )}
               </li>
