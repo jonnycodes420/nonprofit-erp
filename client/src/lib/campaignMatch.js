@@ -12,6 +12,8 @@
 
 // Normalize for comparison: lowercase, strip punctuation to spaces, collapse
 // whitespace, trim. "Spring Studio Scholarships!" → "spring studio scholarships".
+import { eitherContainsTokenRun } from "../../../shared/textMatch.js";
+
 export function normalizeCampaignText(s) {
   return String(s == null ? "" : s)
     .toLowerCase()
@@ -55,7 +57,11 @@ export function campaignMatchScore(typed, name) {
   const b = normalizeCampaignText(name);
   if (!a || !b) return 0;
   if (a === b) return 1;
-  if (a.length >= 3 && b.length >= 3 && (b.includes(a) || a.includes(b))) return 0.9;
+  // BUILD-84 census — containment RESPECTS TOKEN BOUNDARIES. `b.includes(a)`
+  // scored "Gala" against "Galaxy Fund" at 0.90, which is the same class as
+  // BUILD-82's "Unnamed: 31" and the mapper FIX's `contact_confidence`: a
+  // substring test over a haystack that has structure.
+  if (a.length >= 3 && b.length >= 3 && eitherContainsTokenRun(a, b)) return 0.9;
 
   // Token Jaccard — "spring scholarships" vs "spring studio scholarships".
   const ta = tokenSet(a), tb = tokenSet(b);

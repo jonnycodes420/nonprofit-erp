@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -29,58 +29,77 @@ function stageIcon(stage) {
   });
 }
 
-const NOMINATIM = "https://nominatim.openstreetmap.org/search";
-const GEOCODE_DELAY = 1200;
-
-async function geocode(donor) {
-  const parts = [donor.city, donor.state, donor.zip, donor.country].filter(Boolean);
-  if (!parts.length) return null;
-  const q = parts.join(", ");
-  try {
-    const res = await fetch(`${NOMINATIM}?q=${encodeURIComponent(q)}&format=json&limit=1`, {
-      headers: { "Accept-Language": "en", "User-Agent": "Steward-nonprofit-erp" },
-    });
-    const data = await res.json();
-    if (data[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  } catch {}
-  return null;
-}
-
 function MapResizer() {
   const map = useMap();
   useEffect(() => { setTimeout(() => map.invalidateSize(), 100); }, [map]);
   return null;
 }
 
-export function DonorMap({ donors, userId, onSelectDonor }) {
-  const [coords, setCoords] = useState({});
+// BUILD-84 P0-4 — THE MAP MAKES NO GEOCODER REQUEST.
+//
+// This component used to call Nominatim from the browser, at render, once per
+// donor, 1.2s apart, and keep the answers in component state — so navigating
+// away and back started over, a refresh started over, and a 25,000-donor org
+// was simply unreachable. Coordinates are donor data now (geocode.js + the
+// write-time job in server.js); this reads `latitude`/`longitude` off the row
+// and draws.
+//
+// The other half of the fix is that the map ALWAYS RENDERS and SAYS WHAT IT
+// LACKS, in the import receipt's vocabulary. An empty grey rectangle with a
+// spinner is the failure mode this build exists to remove: every donor is in
+// exactly one of these buckets, and the buckets add up to the donor total.
+const STATUS_COPY = {
+  ok: "mapped",
+  no_address: "no address on file",
+  not_found: "could not be located",
+  failed: "could not be looked up",
+  pending: "still processing",
+};
+
+export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
   const [stageFilters, setStageFilters] = useState(new Set(STAGES.map(s => s.id)));
   const [myOnly, setMyOnly] = useState(false);
-  const [geocoding, setGeocoding] = useState(false);
-  const geocodedRef = useRef(new Set());
+  const [provider, setProvider] = useState(null);
 
-  const mappable = donors.filter(d => (d.city || d.state || d.zip) && (!myOnly || d.assignedTo === userId));
-  const noLocation = donors.filter(d => !d.city && !d.state && !d.zip && (!myOnly || d.assignedTo === userId));
-
+  // One read, for the provider's NAME and whether one is configured at all —
+  // never a geocode. The counts below come from the rows already in hand, so
+  // they can never disagree with the pins being drawn.
   useEffect(() => {
-    let cancelled = false;
-    async function run() {
-      setGeocoding(true);
-      for (const d of mappable) {
-        if (geocodedRef.current.has(d.id) || coords[d.id]) continue;
-        geocodedRef.current.add(d.id);
-        const result = await geocode(d);
-        if (!cancelled && result) setCoords(prev => ({ ...prev, [d.id]: result }));
-        await new Promise(r => setTimeout(r, GEOCODE_DELAY));
-        if (cancelled) break;
-      }
-      if (!cancelled) setGeocoding(false);
-    }
-    run();
-    return () => { cancelled = true; };
-  }, [donors, myOnly]);
+    if (!apiFetch) return;
+    let live = true;
+    apiFetch("/geocode/status").then(r => { if (live) setProvider(r); }).catch(() => {});
+    return () => { live = false; };
+  }, [apiFetch]);
 
-  const visibleDonors = mappable.filter(d => coords[d.id] && stageFilters.has(d.stage || "cultivate"));
+  const mine = useMemo(
+    () => donors.filter(d => !myOnly || d.assignedTo === userId || d.assigned_to === userId),
+    [donors, myOnly, userId]);
+
+  const buckets = useMemo(() => {
+    const b = { ok: [], no_address: [], not_found: [], failed: [], pending: [] };
+    for (const d of mine) {
+      const lat = d.latitude != null ? Number(d.latitude) : null;
+      const lng = d.longitude != null ? Number(d.longitude) : null;
+      const placed = Number.isFinite(lat) && Number.isFinite(lng);
+      const st = placed ? "ok" : (b[d.geocodeStatus] ? d.geocodeStatus : "pending");
+      b[st].push(placed ? { ...d, _lat: lat, _lng: lng } : d);
+    }
+    return b;
+  }, [mine]);
+
+  const visibleDonors = buckets.ok.filter(d => stageFilters.has(d.stage || "cultivate"));
+  const unconfigured = provider && provider.provider === "unconfigured";
+  // The sentence, in the receipt's shape: every bucket that has anyone in it,
+  // named, and the numbers add to the donor total by construction. "Still
+  // processing" is only true when something CAN process — with no provider
+  // set up, nothing is running, and saying otherwise is exactly the small lie
+  // this build exists to remove.
+  const line = Object.entries(STATUS_COPY)
+    .filter(([k]) => buckets[k].length > 0)
+    .map(([k, label]) => `${buckets[k].length.toLocaleString()} ${k === "pending" && unconfigured ? "waiting for a geocoding provider" : label}`)
+    .join(" · ") || "no donors in this view";
+
+  const nothingPlaced = buckets.ok.length === 0;
 
   return (
     <div style={{ display: "flex", gap: 12, height: "calc(100vh - 200px)", minHeight: 400 }}>
@@ -107,24 +126,35 @@ export function DonorMap({ donors, userId, onSelectDonor }) {
               My portfolio only
             </label>
           </div>
-          {geocoding && (
-            <div style={{ marginTop: 8, fontSize: 10, color: T.ink3 }}>Geocoding addresses…</div>
-          )}
-          <div style={{ marginTop: 8, fontSize: 10, color: T.ink3 }}>{visibleDonors.length} mapped · {noLocation.length} no address</div>
+          <div style={{ marginTop: 8, fontSize: 10, color: T.ink3, lineHeight: 1.6 }}>{line}</div>
         </div>
 
-        {noLocation.length > 0 && (
+        {buckets.no_address.length > 0 && (
           <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 12, overflowY: "auto", flex: 1 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>No address on file</div>
-            {noLocation.map(d => (
+            {buckets.no_address.slice(0, 200).map(d => (
               <div key={d.id} onClick={() => onSelectDonor(d)} style={{ padding: "6px 0", borderBottom: "1px solid " + T.bg3, cursor: "pointer", fontSize: 12, color: T.greenDk, fontWeight: 500 }}>{d.name}</div>
             ))}
+            {buckets.no_address.length > 200 && (
+              <div style={{ paddingTop: 6, fontSize: 11, color: T.ink3 }}>…and {(buckets.no_address.length - 200).toLocaleString()} more</div>
+            )}
           </div>
         )}
       </div>
 
       {/* Map */}
-      <div style={{ flex: 1, borderRadius: 14, overflow: "hidden", border: "1px solid " + T.bg3 }}>
+      <div style={{ flex: 1, borderRadius: 14, overflow: "hidden", border: "1px solid " + T.bg3, position: "relative" }}>
+        {/* Nothing placed is a SENTENCE, not an empty grey rectangle. */}
+        {nothingPlaced && (
+          <div style={{ position: "absolute", zIndex: 500, left: 12, right: 12, top: 12, background: T.white,
+                        border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 14px", fontSize: 12, color: T.ink, lineHeight: 1.6 }}>
+            {unconfigured
+              ? <>No donor is on the map yet because no geocoding provider is set up for Steward. Addresses are never sent anywhere until one is. <span style={{ color: T.ink3 }}>{provider.reason}</span></>
+              : buckets.pending.length > 0
+                ? <>No donor is on the map yet. {buckets.pending.length.toLocaleString()} {buckets.pending.length === 1 ? "address is" : "addresses are"} still processing — this runs in the background and the pins appear on their own.</>
+                : <>No donor is on the map. {line}.</>}
+          </div>
+        )}
         <MapContainer center={[39.5, -98.35]} zoom={4} style={{ width: "100%", height: "100%" }} scrollWheelZoom={true}>
           <MapResizer />
           <TileLayer
@@ -132,12 +162,13 @@ export function DonorMap({ donors, userId, onSelectDonor }) {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
           {visibleDonors.map(d => (
-            <Marker key={d.id} position={[coords[d.id].lat, coords[d.id].lng]} icon={stageIcon(d.stage || "cultivate")}>
+            <Marker key={d.id} position={[d._lat, d._lng]} icon={stageIcon(d.stage || "cultivate")}>
               <Popup>
                 <div style={{ minWidth: 160 }}>
                   <div style={{ fontWeight: 700, marginBottom: 4, fontSize: 13 }}>{d.name}</div>
+                  {d.contactName && <div style={{ fontSize: 11, color: "#6b6560" }}>{d.contactName}</div>}
                   {d.city && <div style={{ fontSize: 11, color: "#6b6560" }}>{[d.city, d.state].filter(Boolean).join(", ")}</div>}
-                  <div style={{ fontSize: 11, color: "#6b6560", marginTop: 2 }}>Total: {fmt(d.total)}</div>
+                  <div style={{ fontSize: 11, color: "#6b6560", marginTop: 2 }}>Total: {fmt(d.total ?? d.total_giving)}</div>
                   <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || "#6b6560", marginTop: 2, fontWeight: 600, textTransform: "capitalize" }}>{d.stage}</div>
                   <button onClick={() => onSelectDonor(d)} style={{ marginTop: 8, background: "#10b981", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                     Open profile →

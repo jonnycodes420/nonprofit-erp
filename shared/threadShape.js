@@ -263,3 +263,86 @@ export const DISMISS_REASONS = [
   { key: "handled_outside",    label: "Handled outside Steward" },
   { key: "revisit",            label: "Not now, revisit on a date" },
 ];
+
+// ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ────────
+//
+// PREREQUISITE, ESTABLISHED FIRST: the due field held NO TIME before this
+// build. `threads.due_date` is `TEXT NOT NULL` carrying a civil `YYYY-MM-DD`,
+// and every default in NEXT_STEP_DEFAULTS above is expressed as `+N days` —
+// so there was no 2:00 to fire at. The time is added BESIDE the date as a
+// nullable `HH:MM` (db.js), not by converting the date column to a timestamp:
+// a civil date is a day on a calendar in every timezone on earth (orgTime.js's
+// type discipline) and dragging every existing date-only task through a zone
+// it never had would be the larger change and the wrong one. Nothing needed
+// backfilling — every pre-existing row is date-only and stays date-only.
+//
+// SETTING A TIME IS OPTIONAL. A user who never sets one sees no change
+// anywhere: no new email, no change to the digest, no new row on any screen.
+
+// The org's local wall-clock time a step is due at, or null. Stored as the
+// literal 24-hour "HH:MM" string; the ORG's timezone turns it into a moment.
+export function sanitizeStepTime(raw) {
+  if (raw == null || raw === "") return null;
+  const m = /^\s*(\d{1,2})\s*:\s*(\d{2})\s*$/.exec(String(raw));
+  if (!m) return null;
+  const h = +m[1], mi = +m[2];
+  if (!(h >= 0 && h <= 23 && mi >= 0 && mi <= 59)) return null;
+  return `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+}
+
+// "14:00" → "2:00 PM". Display only; never parsed back.
+export function formatStepTime(hhmm) {
+  const t = sanitizeStepTime(hhmm);
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h < 12 ? "AM" : "PM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+// ── PRECEDENCE — THE PART THAT GOES WRONG IF IT IS NOT WRITTEN DOWN ────────
+// A task must never be reported twice. ONE rule covers it, and both the digest
+// and the timed sender read THIS function rather than each re-deriving it:
+//
+//   · a task WITH a time sends its own email at that time, and is excluded
+//     from the morning digest ON ITS DUE DATE ONLY;
+//   · a task with a date and NO time stays in the digest exactly as before and
+//     sends nothing of its own;
+//   · a timed task that comes due and is not closed REJOINS the digest the
+//     next morning as overdue, counted like everything else — the exclusion is
+//     for the day it is due, not forever.
+//
+// The user chooses which kind of reminder they get by whether they set a time.
+// Nothing else in the interface has to explain it.
+export function digestShouldSkip(thread, today) {
+  const t = sanitizeStepTime(thread && thread.dueTime !== undefined ? thread.dueTime : thread && thread.due_time);
+  if (!t) return false;                                    // date-only: always the digest's
+  const due = (thread.dueDate || thread.due_date || "");
+  return due === today;                                    // its own day only
+}
+
+// A timed step fires when the org's clock has reached its time on its due
+// date, and it has not been sent yet. `nowHHMM` is the org's local wall clock.
+// The delivery window is bounded so a server that was down for three hours
+// does not fire a 2:00 reminder at 5:00 — that reminder has already lost the
+// only thing that made it worth sending.
+export const STEP_REMINDER_WINDOW_MINUTES = 90;
+export function stepReminderDue(thread, today, nowHHMM, { windowMinutes = STEP_REMINDER_WINDOW_MINUTES } = {}) {
+  const t = sanitizeStepTime(thread && (thread.dueTime ?? thread.due_time));
+  if (!t) return false;
+  const due = thread.dueDate || thread.due_date || "";
+  if (due !== today) return false;
+  const now = sanitizeStepTime(nowHHMM);
+  if (!now) return false;
+  const mins = s => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+  const delta = mins(now) - mins(t);
+  return delta >= 0 && delta <= windowMinutes;
+}
+
+// THE WEEKEND RULE INVERTS HERE. The digest does not send on weekends by
+// default, because a list of open threads on a Saturday is an intrusion nobody
+// asked for. A time is different: setting Saturday at 10:00 is an explicit
+// commitment to a moment, so a timed task fires on weekends REGARDLESS of the
+// org's weekend toggle. (Said next to the toggle, in Settings, so it is not a
+// surprise.)
+export const TIMED_STEPS_IGNORE_WEEKEND_TOGGLE = true;

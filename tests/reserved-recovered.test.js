@@ -36,7 +36,7 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, textMatch } = require("./helpers");
 
 const iso = d => new Date(d).toISOString().slice(0, 10);
 const daysAgo = n => iso(Date.now() - n * 86400000);
@@ -194,8 +194,12 @@ function chunksOf(line) {
      impact.quietSinceDays === 180, impact.quietSinceDays);
 
   // And nothing in the payload carries a banned LABEL (field names are fine).
-  const labels = JSON.stringify(impact).match(/"[^"]{6,}"/g) || [];
-  const badLabel = labels.filter(l => !/^"[a-zA-Z0-9_]+"$/.test(l) && FAMILY.some(f => f.re.test(l)));
+  // BUILD-84 census — the payload is WALKED for its string LEAVES, instead of
+  // being serialised and scraped with a quoted-run regex (which also caught
+  // KEY names and any punctuation the serialiser happened to add).
+  const labels = [];
+  (await textMatch()).findLeaf(impact, v => { if (typeof v === "string" && v.length >= 6) labels.push(v); return false; });
+  const badLabel = labels.filter(l => !/^[a-zA-Z0-9_]+$/.test(l) && FAMILY.some(f => f.re.test(l)));
   ok(`no outcome-claim label in the /impact payload (found ${badLabel.length})`,
      badLabel.length === 0, badLabel.slice(0, 5));
 

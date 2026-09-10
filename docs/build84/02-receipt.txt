@@ -1,0 +1,67 @@
+Steward
+⌕
+?
+B
+B84 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+◑
+Imported — with gaps you should read.
+WHAT'S MISSING BEFORE THIS COUNTS AS FULLY ACCOUNTED FOR
+· no amount column was mapped
+· no gift-date column was mapped
+· 5 columns in this file read as currency — “revenue” $386,923,121 · “expenses” $357,018,765 · “contributions” $93,358,920 · “deficit” $18,736,986 · “contrib_lost_yoy” $14,032,461 — and none was mapped as a gift amount, so there is nothing to reconcile against
+· so the dollar equation has no left-hand side to check — that is why it does not balance, not a lost figure
+444 donors added
+THE ARITHMETIC — READ THE GAPS ABOVE BEFORE TRUSTING IT
+In your file
+444 · unknown — no column is mapped as the gift amount
+Imported
+444 · $0
+DOES NOT BALANCE
+444 · $0
+EVERY COLUMN ACCOUNTED FOR
+Your file: city → city · organization → organization · phone → phone · email → email · contact_name → name · address → address · zipcode → zip · notes → notes
+Not imported — unrecognized: sell · why · drive_min_from_wilmore · what_they_do · contact_title · contact_confidence · revenue · expenses · contributions · contrib_pct_of_revenue · contrib_change_pct · contrib_lost_yoy · deficit · fiscal_year · ntee · ein · website · propublica · called · outcome · next_step · my_notes
+Done
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

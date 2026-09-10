@@ -12,7 +12,7 @@
 // past the gate when it should.
 
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, textMatch } = require("./helpers");
 
 const EIN_GOOD = "812345679";
 const THIS_YEAR = String(new Date().getFullYear());
@@ -198,8 +198,10 @@ async function cleanup() {
     (await raw("POST", `/donate/${slug}`, { body: { amount: 50, firstName: "A", lastName: "B", email: "give@ng46.test" } })).status === 400);
   ok("…and the admin is alerted (queued path)", mail.some(m => /delist/i.test(m.subject || "")), mail.map(m => m.subject));
   const [delistRow] = await q(`SELECT status, decisions FROM network_applications WHERE id=$1`, [appId]);
+  // BUILD-84 census — the decision log is a structure: assert a LEAF says
+  // "delisted", not that the serialised blob contains those letters.
   ok("…and the delist decision is logged", delistRow.status === "delisted" &&
-    JSON.stringify(delistRow.decisions).includes("delisted"));
+    !!(await textMatch()).findLeaf(delistRow.decisions, v => typeof v === "string" && v.trim().toLowerCase() === "delisted"));
   // empty-registry guard: no data must never mean "everyone revoked"
   await q(`UPDATE network_applications SET status='approved' WHERE id=$1`, [appId]);
   await q(`UPDATE portal_settings SET network_listed=true WHERE org_id=$1`, [orgId]);

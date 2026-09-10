@@ -32,7 +32,7 @@ import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 
@@ -47,8 +47,16 @@ const CSV_FIELDS = [
   { key:"lastGift",  labels:["last gift date","last donation date","most recent date","last gift"] },
   { key:"gifts",     labels:["gifts","gift count","# gifts","number of gifts","donations","gift #","# donations"] },
   { key:"status",    labels:["status","donor status","type"] },
+  // BUILD-84 P0-2 — an organization is a donor. Mapped on its own, never
+  // folded into `name`: when a row carries both, the organization IS the
+  // donor and the person in `name` becomes the contact on it.
+  { key:"organization", labels:["organization","organisation","org","org name","organization name","organisation name","company","company name","business","business name","institution","employer name"] },
   { key:"city",      labels:["city","town"] },
   { key:"state",     labels:["state","province","region"] },
+  // BUILD-84 P0-4 — the map geocodes from the stored address, so the CSV path
+  // has to be able to carry one.
+  { key:"address",   labels:["address","street","street address","address 1","address line 1","mailing address"] },
+  { key:"zip",       labels:["zip","zip code","postal","postal code","postcode","zipcode"] },
   { key:"notes",     labels:["notes","note","comments","memo"] },
   // owner = the gift officer this donor is assigned to (Team import routing). The
   // raw cell value is matched to an org user (email→name) before submit; on Core
@@ -67,7 +75,8 @@ const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", 
 const CSV_FIELD_LABELS = {
   name: "Full name", email: "Email", phone: "Phone", total: "Lifetime giving",
   lastAmount: "Last gift amount", lastGift: "Last gift date", gifts: "Gift count",
-  status: "Status", city: "City", state: "State", notes: "Notes", owner: "Owner",
+  status: "Status", organization: "Organization", city: "City", state: "State",
+  address: "Address", zip: "ZIP", notes: "Notes", owner: "Owner",
   deceased: "Deceased", doNotContact: "Do not contact",
 };
 const CSV_STANDARD_FIELDS = [
@@ -104,30 +113,13 @@ const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe",
 // path still had it. A label now matches only as the WHOLE normalised header or
 // a whole word-run inside it — "last gift date" still matches "Last Gift Date",
 // "contact" no longer matches "contact_confidence".
-const _normHdr = h => String(h || "").toLowerCase().replace(/[?_.:#/\\-]+/g, " ").replace(/\s+/g, " ").trim();
-// Words that turn a SUBJECT into a MEASUREMENT ABOUT the subject. "Email
-// Address" is still an email; "contact confidence" is not a contact, and
-// "region code" is not a region. This list is the difference between the two,
-// and it is why a header may match a label at its leading edge at all.
-const _QUALIFIER_WORDS = new Set(["code", "confidence", "score", "estimate", "band", "tier",
-  "rank", "rating", "index", "level", "pref", "prefs", "preference", "indicator", "propensity",
-  "affinity", "eligible", "eligibility", "hours", "history", "key", "flag", "bucket", "segment",
-  "percentile", "decile", "grade", "quality", "match", "vendor", "source"]);
-function _headerMatchesLabel(header, label) {
-  const h = _normHdr(header), l = _normHdr(label);
-  if (!h || !l) return false;
-  if (h === l) return true;
-  const hw = h.split(" "), lw = l.split(" ");
-  if (lw.length >= hw.length) return false;
-  // TRAILING run: "contact name" is a name, "primary donor name" is a donor name.
-  if (hw.slice(-lw.length).join(" ") === l) return true;
-  // LEADING run: only when what follows is not a qualifier — "email address"
-  // is an email, "region code" is not a region.
-  if (hw.slice(0, lw.length).join(" ") === l) {
-    return !hw.slice(lw.length).some(w => _QUALIFIER_WORDS.has(w));
-  }
-  return false;
-}
+// BUILD-84 census — the normaliser, the qualifier list and the whole-token
+// matcher moved to shared/importShape.js (normalizeHeader / MEASUREMENT_QUALIFIERS
+// / headerMatchesLabel) so the CSV mapper, the workbook mapper and the value
+// scanner all read ONE definition of what a column header means. The copy that
+// lived here is why P0-1 could ship: the mapper knew "min" was a measurement
+// and the scanner did not.
+const _headerMatchesLabel = headerMatchesLabel;
 function guessField(header) {
   if (!header || !String(header).trim()) return "";
   const h = String(header).toLowerCase().trim();
@@ -137,7 +129,10 @@ function guessField(header) {
   if (flags.deceasedCol) return "deceased";
   if (flags.doNotContactCol) return "doNotContact";
   // Reject headers that signal a negation/flag ("do not email", "opt out of email", etc.)
-  if (NEGATOR_PHRASES.some(n => h.includes(n))) return "";
+  // BUILD-84 census — a negator phrase matches as a whole token run, not as
+  // letters: `h.includes("no mail")` refused "Casino Mailing List", and
+  // `h.includes("do not")` would refuse any header containing "…do notes".
+  if (NEGATOR_PHRASES.some(n => containsTokenRun(header, n))) return "";
   // Separate first/last name columns → internal keys combined into name on build
   if (h === "first" || h === "first name" || h === "firstname" || h === "given name") return "_firstName";
   if (h === "last"  || h === "last name"  || h === "lastname"  || h === "surname" || h === "family name") return "_lastName";
@@ -175,16 +170,30 @@ const STAGE_COLORS = Object.fromEntries(STAGES.map(s => [s.id, s.color]));
 // ── Normalization helpers (normalizeDate/Money/Email) live in
 // (now shared/importShape.js) — BUILD-58 Part 2 moved them so the pure ledger-row
 // builder there can use them and the Node suite can test the pipeline. ────
+// BUILD-84 census — a stage CELL is a value with word boundaries, and the old
+// rule was raw substring: `v.includes("ask")` read "Alaska" as solicit,
+// `v.includes("lost")` read "Lost Creek Chapter" as lapsed, `v.includes("warm")`
+// read "Warmack" as qualify. Matching is whole-token now — a prefix family
+// (qualif→qualified/qualifying, cultivat→cultivated) is expressed as a token
+// PREFIX, not as a substring of the whole string — and the multi-word phrases
+// match as whole token runs through the same seam the header matcher uses.
+const STAGE_TOKEN_RULES = [
+  { stage: "prospect",  prefixes: ["prospect", "lead", "potential"] },
+  { stage: "qualify",   prefixes: ["qualif", "engaged", "warm"] },
+  { stage: "cultivate", prefixes: ["cultivat", "nurtur"] },
+  { stage: "solicit",   prefixes: ["solicit", "ask"], phrases: ["pledge pending", "ready to ask"] },
+  { stage: "steward",   prefixes: ["steward", "current"], phrases: ["active donor"] },
+  { stage: "lapsed",    prefixes: ["lapsed", "inactive", "lost", "former"] },
+];
 function normalizeStage(val) {
   if (!val) return null;
   const v = String(val).toLowerCase().trim();
   if (IMPORT_STAGES.includes(v)) return v;
-  if (v.includes("prospect") || v.includes("lead") || v.includes("potential")) return "prospect";
-  if (v.includes("qualif") || v.includes("engaged") || v.includes("warm")) return "qualify";
-  if (v.includes("cultivat") || v.includes("nurtur")) return "cultivate";
-  if (v.includes("solicit") || v.includes("ask") || v.includes("pledge pending") || v.includes("ready to ask")) return "solicit";
-  if (v.includes("steward") || v.includes("current") || v.includes("active donor")) return "steward";
-  if (v.includes("lapsed") || v.includes("inactive") || v.includes("lost") || v.includes("former")) return "lapsed";
+  const tokens = tokenizeText(v);
+  for (const r of STAGE_TOKEN_RULES) {
+    if (tokens.some(t => (r.prefixes || []).some(p => t.startsWith(p)))) return r.stage;
+    if ((r.phrases || []).some(ph => containsTokenRun(v, ph))) return r.stage;
+  }
   return null;
 }
 
@@ -223,6 +232,10 @@ const IMPORT_REASON_LABELS = {
   in_kind: "in-kind gifts — recorded at fair market value, never cash",
   positive_reversal: "reversals with a POSITIVE amount — a human must decide",
   unrecognized_exclusion_value: "unrecognised value in an exclusion column",
+  // BUILD-84 P0-2 — the set-aside vocabulary, matching NAMEABILITY_REASON so
+  // the receipt, the pre-write line and the downloadable file all say the
+  // same sentence (the promise-field rule).
+  no_donor_identity: "no name, email, or organization",
 };
 
 // The slice of an analyzeSheetRows result the importers carry as the parse
@@ -303,8 +316,16 @@ function buildAutoMapping(headers, rows = []) {
 
 // ── Module-level donor row normalization ──────────────────────────────────
 // Extracted from DonorImport's built useMemo so CombinedImport can share it.
-function buildDonorRows(parsed, mapping, rowLines) {
+function buildDonorRows(parsed, mapping, rowLines, basis) {
   if (!parsed) return { ready:[], warned:[], skipped:[] };
+  // BUILD-84 P0-3 — a stage may only be inferred from an input this import
+  // actually has. With no amount and no date mapped there is nothing to infer
+  // from, and everyone lands in ONE stage rather than a fabricated split.
+  const stageBasis = basis || stageAssignmentBasis({
+    total: Object.values(mapping).includes("total"),
+    lastAmount: Object.values(mapping).includes("lastAmount"),
+    lastGift: Object.values(mapping).includes("lastGift"),
+  });
   const ready = [], warned = [], skipped = [];
   parsed.rows.forEach((row, idx) => {
     const d = {};
@@ -321,16 +342,24 @@ function buildDonorRows(parsed, mapping, rowLines) {
       if (!d.name || !String(d.name).trim()) d.name = combined;
     }
     delete d._firstName; delete d._lastName;
-    const hasName  = !!(d.name  && String(d.name).trim());
-    const hasEmail = !!(d.email && String(d.email).trim());
-    if (!hasName && !hasEmail) { skipped.push({ row:idx+2, reason:"no name or email" }); return; }
-    if (!hasName) {
+    // BUILD-84 P0-2 — nameability is decided by ONE function (shared with the
+    // transaction path and the workbook): a person name, an email, OR an
+    // organization. An organization row is a first-class donor, and a contact
+    // person on the same row rides as the contact, not as the donor's name.
+    const ident = resolveDonorIdentity({ name: d.name, organization: d.organization, email: d.email });
+    delete d.organization;
+    if (!ident.nameable) { skipped.push({ row:idx+2, reason: NAMEABILITY_REASON }); return; }
+    if (!ident.hasName) {
       // BUILD-79 Part 5 — a display name never falls back to email/phone.
       d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`;
       d.tags = ["needs-name"];
       warnings.push(`${rowLabel}: no name — flagged as unnamed for review`);
+    } else {
+      d.name = normalizeName(ident.displayName); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
+      if (ident.contactName) d.contactName = normalizeName(ident.contactName);
+      if (ident.kind && ident.kind !== "person") d.kind = ident.kind;
+      else d.kind = "person";
     }
-    else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
     if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
@@ -346,7 +375,10 @@ function buildDonorRows(parsed, mapping, rowLines) {
     // total/last-gift columns). `_stageExplicit` tells the server not to
     // re-infer over it in the combined/history import paths.
     const _explicitStage = normalizeStage(d.stage);
-    d.stage = _explicitStage || inferStage(d.total, d.lastGift, !!(d.email || d.phone));
+    d.stage = _explicitStage
+      || (stageBasis.hasGivingData
+            ? inferStage(d.total, d.lastGift, !!(d.email || d.phone))
+            : stageBasis.fallbackStage);
     d._stageExplicit = !!_explicitStage;
     if (d.city)  d.city  = String(d.city).trim()  || null;
     if (d.state) d.state = String(d.state).trim()  || null;
@@ -379,11 +411,16 @@ function buildCombinedRows(parsed, donorMapping, yearCols, rowLines) {
       if (!d.name || !String(d.name).trim()) d.name = combined;
     }
     delete d._firstName; delete d._lastName;
-    const hasName  = !!(d.name  && String(d.name).trim());
-    const hasEmail = !!(d.email && String(d.email).trim());
-    if (!hasName && !hasEmail) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true }); return; }
-    if (!hasName) { d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`; d.tags = ["needs-name"]; warnings.push(`${rowLabel}: no name — flagged as unnamed for review`); }
-    else d.name = normalizeName(d.name); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
+    // BUILD-84 P0-2 — same one nameability test as the aggregate path.
+    const ident = resolveDonorIdentity({ name: d.name, organization: d.organization, email: d.email });
+    delete d.organization;
+    if (!ident.nameable) { results.push({ rowIdx:idx, donor:null, gifts:[], warnings:[], skipped:true, skipReason: NAMEABILITY_REASON }); return; }
+    if (!ident.hasName) { d.name = `Unnamed donor (line ${rowLines?.[idx] ?? idx + 2})`; d.tags = ["needs-name"]; warnings.push(`${rowLabel}: no name — flagged as unnamed for review`); }
+    else {
+      d.name = normalizeName(ident.displayName); // B2 — tidy Last,First / ALL-CAPS in the preview (editable)
+      if (ident.contactName) d.contactName = normalizeName(ident.contactName);
+      d.kind = ident.kind && ident.kind !== "person" ? ident.kind : "person";
+    }
     if (d.email !== undefined) { const {value,warn} = normalizeEmail(d.email); d.email=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
     if (d.phone) d.phone = String(d.phone).trim() || null;
     if (d.total !== undefined && d.total !== "") { const {value,warn} = normalizeMoney(d.total); d.total=value; if(warn) warnings.push(`${rowLabel}: ${warn}`); }
@@ -429,8 +466,8 @@ function buildCombinedRows(parsed, donorMapping, yearCols, rowLines) {
 // imported total + last-gift date so a brand-new org gets queryable gifts rows
 // (not just aggregate donor fields) — same rationale as DonorImport's old
 // `withHistory` flag, now the default for the magical one-file path.
-function buildAggregatePayload(parsed, mapping, seedHistory, rowLines) {
-  const { ready, warned, skipped } = buildDonorRows(parsed, mapping, rowLines);
+function buildAggregatePayload(parsed, mapping, seedHistory, rowLines, stageBasis) {
+  const { ready, warned, skipped } = buildDonorRows(parsed, mapping, rowLines, stageBasis);
   const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
   const gifts = [];
   if (seedHistory) {
@@ -886,6 +923,16 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     try { return inferDateConvention(parsed.rows.map(r => r[txMap.date])); } catch { return null; }
   }, [parsed, effectiveShape, txMap.date]);
 
+  // BUILD-84 P0-3 — the basis this import actually has, declared once and read
+  // by both the preview split and the sentence under it.
+  const stageBasis = useMemo(() => stageAssignmentBasis(
+    effectiveShape === "transaction" ? { amount: txMap.amount, date: txMap.date }
+    : effectiveShape === "wide" ? { yearColumns: yearCols.some(y => y.enabled) }
+    : { total: Object.values(mapping).includes("total"),
+        lastAmount: Object.values(mapping).includes("lastAmount"),
+        lastGift: Object.values(mapping).includes("lastGift") }
+  ), [effectiveShape, mapping, txMap.amount, txMap.date, yearCols]);
+
   // ── Shape-aware payload build (memoized) ──
   // aggregate → donors (+ one seeded gift/donor from total+lastGift when
   // withHistory, so onboarding gets real gifts rows); transaction → group the
@@ -895,7 +942,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     try {
       if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines, dateConventionChoice);
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
-      return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines);
+      return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines, stageBasis);
     } catch (e) {
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
@@ -916,12 +963,16 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         const gg = giftsByDonor[idx] || [];
         const total = gg.reduce((s,g)=>s+g.amount,0);
         const last = gg.length ? gg.reduce((m,g)=>g.date>m?g.date:m, gg[0].date) : null;
-        const s = last ? inferStage(total, last, !!(d.email||d.phone)) : inferStage(0, null, !!(d.email||d.phone));
+        // BUILD-84 P0-3 — with no giving input mapped there is nothing to
+        // infer from; one stage, never a fabricated distribution.
+        const s = !stageBasis.hasGivingData ? stageBasis.fallbackStage
+                : last ? inferStage(total, last, !!(d.email||d.phone))
+                : inferStage(0, null, !!(d.email||d.phone));
         counts[s] = (counts[s]||0)+1;
       });
     }
     return counts;
-  }, [payload, effectiveShape]);
+  }, [payload, effectiveShape, stageBasis]);
 
   // BUILD-78 — the plan supersedes BUILD-77's bulk acknowledgement: every
   // unmapped column now takes an explicit per-column decision (store as
@@ -1124,10 +1175,26 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         // pre-submit skips just joined them above. One partition, one sum.
         R.rows.accounted = R.rows.created + R.rows.skipped + R.rows.errored;
         R.rows.balanced = R.rows.accounted === R.rows.inFile;
-        R.dollars.inFile = parseReport.amountScan ? parseReport.amountScan.sum : null;
+        // BUILD-84 P0-1 — the file's dollars are ONE column's own subtotal or
+        // they are unknown. The scan now returns every column that qualifies
+        // as currency; a figure may only anchor the equation when there is no
+        // ambiguity about which column it came from:
+        //   · the import mapped an amount column → that column's subtotal,
+        //   · exactly one column in the file qualifies → that one,
+        //   · otherwise → null, and the panel names each candidate instead of
+        //     adding several unrelated money columns into one number nobody
+        //     can check. (Two money columns summed is not a reconcilable
+        //     figure; picking the biggest is picking the best of a bad set.)
+        const scan = parseReport.amountScan;
+        const mappedAmountHdr = Object.keys(mapping).find(h => mapping[h] === "total" || mapping[h] === "lastAmount") || null;
+        const anchor = scan && (
+          (mappedAmountHdr && scan.columns.find(c => c.header === mappedAmountHdr))
+          || (scan.unambiguous ? scan.columns[0] : null));
+        R.dollars.inFile = anchor ? anchor.sum : null;
         R.dollars.accounted = Math.round((R.dollars.created + R.dollars.skipped + R.dollars.errored) * 100) / 100;
         R.dollars.balanced = R.dollars.inFile == null ? false : Math.abs(R.dollars.inFile - R.dollars.accounted) < 0.005;
-        R.dollars.scanColumn = parseReport.amountScan?.header || null;
+        R.dollars.scanColumn = anchor ? anchor.header : null;
+        R.dollars.currencyColumns = scan ? scan.columns.map(c => ({ header: c.header, sum: c.sum, why: c.why })) : [];
         R.balanced = R.rows.balanced && R.dollars.balanced;
       }
       // BUILD-79 Part 3.3 — GREEN IS EARNED. The check mark and "every row and
@@ -1144,13 +1211,30 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           : Object.values(mapping).some(f => f === "lastGift");
         const dollarsIn = Number(R.dollars.created || 0);
         const missing = [];
+        // BUILD-84 P0-1 — every currency column is named with its own subtotal,
+        // and a column that was never mapped as a gift amount is never
+        // described as money that went missing.
+        const cur = R.dollars.currencyColumns || [];
+        const money$ = n => "$" + Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+        const curList = cur.map(c => `“${c.header}” ${money$(c.sum)}`).join(" · ");
         if (!amountMapped) missing.push("no amount column was mapped");
         if (!dateMapped) missing.push("no gift-date column was mapped");
-        if (dollarsIn <= 0 && parseReport?.amountScan?.sum > 0)
-          missing.push(`$0 was imported, but the file's “${parseReport.amountScan.header}” column carries ${"$" + parseReport.amountScan.sum.toLocaleString(undefined,{maximumFractionDigits:2})} of currency-shaped values`);
-        else if (dollarsIn <= 0) missing.push("no gift dollars were imported");
+        if (dollarsIn <= 0 && R.dollars.scanColumn && R.dollars.inFile > 0)
+          missing.push(`$0 was imported, but the file's “${R.dollars.scanColumn}” column carries ${money$(R.dollars.inFile)} of currency-shaped values`);
+        else if (dollarsIn <= 0 && cur.length)
+          missing.push(`${cur.length} column${cur.length===1?"":"s"} in this file read${cur.length===1?"s":""} as currency — ${curList} — and none was mapped as a gift amount, so there is nothing to reconcile against`);
+        else if (dollarsIn <= 0)
+          missing.push("no unmapped column reads as currency either, so there is nothing to reconcile against");
         if (!R.rows.balanced) missing.push("the row equation does not balance");
-        if (!R.dollars.balanced) missing.push(R.dollars.inFile == null ? "the file's dollars are unknown (no amount-shaped column found)" : "the dollar equation does not balance");
+        // The list is printed ONCE. Repeating it here read as two findings
+        // where there is one, which is its own small dishonesty on a panel
+        // whose whole job is to be countable.
+        if (!R.dollars.balanced) missing.push(
+          R.dollars.inFile == null
+            ? (cur.length
+                 ? "so the dollar equation has no left-hand side to check — that is why it does not balance, not a lost figure"
+                 : "the file's dollars are unknown (no column in it reads as currency)")
+            : "the dollar equation does not balance");
         totals.summaryHealth = {
           greenEarned: amountMapped && dateMapped && dollarsIn > 0 && R.rows.balanced && R.dollars.balanced,
           missing,
@@ -1488,7 +1572,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             {result.twinCandidates > 0 && <> · <strong>{result.twinCandidates}</strong> same-day/same-amount twins imported (reviewable)</>}
             {result.newDonors > 0 && <> · <strong>{result.newDonors}</strong> created from unmatched gifts</>}
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
-            {result.skipped > 0   && <> · <strong>{result.skipped.toLocaleString()}</strong> {result.refusedRows?.length ? "refused with line-numbered reasons" : "skipped (no name or email)"}</>}
+            {result.skipped > 0   && <> · <strong>{result.skipped.toLocaleString()}</strong> {result.refusedRows?.length ? "refused with line-numbered reasons" : "skipped (no name, email, or organization)"}</>}
           </div>
           {/* BUILD-72 Part 1 — THE RECONCILIATION, on the user's screen.
               rows_in_file = created + skipped + errored, and the same for
@@ -1512,7 +1596,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
               <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
                 <span>In your file</span>
                 <span style={{fontVariantNumeric:"tabular-nums"}}>
-                  {R.rows.inFile.toLocaleString()} · {R.dollars.inFile == null ? "unknown — no amount-shaped column found" : money(R.dollars.inFile)}
+                  {/* BUILD-84 P0-1 — "no amount-shaped column found" was false
+                      whenever currency columns existed and none was MAPPED, which
+                      is the common case for a file that carries no gifts. */}
+                  {R.rows.inFile.toLocaleString()} · {R.dollars.inFile == null
+                    ? ((R.dollars.currencyColumns || []).length ? "unknown — no column is mapped as the gift amount" : "unknown — no column in this file reads as currency")
+                    : money(R.dollars.inFile)}
                 </span>
               </div>
               {R.dollars.scanColumn && R.dollars.inFile != null && (
@@ -2286,7 +2375,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                     {giftCount>0&&<>{" · "}<span style={{color:T.green600}}>{giftCount.toLocaleString()}</span>{" gifts"}</>}
                     {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600||"#a97f22"}}>{payload.warnedCount}</span>{" with warnings"}</>}
                     {(()=>{
-                      if (effectiveShape !== "transaction") return payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{" skipped (no name or email)"}</>;
+                      if (effectiveShape !== "transaction") return payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{" skipped (no name, email, or organization)"}</>;
                       // BUILD-80 Part 10 — the refusal line shows DOLLARS, not
                       // only rows, before the write — and routed semantic rows
                       // (soft credits, pledges, in-kind) are not "refused".
@@ -2306,7 +2395,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
           {/* Smart stage assignment preview */}
           {Object.keys(stagePreview).length>0 && (
             <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>Smart Stage Assignment Preview</div>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>{stageBasis.hasGivingData ? "Smart Stage Assignment Preview" : "Starting stage"}</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {Object.entries(stagePreview).map(([s,n])=>(
                   <span key={s} style={{fontSize:12,fontWeight:600,padding:"3px 10px",borderRadius:99,background:(STAGE_COLORS[s]||T.ink3)+"22",color:STAGE_COLORS[s]||T.ink3,border:`1px solid ${(STAGE_COLORS[s]||T.ink3)}30`}}>
@@ -2314,7 +2403,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                   </span>
                 ))}
               </div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Based on giving history. Override after import by dragging in the Kanban.</div>
+              {/* BUILD-84 P0-3 — the sentence is DERIVED from the declared basis
+                  fields, never written by hand. A basis that cannot be read back
+                  off the mapping is not claimed. */}
+              <div style={{fontSize:11,color:T.ink3,marginTop:6}}>{stageBasis.sentence}{stageBasis.hasGivingData ? " Override after import by dragging in the Kanban." : ""}</div>
             </div>
           )}
 
@@ -2492,7 +2584,13 @@ function detectGiftFormat(headers) {
 }
 
 function yearColToDate(header, convention) {
-  const h = String(header);
+  // BUILD-84 census — `\b` DOES NOT FIRE AT AN UNDERSCORE (`_` is a word
+  // character), so `\b(20\d{2})\b` read nothing out of `fund_2023` and
+  // `fy[\s_-]?(\d{2,4})\b` read nothing out of `fy2024_total` — while
+  // YEAR_HDR_PAT, which is unanchored, called both year columns. Two rules,
+  // one header, opposite answers. Normalising the header to tokens first
+  // (separators become spaces) makes every \b below mean what it says.
+  const h = normalizeHeader(header);
   const MON = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
   const monYear = h.match(/(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*[\s\-]+(\d{4})/i);
   if (monYear) {
@@ -2533,9 +2631,12 @@ function matchDonorForGift(rawName, rawEmail, donors) {
     const exact = donors.filter(d => normalizeNameForDonorMatch(d.name) === norm);
     if (exact.length === 1) return { confidence:"medium", suggestedDonor:exact[0],    ambiguousDonors:null };
     if (exact.length > 1)   return { confidence:"low",    suggestedDonor:null,         ambiguousDonors:exact };
+    // BUILD-84 census — a partial NAME match respects token boundaries.
+    // `dn.includes(norm)` matched "Ann Lee" inside "Joann Leewood" and offered
+    // it as the donor for a gift; a name is a sequence of tokens, not letters.
     const partial = donors.filter(d => {
       const dn = normalizeNameForDonorMatch(d.name);
-      return dn.length > 3 && (dn.includes(norm) || norm.includes(dn));
+      return dn.length > 3 && eitherContainsTokenRun(dn, norm);
     });
     if (partial.length === 1) return { confidence:"low", suggestedDonor:partial[0],   ambiguousDonors:null };
     if (partial.length > 1)   return { confidence:"low", suggestedDonor:null,          ambiguousDonors:partial.slice(0,5) };
@@ -3578,7 +3679,7 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -4306,7 +4407,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <button onClick={()=>{setDpMoreOpen(false);onEdit();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Edit</button>
             </div>
           )}
-          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread}
+          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
             onClose={()=>setConvoOpen(false)}/>}
         </div>
@@ -6729,7 +6830,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           </div>
         </div>
       )}
-      {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}}
+      {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org}
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
@@ -6739,7 +6840,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
-        orgName={data.org?.name||""} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
+        orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
         initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
         isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
@@ -6854,7 +6955,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 
       {view==="reengage"&&<ReEngageView donors={filtered} org={data.org} onLogTouchpoint={d=>setLogTarget(d)} onSelectDonor={selectDonor}/>}
-      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor}/>}
+      {view==="map"&&<DonorMap donors={filtered} userId={userId} onSelectDonor={selectDonor} apiFetch={apiFetch}/>}
       </>)}
     </div>
   );

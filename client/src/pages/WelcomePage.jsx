@@ -42,6 +42,17 @@ function Spin() {
   );
 }
 
+// The zones a US/Canada nonprofit actually sits in, plus whatever the
+// browser reports (kept as its own option when it is not on this list — Intl
+// is the authority on IANA names, never a hand-kept list, and the server
+// validates against it too).
+const TIMEZONE_CHOICES = [
+  "America/New_York", "America/Chicago", "America/Denver", "America/Phoenix",
+  "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+  "America/Halifax", "America/St_Johns", "America/Toronto", "America/Winnipeg",
+  "America/Edmonton", "America/Vancouver", "America/Puerto_Rico",
+];
+
 function defaultOutcomeTemplate(orgName) {
   // Literal "${amount}" / "{n}" placeholders — NOT JS interpolation. The
   // impact-metrics backend parses these tokens itself (see
@@ -86,6 +97,15 @@ export default function WelcomePage() {
   // Step 1 — org basics
   const [orgName, setOrgName] = useState(auth?.org?.name || "");
   const [mission, setMission] = useState(auth?.org?.mission || "");
+  // BUILD-84 — the org's timezone, set HERE rather than left as Steward's
+  // America/New_York default. Every date boundary in the product is computed
+  // in it (BUILD-72 Part 4), and a step reminder set for 2:00 fires in it — so
+  // it may not stay a guess. Prefilled from the browser, shown, and confirmed
+  // by continuing; that stamp is what unlocks timed reminders for the org.
+  const [timezone, setTimezone] = useState(() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"; }
+    catch { return "America/New_York"; }
+  });
   const [savingBasics, setSavingBasics] = useState(false);
 
   // Step 2 — import
@@ -168,7 +188,7 @@ export default function WelcomePage() {
     if (!orgName.trim()) { setError("Organization name is required."); return; }
     setSavingBasics(true); setError("");
     try {
-      await apiFetch(`/orgs/${auth.org.id}`, { method: "PATCH", body: JSON.stringify({ name: orgName.trim(), mission: mission.trim() }) });
+      await apiFetch(`/orgs/${auth.org.id}`, { method: "PATCH", body: JSON.stringify({ name: orgName.trim(), mission: mission.trim(), timezone }) });
       await refreshOrg();
       setMetric1(m => ({ ...m, outcomeTemplate: defaultOutcomeTemplate(orgName) }));
       goNext();
@@ -334,6 +354,14 @@ export default function WelcomePage() {
               <textarea value={mission} onChange={e => setMission(e.target.value)} rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }}
                 placeholder="e.g. Transformative arts education for underserved youth"/>
               <div style={{ fontSize: 11, color: ink3, marginTop: 5 }}>Used to personalize your AI-drafted communications and reports.</div>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={label}>Time zone</div>
+              <select value={timezone} onChange={e => setTimezone(e.target.value)} style={inp}>
+                {TIMEZONE_CHOICES.map(tz => <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>)}
+                {!TIMEZONE_CHOICES.includes(timezone) && <option value={timezone}>{timezone.replace(/_/g, " ")}</option>}
+              </select>
+              <div style={{ fontSize: 11, color: ink3, marginTop: 5 }}>Every date in Steward — “this week”, “overdue”, a reminder set for 2:00 — is read in this zone.</div>
             </div>
 
             {error && <div style={errBox}>{error}</div>}

@@ -18,7 +18,7 @@
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
 
 const ORG_A = "org_pp54_a", SLUG_A = "portalpage-a";
 const ORG_B = "org_pp54_b";
@@ -134,8 +134,11 @@ async function fixture() {
   ok("video URLs parse to provider+id ONLY", video.status === 200
     && video.body.draft[0].provider === "youtube" && video.body.draft[0].videoId === "dQw4w9WgXcQ"
     && video.body.draft[1].provider === "vimeo" && video.body.draft[1].videoId === "76979871", video.body.draft);
-  ok("no caller URL survives in the stored page", !JSON.stringify(video.body.draft).includes("youtube.com/watch")
-    && !JSON.stringify(video.body.draft).includes("vimeo.com/"));
+  // BUILD-84 census — walked. A provider URL is a raw marker with no tokens
+  // to respect, so {raw} is the honest needle; the walk is what stops it
+  // matching inside an unrelated serialised blob.
+  ok("no caller URL survives in the stored page",
+    (await leaks(video.body.draft, [{ raw: "youtube.com/watch" }, { raw: "vimeo.com/" }], { skipIds: false })).length === 0);
   const hostile = await api("PUT", "/portal-page/draft", tokA, {
     widgets: [{ type: "quote", text: "<script>alert(1)</script> — a donor", attribution: "<img src=x>" }],
   });

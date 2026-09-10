@@ -2060,7 +2060,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         onSelectDonor={goToDonorFromPortfolio}
       />
 
-      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread}
+      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org}
         onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
     </div>
   );

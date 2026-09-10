@@ -14,7 +14,7 @@
 //   - org isolation: a run only ever reflects the caller's org
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
 
 const TEAM = "org_dg_team", CORE = "org_dg_core", OTHER = "org_dg_other";
 
@@ -168,7 +168,9 @@ async function seedTask(o, title, donorId, due, assignedTo = null, assignedName 
   await seedDonor(OTHER, "dg_o1", "Other Org Donor", "u_dg_other", "User other", 1);
   await seedGift(OTHER, "dg_o1", 7777, WK_MID);
   const teamPrev = await api("GET", "/digests/preview?type=weekly", edTok);
-  ok("caller's preview never includes another org's donor", !JSON.stringify(teamPrev.body).includes("Other Org Donor"), "leak");
+  // BUILD-84 census — walked, with token boundaries, not a stringify-and-search.
+  ok("caller's preview never includes another org's donor",
+    (await leaks(teamPrev.body, [{ text: "Other Org Donor" }])).length === 0, "leak");
   const teamRunAgain = (await api("POST", "/digests/run", edTok, { type: "weekly", weekStart: WK, dryRun: true })).body;
   ok("caller's run never includes another org's 7777 gift", !teamRunAgain.weekly.sent.some(p => p.sections.gifts.some(g => g.amount === 7777)), "leak");
   const otherRows = await q(`SELECT COUNT(*)::int AS n FROM digest_sends WHERE org_id=$1`, [OTHER]);

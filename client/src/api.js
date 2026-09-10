@@ -160,6 +160,16 @@ export function adaptDonor(d) {
     importedSustainerAmount: d.imported_sustainer_amount != null ? parseFloat(d.imported_sustainer_amount) : null,
     importedSustainerLastGift: d.imported_sustainer_last_gift ?? null,
     drift:         d.drift ?? null,              // BUILD-76 — the badge field, server-computed (one truth)
+    // BUILD-84 P0-2 — the donor type and the contact person on an
+    // organization's record. `kind` null on a legacy row reads as a person.
+    kind:          d.kind ?? null,
+    contactName:   d.contact_name ?? null,
+    // BUILD-84 P0-4 — the coordinates the write-time geocoding job stored. The
+    // map draws from THESE and makes no geocoder request of its own.
+    country:       d.country ?? null,
+    latitude:      d.latitude  != null ? Number(d.latitude)  : null,
+    longitude:     d.longitude != null ? Number(d.longitude) : null,
+    geocodeStatus: d.geocode_status ?? null,
   };
 }
 
@@ -181,6 +191,10 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       logo:        org.logo_data || "",       // BUILD-13 branding
       brandAccent: org.brand_accent || "",
       brandAccentFg: org.brand_accent_fg || "",
+      // BUILD-84 — the zone every date in the product is read in, and whether
+      // a HUMAN chose it. The timed step reminder is unavailable until they do.
+      timezone:    org.timezone || "",
+      timezone_confirmed_at: org.timezone_confirmed_at || null,
     },
     donors: donors.map(adaptDonor),
     grants: grants.map(g => ({

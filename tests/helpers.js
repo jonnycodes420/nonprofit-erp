@@ -92,4 +92,44 @@ const STRIPE_MOCK_PORT = Number(process.env.STRIPE_MOCK_PORT || 5603);
 // Tests that date something "today" must use the same civil clock.
 const civilToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, civilToday };
+// ── BUILD-84 census — A GUARD OVER A PAYLOAD WALKS IT ─────────────────────
+// `JSON.stringify(payload).includes(x)` throws away every boundary the
+// structure provides and then asks a question about letters. That is how a
+// leak guard searching for the figure "600" matched inside the server-minted
+// id `imp_6e5600ab` and red-lit CI on a docs-only push (FIX-3, 10 Sep). These
+// walk the LEAVES, with type awareness, so a number is compared as a number
+// and an id is compared as an id.
+//
+// The rule and the implementation live ONCE, in shared/textMatch.js; this is
+// the CommonJS door onto it (the suites are CJS, that module is ESM). Loaded
+// lazily and memoised — every suite here is already async.
+let _textMatch = null;
+async function textMatch() { return _textMatch || (_textMatch = await import("../shared/textMatch.js")); }
+
+// leaks(payload, needles) → the offending [path, value] pairs, or []. Each
+// needle is {text} (a phrase, matched inside a STRING leaf with token
+// boundaries), {exact} (a leaf that IS this string), {number} (a leaf that IS
+// this number, as a number or a numeric string), or {raw} (a literal substring
+// inside a string leaf — for markers like ";base64," and "youtube.com/watch"
+// that are not words and have no tokens to respect). `skipIds` keeps the two
+// kinds of value that legitimately carry random digits out of the way.
+async function leaks(payload, needles, { skipIds = true } = {}) {
+  const { findLeaf, containsTokenRun } = await textMatch();
+  const found = [];
+  const isIdish = (v, path) => /(^|\.)id$|Id$|_id$/.test(String(path || "")) || /^[a-z]{2,6}_[0-9a-f]{6,}$/.test(String(v));
+  for (const n of needles) {
+    const hit = findLeaf(payload, (v, path) => {
+      if (typeof v === "number") return n.number !== undefined && v === n.number;
+      if (typeof v !== "string") return false;
+      if (n.number !== undefined) return /^-?\d+(\.\d+)?$/.test(v.trim()) && Number(v) === n.number;
+      if (skipIds && (isIdish(v, path) || v.startsWith("data:"))) return false;
+      if (n.exact !== undefined) return v === n.exact;
+      if (n.raw !== undefined) return v.includes(n.raw);
+      return containsTokenRun(v, n.text);
+    });
+    if (hit) found.push([hit.path, String(hit.value).slice(0, 80), JSON.stringify(n)]);
+  }
+  return found;
+}
+
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, civilToday, textMatch, leaks };

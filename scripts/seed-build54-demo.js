@@ -71,7 +71,10 @@ async function api(method, path, token, body) {
   const donor = donors.find(d => (d.email || "").toLowerCase() === DONOR_EMAIL.toLowerCase()) || donors.find(d => d.email);
   if (!donor) throw new Error("no donor with an email to attribute the demo gift to");
   const gifts = await fetch(BASE + `/donors/${donor.id}`, { headers: { Authorization: "Bearer " + tok } }).then(r => r.json());
-  const already = JSON.stringify(gifts).includes("build54 demo gift");
+  // BUILD-84 census — the idempotency check reads the FIELD it wrote, not the
+  // serialised record. A stringify-and-search over the whole donor payload
+  // would also match the marker inside a note, a tag or an unrelated blob.
+  const already = (gifts.gifts || []).some(g => String(g.notes || "").includes("build54 demo gift"));
   if (already) {
     console.log("demo gift already present — skipping (idempotent)");
   } else {

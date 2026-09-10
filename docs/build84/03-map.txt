@@ -1,0 +1,57 @@
+Steward
+⌕
+?
+B
+B84 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+FILTER BY STAGE
+Prospect
+Qualify
+Cultivate
+Solicit
+Steward
+Lapsed
+My portfolio only
+444 waiting for a geocoding provider
+No donor is on the map yet because no geocoding provider is set up for Steward. Addresses are never sent anywhere until one is. no geocoding provider is configured (set GEOCODIO_API_KEY, or GEOCODE_NOMINATIM_BASE for a self-hosted instance)
++
+−
+ Leaflet | © OpenStreetMap contributors

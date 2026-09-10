@@ -5,6 +5,7 @@
 // module-evaluation time. tests/import-workbook-v3 + custom-fields pin both
 // load orders.
 import { parseExclusionValue } from "./customFieldShape.js";
+import { tokenizeText, containsTokenRun, eitherContainsTokenRun } from "./textMatch.js";
 // Pure, JSX/React-free import-shape detection + transaction grouping — kept in a
 // lib (like client/src/lib/money.js) so the Node suite can unit-test it directly
 // (tests/import-shape.test.js dynamic-imports it). Donors.jsx imports these so
@@ -43,6 +44,99 @@ export function normalizeName(raw) {
   if (allUpper || allLower) s = s.replace(/[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ'’.\-]*/g, w => _titleCaseWord(w));
   return s;
 }
+
+// ── BUILD-84 Part 1 — THE HEADER IS A SEQUENCE OF TOKENS, NOT A STRING ─────
+// One place decides what a column header MEANS. Before this build there were
+// two: the CSV mapper's `_headerMatchesLabel` (whole-token since the 2026-09-09
+// FIX) and the value scanner's `AMOUNT_EXCLUDE_HDR`, a `\b`-anchored regex run
+// against the raw header — and `\b` does not fire at an underscore, because
+// `_` is a word character. That is how `fiscal_year` slipped past `\byear\b`
+// and `zipcode` past `\bzip\b`. Normalising to tokens FIRST removes the whole
+// family: separators become spaces, and a match is a whole token or nothing.
+//
+// This is the same boundary rule as BUILD-82's "Unnamed: 31" and the mapper
+// FIX's `contact_confidence`; see audit/BUILD-84-FINDINGS.md §census.
+export function normalizeHeader(h) {
+  return String(h ?? "").toLowerCase()
+    .replace(/[?_.:#/\\|()\[\]{}"'’,+*&%$@!-]+/g, " ")
+    .replace(/\s+/g, " ").trim();
+}
+export function headerTokens(h) {
+  const n = normalizeHeader(h);
+  return n ? n.split(" ") : [];
+}
+
+// Words that turn a SUBJECT into a MEASUREMENT ABOUT the subject. "Email
+// Address" is still an email; "contact confidence" is not a contact, "region
+// code" is not a region, and "drive min from wilmore" is not money.
+//
+// This list started life in Donors.jsx for `guessField` header matching (the
+// 2026-09-09 mapper FIX) and was left out of the value scanner, which is the
+// P0-1 defect. It lives here now and BOTH callers read it. Extended by the
+// BUILD-84 spec with the units and identifiers a numeric column carries when
+// it is a measurement rather than money.
+export const MEASUREMENT_QUALIFIERS = new Set([
+  // the mapper FIX's original list
+  "code", "codes", "confidence", "score", "scores", "estimate", "estimated", "band", "tier",
+  "rank", "rating", "index", "level", "pref", "prefs", "preference", "indicator", "propensity",
+  "affinity", "eligible", "eligibility", "hours", "history", "key", "flag", "bucket", "segment",
+  "percentile", "decile", "grade", "quality", "match", "vendor", "source",
+  // BUILD-84 — units, ratios and identifiers
+  "min", "mins", "minute", "minutes", "hour", "hr", "hrs", "day", "days", "week", "weeks",
+  "month", "months", "mile", "miles", "mi", "km", "count", "counts", "qty", "quantity", "num",
+  "pct", "percent", "percentage", "rate", "ratio", "avg", "average", "median",
+  "year", "years", "yr", "yrs", "fy", "age", "zip", "zipcode", "zipcodes", "postal", "postcode",
+  "ein", "id", "ids", "phone", "fax", "ntee", "ssn", "tin", "uuid", "guid",
+]);
+export function headerHasQualifier(h) {
+  return headerTokens(h).some(w => MEASUREMENT_QUALIFIERS.has(w));
+}
+
+// headerMatchesLabel(header, label) — a label matches only as the WHOLE
+// normalised header, a trailing word-run, or a leading word-run whose
+// remainder is not a qualifier. Moved here from Donors.jsx so the workbook
+// mapper, the CSV mapper and the scanner cannot drift apart.
+export function headerMatchesLabel(header, label) {
+  const hw = headerTokens(header), lw = headerTokens(label);
+  if (!hw.length || !lw.length) return false;
+  const h = hw.join(" "), l = lw.join(" ");
+  if (h === l) return true;
+  if (lw.length >= hw.length) return false;
+  // TRAILING run: "contact name" is a name, "primary donor name" is a donor name.
+  if (hw.slice(-lw.length).join(" ") === l) return true;
+  // LEADING run: only when what follows is not a qualifier — "email address"
+  // is an email, "region code" is not a region.
+  if (hw.slice(0, lw.length).join(" ") === l)
+    return !hw.slice(lw.length).some(w => MEASUREMENT_QUALIFIERS.has(w));
+  return false;
+}
+
+// The words that make a header a claim about MONEY. The BUILD-84 spec's list,
+// plus the plural/abbreviated spellings the same headers take in the wild
+// (`contrib_lost_yoy` is a contribution column and must pass).
+export const MONEY_WORDS = new Set([
+  "amount", "amt", "amounts",
+  "gift", "gifts", "donation", "donations", "donated",
+  "contribution", "contributions", "contrib", "contribs",
+  "revenue", "revenues",
+  "total", "totals", "subtotal",
+  "balance", "balances",
+  "pledge", "pledges", "pledged",
+  "paid", "payment", "payments",
+  "deficit", "surplus",
+  "expense", "expenses", "cost", "costs",
+  "fee", "fees",
+  "dollars", "usd", "giving", "raised", "income",
+]);
+export function headerHasMoneyWord(h) {
+  return headerTokens(h).some(w => MONEY_WORDS.has(w));
+}
+
+// BUILD-84 census — containment with boundaries lives in shared/textMatch.js
+// (its header carries the whole account of the class). Re-exported here so the
+// import layer's callers have one place to reach for it.
+export { tokenizeText, containsTokenRun, eitherContainsTokenRun, findLeaf,
+         numericLeafEquals, textLeafContains } from "./textMatch.js";
 
 const numlike = v => {
   if (v === null || v === undefined || v === "") return false;
@@ -794,44 +888,99 @@ export function validateMappingChoice(headers = [], rows = [], header, field) {
   return { ok: true, summary: ev.summary };
 }
 
-// BUILD-79 Part 3.1 — the INDEPENDENT amount scan. The dollar line's left side
-// must come from the raw file, never from the mapping: when no amount column is
-// mapped, both sides of the old dollar equation were zero, so a file whose own
-// TOTAL row read $2,035,978.52 reported "Balanced · $0". This scans every
-// column for currency-shaped values and sums the best candidate, mapping or no
-// mapping. Excluded: id/zip/phone/year/count-shaped headers.
-const AMOUNT_EXCLUDE_HDR = /\b(zip|postal|phone|fax|id|#|number|no\.|year|count|qty|quantity|age|score)\b/i;
+// BUILD-79 Part 3.1 / BUILD-84 P0-1 — the INDEPENDENT amount scan. The dollar
+// line's left side must come from the raw file, never from the mapping: when
+// no amount column is mapped, both sides of the old dollar equation were zero,
+// so a file whose own TOTAL row read $2,035,978.52 reported "Balanced · $0".
+//
+// BUILD-84 rewrote WHICH columns it reads. The old rule was "every column
+// whose cells parse as money, most currency-shaped cells wins, $-signs break
+// ties" — with column order as the silent final tiebreak. On a 444-row
+// prospect-research file that made `drive_min_from_wilmore` (drive time, in
+// minutes) the file's money at $12,840, while `revenue`, `contributions`,
+// `deficit` and `contrib_lost_yoy` sat unread. Being numeric is not evidence
+// of being money.
+//
+// A column qualifies on POSITIVE evidence only:
+//   · a currency symbol, a thousands separator or a two-decimal fraction in a
+//     meaningful share (≥20%) of its non-empty values, OR
+//   · a money word in the header (MONEY_WORDS).
+// and is disqualified, regardless of the above, when the header carries a
+// measurement qualifier (MEASUREMENT_QUALIFIERS — min, pct, year, ein, id…).
+//
+// EVERY qualifying column is scanned and returned with its own subtotal.
+// Nothing is collapsed into a single anonymous figure, and nothing is picked
+// as "the best of a bad set": when none qualifies the answer is null, which
+// the receipt renders as a sentence.
+const VALUE_CURRENCY_SHARE = 0.2;   // "a meaningful share" of non-empty values
+const CURRENCY_MARK_RE = /[$£€¥₹]|\d[.,]\d{3}\b|\d[.,]\d{2}(?!\d)/;
+export function amountColumnEvidence(header, values = []) {
+  const tokens = headerTokens(header);
+  if (!tokens.length) return { qualifies: false, why: "the column has no header to read" };
+  const qualifier = tokens.find(w => MEASUREMENT_QUALIFIERS.has(w));
+  if (qualifier)
+    return { qualifies: false, why: `“${qualifier}” makes this a measurement, not money`, disqualifiedBy: qualifier };
+  const moneyWord = tokens.find(w => MONEY_WORDS.has(w));
+  const vals = values.map(v => String(v ?? "").trim()).filter(Boolean);
+  const marked = vals.filter(v => CURRENCY_MARK_RE.test(v)).length;
+  const share = vals.length ? marked / vals.length : 0;
+  if (moneyWord) return { qualifies: true, why: `the header says “${moneyWord}”`, moneyWord, markedShare: share };
+  if (vals.length >= 5 && share >= VALUE_CURRENCY_SHARE)
+    return { qualifies: true, why: `${marked} of ${vals.length} values carry a currency symbol, a thousands separator or cents`, markedShare: share };
+  return { qualifies: false,
+           why: vals.length ? "no money word in the header and the values are bare numbers" : "no values to read",
+           markedShare: share };
+}
+
 export function scanAmountShapedColumns(headers = [], rows = []) {
-  const candidates = [];
+  const columns = [];
   for (const h of headers.map(x => String(x))) {
-    if (AMOUNT_EXCLUDE_HDR.test(h) || YEAR_HDR_PAT.test(h)) continue;
+    if (YEAR_HDR_PAT.test(h)) continue;           // a year column is a gift column, configured on its own
+    const values = rows.map(r => r[h]);
+    const ev = amountColumnEvidence(h, values);
+    if (!ev.qualifies) continue;
     // BUILD-80 Part 1 — the scan speaks the same closed grammar as the import:
-    // "1.250,00" and "2\u00A0000,00" are currency (convention-inferred), and a
+    // "1.250,00" and "2 000,00" are currency (convention-inferred), and a
     // trap like "$1,5000" is NOT — the scan's sum is the number the summary
     // shows as "in your file", so it must be the convention-correct one.
-    const conv = inferAmountConvention(rows.map(r => r[h]));
+    const conv = inferAmountConvention(values);
     const cellOpts = conv.columnConvention === "eu" ? { convention: "eu" } : {};
     let nonEmpty = 0, currency = 0, dollarSigns = 0, sum = 0;
     for (const r of rows) {
       const raw = String(r[h] ?? "").trim();
       if (!raw) continue;
       nonEmpty++;
-      if (/\d/.test(raw)) {
-        const { value, blank } = normalizeMoney(raw, cellOpts);
-        if (!blank && value != null && Math.abs(value) < 1e9) {
-          currency++; sum += value;
-          if (raw.includes("$")) dollarSigns++;
-        }
+      if (!/\d/.test(raw)) continue;
+      const { value, blank } = normalizeMoney(raw, cellOpts);
+      if (!blank && value != null && Math.abs(value) < 1e9) {
+        currency++; sum += value;
+        if (raw.includes("$")) dollarSigns++;
       }
     }
-    if (nonEmpty >= 5 && currency / nonEmpty >= 0.5 && currency >= 5) {
-      candidates.push({ header: h, nonEmpty, currencyCells: currency, dollarSigns, sum: Math.round(sum * 100) / 100 });
-    }
+    // The header may say "amount" over a column of prose; the VALUES still
+    // have to read as numbers before a subtotal is claimed for them.
+    if (nonEmpty < 5 || currency < 5 || currency / nonEmpty < 0.5) continue;
+    columns.push({ header: h, nonEmpty, currencyCells: currency, dollarSigns,
+                   sum: Math.round(sum * 100) / 100, why: ev.why });
   }
-  // most currency-shaped cells wins; $-signs break ties (a bare-integer column
-  // like gift counts can pass the shape test, a $-carrying one is the money)
-  candidates.sort((a, b) => (b.currencyCells - a.currencyCells) || (b.dollarSigns - a.dollarSigns));
-  return candidates[0] || null;
+  if (!columns.length) return null;
+  // Strongest evidence first, so a receipt that has room for one name shows the
+  // most money-like column: $-signs, then cells read, then subtotal.
+  columns.sort((a, b) => (b.dollarSigns - a.dollarSigns) || (b.currencyCells - a.currencyCells) || (b.sum - a.sum));
+  const total = Math.round(columns.reduce((s2, c) => s2 + c.sum, 0) * 100) / 100;
+  return {
+    columns,
+    // `header`/`sum` are the STRONGEST SINGLE column and its own subtotal —
+    // never a cross-column collapse, because two money columns added together
+    // are not a figure anyone can check. `total` is the sum across all of
+    // them and is only meaningful next to the list. A caller that anchors an
+    // equation must read `unambiguous` (or find the column it actually
+    // mapped in `columns`) before using either.
+    header: columns[0].header,
+    sum: columns[0].sum,
+    total,
+    unambiguous: columns.length === 1,
+  };
 }
 
 // analyzeCsvText(text, opts) — the one-call CSV entry: records → analysis.
@@ -1381,6 +1530,93 @@ export function detectDonorKind(name) {
   return null;
 }
 
+// ── BUILD-84 P0-2 — A DONOR RECORD IS NAMEABLE THREE WAYS ──────────────────
+// One function decides whether a row can become a donor, and every importer
+// calls it: the CSV donor path, the CSV transaction path and the workbook.
+// Before this build each path asked its own question, and all three asked the
+// same wrong one — "is there a person name or an email?" — so a 444-row file
+// of nonprofits set 245 rows aside under "no name or email" while every one of
+// those rows carried an organization name and most carried a phone number.
+//
+// On a real donor file the same rule quietly drops foundations, churches,
+// businesses, donor-advised funds, estates and civic clubs — the records that
+// frequently carry the LARGEST gifts in the file.
+//
+// The rules, in order:
+//   · organization present  → the ORGANIZATION is the donor. A person name on
+//     the same row is the CONTACT on it, never folded into the donor's name.
+//   · person name only      → an individual.
+//   · email only            → nameable; the display name is filled in by the
+//     caller ("Unnamed donor (line N)" + needs-name), unchanged from before.
+//   · none of the three     → set aside, reason NAMEABILITY_REASON.
+export const NAMEABILITY_REASON = "no name, email, or organization";
+export const DONOR_KIND_PERSON = "person";
+export const DONOR_KIND_ORGANISATION = "organisation";
+
+export function resolveDonorIdentity({ name, organization, email } = {}) {
+  const person = String(name ?? "").trim();
+  const org = String(organization ?? "").trim();
+  const mail = String(email ?? "").trim();
+  const nameable = !!(person || org || mail);
+  if (org) {
+    return { nameable: true, displayName: org, contactName: person || null,
+             kind: DONOR_KIND_ORGANISATION, hasName: true, source: "organization" };
+  }
+  if (person) {
+    // A person-name column can still be holding an organisation ("Rotary Club
+    // of Wilmore") — BUILD-80 Part 7's reading of the name itself still
+    // applies when no organization column exists to say so outright.
+    const inferred = detectDonorKind(person);
+    return { nameable: true, displayName: person, contactName: null,
+             kind: inferred === "anonymous" ? "anonymous"
+                 : inferred === "organisation" ? DONOR_KIND_ORGANISATION : DONOR_KIND_PERSON,
+             hasName: true, source: inferred ? "name-reads-as-" + inferred : "name" };
+  }
+  return { nameable, displayName: "", contactName: null,
+           kind: nameable ? DONOR_KIND_PERSON : null, hasName: false,
+           source: nameable ? "email" : null,
+           reason: nameable ? null : NAMEABILITY_REASON };
+}
+
+// ── BUILD-84 P0-3 — A STAGE ASSIGNMENT STATES THE INPUT IT USED ────────────
+// The pre-import screen offered "SMART STAGE ASSIGNMENT PREVIEW — qualify ×
+// 159, prospect × 40. Based on giving history." over a file with no gift data
+// at all: $0 imported, no amount column, no date column. The split came from
+// `inferStage`'s contact-info fallback, which is a reachability rule, not a
+// giving history — and the sentence under it named a basis that was not there.
+// That is IMPORT_PROMISE_FIELDS in a different costume: a screen states a
+// figure and names its basis, so the basis has to be real and readable.
+//
+// The basis is DECLARED here, once, as a field list, and the sentence is
+// derived from the entries that are actually mapped. A basis that cannot be
+// read back off the mapping cannot be claimed.
+export const STAGE_BASIS_FIELDS = [
+  { key: "lifetime", label: "lifetime giving",
+    mapped: m => !!(m.total || m.lastAmount || m.yearColumns || m.amount) },
+  { key: "lastGift", label: "last gift date",
+    mapped: m => !!(m.lastGift || m.yearColumns || m.date) },
+];
+
+// stageAssignmentBasis(mapped) — `mapped` is a plain record of which giving
+// inputs this import actually has: { total, lastAmount, lastGift, amount,
+// date, yearColumns } (booleans or header names). Returns the fields that are
+// present, whether a stage may be inferred at all, and the sentence the screen
+// prints — never a hand-written one.
+export function stageAssignmentBasis(mapped = {}) {
+  const fields = STAGE_BASIS_FIELDS.filter(f => f.mapped(mapped));
+  const hasGivingData = fields.length > 0;
+  const names = fields.map(f => f.label);
+  const list = names.length === 2 ? `${names[0]} and ${names[1]}` : names.join("");
+  return {
+    fields, hasGivingData,
+    // The single stage a gift-less file assigns. One stage, no distribution.
+    fallbackStage: "prospect",
+    sentence: hasGivingData
+      ? `Based on ${list}.`
+      : "No giving data in this file, so everyone starts in the same stage. Drag from the Kanban after import.",
+  };
+}
+
 // ── BUILD-80 Part 6 — WHO IS WHO: the identity resolver ────────────────────
 // Grouping order: (1) external donor ID, when a column is recognised as one
 // — stored as TEXT, leading zeros kept; a spreadsheet-damaged ID (1.23E+05)
@@ -1686,10 +1922,17 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       return;
     }
 
-    const name = normalizeName(rawName || [first, last].filter(Boolean).join(" ") || orgName) || "";
+    // BUILD-84 P0-2 — ONE nameability test, shared with the CSV donor path and
+    // the workbook. An organization name is a name. When a row carries both,
+    // the organization is the donor and the person is the CONTACT on it —
+    // never folded into the donor's name (the old `rawName || … || orgName`
+    // dropped the organization entirely whenever a contact person existed).
+    const personName = normalizeName(rawName || [first, last].filter(Boolean).join(" ")) || "";
     const { value: emailVal } = normalizeEmail(rawEmail);
     const email = emailVal || "";
-    if (!name && !email) {
+    const ident = resolveDonorIdentity({ name: personName, organization: orgName, email });
+    const name = ident.displayName;
+    if (!ident.nameable) {
       // BUILD-80 Part 1 — the row is refused, but its DOLLARS are still in the
       // file: parse the amount cell so the equation's left and right sides
       // agree with the independent scan instead of losing this row's money.
@@ -1706,8 +1949,15 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     // is still blank after grouping becomes "Unnamed donor (line N)" +
     // a needs-name tag, excluded from actionable surfaces until named.
     const donor = { name, email, stage: "prospect" };
+    // BUILD-84 — the person on an organization's row is the contact, kept.
+    if (ident.contactName) donor.contactName = ident.contactName;
     // BUILD-80 Part 7 — organisations and the anonymous holding record.
-    const kind = detectDonorKind(name);
+    // BUILD-84 — an explicitly-mapped organization column is the strongest
+    // evidence there is; detectDonorKind still reads a name that looks like
+    // an organisation when no such column exists.
+    const kind = ident.kind === DONOR_KIND_ORGANISATION ? "organisation"
+               : ident.kind === "anonymous" ? "anonymous"
+               : detectDonorKind(name);
     if (kind) donor.kind = kind;
     if (kind === "anonymous") { donor.name = "Anonymous"; donor.email = ""; }
     if (/^estate of\s+/i.test(name)) {
@@ -2718,12 +2968,17 @@ export function buildWorkbookSignals(roled = [], legend = []) {
 // normalized header (never a substring — "Unnamed: 31" containing "name" is
 // the pinned trap that threw away 23,867 donors), case- and punctuation-
 // insensitive.
-const normHdr = h => String(h || "").toLowerCase().replace(/[?_.:#/\\-]+/g, " ").replace(/\s+/g, " ").trim();
+// BUILD-84 census — one normaliser for the whole file (this was a second copy
+// with a narrower separator class, so "board (y/n)" normalised differently
+// here than in the CSV mapper).
+const normHdr = normalizeHeader;
 export const STANDARD_DONOR_FIELDS = [
   { key: "donorId",    label: "Donor ID",     aliases: ["donor id", "constituent id", "account id", "account no", "account number", "account", "record id", "supporter id", "member id", "contact id", "customer id", "pid", "cid", "donor no", "donor number", "constituent"] },
   { key: "_firstName", label: "First name",   aliases: ["first", "first name", "firstname", "given name"] },
   { key: "_lastName",  label: "Last name",    aliases: ["last", "last name", "lastname", "surname", "family name"] },
   { key: "name",       label: "Full name",    aliases: ["name", "full name", "donor name", "display name", "contact name"] },
+  // BUILD-84 P0-2 — the organization IS the donor when a row carries one.
+  { key: "organization", label: "Organization", aliases: ["organization", "organisation", "org", "org name", "organization name", "organisation name", "company", "company name", "business", "business name", "institution", "employer name"] },
   { key: "middleName", label: "Middle",       aliases: ["middle", "middle name", "middle initial", "mi"] },
   { key: "suffix",     label: "Suffix",       aliases: ["suffix", "name suffix"] },
   { key: "salutation", label: "Salutation",   aliases: ["salutation", "title", "prefix", "greeting", "dear"] },
@@ -3325,7 +3580,13 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
     }
 
     const d = { _line: line };
-    d.name = normalizeName([get("_firstName"), get("_lastName")].filter(Boolean).join(" ") || get("name")) || "";
+    // BUILD-84 P0-2 — the ONE nameability test. An organization column makes
+    // the organization the donor; a person on the same row is the contact.
+    const _person = normalizeName([get("_firstName"), get("_lastName")].filter(Boolean).join(" ") || get("name")) || "";
+    const _ident = resolveDonorIdentity({ name: _person, organization: get("organization"), email: get("email") });
+    d.name = _ident.hasName ? _ident.displayName : "";
+    if (_ident.contactName) d.contactName = _ident.contactName;
+    if (_ident.nameable) d.kind = _ident.kind === "person" ? "person" : _ident.kind;
     for (const k of ["middleName", "suffix", "salutation", "spouse", "householdId", "email", "email2",
                      "phone", "mobile", "address1", "address2", "city", "state", "zip", "country",
                      "donorType", "status", "notes", "owner"]) {

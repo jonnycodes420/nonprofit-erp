@@ -20,7 +20,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks } = require("./helpers");
 
 const THIS_YEAR = String(new Date().getFullYear());
 const EMAIL = "nd.donor@nd47.test";
@@ -179,7 +179,10 @@ async function fixture() {
   const fCard = dash.followed.find(f => f.orgSlug === ORGS.meadow.slug);
   ok("followed card carries NO history figures (no $0 rows pretending)",
     fCard.ytd === undefined && fCard.lifetime === undefined && fCard.lastGiftDate === undefined, fCard);
-  ok("followed card text never leaks the real record's totals", !JSON.stringify(dash.followed).includes("275.25"));
+  // BUILD-84 census — walked, typed: the figure as a number or a numeric
+  // string, never those digits inside an id.
+  ok("followed card text never leaks the real record's totals",
+    (await leaks(dash.followed, [{ number: 275.25 }, { exact: "275.25" }])).length === 0);
   ok("follower sees the org-wide impact update", dash.impact.some(u => u.id === "imp_nd_wide"), dash.impact.map(u => u.id));
   ok("follower NEVER sees a fund-targeted impact update", !dash.impact.some(u => u.id === "imp_nd_fund"));
 

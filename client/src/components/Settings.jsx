@@ -1872,6 +1872,9 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
           {key:"taskAssignments",label:"Task assignments",hint:"Someone assigns you a task (or an automation does)."},
           {key:"dailyTasks",label:"Daily task reminder",hint:"A morning summary of tasks due today and overdue."},
           {key:"threadNudge",label:"The Thread",hint:"One weekday-morning email listing every open thread that is due or overdue. It stops when you have none."},
+          // BUILD-84 — the timed step reminder lives in the SAME list as the
+          // nudge, per-user, default on. Not a second notification screen.
+          {key:"stepReminder",label:"Next steps with a time",hint:"When you give a next step a time, one email arrives at that time with the donor and a button to log what happened. Steps with no time stay in The Thread email instead."},
         ].map(row=>(
           <label key={row.key} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"10px 0",borderTop:"1px solid "+T.bg2,cursor:notifyPrefs?"pointer":"default"}}>
             <input type="checkbox" disabled={!notifyPrefs||notifySaving===row.key}
@@ -1890,7 +1893,9 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
               style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
             <div>
               <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Send the Thread email on weekends too</div>
-              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only.</div>
+              {/* BUILD-84 — the weekend rule INVERTS for a timed step, and
+                  that is said next to the toggle rather than discovered. */}
+              <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday — setting one is a commitment to a moment.</div>
             </div>
           </label>
         )}

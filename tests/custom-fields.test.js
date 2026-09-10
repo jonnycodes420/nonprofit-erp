@@ -22,7 +22,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
 if (/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL)) process.env.DB_SSL = "disable";
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
 const { migrateLegacyCustomFields } = require("../customFields.js");
 
 const A = "org_b78cf", B = "org_b78cfB", M = "org_b78cfmig";
@@ -179,7 +179,9 @@ async function resetOrg(org, { plan = "team" } = {}) {
   ok("and NO value landed", rowX.custom_fields[bField.key] === undefined, rowX.custom_fields);
   for (const [method, path] of [["PUT", `/custom-fields/${bField.id}`], ["POST", `/custom-fields/${bField.id}/archive`], ["POST", `/custom-fields/${bField.id}/restore`]]) {
     const r = await api(method, path, tok, { label: "hijack" });
-    ok(`${method} ${path.replace(bField.id, ":bId")} → 404, empty body`, r.status === 404 && !JSON.stringify(r.body).includes("Private"), r.body);
+    // BUILD-84 census — the body is WALKED, not serialised and searched.
+    ok(`${method} ${path.replace(bField.id, ":bId")} → 404, empty body`,
+      r.status === 404 && (await leaks(r.body, [{ text: "Private" }])).length === 0, r.body);
   }
   const [bRow] = await q(`SELECT label, archived_at FROM custom_field_defs WHERE id=$1`, [bField.id]);
   ok("org B's field untouched and still live", bRow.label === "Org B Private Field" && !bRow.archived_at, bRow);

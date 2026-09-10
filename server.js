@@ -82,6 +82,7 @@ const { PRODUCT_ID } = require("./product");
 // BUILD-72 Part 4 — THE date seam. Every civil-date boundary in the product
 // goes through here, computed in the ORGANIZATION's timezone. See orgTime.js
 // for the type discipline (instants vs civil dates) and why it exists.
+const geocode = require("./geocode"); // BUILD-84 P0-4 — the ONE seam an address becomes coordinates through; never called from a read path
 const orgTime = require("./orgTime");
 // BUILD-73 Part 2 — THE MONEY SEAM. Every money value that crosses into or out
 // of storage goes through here, and nothing else in this file converts between
@@ -100,17 +101,27 @@ const driftEngine = require("./drift");
 // Resolve an org's timezone for the seam. Cached briefly: every date-bounded
 // read needs it, and it changes about once in an organization's lifetime.
 const _tzCache = new Map();
-const TZ_CACHE_MS = 30000;
+// BUILD-84 — the suites reuse fixed org ids and delete/recreate them rapidly,
+// so a 30-second cache serves the DELETED org's confirmation state to the next
+// run. `SESSION_CACHE_TTL_MS=0` is already the flag that says "this process is
+// a test boot, do not cache identity"; the org's timezone confirmation is the
+// same kind of fact, so it rides the same switch. Prod leaves it unset → 30s.
+const TZ_CACHE_MS = process.env.SESSION_CACHE_TTL_MS === "0" ? 0 : 30000;
 async function orgTz(orgId) {
-  const hit = _tzCache.get(orgId);
+  const hit = TZ_CACHE_MS ? _tzCache.get(orgId) : null;
   if (hit && hit.until > Date.now()) return hit.value;
-  let tz = orgTime.DEFAULT_TZ;
+  let tz = orgTime.DEFAULT_TZ, confirmed = null;
   try {
-    const r = await query("SELECT timezone FROM orgs WHERE id=?", [orgId]);
+    const r = await query("SELECT timezone, timezone_confirmed_at FROM orgs WHERE id=?", [orgId]);
     tz = orgTime.normalizeTimezone(r[0]?.timezone);
+    // BUILD-84 — the timezone column is NOT NULL with a default, so "has a
+    // timezone" has always been true for every org and means nothing. This is
+    // the timezone a HUMAN chose, and it is what the timed reminder requires:
+    // a morning digest forgives being an hour off, a 2:00 reminder does not.
+    confirmed = r[0]?.timezone_confirmed_at || null;
   } catch { /* pre-migration boot — the default is correct */ }
-  _tzCache.set(orgId, { value: { timezone: tz }, until: Date.now() + TZ_CACHE_MS });
-  return { timezone: tz };
+  _tzCache.set(orgId, { value: { timezone: tz, timezone_confirmed_at: confirmed }, until: Date.now() + TZ_CACHE_MS });
+  return { timezone: tz, timezone_confirmed_at: confirmed };
 }
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
 
@@ -2728,7 +2739,7 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 
 // ── Me ─────────────────────────────────────────────────────────────────────
 app.get("/me", requireAuth, wrap(async (req, res) => {
-  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge FROM users WHERE id = ?", [req.user.userId]);
+  const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   if (!users.length || !orgs.length) return res.status(404).json({ error: "Not found" });
   const u = users[0];
@@ -2743,7 +2754,7 @@ app.get("/me", requireAuth, wrap(async (req, res) => {
 // about: portfolio gifts / task assignments / daily task reminder". Default on.
 app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   const b = req.body || {};
-  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge" };
+  const map = { portfolioGifts: "notify_portfolio_gifts", taskAssignments: "notify_task_assignments", dailyTasks: "notify_daily_tasks", threadNudge: "notify_thread_nudge", stepReminder: "notify_step_reminder" };
   const sets = [], params = [];
   for (const [k, col] of Object.entries(map)) {
     if (typeof b[k] === "boolean") { sets.push(`${col}=?`); params.push(b[k]); }
@@ -2751,7 +2762,7 @@ app.put("/me/notification-prefs", requireAuth, wrap(async (req, res) => {
   if (!sets.length) return res.status(400).json({ error: "No valid preferences provided" });
   params.push(req.user.userId);
   await run(`UPDATE users SET ${sets.join(",")} WHERE id=?`, params);
-  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge FROM users WHERE id=?", [req.user.userId]);
+  const rows = await query("SELECT notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id=?", [req.user.userId]);
   res.json({ notifications: mapNotifyPrefs(rows[0]) });
 }));
 
@@ -2944,7 +2955,11 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
         message: `"${tz}" is not a recognized IANA timezone (for example: America/New_York, America/Chicago, Asia/Kolkata).`,
       });
     }
-    await run(`UPDATE orgs SET timezone=? WHERE id=?`, [tz, req.params.id]);
+    // BUILD-84 — a timezone that came through this route came from a HUMAN,
+    // which is what the timed step reminder requires. The column's NOT NULL
+    // default has always made "has a timezone" trivially true; this stamp is
+    // the difference between a choice and Steward's guess.
+    await run(`UPDATE orgs SET timezone=?, timezone_confirmed_at=NOW() WHERE id=?`, [tz, req.params.id]);
     invalidateOrgTz(req.params.id);   // the 30s read cache must not serve the old zone
   }
 
@@ -3600,7 +3615,9 @@ app.get("/donors/summaries", requireAuth, wrap(async (req, res) => {
     query(`SELECT id, name, email, phone, stage, status, total_giving, last_gift_date,
                   last_gift_amount, gift_count, assigned_to, assigned_to_name,
                   pending_assignee_invite_id, pending_assignee_name,
-                  city, state, zip, tags, wealth_score, capacity_tier, planned_giving,
+                  city, state, zip, country, address, kind, contact_name,
+                  latitude, longitude, geocode_status,
+                  tags, wealth_score, capacity_tier, planned_giving,
                   employer, stripe_subscription_status,
                   deceased, do_not_contact, do_not_solicit, do_not_mail, do_not_email,
                   imported_sustainer, imported_sustainer_amount, imported_sustainer_last_gift
@@ -4169,7 +4186,12 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.email   || "",
         d.phone   || "",
         d.status  || "new",
-        d.stage   || "prospect",
+        // BUILD-83 Part 3.5, applied to this path by BUILD-84 P0-3 — A STAGE
+        // IS A DECISION. import-combined already wrote every inference to
+        // suggested_stage and left `stage` NULL; the donor-only path (the one
+        // a gift-less file takes, which is exactly the file whose stages are
+        // pure guesswork) was still writing them into `stage` as decisions.
+        d._stageExplicit ? (d.stage || null) : null,
         toDollars(toCents(d.total)      || 0),   // BUILD-73: cents preserved, was Math.round
         toDollars(toCents(d.lastAmount) || 0),   // BUILD-73: cents preserved, was Math.round
         d.lastGift || null,
@@ -4186,9 +4208,18 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         // BUILD-58 Part 2: deceased / do-not-contact flags — mapped from the
         // file, never silently discarded again.
         d.deceased === true || d.deceased === "true",
-        d.doNotContact === true || d.doNotContact === "true"
+        d.doNotContact === true || d.doNotContact === "true",
+        // BUILD-84 P0-2 — the donor type and the contact person on an
+        // organization's record. BUILD-84 P0-4 — the address the map
+        // geocodes from, which this path could not carry at all.
+        d.kind || null,
+        d.contactName || null,
+        d.address || null,
+        d.zip || null,
+        d.country || null,
+        d._stageExplicit ? null : (d.stage || "prospect")
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -4197,7 +4228,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
           `INSERT INTO donors
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
               last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
-              pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact)
+              pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
+              kind,contact_name,address,zip,country,suggested_stage)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -4225,7 +4257,13 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     console.error("[import] DONOR LEDGER DID NOT BALANCE:", JSON.stringify(ledger.report()));
   }
 
-  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, reconciliation: ledger.report() });
+  // BUILD-84 P0-4 — the import is a write, so it is where addresses become
+  // geocode work. Marking is cheap and local; the lookups happen on the tick.
+  let geocodeQueued = null;
+  try { geocodeQueued = await markDonorsForGeocoding(req.user.orgId); }
+  catch (e) { console.error("[geocode] mark after import failed:", e.message); }
+
+  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, reconciliation: ledger.report() });
 }));
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
@@ -4515,6 +4553,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         d.externalDonorId || null,
         // BUILD-80 Part 7 — organisation / anonymous, never a person surface.
         d.kind || null,
+        // BUILD-84 P0-2 — the person on an organization's row.
+        d.contactName || null,
         // BUILD-82 — the standard list is complete; these arrive whole.
         d.middleName || null, d.suffix || null, d.salutation || null, d.spouse || null,
         d.email2 || null, d.mobile || null, d.address2 || null, d.country || null,
@@ -4532,7 +4572,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // is a suggestion; leaving it null would drop them off every board.
         d._stageExplicit ? null : (d.stage || "prospect")
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -4543,7 +4583,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
           pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
-          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,
+          imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,contact_name,
           middle_name,suffix,salutation,spouse_name,email2,mobile,address2,country,
           donor_type,board_member,external_household_id,external_donor_ids,first_gift_date,suggested_stage)
        VALUES ${tuples.join(",")}`,
@@ -4947,7 +4987,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       { detail: { via: "import", source: cfSource, rows: cfGiftWrites, keys: [...new Set([...giftCfByIdx.values()].flatMap(v => Object.keys(v)))] } });
   } catch (e) { console.error("[combined-import] custom-field audit event failed:", e.message); }
 
-  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors,
+  // BUILD-84 P0-4 — geocoding is queued by the WRITE that changed addresses.
+  let geocodeQueued = null;
+  try { geocodeQueued = await markDonorsForGeocoding(orgId); }
+  catch (e) { console.error("[combined-import] geocode mark failed:", e.message); }
+
+  res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              duplicateCandidates, externalIdDupes,
              columns: columnSummary,
@@ -4985,6 +5030,11 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
        req.params.id, req.user.orgId]
     );
   }
+
+  // BUILD-84 P0-4 — an address change is the only other thing that makes a
+  // donor need geocoding. Marked here, looked up on the tick, never on read.
+  try { await markDonorsForGeocoding(req.user.orgId, { donorIds: [req.params.id] }); }
+  catch (e) { console.error("[geocode] mark after donor edit failed:", e.message); }
 
   const rows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
   const d = rows[0];
@@ -5287,6 +5337,12 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
   });
 
   await recalcDonorSummary(primaryId, orgId);
+  // BUILD-84 P0-4 — a merge FILLS the survivor's empty fields from the folded
+  // record, city/state/zip/country among them, so it can change an address.
+  // Both records are re-marked: the survivor may need a new lookup, and the
+  // folded one drops off the map by being soft-deleted.
+  try { await markDonorsForGeocoding(orgId, { donorIds: [primaryId] }); }
+  catch (e) { console.error("[geocode] mark after merge failed:", e.message); }
   res.json({ merged: true, primaryId, secondaryId, reassigned });
 }));
 
@@ -7061,12 +7117,21 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
 
   // Infer pipeline stage — same logic as combined import (see its comment
   // for the qualify/solicit reasoning), same guardrail.
+  //
+  // BUILD-84 P0-3 — the LAST path still writing `stage` as though an inference
+  // were a decision. BUILD-83 Part 3.5 moved import-combined to
+  // `suggested_stage`; this route kept writing `stage` and gating on
+  // `stage = 'prospect'`, which meant that the moment /donors/import stopped
+  // placing donors in 'prospect' (this build), gift history arriving later
+  // re-inferred nothing at all — a donor with a fresh $400 gift stayed a
+  // prospect forever. The guard is now the honest one: revise a SUGGESTION,
+  // never a stage a human placed.
   const _giftStageToday = orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
   if (affectedDonorIds.size > 0) {
     try {
       await run(
         `UPDATE donors
-         SET stage = CASE
+         SET suggested_stage = CASE
            WHEN total_giving = 0 AND last_gift_date IS NULL
                 AND (COALESCE(email,'') != '' OR COALESCE(phone,'') != '') THEN 'qualify'
            WHEN total_giving = 0 AND last_gift_date IS NULL            THEN 'prospect'
@@ -7083,7 +7148,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
          END,
          updated_at = NOW()
          WHERE org_id = ? AND id = ANY(?)
-           AND stage = 'prospect'
+           AND stage IS NULL
            AND deleted_at IS NULL`,
         // ORG_TZ_SEAM_OK — same civil-date arithmetic as import-combined.
         [_giftStageToday, _giftStageToday, _giftStageToday, orgId, [...affectedDonorIds]]
@@ -9016,10 +9081,16 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
   // thank-you queue. An unconfirmed largest-import gift becomes a
   // confirm-this-amount question, not a thank-you task.
   const { stats: impStats } = await importHealth(orgId);
+  const { eitherContainsTokenRun } = await import("./shared/importShape.js");
   const unconfirmedLargest = (impStats?.largestGifts || []).filter(g => !g.confirmed);
   for (const g of unacked) {
     const giftDate = new Date(g.date).toLocaleDateString("en-US", { month: "long", day: "numeric" });
-    const flagged = unconfirmedLargest.find(x => Number(x.dollars) === Number(g.amount) && x.name && g.donor_name && (g.donor_name.includes(x.name) || x.name.includes(g.donor_name)));
+    // BUILD-84 census — matching two donor NAMES respects token boundaries.
+    // `g.donor_name.includes(x.name)` matched "Ann Lee" inside "Joann Leewood",
+    // which here would put a confirm-this-amount flag on the wrong donor's
+    // thank-you. `eitherContainsTokenRun` is the ONE boundary-aware test.
+    const flagged = unconfirmedLargest.find(x => Number(x.dollars) === Number(g.amount) && x.name && g.donor_name
+      && eitherContainsTokenRun(g.donor_name, x.name));
     if (flagged) {
       upsertItem({
         donorId: g.donor_id, donorName: g.donor_name,
@@ -9401,13 +9472,13 @@ async function threadShapeMod() { return import("./shared/threadShape.js"); }
 async function openThreadTx(client, { orgId, donorId, step, openedOn, ownerId, ownerName, actorId, actorName, openingInteractionId = null, openingGiftId = null, followon = null }) {
   const id = "th_" + uuid().slice(0, 8);
   const rows = await queryTx(client,
-    `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+    `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,due_time,opened_on,
                           opening_interaction_id,opening_gift_id,owner_id,owner_name,
                           created_by,created_by_name,followon_type,followon_label,followon_due)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (org_id, donor_id) WHERE closed_at IS NULL DO NOTHING
      RETURNING *`,
-    [id, orgId, donorId, step.type, step.label, step.due, openedOn,
+    [id, orgId, donorId, step.type, step.label, step.due, step.time || null, openedOn,
      openingInteractionId, openingGiftId, ownerId || null, ownerName || null,
      actorId || null, actorName || null,
      followon?.type || null, followon?.label || null, followon?.due || null]);
@@ -9473,7 +9544,7 @@ async function composeThreads(orgId, { donorId = null } = {}) {
         : { kind: "none", type: null, date: t.opened_on, line: null, actor: t.created_by_name || null };
     list.push({
       id: t.id, donorId: t.donor_id, donorName: t.donor_name,
-      nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date },
+      nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date, time: t.due_time || null },
       overdue: t.due_date < today, daysOpen, openedOn: t.opened_on,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
@@ -9529,7 +9600,17 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
     // step, or one they retyped in the row); the type's label otherwise. A
     // suggestion the user has to retype costs time instead of saving it.
     const label = shape.sanitizeStepLabel(ns.label) || typeLabel;
-    step = { type: ns.type, label, due: ns.due };
+    // BUILD-84 FEATURE — the optional time. A 2:00 reminder does not forgive
+    // being an hour off, so it is refused outright for an org whose timezone
+    // is still Steward's default guess rather than a choice someone made.
+    let time = shape.sanitizeStepTime(ns.time);
+    if (ns.time != null && ns.time !== "" && !time)
+      return res.status(400).json({ error: "nextStep.time must be a 24-hour HH:MM, or omitted for a date-only step" });
+    if (time && !org.timezone_confirmed_at) {
+      return res.status(400).json({ error: "timezone_unset",
+        message: "Set your organization's timezone in Settings before scheduling a reminder at a specific time — Steward will not fire one at a guessed hour." });
+    }
+    step = { type: ns.type, label, due: ns.due, time };
   }
   // Which rule produced the proposal — "note" or "touch" — recorded with the
   // conversation so a wrong guess can be found later, not just corrected once.
@@ -14310,6 +14391,154 @@ app.post("/digests/run-daily", requireAuth, requireAdmin, wrap(async (req, res) 
   res.json({ today, ...out });
 }));
 
+// ── BUILD-84 P0-4 — GEOCODING IS A WRITE-TIME JOB ───────────────────────────
+// The map used to geocode at render, in the browser, one address per request,
+// storing nothing (geocode.js's header has the full account). Coordinates are
+// donor data now: written once, re-read forever, re-computed only when the
+// address itself changes.
+//
+// Three entry points and no others:
+//   markDonorsForGeocoding()  — a write said an address may have changed
+//   processGeocodeQueue()     — the 5-minute tick drains `pending`
+//   POST /geocode/run         — the ops/test hook that drives it NOW
+// Nothing on a read path may call any of them.
+
+// A DONOR-SIDED job budget. Every tick states how many provider requests it
+// spent for how many addresses, the same way the import states its write
+// round trips — a cost you cannot see is a cost nobody manages.
+const GEOCODE_TICK_BUDGET = Number(process.env.GEOCODE_TICK_BUDGET) || 500;
+
+// markDonorsForGeocoding(orgId, opts) — recompute every affected donor's
+// address key and set the status the key implies. A row whose key is unchanged
+// AND already `ok` is left alone: that is the caching requirement, enforced in
+// SQL rather than trusted to a caller.
+//   · no address at all      → 'no_address', coordinates cleared
+//   · key changed / new      → 'pending'
+//   · key same and 'ok'      → untouched, never looked up twice
+// `donorIds` scopes it to one write; omitted, it sweeps the org (used after an
+// import, where naming every id would be a 25,000-element array).
+async function markDonorsForGeocoding(orgId, { donorIds = null } = {}) {
+  const scope = donorIds && donorIds.length ? " AND id = ANY(?)" : "";
+  const params = donorIds && donorIds.length ? [orgId, donorIds] : [orgId];
+  const rows = await query(
+    `SELECT id, address, address2, city, state, zip, country, geocode_key, geocode_status
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL${scope}`, params);
+  const toPending = [], toNoAddress = [];
+  const keyById = new Map();
+  for (const d of rows) {
+    const key = geocode.addressKey(d);
+    if (!key) {
+      if (d.geocode_status !== "no_address") toNoAddress.push(d.id);
+      continue;
+    }
+    if (d.geocode_status === "ok" && d.geocode_key === key) continue;   // never twice
+    if (d.geocode_status === "pending" && d.geocode_key === key) continue;
+    toPending.push(d.id);
+    keyById.set(d.id, key);
+  }
+  const CH = 1000;
+  for (let i = 0; i < toNoAddress.length; i += CH)
+    await run(`UPDATE donors SET geocode_status='no_address', geocode_key=NULL, latitude=NULL, longitude=NULL,
+                 geocoded_at=NOW(), geocode_provider=NULL WHERE org_id=? AND id = ANY(?)`,
+              [orgId, toNoAddress.slice(i, i + CH)]);
+  for (let i = 0; i < toPending.length; i += CH) {
+    const slice = toPending.slice(i, i + CH);
+    // One statement per chunk, key per row via an unnested pair list.
+    await run(`UPDATE donors SET geocode_status='pending', geocode_key=v.key, latitude=NULL, longitude=NULL
+                 FROM (SELECT * FROM UNNEST(?::text[], ?::text[]) AS t(id, key)) AS v
+                WHERE donors.id = v.id AND donors.org_id = ?`,
+              [slice, slice.map(id => keyById.get(id)), orgId]);
+  }
+  return { pending: toPending.length, noAddress: toNoAddress.length, scanned: rows.length };
+}
+
+// processGeocodeQueue(opts) — drain `pending`, oldest org first, up to the
+// tick's budget. Batched: one provider request per 1,000 addresses on Geocodio.
+// Every row leaves with a TERMINAL status, so "still processing" can never be
+// a permanent state that the map has to paper over.
+async function processGeocodeQueue({ limit = GEOCODE_TICK_BUDGET, orgId = null } = {}) {
+  const cfg = geocode.providerConfig();
+  if (cfg.name === "unconfigured") return { provider: cfg.name, reason: cfg.reason, looked_up: 0, requests: 0 };
+  const scope = orgId ? " AND org_id = ?" : "";
+  const params = orgId ? [orgId, limit] : [limit];
+  const rows = await query(
+    `SELECT id, org_id, address, address2, city, state, zip, country, geocode_key
+       FROM donors WHERE geocode_status = 'pending' AND deleted_at IS NULL${scope}
+      ORDER BY updated_at ASC, id ASC LIMIT ?`, params);
+  if (!rows.length) return { provider: cfg.name, looked_up: 0, requests: 0 };
+
+  // De-duplicate by KEY before spending a request: an org with 400 donors in
+  // one town is one lookup, not 400. This is the other half of the caching
+  // requirement, and the reason a real first import costs far less than its
+  // row count suggests.
+  const byKey = new Map();
+  for (const d of rows) {
+    const k = d.geocode_key || geocode.addressKey(d);
+    if (!byKey.has(k)) byKey.set(k, { query: geocode.addressQuery(d), ids: [] });
+    byKey.get(k).ids.push(d.id);
+  }
+  const keys = [...byKey.keys()];
+  const t0 = Date.now();
+  const { results, requests, provider } = await geocode.geocodeAddresses(keys.map(k => byKey.get(k).query), { config: cfg });
+
+  const buckets = { ok: [], not_found: [], failed: [] };
+  const coords = new Map();
+  keys.forEach((k, i) => {
+    const r = results[i] || { status: "failed", error: "no result" };
+    const ids = byKey.get(k).ids;
+    (buckets[r.status] || buckets.failed).push(...ids);
+    if (r.status === "ok") for (const id of ids) coords.set(id, r);
+  });
+  for (const [status, ids] of Object.entries(buckets)) {
+    if (!ids.length) continue;
+    if (status === "ok") {
+      await run(`UPDATE donors SET geocode_status='ok', geocoded_at=NOW(), geocode_provider=?,
+                   latitude=v.lat::double precision, longitude=v.lng::double precision
+                   FROM (SELECT * FROM UNNEST(?::text[], ?::text[], ?::text[]) AS t(id, lat, lng)) AS v
+                  WHERE donors.id = v.id`,
+                [provider, ids, ids.map(id => String(coords.get(id).lat)), ids.map(id => String(coords.get(id).lng))]);
+    } else {
+      await run(`UPDATE donors SET geocode_status=?, geocoded_at=NOW(), geocode_provider=?,
+                   latitude=NULL, longitude=NULL WHERE id = ANY(?)`, [status, provider, ids]);
+    }
+  }
+  const out = { provider, looked_up: rows.length, distinct: keys.length, requests,
+                ok: buckets.ok.length, not_found: buckets.not_found.length, failed: buckets.failed.length,
+                ms: Date.now() - t0 };
+  console.log(`[geocode] provider=${provider} rows=${out.looked_up} distinct=${out.distinct} requests=${out.requests} ` +
+              `ok=${out.ok} not_found=${out.not_found} failed=${out.failed} ${out.ms}ms`);
+  return out;
+}
+
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processGeocodeQueue().catch(e => console.error("[geocode]", e.message)), 55000);
+  setInterval(() => processGeocodeQueue().catch(e => console.error("[geocode]", e.message)), 5 * 60 * 1000);
+}
+
+// POST /geocode/run — drive the queue for the caller's org NOW. The ops/test
+// hook, same bar as POST /nudges/run. {mark:true} re-derives every donor's
+// key first (what an import does); {limit} caps the spend.
+app.post("/geocode/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const marked = req.body && req.body.mark ? await markDonorsForGeocoding(req.user.orgId) : null;
+  const limit = Math.min(Math.max(parseInt(req.body?.limit, 10) || GEOCODE_TICK_BUDGET, 1), 5000);
+  const out = await processGeocodeQueue({ limit, orgId: req.user.orgId });
+  res.json({ marked, ...out });
+}));
+
+// GET /geocode/status — what the map needs to describe itself in a sentence:
+// the counts by status and whether a provider is configured at all. A read
+// path, and it makes NO provider call.
+app.get("/geocode/status", requireAuth, wrap(async (req, res) => {
+  const cfg = geocode.providerConfig();
+  const rows = await query(
+    `SELECT COALESCE(geocode_status, 'pending') AS s, COUNT(*)::int AS c
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL GROUP BY 1`, [req.user.orgId]);
+  const counts = Object.fromEntries(geocode.GEOCODE_STATUSES.map(s => [s, 0]));
+  for (const r of rows) counts[r.s] = (counts[r.s] || 0) + r.c;
+  res.json({ provider: cfg.name, reason: cfg.reason || null, counts,
+             total: Object.values(counts).reduce((a, b) => a + b, 0) });
+}));
+
 // ── BUILD-81 Part 2 — THE NUDGE LEAVES THE APP ──────────────────────────────
 // A reminder in a dashboard nobody opens is not a reminder. ONE email per
 // user per weekday morning, listing every open thread that is due or
@@ -14334,19 +14563,27 @@ function threadNudgeDayOk(org, todayStr) {
 async function composeThreadNudge(orgId, today) {
   const rows = await query(
     `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_type, t.next_step_label,
-            t.due_date, t.opened_on
+            t.due_date, t.due_time, t.opened_on
        FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
         AND t.due_date <= ?
       ORDER BY t.opened_on ASC, t.due_date ASC`,
     [orgId, today, today]);
-  return rows.map(r => ({
-    id: r.id, donorId: r.donor_id,
-    donorName: displayNameCase(r.donor_name || ""),
-    stepLabel: r.next_step_label, due: r.due_date,
-    daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
-  }));
+  // BUILD-84 FEATURE — PRECEDENCE, read from the ONE function that states it
+  // (shared/threadShape.js digestShouldSkip): a task with a time sends its own
+  // email at that time and is out of the digest ON ITS DUE DATE ONLY. Left
+  // open, it rejoins the next morning as overdue, counted like everything
+  // else. No task is ever reported twice on the same day.
+  const { digestShouldSkip } = await threadShapeMod();
+  return rows
+    .filter(r => !digestShouldSkip(r, today))
+    .map(r => ({
+      id: r.id, donorId: r.donor_id,
+      donorName: displayNameCase(r.donor_name || ""),
+      stepLabel: r.next_step_label, due: r.due_date,
+      daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
+    }));
 }
 
 function threadNudgeSubject(threads) {
@@ -14427,6 +14664,151 @@ app.post("/nudges/run", requireAuth, requireAdmin, wrap(async (req, res) => {
   }
   const out = await runThreadNudgesForOrg(org, { today, send: !(req.body && req.body.dryRun) });
   res.json({ today, ...out });
+}));
+
+// ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ─────────
+//
+// A next step set for Monday at 2:00 sends ONE email Monday at 2:00, carrying
+// the task, the donor, and a button into that donor's log-one-line screen. Not
+// a reminder that it exists — a reminder at the moment the person said they
+// would do it. The morning digest is the weaker form of the same promise: she
+// reads it at eight, the call is at two, and by two the email is four screens
+// up. This is the one notification that arrives while it can still change what
+// she does.
+//
+// PRECEDENCE lives in shared/threadShape.js (digestShouldSkip /
+// stepReminderDue), read by BOTH this sender and the digest, so a task can
+// never be reported twice on the same day.
+//
+// THE WEEKEND RULE INVERTS HERE. The digest is weekday-only by default because
+// a list of open threads on a Saturday is an intrusion nobody asked for. A
+// time is a commitment to a MOMENT, so a timed step fires on weekends
+// regardless of `orgs.thread_nudge_weekends`. There is deliberately no
+// weekday gate below — that absence is the rule.
+//
+// TIMEZONE. The org's, always, and only when a human CHOSE it
+// (`timezone_confirmed_at`). An org still carrying Steward's America/New_York
+// default cannot set a time at all (the conversations route refuses it and the
+// form says why), so this loop can never fire at a guessed hour.
+//
+// The button is a plain navigation to the donor's log-one-line screen,
+// prefilled with the task. BUILD-81's rule stands unchanged and is the reason
+// it stands: mail clients prefetch links, so a GET must never change state.
+// Done and Snooze happen on the page, after a load, as POSTs.
+
+// Every open, unsnoozed, timed step due TODAY for this org, with its donor.
+async function composeStepReminders(orgId, today) {
+  return await query(
+    `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_label, t.due_date, t.due_time,
+            t.owner_id, t.owner_name, t.created_by, t.opened_on
+       FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+        AND t.due_time IS NOT NULL AND t.due_date = ?
+        AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
+      ORDER BY t.due_time ASC, t.id ASC`,
+    [orgId, today, today]);
+}
+
+function stepReminderSubject(t, timeLabel) {
+  return `${timeLabel} — ${t.next_step_label} · ${displayNameCase(t.donor_name || "")}`;
+}
+
+function renderStepReminderBody(t, org, timeLabel) {
+  // The one button: the donor's LOG-ONE-LINE screen, prefilled with the task —
+  // not the plain profile. She opens it to record what happened, which is the
+  // action the email exists to produce.
+  const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donor_id)}?conversation=1&step=${encodeURIComponent(t.next_step_label)}`;
+  const addr = org.receipt_address && String(org.receipt_address).trim();
+  const footer = addr
+    ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
+    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
+  return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">${digestEsc(timeLabel)}. ${digestEsc(t.next_step_label)}.</div>
+      <div style="font-size:14px;color:#0f1a12;margin-top:6px;">${digestEsc(displayNameCase(t.donor_name || ""))}</div>
+      <div style="font-size:12.5px;color:#6b7d70;margin-top:2px;">This is the time you set for it.</div>
+      <div style="margin-top:16px;">
+        <a href="${url}" style="display:inline-block;background:#0d5c3a;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:11px 18px;border-radius:8px;">Log what happened →</a>
+      </div>
+      ${footer}
+    </div>`;
+}
+
+// Run the timed reminders for one org at `nowHHMM` (the org's wall clock).
+// send=false → compose only, reserving nothing.
+async function runStepRemindersForOrg(org, { today, nowHHMM, send = true, force = false }) {
+  const out = { sent: [], skipped: [] };
+  const { stepReminderDue } = await threadShapeMod();
+  const rows = await composeStepReminders(org.id, today);
+  if (!rows.length) return out;
+  const users = await query("SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+  for (const t of rows) {
+    if (!force && !stepReminderDue(t, today, nowHHMM)) { out.skipped.push({ threadId: t.id, reason: "not_yet" }); continue; }
+    const timeLabel = formatOrgStepTime(t.due_time);
+    const subject = stepReminderSubject(t, timeLabel);
+    const body = renderStepReminderBody(t, org, timeLabel);
+    // Who hears about it: the thread's OWNER when it has one (the officer who
+    // set the time), otherwise whoever created it, otherwise the org — the
+    // same escalation the notification matrix uses. Never everyone: a time is
+    // one person's commitment, not the org's.
+    const targets = t.owner_id ? users.filter(u => u.id === t.owner_id)
+                  : t.created_by ? users.filter(u => u.id === t.created_by)
+                  : users;
+    for (const u of (targets.length ? targets : users)) {
+      if (!send) { out.sent.push({ threadId: t.id, recipientUserId: u.id, email: u.email, subject }); continue; }
+      if (!(await userWantsEmail(u.id, "step_reminder"))) { out.skipped.push({ threadId: t.id, recipientUserId: u.id, reason: "opted_out" }); continue; }
+      // ONE email per thread per user per day — the digest_sends idempotency
+      // the nudge already uses, keyed on the thread so a step moved to a new
+      // time on a later day is a new reminder and a re-run is not.
+      const rid = await reserveDigest(org.id, "step_reminder", `step:${t.id}:${today}`, u.id, u.email, "user",
+        { threadId: t.id, donorId: t.donor_id, due: t.due_date, time: t.due_time });
+      if (!rid) { out.skipped.push({ threadId: t.id, recipientUserId: u.id, reason: "already_sent" }); continue; }
+      await sendDigestEmail(org, u.email, subject, body);
+      out.sent.push({ threadId: t.id, recipientUserId: u.id, email: u.email, subject });
+    }
+  }
+  return out;
+}
+
+function formatOrgStepTime(hhmm) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hhmm || ""));
+  if (!m) return "";
+  const h = +m[1], mi = +m[2];
+  const ampm = h < 12 ? "AM" : "PM";
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(mi).padStart(2, "0")} ${ampm}`;
+}
+
+async function processStepReminders(now = new Date()) {
+  try {
+    // ORG_TZ_SEAM_OK — "today" and the wall clock are the ORGANIZATION's.
+    // No weekday gate: a time fires on a Saturday, deliberately (see header).
+    const orgs = await query(
+      "SELECT id, name, legal_name, timezone, receipt_address FROM orgs WHERE onboarding_complete=1", []);
+    for (const org of orgs) {
+      const clock = orgTime.orgClock(org, now);
+      const nowHHMM = `${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
+      await runStepRemindersForOrg(org, { today: clock.date, nowHHMM })
+        .catch(e => console.error("[step-reminder]", org.id, e.message));
+    }
+  } catch (e) { console.error("[step-reminder] processStepReminders:", e.message); }
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processStepReminders().catch(console.error), 52000);
+  setInterval(() => processStepReminders().catch(console.error), 5 * 60 * 1000);
+}
+
+// POST /step-reminders/run — the ops/test hook, same bar as POST /nudges/run.
+// {today, now} pin the org's date and wall clock so the SCHEDULE is testable;
+// {force:true} ignores the delivery window; {dryRun:true} composes only.
+app.post("/step-reminders/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name, legal_name, timezone, receipt_address FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const clock = orgTime.orgClock(org);                  // ORG_TZ_SEAM_OK
+  const today = (req.body && req.body.today) || clock.date;
+  const nowHHMM = (req.body && req.body.now)
+    || `${String(clock.hour).padStart(2, "0")}:${String(clock.minute).padStart(2, "0")}`;
+  const out = await runStepRemindersForOrg(org, {
+    today, nowHHMM, force: !!req.body?.force, send: !(req.body && req.body.dryRun) });
+  res.json({ today, now: nowHHMM, ...out });
 }));
 
 // GET /digests/preview — compose (never send) the caller's current digest, for
@@ -16320,6 +16702,7 @@ const NOTIFY_PREF_COLUMN = {
   task_assignments: "notify_task_assignments",
   daily_tasks: "notify_daily_tasks",
   thread_nudge: "notify_thread_nudge",   // BUILD-81 — the Thread's morning email
+  step_reminder: "notify_step_reminder", // BUILD-84 — a step with a time on it
 };
 async function userWantsEmail(userId, prefKind) {
   const col = NOTIFY_PREF_COLUMN[prefKind];
@@ -16333,6 +16716,7 @@ function mapNotifyPrefs(row) {
     taskAssignments: row?.notify_task_assignments !== false,
     dailyTasks: row?.notify_daily_tasks !== false,
     threadNudge: row?.notify_thread_nudge !== false,
+    stepReminder: row?.notify_step_reminder !== false,
   };
 }
 

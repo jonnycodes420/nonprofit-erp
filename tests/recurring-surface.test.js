@@ -20,7 +20,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const Stripe = require("stripe");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, leaks } = require("./helpers");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const stripeLib = new Stripe("sk_test_dummy");
@@ -211,7 +211,10 @@ async function fixture() {
   ok("roster carries donor identity + start date", byId.rs_r2.donorName === "Ben Beta" && !!byId.rs_r2.startedAt);
   const rosterB = (await api("GET", "/recurring/roster", adminB)).body;
   ok("org B sees only its own roster", rosterB.subs?.length === 1 && rosterB.subs[0].id === "rs_b1", rosterB.subs);
-  ok("org A roster carries no org-B marker", !JSON.stringify(roster).includes("d_rec_bb") && !JSON.stringify(roster).includes("Bob OrgB"));
+  // BUILD-84 census — walked. skipIds is OFF here on purpose: the id IS the
+  // marker being looked for, so it must not be exempted.
+  ok("org A roster carries no org-B marker",
+    (await leaks(roster, [{ raw: "d_rec_bb" }, { text: "Bob OrgB" }], { skipIds: false })).length === 0);
 
   // ── §2 movement ──────────────────────────────────────────────────────────
   const mv = (await api("GET", "/recurring/movement", admin)).body;
@@ -316,7 +319,8 @@ async function fixture() {
   let pMail = mailTo("ada@rec.test")[0];
   const tokAmount = tokenFromMail(pMail);
   ok("proposal email carries the completion link", !!tokAmount, pMail?.html?.slice(0, 200));
-  ok("token is NOT in the API response (email-only, like fundraiser edit tokens)", !JSON.stringify(r.body).includes(tokAmount || "@@"));
+  ok("token is NOT in the API response (email-only, like fundraiser edit tokens)",
+    (await leaks(r.body, [{ raw: tokAmount || "@@" }], { skipIds: false })).length === 0);
   const [pRow] = await q(`SELECT token_hash FROM recurring_proposals WHERE id=$1`, [r.body.id]);
   ok("token is stored HASHED (hash-at-rest)", pRow.token_hash !== tokAmount && pRow.token_hash.length === 64);
   roster = (await api("GET", "/recurring/roster", admin)).body;

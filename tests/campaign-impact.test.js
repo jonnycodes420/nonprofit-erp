@@ -25,7 +25,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, leaks, textMatch } = require("./helpers");
 
 const ORG_A = "org_ci54_a", SLUG_A = "campimpact-a";
 const ORG_B = "org_ci54_b";
@@ -187,8 +187,12 @@ async function fixture() {
     && me.campaigns[0].description.startsWith("Updated:")
     && me.campaigns[0].story?.[0]?.type === "h2"
     && me.campaigns[0].heroImage === heroUrl, me.campaigns);
+  // BUILD-84 census — walked, not stringified: a key named `raised`/`goalAmount`
+  // anywhere in the tree, or the figure 50000 as a NUMBER (never the digits
+  // inside an id or a timestamp).
   ok("goal OFF → NO goal data anywhere in the donor payload", me.campaigns[0].goal === null
-    && !JSON.stringify(me.campaigns).match(/"raised"|"goalAmount"|50000/), me.campaigns[0]);
+    && !(await textMatch()).findLeaf(me.campaigns, (v, path) => /(^|[.\]])(raised|goalAmount)$/.test(path))
+    && (await leaks(me.campaigns, [{ number: 50000 }])).length === 0, me.campaigns[0]);
   ok("thank-you state present for the recent attributed gift", me.thankYou
     && me.thankYou.amount === 25000
     && me.thankYou.campaignName === "Steeples and Studios Campaign"
@@ -202,7 +206,7 @@ async function fixture() {
     && me.campaigns[0].goal.raised === 25000
     && me.campaigns[0].goal.percent === 50, me.campaigns[0].goal);
   ok("goal payload carries NO donor counts", !("donorCount" in (me.campaigns[0].goal || {}))
-    && !JSON.stringify(me.campaigns[0]).includes("donorCount"));
+    && !(await textMatch()).findLeaf(me.campaigns[0], (v, path) => /(^|[.\]])donorCount$/.test(path)));
 
   // ── 5) never fabricate — a content-less campaign is name-only ────────────
   console.log("\n— never fabricate —");

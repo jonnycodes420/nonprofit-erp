@@ -1,0 +1,733 @@
+Steward
+⌕
+?
+B
+B84 Walker
+Sign out
+◈
+Home
+PEOPLE
+♦
+Donors
+◫
+Pipeline
+◻
+Tasks
+FUNDRAISING
+↗
+Fundraising
+◉
+Grants
+◑
+Communications
+◫
+Donor Portal
+◧
+Workflows
+INSIGHT
+▤
+Reports
+◇
+Finance
+⚙
+Settings
+Your donors.
+Import Donors
+One file — donors and their giving history · shape auto-detected · stages auto-assigned
+✕ Close
+▤
+steward-leads.csv
+134 KB · 444 rows · one row per donor — we'll import donors and their totals
+Replace
+Remove
+We detected: one row per donor — we'll import donors and their totals. (only 2 columns recognised — not enough evidence to pick a shape)
+One row per donor (totals)
+One row per gift (build history)
+Year columns (build history)
+Map columns (30 donor columns · 444 rows)
+✦ Guess from contents
+Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+sell
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+why
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+city
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+drive_min_from_wilmore
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+organization
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+what_they_do
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+phone
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+email
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contact_name
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contact_title
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contact_confidence
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+revenue
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+expenses
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contributions
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contrib_pct_of_revenue
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contrib_change_pct
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+contrib_lost_yoy
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+deficit
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+fiscal_year
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+ntee
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+ein
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+address
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+zipcode
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+website
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+propublica
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+notes
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+called
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+outcome
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+next_step
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+my_notes
+First name
+Last name
+Full name
+Email
+Phone
+Lifetime giving
+Last gift amount
+Last gift date
+Gift count
+Status
+Organization
+City
+State
+Address
+ZIP
+Notes
+Owner
+Deceased
+Do not contact
+＋ New custom field…
+Don't import this column
+ASSIGN THESE DONORS TO AN OFFICER
+No owner/officer column detected. Route them all now, or leave unassigned and split them from the Directory later.
+Leave unassigned (assign later from the Directory)
+Assign all to me
+444 donors ready
+STARTING STAGE
+prospect × 444
+No giving data in this file, so everyone starts in the same stage. Drag from the Kanban after import.
+← Back
+Import 444 donors →
+Directory
+Team
+Re-engage
+Map
+✦ Call List
+Log a conversation
++ Add
+↑ Import & tools
+▾
+⊞ Filters
+No donors yet.
+Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.
+Add a donor →
+Explore with sample data

@@ -9,18 +9,24 @@ import { T } from "./shared";
 import {
   TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
   nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel, NOTE_ONLY_PLUS_DAYS,
+  sanitizeStepTime, formatStepTime,
 } from "../../../shared/threadShape";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
 const todayLocal = () => new Date().toISOString().split("T")[0];
 
-export function LogConversationModal({ donor, thread = null, onSaved, onClose }) {
+export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null }) {
   const [touch, setTouch] = useState("call_reached");
   const [line, setLine] = useState("");
   const [date, setDate] = useState(todayLocal());
   const [nsLabel, setNsLabel] = useState("Follow up");
   const [nsDue, setNsDue] = useState(addCivilDays(todayLocal(), 5));
+  // BUILD-84 — the OPTIONAL time. Empty is the whole existing behaviour:
+  // the step stays date-only, rides the morning digest, and sends nothing of
+  // its own. Setting one swaps the reminder from "in the morning list" to "at
+  // that moment", and the sentence below says exactly that.
+  const [nsTime, setNsTime] = useState("");
   const [nsDirty, setNsDirty] = useState(false);
   const [nsSource, setNsSource] = useState(null);   // which rule proposed this
   const [ignoreNote, setIgnoreNote] = useState(false);
@@ -63,6 +69,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
           touch, line: line.trim(), date,
           nextStep: skipped ? { skipped: true }
             : { type: nextStepTypeForLabel(nsLabel), label: sanitizeStepLabel(nsLabel), due: nsDue,
+                time: sanitizeStepTime(nsTime) || undefined,
                 source: nsSource?.from || null },
         }),
       });
@@ -73,6 +80,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
       setBusy(false);
     }
   };
+
+  // Whether this org has a timezone a HUMAN chose (orgs.timezone_confirmed_at)
+  // — the gate on offering a time at all.
+  const tzKnown = !!(org && (org.timezone_confirmed_at || org.timezoneConfirmedAt));
 
   const inp = { width: "100%", background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "10px 12px", color: T.ink, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box" };
   const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5, display: "block" };
@@ -113,6 +124,13 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
               style={{ ...inp, width: "auto", flex: "1 1 200px" }} />
             <input type="date" value={nsDue} onChange={e => { setNsDue(e.target.value); setNsDirty(true); }}
               aria-label="Next step due date" style={{ ...inp, width: "auto", flex: "0 1 150px" }} />
+            {/* An org still on Steward's default timezone cannot set a time —
+                a 2:00 reminder does not forgive being an hour off, and the
+                form says why rather than firing at a guessed hour. */}
+            {tzKnown
+              ? <input type="time" value={nsTime} onChange={e => { setNsTime(e.target.value); setNsDirty(true); }}
+                  aria-label="Next step time (optional)" style={{ ...inp, width: "auto", flex: "0 1 116px" }} />
+              : null}
           </div>
           {/* Which rule proposed this. A wrong guess has to be visible before
               it can be corrected — and switching back is one click. */}
@@ -136,7 +154,11 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose })
             </div>
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
-            This comes back to find you when it is due. Skipping is recorded as skipped.
+            {!tzKnown
+              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone in Settings first — Steward will not fire a reminder at a guessed hour.</>
+              : sanitizeStepTime(nsTime)
+                ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened — instead of the morning list. It fires on a weekend too.</>
+                : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}
           </div>
         </div>
 

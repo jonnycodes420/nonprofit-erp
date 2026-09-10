@@ -15,7 +15,7 @@
 //
 // Standard scratch stack + DONOR_ACCOUNTS_ENABLED=1.
 const bcrypt = require("bcryptjs");
-const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
 const { assetIdFor, ASSET_ID_RE, _signedS3Request } = require("../assetStore");
 
 const ORG_A = "org_ta_a", SLUG_A = "themeassets-a";
@@ -106,13 +106,16 @@ async function fixture() {
   console.log("\n— payloads —");
   const cfg = await (await fetch(BASE + `/portal/${SLUG_A}/config`)).json();
   ok("portal config theme carries the URL", cfg.theme.headerImage === headerUrl && cfg.theme.logo === logoUrl, [cfg.theme.headerImage, cfg.theme.logo]);
-  ok("portal config theme carries zero base64 image bytes", !JSON.stringify(cfg.theme).includes(";base64,"));
+  // BUILD-84 census — walked. ";base64," is a raw marker, not a word.
+  ok("portal config theme carries zero base64 image bytes",
+    (await leaks(cfg.theme, [{ raw: ";base64," }], { skipIds: false })).length === 0);
   const acct = await raw("POST", "/account/login", { body: { email: EMAIL, password: "loadtest1234" } });
   const cookie = cookieOf(acct);
   const dash = await raw("GET", "/account/dashboard", { cookie });
   ok("dashboard org theme carries the URL", dash.body.orgs?.[0]?.theme?.headerImage === headerUrl
     && dash.body.orgs?.[0]?.theme?.logo === logoUrl, dash.body.orgs?.[0]?.theme?.headerImage);
-  ok("whole dashboard payload carries zero image base64", !JSON.stringify(dash.body).includes(";base64,"));
+  ok("whole dashboard payload carries zero image base64",
+    (await leaks(dash.body, [{ raw: ";base64," }], { skipIds: false })).length === 0);
   const dir = await raw("GET", "/network/directory?q=asset arts", { cookie });
   ok("directory row logo is the URL", dir.body.results?.[0]?.logo === logoUrl, dir.body.results?.[0]?.logo);
 
@@ -211,7 +214,8 @@ async function fixture() {
   const dash2 = await raw("GET", "/account/dashboard", { cookie });
   const upRow = (dash2.body.impact || []).find(u => u.id === upId);
   ok("dashboard impact carries the photo PATHS", upRow && upRow.photos.length === 2 && upRow.photos[0] === ph0, upRow?.photos);
-  ok("FULL dashboard payload: zero image base64 (theme + photos)", !JSON.stringify(dash2.body).includes(";base64,"));
+  ok("FULL dashboard payload: zero image base64 (theme + photos)",
+    (await leaks(dash2.body, [{ raw: ";base64," }], { skipIds: false })).length === 0);
 
   // echo, add, remove, cross-update refs
   const echo2 = await api("PUT", `/impact-updates/${upId}`, tokA, { photos: [ph0, ph1] });
@@ -252,7 +256,8 @@ async function fixture() {
   const migP = await api("PUT", "/impact-updates/imp_ta_leg", tokA, { photos: [svgUri] });
   ok("re-saving migrates legacy photos to asset paths", /^\/portal-assets\/pa_/.test(migP.body.photos[0]));
   const dash4 = await raw("GET", "/account/dashboard", { cookie });
-  ok("post-migration: FULL dashboard payload zero base64 again", !JSON.stringify(dash4.body).includes(";base64,"));
+  ok("post-migration: FULL dashboard payload zero base64 again",
+    (await leaks(dash4.body, [{ raw: ";base64," }], { skipIds: false })).length === 0);
   await api("DELETE", "/impact-updates/imp_ta_leg", tokA);
 
   // health surfacing for the S3-fallback alarm

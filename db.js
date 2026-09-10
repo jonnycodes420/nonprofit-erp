@@ -1420,6 +1420,30 @@ async function initSchema() {
   // a funnel reading "Cultivate 3,143 · Solicit 926 · Steward 2,719" the minute
   // a file lands can say plainly that nobody decided any of it.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS suggested_stage TEXT`);
+  // BUILD-84 P0-2 — an organization is a donor, and the person on its row is
+  // the CONTACT on it, never the donor's name. `kind` (BUILD-80 Part 7) is the
+  // donor type: 'person' | 'organisation' | 'anonymous'; NULL is a legacy row
+  // whose kind was never recorded and is read as a person.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS contact_name TEXT`);
+
+  // ── BUILD-84 P0-4 — GEOCODE ONCE AT WRITE TIME, NEVER AT RENDER ──────────
+  // The Map used to geocode in the browser, one address per request, on every
+  // render, storing nothing: minutes of crawl for 444 donors, unreachable at
+  // 25,000, against a provider whose terms require caching and forbid
+  // systematic queries — and it sent donor home addresses to a third party on
+  // every page view. Coordinates are donor data now.
+  //   geocode_status: 'pending' | 'ok' | 'no_address' | 'not_found' | 'failed'
+  //   geocode_key:    the normalised address the coordinates belong to. A
+  //                   record whose key is unchanged is NEVER looked up twice,
+  //                   which is the provider's caching requirement satisfied by
+  //                   construction rather than by a cache anyone has to trust.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS geocoded_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS geocode_status TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS geocode_provider TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS geocode_key TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_geocode_pending ON donors (org_id) WHERE geocode_status = 'pending' AND deleted_at IS NULL`);
   // BUILD-80 Part 9 — derived surfaces must not outrun the import: the last
   // import's row/refusal counts and largest gifts, read by every headline
   // stat while refusals exceed 5% of rows.
@@ -1472,6 +1496,26 @@ async function initSchema() {
   // convention) and the org-level weekend toggle (default off: no weekend mail).
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_thread_nudge BOOLEAN`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS thread_nudge_weekends BOOLEAN DEFAULT FALSE`);
+
+  // ── BUILD-84 FEATURE — A TASK WITH A TIME ON IT EMAILS AT THAT TIME ───────
+  // The next step's due field was a CIVIL DATE and nothing else (`due_date
+  // TEXT NOT NULL`, every BUILD-81 default expressed as `+N days`), so there
+  // was no 2:00 to fire at. Rather than convert due_date to a timestamptz —
+  // which would drag every date-only task through a timezone it never had —
+  // the time rides BESIDE it, nullable: `HH:MM` in the ORG's timezone, or
+  // NULL for the date-only task that behaves exactly as it did yesterday.
+  // Nothing to backfill by construction: every existing row is date-only and
+  // stays date-only.
+  await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS due_time TEXT`);
+  // Per-user switch for the timed reminder, same convention as the nudge
+  // (NULL = on) and shown in the SAME notification settings list.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_step_reminder BOOLEAN`);
+  // A timezone a HUMAN chose, distinct from the America/New_York default the
+  // column carries so no read path has to cope with a null zone. A morning
+  // digest forgives being an hour off; a 2:00 reminder does not, so the
+  // feature is unavailable until this is stamped.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS timezone_confirmed_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_threads_org_timed ON threads (org_id, due_date, due_time) WHERE closed_at IS NULL AND due_time IS NOT NULL`);
 
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the

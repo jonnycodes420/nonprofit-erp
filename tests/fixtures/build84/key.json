@@ -1,0 +1,59 @@
+{
+  "source": "hand-authored for BUILD-84 (P0-1 the value scanner, P0-2 an organization is a donor, P0-3 the stage basis)",
+  "file": "org-donors.csv",
+  "rowsInFile": 9,
+
+  "_comment_scanner": "P0-1 — being numeric is not evidence of being money. Exactly ONE column qualifies as currency: `contributions` (money word in the header AND $-signs and cents in the values). `drive_min_from_wilmore` is disqualified by the token `min`; `contrib_pct_of_revenue` by `pct`; `zipcode` by `zipcode`; `last_gift_date` carries no money word and no currency marks.",
+  "currencyColumns": [
+    { "header": "contributions", "sum": 343425.0, "why": "the header says “contributions”" }
+  ],
+  "scannerRefusals": {
+    "drive_min_from_wilmore": "“min” makes this a measurement, not money",
+    "contrib_pct_of_revenue": "“pct” makes this a measurement, not money",
+    "zipcode": "“zipcode” makes this a measurement, not money"
+  },
+  "naiveScannerWouldHaveSaid": { "header": "drive_min_from_wilmore", "sum": 163 },
+
+  "_comment_nameability": "P0-2 — a donor record is nameable when it has a person name, an email, OR an organization. The key asserts PER-NAME membership, not counts: a count-only key cannot tell you which donor went missing.",
+  "donorsExpected": 8,
+  "setAsideExpected": 1,
+  "donors": [
+    { "line": 2, "name": "Heart Of Africa Inc",          "kind": "organisation", "contactName": "Dr. D. Michael Henderson", "email": "mhafrica@example.org", "total": 25000.0 },
+    { "line": 3, "name": "Circle Of Hope International", "kind": "organisation", "contactName": null,                       "email": "karen@example.org",    "total": 12400.0 },
+    { "line": 4, "name": "Wilmore Rotary Club",          "kind": "organisation", "contactName": null,                       "email": "",                     "total": 250000.0,
+      "why": "no person name AND no email — set aside under the old rule, and it carries the LARGEST gift in the file" },
+    { "line": 5, "name": "The Asbury Fund",              "kind": "organisation", "contactName": "Bill Kierce",              "email": "fas@example.org",      "total": 8900.0 },
+    { "line": 6, "name": "Marguerite Delacroix-Weber",   "kind": "person",       "contactName": null,                       "email": "marg@example.org",     "total": 1450.0 },
+    { "line": 7, "name": "Joann Leewood",                "kind": "person",       "contactName": null,                       "email": "",                     "total": 600.0 },
+    { "line": 8, "name": "Bluegrass Community Bank",     "kind": "organisation", "contactName": "Ann Lee",                  "email": "alee@example.org",     "total": 45000.0,
+      "why": "organization AND a contact person — the organization is the donor, the person rides as the contact and is NEVER folded into the donor's name" },
+    { "line": 9, "name": "",                             "kind": "person",       "contactName": null,                       "email": "tandry@example.org",   "total": 75.0,
+      "why": "email only — nameable, and the display name becomes “Unnamed donor (line 9)” with a needs-name tag, unchanged from before this build" }
+  ],
+  "setAside": [
+    { "line": 10, "reason": "no name, email, or organization",
+      "why": "the ONE row with none of the three. It must still be set aside, and the reason vocabulary must match on the receipt AND in the downloadable file." }
+  ],
+  "oldRuleWouldHaveSetAside": [
+    { "line": 4, "name": "Wilmore Rotary Club", "total": 250000.0 },
+    { "line": 10, "name": null }
+  ],
+
+  "_comment_boundaries": "the census, exercised in both directions — “Ann Lee” (line 8's contact) is a letter-substring of “Joann Leewood” (line 7's donor) and must NEVER match it as a name.",
+  "tokenBoundaryPair": { "a": "Joann Leewood", "b": "Ann Lee", "substringMatch": true, "tokenRunMatch": false },
+
+  "_comment_stage": "P0-3 — the basis is derived from the mapping, never written by hand.",
+  "stageBasis": {
+    "withContributionsAndDateMapped": "Based on lifetime giving and last gift date.",
+    "withNothingMapped": "No giving data in this file, so everyone starts in the same stage. Drag from the Kanban after import.",
+    "fallbackStage": "prospect"
+  },
+
+  "_comment_geocode": "P0-4 — every donor leaves the import with a terminal geocode_status, and the counts add up to the donor total.",
+  "geocode": {
+    "addressOnFile": 7,
+    "noAddress": 1,
+    "noAddressLines": [9],
+    "distinctAddressKeys": 7
+  }
+}

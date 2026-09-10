@@ -16,7 +16,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks } = require("./helpers");
 
 const ORG_A = "org_ob_a", SLUG_A = "blind-a";
 const ORG_B = "org_ob_b", SLUG_B = "blind-b";
@@ -148,7 +148,11 @@ async function captureBattery(tokenA) {
   await raw("POST", "/account/orgs/add", { cookie, body: { orgSlug: SLUG_B } });
   const followDash = JSON.parse((await raw("GET", "/account/dashboard", { cookie })).text);
   ok("the follow shows a card for org B with ZERO history figures",
-    followDash.followed?.some(f => f.orgSlug === SLUG_B) && !JSON.stringify(followDash.followed).includes("777.77"),
+    // BUILD-84 census — walked: no LEAF is the figure, as a number or a
+    // numeric string. The old stringify-and-search also matched those digits
+    // inside any id or timestamp that happened to carry them.
+    followDash.followed?.some(f => f.orgSlug === SLUG_B)
+      && (await leaks(followDash.followed, [{ number: 777.77 }, { exact: "777.77" }])).length === 0,
     followDash.followed);
   ok("the follow does NOT put org B in the history list", !followDash.orgs.some(o => o.orgSlug === SLUG_B));
   mail = [];
