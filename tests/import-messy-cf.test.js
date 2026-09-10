@@ -81,7 +81,11 @@ async function reset() {
   const tok = await login("b78golden@test.local");
   const lib = await import("../shared/importShape.js");
   const cf = await import("../shared/customFieldShape.js");
-  const TODAY = new Date().toISOString().slice(0, 10);
+  // FIX (2026-09-10) — was `new Date().toISOString()`, a UTC calendar date.
+  // Same reasoning as import-messy: this suite imports and then asks the
+  // SERVER, so its client half must be on the ORG's civil day, not UTC's, and
+  // must not be pinned away from the server's clock.
+  const TODAY = require("./helpers").civilToday();
 
   // future-date rows move with the calendar, same re-derivation as B77
   const expected = KEY.dispositions.map(d =>

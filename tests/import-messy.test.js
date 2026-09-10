@@ -74,7 +74,16 @@ async function reset() {
   await reset();
   const tok = await login("b77golden@test.local");
   const lib = await import("../shared/importShape.js");
-  const TODAY = new Date().toISOString().slice(0, 10);
+  // FIX (2026-09-10) — was `new Date().toISOString()`, a UTC calendar date, so
+  // after 8pm Eastern the client half of this suite was a day ahead of the
+  // server half (the BUILD-83 gotcha). It is the ORG's civil date now.
+  //
+  // It is deliberately NOT pinned to the key's `todayUsed`, unlike the pure
+  // golden in import-messy-v2: this suite imports and then asks the SERVER
+  // questions computed against NOW() ("sustainers whose giving stopped >60 days
+  // ago"). The two clocks have to be the same day or the counts disagree —
+  // pinning one alone made it 15 where the key says 13.
+  const TODAY = require("./helpers").civilToday();
 
   // The key was generated on a fixed day; future-vs-today moves with the
   // calendar, so re-derive: a key row errored as future_date whose date has

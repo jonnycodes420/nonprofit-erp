@@ -33,7 +33,7 @@ import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 
@@ -457,6 +457,20 @@ function buildCombinedRows(parsed, donorMapping, yearCols, rowLines) {
   return results;
 }
 
+// FIX (2026-09-10) — the ORG's civil today, for the import's future-date test.
+// BUILD-72's rule is that every date boundary is computed in the ORGANIZATION's
+// timezone: not the server's, not the browser's, and above all not UTC. Intl is
+// the only correct way to ask what day it is somewhere (it knows the offset for
+// this instant, DST and half-hour zones included). Falls back to the browser's
+// own calendar when the org has no zone on file — still right far more often
+// than UTC, which is a different day for a third of every day in the Americas.
+function orgCivilToday(timezone) {
+  try {
+    if (timezone) return new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  } catch { /* an invalid zone falls through to the local calendar */ }
+  return localCivilToday();
+}
+
 // ── Shape-aware payload builders ───────────────────────────────────────────
 // All three return a common { donors, gifts, warnedCount, skippedCount }.
 // `gifts` carry a `donorIndex` into `donors` — the exact { donors, gifts } shape
@@ -490,10 +504,12 @@ function buildAggregatePayload(parsed, mapping, seedHistory, rowLines, stageBasi
 // every physical row leaves with a disposition, no date ever defaults to
 // today, refunds import as negative gifts, and the file-level counts are
 // taken at parse entry and carried through unchanged.
-function buildTransactionPayload(parsed, txMap, cfInputs, rowLines, dateConvention) {
+function buildTransactionPayload(parsed, txMap, cfInputs, rowLines, dateConvention, today) {
   if (!parsed) return { donors: [], gifts: [], warnedCount: 0, skippedCount: 0, dispositions: [], flaggedRows: [], file: { rows: 0, dollars: 0, imported: 0, donorOnly: 0, skipped: 0, errored: 0 } };
   const built = buildTransactionRows(parsed, txMap, {
     rowLines,
+    // The ORG's calendar decides what "future-dated" means — see orgCivilToday.
+    today,
     // BUILD-80 Part 2.2 — a human's answer to a mixed-convention date column;
     // otherwise the builder infers from the column's own evidence.
     dateConvention: dateConvention || undefined,
@@ -651,7 +667,9 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
 // immediately after onboarding for every org that isn't shown the OTHER
 // import button, buried in the regular Donors tab, after the fact.
-export function DonorImport({ onClose, onImported, withHistory = false }) {
+export function DonorImport({ onClose, onImported, withHistory = false, org = null }) {
+  // The org's civil today, for the future-date test (BUILD-72's rule).
+  const orgToday = orgCivilToday(org?.timezone);
   const [csvText,    setCsvText]    = useState("");
   const [srcFile,    setSrcFile]    = useState(null);       // the uploaded File (name/size for the file tile)
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
@@ -949,7 +967,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   const payload = useMemo(() => {
     if (!parsed) return { donors:[], gifts:[], warnedCount:0, skippedCount:0 };
     try {
-      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines, dateConventionChoice);
+      if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines, dateConventionChoice, orgToday);
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
       return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines, stageBasis);
     } catch (e) {
@@ -961,7 +979,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
-  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice]);
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice, orgToday]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -6832,7 +6850,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
-      {showImport&&<DonorImport onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+      {showImport&&<DonorImport org={data.org} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
@@ -6840,7 +6858,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           "Import both" two-sheet CTA). The legacy CombinedImport, whose
           multi-sheet picker forced ONE sheet, is retired — a pilot following
           the recommended path gets the good path. */}
-      {showCombinedImport&&<DonorImport withHistory onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
+      {showCombinedImport&&<DonorImport withHistory org={data.org} onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {convoPickerOpen&&(

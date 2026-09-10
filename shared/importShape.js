@@ -1530,6 +1530,14 @@ export function detectDonorKind(name) {
   return null;
 }
 
+// localCivilToday() — today's date on the CALENDAR THE CALLER IS LOOKING AT,
+// built from the local clock's own Y/M/D. Never `toISOString()`, which is a UTC
+// calendar date and is a different day for a third of every day in the Americas.
+export function localCivilToday(now = new Date()) {
+  const pad = n => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 // ── BUILD-84 P0-2 — A DONOR RECORD IS NAMEABLE THREE WAYS ──────────────────
 // One function decides whether a row can become a donor, and every importer
 // calls it: the CSV donor path, the CSV transaction path and the workbook.
@@ -1857,7 +1865,19 @@ export function parseAttributionNote(note) {
 //                         line number (4.2): never coerced, never blanked,
 //                         never quietly stored as text.
 export function buildTransactionRows(parsed, txMap, opts = {}) {
-  const today = opts.today || new Date().toISOString().split("T")[0];
+  // FIX (2026-09-10) — `new Date().toISOString()` is a UTC CALENDAR DATE, and
+  // this comparison decides whether a gift is refused as future-dated or a
+  // pledge installment is posted as cash instead of routed to the schedule.
+  // For a US org between 8pm Eastern and midnight, UTC is already tomorrow, so
+  // a gift dated TOMORROW imported at 9pm imported as an ordinary gift. That is
+  // BUILD-72 Part 0's bug — "never compare a civil date to a JavaScript
+  // `new Date()`" — living on in the import layer.
+  //
+  // The default is now the caller's own CIVIL date (read from the local clock's
+  // Y/M/D, never round-tripped through an instant), matching client/src/lib/
+  // taskDue.js's rule. `opts.today` still wins, and it is what the org's real
+  // timezone rides in on — see the caller in Donors.jsx.
+  const today = opts.today || localCivilToday();
   const currentYear = Number(String(today).slice(0, 4));
   const rows = parsed && parsed.rows ? parsed.rows : [];
   const items = [];

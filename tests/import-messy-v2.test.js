@@ -42,6 +42,9 @@ const { ok, summary, login, api, q } = require("./helpers");
 
 const ORG = "org_b79golden";
 const FIXTURE = path.join(__dirname, "fixtures", "build79", "steward-messy-2500-v2.csv");
+// The fixture's own answer key — including the anchor date every count here is
+// measured against (see TODAY below).
+const KEY = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "build79", "key.json"), "utf8"));
 
 async function reset() {
   for (const t of ["gifts", "fin_transactions", "interactions", "donors", "accounts", "fin_funds", "budgets", "users"])
@@ -67,10 +70,20 @@ async function reset() {
   await reset();
   const tok = await login("b79golden@test.local");
   const lib = await import("../shared/importShape.js");
-  // The org's civil today, not UTC — after 8pm Eastern those differ and a
-  // client-accepted gift dated UTC-today is future to the server (see
-  // helpers.civilToday).
-  const TODAY = require("./helpers").civilToday();
+  // FIX (2026-09-10) — THIS IS A GOLDEN OVER A FIXED FILE, SO ITS "TODAY" IS
+  // FIXED TOO. It used to read the real clock (BUILD-83 made that the org's
+  // civil date rather than UTC's, which fixed the after-8pm flake but not this
+  // one). Every count here is a property of the FIXTURE; the moment a real day
+  // passed one of the file's own future dates, the count changed underneath the
+  // assertion. It red-lit CI on 2026-09-10 with 16 scheduled pledge
+  // installments instead of 17: row 1985 is dated September 10, 2026, so it was
+  // a future-dated installment through the 9th and a same-day one on the 10th.
+  // Nothing in the push touched pledges.
+  //
+  // The anchor is the fixture's own, declared in key.json, so these numbers are
+  // now true forever instead of true until the calendar catches up. A guard
+  // whose answer depends on the day it runs is not measuring the code.
+  const TODAY = KEY.anchorDate;
 
   // ── §1 · the file layer ──────────────────────────────────────────────────
   console.log("\n— §1 · the file layer: evidence, chrome, one count —");

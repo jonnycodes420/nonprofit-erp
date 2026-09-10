@@ -577,6 +577,74 @@ down here so it is not lost rather than quietly skipped.
 
 ---
 
+## FIX (2026-09-10) — CI went red on the push, and what was under it
+
+The push's CI run failed one suite: `import-messy-v2`, *"future pledge
+installments route to the SCHEDULE (17 rows)"* — got 16.
+
+**It was not the diff.** Row 1985 of that fixture is dated **September 10,
+2026**. It was a future-dated pledge installment through the 9th and a same-day
+one on the 10th, and the assertion compares the file's fixed dates against a
+`today` read from the wall clock. That guard was going to red-light CI on the
+10th no matter who pushed or what they changed. Proven rather than assumed:
+running the builder with `today` pinned to each of 09-08 → 09-11 gives
+17 · 17 · **16** · 16, and diffing the two disposition sets names row 1985,
+"September 10, 2026, Priya D'Angelo", as the row that stopped being future.
+
+### The guard was measuring the calendar, not the code
+
+`import-messy-v2` is a **golden over a fixed file**: every count in it is a
+property of that file. Reading `today` from the clock meant its answers changed
+underneath it whenever a real day passed one of the file's own dates. It is
+pinned to the fixture's own `anchorDate` (declared in `key.json`) now, so the
+numbers are true forever instead of true until the calendar catches up. Safe to
+pin because nothing in that suite is server-clock-relative — no `NOW()`, no
+`CURRENT_DATE`, no `INTERVAL`; `TODAY` sits on both sides of every comparison
+it makes.
+
+**Two sibling suites needed the opposite fix, and finding out cost a wrong
+turn.** `import-messy` and `import-messy-cf` read `new Date().toISOString()` —
+a **UTC** calendar date, the BUILD-83 gotcha. Pinning them to their keys' dates
+seemed like the same medicine and broke `import-messy` differently: it imports
+and then asks the **server** a clock-relative question ("sustainers whose giving
+stopped more than 60 days ago", computed against `NOW()`), so pinning the client
+half desynchronised the two and the count went to 15 where the key says 13.
+Those two get the BUILD-83 fix instead — UTC → `civilToday()`, so the client
+half is on the ORG's civil day and the same day as the server's. **The rule that
+separates them: pin a golden whose comparisons are all its own; synchronise a
+suite that asks the server a question about now.**
+
+### And a live defect underneath it
+
+Chasing the pinned date found the reason it was UTC in the first place. In
+`buildTransactionRows`:
+
+```js
+const today = opts.today || new Date().toISOString().split("T")[0];   // UTC
+```
+
+and the real caller — `buildTransactionPayload` in `Donors.jsx` — **passed no
+`today` at all**. So the import's future-date test ran on **UTC's calendar in
+the browser**. For a US organization between 8pm Eastern and midnight, UTC is
+already tomorrow, which means a gift dated **tomorrow**, imported at 9pm, landed
+as an ordinary gift instead of being refused as future-dated — and a pledge
+installment due tomorrow was posted as cash instead of routed to the schedule.
+That is BUILD-72 Part 0's bug ("never compare a civil date to a JavaScript
+`new Date()`") surviving in the import layer, and it is this build's own theme
+again: **a refusal made on the wrong calendar**.
+
+Fixed on both ends:
+- `shared/importShape.js` gains `localCivilToday()` and defaults to it — the
+  caller's own calendar, built from the local clock's Y/M/D, never round-tripped
+  through an instant.
+- `Donors.jsx` gains `orgCivilToday(timezone)` (Intl, the only correct way to
+  ask what day it is somewhere) and passes the **organization's** civil today
+  into the builder. `DonorImport` takes the org for it. The browser's calendar
+  is only the fallback for an org with no zone on file — still right far more
+  often than UTC.
+
+---
+
 ## Acceptance
 
 | # | Criterion | Status |
