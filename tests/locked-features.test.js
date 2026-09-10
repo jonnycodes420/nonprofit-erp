@@ -21,6 +21,7 @@ const shared   = read("client/src/components/shared.jsx");
 const pipeline = read("client/src/components/Pipeline.jsx");
 const reports  = read("client/src/components/Reports.jsx");
 const app      = read("client/src/App.jsx");
+const settings = read("client/src/components/Settings.jsx");
 const server   = read("server.js");
 
 // ── The reusable LockedFeature wrapper (shared.jsx) ────────────────────────
@@ -66,6 +67,37 @@ const insight = (app.match(/\{label:"Insight",\s*ids:\[([^\]]*)\]/) || [,""])[1]
 ok(/"reports"/.test(insight) && /"finance"/.test(insight), "Insight group = Reports · Finance");
 ok(!/ids:\[[^\]]*"dashboard"/.test(app), "Home (dashboard) stays ungrouped at the top");
 ok(has(app, 'navigateTo("settings")'), "Settings stays pinned at the bottom (its own nav call)");
+
+// ── The Donor Portal tab is HIDDEN FROM THE CRM (2026-09-10) ──────────────
+// Hidden, not deleted — the Events/Volunteers/Board move. The component, the
+// routes, the tables and every portal suite stay intact; only the CRM's
+// navigation loses it. Verified in a real browser at the time (a CRM org's
+// sidebar has no Donor Portal item; a portal-tier org's still does).
+ok(/const CRM_HIDDEN_TABS\s*=\s*new Set\(\["portal"\]\)/.test(app),
+   "CRM_HIDDEN_TABS hides the Donor Portal tab from the CRM's navigation");
+ok(has(app, 'tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id):!CRM_HIDDEN_TABS.has(id)'),
+   "…and tabAllowed is the ONE place the CRM rule and the portal-tier rule meet");
+ok(/PORTAL_TIER_TABS\s*=\s*new Set\(\["donors","portal","settings"\]\)/.test(app),
+   "a portal-tier org KEEPS the tab — its entire product is that surface");
+ok(has(app, 'CRM_HIDDEN_TABS.has(t))t="dashboard"'),
+   "a CRM org cannot navigate to a hidden tab however it was asked to (a stale deep link, an older card)");
+// NAV_GROUPS and MORE_TABS deliberately still CARRY the id: they are the
+// lookup source for BOTH tiers, and a portal-tier org renders its Donor Portal
+// item out of them. The hiding happens at `tabAllowed`, in one place, which is
+// why there is exactly one rule to read and one Set to edit to bring it back.
+ok(/ids:\[[^\]]*"portal"/.test(app),
+   "the id stays in NAV_GROUPS — it is the lookup source for the portal tier too; tabAllowed is what hides it");
+ok(/\{id:"portal",label:"Donor Portal"/.test(app),
+   "the tab DEFINITION survives in TABS — hidden, not deleted, and re-enabled by editing one Set");
+ok(has(app, "moreTabs=MORE_TABS.filter(t=>tabAllowed(t.id))"),
+   "mobile's More drawer runs through the same one filter, so the two navigations cannot disagree");
+// Giving Pages is a DIFFERENT surface and does not move with it.
+ok(has(settings, '{id:"giving",label:"Giving Pages"}'),
+   "Giving Pages stays a Settings section — it is not part of what was hidden");
+ok(/\{id:"portal",label:"Donor Portal",portalTierOnly:true\}/.test(settings),
+   "the Settings → Donor Portal POINTER section is portal-tier-only (it only ever linked to the hidden tab)");
+ok(has(settings, "visibleTabs=SETTINGS_TABS.filter(t=>!t.portalTierOnly||isPortalTier)"),
+   "…and Settings renders the filtered list, so the pointer cannot outlive what it points at");
 
 // ── App.jsx Part 4: Team-gated sidebar items show a lock for Core ──────────
 ok(/const TEAM_GATED\s*=\s*new Set\(\["pipeline"\]\)/.test(app), "TEAM_GATED marks the Pipeline nav item");

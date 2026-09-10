@@ -972,14 +972,21 @@ const SETTINGS_TABS=[
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
-  {id:"portal",label:"Donor Portal"},
+  // 2026-09-10 — the Donor Portal tab is hidden from the CRM's navigation
+  // (App.jsx CRM_HIDDEN_TABS), and this section was only ever a POINTER to it,
+  // so it goes with it rather than becoming a link to nowhere. Still shown to a
+  // `portal` plan org, whose product that tab is. Giving Pages is a separate
+  // section and is untouched.
+  {id:"portal",label:"Donor Portal",portalTierOnly:true},
   {id:"receipts",label:"Tax Receipts"},
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
 ];
 
 export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
-  const [section,setSection]=useState(SETTINGS_TABS.some(t=>t.id===initialSection)?initialSection:"org");
+  const isPortalTier=auth?.org?.plan==="portal";
+  const visibleTabs=SETTINGS_TABS.filter(t=>!t.portalTierOnly||isPortalTier);
+  const [section,setSection]=useState(visibleTabs.some(t=>t.id===initialSection)?initialSection:"org");
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
   const userEmail=auth?.user?.email||"";
@@ -1380,7 +1387,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         );
       })()}
-      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={SETTINGS_TABS} active={section} onSelect={id=>{if(confirmIfDirty())setSection(id);}}/>
+      <SectionTabs className="settings-tabbar" style={{marginBottom:-2}} tabs={visibleTabs} active={section} onSelect={id=>{if(confirmIfDirty())setSection(id);}}/>
 
       {/* ── Organization ──────────────────────────────────────────────────── */}
       {section==="org"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>

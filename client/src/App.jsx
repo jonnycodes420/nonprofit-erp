@@ -85,6 +85,21 @@ const TEAM_GATED=new Set(["pipeline"]);
 // unchanged — this is the UI finally matching it.
 const PORTAL_TIER_TABS=new Set(["donors","portal","settings"]);
 
+// ── HIDDEN FROM THE CRM's NAVIGATION (2026-09-10) ──────────────────────────
+// The same "hidden, not deleted" move as Events / Volunteers / Board: the tab
+// comes out of the navigation and every route, table, component and test
+// behind it stays intact, re-enabled by deleting an id from this set.
+//
+// GIVING PAGES ARE NOT AFFECTED and are a different surface entirely: they
+// live in Settings → Giving Pages, along with Stripe Connect, donor-covers-
+// fees, the org's timezone and the public /give page. None of that moves.
+//
+// NOT hidden for a `plan === "portal"` org, whose ENTIRE product is this tab
+// (PORTAL_TIER_TABS above) — hiding it globally would leave those orgs
+// navigating to something that is not there, which is the one case that has to
+// keep working. `tabAllowed` below is where the two rules meet.
+const CRM_HIDDEN_TABS=new Set(["portal"]);
+
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
   const { auth, logout } = useAuth();
@@ -134,6 +149,9 @@ function AppShell() {
     // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
     // one lands on the portal hub instead of a locked/broken view.
     if(data?.org?.plan==="portal"&&!PORTAL_TIER_TABS.has(t))t="portal";
+    // …and the mirror of it: a CRM org cannot navigate to a tab hidden from
+    // the CRM, however it got asked to (a stale deep link, an older card).
+    else if(data?.org?.plan!=="portal"&&CRM_HIDDEN_TABS.has(t))t="dashboard";
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -294,7 +312,9 @@ function AppShell() {
   // the data load, no billing-fetch flash). tabAllowed filters every nav
   // surface; navigateTo routes a disallowed target back to the portal hub.
   const isPortalTier=data.org?.plan==="portal";
-  const tabAllowed=id=>!isPortalTier||PORTAL_TIER_TABS.has(id);
+  // A portal-tier org sees ONLY its own surfaces; every other org sees the CRM
+  // minus whatever is hidden from it.
+  const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id):!CRM_HIDDEN_TABS.has(id);
   const bottomTabs=isPortalTier
     ?[BOTTOM_TABS.find(t=>t.id==="donors"),MORE_TABS.find(t=>t.id==="portal"),BOTTOM_TABS.find(t=>t.id==="settings")].filter(Boolean)
     :BOTTOM_TABS;
