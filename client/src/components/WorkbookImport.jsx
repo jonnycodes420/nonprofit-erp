@@ -9,6 +9,7 @@
 // buildWorkbookSubmission — the screen cannot disagree with the write.
 import { useState, useMemo, useEffect } from "react";
 import { apiFetch } from "../api";
+import { rethrowProgrammerError, errorMessage } from "../lib/domainError";
 import { T, Spin } from "./shared";
 import {
   buildWorkbookSubmission, buildStandardMapping, buildWorkbookSignals, extractWorkbookLegend,
@@ -187,6 +188,9 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       }
       setStep("summary");
     } catch (e) {
+      // FIX (2026-09-10) — "Could not prepare the import: undefined is not a
+      // function" is not a sentence about a workbook. A bug crashes honestly.
+      rethrowProgrammerError(e);
       console.error("workbook build failed:", e);
       setErr("Could not prepare the import: " + (e.message || e));
     }
@@ -228,8 +232,9 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       setTiming(t => ({ ...(t || {}), write: (Date.now() - tWrite0) / 1000 }));
       setStep("result");   // the Done button hands control back (onImported closes the modal + reloads)
     } catch (e) {
+      rethrowProgrammerError(e);
       console.error("workbook import failed:", e);
-      setErr(e.message || "Import failed — nothing was written.");
+      setErr(errorMessage(e, "Import failed — nothing was written."));
     }
     setBuilding(false); setProgressText("");
   };

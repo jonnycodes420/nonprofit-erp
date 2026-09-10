@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { T, askClaude, daysDiff, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle } from "./shared";
 import { apiFetch } from "../api";
+import { errorMessage } from "../lib/domainError";
 
 export function Volunteers({data, setData, isReadOnly}) {
   const [convPlan,setConvPlan]=useState(""); const [convLoading,setConvLoading]=useState(false);
@@ -43,7 +44,7 @@ export function Volunteers({data, setData, isReadOnly}) {
       setData(prev=>({...prev,volunteers:[...prev.volunteers,adapted]}));
       setForm({name:"",email:"",skills:"",convertPotential:"medium",employer:"",notes:""});
       setShowAdd(false);
-    }catch(e){alert(e.message||"Failed to add volunteer");}
+    }catch(e){alert(errorMessage(e, "Failed to add volunteer"));}
     setSaving(false);
   }
 

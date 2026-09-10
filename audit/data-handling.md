@@ -74,15 +74,19 @@ caller, and forbids systematic bulk queries). It has been removed.
 - **Retention by the provider:** governed by the provider's own terms; see
   below. Steward does not ask any provider to store anything on its behalf.
 
-**Provider.** The provider is selected by environment variable and there is a
-deliberate third state — **not configured** — in which the job does not run, no
-address leaves the server at all, and the map says so in a sentence rather than
+**Provider: Geocodio** (geocod.io), chosen 10 September 2026. US and Canada
+only, which matches the customer base. Addresses are sent in batches of up to
+1,000 per request.
+
+The provider is selected by environment variable and there is a deliberate
+third state — **not configured** — in which the job does not run, no address
+leaves the server at all, and the map says so in a sentence rather than
 degrading silently.
 
 | Setting | Provider | Notes |
 |---|---|---|
-| `GEOCODIO_API_KEY` set | **Geocodio** (geocod.io) | US and Canada only, which matches the customer base. Batched: one request per 1,000 addresses. |
-| `GEOCODE_NOMINATIM_BASE` set | **A self-hosted Nominatim instance** | The address never leaves infrastructure the operator controls. |
+| `GEOCODIO_API_KEY` set | **Geocodio** — the production configuration | US and Canada only. Batched: one request per 1,000 addresses. |
+| `GEOCODE_NOMINATIM_BASE` set | **A self-hosted Nominatim instance** | The address never leaves infrastructure the operator controls. Available, not in use. |
 | neither set | **none** | No address is transmitted anywhere. The map renders and states that geocoding is not set up. |
 
 The **public** Nominatim instance is refused by hostname in code
@@ -90,11 +94,17 @@ The **public** Nominatim instance is refused by hostname in code
 product at this shape, and leaving the door open would put the terms problem
 one environment variable away.
 
-> **PENDING (Jonathan's call, `BLOCKED-build84.md`):** which provider to run in
-> production. Until one is chosen, production is in the "not configured" state
-> above — correct and honest, but the map shows no pins. **This table must name
-> the provider actually in use before this document goes in front of a
-> customer.**
+**What it costs, and in what unit.** The billable unit is a distinct *address*,
+not a donor, and only a new or changed one — the queue de-duplicates before
+spending anything and never re-resolves an address it already holds. Geocodio
+gives 2,500 lookups free every day and charges $1.00 per 1,000 above that
+(1 February 2026 pricing). A measured 444-donor import resolved 408 distinct
+addresses and cost nothing; a 25,000-address first import is $22.50 in a single
+day, or nothing if the backfill is allowed to spread across ten. A
+steady-state organization spends nothing at all.
+
+**Geocodio's own retention** is governed by their terms and privacy policy, not
+by Steward. Steward does not ask them to store anything on its behalf.
 
 ## Recommendations (stated, not yet done)
 

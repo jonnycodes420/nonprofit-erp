@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { API } from "../api";
 import { T, fmtMoney } from "./publicTheme";
 import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
+import { errorMessage } from "../lib/domainError";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -109,7 +110,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
       if (!r.ok) throw new Error(d.error || "Could not start your fundraiser.");
       onCreated(d);
     } catch (e) {
-      setErr(e.message);
+      setErr(errorMessage(e));
       setSaving(false);
     }
   }

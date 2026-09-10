@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, MetricCard, SectionLabel, PageTitle } from "./shared";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
+import { errorMessage } from "../lib/domainError";
 
 export function AnnualFund({data}) {
   const {auth}=useAuth(); const isAdmin=auth?.user?.role==="admin";
@@ -16,7 +17,7 @@ export function AnnualFund({data}) {
   const saveGoal=async()=>{
     try{await apiFetch("/annual-fund/goal",{method:"POST",body:JSON.stringify({year,goal:parseInt(goalInput)||0})});
       await load();setEditGoal(false);}
-    catch(e){alert(e.message);}
+    catch(e){alert(errorMessage(e));}
   };
 
   const getForecast=async()=>{

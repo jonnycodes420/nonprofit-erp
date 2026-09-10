@@ -179,6 +179,115 @@ async function reset() {
   for (const r of ROOTS) walkFiles(path.join(__dirname, "..", r));
   ok(`no JSON.stringify-then-search survives the census (found ${offenders.length})`, offenders.length === 0, offenders.slice(0, 6));
 
+  // ── §4b · a catch must not turn a BUG into a data-quality message ───────
+  // FIX (2026-09-10). The class: a `catch` around domain logic swallowed a
+  // ReferenceError and rendered it as "No rows ready — map at least one column
+  // to name or email" — plausible, domain-shaped, completely false, and it
+  // sent the reader to fix their spreadsheet for a bug in ours. Same family as
+  // the rest of this build: a screen stating something it cannot back.
+  console.log("\n— §4b · an error handler may not blame the data for a bug —");
+  const de = await import("../client/src/lib/domainError.js");
+  for (const E of [ReferenceError, TypeError, RangeError, SyntaxError]) {
+    ok(`${E.name} is a bug, and is RE-THROWN`, (() => {
+      try { de.rethrowProgrammerError(new E("boom")); return false; } catch (x) { return x instanceof E; }
+    })());
+  }
+  ok("a domain error passes through, so a real refusal can still be described",
+    (() => { const e = Object.assign(new Error("record_limit reached"), { error: "record_limit" });
+             return de.rethrowProgrammerError(e) === e; })());
+  ok("…and the test is the NAME, so it survives a cross-realm error (an iframe, a worker, a bundled copy)",
+    de.isProgrammerError({ name: "TypeError", message: "x" }) === true
+    && de.isProgrammerError({ name: "HttpError", message: "403" }) === false);
+
+  // TOTAL CLASSIFICATION over the sub-class that produced the defect: a catch
+  // that puts WORDS ON A SCREEN. Every one of them, anywhere in the client,
+  // must route the error through `errorMessage` (which says "this is ours" for
+  // a bug and quotes the message for a real refusal) or re-throw it. A new one
+  // fails this suite until it does one or the other.
+  //
+  // NOT in scope, deliberately, and named so it is not lost: a catch that
+  // swallows into an EMPTY READ STATE (`.catch(() => setMoves([]))` and its
+  // ~30 siblings on the donor profile). Those are the same family — an absent
+  // panel is a claim that there is nothing there — but the honest fix is a
+  // per-panel "couldn't load" state, which is a build of its own, and
+  // re-throwing on a network hiccup would crash the profile. Written down in
+  // audit/BUILD-84-FINDINGS.md rather than quietly skipped.
+  // The scan BRACE-MATCHES each catch block. A ten-line window (the first
+  // draft of this guard) reported false hits by sweeping up an `alert(...)`
+  // that came after the block, which is the same "ignore the boundaries the
+  // structure gives you" mistake this build censused everywhere else.
+  const EMITS_COPY = /\b(setErr|setSendErr|setComposeErr|setRelErr|setInviteErr|setMapRefusal|onError|setPortalError|setErrMsg)\s*\(|(?<!\w)alert\s*\(/;
+  const catchBlocks = (src) => {
+    const out = [];
+    const re = /catch\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*\)\s*)?\{/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const open = src.indexOf("{", m.index);
+      let d = 0, i = open;
+      for (; i < src.length; i++) {
+        if (src[i] === "{") d++;
+        else if (src[i] === "}") { d--; if (d === 0) break; }
+      }
+      out.push({ binding: m[1] || null, body: src.slice(open + 1, i),
+                 line: src.slice(0, m.index).split("\n").length });
+    }
+    return out;
+  };
+  const walkClient = (dir, out = []) => {
+    for (const f of fs.readdirSync(dir)) {
+      const full = path.join(dir, f);
+      if (fs.statSync(full).isDirectory()) { if (f !== "node_modules") walkClient(full, out); continue; }
+      if (/\.jsx?$/.test(f)) out.push(full);
+    }
+    return out;
+  };
+  const ROUTED = /errorMessage\(|isProgrammerError\(|rethrowProgrammerError|billingErrorMessage\(|throw /;
+  const CLIENT = path.join(__dirname, "..", "client", "src");
+  const unguarded = [];
+  for (const full of walkClient(CLIENT)) {
+    const rel = full.slice(full.indexOf("client/src"));
+    for (const b of catchBlocks(fs.readFileSync(full, "utf8"))) {
+      if (!EMITS_COPY.test(b.body)) continue;      // says nothing to anyone
+      if (ROUTED.test(b.body)) continue;           // routed, typed, or re-thrown
+      unguarded.push(`${rel}:${b.line}: ${b.body.replace(/\s+/g, " ").trim().slice(0, 90)}`);
+    }
+  }
+  ok(`every catch in the client that puts words on a screen routes the error first (${unguarded.length} unguarded)`,
+    unguarded.length === 0, unguarded.slice(0, 8));
+
+  // The guard can FIRE — the BUILD-75 A.6 rule. A synthetic catch of the
+  // defect's exact shape must be caught by the same scan.
+  const planted = `  } catch (e) {\n    setErr(e.message || "Could not read your file.");\n  }`;
+  ok("…and the scan PROVES it can fail: a planted `setErr(e.message)` is flagged",
+    EMITS_COPY.test(planted) && !/errorMessage\(|rethrowProgrammerError|throw /.test(planted));
+
+  // The pure/render path is the other half: there, a re-throw IS the medicine,
+  // because an ErrorBoundary wraps every tab and says the honest thing.
+  const PURE_CATCHES = [
+    ["client/src/components/Donors.jsx", "[import] payload build failed"],
+    ["client/src/components/Donors.jsx", "[import-both] payload build failed"],
+    ["client/src/components/Donors.jsx", "[import] mapper plan failed"],
+    ["client/src/components/WorkbookImport.jsx", "workbook build failed"],
+  ];
+  for (const [rel, marker] of PURE_CATCHES) {
+    const src = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+    const at = src.indexOf(marker);
+    const before = at > 0 ? src.slice(Math.max(0, at - 700), at) : "";
+    ok(`the catch around “${marker}” re-throws a bug before returning anything`,
+      at > 0 && /rethrowProgrammerError\(e\)/.test(before), rel);
+  }
+  ok("every tab is inside an ErrorBoundary, so a re-thrown bug becomes an honest crash screen and not a white page",
+    /<ErrorBoundary label=\{tab\}/.test(fs.readFileSync(path.join(__dirname, "..", "client/src/App.jsx"), "utf8")));
+
+  // And the copy that shipped the defect is gone: nameability includes an
+  // organization now, and a build FAILURE says it is not the user's file.
+  const donorsSrc = fs.readFileSync(path.join(__dirname, "..", "client/src/components/Donors.jsx"), "utf8");
+  ok("the empty-payload sentence names all three ways a row can be nameable",
+    !/map at least one column to <em>name<\/em> or <em>email<\/em>/.test(donorsSrc)
+    && /organization<\/em>\./.test(donorsSrc), null);
+  ok("…and a build failure says so plainly instead of wearing a data-quality sentence",
+    /this is not a problem with your spreadsheet/.test(donorsSrc), null);
+
   // ── §5 · P0-4 — geocoding is a write-time job ────────────────────────────
   console.log("\n— §5 · geocode once at write time, never at render —");
   ok("the PUBLIC Nominatim instance is refused by hostname, not by convention",

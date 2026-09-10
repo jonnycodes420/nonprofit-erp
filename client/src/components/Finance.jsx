@@ -2,6 +2,7 @@ import { useState, useEffect, Fragment } from "react";
 import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive } from "./shared";
 import { apiFetch } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
+import { errorMessage } from "../lib/domainError";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents, five-color palette only (dark-green shades + gold +
@@ -224,7 +225,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         campaignId:g.campaign_id || g.campaignId || "",
       })});
       onRouted({ kind:"grant", name:g.funder, grant:updated });
-    } catch(e) { setErr(e?.message || "Could not mark the grant awarded."); setBusy(false); }
+    } catch(e) { setErr(errorMessage(e, "Could not mark the grant awarded.")); setBusy(false); }
   };
 
   // Accept the donor prompt → the EXISTING gift flow (POST /donors/:id/gifts),
@@ -238,7 +239,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         notes:form.description, fundId:form.fundId || undefined,
       })});
       onRouted({ kind:"gift", name:d.name });
-    } catch(e) { setErr(e?.message || "Could not log the gift."); setBusy(false); }
+    } catch(e) { setErr(errorMessage(e, "Could not log the gift.")); setBusy(false); }
   };
 
   // Decline → it's genuinely different money; log the manual row as typed

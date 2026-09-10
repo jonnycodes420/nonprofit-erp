@@ -23,6 +23,7 @@ import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "../components/Uploader";
 import { PortalBannerCrop, PORTAL_HEADER_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "../components/PortalBanner";
+import { errorMessage } from "../lib/domainError";
 
 // ── The fictional donor (§4: never a real donor's data) ────────────────────
 const SAMPLE_ME = {
@@ -145,7 +146,7 @@ export default function PortalEditor() {
   const applyPs = useCallback((next) => { psRef.current = next; setPs(next); }, []);
 
   useEffect(() => {
-    apiFetch("/portal-page").then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); }).catch(e => setErr(e.message));
+    apiFetch("/portal-page").then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); }).catch(e => setErr(errorMessage(e)));
     apiFetch("/portal-settings").then(d => { psRef.current = d; setPs(d); }).catch(() => {});
     apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => {});
     apiFetch("/fundraising/campaigns").then(c => setCamps(Array.isArray(c) ? c : [])).catch(() => {});
@@ -200,7 +201,7 @@ export default function PortalEditor() {
           setDesignNote(adjusted ? (message || "Adjusted slightly for legibility.") : "");
           setSaveState("saved");
         }
-      } catch (e) { setErr(e.message || "Could not save the design."); setSaveState("error"); }
+      } catch (e) { setErr(errorMessage(e, "Could not save the design.")); setSaveState("error"); }
     }, 1200);
   }, []);
   const setDesign = (k, v) => {
@@ -220,7 +221,7 @@ export default function PortalEditor() {
         // Adopt the server's canonical draft (data-URI images became asset
         // paths) ONLY if nothing changed while the request was in flight.
         if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); }
-      } catch (e) { setErr(e.message || "Could not save the draft."); setSaveState("error"); }
+      } catch (e) { setErr(errorMessage(e, "Could not save the draft.")); setSaveState("error"); }
     }, 1200);
   }, []);
 
@@ -269,7 +270,7 @@ export default function PortalEditor() {
       await apiFetch("/portal-page/publish", { method: "POST", body: "{}" });
       const d = await apiFetch("/portal-page");
       setMeta(d); setSaveState("saved");
-    } catch (e) { setErr(e.message || "Publish failed."); }
+    } catch (e) { setErr(errorMessage(e, "Publish failed.")); }
     setPublishing(false);
   };
   const revert = async () => {
@@ -278,13 +279,13 @@ export default function PortalEditor() {
       const r = await apiFetch("/portal-page/revert", { method: "POST", body: "{}" });
       setWidgets(Array.isArray(r.draft) ? r.draft : []);
       setSelected(null); setSaveState("saved");
-    } catch (e) { setErr(e.message || "Revert failed."); }
+    } catch (e) { setErr(errorMessage(e, "Revert failed.")); }
   };
   const applyStarter = async (key) => {
     try {
       const r = await apiFetch("/portal-page/starter", { method: "POST", body: JSON.stringify({ key }) });
       setWidgets(r.draft); setSaveState("saved");
-    } catch (e) { setErr(e.message || "Could not apply the starter."); }
+    } catch (e) { setErr(errorMessage(e, "Could not apply the starter.")); }
   };
 
   if (err && widgets === null) {

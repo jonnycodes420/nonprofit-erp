@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase } from "./shared";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
@@ -7,6 +7,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
+import { errorMessage } from "../lib/domainError";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -99,7 +100,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     try{
       const updated=await apiFetch(`/peer-fundraisers/${f.id}`,{method:"PUT",body:JSON.stringify({status:nextStatus})});
       setFundraisersByPage(prev=>({...prev,[pageId]:(prev[pageId]||[]).map(x=>x.id===f.id?updated:x)}));
-    }catch(e){alert(e.message||"Failed to update fundraiser");}
+    }catch(e){alert(errorMessage(e, "Failed to update fundraiser"));}
   }
 
   function openAdd(){
@@ -133,7 +134,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
         setPages(prev=>[created,...prev]);
       }
       closeModal();
-    }catch(e){alert(e.message||"Failed to save giving page");}
+    }catch(e){alert(errorMessage(e, "Failed to save giving page"));}
     setSaving(false);
   }
 
@@ -142,7 +143,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
     try{
       const updated=await apiFetch(`/giving-pages/${p.id}`,{method:"PUT",body:JSON.stringify({status:nextStatus})});
       setPages(prev=>prev.map(x=>x.id===p.id?updated:x));
-    }catch(e){alert(e.message||"Failed to update giving page");}
+    }catch(e){alert(errorMessage(e, "Failed to update giving page"));}
   }
 
   async function deletePage(p){
@@ -151,7 +152,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       await apiFetch(`/giving-pages/${p.id}`,{method:"DELETE"});
       setPages(prev=>prev.filter(x=>x.id!==p.id));
       if(shareOpenId===p.id)setShareOpenId(null);
-    }catch(e){alert(e.message||"Failed to delete giving page");}
+    }catch(e){alert(errorMessage(e, "Failed to delete giving page"));}
   }
 
   const inp={width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:14,fontFamily:"inherit"};
@@ -393,7 +394,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
       setDirty(false);
       setMsg(res.adjusted?"Saved — your color was deepened slightly so text stays readable.":"Branding saved.");
       onSaved&&onSaved();
-    }catch(e){setErr(e.message||"Could not save branding.");}
+    }catch(e){setErr(errorMessage(e, "Could not save branding."));}
     setSaving(false);
   }
   if(!loaded)return <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",color:T.ink3,fontSize:13}}>Loading…</div>;
@@ -455,8 +456,21 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
 // EVERY date boundary in the product is computed in this zone. Before it
 // existed, a task due today started reading "1 day overdue" at 8pm Eastern
 // because the server compared it against a UTC calendar date.
-function TimezoneCard({orgId,isAdmin,isReadOnly}){
+function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
   const [tz,setTz]=useState(null);          // null = loading
+  // FIX (2026-09-10) — the next-step form REFUSES a time until this is a
+  // human's choice, and it links straight here. A deep link that exists to fix
+  // one setting has to land on that setting, so the card scrolls itself into
+  // view and rings once. (BUILD-84's timed reminder; see BLOCKED-build84.md.)
+  const cardRef=useRef(null);
+  const [ring,setRing]=useState(false);
+  useEffect(()=>{
+    if(!focused||!cardRef.current)return;
+    cardRef.current.scrollIntoView({behavior:"smooth",block:"center"});
+    setRing(true);
+    const t=setTimeout(()=>setRing(false),2400);
+    return ()=>clearTimeout(t);
+  },[focused]);
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState("");
   const [savedAt,setSavedAt]=useState(0);
@@ -477,16 +491,19 @@ function TimezoneCard({orgId,isAdmin,isReadOnly}){
     try{
       await apiFetch(`/orgs/${orgId}`,{method:"PATCH",body:JSON.stringify({timezone:next})});
       setSavedAt(Date.now());
-    }catch(e){ setTz(prev); setErr(e.message||"Could not save the timezone."); }
+    }catch(e){ setTz(prev); setErr(errorMessage(e, "Could not save the timezone.")); }
     setSaving(false);
   }
   const today=(()=>{ try{ return tz? new Intl.DateTimeFormat("en-US",{timeZone:tz,weekday:"long",month:"long",day:"numeric"}).format(new Date()):""; }catch{ return ""; } })();
   return(
-    <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:20}}>
+    <div ref={cardRef} id="settings-timezone"
+      style={{background:T.white,border:"1px solid "+(ring?T.green600:T.bg3),borderRadius:16,padding:"24px 28px",marginBottom:20,
+              boxShadow:ring?`0 0 0 3px ${T.green600}33`:"none",transition:"box-shadow 0.4s, border-color 0.4s"}}>
       <SectionLabel>Time Zone</SectionLabel>
       <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginTop:6,marginBottom:14}}>
         Every date in Steward is calculated in your organization&rsquo;s time zone — what counts as
-        &ldquo;this week&rdquo;, when a task becomes overdue, and where a gift falls in your fiscal year.
+        &ldquo;this week&rdquo;, when a task becomes overdue, when a next step you gave a <em>time</em> emails you,
+        and where a gift falls in your fiscal year.
         A gift you enter on Sunday evening belongs to that Sunday.
       </div>
       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -602,7 +619,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       });
       setSaveMsg("Saved.");
       setTimeout(()=>setSaveMsg(""),3000);
-    }catch(e){ setSaveErr(e.message||"Failed to save."); }
+    }catch(e){ setSaveErr(errorMessage(e, "Failed to save.")); }
     setSaving(false);
   }
 
@@ -615,7 +632,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       const url=URL.createObjectURL(blob);
       window.open(url,"_blank");
       setTimeout(()=>URL.revokeObjectURL(url),10000);
-    }catch(e){ alert(e.message||"Could not generate preview"); }
+    }catch(e){ alert(errorMessage(e, "Could not generate preview")); }
     setPreviewLoading(false);
   }
 
@@ -624,7 +641,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
     try{
       const r=await apiFetch("/receipts/year-end-run",{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),dryRun:true})});
       setDryRunResult(r);
-    }catch(e){ setRunErr(e.message||"Dry run failed."); }
+    }catch(e){ setRunErr(errorMessage(e, "Dry run failed.")); }
     setDryRunLoading(false);
   }
 
@@ -635,7 +652,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       const r=await apiFetch("/receipts/year-end-run",{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),dryRun:false})});
       setRunResult(r);
       setDryRunResult(null);
-    }catch(e){ setRunErr(e.message||"Year-end run failed."); }
+    }catch(e){ setRunErr(errorMessage(e, "Year-end run failed.")); }
     setRunLoading(false);
   }
 
@@ -843,7 +860,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
       if(form.id)await apiFetch(`/impact-updates/${form.id}`,{method:"PUT",body});
       else await apiFetch("/impact-updates",{method:"POST",body});
       setForm(null);load();
-    }catch(e){setErr(e.message||"Could not save.");}
+    }catch(e){setErr(errorMessage(e, "Could not save."));}
     setBusy(false);
   }
   const toggleTarget=(kind,id)=>setForm(fm=>{
@@ -961,7 +978,7 @@ const SETTINGS_TABS=[
   {id:"account",label:"Account"},
 ];
 
-export function Settings({auth,logout,initialSection,onNavigate}) {
+export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [section,setSection]=useState(SETTINGS_TABS.some(t=>t.id===initialSection)?initialSection:"org");
   const orgName=auth?.org?.name||"Your Organization";
   const userName=auth?.user?.name||"User";
@@ -999,7 +1016,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
     try{
       await apiFetch(`/custom-fields/kept-raw/${row.donorId}`,{method:"PUT",body:JSON.stringify({key:row.key,value:val})});
       loadKeptRaw();
-    }catch(e){alert(e.details?.[0]?.error||e.message||"That value still doesn't match the field's type.");}
+    }catch(e){alert(e.details?.[0]?.error||errorMessage(e, "That value still doesn't match the field's type."));}
   };
   const [cfShowArchived,setCfShowArchived]=useState(false);
   const [showAddField,setShowAddField]=useState(false);
@@ -1091,7 +1108,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
     try{
       const r=await apiFetch("/gmail/auth-url",{method:"POST"});
       window.location.href=r.url;
-    }catch(e){ alert(e.message||"Failed to start Gmail connect"); }
+    }catch(e){ alert(errorMessage(e, "Failed to start Gmail connect")); }
   }
 
   async function disconnectGmail(){
@@ -1107,7 +1124,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       setGmailToast("Sync started — new emails will appear shortly.");
       setTimeout(()=>setGmailToast(""),3500);
       setTimeout(()=>apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{}),3000);
-    }catch(e){ alert(e.message||"Sync failed"); }
+    }catch(e){ alert(errorMessage(e, "Sync failed")); }
     setGmailSyncing(false);
   }
 
@@ -1144,7 +1161,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       const s=await apiFetch("/org/sample-data-status");
       setSampleStatus(s);
       window.location.reload();
-    }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
+    }catch(e){ alert(errorMessage(e, "Failed to load sample data")); setSampleLoading(false); }
   }
 
   async function clearSampleData(){
@@ -1154,7 +1171,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       await apiFetch("/org/clear-sample-data",{method:"POST"});
       setSampleStatus({hasSampleData:false,sampleDonorCount:0});
       window.location.reload();
-    }catch(e){ alert(e.message||"Failed to clear sample data"); setSampleClearing(false); }
+    }catch(e){ alert(errorMessage(e, "Failed to clear sample data")); setSampleClearing(false); }
   }
 
   async function exportData(){
@@ -1168,7 +1185,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       a.href=url; a.download=`steward-export.json`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
-    }catch(e){alert(e.message||"Export failed");}
+    }catch(e){alert(errorMessage(e, "Export failed"));}
     setExporting(false);
   }
 
@@ -1183,7 +1200,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       a.href=url; a.download=`steward-export-${new Date().toISOString().split("T")[0]}.zip`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
-    }catch(e){alert(e.message||"Export failed");}
+    }catch(e){alert(errorMessage(e, "Export failed"));}
     setExportingCsv(false);
   }
 
@@ -1193,7 +1210,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       const r=await apiFetch("/stripe/connect",{method:"POST"});
       window.location.href=r.url;
     }catch(e){
-      alert(e.message||"Failed to start Stripe connect");
+      alert(errorMessage(e, "Failed to start Stripe connect"));
       setStripeLoading(false);
     }
   }
@@ -1209,7 +1226,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
         closeInvite();
         setUpgradeModal({reason:e.error,current:e.current,limit:e.limit,plan:e.plan});
       } else {
-        setInvErr(e.message||"Failed to send invite");
+        setInvErr(errorMessage(e, "Failed to send invite"));
       }
     }finally{setInviting(false);}
   }
@@ -1256,7 +1273,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
       }
       await reloadCf(cfEntity);
       closeCfModal();
-    }catch(e){alert(e.message||"Failed to save field");}
+    }catch(e){alert(errorMessage(e, "Failed to save field"));}
     setCfSaving(false);
   }
 
@@ -1264,11 +1281,11 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
   // destroys nothing; restore brings every value back. There is no delete.
   async function archiveCfField(f){
     try{await apiFetch(`/custom-fields/${f.id}/archive`,{method:"POST"});await reloadCf(f.entity);}
-    catch(e){alert(e.message||"Failed to archive field");}
+    catch(e){alert(errorMessage(e, "Failed to archive field"));}
   }
   async function restoreCfField(f){
     try{await apiFetch(`/custom-fields/${f.id}/restore`,{method:"POST"});await reloadCf(f.entity);}
-    catch(e){alert(e.message||"Failed to restore field");}
+    catch(e){alert(errorMessage(e, "Failed to restore field"));}
   }
   async function moveCfField(f,dir){
     const live=customFields[f.entity].filter(x=>!x.archivedAt);
@@ -1278,7 +1295,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
     const ids=live.map(x=>x.id);
     [ids[i],ids[j]]=[ids[j],ids[i]];
     try{await apiFetch("/custom-fields/reorder",{method:"PUT",body:JSON.stringify({entity:f.entity,ids})});await reloadCf(f.entity);}
-    catch(e){alert(e.message||"Failed to reorder");}
+    catch(e){alert(errorMessage(e, "Failed to reorder"));}
   }
 
   const CF_TYPE_LABELS={text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"};
@@ -1312,7 +1329,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
         setImpactMetrics(prev=>[...prev,created]);
       }
       closeImModal();
-    }catch(e){alert(e.message||"Failed to save impact metric");}
+    }catch(e){alert(errorMessage(e, "Failed to save impact metric"));}
     setImSaving(false);
   }
 
@@ -1420,7 +1437,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
                 try{
                   await apiFetch(`/users/${m.id}`,{method:"DELETE"});
                   setTeam(t=>t.filter(x=>x.id!==m.id));
-                }catch(e){ alert(e.message||"Couldn't remove this person"); }
+                }catch(e){ alert(errorMessage(e, "Couldn't remove this person")); }
               }} style={{fontSize:12,padding:"5px 12px",borderRadius:8,border:"1px solid "+T.terra200,background:"transparent",color:T.terra700,cursor:"pointer",flexShrink:0}}>
                 Remove
               </button>
@@ -1550,7 +1567,7 @@ export function Settings({auth,logout,initialSection,onNavigate}) {
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}
       {section==="giving"&&<>
-        <TimezoneCard orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+        <TimezoneCard orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly} focused={initialFocus==="timezone"}/>
         <CoverFeesCard orgId={auth?.org?.id} isAdmin={isAdmin}/>
         <GivingPagesManager orgSlug={orgSlug} isAdmin={isAdmin} isReadOnly={isReadOnly}/>
       </>}

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
 // from. Two exports: RecurringView (the full Fundraising → Recurring page:
@@ -222,7 +223,7 @@ function ProposeModal({ sub, funds, presetKind, onClose, onDone }) {
     setBusy(true);
     apiFetch("/recurring/proposals", { method: "POST", body: JSON.stringify(body) })
       .then(() => { setBusy(false); onDone(); })
-      .catch(e => { setBusy(false); setErr(e.message || "Couldn't send the proposal."); });
+      .catch(e => { setBusy(false); setErr(errorMessage(e, "Couldn't send the proposal.")); });
   };
 
   return (
@@ -310,7 +311,7 @@ function PauseModal({ sub, onClose, onConfirm }) {
   const [err, setErr] = useState(null);
   const go = () => {
     setBusy(true); setErr(null);
-    onConfirm(resumeAt || null).catch(e => { setBusy(false); setErr(e.message || "Couldn't pause."); });
+    onConfirm(resumeAt || null).catch(e => { setBusy(false); setErr(errorMessage(e, "Couldn't pause.")); });
   };
   return (
     <Modal title={`Pause ${sub.donorName}'s gift`} onClose={onClose}>
@@ -334,7 +335,7 @@ function FundModal({ sub, funds, onClose, onConfirm }) {
   const [err, setErr] = useState(null);
   const go = () => {
     setBusy(true); setErr(null);
-    onConfirm(fundId || null).catch(e => { setBusy(false); setErr(e.message || "Couldn't change the designation."); });
+    onConfirm(fundId || null).catch(e => { setBusy(false); setErr(errorMessage(e, "Couldn't change the designation.")); });
   };
   return (
     <Modal title="Change fund designation" onClose={onClose}>
@@ -425,7 +426,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
       const r = await apiFetch("/recurring/unlinked/send-reconnect", { method: "POST", body: JSON.stringify({ donorIds: sendTargets }) });
       setToast(`${r.sent} reconnect link${r.sent === 1 ? "" : "s"} sent.`);
       setSel(new Set()); await load();
-    } catch (e) { setToast(e.message || "Send failed."); }
+    } catch (e) { setToast(errorMessage(e, "Send failed.")); }
     setBusy(false);
   };
   const row = (u) => (
@@ -505,33 +506,33 @@ export function RecurringView({ onNavigate, isReadOnly }) {
     if (key === "resume") {
       apiFetch(`/recurring/subs/${sub.id}/resume`, { method: "POST", body: JSON.stringify({}) })
         .then(() => { say(`${sub.donorName}'s gift resumed — they've been notified.`); load(); })
-        .catch(e => say(e.message || "Couldn't resume."));
+        .catch(e => say(errorMessage(e, "Couldn't resume.")));
       return;
     }
     if (key === "cancel") {
       if (!window.confirm(`Cancel ${sub.donorName}'s ${money(sub.amount)}${per(sub.interval)} recurring gift? They won't be charged again, and they'll be notified.`)) return;
       apiFetch(`/recurring/subs/${sub.id}/cancel`, { method: "POST", body: JSON.stringify({}) })
         .then(() => { say(`Canceled — ${sub.donorName} has been notified.`); load(); })
-        .catch(e => say(e.message || "Couldn't cancel."));
+        .catch(e => say(errorMessage(e, "Couldn't cancel.")));
       return;
     }
     if (key === "cardlink") {
       apiFetch(`/recurring/${sub.donorId}/resend`, { method: "POST", body: JSON.stringify({}) })
         .then(() => say(`Card-update link sent to ${sub.donorName}.`))
-        .catch(e => say(e.message || "Couldn't send the link."));
+        .catch(e => say(errorMessage(e, "Couldn't send the link.")));
       return;
     }
     if (key === "resend_proposal" && sub.pendingProposal) {
       apiFetch(`/recurring/proposals/${sub.pendingProposal.id}/resend`, { method: "POST", body: JSON.stringify({}) })
         .then(() => { say("Proposal resent."); load(); })
-        .catch(e => say(e.message || "Couldn't resend."));
+        .catch(e => say(errorMessage(e, "Couldn't resend.")));
     }
   };
 
   const resendInvitation = inv => {
     apiFetch(`/recurring/proposals/${inv.id}/resend`, { method: "POST", body: JSON.stringify({}) })
       .then(() => { say("Invitation resent."); load(); })
-      .catch(e => say(e.message || "Couldn't resend."));
+      .catch(e => say(errorMessage(e, "Couldn't resend.")));
   };
 
   const subs = roster?.subs || [];

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
@@ -86,7 +87,7 @@ function NewEventPanel({ onSave, onClose }) {
         }),
       });
       onSave(evt);
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setSaving(false);
   };
 
@@ -212,7 +213,7 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
         body: JSON.stringify({ taskTitle, dueDate, priority }),
       });
       setResult(r.count);
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setSaving(false);
   };
 
@@ -307,7 +308,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
         ...ev,
         attendees: ev.attendees.map(a => a.id === attId ? { ...a, ...updated } : a),
       }));
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setSavingAtt(null);
   };
 
@@ -341,7 +342,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
       setDonorSearch("");
       await reload();
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setAddingDonors(false);
   };
 
@@ -355,7 +356,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
       setGuestForm({ name: "", email: "" });
       await reload();
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setAddingGuest(false);
   };
 
@@ -368,7 +369,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
       setEvent(ev => ({ ...ev, ...updated }));
       setEditing(false);
       if (onEventUpdated) onEventUpdated();
-    } catch(e) { alert(e.message); }
+    } catch(e) { alert(errorMessage(e)); }
     setEditSaving(false);
   };
 

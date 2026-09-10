@@ -5,8 +5,8 @@ Four defects found 9 September 2026 importing `steward-leads.csv` (444 rows, the
 feature. Every defect below was **reproduced first** against the real file, in
 this repo, before anything was changed.
 
-Suite: `tests/build84.test.js` (**136 assertions**, in `run-all.sh`).
-Walk: `scripts/build84-capture.js` (**38 assertions, ALL GREEN**) — the real
+Suite: `tests/build84.test.js` (**151 assertions**, in `run-all.sh`).
+Walk: `scripts/build84-capture.js` (**41 assertions, ALL GREEN**) — the real
 444-row file through the real UI on a fresh org, then the Map.
 Fixture: `tests/fixtures/build84/org-donors.csv` + `key.json`.
 
@@ -407,7 +407,7 @@ sender never fires for it twice.
 
 ## The verification walk — the real file, the real UI
 
-`scripts/build84-capture.js` (**38 assertions, ALL GREEN**) is the hour that
+`scripts/build84-capture.js` (**41 assertions, ALL GREEN**) is the hour that
 found all four defects, made repeatable: a fresh org, `steward-leads.csv`
 dropped into the real import UI at 1440, then the Map, then a timed step.
 Screens and the full page text in `docs/build84/`.
@@ -461,6 +461,119 @@ arithmetic panel said *"unknown — no amount-shaped column found"* on a file
 where five were found and none was mapped; and the missing-list printed the
 currency list twice, reading as two findings where there is one. Both fixed and
 pinned in the walk.
+
+---
+
+## FIX (2026-09-10, same session) — four things from the review
+
+### 1. The Geocodio cost figure was wrong, and it is the one you would quote
+
+The first draft of `BLOCKED-build84.md` said the 444-row import costs **$0.41**
+and a 25,000-donor one costs **$25**. Both were list price with the **2,500-a-day
+free allowance never applied**, and the second also quoted a cost **per donor**
+rather than per distinct address. Corrected everywhere the number appears
+(`BLOCKED-build84.md`, `audit/data-handling.md`, `geocode.js`'s own header):
+
+- the billable unit is a **distinct address**, and only a new or changed one —
+  the queue de-duplicates before spending and never re-resolves;
+- 444 donors → 408 distinct → **$0.00**, inside the daily free allowance;
+- 25,000 distinct → **$22.50** in one day, **$0.00** across ten;
+- a steady-state org spends **nothing**.
+
+Provider **decided: Geocodio**. `audit/data-handling.md` names it; the PENDING
+banner is gone.
+
+### 2. The receipt caps the currency list at three
+
+Kept the rule — the acceptance line was the error, not the behaviour, and the
+sentence does real work: if she forgot to map her Amount column, that line is
+what catches it. What changed is **display only**. The sentence now names the
+**largest three** qualifying columns and puts the rest behind "and 2 more",
+because five subtotals headed by $386,923,121 reads as confusion even when every
+number in it is correct. Every qualifying column is still scanned, still
+counted, and still carried on `reconciliation.dollars.currencyColumns`.
+
+### 3. The timezone gate links to the fix instead of only refusing
+
+Kept strict — a default timezone fires a 2:00 reminder at the wrong hour and
+fails silently, which is the exact thing the rule exists to prevent. But
+refusing an action and then leaving the user to hunt for the fix is half a fix.
+The next-step form now carries a **"Set your time zone"** button that closes the
+modal and lands **on the Time Zone card**, which scrolls itself into view and
+rings once. `navigateTo("settings", {section, focus})` is the new plumbing;
+`focus` names one card inside a section.
+
+### 4. THE SWALLOWED PROGRAMMING ERROR — the class, named and closed
+
+The TDZ bug is a new failure class and it is now written down, in
+**`client/src/lib/domainError.js`**, whose header carries the whole account:
+
+> **A catch around domain logic re-throws anything that is not a domain error,
+> and never emits user-facing copy for one it did not expect.**
+
+An error handler that turns a bug into a data-quality message is worse than no
+handler, because it sends the user to fix their file. It is the same family as
+everything else in this build — **a screen stating something it cannot back**.
+
+**Two medicines, because a re-throw is not always the right one.**
+
+- **Render path / pure computation** → **re-throw**. `rethrowProgrammerError(e)`
+  is the first line of the catch. Every tab is inside an `ErrorBoundary`, so a
+  bug becomes an honest crash screen. Applied to the four catches that
+  computed a value and returned a plausible one — `payload`, `bothPayload`,
+  `mapperPlan`, `dateConvEvidence`, and the workbook's build. **Two of those
+  were worse than the one that bit:** a swallowed bug in `mapperPlan` takes
+  `cfUndecided` to 0, which would let an import run with columns nobody decided,
+  and a swallowed bug in `dateConvEvidence` removes the mixed-date-convention
+  block entirely.
+- **Async event handlers** → **`errorMessage(e, fallback)`**. React error
+  boundaries do **not** catch errors thrown from an async callback, so
+  re-throwing there produces an unhandled rejection and a stuck spinner — worse
+  than the message it replaced. Those handlers keep catching; what changes is
+  what they are allowed to *say*. A domain error is quoted (a route refusing
+  with "You've reached your donor record limit of 500" is telling the truth); a
+  bug gets a sentence that names itself as ours and says nothing about the
+  user's data.
+
+**Applied across the whole client: 141 catch blocks in 28 files.** Three sites
+needed hand-work rather than the mechanical rewrite:
+
+- `"Could not read Excel file: " + e.message` — a prefix that blames the file
+  glued to a message saying the opposite. When it is our bug, the bug's sentence
+  is the whole message.
+- `Invitation.jsx`'s `ex.message === "Failed to fetch"` — a typed check on the
+  message; the comparison is preserved and only the else-branch routed.
+- `billingErrorMessage` and `PlanPicker` — **typed mappers** that deliberately
+  never surface a message they do not recognise. Exempt from the rewrite, but
+  `billingErrorMessage` now does the check itself: a ReferenceError has no
+  billing code, and "Something went wrong with billing" would be a claim about
+  Stripe for a bug in us.
+
+**And the copy that shipped the defect is gone.** "No rows ready — map at least
+one column to name or email" was doubly wrong after this build: nameability
+includes an organization now, and a build *failure* must not wear a
+data-quality sentence at all. It reads:
+
+> *Steward could not read this file — <the error>. Nothing has been imported,
+> and this is not a problem with your spreadsheet.*
+
+**The guard** (`tests/build84.test.js` §4b) brace-matches every `catch` in
+`client/src` and fails the build if one puts words on a screen without routing
+the error first — total classification, script-guards style. It proves it can
+fire against a planted `setErr(e.message)`, and it separately pins that the four
+pure-computation catches re-throw and that every tab is inside an
+`ErrorBoundary`. *(The first draft of this guard used a ten-line window and
+reported false hits by sweeping up an `alert(...)` after the block — the same
+"ignore the boundaries the structure gives you" mistake this build censused
+everywhere else. It brace-matches now.)*
+
+**Named, not fixed — the sub-class this deliberately leaves open.** About thirty
+catches on the donor profile swallow into an **empty read state**
+(`.catch(() => setMoves([]))` and siblings). They are the same family — an
+absent panel is a claim that there is nothing there — but the honest fix is a
+per-panel "couldn't load" state, which is a build of its own, and re-throwing on
+a network hiccup would crash the profile every time the wifi blinks. Written
+down here so it is not lost rather than quietly skipped.
 
 ---
 

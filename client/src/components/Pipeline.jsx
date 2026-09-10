@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -35,7 +36,7 @@ function MoveModal({ card, onClose, onMoved }) {
     try {
       await apiFetch(`/pipeline/${card.donorId}/move`, { method: "POST", body: JSON.stringify({ toStage, description: desc.trim() }) });
       onMoved();
-    } catch (e) { setErr(e.message || "Could not save move."); setBusy(false); }
+    } catch (e) { setErr(errorMessage(e, "Could not save move.")); setBusy(false); }
   };
   const inp = { width: "100%", padding: "9px 11px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 14, fontFamily: "'DM Sans',sans-serif", boxSizing: "border-box" };
   return (

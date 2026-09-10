@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Pill, Card, AIBtn, AIPanel, MetricCard, EmptyState, PageTitle, Spin } from "./shared";
 import { apiFetch, API, getToken } from "../api";
+import { errorMessage } from "../lib/domainError";
 
 export function Board({data, setData, isReadOnly}) {
   const [subTab, setSubTab] = useState("members");
@@ -41,7 +42,7 @@ export function Board({data, setData, isReadOnly}) {
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
       await loadReports();
-    } catch(e) { setGenError(e.message || "Could not generate report"); }
+    } catch(e) { setGenError(errorMessage(e, "Could not generate report")); }
     setGenerating(false);
   };
 
@@ -99,7 +100,7 @@ export function Board({data, setData, isReadOnly}) {
       setData(prev=>({...prev,board:[...prev.board,adapted]}));
       setForm({name:"",role:"Member",employer:"",committees:"",term:"",givingLevel:""});
       setShowAdd(false);
-    }catch(e){alert(e.message||"Failed to add board member");}
+    }catch(e){alert(errorMessage(e, "Failed to add board member"));}
     setSaving(false);
   }
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { CHECKOUT_PLANS } from "../pages/Pricing";
+import { errorMessage } from "../lib/domainError";
 
 // In-app plan-selection modal used by "Reactivate" — launches a real Stripe
 // Checkout session for the chosen plan. This is deliberately separate from
@@ -27,7 +28,7 @@ export default function PlanPicker({ open, onClose }) {
       window.location.href = r.url;
     } catch (e) {
       const code = e?.error || "";
-      const raw = e?.message || "";
+      const raw = errorMessage(e, "");
       // Never surface a raw 500 / Stripe internals. Typed billing-config errors
       // (plan_mode_mismatch / plan_not_configured) carry clean admin-facing copy.
       const clean = (code === "plan_mode_mismatch" || code === "plan_not_configured")

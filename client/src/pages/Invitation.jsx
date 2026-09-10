@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { API } from "../api";
+import { errorMessage } from "../lib/domainError";
 
 // ── Request an invitation (invitation pivot, 2026-08-06) ─────────────────────
 // Steward is invitation-only while the founding-partner group (five orgs) is
@@ -83,7 +84,7 @@ export function InvitationSection({ headline }) {
     } catch (ex) {
       setErr(ex.message === "Failed to fetch"
         ? "Couldn't reach the server — please try again, or write to jonathan@stewardapp.dev."
-        : (ex.message || "Something went wrong — please try again."));
+        : (errorMessage(ex, "Something went wrong — please try again.")));
     } finally {
       setSending(false);
     }

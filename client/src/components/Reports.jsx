@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature, goToPricing } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
 // Six fixed, parameterized, table-first, CSV-downloadable reports — each one
@@ -211,7 +212,7 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
       a.href = url; a.download = `${active}-${suffix}.csv`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (e) { alert(e.message || "Download failed"); }
+    } catch (e) { alert(errorMessage(e, "Download failed")); }
     setDownloading(false);
   }
 

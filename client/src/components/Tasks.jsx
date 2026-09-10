@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, interactive } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 // BUILD-13 Part 1 — Tasks: the daily-driver follow-up surface.
 // Answers "what do I need to do" via three time buckets (Overdue / Due today /
@@ -92,7 +93,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
       setTasks(prev => { const next = [...(prev || []), row]; syncBadge(next); return next; });
       setForm({ title: "", due: "", priority: "medium", donorId: "" });
       setShowAdd(false);
-    } catch (e) { setErr(e.message || "Could not save task"); }
+    } catch (e) { setErr(errorMessage(e, "Could not save task")); }
     setSaving(false);
   };
 

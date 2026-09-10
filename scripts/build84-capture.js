@@ -133,8 +133,17 @@ const shoot = async (page, name) => page.screenshot({ path: `${OUT}/${name}.png`
   ok("§1 the dollar line says there is nothing to reconcile against, in a sentence",
     /nothing to reconcile against/i.test(body), (body.match(/[^\n]*reconcile against[^\n]*/i) || [])[0]);
   ok("§1 …and it names the currency columns it found, each with its own subtotal",
-    /revenue/i.test(body) && /contributions/i.test(body) && /none was mapped as a gift amount/i.test(body),
+    /revenue/i.test(body) && /none was mapped as a gift amount/i.test(body),
     (body.match(/[^\n]*read[s]? as currency[^\n]*/i) || [])[0]);
+  // FIX (2026-09-10) — DISPLAY cap: the largest three, the rest behind a count.
+  // Five subtotals headed by $386,923,121 reads as confusion even when every
+  // number is right.
+  const curLine = (body.match(/[^\n]*columns in this file read as currency[^\n]*/i) || [""])[0];
+  ok("§1 the currency sentence names the LARGEST THREE and counts the rest",
+    /“revenue” \$386,923,121/.test(curLine) && /“expenses”/.test(curLine) && /“contributions”/.test(curLine)
+    && /and 2 more/.test(curLine) && !/contrib_lost_yoy/.test(curLine), curLine);
+  ok("§1 …and the full list is still carried in the reconciliation, not just on screen",
+    /5 columns in this file read as currency/.test(curLine), curLine);
   ok("§1 the receipt never says the import is balanced", !/every row and every dollar accounted/i.test(body), null);
   await shoot(page, "02-receipt");
 
@@ -284,6 +293,8 @@ const shoot = async (page, name) => page.screenshot({ path: `${OUT}/${name}.png`
     body: JSON.stringify({ touch: "call_reached", line: "Reached the ED, wants a call back Monday.",
       nextStep: { type: "follow_up", label: "Call back", due: today, time: "14:00" } }) }).then(x => x.json());
   ok("§5 a next step accepts a time once the org's timezone is a human's choice", convo.thread?.due_time === "14:00", convo);
+  ok("§5 …and the form's refusal LINKS to the fix rather than only refusing",
+    /Set your time zone/.test(fs.readFileSync(path.join(__dirname, "..", "client/src/components/LogConversation.jsx"), "utf8")), null);
   const digest = await fetch(API + "/nudges/run", { method: "POST", headers: auth, body: JSON.stringify({ today, force: true, dryRun: true }) }).then(x => x.json());
   const timed = await fetch(API + "/step-reminders/run", { method: "POST", headers: auth, body: JSON.stringify({ today, now: "14:02", dryRun: true }) }).then(x => x.json());
   ok("§5 the timed task is out of the morning digest on its due date", (digest.sent || []).length === 0, digest);

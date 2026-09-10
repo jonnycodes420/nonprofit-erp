@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { T, fmt, fmtFull, askClaude, Pill, Card, AIBtn, AIPanel, SectionLabel, PageTitle } from "./shared";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
+import { errorMessage } from "../lib/domainError";
 
 export function Programs({data}) {
   const {auth}=useAuth(); const isAdmin=auth?.user?.role==="admin";
@@ -20,18 +21,18 @@ export function Programs({data}) {
       startDate:form.startDate,endDate:form.endDate,status:form.status,outcomes:form.outcomes,metrics:{}};
     try{await apiFetch("/programs",{method:"POST",body:JSON.stringify(body)});await load();setShowAdd(false);
       setForm({name:"",description:"",budget:"",spent:"",staff:"",participantCount:"",startDate:"",endDate:"",status:"active",outcomes:""});}
-    catch(e){alert(e.message);}
+    catch(e){alert(errorMessage(e));}
   };
 
   const addGrantLink=async(programId)=>{
     try{await apiFetch(`/programs/${programId}/grants`,{method:"POST",body:JSON.stringify({grantId:linkGrant.grantId,allocated:parseInt(linkGrant.allocated)||0})});
       await load();setLinkGrant({programId:null,grantId:"",allocated:""});}
-    catch(e){alert(e.message);}
+    catch(e){alert(errorMessage(e));}
   };
 
   const removeGrantLink=async(programId,grantId)=>{
     try{await apiFetch(`/programs/${programId}/grants/${grantId}`,{method:"DELETE"});await load();}
-    catch(e){alert(e.message);}
+    catch(e){alert(errorMessage(e));}
   };
 
   const getAI=async(p,type)=>{

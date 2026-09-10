@@ -7,6 +7,7 @@ import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./U
 import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
+import { errorMessage } from "../lib/domainError";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -517,7 +518,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
       if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
       else await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
       onSaved();
-    } catch (e) { setErr(e.message || "Could not save"); setSaving(false); }
+    } catch (e) { setErr(errorMessage(e, "Could not save")); setSaving(false); }
   };
 
   const field = { width: "100%", padding: "10px 12px", border: "1px solid " + T.bg3, borderRadius: 10, fontSize: 14, boxSizing: "border-box", fontFamily: "inherit" };

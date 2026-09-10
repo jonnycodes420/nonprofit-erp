@@ -4,6 +4,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
 import { T } from "../components/shared";
+import { errorMessage } from "../lib/domainError";
 
 // The onboarding flow is a KEYED sequence, not a fixed numeric ladder, so a
 // Team org can slot in an extra "Invite your team" step while Core skips it
@@ -192,7 +193,7 @@ export default function WelcomePage() {
       await refreshOrg();
       setMetric1(m => ({ ...m, outcomeTemplate: defaultOutcomeTemplate(orgName) }));
       goNext();
-    } catch (e) { setError(e.message || "Could not save — please try again."); }
+    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
     setSavingBasics(false);
   }
 
@@ -211,8 +212,8 @@ export default function WelcomePage() {
         await apiFetch("/auth/invite", { method: "POST", body: JSON.stringify({ email, role: "staff" }) });
         results.push({ email, ok: true });
       } catch (e) {
-        if (e.error === "seat_limit") { setSeatMsg(e.message || "You've reached your seat limit — Team includes up to 10 users."); results.push({ email, ok: false, error: "seat limit" }); }
-        else results.push({ email, ok: false, error: e.message || "couldn't send" });
+        if (e.error === "seat_limit") { setSeatMsg(errorMessage(e, "You've reached your seat limit — Team includes up to 10 users.")); results.push({ email, ok: false, error: "seat limit" }); }
+        else results.push({ email, ok: false, error: errorMessage(e, "couldn't send") });
       }
     }
     setInvited(results);
@@ -245,7 +246,7 @@ export default function WelcomePage() {
     try {
       await apiFetch("/goals", { method: "POST", body: JSON.stringify(goalForm) });
       goNext();
-    } catch (e) { setError(e.message || "Could not save — please try again."); }
+    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
     setSavingGoal(false);
   }
 
@@ -262,7 +263,7 @@ export default function WelcomePage() {
       }
       go("launch");
       runFinish();
-    } catch (e) { setError(e.message || "Could not save — please try again."); }
+    } catch (e) { setError(errorMessage(e, "Could not save — please try again.")); }
     setSavingMetrics(false);
   }
 

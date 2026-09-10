@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Component } from "react";
 import Papa from "papaparse";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
+import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
@@ -271,7 +272,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError 
       const roled = classifyWorkbookSheets(sheets);
       if (!roled.some(s => s.rowCount > 0)) { onError("No data rows found in this file."); return; }
       onWorkbook({ roled });
-    } catch(ex) { onError("Could not read Excel file: " + ex.message); }
+    } catch(ex) { onError(isProgrammerError(ex) ? errorMessage(ex) : "Could not read Excel file: " + ex.message); }
   } else {
     // BUILD-79 Part 1 — the report-export layer. Decode strictly (per-LINE
     // windows-1252 repair, never whole-file — a mixed file must not have its
@@ -285,7 +286,7 @@ async function parseFileToSheets(file, { onSingle, onMulti, onWorkbook, onError 
       const analysis = analyzeCsvText(dec.text);
       if (!analysis.rows.length) { onError("No rows found."); return; }
       onSingle(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: dec.cp1252Lines, mojibakeRepaired: dec.mojibakeRepaired || 0, mojibakeRepairs: dec.mojibakeRepairs || [] });
-    } catch (ex) { onError("Could not read file: " + ex.message); }
+    } catch (ex) { onError(isProgrammerError(ex) ? errorMessage(ex) : "Could not read file: " + ex.message); }
   }
 }
 
@@ -820,7 +821,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       const analysis = analyzeCsvText(csvText);
       if (!analysis.rows.length) { setErr("No rows found. Check CSV format."); return; }
       applyParsed(analysis.headers, analysis.rows, analysis.physical, { ...reportFromAnalysis(analysis), cp1252Lines: [] });
-    } catch (ex) { setErr("Parse error: " + ex.message); }
+    } catch (ex) { setErr(isProgrammerError(ex) ? errorMessage(ex) : "Parse error: " + ex.message); }
   };
 
   // ── AI column mapping (aggregate/wide donor fields only) ──
@@ -874,7 +875,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         existingDefs: cfDefs, savedMappings: savedCfMappings,
         orphanColumns: physicalCols.orphanColumns, overflowRows: physicalCols.overflowRows,
       });
-    } catch (e) { console.error("[import] mapper plan failed:", e); return null; }
+    } catch (e) {
+      // Worse than the payload case: a null plan takes `cfUndecided` to 0, so a
+      // swallowed bug here would let an import run with columns nobody decided.
+      rethrowProgrammerError(e);
+      console.error("[import] mapper plan failed:", e); return null;
+    }
   }, [parsed, effectiveShape, physicalCols, txMap, cfDefs, savedCfMappings]);
 
   // The columns that flow into the accounted builder, from plan + decisions.
@@ -920,7 +926,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
   // blocks the import until a human chooses, with examples of both readings.
   const dateConvEvidence = useMemo(() => {
     if (!parsed || effectiveShape !== "transaction" || !txMap.date) return null;
-    try { return inferDateConvention(parsed.rows.map(r => r[txMap.date])); } catch { return null; }
+    // A null here removes the mixed-date-convention block, so a swallowed bug
+    // would let an ambiguous date column import unasked.
+    try { return inferDateConvention(parsed.rows.map(r => r[txMap.date])); }
+    catch (e) { rethrowProgrammerError(e); return null; }
   }, [parsed, effectiveShape, txMap.date]);
 
   // BUILD-84 P0-3 — the basis this import actually has, declared once and read
@@ -944,6 +953,11 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
       return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines, stageBasis);
     } catch (e) {
+      // FIX (2026-09-10) — a bug is RE-THROWN, never rendered as a sentence
+      // about the user's file. Returning an empty payload here is how a
+      // ReferenceError became "No rows ready — map at least one column to name
+      // or email". See client/src/lib/domainError.js.
+      rethrowProgrammerError(e);
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
@@ -1038,8 +1052,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         };
       }
     } catch (e) {
+      rethrowProgrammerError(e);
       console.error("IMPORT FIELD SETUP FAILED:", e);
-      setErr(e.message || "Could not create the custom fields. Nothing was imported.");
+      setErr(errorMessage(e, "Could not create the custom fields. Nothing was imported."));
       setLoading(false); return;
     }
     // FIX (2026-09-09) — a CSV donor column mapped to a custom field carries its
@@ -1144,7 +1159,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
             totals.mergeRows = semRes?.merges || [];
           } catch (e) {
             console.error("[import] semantics call failed:", e);
-            totals.semanticsError = e.message || "the pledge/in-kind/link rows could not be recorded";
+            totals.semanticsError = errorMessage(e, "the pledge/in-kind/link rows could not be recorded");
           }
         }
       }
@@ -1216,7 +1231,20 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         // described as money that went missing.
         const cur = R.dollars.currencyColumns || [];
         const money$ = n => "$" + Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
-        const curList = cur.map(c => `“${c.header}” ${money$(c.sum)}`).join(" · ");
+        // FIX (2026-09-10) — a DISPLAY cap, not a logic one. Every qualifying
+        // column is still scanned, still counted, and still carried on
+        // `reconciliation.dollars.currencyColumns` for anything that reads the
+        // receipt. But five subtotals headed by a $386,923,121 figure reads as
+        // confusion on a receipt even when every number in it is correct, so
+        // the sentence names the LARGEST THREE and puts the rest behind a
+        // count. The count is what keeps it honest: "and 2 more" is a fact the
+        // reader can act on, an elided list is not.
+        const CURRENCY_COLS_SHOWN = 3;
+        const curRanked = [...cur].sort((a, b) => b.sum - a.sum);
+        const curShown = curRanked.slice(0, CURRENCY_COLS_SHOWN);
+        const curRest = curRanked.length - curShown.length;
+        const curList = curShown.map(c => `“${c.header}” ${money$(c.sum)}`).join(" · ")
+          + (curRest > 0 ? ` · and ${curRest} more` : "");
         if (!amountMapped) missing.push("no amount column was mapped");
         if (!dateMapped) missing.push("no gift-date column was mapped");
         if (dollarsIn <= 0 && R.dollars.scanColumn && R.dollars.inFile > 0)
@@ -1272,9 +1300,12 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       }
       setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport });
     } catch (e) {
+      // A refusal from a route is a domain error and its message is real. A
+      // TypeError in this function is not, and must not be shown as one.
+      rethrowProgrammerError(e);
       console.error("IMPORT FAILED:", e);
       if (e.error === "record_limit") { setUpgradeInfo(e); }
-      else { setErr(e.message || "Import failed. See browser console."); }
+      else { setErr(errorMessage(e, "Import failed. See browser console.")); }
     }
     setLoading(false); setProgress(null);
   };
@@ -1285,6 +1316,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
     try {
       return buildBothPayload(bothMode.donorSheet, bothMode.giftSheet, bothMode.matchInfo, matchKey);
     } catch (e) {
+      rethrowProgrammerError(e);   // a bug is a crash, not "0 gifts → 0 donors"
       console.error("[import-both] payload build failed:", e);
       return { donors:[], gifts:[], matchedGifts:0, unmatchedGifts:0, newDonors:0, skippedGifts:0, error:e.message };
     }
@@ -1367,9 +1399,10 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
         rowReport: bothPayload.rowReport,
       });
     } catch (e) {
+      rethrowProgrammerError(e);
       console.error("IMPORT-BOTH FAILED:", e);
       if (e.error === "record_limit") { setUpgradeInfo(e); }
-      else { setErr(e.message || "Import failed. See browser console."); }
+      else { setErr(errorMessage(e, "Import failed. See browser console.")); }
     }
     setLoading(false); setProgress(null);
   };
@@ -1434,7 +1467,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
       loadOfficers();  // refresh from server (pending list + counts)
       setInviteFor(null); setInviteEmail("");
     } catch (e) {
-      setInviteErr(e.error === "seat_limit" ? (e.message || "You've reached your seat limit.") : (e.message || "Could not send invite."));
+      setInviteErr(e.error === "seat_limit" ? (errorMessage(e, "You've reached your seat limit.")) : (errorMessage(e, "Could not send invite.")));
     }
     setInviteBusy(false);
   }
@@ -1758,7 +1791,7 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                     <button onClick={async()=>{
                       try { await apiFetch(`/import-merges/${m.id}/undo`, { method:"POST", body: JSON.stringify({}) });
                         setResult(r=>({ ...r, mergeRows: r.mergeRows.map(x=>x.id===m.id?{...x, undone:true}:x) }));
-                      } catch(e){ alert(e.message || "Undo failed"); }
+                      } catch(e){ alert(errorMessage(e, "Undo failed")); }
                     }} disabled={m.undone}
                       style={{background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:6,padding:"2px 8px",color:m.undone?T.ink3:T.ink,fontSize:11,cursor:m.undone?"default":"pointer",flexShrink:0}}>
                       {m.undone ? "Split back" : "Undo"}
@@ -2388,7 +2421,9 @@ export function DonorImport({ onClose, onImported, withHistory = false }) {
                         {routed>0&&<>{" · "}<span style={{color:T.ink3}}>{routed.toLocaleString()}</span>{" rows route to their own surfaces (soft credits, pledges, in-kind)"}</>}
                       </>;
                     })()}</>
-                : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em> or <em>email</em>.</span>}
+                : payload.error
+                  ? <span style={{color:T.terracotta}}>Steward could not read this file — {payload.error}. Nothing has been imported, and this is not a problem with your spreadsheet.</span>
+                  : <span style={{color:T.ink3}}>No rows ready — map at least one column to <em>name</em>, <em>email</em>, or <em>organization</em>.</span>}
             </div>
           </div>
 
@@ -2831,7 +2866,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
     try {
       const res = await apiFetch("/gifts/import-history", { method:"POST", body:JSON.stringify({ gifts:toSend }) });
       setResult(res); setStep("result");
-    } catch(e) { setErr(e.message || "Import failed."); }
+    } catch(e) { setErr(errorMessage(e, "Import failed.")); }
     setLoading(false);
   };
 
@@ -2843,7 +2878,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
       const res = await apiFetch("/gifts/import-history", { method:"POST",
         body:JSON.stringify({ includeDuplicates:true, gifts:result.heldForReview }) });
       setResult(r => ({ ...r, inserted:(r.inserted||0)+(res.inserted||0), heldForReview:[] }));
-    } catch(e) { setErr(e.message || "Import failed."); }
+    } catch(e) { setErr(errorMessage(e, "Import failed.")); }
     setLoading(false);
   };
 
@@ -3508,7 +3543,7 @@ function EditDonorModal({donor,onSave,onClose}){
       const tags=form.tags.split(",").map(t=>t.trim()).filter(Boolean);
       const res=await apiFetch(`/donors/${donor.id}`,{method:"PUT",body:JSON.stringify({...form,tags})});
       onSave(res);
-    }catch(e){setErr(e.message||"Failed to save");}
+    }catch(e){setErr(errorMessage(e, "Failed to save"));}
     setLoading(false);
   };
 
@@ -3576,7 +3611,7 @@ function GiftLinkModal({donor,orgName,onClose}){
   useEffect(()=>{
     apiFetch("/stripe/donation-page",{method:"POST",body:JSON.stringify({donorName:donor.name,donorEmail:donor.email})})
       .then(r=>{setUrl(r.url);setEmailBody(b=>b.replace("PAYMENT_LINK",r.url));})
-      .catch(e=>setErr(e.message||"Could not create payment link"))
+      .catch(e=>setErr(errorMessage(e, "Could not create payment link")))
       .finally(()=>setLoading(false));
   },[]);
 
@@ -3595,7 +3630,7 @@ function GiftLinkModal({donor,orgName,onClose}){
       })});
       await apiFetch(`/campaigns/${created.id}/send`,{method:"POST"});
       setSent(true);
-    }catch(e){setSendErr(e.message||"Failed to send email");}
+    }catch(e){setSendErr(errorMessage(e, "Failed to send email"));}
     setSending(false);
   };
 
@@ -3721,7 +3756,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       await apiFetch(`/donors/${donor.id}/relationships`,{method:"POST",body:JSON.stringify({relatedDonorId,relationshipType:relType})});
       setRelPickerOpen(false);setRelSearch("");
       loadRelationships();
-    }catch(e){setRelErr(e.message||"Could not link donor");}
+    }catch(e){setRelErr(errorMessage(e, "Could not link donor"));}
     setRelSaving(false);
   };
   const unlinkDonor=async(relId)=>{
@@ -3816,7 +3851,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       await apiFetch("/gmail/send",{method:"POST",body:JSON.stringify({donorId:donor.id,to:composeTo,subject:resolvedSubj,body:resolvedBody})});
       setComposeSent(true);
       setTimeout(()=>{setComposeSent(false);setComposeOpen(false);setComposeSubject("");setComposeBody("");if(onInteractionAdded)onInteractionAdded();},3000);
-    }catch(e){setComposeErr(e.message||"Failed to send email");}
+    }catch(e){setComposeErr(errorMessage(e, "Failed to send email"));}
     setComposeSending(false);
   };
 
@@ -3917,7 +3952,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/recurring/${donor.id}/resend`,{method:"POST"});
       setRecurResendSent(true);
-    }catch(e){alert(e.message||"Could not resend the update link");}
+    }catch(e){alert(errorMessage(e, "Could not resend the update link"));}
     setRecurResendBusy(false);
   };
 
@@ -3964,12 +3999,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const addAsk=async()=>{
     const amt=parseFloat(askAmt);if(!(amt>0)){alert("Enter a positive target ask amount.");return;}
     try{await apiFetch(`/donors/${donor.id}/opportunities`,{method:"POST",body:JSON.stringify({name:askName.trim()||"Ask",targetAmount:amt})});
-      setAskOpen(false);setAskName("");setAskAmt("");refreshPipeline();}catch(e){alert(e.message||"Could not add ask");}
+      setAskOpen(false);setAskName("");setAskAmt("");refreshPipeline();}catch(e){alert(errorMessage(e, "Could not add ask"));}
   };
   const closeAsk=async(o,status)=>{
     const body={status};
     if(status==="won"){const amt=prompt(`Actual gift amount closed (asked ${fmtFull(o.target_amount)}):`,o.target_amount);if(amt==null)return;body.giftAmount=parseFloat(amt)||0;}
-    try{await apiFetch(`/opportunities/${o.id}`,{method:"PUT",body:JSON.stringify(body)});refreshPipeline();}catch(e){alert(e.message||"Could not update ask");}
+    try{await apiFetch(`/opportunities/${o.id}`,{method:"PUT",body:JSON.stringify(body)});refreshPipeline();}catch(e){alert(errorMessage(e, "Could not update ask"));}
   };
   useEffect(()=>{
     refreshSoftCredit();refreshPipeline();
@@ -3992,7 +4027,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [pipelineAdded,setPipelineAdded]=useState(false);
   const addToPipeline=async()=>{
     try{ await apiFetch("/pipeline/add",{method:"POST",body:JSON.stringify({ids:[donor.id]})}); setPipelineAdded(true); }
-    catch(e){ alert(e.message||"Could not add to pipeline"); }
+    catch(e){ alert(errorMessage(e, "Could not add to pipeline")); }
   };
   const hasDesignation=k=>designations.some(d=>d.kind===k);
   const toggleDesignation=async(kind)=>{
@@ -4000,14 +4035,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       if(hasDesignation(kind))await apiFetch(`/donors/${donor.id}/designations/${kind}`,{method:"DELETE"});
       else await apiFetch(`/donors/${donor.id}/designations`,{method:"POST",body:JSON.stringify({kind})});
       const d=await apiFetch(`/donors/${donor.id}/designations`);setDesignations(Array.isArray(d)?d:[]);
-    }catch(e){alert(e.message||"Could not update designation");}
+    }catch(e){alert(errorMessage(e, "Could not update designation"));}
   };
   const createHousehold=async()=>{
     const ids=[...hhPick];if(!ids.length)return;
     try{
       const hh=await apiFetch("/households",{method:"POST",body:JSON.stringify({memberIds:[donor.id,...ids],primaryDonorId:donor.id})});
       setHousehold(hh);setHhModalOpen(false);setHhPick(new Set());setHhSearch("");refreshSoftCredit();
-    }catch(e){alert(e.message||"Could not create household");}
+    }catch(e){alert(errorMessage(e, "Could not create household"));}
   };
   const removeFromHousehold=async()=>{
     if(!household)return;
@@ -4016,7 +4051,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       if(remaining.length<2)await apiFetch(`/households/${household.id}`,{method:"DELETE"});
       else await apiFetch(`/households/${household.id}`,{method:"PUT",body:JSON.stringify({memberIds:remaining})});
       setHousehold(null);refreshSoftCredit();
-    }catch(e){alert(e.message||"Could not update household");}
+    }catch(e){alert(errorMessage(e, "Could not update household"));}
   };
 
   // Tax receipts — per-gift status + whether the org has receipts enabled
@@ -4038,7 +4073,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/gifts/${giftId}/receipt`,{method:"POST"});
       await loadDonorReceipts();
-    }catch(e){alert(e.message||"Could not send receipt");}
+    }catch(e){alert(errorMessage(e, "Could not send receipt"));}
     setReceiptBusyId(null);
   };
 
@@ -4050,7 +4085,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");a.href=url;a.download=`${filenameHint}.pdf`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){alert(e.message||"Could not download receipt");}
+    }catch(e){alert(errorMessage(e, "Could not download receipt"));}
   };
 
   const [showYearEnd,setShowYearEnd]=useState(false);
@@ -4063,7 +4098,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       await apiFetch(`/donors/${donor.id}/year-end-statement`,{method:"POST",body:JSON.stringify({year:parseInt(yearEndYear,10),send:true})});
       await loadDonorReceipts();
       setShowYearEnd(false);
-    }catch(e){setYearEndErr(e.message||"Could not generate statement");}
+    }catch(e){setYearEndErr(errorMessage(e, "Could not generate statement"));}
     setYearEndBusy(false);
   };
 
@@ -4113,7 +4148,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       await apiFetch(`/interactions/${int.id}`,{method:"DELETE"});
     }catch(e){
       loadGiftsFull();
-      alert("Could not delete this entry: "+(e.message||"unknown error"));
+      alert("Could not delete this entry: "+(errorMessage(e, "unknown error")));
     }
   };
 
@@ -4173,7 +4208,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       }
       loadGiftsFull();
       setGiftEditId(null);
-    }catch(e){alert(e?.errors?.[0]?.error||e.message||"That value was refused");}
+    }catch(e){alert(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));}
     setGiftSaving(false);
   };
 
@@ -4220,7 +4255,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       setAddPledgeOpen(false);
       setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
       loadPledges();
-    }catch(e){alert(e.message||"Could not save pledge");}
+    }catch(e){alert(errorMessage(e, "Could not save pledge"));}
     setPledgeSaving(false);
   };
 
@@ -4228,7 +4263,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/pledges/${id}`,{method:"PUT",body:JSON.stringify({status})});
       loadPledges();
-    }catch(e){alert(e.message||"Could not update pledge");}
+    }catch(e){alert(errorMessage(e, "Could not update pledge"));}
   };
 
   const deletePledge=async(id)=>{
@@ -4244,7 +4279,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     try{
       await apiFetch(`/pledges/${id}/resend`,{method:"POST"});
       setPledgeResentIds(prev=>new Set(prev).add(id));
-    }catch(e){alert(e.message||"Could not resend the reminder");}
+    }catch(e){alert(errorMessage(e, "Could not resend the reminder"));}
     setPledgeResendBusyId(null);
   };
 
@@ -4407,7 +4442,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <button onClick={()=>{setDpMoreOpen(false);onEdit();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Edit</button>
             </div>
           )}
-          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org}
+          {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
             onClose={()=>setConvoOpen(false)}/>}
         </div>
@@ -5320,7 +5355,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
                     setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
                     setSeqOpen(false);setSeqId("");
-                  }catch(e){alert(e.message||"Could not enroll");}
+                  }catch(e){alert(errorMessage(e, "Could not enroll"));}
                   setSeqLoading(false);
                 }} style={{background:seqId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"6px 12px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
                   {seqLoading?"…":"Enroll"}
@@ -5353,7 +5388,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 setCfSaved(f.key);setTimeout(()=>setCfSaved(null),2000);
                 setCfEditing(null);setCfError("");onCfSaved?.();
               }catch(e){
-                setCfError(e?.errors?.[0]?.error||e.message||"That value was refused");
+                setCfError(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));
               }
             };
             return <div>
@@ -5784,7 +5819,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
       const a=document.createElement("a");
       a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){flash("Export failed — "+(e.message||"unknown error"));}
+    }catch(e){flash("Export failed — "+(errorMessage(e, "unknown error")));}
     setExporting(false);
   }
 
@@ -5849,7 +5884,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
 
   async function saveOfficerColor(userId,color){
     try{ await apiFetch(`/portfolio/officers/${userId}/color`,{method:"PUT",body:JSON.stringify({color})}); onOfficersChanged&&onOfficersChanged(); }
-    catch(e){ flash("Could not save color: "+(e.message||"error")); }
+    catch(e){ flash("Could not save color: "+(errorMessage(e, "error"))); }
   }
   const teamPortfolios=portfolioMeta.tier==="team";
   const showPortfolios=officers.length>1; // single-user shop: no color clutter at all
@@ -6357,7 +6392,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
 
   const load=()=>{
     setGroups(null);setOpen(null);setPrimaryId(null);setErr("");
-    apiFetch("/donors/duplicates").then(r=>setGroups(r.groups||[])).catch(e=>{setGroups([]);setErr(e.message||"Could not check for duplicates.");});
+    apiFetch("/donors/duplicates").then(r=>setGroups(r.groups||[])).catch(e=>{setGroups([]);setErr(errorMessage(e, "Could not check for duplicates."));});
   };
   useEffect(load,[]);
 
@@ -6374,7 +6409,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
       setDone(`Merged ${others.length} duplicate${others.length!==1?"s":""} into ${keep.name}.`);
       onMerged();
       load();
-    }catch(e){setErr(e.message||"Merge failed.");}
+    }catch(e){setErr(errorMessage(e, "Merge failed."));}
     setBusy(false);
   }
 
@@ -6631,7 +6666,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     try{
       await apiFetch("/org/load-sample-data",{method:"POST"});
       window.location.reload();
-    }catch(e){ alert(e.message||"Failed to load sample data"); setSampleLoading(false); }
+    }catch(e){ alert(errorMessage(e, "Failed to load sample data")); setSampleLoading(false); }
   };
 
   const patchDirRows=(donorId,patch)=>setDirRows(prev=>prev?prev.map(d=>d.id===donorId?{...d,...patch}:d):prev);
@@ -6830,7 +6865,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           </div>
         </div>
       )}
-      {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org}
+      {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}

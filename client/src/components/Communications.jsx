@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive } from "./shared";
+import { errorMessage } from "../lib/domainError";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -346,7 +347,7 @@ function CampaignLinkBtn({ campaignId, campaignName }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
-      alert(err.message || "Connect Stripe in Settings to generate donation links.");
+      alert(errorMessage(err, "Connect Stripe in Settings to generate donation links."));
     }
     setLoading(false);
   };
@@ -450,14 +451,14 @@ function SequencesPanel({ data }) {
       else await apiFetch("/sequences", { method: "POST", body: JSON.stringify(payload) });
       await loadSeqs();
       setView("list"); setEditing(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setSaveLoading(false);
   };
 
   const deleteSeq = async (id) => {
     if (!window.confirm("Delete this sequence and all enrollments?")) return;
     try { await apiFetch(`/sequences/${id}`, { method: "DELETE" }); await loadSeqs(); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
   };
 
   const toggleStatus = async (seq) => {
@@ -465,7 +466,7 @@ function SequencesPanel({ data }) {
     try {
       await apiFetch(`/sequences/${seq.id}/status`, { method: "PATCH", body: JSON.stringify({ status: newStatus }) });
       setSeqList(prev => prev.map(s => s.id === seq.id ? { ...s, status: newStatus } : s));
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
   };
 
   const viewEnrollments = async (seqId) => {
@@ -481,7 +482,7 @@ function SequencesPanel({ data }) {
     try {
       await apiFetch(`/sequences/${seqId}/unenroll`, { method: "POST", body: JSON.stringify({ donorId }) });
       setEnrollmentsMap(prev => ({ ...prev, [seqId]: (prev[seqId] || []).map(e => e.donor_id === donorId ? { ...e, status: "unsubscribed" } : e) }));
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
   };
 
   const addStep = () => setForm(f => ({ ...f, steps: [...f.steps, { delayDays: 3, subject: "", body: "" }] }));
@@ -674,7 +675,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
       await apiFetch(`/milestone-drafts/${id}`, { method: "PUT", body: JSON.stringify(editForm) });
       setDrafts(prev => prev.map(d => d.id === id ? { ...d, ...editForm } : d));
       setEditingId(null);
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
 
@@ -684,7 +685,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
     try {
       await apiFetch(`/milestone-drafts/${id}/send`, { method: "POST" });
       setDrafts(prev => prev.filter(d => d.id !== id));
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
 
@@ -694,7 +695,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
     try {
       await apiFetch(`/milestone-drafts/${id}/dismiss`, { method: "POST" });
       setDrafts(prev => prev.filter(d => d.id !== id));
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setBusyId(null);
   };
 
@@ -872,7 +873,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     const raw = typeof c.segment === "string" ? JSON.parse(c.segment || "{}") : (c.segment || {});
     const payload = { name: "Copy of " + c.name, subject: c.subject, body: c.body, segment: raw, status: "draft" };
     try { await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); await loadCampaigns(); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
   };
 
   const saveDraft = async () => {
@@ -883,7 +884,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
       await loadCampaigns(); setView("list");
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
   };
 
   const scheduleIt = async () => {
@@ -896,7 +897,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       if (editingId) await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) });
       else await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
       await loadCampaigns(); setView("list");
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
   };
 
   const sendNow = async (directId) => {
@@ -908,20 +909,20 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       try {
         if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); id = editingId; }
         else { const s = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) }); id = s.id; }
-      } catch (e) { alert(e.message); return; }
+      } catch (e) { alert(errorMessage(e)); return; }
     }
     if (!window.confirm("Send this campaign now? This will send real emails.")) return;
     setSending(true); setSendResult(null);
     try {
       const r = await apiFetch(`/campaigns/${id}/send`, { method: "POST" });
       setSendResult(r); await loadCampaigns(); setView("list");
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setSending(false);
   };
 
   const deleteCampaign = async (id) => {
     try { await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
   };
 
   const draftAI = async () => {
@@ -947,7 +948,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         document.execCommand("insertHTML", false, linkHtml);
       }
     } catch (e) {
-      alert(e.message || "Could not generate donation link. Make sure Stripe is connected in Settings.");
+      alert(errorMessage(e, "Could not generate donation link. Make sure Stripe is connected in Settings."));
     }
     setLinkLoading(false);
   };

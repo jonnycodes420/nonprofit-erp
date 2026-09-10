@@ -9,6 +9,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import { ProductMark } from "./ProductMark";
+import { errorMessage } from "../lib/domainError";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -388,7 +389,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       else await apiFetch("/me/home-layout",{method:"PUT",body:JSON.stringify({layout:next})});
     }catch(e){
       if(prev)setLayout(prev);
-      setLayoutError(e.message||"Couldn't save your Home layout — your changes were undone.");
+      setLayoutError(errorMessage(e, "Couldn't save your Home layout — your changes were undone."));
       setTimeout(()=>setLayoutError(""),6000);
     }
   };
@@ -575,7 +576,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         title:item.taskTitle,due:item.taskDue,priority:item.taskPriority,type:item.taskType,done:1,
       })});
       setQueueItems(prev=>prev.filter(i=>i.taskId!==item.taskId));
-    }catch(e){alert(e.message||"Could not mark task done");}
+    }catch(e){alert(errorMessage(e, "Could not mark task done"));}
     setBusyDonorId(null);
   };
 
@@ -584,7 +585,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     try{
       await apiFetch(`/note-reminders/${item.reminderId}/send`,{method:"POST"});
       setQueueItems(prev=>prev.filter(i=>i.reminderId!==item.reminderId));
-    }catch(e){alert(e.message||"Could not mark note sent");}
+    }catch(e){alert(errorMessage(e, "Could not mark note sent"));}
     setBusyDonorId(null);
   };
 
@@ -596,7 +597,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
     try{
       await apiFetch(`/recurring/${item.donorId}/resend`,{method:"POST"});
       setResentIds(prev=>new Set(prev).add(item.donorId));
-    }catch(e){alert(e.message||"Could not resend the update link");}
+    }catch(e){alert(errorMessage(e, "Could not resend the update link"));}
     setBusyDonorId(null);
   };
 
@@ -653,7 +654,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       await apiFetch("/goals",{method:"POST",body:JSON.stringify(goalForm)});
       await loadGoal();
       setShowSetGoal(false);
-    }catch(e){alert(e.message||"Could not save goal");}
+    }catch(e){alert(errorMessage(e, "Could not save goal"));}
     setSavingGoal(false);
   };
 
@@ -2060,7 +2061,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         onSelectDonor={goToDonorFromPortfolio}
       />
 
-      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org}
+      {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
     </div>
   );

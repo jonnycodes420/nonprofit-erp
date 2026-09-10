@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
+import { errorMessage } from "../lib/domainError";
 import {
   TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
   nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel, NOTE_ONLY_PLUS_DAYS,
@@ -16,7 +17,7 @@ const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch
 
 const todayLocal = () => new Date().toISOString().split("T")[0];
 
-export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null }) {
+export function LogConversationModal({ donor, thread = null, onSaved, onClose, org = null, onNavigate = null }) {
   const [touch, setTouch] = useState("call_reached");
   const [line, setLine] = useState("");
   const [date, setDate] = useState(todayLocal());
@@ -76,7 +77,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
       onSaved && onSaved({ ...r, touch, line: line.trim(), date });
       onClose && onClose();
     } catch (e) {
-      setErr(e?.message || "That didn't save. Try again.");
+      setErr(errorMessage(e, "That didn't save. Try again."));
       setBusy(false);
     }
   };
@@ -155,7 +156,16 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
             {!tzKnown
-              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone in Settings first — Steward will not fire a reminder at a guessed hour.</>
+              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone first — Steward will not fire a reminder at a guessed hour.
+                  {onNavigate && <>{" "}
+                    {/* FIX (2026-09-10) — refusing an action and then leaving
+                        the user to hunt for the fix is half a fix. This lands
+                        ON the Time Zone card, which rings itself. */}
+                    <button type="button" onClick={() => { onClose && onClose(); onNavigate("settings", { section: "giving", focus: "timezone" }); }}
+                      style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                      Set your time zone
+                    </button>
+                  </>}</>
               : sanitizeStepTime(nsTime)
                 ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened — instead of the morning list. It fires on a weekend too.</>
                 : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}

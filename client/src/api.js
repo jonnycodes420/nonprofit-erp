@@ -1,3 +1,5 @@
+import { errorMessage, isProgrammerError } from "./lib/domainError";
+
 export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
 export const getToken = () => localStorage.getItem("npe_token");
@@ -20,6 +22,13 @@ function isAuthError(err) {
 // Stripe internals to the user. `err` is what apiFetch throws (has .error/.message/.status).
 const BILLING_CONFIG_CODES = ["plan_mode_mismatch", "plan_not_configured", "portal_not_configured"];
 export function billingErrorMessage(err, fallback = "Something went wrong with billing. Please try again, or reach out if it keeps happening.") {
+  // FIX (2026-09-10) — this is a TYPED mapper over billing's own error codes,
+  // which is why it is exempt from the blanket `errorMessage` rewrite: it
+  // deliberately never surfaces a raw message it does not recognise. But a
+  // ReferenceError in the caller has no billing code and no useful message, and
+  // "Something went wrong with billing" would be a claim about Stripe for a bug
+  // in us. The one rule holds here too. (client/src/lib/domainError.js)
+  if (isProgrammerError(err)) return errorMessage(err, fallback);
   const code = err?.error || "";
   const raw = err?.message || "";
   if (BILLING_CONFIG_CODES.includes(code)) return raw || fallback;

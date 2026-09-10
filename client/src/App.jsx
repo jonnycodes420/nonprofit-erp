@@ -24,6 +24,7 @@ import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
+import { errorMessage } from "./lib/domainError";
 
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
@@ -138,7 +139,11 @@ function AppShell() {
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
     setDonorsIntent(opts?.view||opts?.logDonorId||opts?.stageFilter||opts?.selectDonorId||opts?.openImport||opts?.openConversation?{view:opts.view,logDonorId:opts.logDonorId,stageFilter:opts.stageFilter,selectDonorId:opts.selectDonorId,openImport:opts.openImport,openConversation:opts.openConversation}:null);
     setGrantsIntent(opts?.grantId?{grantId:opts.grantId}:null);
-    setSettingsIntent(opts?.section?{section:opts.section}:null);
+    // FIX (2026-09-10) — `focus` names ONE card inside the section, so a deep
+    // link that exists to fix a specific setting lands ON it instead of at the
+    // top of a tab with the card three scrolls down. Refusing an action and
+    // then making the user hunt for the fix is half a fix.
+    setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
     setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent(opts?.report&&t==="reports"?{report:opts.report,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
@@ -323,7 +328,7 @@ function AppShell() {
       a.href=url; a.download=isAdmin?`steward-export-${new Date().toISOString().split("T")[0]}.zip`:"steward-export.json";
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
-    }catch(e){ alert(e.message||"Export failed"); }
+    }catch(e){ alert(errorMessage(e, "Export failed")); }
     setExportingBanner(false);
   }
 
@@ -489,7 +494,7 @@ function AppShell() {
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
-      {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} onNavigate={navigateTo}/>}
+      {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
     </ErrorBoundary>
     </div>
     </div>{/* /app-main */}

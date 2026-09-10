@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { errorMessage } from "../lib/domainError";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -229,14 +230,14 @@ function OrgPanel({ org, onClose, onRefresh }) {
   async function extendTrial() {
     setWorking(true);
     try { await adminFetch("/admin/orgs/" + org.id + "/extend-trial", { method: "POST", body: JSON.stringify({ days: parseInt(extDays, 10) }) }); onRefresh(); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
     setWorking(false);
   }
 
   async function changePlan() {
     setWorking(true);
     try { await adminFetch("/admin/orgs/" + org.id + "/change-plan", { method: "POST", body: JSON.stringify({ plan: newPlan }) }); onRefresh(); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
     setWorking(false);
   }
 
@@ -246,7 +247,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
     try {
       await adminFetch("/admin/orgs/" + org.id, { method: "DELETE", body: JSON.stringify({ confirm: true }) });
       onClose(); onRefresh();
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(errorMessage(e)); }
     setWorking(false);
   }
 
@@ -423,12 +424,12 @@ function Organizations({ orgs, loading, onRefresh }) {
 
   async function quickExtend(orgId) {
     try { await adminFetch("/admin/orgs/" + orgId + "/extend-trial", { method: "POST", body: JSON.stringify({ days: parseInt(extDays, 10) }) }); onRefresh(); setExtendOrgId(null); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
   }
 
   async function quickChangePlan(orgId) {
     try { await adminFetch("/admin/orgs/" + orgId + "/change-plan", { method: "POST", body: JSON.stringify({ plan: newPlan }) }); onRefresh(); setChangePlanOrgId(null); }
-    catch (e) { alert(e.message); }
+    catch (e) { alert(errorMessage(e)); }
   }
 
   const INP = {
@@ -661,7 +662,7 @@ function NetworkReview() {
   const [err, setErr] = useState("");
   const load = useCallback(async () => {
     try { setApps(await adminFetch(`/admin/network/applications?status=${status}`)); }
-    catch (e) { setErr(String(e.message || e)); }
+    catch (e) { setErr(errorMessage(e, String(e))); }
   }, [status]);
   useEffect(() => { load(); }, [load]);
   const decide = async (id, action) => {
@@ -670,7 +671,7 @@ function NetworkReview() {
     try {
       await adminFetch(`/admin/network/applications/${id}/decide`, { method: "POST", body: JSON.stringify({ action, reason }) });
       await load();
-    } catch (e) { setErr(String(e.message || e)); }
+    } catch (e) { setErr(errorMessage(e, String(e))); }
     setBusyId(null);
   };
   const chip = (on, label) => (

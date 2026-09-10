@@ -104,8 +104,17 @@ function geocodingConfigured(env = process.env) {
 // round-trip budget the way the import logs its write trips.
 
 // Geocodio: US and Canada, POST a list, one request per batch of up to 10,000.
-// $1.00 per 1,000 lookups with 2,500 free per day (1 Feb 2026), so a
-// 25,000-donor first import is a one-time $25 — or free spread over ten days.
+//
+// PRICING, AND THE UNIT IT IS CHARGED IN (1 Feb 2026): 2,500 lookups free
+// EVERY DAY, then $1.00 per 1,000 ($0.001 each). The billable unit is a
+// LOOKUP — which is a DISTINCT ADDRESS, not a donor — because the queue
+// de-duplicates by geocode_key before it spends anything and never re-resolves
+// an address it already holds. Quoting a cost per donor overstates it twice
+// over: once for the duplicates, and again for the free allowance.
+//   measured, 444-donor lead file:  408 distinct → 0 billed → $0.00
+//   25,000 distinct in ONE day:     2,500 free + 22,500 billed → $22.50
+//   25,000 distinct over ten days:  2,500/day, all free → $0.00
+// A steady-state org spends nothing: only a NEW or CHANGED address is a lookup.
 const GEOCODIO_BATCH = 1000;
 async function geocodeGeocodio(queries, cfg, { fetchImpl = fetch } = {}) {
   const out = new Array(queries.length).fill(null);

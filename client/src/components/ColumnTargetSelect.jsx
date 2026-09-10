@@ -27,6 +27,7 @@
 import { useState } from "react";
 import { T } from "./shared";
 import { CF_TYPES } from "../../../shared/customFieldShape";
+import { errorMessage } from "../lib/domainError";
 
 export function ColumnTargetSelect({
   header, standardFields = [], cfDefs = { donor: [], gift: [] }, entity = "donor",
@@ -55,7 +56,7 @@ export function ColumnTargetSelect({
                                         options: draft.options || [], entity: draft.entity });
       if (def && def.id) onChange(`cf:${def.id}`);
       setDraft(null);
-    } catch (e) { setErr(e.message || "Could not create the field."); }
+    } catch (e) { setErr(errorMessage(e, "Could not create the field.")); }
     setBusy(false);
   };
 

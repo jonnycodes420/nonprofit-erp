@@ -16,6 +16,7 @@ import { useState, useEffect, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, SectionLabel, Pill } from "./shared";
 import { ImpactUpdatesManager, PortalWebsiteSnippetCard } from "./Settings";
+import { errorMessage } from "../lib/domainError";
 
 const btnPrimary = { display: "inline-block", background: T.gold500, border: "none", borderRadius: 9, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none" };
 const btnSecondary = { ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 };
@@ -105,7 +106,7 @@ export function DonorPortalHub({ auth, isReadOnly, onNavigate }) {
       const next = { ...psRef.current, ...res };
       delete next.adjusted; delete next.message;
       psRef.current = next; setPs(next);
-    } catch (e) { setErr(e.message || "Could not save."); }
+    } catch (e) { setErr(errorMessage(e, "Could not save.")); }
   }
   const setToggle = (col, apiKey, v) => {
     if (disabled) return;

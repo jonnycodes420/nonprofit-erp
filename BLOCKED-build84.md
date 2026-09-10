@@ -14,23 +14,35 @@ currently in the third one**: no provider configured → the job does not run, n
 donor address leaves the server, and the map says so in a sentence. That is
 correct and honest, and it means **the Map shows no pins until you choose.**
 
-The spec named two workable directions and left the choice to you:
+**DECIDED: Geocodio** (Jonathan, 2026-09-10). Set `GEOCODIO_API_KEY` on Railway
+and the map starts filling in on the next tick. Nothing else to change.
 
 | | Geocodio | Self-hosted Nominatim |
 |---|---|---|
 | Coverage | US + Canada — matches the customer base | worldwide |
-| Cost | $1.00 per 1,000 lookups, 2,500 free/day (1 Feb 2026 pricing) | no per-lookup bill |
-| A 25,000-donor first import | **one-time $25**, or **free** if the backfill spreads over ten days | free |
-| The 444-row lead list | free | free |
+| Cost | **2,500 lookups free every day**, then $1.00 per 1,000 ($0.001 each) — 1 Feb 2026 pricing | no per-lookup bill |
+| A 25,000-address first import | **$22.50** in one day (2,500 free + 22,500 billed), or **$0.00** spread over ten | free |
+| The 444-row lead list | **$0.00** — 408 lookups, inside the daily free allowance | free |
 | Operational surface | none | a service to run, update and monitor — which you have said you do not currently want |
 | To turn on | set `GEOCODIO_API_KEY` on Railway | set `GEOCODE_NOMINATIM_BASE` to your instance |
 
-**Measured here, against a mock provider, on the real 444-row file:** 444
-donors resolved in **one** batched request (408 distinct addresses — the job
-de-duplicates by address before spending anything), in 28 ms; a re-run spends
-**zero** requests because no address changed. At Geocodio's pricing that first
-import is **$0.41**, and a 25,000-donor org would be well under the daily free
-tier if the backfill is allowed a few days.
+### What the map actually costs — the sentence to give an ED
+
+**The billable unit is a distinct ADDRESS, not a donor**, and only a new or
+changed one. The queue de-duplicates by address before it spends anything and
+never re-resolves an address it already holds, so a steady-state org spends
+nothing at all: only new donors and address edits are lookups.
+
+**Measured here, against a mock provider, on the real 444-row file:** 444 donors
+→ **408 distinct addresses** → **one** batched request, 26 ms. A re-run spent
+**zero**. At Geocodio's pricing that import costs **$0.00** — 408 is well inside
+the 2,500-a-day free allowance.
+
+*(An earlier draft of this file said $0.41 for that import and $25 for a
+25,000-donor one. Both were list price with the free allowance never applied,
+and the second also quoted a cost per DONOR rather than per distinct address.
+Corrected above — it is the number you would be quoting if a customer asks what
+the map costs.)*
 
 Two things follow whichever way you go:
 

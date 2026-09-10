@@ -103,6 +103,7 @@ export function interactive(onClick, opts = {}) {
 // buildContext). A re-export alone left them undefined here and crashed the
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
 import { fmt, fmtFull, quietPhrase } from "../lib/money";
+import { errorMessage } from "../lib/domainError";
 export { fmt, fmtFull, quietPhrase };
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
@@ -916,7 +917,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
       setIncludeDetail(false); setIncludeAction(false);
       setPhase("review");
     }catch(e){
-      setError(e.message||"Transcription failed — please try again.");
+      setError(errorMessage(e, "Transcription failed — please try again."));
       setPhase("recorded");
     }
   };
@@ -932,7 +933,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
       onSaved?.(selectedDonor,r);
       close();
     }catch(e){
-      setError(e.message||"Could not save — please try again.");
+      setError(errorMessage(e, "Could not save — please try again."));
       setPhase("review");
     }
   };
