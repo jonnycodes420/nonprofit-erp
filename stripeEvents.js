@@ -28,6 +28,15 @@ const DONATION_WEBHOOK_EVENTS = [
   "invoice.payment_succeeded",
   "customer.subscription.updated",
   "customer.subscription.deleted",
+  // (2026-09-11) Stripe's Card Account Updater replacing an expired or
+  // reissued card at the network. Without this the expiry sweep would email
+  // donors whose card was never going to fail.
+  //
+  // NOTE THE CONSEQUENCE, which is the point of this manifest existing: until
+  // the LIVE endpoint subscribes to it, /health's webhookSubscriptions diff
+  // reports it missing and the handler never fires in production. That is the
+  // BUILD-62 class made visible instead of silent — see BLOCKED-card-recovery.md.
+  "payment_method.automatically_updated",
 ];
 
 // The PLATFORM BILLING endpoint (/billing/webhook — Steward's own subscription

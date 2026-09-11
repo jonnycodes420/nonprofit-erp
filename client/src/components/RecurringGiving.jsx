@@ -64,6 +64,13 @@ function MovementSummary({ movement }) {
         <div style={{ fontSize: 12, color: T.ink3 }}>
           {movement.healthyCount} active sustainer{movement.healthyCount === 1 ? "" : "s"}
           {movement.atRiskCount ? <span style={{ color: T.terra700, fontWeight: 700 }}> · {movement.atRiskCount} at risk</span> : null}
+          {/* (2026-09-11) The card that has not failed yet. Its own colour and
+              its own clause, because it is the half still worth acting on —
+              folding it into "at risk" would bury the preventable money in the
+              lost money. */}
+          {movement.expiringCount
+            ? <span style={{ color: T.gold600 || "#a97f22", fontWeight: 700 }}> · {movement.expiringCount} card{movement.expiringCount === 1 ? "" : "s"} expiring</span>
+            : null}
         </div>
       </div>
       <div>

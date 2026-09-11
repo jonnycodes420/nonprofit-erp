@@ -1221,6 +1221,36 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_dunning ON recurring_subscriptions (status, next_dunning_at)`);
+
+  // ── (2026-09-11) THE CARD THAT IS GOING TO DIE, BEFORE IT DIES ───────────
+  // Everything in the recovery engine until now started at
+  // `invoice.payment_failed` — i.e. after the gift had already been lost and
+  // the donor had already received an apology. Card expiry is the most
+  // predictable cause of involuntary churn and the one thing that can be seen
+  // coming, so these columns hold what Stripe knows about the card on file.
+  //
+  // It has to be a POLL, not a webhook: Stripe's `customer.source.expiring`
+  // fires only for legacy Card/Source objects and explicitly does NOT occur
+  // for PaymentMethod integrations, which is what Steward uses (setup-mode
+  // Checkout → setupIntent.payment_method). Verified in Stripe's own event
+  // reference, not assumed.
+  //
+  // `card_checked_at` is the re-read budget (a card is re-read at most every
+  // CARD_RECHECK_DAYS); `card_expiry_notified_for` holds the 'YYYY-MM' of the
+  // expiry already warned about, so one notice per card per expiry — a card
+  // updated by the network clears it and becomes eligible again.
+  for (const col of [
+    ["card_payment_method_id", "TEXT"],   // lets payment_method.automatically_updated find its subscription
+    ["card_brand", "TEXT"], ["card_last4", "TEXT"],
+    ["card_exp_month", "INTEGER"], ["card_exp_year", "INTEGER"],
+    ["card_checked_at", "TIMESTAMPTZ"], ["card_expiry_notified_for", "TEXT"],
+  ]) await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS ${col[0]} ${col[1]}`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_card_check
+                      ON recurring_subscriptions (status, card_checked_at)
+                    WHERE status IN ('active','past_due','recovering')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_card_pm
+                      ON recurring_subscriptions (card_payment_method_id)
+                    WHERE card_payment_method_id IS NOT NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recurring_subs_donor ON recurring_subscriptions (org_id, donor_id)`);
 
   // ── BUILD-57 Part 1 — the staff recurring-giving surface ────────────────

@@ -1371,6 +1371,35 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
       }
     }
 
+    // ── THE NETWORK FIXED THE CARD BY ITSELF (2026-09-11) ───────────────────
+    // Stripe's Card Account Updater silently replaces an expired or reissued
+    // card at the network, and `payment_method.automatically_updated` is how it
+    // says so. Without listening for it, the expiry sweep above would email
+    // donors whose card was never going to fail — which is worse than not
+    // emailing, because it invents a problem and asks them to fix it.
+    //
+    // So: store the new details, and CLEAR the expiry notice stamp. Clearing is
+    // the point. The stamp is keyed to an expiry period; the card now has a new
+    // one, and if that one ever approaches the donor should hear about it.
+    if (event.type === "payment_method.automatically_updated") {
+      const pm = event.data.object;
+      const card = pm && pm.card ? pm.card : null;
+      if (pm && pm.id && !(await recoveryEventAlreadyProcessed(event.id))) {
+        const affected = await query(
+          `UPDATE recurring_subscriptions
+              SET card_brand=?, card_last4=?, card_exp_month=?, card_exp_year=?,
+                  card_checked_at=NOW(), card_expiry_notified_for=NULL, updated_at=NOW()
+            WHERE card_payment_method_id=? RETURNING id, org_id, donor_id, stripe_subscription_id`,
+          [card ? card.brand : null, card ? card.last4 : null,
+           card ? card.exp_month : null, card ? card.exp_year : null, pm.id]);
+        for (const rs of affected) {
+          await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "card_auto_updated", event.id,
+            { last4: card ? card.last4 : null, exp: card ? `${card.exp_month}/${card.exp_year}` : null });
+        }
+        if (affected.length) console.log(`[card-expiry] network updated ${pm.id} → ${affected.length} subscription(s); expiry notice cleared`);
+      }
+    }
+
     if (event.type === "customer.subscription.deleted") {
       const sub = event.data.object;
       if (!(await recoveryEventAlreadyProcessed(event.id))) {
@@ -1394,6 +1423,15 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               ? "canceled_involuntary" : "canceled_voluntary";
             await logRecurringChange(rs.org_id, rs.id, rs.donor_id, churnKind,
               { oldAmount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, actor: "system" });
+            // An INVOLUNTARY loss gets a human too. This is the second caller
+            // and it is not redundant: an org with recurring_dunning_enabled
+            // off never runs a cadence to exhaust, so without this branch its
+            // failed sustainers would die with nobody told. One open thread per
+            // donor means the two callers can never stack.
+            if (churnKind === "canceled_involuntary") {
+              await openSustainerLapseThread(rs.org_id, rs.donor_id, {
+                amount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, reason: "canceled_involuntary" });
+            }
           }
         } else if (event.account) {
           // No health record ever existed (subscription never failed a
@@ -9513,6 +9551,59 @@ async function openGiftThread(orgId, donorId, { giftId, giftDate, actorId, actor
   } catch (e) { console.error("[thread] gift thread:", e.message); return null; }
 }
 
+// ── A SUSTAINER THE AUTOMATION COULD NOT SAVE BECOMES A PERSON'S JOB ───────
+// (2026-09-11) The dunning cadence is four emails over fourteen days. When it
+// runs out, `next_dunning_at` goes NULL and the subscription was left to
+// Stripe's own retries and eventual cancellation — with nobody told. A monthly
+// donor of six years stopped being a donor and no human ever heard about it.
+//
+// That is the exact moment this product exists for: the follow-up that was
+// meant and never happened. So exhausting the automation opens a THREAD — a
+// donor, an open next step, a due date — owned by whoever owns the donor.
+//
+// Deliberately a thread and not a task: BUILD-81 made the thread the spine,
+// one open per donor, closed only by a logged outcome or a stated reason. The
+// `ON CONFLICT (org_id, donor_id) WHERE closed_at IS NULL DO NOTHING` in
+// openThreadTx is what makes this safe to call from both of its two callers
+// (cadence exhaustion, and involuntary cancellation for orgs that never dunned)
+// without ever producing a second thread.
+//
+// NOTE: the person-surface gate is copied from openGiftThread verbatim, so a
+// sample/deceased/do-not-contact/non-person record never gets one. BUILD-84
+// gave organisations a `contact_name`, which arguably makes them callable now —
+// that is a change to BUILD-80 Part 7's contract and belongs to its own
+// decision, not to this one.
+async function openSustainerLapseThread(orgId, donorId, { amount = null, interval = "month", reason = "dunning_exhausted" } = {}) {
+  try {
+    const [d] = await query(
+      `SELECT id, assigned_to, assigned_to_name FROM donors
+        WHERE id = ? AND org_id = ? AND deleted_at IS NULL
+          AND is_sample IS NOT TRUE AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE
+          AND (kind IS NULL OR kind = 'person')`, [donorId, orgId]);
+    if (!d) return null;
+    const org = await orgTz(orgId);
+    const today = orgToday(org);                       // ORG_TZ_SEAM_OK
+    const { sanitizeStepLabel } = await threadShapeMod();
+    // The label says the money and the cadence, because "follow up" on its own
+    // tells the officer nothing about what they are walking into.
+    const amt = amount != null && Number(amount) > 0
+      ? "$" + Number(amount).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " " : "";
+    const per = interval === "year" ? "yearly" : "monthly";
+    const label = sanitizeStepLabel(`Call about their ${amt}${per} gift — the card failed and our emails did not reach them`)
+      || "Call about their recurring gift";
+    // Due TODAY: by the time this fires the gift has already been failing for
+    // a fortnight. A +N-day default would be the automation stalling twice.
+    const thread = await withTransaction(client => openThreadTx(client, {
+      orgId, donorId, step: { type: "follow_up", label, due: today },
+      openedOn: today,
+      ownerId: d.assigned_to || null, ownerName: d.assigned_to_name || null,
+      actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+    }));
+    if (thread) console.log(`[recurring] sustainer handed to a human: org=${orgId} donor=${donorId} reason=${reason}`);
+    return thread;
+  } catch (e) { console.error("[thread] sustainer lapse thread:", e.message); return null; }
+}
+
 // Compose the org's open threads: overdue first, then by due date. Snoozed
 // threads (revisit dates still in the future) stay off the list and out of
 // the stat — they resurface by construction the day snoozed_until arrives.
@@ -10252,6 +10343,7 @@ const DONOR_MAIL_POLICY = {
   receipt:            "transactional",  // legal acknowledgment of a gift
   year_end:           "transactional",  // year-end giving statement
   recurring_change:   "transactional",  // staff/donor changes to a recurring gift + proposals
+  card_expiring:      "transactional",  // "your card expires soon" — the pre-failure half of dunning
 };
 async function donorMailDecision(kind, email, orgId) {
   const cls = DONOR_MAIL_POLICY[kind];
@@ -16505,11 +16597,18 @@ async function processDunning() {
         const nextDelayDays = DUNNING_SCHEDULE_DAYS[nextStep];
         const nextDunningAt = nextDelayDays != null
           ? new Date(new Date(rs.first_failed_at).getTime() + nextDelayDays * 86400000).toISOString()
-          : null; // exhausted the cadence — stop sending, leave it for Stripe's own retries/eventual cancellation
+          : null; // exhausted the cadence — Stripe's own retries continue, but WE stop emailing
         await run(
           `UPDATE recurring_subscriptions SET status='recovering', dunning_step=?, next_dunning_at=?, updated_at=NOW() WHERE id=?`,
           [nextStep, nextDunningAt, rs.id]
         );
+        // …and the automation handing the donor to a human is the whole point:
+        // four emails over a fortnight did not reach them, so someone calls.
+        if (nextDunningAt === null) {
+          await logRecoveryEvent(rs.org_id, rs.donor_id, rs.stripe_subscription_id, "dunning_exhausted", null, { steps: nextStep });
+          await openSustainerLapseThread(rs.org_id, rs.donor_id, {
+            amount: rs.amount != null ? parseFloat(rs.amount) : null, interval: rs.interval, reason: "dunning_exhausted" });
+        }
       } catch (e) { console.error("[dunning] subscription", rs.id, e.message); }
     }
   } catch (e) { console.error("[dunning] processDunning:", e.message); }
@@ -16518,6 +16617,211 @@ if (!backgroundTicksDisabled()) {
   setTimeout(() => processDunning().catch(console.error), 5000);
   setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
 }
+
+// ── THE CARD THAT IS GOING TO DIE, BEFORE IT DIES (2026-09-11) ─────────────
+//
+// Every path above this one begins at `invoice.payment_failed` — after the
+// gift is already lost and the donor has already had an apology. Card expiry
+// is the most predictable cause of involuntary churn and the one thing that
+// can be seen coming, so this reads what Stripe knows about the card on file
+// and asks BEFORE it fails. Same Checkout link, two weeks earlier, sent to an
+// intact relationship rather than a broken one.
+//
+// WHY A POLL AND NOT A WEBHOOK. Stripe's `customer.source.expiring` fires only
+// for legacy Card/Source objects; its own event reference says it does not
+// occur for PaymentMethod integrations, which is what Steward uses (setup-mode
+// Checkout → setupIntent.payment_method → subscriptions.update). Checked, not
+// assumed. So the expiry date has to be fetched and stored, and this is the
+// same shape as the BUILD-84 geocoding queue: a budgeted background sweep, an
+// answer stored on the row, nothing at read time.
+//
+// The re-read is cheap and bounded: one Stripe call per subscription at most
+// every CARD_RECHECK_DAYS, capped per tick. A card that has not been re-read
+// recently is the only thing this ever looks at.
+const CARD_RECHECK_DAYS = Number(process.env.CARD_RECHECK_DAYS) || 7;
+const CARD_CHECK_BUDGET = Number(process.env.CARD_CHECK_BUDGET) || 200;
+
+// The expiry period is 'YYYY-MM' — a card is dead after the LAST day of its
+// expiry month, so the month is the whole unit and the notice is keyed to it.
+const cardPeriod = (y, m) => (y && m) ? `${y}-${String(m).padStart(2, "0")}` : null;
+
+// refreshCardsOnFile — pull brand/last4/expiry for live subscriptions whose
+// stored copy is missing or stale. Returns a job budget the way the import and
+// the geocoder do: a cost you cannot see is a cost nobody manages.
+async function refreshCardsOnFile({ limit = CARD_CHECK_BUDGET, orgId = null } = {}) {
+  const scope = orgId ? " AND rs.org_id = ?" : "";
+  const params = orgId
+    ? [CARD_RECHECK_DAYS, orgId, limit]
+    : [CARD_RECHECK_DAYS, limit];
+  const rows = await query(
+    `SELECT rs.id, rs.org_id, rs.stripe_subscription_id, o.stripe_account_id
+       FROM recurring_subscriptions rs JOIN orgs o ON o.id = rs.org_id
+      WHERE rs.status IN ('active','past_due','recovering')
+        AND rs.stripe_subscription_id IS NOT NULL
+        AND o.stripe_account_id IS NOT NULL
+        AND (rs.card_checked_at IS NULL OR rs.card_checked_at < NOW() - (? || ' days')::interval)${scope}
+      ORDER BY rs.card_checked_at ASC NULLS FIRST, rs.id ASC
+      LIMIT ?`, params);
+  const out = { checked: 0, requests: 0, withCard: 0, failed: 0 };
+  const t0 = Date.now();
+  for (const r of rows) {
+    out.requests++;
+    try {
+      // ONE call gets the subscription and the card behind it. A subscription
+      // with no default of its own inherits the customer's, so both are
+      // expanded — reading only the first would leave those rows blank forever.
+      const sub = await stripe.subscriptions.retrieve(r.stripe_subscription_id,
+        { expand: ["default_payment_method", "customer.invoice_settings.default_payment_method"] },
+        { stripeAccount: r.stripe_account_id });
+      const pm = (sub.default_payment_method && typeof sub.default_payment_method === "object")
+        ? sub.default_payment_method
+        : (sub.customer && sub.customer.invoice_settings && typeof sub.customer.invoice_settings.default_payment_method === "object"
+            ? sub.customer.invoice_settings.default_payment_method : null);
+      const card = pm && pm.card ? pm.card : null;
+      await run(
+        `UPDATE recurring_subscriptions
+            SET card_payment_method_id=?, card_brand=?, card_last4=?, card_exp_month=?, card_exp_year=?,
+                card_checked_at=NOW(), updated_at=NOW()
+          WHERE id=?`,
+        [pm ? pm.id : null, card ? card.brand : null, card ? card.last4 : null,
+         card ? card.exp_month : null, card ? card.exp_year : null, r.id]);
+      out.checked++;
+      if (card) out.withCard++;
+    } catch (e) {
+      // A failed READ is not a fact about the card. Stamp the check so one
+      // broken subscription cannot monopolise every tick's budget, but leave
+      // the stored card alone rather than blanking it on a network blip.
+      out.failed++;
+      await run(`UPDATE recurring_subscriptions SET card_checked_at=NOW() WHERE id=?`, [r.id]).catch(() => {});
+      console.error(`[card-expiry] read failed for ${r.stripe_subscription_id}:`, e.message);
+    }
+  }
+  out.ms = Date.now() - t0;
+  if (out.requests) console.log(`[card-expiry] refresh org=${orgId || "all"} requests=${out.requests} checked=${out.checked} withCard=${out.withCard} failed=${out.failed} ${out.ms}ms`);
+  return out;
+}
+
+// The subscriptions whose card dies this month or next, that have not already
+// been told about THIS expiry. Two months of warning is the window that still
+// leaves time to act before the next charge without being so early it reads as
+// noise.
+async function expiringCardRows(orgId, { today = new Date() } = {}) {
+  const y = today.getUTCFullYear(), m = today.getUTCMonth() + 1;
+  const next = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
+  const periods = [cardPeriod(y, m), cardPeriod(next.y, next.m)];
+  return await query(
+    `SELECT rs.*, d.name AS donor_name, d.email AS donor_email
+       FROM recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id
+      WHERE rs.org_id = ? AND rs.status IN ('active','past_due','recovering')
+        AND rs.card_exp_year IS NOT NULL AND rs.card_exp_month IS NOT NULL
+        AND (rs.card_exp_year || '-' || LPAD(rs.card_exp_month::text, 2, '0')) = ANY(?)
+        AND d.deleted_at IS NULL
+      ORDER BY rs.card_exp_year ASC, rs.card_exp_month ASC, rs.id ASC`,
+    [orgId, periods]);
+}
+
+// The notice itself. TRANSACTIONAL, like dunning: it is about the payment
+// instrument on an agreement the donor already made, not a new ask.
+async function sendCardExpiringEmail(org, donor, rs) {
+  const decision = await donorMailDecision("card_expiring", donor.email, org.id);
+  if (!decision.send) return { sent: false, refused: decision.reason };
+  const dfName = await donorFacingOrgName(org.id, org.name);
+  const firstName = donor.name ? donor.name.trim().split(/\s+/)[0] : "";
+  const updateUrl = buildCardUpdateUrl(rs.stripe_subscription_id, org.id);
+  const last4 = rs.card_last4 ? ` ending ${escHtmlWf(String(rs.card_last4))}` : "";
+  const amountStr = rs.amount != null ? `$${Number(rs.amount).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "your";
+  const per = rs.interval === "year" ? "yearly" : "monthly";
+  const expLabel = `${String(rs.card_exp_month).padStart(2, "0")}/${String(rs.card_exp_year).slice(-2)}`;
+  const subject = `Your card${last4} expires soon`;
+  // Nothing has gone wrong, and the copy must not imply it has. It states the
+  // date, the gift it protects, and the one thing to do.
+  const bodyHtml = await brandEmailHeaderHtml(org.id)
+    + `<div style="padding:22px;font-family:'DM Sans',Helvetica,Arial,sans-serif;color:#0f1a12;">
+        <p>Hi ${escHtmlWf(firstName)},</p>
+        <p>The card on your ${escHtmlWf(amountStr)} ${per} gift to ${escHtmlWf(dfName)}${last4} expires ${escHtmlWf(expLabel)}.
+           Nothing has gone wrong — we wanted to let you know before your next gift, so it does not
+           get interrupted.</p>
+        <p style="text-align:center;margin:28px 0;"><a href="${updateUrl}" style="background:#1a6b4a;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Update my card</a></p>
+        <p style="font-size:13px;color:#555;">It takes a minute, and ${escHtmlWf(dfName)} never sees your card details — Stripe handles it.</p>
+        <p style="font-size:13px;color:#555;">Thank you for giving, month after month.</p>
+      </div>`
+    + await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
+  const smtpFrom = await donorFromAddress(org.id);
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error: sendErr } = await resend.emails.send({
+        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
+        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+      });
+      if (sendErr) { console.error("[card-expiry] send error:", sendErr.message); return { sent: false, refused: null }; }
+    } catch (e) { console.error("[card-expiry] resend error:", e.message); return { sent: false, refused: null }; }
+  }
+  return { sent: true, refused: null };
+}
+
+// notifyExpiringCards — one notice per subscription per expiry month. The
+// stamp is the EXPIRY period, not a date: a card re-read, a network update, or
+// a re-run can never produce a second email about the same expiry, and a
+// genuinely new expiry (the donor updated the card) is eligible again by
+// construction because the period changed.
+async function notifyExpiringCards(org, { send = true, today = new Date() } = {}) {
+  const out = { notified: [], skipped: [] };
+  // The org-level switch for failed-card mail governs this too: an org that
+  // turned off recovery email does not want an earlier version of it. If that
+  // ever needs to be separable it is one column, not a rethink.
+  if (org.recurring_dunning_enabled === false) return { ...out, disabled: true };
+  const rows = await expiringCardRows(org.id, { today });
+  for (const rs of rows) {
+    const period = cardPeriod(rs.card_exp_year, rs.card_exp_month);
+    if (rs.card_expiry_notified_for === period) { out.skipped.push({ id: rs.id, reason: "already_notified" }); continue; }
+    if (!rs.donor_email) { out.skipped.push({ id: rs.id, reason: "no_email" }); continue; }
+    if (!send) { out.notified.push({ id: rs.id, donorId: rs.donor_id, period, last4: rs.card_last4 }); continue; }
+    const r = await sendCardExpiringEmail(org, { name: rs.donor_name, email: rs.donor_email }, rs);
+    if (r.sent) {
+      // Stamped only after a REAL delivery, the W-4 rule: a provider failure
+      // leaves the stamp off so the next tick tries again.
+      await run(`UPDATE recurring_subscriptions SET card_expiry_notified_for=?, updated_at=NOW() WHERE id=?`, [period, rs.id]);
+      await logRecoveryEvent(org.id, rs.donor_id, rs.stripe_subscription_id, "card_expiring_notice", null, { period, last4: rs.card_last4 });
+      out.notified.push({ id: rs.id, donorId: rs.donor_id, period, last4: rs.card_last4 });
+    } else if (r.refused) {
+      await run(`UPDATE recurring_subscriptions SET card_expiry_notified_for=?, updated_at=NOW() WHERE id=?`, [period, rs.id]);
+      out.skipped.push({ id: rs.id, reason: r.refused });
+    } else {
+      out.skipped.push({ id: rs.id, reason: "delivery_failed" });
+    }
+  }
+  return out;
+}
+
+async function processCardExpiry() {
+  try {
+    await refreshCardsOnFile({});
+    const orgs = await query(
+      `SELECT DISTINCT o.id, o.name, o.recurring_dunning_enabled
+         FROM orgs o JOIN recurring_subscriptions rs ON rs.org_id = o.id
+        WHERE rs.status IN ('active','past_due','recovering') AND rs.card_exp_year IS NOT NULL`, []);
+    for (const org of orgs) {
+      await notifyExpiringCards(org, {}).catch(e => console.error("[card-expiry]", org.id, e.message));
+    }
+  } catch (e) { console.error("[card-expiry] processCardExpiry:", e.message); }
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processCardExpiry().catch(console.error), 65000);
+  setInterval(() => processCardExpiry().catch(console.error), 6 * 60 * 60 * 1000);
+}
+
+// Ops/test hook — same bar as /recurring/process-dunning. {dryRun} composes
+// without sending or stamping; {today} pins the month so the window is
+// testable without waiting for a calendar.
+app.post("/recurring/check-cards", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name, recurring_dunning_enabled FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const refreshed = req.body && req.body.skipRefresh ? null
+    : await refreshCardsOnFile({ orgId: req.user.orgId, limit: Math.min(Math.max(parseInt(req.body?.limit, 10) || CARD_CHECK_BUDGET, 1), 2000) });
+  const today = req.body && req.body.today ? new Date(req.body.today + "T12:00:00Z") : new Date();
+  const out = await notifyExpiringCards(org, { send: !(req.body && req.body.dryRun), today });
+  res.json({ refreshed, ...out });
+}));
 
 // ════════════════════════════════════════════════════════════════════════════
 // Workflows engine (BUILD-13 Part 3) — retention recipes on a builder-ready
@@ -17718,10 +18022,24 @@ app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
     - buckets.involuntaryChurn.amount - buckets.voluntaryChurn.amount);
   const cohort = cohortRows[0]?.cohort || 0;
   const retained = cohortRows[0]?.retained || 0;
+  // (2026-09-11) The card that has not failed YET. Counted apart from at-risk
+  // on purpose: at-risk is money already broken, expiring is money still
+  // savable with one email, and merging them would bury the actionable half.
+  const expSoon = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0) AS mrr
+       FROM recurring_subscriptions
+      WHERE org_id = ? AND status IN ('active','past_due','recovering')
+        AND card_exp_year IS NOT NULL AND card_exp_month IS NOT NULL
+        AND make_date(card_exp_year, card_exp_month, 1)
+            BETWEEN date_trunc('month', CURRENT_DATE)::date
+                AND (date_trunc('month', CURRENT_DATE) + interval '1 month')::date`, [orgId]);
+
   res.json({
     mrr: round2(parseFloat(mrrRows[0]?.mrr) || 0),
     healthyCount: mrrRows[0]?.healthy || 0,
     atRiskCount: mrrRows[0]?.at_risk || 0,
+    expiringCount: expSoon[0]?.n || 0,
+    mrrExpiring: round2(parseFloat(expSoon[0]?.mrr) || 0),
     waterfall: { monthStart: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10), ...buckets, net },
     // No cohort → null, never a fake 0% (the empty-state honesty rule).
     retention12: { rate: cohort ? round2((retained / cohort) * 100) : null, cohortSize: cohort, retained },
@@ -18422,10 +18740,27 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   // Stripe knows. Neither may stand in for the other.
   const facts = await sustainerFileFacts(orgId);
 
+  // (2026-09-11) MONEY THAT HAS NOT FAILED YET IS STILL AT RISK, and it is the
+  // half a staff member can still do something cheap about. `atRisk` counts
+  // cards that already broke; `expiring` counts cards that are going to, this
+  // month or next. They are deliberately separate numbers: collapsing them
+  // would hide the one that is still preventable.
+  const expRows = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0) AS mrr
+       FROM recurring_subscriptions
+      WHERE org_id = ? AND status IN ('active','past_due','recovering')
+        AND card_exp_year IS NOT NULL AND card_exp_month IS NOT NULL
+        AND make_date(card_exp_year, card_exp_month, 1)
+            BETWEEN date_trunc('month', CURRENT_DATE)::date
+                AND (date_trunc('month', CURRENT_DATE) + interval '1 month')::date`, [orgId]);
+
   res.json({
     activeCount: s.active_count || 0,
     atRiskCount: s.at_risk_count || 0,
     mrrAtRisk: parseFloat(s.mrr_at_risk) || 0,
+    // cards expiring this month or next — preventable, not yet lost
+    expiringCount: expRows[0]?.n || 0,
+    mrrExpiring: parseFloat(expRows[0]?.mrr) || 0,
     recoveredThisMonth,
     lostThisMonth,
     recoveryRate,

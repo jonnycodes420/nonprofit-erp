@@ -70,7 +70,11 @@ function assertAgree(label, handledSet, manifest) {
   // The known real-world diff: against a 6-event endpoint that subscribed no
   // refund/dispute events, the manifest handles the refund + dispute family it
   // doesn't subscribe. BUILD-65 added charge.dispute.funds_reinstated (won-on-
-  // appeal → restore the reversed gift), so it's part of that set now.
+  // appeal → restore the reversed gift), so it's part of that set now, and
+  // (2026-09-11) payment_method.automatically_updated joined it — the card
+  // recovery work handles it and the live endpoint does not yet subscribe it.
+  // This list growing IS the signal: each entry is a handler that will not fire
+  // in production until someone subscribes it. See BLOCKED-card-recovery.md.
   const liveSubscribedNow = [
     "payment_intent.succeeded", "checkout.session.completed",
     "invoice.payment_failed", "invoice.payment_succeeded",
@@ -79,7 +83,8 @@ function assertAgree(label, handledSet, manifest) {
   const live = webhookEventDiff(DONATION_WEBHOOK_EVENTS, liveSubscribedNow);
   ok("diff vs a no-dispute-events endpoint = the refund + dispute family",
     JSON.stringify(live.missing) === JSON.stringify(
-      ["charge.dispute.closed", "charge.dispute.created", "charge.dispute.funds_reinstated", "charge.dispute.updated", "charge.refunded"]),
+      ["charge.dispute.closed", "charge.dispute.created", "charge.dispute.funds_reinstated", "charge.dispute.updated",
+       "charge.refunded", "payment_method.automatically_updated"]),
     live);
 
   summary();
