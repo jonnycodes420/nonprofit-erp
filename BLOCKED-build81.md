@@ -2,11 +2,16 @@
 
 Decisions or steps that need Jonathan; everything else shipped.
 
-1. **`[LEGAL ENTITY NAME]` is still the © placeholder** on the landing
-   footer. It renders flagged (dashed outline — the verifier now pins that
-   treatment, so it can never ship as bare bracket text pretending to be a
-   name), but only Jonathan can fill the registered entity. One edit in
-   `client/src/pages/Landing.jsx` (`PLACEHOLDERS.legalEntity`).
+1. ~~**The © placeholder** on the landing footer.~~ **RESOLVED 2026-09-12.**
+   The entity was filed (Kentucky, 12 September 2026) and the blank is
+   filled from ONE constant, `shared/legalEntity.js`. The dashed-outline
+   `Placeholder` machinery is deleted with the last blank it flagged, the
+   footer year is computed rather than hardcoded, and both landing gates
+   (`scripts/landing-prod-verify.js`, `tests/landing-field.test.js`) were
+   INVERTED — they used to require the placeholder be visible, and now
+   require the registered name plus the absence of any bracketed
+   placeholder. Census + the one deviation:
+   `audit/FIX-legal-entity-FINDINGS.md`.
 
 2. **The Cowork artifact "Steward Landing Page"** is the design authority
    (§4.6) and still shows the pre-BUILD-81 hero. Built from the spec

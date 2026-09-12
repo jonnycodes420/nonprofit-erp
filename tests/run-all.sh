@@ -89,6 +89,7 @@ CORE=(
   script-guards deploy-shape import-header import-messy-v2 import-workbook-v3 import-workbook-server mapper-one-dropdown
   threads thread-nudge thread-next-step thread-step-inline
   build84 recurring-recovery
+  legal-entity
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

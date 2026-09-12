@@ -19,8 +19,11 @@
 // Everything else carried forward: the honesty gates, NO PRICING, the FEP
 // attribution incl. "full-year 2025", no competitor as the authority, no
 // "keep 100%" overclaim, no outcome-claim language, measured contrast,
-// CLS + no-sideways-scroll, reduced-motion visibility, the visible ©
-// placeholder. New BUILD-81 gates: the question is the H1; "The Thread"
+// CLS + no-sideways-scroll, reduced-motion visibility, and the © line —
+// which 2026-09-12 INVERTED: it used to require the bracketed placeholder be
+// visible (BUILD-73's refusal to invent a legal entity), and now requires the
+// registered name and the current year, with no bracketed placeholder of any
+// shape surviving on a public page. New BUILD-81 gates: the question is the H1; "The Thread"
 // renders on the page; the thread visual's five knots render at full
 // opacity under reduced motion; CLS is 0.0000 at BOTH 1440 and 390; CTA
 // semantics (a navigating CTA is a real <a href>, never a <button>; no
@@ -63,6 +66,10 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
 
 (async () => {
   console.log(`landing-prod-verify → ${BASE}\n`);
+  // The entity name is READ, never re-typed: shared/legalEntity.js is the one
+  // module that holds it (ESM, hence the dynamic import from this CJS script),
+  // so this gate cannot drift from what the page renders.
+  const { LEGAL_ENTITY_NAME } = await import("../shared/legalEntity.js");
   const browser = await chromium.launch();
 
   // ── §1 · structure — the BUILD-81 order ─────────────────────────────────
@@ -223,20 +230,26 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
      marks.filter(m => m === "The Thread").length >= 2 && marks.filter(m => m === "Drift").length >= 1, marks);
   ok('no naggy language: "keeps asking" and "until you\'ve done it" absent from rendered text',
      !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
-  ok("the © placeholder is VISIBLE, not silently blank or invented",
-     text.includes("[LEGAL ENTITY NAME]"), null);
-  // BUILD-81 §4.4 item 7 — "assert it is not shipped as literal brackets":
-  // read as "never as bare bracket TEXT pretending to be a finished name."
-  // Until Jonathan fills the value it must render through the Placeholder
-  // treatment (dashed outline — visibly unfinished); once filled, the
-  // brackets disappear and this guard passes on the absence branch.
-  const placeholderTreatment = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("span")].find(s => s.textContent.trim() === "[LEGAL ENTITY NAME]");
-    if (!el) return { present: false };
-    return { present: true, dashed: getComputedStyle(el).borderStyle.includes("dashed") };
-  });
-  ok("the placeholder never ships as bare bracket text: it renders flagged (dashed outline) until filled",
-     !placeholderTreatment.present || placeholderTreatment.dashed === true, placeholderTreatment);
+  // FILLED 2026-09-12 (the entity was registered in Kentucky). These assertions
+  // used to demand the BRACKETED PLACEHOLDER be visible — BUILD-73's refusal to
+  // invent a legal entity, made into a guard. The entity exists now, so they
+  // invert: the DEPLOYED footer must carry the registered name, and no
+  // bracketed placeholder of any shape may reach a public page. Asserted on the
+  // family, not the one string — the value itself is read from the ONE constant
+  // so this file holds no second copy of the name.
+  ok("the © line names the registered legal entity on the DEPLOYED page",
+     text.includes(LEGAL_ENTITY_NAME), (text.match(/©[^\n]{0,60}/g) || []));
+  ok("…with the CURRENT year, computed rather than hardcoded",
+     text.includes(`© ${new Date().getFullYear()} ${LEGAL_ENTITY_NAME}`), (text.match(/©[^\n]{0,60}/g) || []));
+  const bracketed = text.match(/\[[A-Z][A-Z0-9]*(?: +[A-Z0-9]+)+\]/g) || [];
+  ok("no bracketed placeholder of ANY shape survives on the public page",
+     bracketed.length === 0, bracketed);
+  // The dashed-outline Placeholder treatment is gone with the last blank it
+  // flagged; a reintroduced one would be caught by the family check above and
+  // by tests/legal-entity.test.js before it could ever deploy.
+  const dashedLeft = await page.evaluate(() =>
+    [...document.querySelectorAll("span")].filter(s => /^\[[A-Z]/.test(s.textContent.trim())).length);
+  ok("no dashed unfinished-value chip remains in the DOM", dashedLeft === 0, dashedLeft);
 
   // ── §4 · the thread visual + the dot field ──────────────────────────────
   console.log("\n— §4 · the thread visual, and the dot field as evidence —");

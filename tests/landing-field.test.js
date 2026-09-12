@@ -63,6 +63,9 @@ function serveDist() {
 }
 
 (async () => {
+  // shared/legalEntity.js is the ONE module holding the entity name (ESM, hence
+  // the dynamic import from this CJS suite) — this golden cannot drift from it.
+  const { LEGAL_ENTITY_NAME } = await import("../shared/legalEntity.js");
   const srv = await serveDist();
   const browser = await chromium.launch();
   const URL = `http://localhost:${PORT}/`;
@@ -231,8 +234,19 @@ function serveDist() {
   console.log("\n— §6 · load-bearing copy —");
   ok('"Fundraising Effectiveness Project, full-year 2025" is intact — FEP rebased in Q1 2026 and now headlines a QUARTERLY figure',
      /Fundraising Effectiveness Project, full-year 2025/.test(text), null);
-  ok("the © placeholder is VISIBLE on the page, not silently blank",
-     text.includes("[LEGAL ENTITY NAME]"), null);
+  // INVERTED 2026-09-12. This used to require the bracketed placeholder be
+  // visible — BUILD-73 refused to invent a legal entity and made that refusal a
+  // guard. The entity is filed now, so the guard points the other way: the ©
+  // line must carry the registered name and the CURRENT year (it was a
+  // hardcoded "© 2026"), and no bracketed placeholder of any shape may render.
+  // The name is READ from the one module that holds it, never re-typed here.
+  ok("the © line names the registered legal entity",
+     text.includes(LEGAL_ENTITY_NAME), (text.match(/©[^\n]{0,60}/g) || []));
+  ok("…with the year computed, not hardcoded",
+     text.includes(`© ${new Date().getFullYear()} ${LEGAL_ENTITY_NAME}`), (text.match(/©[^\n]{0,60}/g) || []));
+  const bracketedLeft = text.match(/\[[A-Z][A-Z0-9]*(?: +[A-Z0-9]+)+\]/g) || [];
+  ok("no bracketed placeholder of ANY shape survives on the rendered page",
+     bracketedLeft.length === 0, bracketedLeft);
   ok("the honest fee line survives (no platform fee · own Stripe)",
      /No platform fee/i.test(text) && /own Stripe/i.test(text), null);
   ok("the card-stops arithmetic stays the READER's, never a number on the page",

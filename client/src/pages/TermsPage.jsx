@@ -1,6 +1,10 @@
 import { Link } from "react-router-dom";
+import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
 
-const LAST_UPDATED = "June 2, 2025";
+// Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
+// above is a change to the document, and a stale last-updated date beside a
+// changed document is itself a false statement.
+const LAST_UPDATED = "September 12, 2026";
 
 function Nav() {
   return (
@@ -33,6 +37,15 @@ export default function TermsPage() {
       <div style={S.body}>
         <h1 style={S.h1}>Terms of Service</h1>
         <p style={S.meta}>Last updated: {LAST_UPDATED}</p>
+
+        {/* THE PARTY DEFINITION. This agreement named no counterparty at all
+            until 2026-09-12 — "we" was an undefined term through fifteen
+            sections. This paragraph fills that blank and nothing else: every
+            existing "Steward" in the body below now resolves to the named
+            entity, so no other wording changed. Source of truth for the
+            wording of this document remains steward-terms-draft.md in Cowork
+            (audit/FIX-legal-entity-FINDINGS.md, Part 3). */}
+        <p style={S.p}>Steward is operated by <strong>{LEGAL_ENTITY_NAME}</strong>, a {LEGAL_ENTITY_STATE} limited liability company, {LEGAL_ENTITY_ADDRESS_LINE}. In these Terms, "Steward," "we," "us," and "our" mean {LEGAL_ENTITY_NAME}.</p>
 
         <p style={S.p}>Please read these Terms of Service ("Terms") carefully before using Steward. By accessing or using Steward, you agree to be bound by these Terms. If you do not agree, do not use the service.</p>
 

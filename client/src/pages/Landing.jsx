@@ -3,6 +3,7 @@ import {
   FIELD_SIZE, DRIFT_COUNTS, STEADY_COUNT, fieldDots, breatheDelay,
 } from "../lib/donorField";
 import { ProductMark } from "../components/ProductMark";
+import { copyrightLine } from "../../../shared/legalEntity";
 
 // ── Landing — BUILD-81 + the photograph pass ────────────────────────────────
 //
@@ -58,20 +59,16 @@ const CALENDLY_URL   = "https://calendly.com/xjca2006/new-meeting";
 const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
 
 // ── PLACEHOLDERS ────────────────────────────────────────────────────────────
-export const PLACEHOLDERS = {
-  legalEntity: "[LEGAL ENTITY NAME]", // TODO: the registered entity for the © line
-};
-const isPlaceholder = v => typeof v === "string" && v.trim().startsWith("[");
-function Placeholder({ value }) {
-  if (!isPlaceholder(value)) return <>{value}</>;
-  const style = {
-    display: "inline-flex", alignItems: "center", justifyContent: "center",
-    border: "1px dashed currentColor", borderRadius: 4, color: "inherit",
-    letterSpacing: "0.14em", fontSize: 13, fontFamily: "'DM Sans', system-ui, sans-serif",
-    padding: "1px 7px", background: "transparent",
-  };
-  return <span style={style}>{value}</span>;
-}
+// GONE, 2026-09-12. `PLACEHOLDERS` and the dashed-outline `Placeholder`
+// component existed to make ONE unfinished value visibly unfinished on a public
+// page — the © line's legal entity, which BUILD-73 refused to invent. The entity
+// now exists (filed in Kentucky; the name itself lives in shared/legalEntity.js
+// and is written down nowhere else), the last member is filled, and a
+// mechanism for flagging blanks with no blanks left to flag is dead weight that
+// invites the next blank to be shipped through it. The guard that replaces it is
+// repo-wide and does not depend on anyone remembering to wrap a value:
+// tests/legal-entity.test.js fails the build on any bracketed placeholder in
+// source. See audit/FIX-legal-entity-FINDINGS.md §A.
 
 // ── THE THREAD PANEL — the hero's ink panel, from the proposal ──────────────
 // One donor, one thread: the conversation as cream cards down a rail, the
@@ -642,7 +639,9 @@ export default function Landing() {
           <div style={{ display: "flex", gap: 30, fontSize: 14, color: C.sage, alignItems: "center", flexWrap: "wrap" }}>
             <a href="/terms" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Terms</a>
             <a href="/privacy" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Privacy</a>
-            <span>© 2026 <Placeholder value={PLACEHOLDERS.legalEntity} /></span>
+            {/* The year is COMPUTED — "© 2026" was a literal here, which is a
+                claim that goes quietly stale on 1 January. */}
+            <span>{copyrightLine()}</span>
           </div>
         </footer>
 

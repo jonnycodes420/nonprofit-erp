@@ -142,6 +142,7 @@ function checkDeployShape(rootDir, entryRel, { useGit } = {}) {
   const artifact = artifactSet(ROOT, { useGit: true });
   ok(artifact.has("shared/customFieldShape.js"), "shared/customFieldShape.js is in the deploy artifact");
   ok(artifact.has("shared/importShape.js"), "shared/importShape.js is in the deploy artifact");
+  ok(artifact.has("shared/legalEntity.js"), "shared/legalEntity.js is in the deploy artifact");
   ok(artifact.has("shared/package.json"), "shared/package.json (the type:module marker) is in the deploy artifact");
   ok(r.esmUnmarked.length === 0,
     `every ESM-syntax server-tree file has an in-artifact type:module marker — unmarked: ${JSON.stringify(r.esmUnmarked)}`);

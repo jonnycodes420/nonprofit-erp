@@ -1,6 +1,10 @@
 import { Link } from "react-router-dom";
+import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
 
-const LAST_UPDATED = "June 2, 2025";
+// Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
+// above is a change to the document, and a stale last-updated date beside a
+// changed document is itself a false statement.
+const LAST_UPDATED = "September 12, 2026";
 
 function Nav() {
   return (
@@ -33,6 +37,15 @@ export default function PrivacyPage() {
       <div style={S.body}>
         <h1 style={S.h1}>Privacy Policy</h1>
         <p style={S.meta}>Last updated: {LAST_UPDATED}</p>
+
+        {/* THE CONTROLLER. A privacy policy has to say WHO holds the data; this
+            one said "we" and never named anyone until 2026-09-12. The blank is
+            filled here, once, and the "we" on the next line — and everywhere
+            below — now points at a real entity without a word of the body
+            changing. Source of truth for the wording remains
+            steward-data-handling.md in Cowork
+            (audit/FIX-legal-entity-FINDINGS.md, Part 3). */}
+        <p style={S.p}>Steward is operated by <strong>{LEGAL_ENTITY_NAME}</strong>, a {LEGAL_ENTITY_STATE} limited liability company, {LEGAL_ENTITY_ADDRESS_LINE}, which is the controller of the personal information described below.</p>
 
         <p style={S.p}>This Privacy Policy describes how Steward ("we," "us," or "our") collects, uses, and shares information when you use our platform. By using Steward, you agree to the practices described in this policy.</p>
 

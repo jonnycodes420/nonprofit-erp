@@ -202,6 +202,40 @@ Also asserted: the literal string `Steward Software LLC` appears in **exactly
 one** module (`shared/legalEntity.js`) plus the pin in the guard itself —
 nowhere else in `client/`, `server.js`, `shared/`, `routes/` or `scripts/`.
 
+### Local-stack gotcha this pass paid for (costs an hour if rediscovered)
+
+`tests/run-all.sh` reported **four** red suites — `portal-visual`,
+`mapper-one-dropdown`, `donor-accounts`, `theme-depth` — and **none of them was
+a regression.** Two causes, both environment:
+
+1. **A stale `vite preview` was squatting :4173** from an earlier session,
+   alongside the `scripts/local-preview.js` this repo requires. The proxy bound
+   second, so `/portal-assets/…` returned `index.html` instead of image bytes and
+   `portal-visual` timed out on `waiting for locator('header img')`. The
+   diagnostic that names it in one line — the API serves the asset and the
+   preview does not:
+   ```
+   curl -so /dev/null -w "%{http_code} %{content_type}\n" localhost:5601/portal-assets/<id>   # 200 image/webp
+   curl -so /dev/null -w "%{http_code} %{content_type}\n" localhost:4173/portal-assets/<id>   # 200 text/html  ← squatter
+   lsof -ti:4173   # two PIDs = the bug
+   ```
+   **`vite preview` is not a substitute for `scripts/local-preview.js`** — the
+   README says so (BUILD-73), and a leftover one is worse than none because it
+   answers.
+2. **`client/dist` built without `VITE_API_URL=http://localhost:5601`** points
+   the bundle at prod; the page loads, login succeeds at the API level, and the
+   UI then renders nothing — which is how `mapper-one-dropdown` reported
+   "button not found". Same class as the CORS gap the README already records:
+   an environment fault wearing a UI fault's clothes.
+
+Both were confirmed pre-existing by running the red suites in a **git worktree
+at `b96374a`** (the commit before this pass) and watching them fail identically
+— and note the trap in doing that: a fresh worktree has **no `client/dist`**, so
+the browser suites SKIP and a skip is counted as a pass. The baseline comparison
+only means anything after building dist in the worktree too.
+
+After both were closed: **`bash tests/run-all.sh` → 133 suites passed, 0 failed.**
+
 ### Noticed while wiring the guard — not fixed, flagged
 
 `tests/affected.sh`'s `CLIENT_SUITES` list omits **`landing-field`** and

@@ -32,7 +32,7 @@ in_core() { echo "$core" | grep -qx "$1"; }
 # `grep -l 'client/' tests/*.test.js` + manual check that each actually reads
 # client files, not just mentions them in a comment). Any client/ change runs
 # ALL of these.
-CLIENT_SUITES="brand-allowlist brand-glyph campaign-impact clickability concurrency donor-front-door empty-states finance-entity-routing finance-funds finance-reports-consistency gift-attribution greeting home-layout import-assign import-both import-combined import-shape landing-reveal locked-features name-normalize no-emoji officer-chip onboarding-brand palette pipeline pipeline-gating portal-page presentation-wiring reserved-recovered setup-checklist task-due theme-depth upgrade-checkout workflows-e2e"
+CLIENT_SUITES="legal-entity brand-allowlist brand-glyph campaign-impact clickability concurrency donor-front-door empty-states finance-entity-routing finance-funds finance-reports-consistency gift-attribution greeting home-layout import-assign import-both import-combined import-shape landing-reveal locked-features name-normalize no-emoji officer-chip onboarding-brand palette pipeline pipeline-gating portal-page presentation-wiring reserved-recovered setup-checklist task-due theme-depth upgrade-checkout workflows-e2e"
 
 suites=""
 add_suite() {
