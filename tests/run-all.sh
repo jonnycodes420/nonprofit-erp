@@ -91,7 +91,7 @@ CORE=(
   build84 recurring-recovery
   legal-entity build85 build86 vocabulary palette-census dashboards modal-shell invitation-only
   imports-history import-sentence bookkeeper-export inbound-email
-  build88a-mapper build88a-one-gift build88a-one-task
+  build88a-mapper build88a-one-gift build88a-one-task build88a-giving
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

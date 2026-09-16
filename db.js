@@ -1611,6 +1611,15 @@ async function initSchema() {
   // keeps it on. Default TRUE, which is exactly what every org does today, so
   // nobody's books move on deploy.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ledger_posting_enabled BOOLEAN DEFAULT true`);
+  // ── BUILD-88a A.6 — GIVING, NOT REVENUE ───────────────────────────────────
+  // Steward counts contributions. An organisation with a bookshop, tickets or
+  // programme fees has real income Steward does not hold, and a board screen
+  // that says "Revenue" invites it to be read as everything. The figure lives
+  // here only if somebody typed it, it is shown on its OWN line under giving,
+  // and it is never summed into giving — half of that sum would come from gifts
+  // Steward holds and half from a number nobody here can check.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS other_income_enabled BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS other_income_this_year NUMERIC`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An

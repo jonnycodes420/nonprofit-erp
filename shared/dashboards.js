@@ -29,12 +29,26 @@ export const DASHBOARDS = [
     question: "How are we doing this year?",
     blurb: "The four things a board asks before it asks anything else.",
     metrics: [
-      { key: "revenueThisYear", label: "Raised this year", kind: "money",
-        definition: "Every gift received between the first day of your fiscal year and today." },
+      // BUILD-88a A.6 — GIVING, NOT REVENUE. "Revenue" is what a business calls
+      // the money it takes in for the things it sells, and a nonprofit that
+      // reads it on its own board screen starts answering to it. What Steward
+      // counts is CONTRIBUTIONS: gifts. Earned income — a bookshop, a ticket, a
+      // programme fee — is real money and Steward does not track it, so the
+      // definition says so rather than letting the number be read as everything
+      // the organisation brought in.
+      { key: "revenueThisYear", label: "Giving this year", kind: "money",
+        definition: "Every gift received between the first day of your fiscal year and today. Contributions only. Earned income like store sales or program fees is not tracked here." },
       { key: "revenueLastYear", label: "Same point last year", kind: "money",
         definition: "Gifts received in the equivalent stretch of your previous fiscal year, so the comparison is like for like." },
       { key: "revenueChangePct", label: "Change on last year", kind: "percent",
         definition: "This year's total against the same point last year, as a percentage. Blank when there is no prior year to compare with." },
+      // A.6 — the org's OTHER income, when it keeps one. Off by default, one
+      // figure somebody types, shown on its own line directly UNDER giving and
+      // NEVER added to it: the moment the two are summed, the board is reading
+      // a number Steward cannot stand behind, because only one half of it comes
+      // from the gifts Steward actually holds.
+      { key: "otherIncomeThisYear", label: "Other income this year", kind: "money", optional: true,
+        definition: "A figure your organisation keeps elsewhere — earned income, a store, programme fees — typed in Settings. Steward does not track it and never adds it to giving; it is shown so the board can see both." },
       { key: "donorCount", label: "People who gave", kind: "count",
         definition: "Distinct givers with at least one gift this fiscal year." },
       { key: "retentionRate", label: "Retention", kind: "percent",
@@ -99,10 +113,10 @@ export const DASHBOARDS = [
     metrics: [
       { key: "byStatus", label: "Monthly gifts by status", kind: "breakdown",
         definition: "Every monthly commitment grouped by where it stands: giving, failing, being recovered, paused, or ended." },
-      { key: "mrr", label: "Monthly revenue", kind: "money",
+      { key: "mrr", label: "Monthly giving", kind: "money",
         definition: "What the currently-giving monthly commitments bring in each month. A commitment billed yearly counts as a twelfth of its amount." },
       { key: "mrrTrend", label: "Change this month", kind: "money",
-        definition: "Monthly revenue added by new commitments this month, less what was lost to ones that ended." },
+        definition: "Monthly giving added by new commitments this month, less what was lost to ones that ended." },
       { key: "failuresCaught", label: "Failures caught", kind: "count",
         definition: "Monthly gifts whose card failed and which Steward began working, this quarter." },
       { key: "failuresRecovered", label: "Recovered", kind: "count",

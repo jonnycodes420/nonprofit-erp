@@ -1273,7 +1273,29 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [notifyPrefs,setNotifyPrefs]=useState(null);
   // BUILD-81 — org-level: send the thread nudge on weekends too (default off).
   const [nudgeWeekends,setNudgeWeekends]=useState(null);
-  useEffect(()=>{apiFetch("/org").then(o=>setNudgeWeekends(!!(o?.threadNudgeWeekends??o?.thread_nudge_weekends))).catch(()=>{});},[]);
+  // BUILD-88a A.6 — "Other income this year": one figure the org keeps
+  // elsewhere, off by default, shown under giving on the board and never added
+  // to it.
+  const [otherIncomeOn,setOtherIncomeOn]=useState(null);
+  const [otherIncome,setOtherIncome]=useState("");
+  const [otherIncomeSaved,setOtherIncomeSaved]=useState("");
+  useEffect(()=>{apiFetch("/org").then(o=>{
+    setNudgeWeekends(!!(o?.threadNudgeWeekends??o?.thread_nudge_weekends));
+    setOtherIncomeOn(!!(o?.otherIncomeEnabled??o?.other_income_enabled));
+    const v=o?.otherIncomeThisYear??o?.other_income_this_year;
+    setOtherIncome(v==null?"":String(v));
+  }).catch(()=>{});},[]);
+  async function toggleOtherIncome(){
+    const next=!otherIncomeOn; setOtherIncomeOn(next);
+    try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({otherIncomeEnabled:next})}); }
+    catch{ setOtherIncomeOn(!next); }
+  }
+  async function saveOtherIncome(){
+    setOtherIncomeSaved("");
+    try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({otherIncomeThisYear:otherIncome})});
+         setOtherIncomeSaved("Saved"); }
+    catch(e){ setOtherIncomeSaved(errorMessage(e,"That figure could not be saved.")); }
+  }
   async function toggleNudgeWeekends(){
     const next=!nudgeWeekends; setNudgeWeekends(next);
     try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({threadNudgeWeekends:next})}); }
@@ -2153,6 +2175,31 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday — setting one is a commitment to a moment.</div>
             </div>
           </label>
+        )}
+        {/* BUILD-88a A.6 — Steward counts GIVING. An organisation with earned
+            income keeps that figure somewhere else; this is where it says so,
+            on its own line under giving on the board, never added to it. */}
+        {isAdmin&&otherIncomeOn!==null&&(
+          <div style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
+            <label style={{display:"flex",alignItems:"flex-start",gap:12,cursor:"pointer"}}>
+              <input type="checkbox" checked={otherIncomeOn} onChange={toggleOtherIncome} data-testid="other-income-toggle"
+                style={{width:16,height:16,marginTop:2,cursor:"pointer",accentColor:T.greenMid}}/>
+              <div>
+                <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Show other income on the board dashboard</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Steward counts gifts. Earned income — a store, tickets, programme fees — is not tracked here, so this is one figure you type. It appears on its own line under giving and is never added to it.</div>
+              </div>
+            </label>
+            {otherIncomeOn&&(
+              <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,marginLeft:28,flexWrap:"wrap"}}>
+                <input value={otherIncome} onChange={e=>setOtherIncome(e.target.value)} inputMode="decimal"
+                  aria-label="Other income this year" data-testid="other-income-amount" placeholder="e.g. 41,250"
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",width:160}}/>
+                <button onClick={saveOtherIncome}
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save</button>
+                {otherIncomeSaved&&<span style={{fontSize:12,color:T.ink3}}>{otherIncomeSaved}</span>}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

@@ -3072,6 +3072,13 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     values.recurringActive = rec[0]?.giving || 0;
     values.recurringStopped = rec[0]?.stopped || 0;
     values.recurringRecovered = rec[0]?.recovered || 0;
+    // BUILD-88a A.6 — the org's other income, ONLY if somebody turned it on and
+    // typed one. It is its own line and it is NEVER added to giving anywhere:
+    // `values.revenueThisYear` above is gifts, and stays gifts.
+    const [oi] = await query("SELECT other_income_enabled, other_income_this_year FROM orgs WHERE id=?", [orgId]);
+    values.otherIncomeThisYear = oi && oi.other_income_enabled && oi.other_income_this_year != null
+      ? Math.round((parseFloat(oi.other_income_this_year) || 0) * 100) / 100
+      : undefined;
   }
 
   if (key === "fundraising") {
@@ -3162,6 +3169,10 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   // registry, to the hover and to the PDF footnote.
   const metrics = def.metrics
     .filter(m => !m.teamOnly || isTeam)
+    // A.6 — an OPTIONAL metric with no value is ABSENT, not blank. A board
+    // screen showing "Other income this year — not enough history yet" for an
+    // org that never had other income is a question nobody asked.
+    .filter(m => !m.optional || values[m.key] !== undefined)
     .map(m => ({ key: m.key, label: m.label, kind: m.kind, rowsAre: m.rowsAre || null, definition: m.definition,
                  value: values[m.key] === undefined ? null : values[m.key] }));
   return { key: def.key, label: def.label, question: def.question, blurb: def.blurb,
@@ -3462,6 +3473,30 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // is weekday-only by default). Only touched when the request includes it.
   if (req.body.threadNudgeWeekends !== undefined) {
     await run(`UPDATE orgs SET thread_nudge_weekends=? WHERE id=?`, [!!req.body.threadNudgeWeekends, req.params.id]);
+  }
+
+  // BUILD-88a A.6 — "Other income this year": one figure the org keeps
+  // elsewhere, off by default. Shown on its own line under giving on the board
+  // and in its PDF, and NEVER summed into giving.
+  if (req.body.otherIncomeEnabled !== undefined) {
+    await run(`UPDATE orgs SET other_income_enabled=? WHERE id=?`, [!!req.body.otherIncomeEnabled, req.params.id]);
+  }
+  if (req.body.otherIncomeThisYear !== undefined) {
+    const raw = req.body.otherIncomeThisYear;
+    if (raw === null || String(raw).trim() === "") {
+      await run(`UPDATE orgs SET other_income_this_year=NULL WHERE id=?`, [req.params.id]);
+    } else {
+      let cents;
+      try { cents = parseMoneyOrThrow(raw, "otherIncomeThisYear"); }
+      catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+      if (cents < 0) return res.status(400).json({ error: "Other income cannot be negative." });
+      await run(`UPDATE orgs SET other_income_this_year=? WHERE id=?`, [toDollars(cents), req.params.id]);
+    }
+  }
+  // BUILD-88a A.1 — the BUILD-83 posting rule as a switch. Imported history
+  // never posts whatever this says; a LIVE gift posts while it is on.
+  if (req.body.ledgerPostingEnabled !== undefined) {
+    await run(`UPDATE orgs SET ledger_posting_enabled=? WHERE id=?`, [!!req.body.ledgerPostingEnabled, req.params.id]);
   }
 
   // Tax receipt settings — only touched when the request actually includes
