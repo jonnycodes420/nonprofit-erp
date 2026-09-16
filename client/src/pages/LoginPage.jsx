@@ -67,10 +67,11 @@ export default function LoginPage() {
         <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 21, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
-        {/* Public signup reopened (BUILD-49): the "No account?" link points at
-            the self-serve /signup path again. */}
-        <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Start free</span>
+        {/* BUILD-87 F.2 — Steward is invitation-only (BUILD-39). "Start free"
+            pointed at a self-serve signup that no longer exists; the honest
+            door is the invitation request. */}
+        <Link to="/invitation" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Request an invitation</span>
         </Link>
       </nav>
 

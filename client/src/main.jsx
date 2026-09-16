@@ -17,7 +17,6 @@ import { apiFetch } from "./api";
 // (the shell + Donors/Grants/Comms/etc. was ~1.5MB minified before this).
 import Landing from "./pages/Landing";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
-const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
 const App                = React.lazy(() => import("./App"));
@@ -149,7 +148,17 @@ function Root() {
         <Routes>
           <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
-          <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
+          {/* BUILD-87 F.2 — THE ROUTER DECISION, AND IT IS A REDIRECT.
+              /signup was PUBLICLY reachable and still sold "Free through
+              December 31, 2026, then $149/month" — a price that has not
+              existed since August and a self-serve door BUILD-39 closed when
+              Steward went invitation-only. A public signup form contradicting
+              the product it signs you up for is worse than no form, so the
+              path resolves to the invitation request instead. The page
+              component is deleted, not hidden: nothing reached it but this
+              route. The token-gated half of the flow is /invite/:token, which
+              is where the founding-partner terms now read. */}
+          <Route path="/signup"    element={<Navigate to="/invitation" replace />} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />

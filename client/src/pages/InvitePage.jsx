@@ -154,6 +154,12 @@ export default function InvitePage() {
       </div>
 
       <div style={cardStyle}>
+        {/* BUILD-87 F.2 — the terms, on the screen where somebody accepts
+            them. No em dashes; the three facts and nothing else. */}
+        <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.7, marginBottom: 18, paddingBottom: 16, borderBottom: `1px solid ${T.cream3}` }}>
+          Founding partner rate $199 a month. Billing begins thirty days after
+          your donor file is in. No card required today.
+        </div>
         <form onSubmit={handleAccept} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Field label="Your name">
             <input style={inputStyle} type="text" placeholder="Full name" value={name} onChange={e => setName(e.target.value)} autoFocus />

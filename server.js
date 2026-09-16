@@ -1511,7 +1511,8 @@ app.post("/resend/webhook", express.raw({ type: "application/json" }), async (re
 // parsed object instead of a Buffer and threw on every real delivery. Moved
 // here so it's registered before the global parser, matching /stripe/webhook.
 // ── Platform billing webhook (BUILD-24) ────────────────────────────────────
-// Steward's OWN subscription (the org pays Steward $149/$299). This is a
+// Steward's OWN subscription (the org pays Steward: Core $249 / Team $499,
+// founding partners $199). This is a
 // SEPARATE integration from donation processing: donations flow through each
 // org's CONNECTED Stripe account on the /stripe/webhook endpoint (with its own
 // idempotency + gift recording). The two never cross — different endpoints,
@@ -2110,7 +2111,7 @@ async function orgOwns(table, id, orgId) {
 // Steward's up-market features (officer portfolios, moves/major-gifts, per-
 // officer reports) gate to the "team" tier. Tier is DERIVED from the org's
 // plan + subscription. BUILD-24 made Core/Team first-class plan values (the
-// $149/$299 commercial model actually charged via Stripe); the legacy
+// $249/$499 commercial model actually charged via Stripe); the legacy
 // seed/growth/impact enum is still recognized so pre-cutover orgs and any
 // in-flight subscription keep their tier without a destructive migration:
 //   team  = { team, growth, impact }  OR any live trial (full-feature trial)
@@ -15747,7 +15748,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
       {
         delay_days: 28,
         subject: "A month in with Steward",
-        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: Steward is free for you through December 31, 2026. After that, plans are $149/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
+        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: Steward is free for you through December 31, 2026. After that, plans start at $249/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
       },
     ];
     for (let i = 0; i < steps.length; i++) {
@@ -20278,7 +20279,7 @@ const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal"]);
 
 // Published monthly price per plan (USD) — mirrors pages/Pricing.jsx's
 // CHECKOUT_PLANS/BILLING_PLANS. Used ONLY to render the ROI comparison
-// ("your plan is $149/mo") next to Steward's recovered-dollars figure; not a
+// ("your plan is $249/mo") next to Steward's recovered-dollars figure; not a
 // billing source of truth. trial → null (nothing charged yet).
 const PLAN_MONTHLY_COST = {
   core: 149, team: 299, founding: 99, seed: 99, growth: 249, impact: 499,
