@@ -2584,6 +2584,47 @@ async function initSchema() {
     await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
   }
 
+  // ── BUILD-87 Part 3 — EMAIL LOGGING BY BCC ────────────────────────────────
+  // A message BCC'd to `log+<org_slug>@<inbound domain>` whose To address
+  // matches exactly one donor is logged straight onto that donor as an `email`
+  // interaction — it never reaches these tables. These two hold the other two
+  // outcomes.
+  //
+  // inbound_email_unmatched: zero or several donor matches. A human picks the
+  // donor or discards it; an inbound email NEVER creates a donor. It carries
+  // the message body because the body is the thing being filed — deleting the
+  // row is the discard.
+  //
+  // inbound_email_drops: the REFUSALS, counted and otherwise contentless. A
+  // bad slug or a sender who is not a user of the org leaves a timestamp and a
+  // reason and nothing else — the whole point of dropping a message is that we
+  // do not keep it. org_id is NULL when the slug never resolved to an org,
+  // which is exactly the case where we have no tenant to file it under.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inbound_email_unmatched (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      kind TEXT NOT NULL,
+      from_email TEXT,
+      to_emails TEXT,
+      subject TEXT,
+      body TEXT,
+      message_date TEXT,
+      candidates JSONB,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_inbound_unmatched_org ON inbound_email_unmatched (org_id, created_at DESC)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inbound_email_drops (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      reason TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_inbound_drops_org ON inbound_email_drops (org_id, created_at DESC)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
