@@ -120,10 +120,14 @@ const root = path.join(__dirname, "..");
   ok("every section declares exactly one surface",
      L.HOME_SECTIONS.every(s => s.surface === "home" || s.surface === "board"), L.HOME_SECTIONS.map(s => [s.id, s.surface]));
   ok("no section is on both", home.filter(id => board.includes(id)).length === 0, { home, board });
-  // C.4 — HOME IS EXACTLY FOUR SECTIONS. The Part A leftovers are gone: the
-  // tasks list ("Needs your attention", Mark done) and the milestone card.
-  ok("Home renders EXACTLY the note, the Thread, Drift and the failing gifts",
-     home.slice().sort().join(",") === "drift,recurring,setup,thread", home);
+  // C.4 — HOME IS A SHORT, NAMED LIST. It was four (setup, the Thread, Drift,
+  // the failing monthly gifts); BUILD-88b B.3 added a fifth, the thank-yous
+  // Steward has drafted and she has not sent. It passes C.4's own test twice
+  // over — she can do something about it before her first coffee, and every row
+  // names a person — and the list stays enumerated HERE so a sixth cannot
+  // arrive without somebody arguing for it.
+  ok("Home renders EXACTLY the note, the Thread, Drift, the failing gifts and the thank-yous",
+     home.slice().sort().join(",") === "drift,recurring,setup,thankYous,thread", home);
   // COMMENTS ARE NOT A SCREEN. The note explaining what was removed names the
   // thing it removed; a guard that cannot tell a comment from a render forces
   // you to stop writing down why.

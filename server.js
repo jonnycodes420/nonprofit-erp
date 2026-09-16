@@ -2259,11 +2259,16 @@ app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req,
   const org = await orgTz(orgId);
   const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
   const act = actor(req);
+  // SHE sent it, so the timeline says her NAME. `actor(req).name` falls back to
+  // the email (it is the identifier that is always present); a colleague on a
+  // record is a person, and BUILD-87 F.3.7's rule is that a row reads as one.
+  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const actorName = (me && me.name) || act.name;
   const intId = "int_" + uuid().slice(0, 8);
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, act.name, d.gift_id,
+    [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorName, d.gift_id,
      JSON.stringify({ via: "thank_you_queue", draftId: d.id })]);
   await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
   await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
@@ -2298,13 +2303,15 @@ app.post("/thank-yous/mark-all-sent", requireAuth, checkWriteAccess, wrap(async 
   const org = await orgTz(orgId);
   const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
   const act = actor(req);
+  const [meAll] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const actorNameAll = (meAll && meAll.name) || act.name;
   let marked = 0;
   for (const d of open) {
     const [full] = await query("SELECT donor_id, gift_id FROM thank_you_drafts WHERE id=?", [d.id]);
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
        VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      ["int_" + uuid().slice(0, 8), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, act.name,
+      ["int_" + uuid().slice(0, 8), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, actorNameAll,
        full.gift_id, JSON.stringify({ via: "thank_you_queue_all", draftId: d.id })]);
     await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
     marked++;

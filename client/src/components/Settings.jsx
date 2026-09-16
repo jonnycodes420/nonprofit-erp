@@ -1290,6 +1290,20 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({otherIncomeEnabled:next})}); }
     catch{ setOtherIncomeOn(!next); }
   }
+  // BUILD-88b B.3 — her voice: three samples, and Steward takes two lines.
+  const [voice,setVoice]=useState(null);
+  const [voiceDraft,setVoiceDraft]=useState(["","",""]);
+  const [voiceSaved,setVoiceSaved]=useState("");
+  useEffect(()=>{apiFetch("/org/voice-samples").then(r=>{
+    setVoice(r); setVoiceDraft([(r.samples||[])[0]||"",(r.samples||[])[1]||"",(r.samples||[])[2]||""]);
+  }).catch(()=>setVoice({samples:[],ready:false,needs:3}));},[]);
+  async function saveVoice(){
+    setVoiceSaved("");
+    try{ const r=await apiFetch("/org/voice-samples",{method:"PUT",body:JSON.stringify({samples:voiceDraft})});
+         setVoice(v=>({...(v||{}),...r,samples:voiceDraft.filter(x=>x.trim().length>=40)}));
+         setVoiceSaved(r.ready?"Saved. Steward will write in your voice.":`Saved. ${r.needs} more to go.`); }
+    catch(e){ setVoiceSaved(errorMessage(e,"Those could not be saved.")); }
+  }
   async function saveOtherIncome(){
     setOtherIncomeSaved("");
     try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({otherIncomeThisYear:otherIncome})});
@@ -2175,6 +2189,38 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday — setting one is a commitment to a moment.</div>
             </div>
           </label>
+        )}
+        {/* ── BUILD-88b B.3 — YOUR VOICE ────────────────────────────────────
+            Steward drafts the thank-yous; she sends them. Three notes she has
+            already written are enough to open and close them the way she does —
+            and until they exist the draft stays ONE plain sentence, because a
+            warm four-paragraph letter in nobody's voice is worse than a plain
+            line she finishes herself. Only the greeting and the sign-off are
+            lifted: copying somebody's habits is defensible, copying their
+            sentences into a letter they did not write is not. */}
+        {isAdmin&&voice!==null&&(
+          <div style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}}>
+            <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Your voice, for the thank-yous Steward drafts</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2,maxWidth:560,lineHeight:1.55}}>
+              Paste three thank-yous you have already sent. Steward takes your greeting and your sign-off and
+              nothing else. {voice.ready
+                ? <>It has what it needs: {voice.greeting?<em>“{voice.greeting}”</em>:"your greeting"} … {voice.signoff?<em>“{voice.signoff}”</em>:"your sign-off"}.</>
+                : <>{voice.needs} more to go. Until then the drafts are one plain sentence.</>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:10,maxWidth:620}}>
+              {[0,1,2].map(i=>(
+                <textarea key={i} value={voiceDraft[i]||""} onChange={e=>setVoiceDraft(p2=>{const n=[...p2];n[i]=e.target.value;return n;})}
+                  aria-label={`Thank-you sample ${i+1}`} data-testid={`voice-sample-${i}`}
+                  placeholder={i===0?"Dear Anna,\n\nThank you so much for the gift…\n\nWith gratitude,\nAda":"Another one you have sent"}
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 11px",color:T.ink,fontSize:12.5,lineHeight:1.5,minHeight:i===0?110:70,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              ))}
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <button onClick={saveVoice} data-testid="voice-save"
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save my voice</button>
+                {voiceSaved&&<span style={{fontSize:12,color:T.ink3}}>{voiceSaved}</span>}
+              </div>
+            </div>
+          </div>
         )}
         {/* BUILD-88a A.6 — Steward counts GIVING. An organisation with earned
             income keeps that figure somewhere else; this is where it says so,

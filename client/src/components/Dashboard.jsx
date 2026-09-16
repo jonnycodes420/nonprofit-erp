@@ -15,7 +15,7 @@ import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
-import { errorMessage } from "../lib/domainError";
+import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -340,6 +340,32 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [stageCounts,setStageCounts]=useState({counts:[],placed:[],suggested:[],anyPlaced:true});
   const [stewardMetrics,setStewardMetrics]=useState(null);
   const [recurringHealth,setRecurringHealth]=useState(null);
+  // BUILD-88b B.3 — the thank-you queue.
+  const [thankYous,setThankYous]=useState(null);
+  const [tyOpen,setTyOpen]=useState(null);
+  const [tyShowAll,setTyShowAll]=useState(false);
+  const [tyCopied,setTyCopied]=useState(null);
+  const [tyErr,setTyErr]=useState("");
+  const loadThankYous=()=>apiFetch("/thank-yous").then(setThankYous).catch(()=>{});
+  // Opening a draft is RECORDED, because "Mark all as sent" depends on it.
+  const tyOpenDraft=(d)=>{
+    setTyOpen(d.id); setTyErr("");
+    if(!d.opened)apiFetch(`/thank-yous/${d.id}/opened`,{method:"POST"}).then(loadThankYous).catch(()=>{});
+  };
+  const tyCopy=async(d)=>{
+    try{ await navigator.clipboard.writeText(d.body); setTyCopied(d.id); setTimeout(()=>setTyCopied(null),2500); }
+    catch(e){ rethrowProgrammerError(e); setTyErr("Your browser would not let Steward reach the clipboard. Select the draft and copy it."); }
+  };
+  const tyAct=async(id,what)=>{
+    setTyErr("");
+    try{ await apiFetch(`/thank-yous/${id}/${what}`,{method:"POST"}); setTyOpen(null); await loadThankYous(); if(loadThreads)loadThreads(); }
+    catch(e){ setTyErr(errorMessage(e,"That could not be saved.")); }
+  };
+  const tyMarkAll=async()=>{
+    setTyErr("");
+    try{ await apiFetch("/thank-yous/mark-all-sent",{method:"POST"}); await loadThankYous(); }
+    catch(e){ setTyErr(errorMessage(e,"Those could not be marked sent.")); }
+  };
   const [impact,setImpact]=useState(null);
   const [resentIds,setResentIds]=useState(()=>new Set());
   // BUILD-16 Part 1 — the Home command center's four headers (Portfolio/Tasks/
@@ -575,6 +601,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     apiFetch(`/dashboard/today?scope=${scope}`).then(r=>setQueueItems(r||[])).catch(()=>{}).finally(()=>setQueueLoading(false));
     apiFetch(`/metrics/stewardship-summary?scope=${scope}`).then(r=>setStewardMetrics(r)).catch(()=>{});
     apiFetch(`/dashboard/home?scope=${scope}`).then(r=>setHomeData(r)).catch(()=>{});
+    loadThankYous();
 
     // Breakdown data is fetched eagerly here (not lazily on click) so the
     // hero cards can show the top few donors driving each number inline —
@@ -1767,6 +1794,68 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     </div>
   ):null;
 
+  // ── BUILD-88b B.3 — THE THANK-YOU QUEUE ──────────────────────────────────
+  // "Six thank-yous ready." Steward wrote them; she sends them. Three actions
+  // and no fourth: Copy, Mark sent, Skip. A draft must be OPENED before "Mark
+  // all as sent" is offered, because a bulk action over letters nobody read is
+  // what turns a thank-you queue into a lie.
+  const thankYouSection=(thankYous&&thankYous.count>0)?(
+    <div style={{...cardWrap}} data-testid="thank-you-queue">
+      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+        <span style={sSerif}>{thankYous.headline}</span>
+        {thankYous.voice&&!thankYous.voice.ready&&(
+          <button onClick={()=>onNavigate("settings")} style={sLink}>Teach Steward your voice →</button>
+        )}
+      </div>
+      {thankYous.voice&&!thankYous.voice.ready&&(
+        <div style={{padding:"10px 20px 0",fontSize:11.5,color:T.ink3,lineHeight:1.5}}>
+          These are one plain sentence for now. Paste {thankYous.voice.needs} more thank-you{thankYous.voice.needs===1?"":"s"} you have
+          already written into Settings and Steward will open and close them the way you do.
+        </div>
+      )}
+      <div style={{display:"flex",flexDirection:"column"}}>
+        {thankYous.drafts.slice(0,tyShowAll?thankYous.drafts.length:6).map(d=>(
+          <div key={d.id} data-thank-you={d.id} style={{padding:"12px 20px",borderTop:"1px solid "+T.bg3}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <button onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}
+                style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.ink,cursor:"pointer"}}>{d.donorName}</button>
+              <span style={{fontSize:12.5,color:T.ink3}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
+              {d.opened&&<span style={{fontSize:11,color:T.ink3}}>opened</span>}
+            </div>
+            {tyOpen===d.id?(
+              <div style={{marginTop:8}}>
+                <textarea readOnly value={d.body} aria-label={`Thank-you for ${d.donorName}`}
+                  style={{width:"100%",minHeight:130,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.55,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
+                <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                  <button onClick={()=>tyCopy(d)} data-testid="ty-copy"
+                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{tyCopied===d.id?"Copied ✓":"Copy"}</button>
+                  <button onClick={()=>tyAct(d.id,"sent")} data-testid="ty-sent"
+                    style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Mark sent</button>
+                  <button onClick={()=>tyAct(d.id,"skip")} data-testid="ty-skip"
+                    style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Skip</button>
+                  <span style={{fontSize:11.5,color:T.ink3,alignSelf:"center"}}>Steward does not send this. It goes from your own mail.</span>
+                </div>
+              </div>
+            ):(
+              <button onClick={()=>tyOpenDraft(d)} data-testid="ty-open"
+                style={{background:"none",border:"none",padding:0,marginTop:4,color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Read the draft</button>
+            )}
+          </div>
+        ))}
+      </div>
+      <div style={{padding:"10px 20px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+        {thankYous.drafts.length>6&&(
+          <button onClick={()=>setTyShowAll(v=>!v)} style={sLink}>{tyShowAll?"Show fewer":`and ${thankYous.drafts.length-6} more`}</button>
+        )}
+        {thankYous.allOpened&&(
+          <button onClick={tyMarkAll} data-testid="ty-mark-all"
+            style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>Mark all as sent</button>
+        )}
+        {tyErr&&<span role="alert" style={{fontSize:12,color:T.terracotta}}>{tyErr}</span>}
+      </div>
+    </div>
+  ):null;
+
   // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
   const driftHomeSection=driftSection;
 
@@ -2063,7 +2152,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);

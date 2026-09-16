@@ -48,6 +48,12 @@ export const HOME_SECTIONS = [
   // board metrics; a failing gift is the most actionable thing on this screen
   // and it belongs beside the other two lists of people.
   { id: "recurring", label: "Monthly gifts that need you", hideable: true, surface: "home" },
+  // BUILD-88b B.3 — the thank-yous Steward has drafted and she has not sent.
+  // It passes the surface test twice over: she can do something about it before
+  // her first coffee, and every row names a person. It sits BELOW the Thread
+  // because a thank-you is what you owe somebody who already gave, and above
+  // Drift because it is the one list with a deadline made of goodwill.
+  { id: "thankYous", label: "Thank-yous ready", hideable: true, surface: "home" },
 
   // ── the board's ──────────────────────────────────────────────────────────
   { id: "hero",             label: "Fundraising goal",      hideable: false, surface: "board" },
