@@ -9503,6 +9503,8 @@ app.post("/drift/:donorId/done", requireAuth, wrap(async (req, res) => {
 // file is history, not an open loop. The only non-human opener is a LIVE gift
 // landing (webhook / manual entry), whose next step is "Thank".
 async function threadShapeMod() { return import("./shared/threadShape.js"); }
+// BUILD-85 — the ordering. Pure module, same ESM-from-CJS door as above.
+async function threadRankMod() { return import("./shared/threadRank.js"); }
 
 // Open a thread inside a caller-held transaction. Returns the row, or null
 // when the donor already has an open thread (the one-open-thread rule — the
@@ -9604,14 +9606,44 @@ async function openSustainerLapseThread(orgId, donorId, { amount = null, interva
   } catch (e) { console.error("[thread] sustainer lapse thread:", e.message); return null; }
 }
 
-// Compose the org's open threads: overdue first, then by due date. Snoozed
-// threads (revisit dates still in the future) stay off the list and out of
-// the stat — they resurface by construction the day snoozed_until arrives.
-async function composeThreads(orgId, { donorId = null } = {}) {
+// ── BUILD-85 — THE QUEUE ───────────────────────────────────────────────────
+// BUILD-81 composed every open thread in the org, unbounded, sorted by
+// overdue-then-due-date, and handed the same list to everyone. Three things
+// were wrong with that and all three are fixed here:
+//
+//   OWNERSHIP. A thread carries `owner_id` (the donor's officer, else the
+//   person who logged it) and nothing read it. `scope=mine` is now the
+//   default and the server ENFORCES it: a non-admin asking for `all` is
+//   downgraded rather than refused (the BUILD-31 pipeline precedent — the
+//   cross-officer view is the oversight Team sells, so staff never get it by
+//   editing a query param). Unowned threads are nobody's by definition, so
+//   they ride the ADMIN's own list rather than vanishing — a backstop, and
+//   the reason `unowned` is reported separately in the stat.
+//
+//   A CAP. shared/threadRank.js QUEUE_CAP. A list you cannot finish is a list
+//   you stop opening; the remainder is stated as a number, never hidden.
+//
+//   AN ORDER WITH A REASON. Ranking lives in shared/threadRank.js, and every
+//   signal it uses is read HERE, in four batched queries — never per row.
+//
+// Snoozed threads (revisit dates still in the future) stay off the list and
+// out of the stat; they resurface by construction the day snoozed_until
+// arrives. `donorId` asks for one donor's thread and bypasses scope and cap —
+// a donor record shows its own thread whoever owns it.
+async function composeThreads(orgId, { donorId = null, scope = "mine", userId = null, isAdmin = false, cap = null } = {}) {
   const org = await orgTz(orgId);
   const today = orgToday(org);                         // ORG_TZ_SEAM_OK
+  const rank = await threadRankMod();
+
+  // Non-admins may not read across officers, whatever the query string says.
+  const effScope = donorId ? "all" : (scope === "all" && isAdmin ? "all" : "mine");
+  const ownerClause = effScope === "all" || !userId
+    ? ""
+    : (isAdmin ? "AND (t.owner_id = ? OR t.owner_id IS NULL)" : "AND t.owner_id = ?");
+  const ownerParams = ownerClause ? [userId] : [];
+
   const rows = await query(
-    `SELECT t.*, d.name AS donor_name,
+    `SELECT t.*, d.name AS donor_name, d.total_giving, d.gift_count,
             i.type AS touch_type, i.note AS touch_note, i.date AS touch_date, i.logged_by_name AS touch_actor,
             g.amount AS gift_amount, g.date AS gift_date
        FROM threads t
@@ -9619,14 +9651,41 @@ async function composeThreads(orgId, { donorId = null } = {}) {
        LEFT JOIN interactions i ON i.id = t.opening_interaction_id
        LEFT JOIN gifts g ON g.id = t.opening_gift_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
-        ${donorId ? "AND t.donor_id = ?" : ""}
+        ${donorId ? "AND t.donor_id = ?" : ""} ${ownerClause}
       ORDER BY t.due_date ASC, t.opened_on ASC`,
-    donorId ? [orgId, donorId] : [orgId]);
+    donorId ? [orgId, donorId, ...ownerParams] : [orgId, ...ownerParams]);
+
+  // ── The rank signals, read in BATCHES ────────────────────────────────────
+  // Four queries for the whole list, never one per row (the BUILD-15 board
+  // discipline). Each is scoped to the donors actually on the list.
+  const donorIds = [...new Set(rows.map(r => r.donor_id))];
+  let asks = {}, atRisk = new Set(), majorThreshold = 0;
+  if (donorIds.length) {
+    const ph = donorIds.map(() => "?").join(",");
+    for (const a of await query(
+      `SELECT donor_id, COALESCE(SUM(target_amount),0) AS amt FROM opportunities
+        WHERE org_id = ? AND status = 'open' AND donor_id IN (${ph}) GROUP BY donor_id`,
+      [orgId, ...donorIds])) asks[a.donor_id] = parseFloat(a.amt) || 0;
+    for (const r of await query(
+      `SELECT DISTINCT donor_id FROM recurring_subscriptions
+        WHERE org_id = ? AND donor_id IN (${ph}) AND status IN ('past_due','recovering')`,
+      [orgId, ...donorIds])) atRisk.add(r.donor_id);
+  }
+  // THE ORG'S OWN SCALE, never an absolute dollar figure: p90 of lifetime
+  // giving among donors who have given at all. A $5,000 ask is the year for
+  // one organization and noise for another; ranking on absolute money is how
+  // a CRM starts telling a food pantry its work is small.
+  const [{ p90 } = {}] = await query(
+    `SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
+  majorThreshold = parseFloat(p90) || 0;
+
   const list = [];
-  let snoozed = 0;
+  let snoozed = 0, unowned = 0;
   for (const t of rows) {
     const snoozedOut = t.snoozed_until && String(t.snoozed_until) > today;
     if (snoozedOut && !donorId) { snoozed++; continue; }
+    if (!t.owner_id) unowned++;
     const daysOpen = orgTime.daysBetween(t.opened_on, today) ?? 0;
     const lastTouch = t.opening_interaction_id
       ? { kind: "interaction", type: t.touch_type, date: t.touch_date, line: t.touch_note, actor: t.touch_actor }
@@ -9640,19 +9699,51 @@ async function composeThreads(orgId, { donorId = null } = {}) {
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
+      // The rank inputs ride ALONG so the client can explain a row without a
+      // second request, and so the pure module stays the only place that
+      // decides what they mean.
+      signals: {
+        dueDate: t.due_date, stepType: t.next_step_type, stepLabel: t.next_step_label, daysOpen,
+        openAskAmount: asks[t.donor_id] || 0,
+        recurringAtRisk: atRisk.has(t.donor_id),
+        // The opening gift was this donor's FIRST when the thread was opened
+        // by a gift and the donor has exactly one on record. Cheap, and right
+        // for the moment that matters: the gift that decides whether a second
+        // one ever comes.
+        isFirstGift: !!t.opening_gift_id && Number(t.gift_count) === 1,
+        lifetimeGiving: parseFloat(t.total_giving) || 0,
+        majorThreshold,
+      },
     });
   }
-  // Overdue first (list is already due-date ascending inside each half).
-  list.sort((a, b) => (b.overdue ? 1 : 0) - (a.overdue ? 1 : 0) || (a.nextStep.due < b.nextStep.due ? -1 : a.nextStep.due > b.nextStep.due ? 1 : 0));
+
+  // Rank + band + cap in the ONE place that decides it.
+  const forRank = list.map(t => ({ ...t, ...t.signals }));
+  const q = rank.buildQueue(forRank, today, { cap: donorId ? 0 : (cap == null ? rank.QUEUE_CAP : cap) });
+  const ranked = q.list.map(r => {
+    const { signals, ...rest } = r;
+    return { ...rest, rank: r.rank, band: r.band };
+  });
+
   const overdue = list.filter(t => t.overdue).length;
   const oldestDays = list.reduce((m, t) => Math.max(m, t.daysOpen), 0);
   const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
-  return { list, stat: { open: list.length, overdue, oldestDays, snoozed }, hasAny: everCount > 0, today };
+  return {
+    list: ranked, bands: q.bands, more: q.more,
+    stat: { open: list.length, overdue, oldestDays, snoozed, unowned, shown: ranked.length },
+    scope: effScope, canViewAll: isAdmin, hasAny: everCount > 0, today,
+  };
 }
 
 app.get("/threads", requireAuth, wrap(async (req, res) => {
   const donorId = req.query.donorId ? String(req.query.donorId) : null;
-  res.json(await composeThreads(req.user.orgId, { donorId }));
+  const cap = /^\d+$/.test(String(req.query.cap || "")) ? Math.min(200, parseInt(req.query.cap, 10)) : null;
+  res.json(await composeThreads(req.user.orgId, {
+    donorId, cap,
+    scope: String(req.query.scope || "mine"),
+    userId: req.user.userId,
+    isAdmin: req.user.role === "admin",
+  }));
 }));
 
 // POST /donors/:id/conversations — THE write path of the Thread. Logs the
@@ -9773,6 +9864,167 @@ app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
     "UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = ? WHERE id = ?",
     [reason, req.params.id]);
   res.json({ ok: true, dismissed: reason });
+}));
+
+// ── BUILD-85 — PLANNING FORWARD ────────────────────────────────────────────
+// Every BUILD-81 opener required something to have ALREADY HAPPENED: a logged
+// conversation, a gift, a drift-done, a sustainer lapse. Half of a
+// fundraiser's week is not reactive — "I am calling these twenty lapsed
+// donors this month" had nowhere to live, so it lived in Tasks, which is what
+// kept two follow-up systems alive at once.
+//
+// This does NOT reopen the tasks battle. That rule was "logging a
+// conversation must not require a second step", not "you may never plan". A
+// planned thread is the same row as any other: one donor, one open step, one
+// owner, closed honestly by the same conversation flow. Its `lastTouch.kind`
+// is "none", a case composeThreads has always handled.
+app.post("/donors/:id/threads", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const [donor] = await query(
+    "SELECT id, name, assigned_to, assigned_to_name FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL",
+    [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+
+  const shape = await threadShapeMod();
+  const label = shape.sanitizeStepLabel(req.body?.label);
+  if (!label) return res.status(400).json({ error: "A next step needs a label — say what you are going to do." });
+  const due = String(req.body?.due || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  let time = shape.sanitizeStepTime(req.body?.time);
+  if (req.body?.time != null && req.body.time !== "" && !time)
+    return res.status(400).json({ error: "time must be a 24-hour HH:MM, or omitted for a date-only step" });
+  if (time && !org.timezone_confirmed_at)
+    return res.status(400).json({ error: "timezone_unset", message: "Set your organization's timezone in Settings before scheduling a reminder at a specific time." });
+
+  // ONE OPEN THREAD PER DONOR is the model, and the DB enforces it
+  // (threads_one_open). Refuse with the thread that is already there rather
+  // than silently replacing a commitment somebody made.
+  const [open] = await query(
+    "SELECT id, next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL",
+    [orgId, req.params.id]);
+  if (open) return res.status(409).json({ error: "thread_open",
+    message: `${donor.name} already has an open next step: "${open.next_step_label}", due ${open.due_date}.`,
+    thread: { id: open.id, label: open.next_step_label, due: open.due_date } });
+
+  const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
+  const userName = userRow[0]?.name || "";
+  const step = { type: shape.nextStepTypeForLabel(label), label, due, time };
+  const thread = await withTransaction(client => openThreadTx(client, {
+    orgId, donorId: req.params.id, step, openedOn: today,
+    ownerId: req.body?.ownerId || donor.assigned_to || userId,
+    ownerName: req.body?.ownerId ? null : (donor.assigned_to ? donor.assigned_to_name : userName),
+    actorId: userId, actorName: userName,
+  }));
+  res.status(201).json({ thread });
+}));
+
+// POST /threads/plan — the same act, for a selection. "Call these twenty
+// lapsed donors" in one request. A donor who ALREADY has an open thread is
+// SKIPPED and REPORTED, never overwritten: the whole point of the one-open
+// rule is that a commitment already made outranks a plan being drawn up.
+const BULK_PLAN_MAX = 200;
+app.post("/threads/plan", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { orgId, userId } = req.user;
+  const ids = Array.isArray(req.body?.donorIds) ? req.body.donorIds.map(String).filter(Boolean) : [];
+  if (!ids.length) return res.status(400).json({ error: "donorIds must be a non-empty array" });
+  if (ids.length > BULK_PLAN_MAX) return res.status(400).json({ error: `At most ${BULK_PLAN_MAX} donors at a time` });
+
+  const shape = await threadShapeMod();
+  const label = shape.sanitizeStepLabel(req.body?.label);
+  if (!label) return res.status(400).json({ error: "A next step needs a label — say what you are going to do." });
+  const due = String(req.body?.due || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) return res.status(400).json({ error: "due must be a date (YYYY-MM-DD)" });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
+  const userName = userRow[0]?.name || "";
+
+  // Org-scoped up front: an id from another org is not found, never planted.
+  const ph = ids.map(() => "?").join(",");
+  const donors = await query(
+    `SELECT id, name, assigned_to, assigned_to_name FROM donors
+      WHERE org_id = ? AND deleted_at IS NULL AND id IN (${ph})`, [orgId, ...ids]);
+  const byId = new Map(donors.map(d => [d.id, d]));
+  const openAlready = new Set((await query(
+    `SELECT donor_id FROM threads WHERE org_id = ? AND closed_at IS NULL AND donor_id IN (${ph})`,
+    [orgId, ...ids])).map(r => r.donor_id));
+
+  const planned = [], skipped = [];
+  for (const id of ids) {
+    const d = byId.get(id);
+    if (!d) { skipped.push({ donorId: id, reason: "not_found" }); continue; }
+    if (openAlready.has(id)) { skipped.push({ donorId: id, donorName: d.name, reason: "already_open" }); continue; }
+    try {
+      const t = await withTransaction(client => openThreadTx(client, {
+        orgId, donorId: id, step: { type: shape.nextStepTypeForLabel(label), label, due, time: null },
+        openedOn: today, ownerId: d.assigned_to || userId,
+        ownerName: d.assigned_to ? d.assigned_to_name : userName,
+        actorId: userId, actorName: userName,
+      }));
+      planned.push({ donorId: id, donorName: d.name, threadId: t?.id || null });
+    } catch (e) {
+      // The partial unique index is the arbiter under a race — a loser is a
+      // skip with a reason, never a 500 and never a second open thread.
+      skipped.push({ donorId: id, donorName: d.name, reason: "already_open" });
+    }
+  }
+  res.status(201).json({ planned: planned.length, skipped: skipped.length, details: { planned, skipped } });
+}));
+
+// ── BUILD-85 — DOES THE ENGINE RUN? ────────────────────────────────────────
+// Drift snapshots log_capture_rate. The Thread snapshotted NOTHING, so the
+// product's central claim — log a conversation and the next step comes back —
+// was untested in the only way that counts. The number that answers it is
+// CONTINUATION: of the threads closed as an outcome, how many had their
+// closing conversation open the next one. A high open count with a low
+// continuation rate is a list being cleared, not a relationship being kept.
+async function computeThreadHealth(orgId, { days = 30 } = {}) {
+  const [row = {}] = await query(
+    `WITH closed AS (
+       SELECT t.id, t.close_kind, t.closing_interaction_id, t.opened_on,
+              GREATEST(0, (t.closed_at AT TIME ZONE 'UTC')::date - t.opened_on::date) AS days_to_close
+         FROM threads t
+        WHERE t.org_id = ? AND t.closed_at IS NOT NULL
+          AND t.closed_at >= NOW() - (? || ' days')::interval
+     )
+     SELECT COUNT(*)::int AS closed_count,
+            COUNT(*) FILTER (WHERE close_kind = 'outcome')::int AS outcome_count,
+            COUNT(*) FILTER (WHERE close_kind = 'dismissed')::int AS dismissed_count,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY days_to_close) AS median_days
+       FROM closed`, [orgId, String(days)]);
+  // Continuation: an outcome-closed thread whose closing interaction is the
+  // OPENING interaction of another thread. That join IS the chain.
+  const [cont = {}] = await query(
+    `SELECT COUNT(*)::int AS n
+       FROM threads a
+       JOIN threads b ON b.org_id = a.org_id AND b.opening_interaction_id = a.closing_interaction_id
+      WHERE a.org_id = ? AND a.close_kind = 'outcome' AND a.closing_interaction_id IS NOT NULL
+        AND a.closed_at >= NOW() - (? || ' days')::interval`, [orgId, String(days)]);
+  const outcome = row.outcome_count || 0;
+  const [{ n: open } = { n: 0 }] = await query(
+    `SELECT COUNT(*)::int AS n FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL`, [orgId]);
+  return {
+    windowDays: days, open,
+    closed: row.closed_count || 0,
+    outcome, dismissed: row.dismissed_count || 0,
+    medianDaysToClose: row.median_days == null ? null : Math.round(parseFloat(row.median_days)),
+    // THIN DATA IS SAID, NOT SMOOTHED (the BUILD-76 retention rule): a rate
+    // over three threads is an artifact, so it is returned as null with the
+    // count beside it rather than as a confident percentage.
+    continued: cont.n || 0,
+    continuationRate: outcome >= 5 ? Math.round((cont.n || 0) / outcome * 100) : null,
+    thinData: outcome < 5,
+  };
+}
+
+app.get("/threads/health", requireAuth, wrap(async (req, res) => {
+  const days = /^\d+$/.test(String(req.query.days || "")) ? Math.min(365, parseInt(req.query.days, 10)) : 30;
+  res.json(await computeThreadHealth(req.user.orgId, { days }));
 }));
 
 // ── Fundraising goals (home screen goal banner) ─────────────────────────────
@@ -14436,30 +14688,18 @@ function renderDailyTaskReminderBody(digest, org, user, today) {
 
 // Run the daily reminder for one org. send=false → compose only (preview),
 // reserving nothing. Non-empty is required to send. Returns sent/skipped.
-async function runDailyTaskRemindersForOrg(org, { today, send = true }) {
-  const out = { sent: [], skipped: [] };
-  const users = await query("SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
-  for (const u of users) {
-    const digest = await composeDailyTaskReminder(org.id, u.id, today);
-    if (digest.count === 0) { out.skipped.push({ recipientUserId: u.id, reason: "empty" }); continue; }
-    const payload = { recipientUserId: u.id, email: u.email, count: digest.count, overdue: digest.overdue.length, dueToday: digest.dueToday.length };
-    if (!send) { out.sent.push(payload); continue; }
-    if (!(await userWantsEmail(u.id, "daily_tasks"))) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
-    const rid = await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: digest.count, overdue: digest.overdue.length });
-    if (!rid) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
-    const subject = `${digest.count} task${digest.count === 1 ? "" : "s"} need${digest.count === 1 ? "s" : ""} you today — ${displayNameCase(org.name)}`;
-    await sendDigestEmail(org, u.email, subject, renderDailyTaskReminderBody(digest, org, u, today));
-    out.sent.push(payload);
-  }
-  return out;
-}
+// BUILD-85 — there is ONE morning sender now. This name survives because the
+// ops route and the suites call it; underneath, it is the brief, which carries
+// the task section this function used to send on its own. Both ticks land
+// here, and the digest_sends reservations make the second one a no-op.
+async function runDailyTaskRemindersForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
 
 async function processDailyTaskReminders(now = new Date(), { force = false } = {}) {
   try {
     // ORG_TZ_SEAM_OK — window and day are computed PER ORG (see the note on
     // DAILY_REMINDER_WINDOW above). Two orgs in different timezones are in
     // their morning at different instants, and "today" differs between them.
-    const orgs = await query("SELECT id, name, timezone FROM orgs WHERE onboarding_complete=1", []);
+    const orgs = await query("SELECT id, name, legal_name, timezone, receipt_address, thread_nudge_weekends FROM orgs WHERE onboarding_complete=1", []);
     for (const org of orgs) {
       const clock = orgTime.orgClock(org, now);
       if (!force && !inDailyReminderWindow(clock)) continue;
@@ -14651,79 +14891,241 @@ function threadNudgeDayOk(org, todayStr) {
   return dow < 5 || !!org.thread_nudge_weekends;
 }
 
-// Every open thread due or overdue on `today`, OLDEST first (longest open).
-async function composeThreadNudge(orgId, today) {
+// BUILD-85 — Every open thread due or overdue on `today` THAT THIS PERSON
+// OWNS. BUILD-81 selected the whole org and handed the identical list to
+// everybody: at a two-person shop that is invisible, and at six officers it is
+// the classic failure — if it is everyone's list it is no one's. Unowned
+// threads ride the ADMIN's list (a backstop, so nothing is orphaned) and
+// nobody else's. Ranked and capped by shared/threadRank.js, so the ten rows
+// an email can carry are the right ten.
+async function composeThreadNudge(orgId, today, { userId = null, isAdmin = false } = {}) {
+  const ownerClause = !userId ? ""
+    : (isAdmin ? "AND (t.owner_id = ? OR t.owner_id IS NULL)" : "AND t.owner_id = ?");
   const rows = await query(
     `SELECT t.id, t.donor_id, d.name AS donor_name, t.next_step_type, t.next_step_label,
-            t.due_date, t.due_time, t.opened_on
+            t.due_date, t.due_time, t.opened_on, d.total_giving, d.gift_count, t.opening_gift_id
        FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
       WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
         AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
-        AND t.due_date <= ?
+        AND t.due_date <= ? ${ownerClause}
       ORDER BY t.opened_on ASC, t.due_date ASC`,
-    [orgId, today, today]);
+    userId ? [orgId, today, today, userId] : [orgId, today, today]);
   // BUILD-84 FEATURE — PRECEDENCE, read from the ONE function that states it
   // (shared/threadShape.js digestShouldSkip): a task with a time sends its own
   // email at that time and is out of the digest ON ITS DUE DATE ONLY. Left
   // open, it rejoins the next morning as overdue, counted like everything
   // else. No task is ever reported twice on the same day.
   const { digestShouldSkip } = await threadShapeMod();
-  return rows
-    .filter(r => !digestShouldSkip(r, today))
-    .map(r => ({
-      id: r.id, donorId: r.donor_id,
-      donorName: displayNameCase(r.donor_name || ""),
-      stepLabel: r.next_step_label, due: r.due_date,
-      daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
-    }));
+  const rank = await threadRankMod();
+  const eligible = rows.filter(r => !digestShouldSkip(r, today));
+  if (!eligible.length) return [];
+
+  // The same rank signals the queue uses, read in batches for exactly the
+  // donors on this person's list — never one query per row.
+  const donorIds = [...new Set(eligible.map(r => r.donor_id))];
+  const ph = donorIds.map(() => "?").join(",");
+  const asks = {}; const atRisk = new Set();
+  for (const a of await query(
+    `SELECT donor_id, COALESCE(SUM(target_amount),0) AS amt FROM opportunities
+      WHERE org_id = ? AND status = 'open' AND donor_id IN (${ph}) GROUP BY donor_id`,
+    [orgId, ...donorIds])) asks[a.donor_id] = parseFloat(a.amt) || 0;
+  for (const r of await query(
+    `SELECT DISTINCT donor_id FROM recurring_subscriptions
+      WHERE org_id = ? AND donor_id IN (${ph}) AND status IN ('past_due','recovering')`,
+    [orgId, ...donorIds])) atRisk.add(r.donor_id);
+  const [{ p90 } = {}] = await query(
+    `SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY total_giving) AS p90
+       FROM donors WHERE org_id = ? AND deleted_at IS NULL AND total_giving > 0`, [orgId]);
+  const majorThreshold = parseFloat(p90) || 0;
+
+  const shaped = eligible.map(r => ({
+    id: r.id, donorId: r.donor_id,
+    donorName: displayNameCase(r.donor_name || ""),
+    stepLabel: r.next_step_label, due: r.due_date,
+    nextStep: { due: r.due_date },
+    daysOpen: Math.max(0, orgTime.daysBetween(r.opened_on, today) ?? 0),
+    dueDate: r.due_date, stepType: r.next_step_type, stepLabel: r.next_step_label,
+    openAskAmount: asks[r.donor_id] || 0,
+    recurringAtRisk: atRisk.has(r.donor_id),
+    isFirstGift: !!r.opening_gift_id && Number(r.gift_count) === 1,
+    lifetimeGiving: parseFloat(r.total_giving) || 0,
+    majorThreshold,
+  }));
+  const q = rank.buildQueue(shaped, today, { cap: rank.EMAIL_CAP });
+  return q.list.map(t => ({
+    id: t.id, donorId: t.donorId, donorName: t.donorName, stepLabel: t.stepLabel,
+    due: t.due, daysOpen: t.daysOpen, why: t.rank.why, band: t.band,
+  }));
 }
 
-function threadNudgeSubject(threads) {
-  const oldest = threads[0];
-  return `${threads.length} thread${threads.length === 1 ? "" : "s"} open · ${oldest.donorName}, day ${oldest.daysOpen}`;
+// The same list plus what the cap left behind, for the email's "and N more".
+async function composeThreadNudgeQueue(orgId, today, opts) {
+  const list = await composeThreadNudge(orgId, today, opts);
+  const rank = await threadRankMod();
+  // buildQueue already capped; `total` is recoverable from the unranked count,
+  // which is cheaper to ask for again than to thread through the composer.
+  const ownerClause = !opts?.userId ? ""
+    : (opts.isAdmin ? "AND (t.owner_id = ? OR t.owner_id IS NULL)" : "AND t.owner_id = ?");
+  const [{ n } = { n: 0 }] = await query(
+    `SELECT COUNT(*)::int AS n FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+        AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?) AND t.due_date <= ? ${ownerClause}`,
+    opts?.userId ? [orgId, today, today, opts.userId] : [orgId, today, today]);
+  return { list, total: n, more: Math.max(0, n - list.length), cap: rank.EMAIL_CAP };
 }
 
-function renderThreadNudgeBody(threads, org) {
-  // The row says "day 24", never a date the reader has to subtract.
-  const li = t => {
+// BUILD-85 — ONE subject for ONE email. The count is everything waiting on
+// this person (threads AND tasks); the escalation is still the oldest thread,
+// named, with its day count — the BUILD-81 line that made the subject do the
+// work. A brief with no threads falls back to the task sentence rather than
+// inventing a thread that is not there.
+function morningBriefSubject(threads, taskCount, org) {
+  const total = threads.length + taskCount;
+  if (threads.length === 0) {
+    return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today — ${displayNameCase(org.name || "")}`;
+  }
+  const oldest = threads.reduce((m, t) => (t.daysOpen > m.daysOpen ? t : m), threads[0]);
+  return `${total} waiting on you · ${oldest.donorName}, day ${oldest.daysOpen}`;
+}
+
+// BUILD-85 — the brief's body. Threads first (the spine), then the tasks that
+// were a second email until today, then — for an admin at a multi-officer shop
+// — a roll-up of counts, never everyone's rows.
+//
+// EVERY THREAD ROW CARRIES ITS REASON. shared/threadRank.js decided the order;
+// this prints the sentence that order was built from, so the list can always
+// answer "why am I looking at this one first?" without the reader guessing.
+function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }) {
+  const INK = "#0f1a12", SAGE = "#6b7d70", EMERALD = "#0d5c3a", BRASS = "#c9a84c", TERRA = "#8a3a24";
+  const row = t => {
     const url = `${publicAppUrl()}/donors/${encodeURIComponent(t.donorId)}?conversation=1`;
-    return `<tr><td style="padding:7px 0;font-size:14px;color:#0f1a12;">
-      <a href="${url}" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">${digestEsc(t.donorName)}</a>
-      <span style="color:#6b7d70;"> · ${digestEsc(t.stepLabel)} · day ${t.daysOpen}</span></td></tr>`;
+    const late = t.band === "overdue";
+    return `<tr><td style="padding:9px 0;border-bottom:1px solid #e4e0d6;">
+      <div style="font-size:14px;color:${INK};">
+        <a href="${url}" style="color:${EMERALD};font-weight:700;text-decoration:underline;">${digestEsc(t.donorName)}</a>
+        <span style="color:${SAGE};"> · ${digestEsc(t.stepLabel)} · day ${t.daysOpen}</span>
+      </div>
+      ${t.why ? `<div style="font-size:12px;color:${late ? TERRA : SAGE};margin-top:2px;">${digestEsc(t.why)}</div>` : ""}
+    </td></tr>`;
   };
+  const threadBlock = threads.length ? `
+    <div style="font-family:'DM Serif Display',Georgia,serif;font-size:19px;color:${INK};margin-top:4px;">These are waiting on you.</div>
+    <div style="font-size:12.5px;color:${SAGE};margin-top:2px;">Each name opens the donor's record. Log what happened there, and the next step comes back when it is due.</div>
+    <table style="margin-top:10px;border-collapse:collapse;width:100%;">${threads.map(row).join("")}</table>
+    ${more > 0 ? `<div style="font-size:12px;color:${SAGE};margin-top:8px;">and ${more} more open · <a href="${publicAppUrl()}/dashboard" style="color:${EMERALD};">see the whole list</a></div>` : ""}` : "";
+
+  const taskLi = t => {
+    const late = String(t.due).slice(0, 10) < today;
+    const donor = t.donor_name ? ` · ${digestEsc(displayNameCase(t.donor_name))}` : "";
+    return `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
+      ${digestEsc(t.title)}<span style="color:${late ? TERRA : SAGE};font-weight:700;"> · ${late ? "Overdue" : "Due today"}</span><span style="color:${SAGE};">${donor}</span></td></tr>`;
+  };
+  const taskBlock = tasks.count ? `
+    <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};">
+      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your tasks</div>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.overdue, ...tasks.dueToday].map(taskLi).join("")}</table>
+    </div>` : "";
+
+  const teamBlock = team && team.length ? `
+    <div style="margin-top:22px;padding-top:14px;border-top:1px solid #dcd8cd;">
+      <div style="font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:${SAGE};">Across the team</div>
+      <table style="margin-top:6px;border-collapse:collapse;">${team.map(r =>
+        `<tr><td style="padding:3px 0;font-size:13px;color:${INK};">${digestEsc(displayNameCase(r.who))}<span style="color:${SAGE};"> · ${r.n} open${r.overdue ? ` · ${r.overdue} overdue` : ""}</span></td></tr>`).join("")}</table>
+    </div>` : "";
+
   // CAN-SPAM: the org's mailing address in the footer. No address on file →
-  // the email SAYS SO and links to add it, never a footer that pretends
-  // (the address item is on the setup checklist for exactly this).
+  // the email SAYS SO and links to add it, never a footer that pretends.
   const addr = org.receipt_address && String(org.receipt_address).trim();
   const footer = addr
-    ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
-    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:#6b7d70;">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;">Add it in Settings</a> and it will.</div>`;
+    ? `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">${digestEsc(displayNameCase(org.legal_name || org.name || ""))} · ${digestEsc(addr)}</div>`
+    : `<div style="margin-top:22px;padding-top:12px;border-top:1px solid #dcd8cd;font-size:11px;color:${SAGE};">Steward has no mailing address on file for ${digestEsc(displayNameCase(org.name || ""))}, so this footer cannot carry one yet. <a href="${publicAppUrl()}/dashboard" style="color:${EMERALD};">Add it in Settings</a> and it will.</div>`;
+
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
-      <div style="font-family:'DM Serif Display',Georgia,serif;font-size:20px;color:#0f1a12;">These are waiting on you.</div>
-      <div style="font-size:12.5px;color:#6b7d70;margin-top:2px;">Each name opens the donor's record. Log what happened there, and the next step comes back when it is due.</div>
-      <table style="margin-top:12px;border-collapse:collapse;">${threads.map(li).join("")}</table>
-      ${footer}
+      <div style="font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:${SAGE};">${digestEsc(displayNameCase(user?.name || ""))} · ${digestEsc(today)}</div>
+      ${threadBlock}${taskBlock}${teamBlock}${footer}
     </div>`;
 }
 
-// Run the nudge for one org. send=false → compose only, reserving nothing.
-async function runThreadNudgesForOrg(org, { today, send = true }) {
+// ── BUILD-85 — THE MORNING BRIEF: ONE EMAIL ────────────────────────────────
+// Before this, `processDailyTaskReminders` and `processThreadNudges` shared
+// the SAME [6,12) window and sent two separate emails to the same person, with
+// two different scoping rules — the Thread was meant to end the tasks battle
+// and was instead standing next to it. This is the one sender.
+//
+// IT RESERVES BOTH LEDGERS. `thread_nudge` and `daily_tasks` each keep their
+// own digest_sends key, so whichever tick arrives first sends the combined
+// brief and the other finds the reservations taken and does nothing. Two
+// timers, one email, and neither idempotency ledger had to be rewritten.
+//
+// BOTH PREFERENCES STILL MEAN SOMETHING. A user opted out of `daily_tasks`
+// gets a brief with no task section; opted out of `thread_nudge`, no thread
+// section; opted out of both, no email at all and nothing reserved.
+async function runMorningBriefForOrg(org, { today, send = true }) {
   const out = { sent: [], skipped: [] };
-  const threads = await composeThreadNudge(org.id, today);
-  if (threads.length === 0) return out;   // no email when nothing is due, nothing reserved
-  const users = await query("SELECT id, name, email FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
-  const subject = threadNudgeSubject(threads);
-  const body = renderThreadNudgeBody(threads, org);
+  const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
+
+  // The team roll-up an ADMIN gets beneath their own list: counts per officer,
+  // never everyone's rows. Oversight is a shape, not a longer list.
+  const teamRows = await query(
+    `SELECT COALESCE(t.owner_name, 'Unassigned') AS who, COUNT(*)::int AS n,
+            COUNT(*) FILTER (WHERE t.due_date < ?)::int AS overdue
+       FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id = ? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+        AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
+      GROUP BY 1 ORDER BY 2 DESC`, [today, org.id, today]);
+  const multiOfficer = teamRows.filter(r => r.who !== "Unassigned").length >= 2;
+
   for (const u of users) {
-    if (!send) { out.sent.push({ recipientUserId: u.id, email: u.email, count: threads.length, subject }); continue; }
-    if (!(await userWantsEmail(u.id, "thread_nudge"))) { out.skipped.push({ recipientUserId: u.id, reason: "opted_out" }); continue; }
-    const rid = await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen });
-    if (!rid) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
-    await sendDigestEmail(org, u.email, subject, body);
-    out.sent.push({ recipientUserId: u.id, email: u.email, count: threads.length, subject });
+    const isAdmin = u.role === "admin";
+    const wantsThreads = await userWantsEmail(u.id, "thread_nudge");
+    const wantsTasks   = await userWantsEmail(u.id, "daily_tasks");
+
+    // THE WEEKEND RULE IS THE THREAD SECTION'S, not the email's. A list of
+    // open threads on a Saturday is an intrusion nobody asked for; a task the
+    // user dated Saturday is a commitment they made. So the brief can still
+    // go out on a weekend carrying tasks, and simply has no thread section.
+    const threadsAllowedToday = threadNudgeDayOk(org, today);
+    // Compose FIRST, apply the preference SECOND. Doing it the other way round
+    // cannot tell "this person has a clear morning" from "this person turned
+    // the notification off and is missing three overdue threads" — and those
+    // are the two facts whoever reads this report most needs apart.
+    const tqAll = threadsAllowedToday ? await composeThreadNudgeQueue(org.id, today, { userId: u.id, isAdmin }) : { list: [], more: 0, total: 0 };
+    const taskAll = await composeDailyTaskReminder(org.id, u.id, today);
+    const suppressed = (!wantsThreads && tqAll.list.length > 0) || (!wantsTasks && taskAll.count > 0);
+    const tq = wantsThreads ? tqAll : { list: [], more: 0, total: 0 };
+    const taskDigest = wantsTasks ? taskAll : { rows: [], overdue: [], dueToday: [], count: 0 };
+    if (tq.list.length === 0 && taskDigest.count === 0) {
+      // WHY there is no email matters to whoever is reading this report: a
+      // person who turned both notifications off is not the same as a person
+      // with a clear morning, and reporting both as "empty" hides a setting
+      // somebody may not have meant to leave that way.
+      out.skipped.push({ recipientUserId: u.id, reason: suppressed ? "opted_out" : "empty" });
+      continue;
+    }
+
+    const subject = morningBriefSubject(tq.list, taskDigest.count, org);
+    const payload = { recipientUserId: u.id, email: u.email, subject,
+                      threads: tq.list.length, tasks: taskDigest.count, count: tq.list.length + taskDigest.count };
+    if (!send) { out.sent.push(payload); continue; }
+
+    // Reserve only the ledgers whose section this brief actually carries. A
+    // section whose day is already reserved is DROPPED from the body, not
+    // re-sent — so a second tick can never repeat a line the user has read.
+    let threads = tq.list, more = tq.more, tasks = taskDigest;
+    if (threads.length && !(await reserveDigest(org.id, "thread_nudge", "day:" + today, u.id, u.email, "user", { count: threads.length, oldestDays: threads[0].daysOpen }))) { threads = []; more = 0; }
+    if (tasks.count && !(await reserveDigest(org.id, "daily_tasks", "day:" + today, u.id, u.email, "user", { count: tasks.count, overdue: tasks.overdue.length }))) tasks = { rows: [], overdue: [], dueToday: [], count: 0 };
+    if (threads.length === 0 && tasks.count === 0) { out.skipped.push({ recipientUserId: u.id, reason: "already_sent" }); continue; }
+
+    const body = renderMorningBriefBody({ threads, more, tasks, org, user: u, today,
+                                          team: isAdmin && multiOfficer ? teamRows : null });
+    await sendDigestEmail(org, u.email, morningBriefSubject(threads, tasks.count, org), body);
+    out.sent.push({ ...payload, threads: threads.length, tasks: tasks.count });
   }
   return out;
 }
+
+// Kept as the name the ops route and the suites call. One sender underneath.
+async function runThreadNudgesForOrg(org, opts) { return runMorningBriefForOrg(org, opts); }
 
 async function processThreadNudges(now = new Date()) {
   try {
@@ -23832,6 +24234,27 @@ async function snapshotMetricsForOrg(orgId) {
       ["ms_" + uuid().slice(0, 8), orgId, "recovery_rate", recoveryRate, today]
     );
   }
+  // ── BUILD-85 — DOES THE FOLLOW-UP ENGINE RUN? ──────────────────────────
+  // The Thread's central claim is that closing one conversation opens the
+  // next. Nothing counted it, so the claim was untestable. These three do:
+  // how much is open, how fast it clears, and — the one that matters — the
+  // rate at which a close becomes the next commitment. A rising open count
+  // with a falling continuation rate is a list being cleared, not a set of
+  // relationships being kept, and only the trend can tell those apart.
+  try {
+    const th = await computeThreadHealth(orgId, { days: 30 });
+    const put = async (key, val) => run(
+      `INSERT INTO metric_snapshots (id, org_id, metric_key, value, snapshot_date) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, metric_key, snapshot_date) DO UPDATE SET value = EXCLUDED.value`,
+      ["ms_" + uuid().slice(0, 8), orgId, key, val, today]);
+    await put("threads_open", th.open);
+    if (th.medianDaysToClose != null) await put("thread_days_to_close", th.medianDaysToClose);
+    // THIN DATA IS NEVER SNAPSHOTTED (the BUILD-76 retention rule): a rate
+    // over four closes is an artifact that would outlive the thinness that
+    // made it and sit in the trend line forever.
+    if (th.continuationRate != null) await put("thread_continuation_rate", th.continuationRate);
+  } catch (e) { console.error("[metrics] thread health:", e.message); }
+
   const { retentionRate, thinData: retentionThin } = await computeRetentionRate(orgId);
   // BUILD-76 follow-up: a thin-data rate is never snapshotted — a 100%-on-16-
   // donors artifact in the trend line would outlive the thin data that made it.

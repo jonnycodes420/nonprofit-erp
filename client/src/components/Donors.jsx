@@ -36,6 +36,7 @@ import { DonorMap } from "./DonorMap";
 import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
+import { PlanFollowUpModal } from "./PlanFollowUp";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -3744,6 +3745,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // flow and a skip is recorded as skipped.
   const [dpThread,setDpThread]=useState(null);
   const [convoOpen,setConvoOpen]=useState(initialOpenConversation);
+  const [planOpen,setPlanOpen]=useState(false);   // BUILD-85 — plan forward on this donor
   const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>setDpThread((r.list&&r.list[0])||null)).catch(()=>{});
   useEffect(()=>{loadDpThread();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4437,6 +4439,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" style={{background:T.gold500,border:"none",borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Log a conversation
           </button>
+          {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
+              because one open step per donor is the model and a second button
+              that can only 409 is a button that teaches people to distrust
+              buttons. */}
+          {!dpThread&&<button onClick={()=>setPlanOpen(true)} disabled={isReadOnly} className="dph-desktop-act"
+            style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+            Plan a follow-up
+          </button>}
           <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Request Gift
           </button>
@@ -4463,6 +4473,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
             onClose={()=>setConvoOpen(false)}/>}
+          {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
+            onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
         </div>
       </div>
 
@@ -5798,10 +5810,11 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
 // and stage/owner/search filtering happens in the GET /donors query itself.
 const DESIGNATION_OPTS=[["planned_confirmed","Planned gift confirmed"],["planned_prospect","Planned-giving prospect"],["estate","Estate giving"]];
 const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"—";
-function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone}){
+function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFilterCount,exportParams,totalDonors,orgTeam,isAdmin,onSelectDonor,onAssign,stageFilter,setStageFilter,assigneeFilter,setAssigneeFilter,designationFilter,setDesignationFilter,officers=[],officerColorMap={},portfolioMeta={tier:"core",single_user:true},pendingInvites=[],onOfficersChanged,onLoadSampleData,sampleLoading,hasSampleData,onAddDonor,onBulkDone,isReadOnly=false}){
   const [selIds,setSelIds]=useState(new Set());
   const [selectMode,setSelectMode]=useState(false); // BUILD-41: mobile rows show checkboxes only in explicit Select mode
   const [stageDrop,setStageDrop]=useState(false);
+  const [planSel,setPlanSel]=useState(null);   // BUILD-85 — the selection being planned
   const [assignDrop,setAssignDrop]=useState(false);
   const [delModal,setDelModal]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -6009,6 +6022,16 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <button onClick={()=>setSelIds(new Set())} style={{background:"none",border:"none",color:"#a1b5a8",fontSize:12,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>Clear</button>
           <div style={{flex:1,minWidth:8}}/>
 
+          {/* BUILD-85 — PLAN A FOLLOW-UP for the selection. "Call these twenty
+              lapsed donors this month" had nowhere to live before this; it
+              lived in Tasks, which is what kept two follow-up systems running
+              at once. Core-available on purpose: planning who to call is the
+              CRM's own job, not a major-gifts capability. */}
+          {!isReadOnly&&<button onClick={()=>setPlanSel(selFiltered)} disabled={busy}
+            style={{background:"transparent",border:"1px solid #c9a84c",borderRadius:8,padding:"7px 12px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+            Plan a follow-up
+          </button>}
+
           {/* Add to pipeline — the deliberate act that puts prospects on the board (Team). */}
           {teamPortfolios&&<button onClick={bulkAddPipeline} disabled={busy}
             style={{background:"#c9a84c",border:"none",borderRadius:8,padding:"7px 12px",color:"#0f1a12",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
@@ -6072,6 +6095,12 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           )}
         </div>
       )}
+
+      {/* BUILD-85 — the selection being planned. On success the selection is
+          cleared: the twenty you just planned are no longer the twenty you are
+          about to act on, and leaving them checked invites a second plan. */}
+      {planSel&&<PlanFollowUpModal donors={planSel}
+        onSaved={()=>{setSelIds(new Set());}} onClose={()=>setPlanSel(null)}/>}
 
       {/* Donor table */}
       {loading
@@ -7003,7 +7032,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         </div>
       </Card>}
 
-      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors}/>}
+      {view==="directory"&&<DirectoryView donors={dirPageRows} loading={dirRows===null} serverTotal={dirTotal} page={dirPage} pageSize={DIR_PAGE_SIZE} onPage={setDirPage} clientFilterCount={advFilterCount+cfFilterCount} exportParams={{search:dirSearch.trim(),stage:dirStage,assignedTo:dirAssignee,designation:dirDesignation}} totalDonors={data.donors.length} orgTeam={orgTeam} isAdmin={isAdmin} onSelectDonor={selectDonor} onAssign={d=>setAssignTarget(d)} stageFilter={dirStage} setStageFilter={setDirStage} assigneeFilter={dirAssignee} setAssigneeFilter={setDirAssignee} designationFilter={dirDesignation} setDesignationFilter={setDirDesignation} officers={officers} officerColorMap={officerColorMap} portfolioMeta={portfolioMeta} pendingInvites={pendingInvites} onOfficersChanged={loadOfficers} onLoadSampleData={loadSampleData} sampleLoading={sampleLoading} hasSampleData={sampleStatus?.hasSampleData} onAddDonor={()=>setShowAdd(true)} onBulkDone={reloadDonors} isReadOnly={isReadOnly}/>}
 
       {view==="team"&&isAdmin&&<TeamView donors={filtered} orgTeam={orgTeam} onSelectDonor={selectDonor}/>}
 

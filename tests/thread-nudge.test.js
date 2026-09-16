@@ -4,7 +4,8 @@
 // Resend sink), never assumptions.
 //
 //   §1  the test-mode proof: threads at day 3, 11 and 24 → ONE email whose
-//       subject reads "3 threads open · <oldest>, day 24", rows oldest
+//       subject reads "3 waiting on you · <oldest>, day 24" (BUILD-85: the
+//       count is threads AND tasks now — one brief, one email), rows oldest
 //       first, the day-24 line reads "day 24" and never a date the reader
 //       has to subtract, the org's mailing address in the footer
 //   §2  links do NOTHING on their own: GET and HEAD every link in the
@@ -91,12 +92,27 @@ async function reset() {
   console.log("\n— §1 · the proof email —");
   captured = [];
   const r1 = await api("POST", "/nudges/run", tok, { today: TODAY, force: true });
-  ok("run 200, one send + one opt-out skip", r1.status === 200 && r1.body.sent.length === 1 && r1.body.skipped.some(s => s.reason === "opted_out"), r1.body);
+  // BUILD-85 — REVIEWED CHANGE: the queue is OWNED now. These fixture threads
+  // carry no owner, so they ride the ADMIN's list as the backstop and reach
+  // nobody else. The staff member is therefore skipped as "empty" rather than
+  // "opted_out": under ownership she genuinely has nothing waiting, whatever
+  // her preference says. (That her preference is also off is now beside the
+  // point, and the brief reports "opted_out" only when a preference actually
+  // SUPPRESSED something — proven in tests/build85.test.js §5.)
+  ok("run 200, one send to the owner-of-record, the staff member skipped as empty",
+     r1.status === 200 && r1.body.sent.length === 1 && r1.body.sent[0].recipientUserId === "u_b81ndg"
+       && r1.body.skipped.some(s => s.recipientUserId === "u_b81ndg_off"), r1.body);
   const m = mails();
   ok("exactly ONE email left the org (not one per thread)", m.length === 1, m.length);
   const mail = m[0]?.body || {};
-  ok('the SUBJECT is the fact: "3 threads open · Marta Villanueva, day 24"',
-     mail.subject === "3 threads open · Marta Villanueva, day 24", mail.subject);
+  // BUILD-85 — THE SUBJECT CHANGED DELIBERATELY, and this is the reviewed edit.
+  // The nudge became the MORNING BRIEF: one email carrying threads AND the
+  // tasks that used to arrive separately in the same [6,12) window. So the
+  // count is now everything waiting on this person, not threads alone. What
+  // did NOT change, because it is the part that does the work, is the
+  // escalation: the oldest thread, named, with its day number.
+  ok('the SUBJECT counts everything waiting and still escalates by name: "3 waiting on you · Marta Villanueva, day 24"',
+     mail.subject === "3 waiting on you · Marta Villanueva, day 24", mail.subject);
   const html = mail.html || "";
   const posOf = n => html.indexOf(n);
   ok("rows are OLDEST FIRST: Marta, then Desmond, then Priya",

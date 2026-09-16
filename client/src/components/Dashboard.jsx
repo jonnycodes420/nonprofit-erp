@@ -9,6 +9,7 @@ import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 import { ProductMark } from "./ProductMark";
+import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage } from "../lib/domainError";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
@@ -313,7 +314,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // ── BUILD-81 — THE THREAD, the first section of the work column ──────────
   const [threadsData,setThreadsData]=useState(null);
   const [convoFor,setConvoFor]=useState(null); // {donor:{id,name}, thread} → the log-one-line modal
-  const loadThreads=()=>apiFetch("/threads").then(r=>setThreadsData(r)).catch(()=>{});
+  // BUILD-85 — the queue is SCOPED and CAPPED. `mine` is the default because a
+  // list that is everyone's is no one's; the server downgrades `all` for a
+  // non-admin, so this param is a convenience, never the gate.
+  const [threadScope,setThreadScope]=useState("mine");
+  const [threadHealth,setThreadHealth]=useState(null);
+  const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
+  const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>{});
+  useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
 
   // ── BUILD-35: activation checklist state ──────────────────────────────────
   const setupOrgId=(()=>{try{return JSON.parse(localStorage.getItem("npe_org")||"{}").id||"org";}catch{return "org";}})();
@@ -1536,16 +1544,37 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   const threadList=threadsData?.list||[];
   const threadStat=threadsData?.stat;
   const TOUCH_WORD={call:"Call",meeting:"Meeting",email:"Email",gift:"Gift",other:"Note",stewardship:"Stewardship",note:"Note",event:"Event"};
-  const threadRows=threadList.map((t,i)=>(
+  // BUILD-85 — a row now carries its REASON. shared/threadRank.js decided the
+  // order; this prints the sentence that order was built from, so the queue can
+  // always answer "why this one first?" without the reader guessing. The score
+  // itself never reaches the screen — an unsourced number on a row reads as
+  // invented precision, and this product does not do that.
+  const BAND_STYLE={overdue:{label:"Overdue",color:T.terracotta},today:{label:"Today",color:T.gold600},ahead:{label:"Coming up",color:T.ink3}};
+  const threadRows=[];
+  let lastBand=null;
+  threadList.forEach((t,i)=>{
+    if(t.band!==lastBand){
+      lastBand=t.band;
+      const b=BAND_STYLE[t.band]||BAND_STYLE.ahead;
+      threadRows.push(
+        <li key={"band-"+t.band} style={{padding:"9px 20px 5px",background:T.bg2,borderBottom:"1px solid "+T.bg3}}>
+          <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:b.color}}>{b.label}</span>
+          <span style={{fontSize:10.5,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
+        </li>);
+    }
+    threadRows.push(
     <li key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.terracotta:T.greenMid)}}>
       <a href={`/donors/${t.donorId}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
         <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
         <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.45,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-          {TOUCH_WORD[t.lastTouch?.type]||"Touch"} · {String(t.lastTouch?.date||t.openedOn).slice(0,10)}
+          {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Touch")} · {String(t.lastTouch?.date||t.openedOn).slice(0,10)}
           {t.lastTouch?.line?<> · {t.lastTouch.line}</>:t.lastTouch?.kind==="gift"&&t.lastTouch.amount!=null?<> · {fmtFull(t.lastTouch.amount)} received</>:null}
           {t.lastTouch?.actor?<> · {t.lastTouch.actor}</>:null}
         </div>
+        {t.rank?.why&&(
+          <div style={{fontSize:11.5,color:t.overdue?T.terra700:T.greenDk,marginTop:3,fontWeight:600}}>{t.rank.why}</div>
+        )}
       </a>
       <div style={{textAlign:"right",flexShrink:0}}>
         <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.terracotta:T.ink}}>
@@ -1556,10 +1585,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
       <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
         <button onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
           style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Done</button>
-        <ThreadDismissMenu thread={t} onDone={loadThreads}/>
+        <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
       </div>
-    </li>
-  ));
+    </li>);
+  });
+
   // The thank queue items fold into the thread rows themselves once a gift
   // opens its thread — a donor with an open thread never shows a second
   // "thank" line below.
@@ -1575,11 +1605,30 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
               <span style={{display:"flex",alignItems:"center",gap:8}}>
                 <ProductMark product="thread" on="cream"/>
               </span>
-              {threadStat&&threadStat.open>0&&(
-                <span style={{fontSize:11.5,color:T.ink3}}>
-                  {threadStat.open} open · {threadStat.overdue} overdue · oldest {threadStat.oldestDays} day{threadStat.oldestDays===1?"":"s"}
-                </span>
-              )}
+              <span style={{display:"flex",alignItems:"center",gap:10}}>
+                {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
+                    shop with more than one officer (the BUILD-32 standing rule:
+                    hide a picker whose options all resolve to the same view). */}
+                {threadsData?.canViewAll&&threadsData?.stat?.unowned!==undefined&&homeData?.multiOfficer&&(
+                  <span style={{display:"inline-flex",border:"1px solid "+T.bg3,borderRadius:99,overflow:"hidden"}}>
+                    {[["mine","Mine"],["all","Everyone"]].map(([k,lbl])=>(
+                      <button key={k} onClick={()=>{setThreadScope(k);loadThreads(k);}}
+                        style={{border:"none",padding:"3px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",
+                                background:threadScope===k?T.greenDk:"transparent",color:threadScope===k?"#fff":T.ink3}}>{lbl}</button>
+                    ))}
+                  </span>
+                )}
+                {threadStat&&threadStat.open>0&&(
+                  <span style={{fontSize:11.5,color:T.ink3}}>
+                    {threadStat.open} open · {threadStat.overdue} overdue · oldest {threadStat.oldestDays} day{threadStat.oldestDays===1?"":"s"}
+                  </span>
+                )}
+                <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
+                  style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:7,padding:"4px 10px",
+                          color:T.greenDk,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+                  Plan a follow-up
+                </button>
+              </span>
             </div>
             {threadsData&&threadList.length===0&&(
               <div style={{...cPad,fontSize:12.5,color:T.ink3,lineHeight:1.6}}>
@@ -1590,6 +1639,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             )}
             {threadList.length>0&&(
               <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
+            )}
+            {/* THE CAP IS THE FEATURE, and the remainder is STATED. A list you
+                cannot finish is a list you stop opening; a list that hides its
+                own size is worse. */}
+            {threadsData?.more>0&&(
+              <div style={{...cPad,paddingTop:10,paddingBottom:10,fontSize:11.5,color:T.ink3,borderTop:"1px solid "+T.bg3}}>
+                and {threadsData.more} more open. The {threadList.length} above are the ones that cost the most to leave.
+              </div>
+            )}
+            {/* Does the engine run? The one number that answers it: of the
+                threads closed as an outcome, how many opened the next one. */}
+            {threadHealth&&threadHealth.continuationRate!=null&&(
+              <div style={{...cPad,paddingTop:8,paddingBottom:10,fontSize:11,color:T.ink3,borderTop:"1px solid "+T.bg3}}>
+                Last 30 days · {threadHealth.closed} closed · {threadHealth.continuationRate}% led straight to the next step
+                {threadHealth.medianDaysToClose!=null?` · typically ${threadHealth.medianDaysToClose} day${threadHealth.medianDaysToClose===1?"":"s"} to close`:""}
+              </div>
             )}
           <div id="dash-needtodo" style={{scrollMarginTop:64,borderTop:"1px solid "+T.bg3}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
@@ -2063,6 +2128,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
 
       {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
+      {planFor&&<PlanFollowUpModal donor={planFor.donor}
+        onSaved={()=>{loadThreads();}} onClose={()=>setPlanFor(null)}/>}
     </div>
   );
 }
