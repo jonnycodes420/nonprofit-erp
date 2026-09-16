@@ -59,7 +59,10 @@ function Breakdown({ m }) {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <td style={{ padding: "7px 18px", fontSize: 13, color: T.ink, borderTop: i ? "1px solid " + T.bg3 : "none" }}>
-                    {r.label}{r.when ? <span style={{ color: T.ink3 }}> · due {r.when}</span> : null}
+                    {/* BUILD-88a A.5 — a ROW may carry its own definition. Five
+                        numbers under one sentence is four numbers nobody can
+                        define, so the activity block defines each of them. */}
+                    {r.label}{r.definition ? <Def text={r.definition} /> : null}{r.when ? <span style={{ color: T.ink3 }}> · due {r.when}</span> : null}
                   </td>
                   <td style={{ padding: "7px 18px", fontSize: 13, fontWeight: 700, color: T.ink, textAlign: "right",
                                borderTop: i ? "1px solid " + T.bg3 : "none", whiteSpace: "nowrap" }}>

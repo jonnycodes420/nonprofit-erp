@@ -3139,6 +3139,21 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     values.milestonesThisQuarter = milestones[0]?.n || 0;
     values.giftsNotYetThanked = unthanked[0]?.n || 0;
     values.stewardStart = start;
+    // BUILD-88a A.5 — the activity report, from the ONE counter. Monday to
+    // today in the ORG's timezone, which is the same window the Week in Review
+    // email uses, so the screen and the email are the same arithmetic.
+    {
+      const wk = orgTime.orgPeriodBounds(org, "week", 0);
+      const act = await composeActivityReport(orgId, { start: wk.start, end: today });
+      values.thisWeek = [
+        { label: "Conversations logged", value: act.conversationsLogged, definition: ACTIVITY_DEFINITIONS.conversationsLogged },
+        { label: "Gifts received", value: act.giftsReceived, definition: ACTIVITY_DEFINITIONS.giftsReceived },
+        { label: "Given this week", value: act.giftDollars, money: true, definition: ACTIVITY_DEFINITIONS.giftsReceived },
+        { label: "Thank-yous marked sent", value: act.thankYousMarkedSent, definition: ACTIVITY_DEFINITIONS.thankYousMarkedSent },
+        { label: "Follow-ups closed by outcome", value: act.threadsClosedByOutcome, definition: ACTIVITY_DEFINITIONS.threadsClosedByOutcome },
+        { label: "Follow-ups dismissed", value: act.threadsDismissed, definition: ACTIVITY_DEFINITIONS.threadsDismissed },
+      ];
+    }
   }
 
   if (key === "recurring") {
@@ -6313,11 +6328,14 @@ app.put("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // editors — a P1 coherence race, not P0 single-user corruption.
   const rows = await withAdvisoryLock(`gift:${req.params.id}`, async () => {
     await run(
-      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=? WHERE id=? AND org_id=?`,
+      `UPDATE gifts SET amount=?,date=?,type=?,campaign=?,campaign_id=?,notes=?,fund_id=?,payment_method=?,acknowledgement_sent=?,
+              acknowledgement_sent_at = CASE WHEN ? IS TRUE THEN COALESCE(acknowledgement_sent_at, NOW()) ELSE NULL END
+        WHERE id=? AND org_id=?`,
       [newAmt, newDate, type||g.type, newCampaign, newCampaignId,
        notes!==undefined?notes:g.notes, fund_id!==undefined?fund_id:g.fund_id,
        payment_method!==undefined?payment_method:g.payment_method,
        acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,
+       acknowledgement_sent!==undefined?acknowledgement_sent:g.acknowledgement_sent,   // A.5 — the same value drives the stamp
        req.params.id, req.user.orgId]
     );
     // Full recalc replaces the old delta — delta was wrong when editing a non-latest gift's amount
@@ -6880,7 +6898,8 @@ async function issueGiftReceipt(gift, org, donor, { send = true, by = SYS_AUTO }
   // requirement the moment the PDF is generated), not "the email definitely
   // arrived" — even on a suppressed address or a failed send, the PDF is
   // stored and staff can download + mail it manually from DonorProfile.
-  await run("UPDATE gifts SET acknowledgement_sent=true WHERE id=?", [gift.id]);
+  // A.5 — the moment, not just the fact.
+  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=?", [gift.id]);
 
   const rows = await query("SELECT * FROM receipts WHERE id=?", [id]);
   return { receipt: rows[0], created: true, emailSent };
@@ -15337,6 +15356,24 @@ const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 // Reports are read paths — requireAuth only, never checkWriteAccess (a
 // read_only org keeps full report access, consistent with GETs/exports
 // everywhere else).
+// GET /reports/activity?start=&end=&scope=mine|org — BUILD-88a A.5.
+// The activity report over ANY window, from the one counter. It exists as a
+// route because a figure you cannot take apart is a figure nobody can audit:
+// the week is the sum of its days, and this is what lets anyone — the suite
+// included — check that rather than take it on trust.
+app.get("/reports/activity", requireAuth, wrap(async (req, res) => {
+  const ymd = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null);
+  const org = await orgTz(req.user.orgId);
+  const today = orgToday(org);                                    // ORG_TZ_SEAM_OK
+  const wk = orgTime.orgPeriodBounds(org, "week", 0);
+  const start = ymd(req.query.start) || wk.start;
+  const end = ymd(req.query.end) || today;
+  if (start > end) return res.status(400).json({ error: "start must be on or before end" });
+  const scope = req.query.scope === "mine" ? "mine" : "org";
+  const report = await composeActivityReport(req.user.orgId, { start, end }, scope === "mine" ? req.user.userId : null);
+  res.json({ ...report, definitions: ACTIVITY_DEFINITIONS });
+}));
+
 app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
   const { key } = req.params;
   if (!REPORT_HANDLERS[key]) return res.status(404).json({ error: "Unknown report" });
@@ -15402,6 +15439,86 @@ function monthBounds(offset = 0, org = null, atInstant = new Date()) {
   return orgPeriodBounds(org || {}, "month", offset, atInstant);
 }
 
+// ── BUILD-88a A.5 — THE WEEK IN REVIEW IS THE ACTIVITY REPORT ──────────────
+// The weekly email listed gifts, asks, moves and past-due tasks: what the money
+// did and what was still owed. It did not say what anyone DID. A fundraiser's
+// week is conversations logged, gifts received, thank-yous sent, and follow-ups
+// closed or let go — and that report existed nowhere, so nobody could answer
+// "what happened last week?" without reading the database.
+//
+// ONE COUNTER, used by the weekly email AND by the People dashboard's "This
+// week", so the two can never disagree. It takes a WINDOW rather than a period
+// name, which is what makes the arithmetic checkable: the seven single-day
+// windows of a week sum to the week, in cents, and tests/build88a-week.test.js
+// asserts exactly that. A number you cannot take apart is a number nobody can
+// audit.
+//
+// `userId` scopes to one person's work (the conversations they logged, the
+// gifts on their donors, the threads they own); org-wide otherwise.
+async function composeActivityReport(orgId, win, userId = null) {
+  const { start, end } = win;
+  const byUser = !!userId;
+  // A conversation is a TOUCH, not every interaction: an automatic timeline
+  // entry (a gift landing, a stage change) is not something a person did.
+  const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
+  const [conv, gifts, thanks, closed] = await Promise.all([
+    query(
+      `SELECT COUNT(*)::int AS n FROM interactions i
+         JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+        WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.date >= ? AND i.date <= ?
+          AND i.type = ANY(?) ${byUser ? "AND i.created_by = ?" : ""}`,
+      byUser ? [orgId, start, end, CONVERSATION_TYPES, userId] : [orgId, start, end, CONVERSATION_TYPES]),
+    query(
+      `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount),0) AS v FROM gifts g
+         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+          ${byUser ? "AND d.assigned_to = ?" : ""}`,
+      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
+    // The stamp, not the flag: a gift acknowledged before A.5 carries no date
+    // and belongs to no week rather than to this one.
+    query(
+      `SELECT COUNT(*)::int AS n FROM gifts g
+         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+        WHERE g.org_id = ? AND d.deleted_at IS NULL
+          AND g.acknowledgement_sent_at IS NOT NULL
+          AND g.acknowledgement_sent_at >= ?::date AND g.acknowledgement_sent_at < (?::date + 1)
+          ${byUser ? "AND d.assigned_to = ?" : ""}`,
+      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
+    query(
+      `SELECT t.close_kind, COUNT(*)::int AS n FROM threads t
+         JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+        WHERE t.org_id = ? AND d.deleted_at IS NULL AND t.closed_at IS NOT NULL
+          AND t.closed_at >= ?::date AND t.closed_at < (?::date + 1)
+          ${byUser ? "AND t.owner_id = ?" : ""}
+        GROUP BY 1`,
+      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
+  ]);
+  const byKind = Object.fromEntries(closed.map(r => [r.close_kind, r.n]));
+  // CENTS, through the one money seam. The week is compared against the sum of
+  // its days and floats do not survive that comparison.
+  const giftCents = money.toCents(gifts[0]?.v) ?? 0;
+  return {
+    window: { start, end }, scope: byUser ? "user" : "org", userId: userId || null,
+    conversationsLogged: conv[0]?.n || 0,
+    giftsReceived: gifts[0]?.n || 0,
+    giftCents,
+    giftDollars: money.toDollars(giftCents),
+    thankYousMarkedSent: thanks[0]?.n || 0,
+    threadsClosedByOutcome: byKind.outcome || 0,
+    threadsDismissed: byKind.dismissed || 0,
+  };
+}
+
+// The sentence each figure answers to. ONE string, read by the email and by the
+// People dashboard — the BUILD-86 C.3 rule, applied to the activity report.
+const ACTIVITY_DEFINITIONS = {
+  conversationsLogged: "Calls, meetings, emails, asks and notes somebody logged in this window. A timeline entry Steward wrote itself is not one.",
+  giftsReceived: "Gifts dated inside this window, counted and summed. Imported history counts on the date the file gave it.",
+  thankYousMarkedSent: "Gifts marked acknowledged inside this window. A gift acknowledged before Steward began stamping the moment carries no date and is counted in no week.",
+  threadsClosedByOutcome: "Follow-ups closed because the conversation happened.",
+  threadsDismissed: "Follow-ups closed without one, with the reason recorded.",
+};
+
 // Compose the Week-in-Review sections for a window. officerId != null scopes
 // every section to that officer's portfolio (their assigned donors + their
 // tasks); org-wide otherwise. today gates the past-due-tasks section.
@@ -15431,7 +15548,11 @@ async function composeWeekInReview(orgId, win, officerId = null) {
      LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
      WHERE t.org_id = ? AND t.done = 0 AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) < ? ${tFilter}
      ORDER BY t.due ASC`, [orgId, today, ...(officerId ? [officerId] : [])]);
+  // BUILD-88a A.5 — the activity report rides with the sections, from the ONE
+  // counter the People dashboard reads.
+  const activity = await composeActivityReport(orgId, win, officerId);
   return {
+    activity, activityDefinitions: ACTIVITY_DEFINITIONS,
     gifts: gifts.map(g => ({ donorId: g.donor_id, donorName: g.donor_name, amount: Number(g.amount) })),
     asks: asks.map(a => ({ donorId: a.donor_id, donorName: a.donor_name, name: a.opp_name, targetAmount: Number(a.target_amount || 0), officerName: a.officer_name })),
     moves: moves.map(m => ({ donorId: m.donor_id, donorName: m.donor_name, fromStage: m.from_stage, toStage: m.to_stage, description: m.description, officerName: m.officer_name })),
@@ -15479,7 +15600,25 @@ function digestSectionHtml(title, rowsHtml, emptyLine) {
   </div>`;
 }
 function renderWeekInReviewBody(sec, win, headingName) {
-  const row = (a, b) => `<div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;padding:5px 0;border-bottom:1px solid #eee7d8;">${a}${b ? `<span style="float:right;color:#0d5c3a;font-weight:700;">${b}</span>` : ""}</div>`;
+  // BUILD-88a A.5 — WHAT ANYBODY ACTUALLY DID. Every figure carries the
+  // sentence it answers to, from the same constant the People dashboard reads.
+  const a = sec.activity || {};
+  const defs = sec.activityDefinitions || {};
+  const actRow = (label, value, key) => `<tr><td style="padding:6px 0;border-bottom:1px solid #eee7d8;">
+      <div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;">${label}<span style="float:right;color:#0d5c3a;font-weight:800;">${value}</span></div>
+      <div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:11.5px;color:#6b7d70;margin-top:2px;max-width:420px;">${digestEsc(defs[key] || "")}</div>
+    </td></tr>`;
+  const activityBlock = `<div style="margin:22px 0 0;">
+    <div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#1a6b4a;margin-bottom:8px;">What happened</div>
+    <table style="border-collapse:collapse;width:100%;">
+      ${actRow("Conversations logged", a.conversationsLogged || 0, "conversationsLogged")}
+      ${actRow("Gifts received", `${a.giftsReceived || 0} · ${digestMoney(a.giftDollars || 0)}`, "giftsReceived")}
+      ${actRow("Thank-yous marked sent", a.thankYousMarkedSent || 0, "thankYousMarkedSent")}
+      ${actRow("Follow-ups closed by outcome", a.threadsClosedByOutcome || 0, "threadsClosedByOutcome")}
+      ${actRow("Follow-ups dismissed", a.threadsDismissed || 0, "threadsDismissed")}
+    </table>
+  </div>`;
+  const row = (a2, b) => `<div style="font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:14px;color:#0f1a12;padding:5px 0;border-bottom:1px solid #eee7d8;">${a2}${b ? `<span style="float:right;color:#0d5c3a;font-weight:700;">${b}</span>` : ""}</div>`;
   const gifts = sec.gifts.map(g => row(digestEsc(g.donorName), digestMoney(g.amount))).join("");
   const asks = sec.asks.map(a => row(`${digestEsc(a.donorName)}${a.name ? ` — ${digestEsc(a.name)}` : ""}`, digestMoney(a.targetAmount))).join("");
   const moves = sec.moves.map(m => row(`${digestEsc(m.donorName)} · ${digestEsc(m.fromStage || "—")} → ${digestEsc(m.toStage)}<div style="font-size:12px;color:#6b7d70;">${digestEsc(m.description)}</div>`, "")).join("");
@@ -15493,6 +15632,7 @@ function renderWeekInReviewBody(sec, win, headingName) {
       ${sec.totals.moveCount} move${sec.totals.moveCount === 1 ? "" : "s"} ·
       <span style="color:${sec.totals.pastDueCount ? "#b8593f" : "#6b7d70"};font-weight:700;">${sec.totals.pastDueCount} past-due task${sec.totals.pastDueCount === 1 ? "" : "s"}</span>
     </div>
+    ${activityBlock}
     ${digestSectionHtml("Gifts received", gifts, "No gifts recorded this week.")}
     ${digestSectionHtml("Asks / pledges made", asks, "No new asks logged this week.")}
     ${digestSectionHtml("Moves", moves, "No pipeline moves this week.")}

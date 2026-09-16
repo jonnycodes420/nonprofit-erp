@@ -1620,6 +1620,16 @@ async function initSchema() {
   // Steward holds and half from a number nobody here can check.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS other_income_enabled BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS other_income_this_year NUMERIC`);
+
+  // ── BUILD-88a A.5 — A BOOLEAN CANNOT ANSWER "THIS WEEK" ───────────────────
+  // `gifts.acknowledgement_sent` is a flag with no date, so "thank-yous marked
+  // sent this week" was unanswerable: the fact was recorded and the moment was
+  // thrown away. The stamp is written wherever the flag is set. Rows that were
+  // already true carry no date and are counted in NO week, which the Week in
+  // Review's definition says out loud rather than quietly folding them into the
+  // first week after the deploy.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledgement_sent_at TIMESTAMPTZ`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_ack_at ON gifts (org_id, acknowledgement_sent_at) WHERE acknowledgement_sent_at IS NOT NULL`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An

@@ -89,6 +89,13 @@ export const DASHBOARDS = [
     question: "Who is carrying us?",
     blurb: "Drift's board-facing face, and the thank-yous still owed.",
     metrics: [
+      // BUILD-88a A.5 — THIS WEEK, the activity report. The same five figures
+      // the Week in Review email carries, from the same counter, so the screen
+      // and the email can never disagree. Each ROW carries its own definition
+      // (the payload puts it on the row) because five numbers under one
+      // sentence is four numbers nobody can define.
+      { key: "thisWeek", rowsAre: "count", label: "This week", kind: "breakdown",
+        definition: "What was done between Monday and today, in your organisation's timezone. The same figures the Week in Review email carries, counted the same way." },
       { key: "concentration", label: "Share of giving from the top donors", kind: "breakdown",
         definition: "How few people it takes to reach ninety per cent of this year's giving, and who they are." },
       { key: "topDonors", rowsAre: "money", label: "Who they are", kind: "breakdown",
