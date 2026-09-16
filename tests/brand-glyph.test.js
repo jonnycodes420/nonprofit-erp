@@ -63,7 +63,9 @@ ok(callSiteDiamond.length === 0,
 // 3 — The serif wordmark is present on the key public surfaces.
 for (const [file, label] of [
   ["client/src/pages/LoginPage.jsx", "sign-in"],
-  ["client/src/pages/SignupPage.jsx", "signup"],
+  // BUILD-87 F.2 — the public signup page is gone (/signup redirects to the
+  // invitation request). The wordmark assertion follows the surface.
+  ["client/src/pages/Invitation.jsx", "invitation"],
   ["client/src/pages/Pricing.jsx", "pricing"],
   ["client/src/pages/PrivacyPage.jsx", "privacy"],
   ["client/src/pages/TermsPage.jsx", "terms"],
@@ -97,7 +99,7 @@ ok(!fs.existsSync(path.join(root, "client", "src", "Login.jsx")),
 const EMERALD = /#10b981|#34d399/i;
 const publicSurfaces = [
   "client/src/pages/LoginPage.jsx",
-  "client/src/pages/SignupPage.jsx",
+  "client/src/pages/Invitation.jsx",
   "client/src/pages/ForgotPasswordPage.jsx",
   "client/src/pages/ResetPasswordPage.jsx",
   "client/src/pages/InvitePage.jsx",
@@ -118,10 +120,11 @@ ok(/background:\s*loading\s*\?\s*T\.cream3\s*:\s*T\.gold/.test(login),
   "sign-in: Sign In button background is gold");
 ok(/borderBottom:\s*`3px solid \$\{T\.gold\}`/.test(login),
   "sign-in: 'Welcome back' underline is gold");
-// (BUILD-49 reopened public signup: the "No account?" link is "Start free" →
-// /signup again, same forest-green treatment.)
-ok(/color:\s*T\.forest[^]{0,40}Start free/.test(login),
-  "sign-in: 'Start free' link is forest green");
+// (BUILD-87 F.2: Steward is invitation-only again, so the "No account?" link
+// reads "Request an invitation" → /invitation. Same forest-green treatment —
+// the colour is the contract here, not the wording.)
+ok(/color:\s*T\.forest[^]{0,60}Request an invitation/.test(login),
+  "sign-in: the 'no account' link is forest green");
 
 // 8 — The public sign-in page carries NO demo credentials (it's the front door;
 //     any demo shortcut is gated to non-production via import.meta.env.DEV).
@@ -165,7 +168,7 @@ const DARK_NAVY = /#030712|#111827|#0d1117|#1f2937|#374151|#0f172a|#1e293b|#3341
 const authBucket = [
   "client/src/pages/InvitePage.jsx",
   "client/src/pages/LoginPage.jsx",
-  "client/src/pages/SignupPage.jsx",
+  "client/src/pages/Invitation.jsx",
   "client/src/pages/ForgotPasswordPage.jsx",
   "client/src/pages/ResetPasswordPage.jsx",
 ];

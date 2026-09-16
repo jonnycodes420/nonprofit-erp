@@ -35,6 +35,10 @@ const ok = (name, cond, extra) => {
 // ── The scan surface ───────────────────────────────────────────────────────
 // Excluded, each for a stated reason:
 //   node_modules/, .git/, client/dist/, package-lock.json — not source.
+//   .claude/ — agent worktrees live there (`.claude/worktrees/agent-*`), which
+//   are whole checkouts of this repo. Walking them makes every file in the
+//   tree count two or three times and red-lights this suite on findings that
+//   are its own reflection. Added 2026-09-16 after exactly that.
 //   tests/fixtures/, audit/ — the brief's own exclusions (fixtures carry
 //     invented donor data; audit/ carries the findings that quote the
 //     placeholder in order to record that it existed).
@@ -42,7 +46,7 @@ const ok = (name, cond, extra) => {
 //     it WAS, and recorded verifier output. Editing them to satisfy a guard
 //     would falsify the record. This is an addition to the brief's exclusion
 //     list and is called out in the findings rather than made silently.
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "docs", "audit", "fixtures", ".vercel", "coverage"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", ".claude", "dist", "docs", "audit", "fixtures", ".vercel", "coverage"]);
 const TEXT_EXT = new Set([".js", ".jsx", ".mjs", ".cjs", ".json", ".html", ".css", ".md", ".sh", ".yml", ".yaml", ".txt", ".webmanifest"]);
 const SKIP_FILES = new Set(["package-lock.json"]);
 
@@ -212,7 +216,7 @@ ok("the landing footer renders copyrightLine() — the year is computed, not typ
   for (const dir of [root]) {
     const files = (function w(d, out = []) {
       for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-        if (e.isDirectory()) { if (!["node_modules", ".git", "dist", ".vercel", "coverage"].includes(e.name)) w(path.join(d, e.name), out); continue; }
+        if (e.isDirectory()) { if (!["node_modules", ".git", ".claude", "dist", ".vercel", "coverage"].includes(e.name)) w(path.join(d, e.name), out); continue; }
         if (e.name === "package-lock.json") continue;
         if (!TEXT_EXT.has(path.extname(e.name)) && path.extname(e.name) !== ".csv") continue;
         out.push(path.join(d, e.name));
