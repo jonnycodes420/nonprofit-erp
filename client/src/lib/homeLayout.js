@@ -24,16 +24,44 @@ export const HERO_ID = "hero";
 //                    which contradicted them (0 prospects beside 634)
 //   work           — split into `thread` and `retentionPipeline`
 //   retention      — folded into `retentionPipeline`, demoted
+// ── BUILD-86 — TWO SURFACES ────────────────────────────────────────────────
+// Home is hers at 7:40 in the morning. Dashboard is the board meeting.
+//
+// THE TEST FOR WHICH SURFACE A SECTION BELONGS ON: can she DO something about
+// it before her first coffee, and does it name a person? If yes it is `home`.
+// A number over a period, however true and however good, is `board` — one
+// click away, and better for being somewhere a person goes deliberately.
+//
+// `surface` is a property on this registry, which is the whole reason this
+// build is a move rather than a rebuild: the sections already existed, the
+// ordering machinery already existed (BUILD-34), and nothing below is a new
+// component.
+export const SURFACES = { HOME: "home", BOARD: "board" };
+
 export const HOME_SECTIONS = [
-  { id: "hero", label: "Fundraising goal", hideable: false },
-  { id: "setup", label: "Set up Steward", hideable: true },
-  { id: "thread", label: "The Thread", hideable: true },
-  { id: "monthly", label: "Your monthly donors", hideable: true },
-  { id: "drift", label: "Drift", hideable: true },
-  { id: "retentionPipeline", label: "Retention & pipeline", hideable: true },
-  { id: "myPortfolio", label: "My Portfolio", hideable: true },
-  { id: "impact", label: "What Steward has done", hideable: true },
+  // ── hers, at 7:40 ────────────────────────────────────────────────────────
+  { id: "setup",   label: "Set up Steward", hideable: true,  surface: "home" },
+  { id: "thread",  label: "The Thread",     hideable: false, surface: "home" },
+  { id: "drift",   label: "Drift",          hideable: true,  surface: "home" },
+  // BUILD-86 — the failing monthly gifts, WITH the donors' names on them.
+  // Split out of `retentionPipeline`, where they were a count inside a card of
+  // board metrics; a failing gift is the most actionable thing on this screen
+  // and it belongs beside the other two lists of people.
+  { id: "recurring", label: "Monthly gifts that need you", hideable: true, surface: "home" },
+
+  // ── the board's ──────────────────────────────────────────────────────────
+  { id: "hero",             label: "Fundraising goal",      hideable: false, surface: "board" },
+  { id: "retentionPipeline", label: "Retention & pipeline", hideable: true,  surface: "board" },
+  { id: "monthly",          label: "Your monthly donors",   hideable: true,  surface: "board" },
+  { id: "myPortfolio",      label: "My Portfolio",          hideable: true,  surface: "board" },
+  { id: "impact",           label: "What Steward has done", hideable: true,  surface: "board" },
 ];
+
+// The hero is not hideable on the BOARD (it is that screen's headline) and the
+// Thread is not hideable on HOME (a Home with no queue is a blank screen, the
+// same reasoning that made the hero unhideable in BUILD-34).
+export const sectionsFor = surface => HOME_SECTIONS.filter(s => s.surface === surface);
+export const surfaceOf = id => sectionMeta(id)?.surface || SURFACES.HOME;
 
 export const DEFAULT_LAYOUT = HOME_SECTIONS.map(s => ({ id: s.id, visible: true }));
 
@@ -72,15 +100,30 @@ export function mergeLayout(saved) {
 // down, top is genuinely first. Moving the hero itself always lands it first.
 // Returns the SAME array reference when the move is a no-op (already at top /
 // unknown id) — the UI uses that to decide whether to offer the button.
+// BUILD-86 — "top" NOW MEANS TOP OF ITS OWN SURFACE. One layout array holds
+// both surfaces, so a bare move-to-index-0 sent a board section above the Home
+// sections and, filtered back to the board, above the hero — breaking the
+// unhideable-hero rail on the only screen the hero is on. The move is scoped:
+// a section lands at the top of the surface it belongs to, still respecting
+// that rail. Returns the SAME array reference on a no-op, which is how the UI
+// decides whether to offer the button at all.
 export function moveToTop(layout, id) {
   if (!Array.isArray(layout)) return layout;
   const from = layout.findIndex(r => r && r.id === id);
   if (from < 0) return layout;
-  const firstVisible = layout.find(r => r && r.visible !== false);
-  const heroIsFirst = !!firstVisible && firstVisible.id === HERO_ID;
-  const to = (id !== HERO_ID && heroIsFirst)
-    ? layout.findIndex(r => r.id === HERO_ID) + 1
-    : 0;
+  const surface = surfaceOf(id);
+  const sameSurface = i => surfaceOf(layout[i]?.id) === surface;
+
+  // The first slot belonging to this surface.
+  let to = layout.findIndex((_, i) => sameSurface(i));
+  if (to < 0) return layout;
+
+  // The hero rail, applied within the board: while the hero is the first
+  // VISIBLE section of its surface, "top" for anything else means under it.
+  const firstVisibleHere = layout.find((r, i) => sameSurface(i) && r && r.visible !== false);
+  if (id !== HERO_ID && firstVisibleHere && firstVisibleHere.id === HERO_ID) {
+    to = layout.findIndex(r => r.id === HERO_ID) + 1;
+  }
   if (from === to) return layout;
   const next = [...layout];
   const [row] = next.splice(from, 1);

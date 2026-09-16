@@ -29,6 +29,12 @@ import { errorMessage } from "./lib/domainError";
 // ── Tabs ───────────────────────────────────────────────────────────────────
 const TABS=[
   {id:"dashboard",label:"Home",icon:"◈"},
+  // BUILD-86 — Home is hers at 7:40 in the morning; Dashboard is the board
+  // meeting. The `dashboard` id KEEPS its route and its "Home" label so every
+  // deep link, navigateTo("dashboard") call and the morning email's links
+  // work unchanged; the board is a new id beside it. Renaming the old one
+  // would have been ~40 call sites for no user-visible gain.
+  {id:"board",label:"Dashboard",icon:"▤"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
@@ -52,6 +58,7 @@ const BOTTOM_TABS=[
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
 const MORE_TABS=[
+  {id:"board",label:"Dashboard",icon:"▤"},
   {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
@@ -376,7 +383,7 @@ function AppShell() {
   // that never sets branding is visually identical to before.
   const orgAccent=data.org?.brandAccent||"#c9a84c";
   const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
-  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+  return <div className="app-root" style={{...BASE,background:(tab==="dashboard"||tab==="board")?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -406,8 +413,13 @@ function AppShell() {
             </button>;
           };
           const home=byId["dashboard"];
+          const board=byId["board"];
           return <>
             {home&&tabAllowed("dashboard")&&navItem(home)}
+            {/* BUILD-86 — Dashboard sits directly under Home, ungrouped: it is
+                the one click the brief promises when somebody asks for a
+                number. Putting it in Insight would have buried it. */}
+            {board&&tabAllowed("board")&&navItem(board)}
             {NAV_GROUPS.map(g=>{
               const ids=g.ids.filter(tabAllowed);
               if(!ids.length)return null;
@@ -494,13 +506,17 @@ function AppShell() {
         legacy tabs) go fluid full-width with 32px side padding so 1920px+
         displays get working room instead of dead gutters. Mobile is
         untouched — GlobalStyles' 768px rules override this with !important. */}
-    <div className="app-content" style={{flex:1,padding:tab==="dashboard"?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:tab==="dashboard"?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div className="app-content" style={{flex:1,padding:(tab==="dashboard"||tab==="board")?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:(tab==="dashboard"||tab==="board")?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {/* Per-surface crash insurance (BUILD-21 Part 2): a render error in one tab
           shows a graceful fallback in the content area — the sidebar/top bar stay
           usable and switching tabs (resetKey=tab) recovers — instead of a black
           screen. The shell itself is wrapped app-level in the App export below. */}
     <ErrorBoundary label={tab} resetKey={tab} onHome={()=>setTab("dashboard")}>
-      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly}/>}
+      {tab==="dashboard"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="home"/>}
+      {/* BUILD-86 — the same component, the other surface. One Dashboard, one
+          layout, one set of sections; `surface` decides which of them render.
+          A second component would have been two places to keep a section. */}
+      {tab==="board"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="board"/>}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}

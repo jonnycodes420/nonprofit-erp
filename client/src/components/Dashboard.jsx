@@ -2,7 +2,8 @@ import { useState, useEffect, Fragment } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
-import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop } from "../lib/homeLayout";
+import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
+import { morningSentence } from "../lib/morningSentence";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
@@ -229,7 +230,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
 }
 
 // ── Dashboard / Home ─────────────────────────────────────────────────────────
-export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
+export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="home"}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
@@ -1584,7 +1585,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             Moving the due date without saying you moved it would be the
             product quietly editing somebody's commitment. */}
         <div style={{fontSize:11,color:T.ink3,marginTop:2}}>
-          day {t.daysOpen}{t.owner?` · ${t.owner.name}`:""}
+          {/* "day 0" is not a thing anybody says. A thread planned this morning
+              against a date already past has no age yet, and its lateness is
+              already on the left; so the age appears only once there is one. */}
+          {t.daysOpen>=1?`day ${t.daysOpen}`:"planned today"}{t.owner?` · ${t.owner.name}`:""}
           {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
         </div>
       </div>
@@ -1652,14 +1656,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
             {threadsData?.more>0&&(
               <div style={{...cPad,paddingTop:10,paddingBottom:10,fontSize:11.5,color:T.ink3,borderTop:"1px solid "+T.bg3}}>
                 and {threadsData.more} more open. The {threadList.length} above are the ones that cost the most to leave.
-              </div>
-            )}
-            {/* Does the engine run? The one number that answers it: of the
-                threads closed as an outcome, how many opened the next one. */}
-            {threadHealth&&threadHealth.continuationRate!=null&&(
-              <div style={{...cPad,paddingTop:8,paddingBottom:10,fontSize:11,color:T.ink3,borderTop:"1px solid "+T.bg3}}>
-                Last 30 days · {threadHealth.closed} closed · {threadHealth.continuationRate}% led straight to the next step
-                {threadHealth.medianDaysToClose!=null?` · typically ${threadHealth.medianDaysToClose} day${threadHealth.medianDaysToClose===1?"":"s"} to close`:""}
               </div>
             )}
           <div id="dash-needtodo" style={{scrollMarginTop:64,borderTop:"1px solid "+T.bg3}}>
@@ -1774,6 +1770,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
   // BUILD-83 Part 3.1/3.4 — retention and the pipeline funnel, ONE demoted card
   // at the bottom of Home. The funnel labels itself a SUGGESTION until a human
   // has placed anybody (Part 3.5).
+  // BUILD-86 — MOVED OFF HOME. "67% led straight to the next step" is a
+  // performance measure of her, over thirty days: true, worth having, and the
+  // only one of the Thread card's three numbers she cannot act on before her
+  // first coffee. That makes it board-shaped. Home keeps the two counts that
+  // LABEL the named rows beneath them; this one goes where numbers go.
+  const threadHealthLine=(threadHealth&&threadHealth.continuationRate!=null)?(
+    <div style={{...cardWrap}}>
+      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+        <span style={sTitle}>Follow-up, last 30 days</span>
+      </div>
+      <div style={{padding:"14px 20px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
+        <strong style={{fontSize:22,fontFamily:"'DM Serif Display',serif"}}>{threadHealth.continuationRate}%</strong> of the
+        conversations you closed led straight to the next step
+        {" · "}{threadHealth.closed} closed
+        {threadHealth.medianDaysToClose!=null?` · typically ${threadHealth.medianDaysToClose} day${threadHealth.medianDaysToClose===1?"":"s"} to close`:""}
+      </div>
+    </div>
+  ):null;
+
   const retentionPipelineSection=(
       <div className="dash-main-grid" style={{display:"grid",gridTemplateColumns:"minmax(0,1fr) 320px",gap:16,alignItems:"start"}}>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1873,6 +1888,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         <div>
           {data.org?.name&&<div style={{fontSize:16,fontWeight:800,color:data.org?.brandAccent||T.ink,lineHeight:1.15,letterSpacing:"-0.01em"}}>{data.org.name}</div>}
           <div style={{fontSize:data.org?.name?12.5:15,fontWeight:data.org?.name?500:700,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+          {/* ── BUILD-86 — THE SENTENCE ────────────────────────────────────
+              What is actually waiting, assembled from the three sources that
+              already exist, in her words, before she has clicked anything. A
+              source with nothing to say contributes no clause: the sentence is
+              short because her morning is, not because a template had blanks.
+              And "Nothing is waiting on you this morning." is allowed to be
+              the whole screen. It is a good morning, not an empty state. */}
+          {surface==="home"&&!editMode&&threadsData&&(
+            <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,lineHeight:1.4,color:T.ink,marginTop:6,maxWidth:760}}>
+              {morningSentence({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk})}
+            </div>
+          )}
+          {/* The board screen says what it is and as of when, and nothing else
+              about itself. */}
+          {surface==="board"&&!editMode&&(
+            <div style={{fontSize:12.5,color:T.ink3,marginTop:4}}>
+              As of {todayStr}. Numbers a board can read.
+            </div>
+          )}
         </div>
         {/* BUILD-34 edit affordance — a quiet on-palette text button by the
             greeting, not a floating pencil. Done saves optimistically
@@ -1950,10 +1984,51 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
           }
           return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
         })();
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,retentionPipeline:retentionPipelineSection,myPortfolio:myPortfolioSection,impact:impactSection};
-        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null);
+        // ── BUILD-86 — THE FAILING MONTHLY GIFTS, WITH NAMES ────────────
+        // These were a COUNT inside the retention/pipeline card, next to a
+        // retention rate and a funnel. A failing gift is the most actionable
+        // thing on this screen and the least like a board metric, so it is its
+        // own row group beside the other two lists of people. Every row is a
+        // person, an amount, how long it has been failing, and one action.
+        const atRisk=recurringHealth?.atRisk||[];
+        const recurringSection=atRisk.length>0?(
+          <div style={{...cardWrap}}>
+            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+              <span style={sTitle}>Monthly gifts that need you</span>
+              <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
+            </div>
+            <ul style={{listStyle:"none",margin:0,padding:0}}>
+              {atRisk.map((r,i)=>{
+                const days=r.first_failed_at?Math.max(0,Math.floor((Date.now()-new Date(r.first_failed_at).getTime())/86400000)):null;
+                return(
+                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.terracotta,
+                                         borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
+                    <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
+                      onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
+                      <div style={{fontSize:11.5,color:T.terra700,marginTop:3,fontWeight:600}}>
+                        {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
+                        {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
+                      </div>
+                    </a>
+                    <button onClick={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
+                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                      Open
+                    </button>
+                  </li>);
+              })}
+            </ul>
+          </div>
+        ):null;
+
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
+        // stay a single per-user list (so BUILD-34's merge rule, its
+        // stale-config guarantee and move-to-top all keep working untouched);
+        // the surface is a filter over it at render time.
+        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null&&surfaceOf(r.id)===surface);
         const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
-        const hiddenRows=layout.filter(r=>!r.visible);
+        const hiddenRows=layout.filter(r=>!r.visible&&surfaceOf(r.id)===surface);
         return(<>
           {rendered.map((row,idx)=>{
             const content=sections[row.id];

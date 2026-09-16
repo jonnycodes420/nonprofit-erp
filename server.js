@@ -9698,7 +9698,13 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
                   // The day this was first promised, when a revisit has moved
                   // the due date since. Null on a thread nobody deferred.
                   originalDue: t.original_due_date || null },
-      overdue: t.due_date < today, daysOpen, openedOn: t.opened_on,
+      overdue: t.due_date < today,
+      // BUILD-86 — HOW LATE, computed ONCE, server-side, on the civil calendar.
+      // The morning sentence was deriving it from Date.now() against the due
+      // date and landing a day off the row's own "Overdue 23 days" — two
+      // numbers for one fact, on one screen. There is one now and both read it.
+      overdueDays: t.due_date < today ? (orgTime.daysBetween(t.due_date, today) ?? 0) : 0,
+      daysOpen, openedOn: t.opened_on,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
@@ -19195,6 +19201,21 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
     // Part 5.4 — rows with no email are excluded from a reconnect send and said
     // so on screen, never silently dropped from the count.
     stoppedWithoutEmail: facts.stoppedWithoutEmail,
+    // ── BUILD-86 — NAMES, not just a count ───────────────────────────────
+    // Home's rule is that no row is a number without a name attached, and
+    // "3 monthly gifts are failing" was exactly that. These are the same
+    // subscriptions atRiskCount already counts, with the donor on them and a
+    // cap, so Home can render a person to call instead of a figure to worry
+    // about. Not a new metric: a count that finally says who.
+    atRisk: await query(
+      `SELECT rs.id, rs.donor_id, d.name AS donor_name, rs.amount, rs.interval,
+              rs.status, rs.first_failed_at
+         FROM recurring_subscriptions rs
+         JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id
+        WHERE rs.org_id = ? AND d.deleted_at IS NULL
+          AND rs.status IN ('past_due','recovering')
+        ORDER BY rs.first_failed_at ASC NULLS LAST, rs.amount DESC
+        LIMIT 6`, [orgId]),
   });
 }));
 

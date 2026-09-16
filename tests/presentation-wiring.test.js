@@ -166,17 +166,32 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
       ok(`${label} Home: ProductMark renders the literal "Drift"`, marks.includes("Drift"), marks);
       ok(`${label} Home: no naggy language ("keeps asking" / "until you've done it")`,
          !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
+      // BUILD-86 — REVIEWED CHANGE. The goal hero MOVED to the board surface:
+      // it is a percentage and a dollar figure, which is exactly what Home
+      // stopped carrying. The assertion follows it rather than being deleted —
+      // the number still has to equal the API on the screen it now lives on.
+      // goTab, not nav: on mobile the board is in the More drawer.
+      await goTab("Dashboard");
+      await page.waitForTimeout(1100);
+      const boardText = await bodyText();
+      ok(`${label}: the board is reachable and says what it is`,
+         /Numbers a board can read/.test(boardText), boardText.slice(0, 160));
       if (A.rollup && A.rollup.totalGoal > 0) {
         const pct = Math.round((A.rollup.rawPercent ?? A.rollup.percent) || 0);
-        ok(`${label} Home hero: rollup % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(text), text.match(/\d+\s*%/g));
-        ok(`${label} Home hero: rollup raised (${fmtFull(A.rollup.totalRaised)}) rendered`,
-          rendersMoney(text, A.rollup.totalRaised), (text.match(/\$[\d,.]+k?/g) || []).slice(0, 6));
+        ok(`${label} board hero: rollup % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(boardText), boardText.match(/\d+\s*%/g));
+        ok(`${label} board hero: rollup raised (${fmtFull(A.rollup.totalRaised)}) rendered`,
+          rendersMoney(boardText, A.rollup.totalRaised), (boardText.match(/\$[\d,.]+k?/g) || []).slice(0, 6));
       } else if (A.goalActive && A.goalActive.goal_amount) {
         const pct = Math.round(A.goalActive.rawPercent ?? A.goalActive.percent ?? 0);
-        ok(`${label} Home hero: single-goal % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(text), text.match(/\d+\s*%/g));
+        ok(`${label} board hero: single-goal % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(boardText), boardText.match(/\d+\s*%/g));
       } else {
-        ok(`${label} Home hero: no goal (API) → no thermometer % claimed`, true);
+        ok(`${label} board hero: no goal (API) → no thermometer % claimed`, true);
       }
+      // And the rule that sent it there: Home carries no goal percentage.
+      ok(`${label} Home: the goal thermometer is NOT on her morning screen`,
+         !/of goal reached|Set a goal/i.test(text), (text.match(/of goal reached|Set a goal/gi) || []));
+      await goTab("Home");
+      await page.waitForTimeout(900);
       // ── BUILD-83 Part 3.1/3.4 — ONE NUMBER, ONE CODE PATH ────────────────
       // The four tiles (Portfolio / Tasks / Need to do / Pipeline) are GONE:
       // their contents live in the cards above or in the checklist, and they

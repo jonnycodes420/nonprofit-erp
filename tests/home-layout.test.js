@@ -96,11 +96,19 @@ async function seedUser(o, id, tag) {
   ok("after reset, GET → null again", r.status === 200 && r.body.layout === null, r.body);
 
   // ── The client merge rule (the canonical list + stale-config guarantee) ──
-  const { mergeLayout, DEFAULT_LAYOUT, HOME_SECTIONS, isDefaultLayout, sectionMeta, moveToTop } =
+  const { mergeLayout, DEFAULT_LAYOUT, HOME_SECTIONS, isDefaultLayout, sectionMeta, moveToTop, surfaceOf } =
     await import("../client/src/lib/homeLayout.js");
 
-  ok("canonical list has the hero first and 8 sections (setup added by BUILD-35)", HOME_SECTIONS.length === 8 && HOME_SECTIONS[0].id === "hero" && HOME_SECTIONS[1].id === "setup", HOME_SECTIONS.map(s => s.id));
-  ok("hero is the ONLY unhideable section", HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id).join(",") === "hero");
+  // BUILD-86 — REVIEWED CHANGE. The list is now TWO SURFACES in one array:
+  // Home's sections first (hers at 7:40), the board's after. The hero is no
+  // longer first because it is no longer on Home — it is the BOARD's headline,
+  // and `thread` is Home's. Both are unhideable for the same reason the hero
+  // always was: neither screen may be blank.
+  ok("canonical list is Home's sections then the board's, 9 in total",
+     HOME_SECTIONS.length === 9 && HOME_SECTIONS[0].id === "setup" && HOME_SECTIONS[1].id === "thread",
+     HOME_SECTIONS.map(s => s.id));
+  ok("each surface's headline is unhideable — Home cannot be blank, nor can the board",
+     HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id).sort().join(",") === "hero,thread");
 
   const m0 = mergeLayout(null);
   ok("merge(null) = the full default, everything visible", m0.length === DEFAULT_LAYOUT.length && m0.every(x => x.visible) && isDefaultLayout(m0));
@@ -123,7 +131,7 @@ async function seedUser(o, id, tag) {
   ok("merge keeps the user's order for known ids", m1.slice(0, 3).map(x => x.id).join(",") === "drift,hero,myPortfolio", m1);
   ok("merge drops retired/unknown ids", !m1.some(x => ["retiredSection", "work", "commandCenter", "goalCards", "retention"].includes(x.id)), m1.map(x => x.id));
   ok("NEW section ids appear for a stale config, visible, in canonical order",
-     m1.slice(3).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,thread:true,monthly:true,retentionPipeline:true,impact:true", m1);
+     m1.slice(3).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,thread:true,recurring:true,retentionPipeline:true,monthly:true,impact:true", m1);
   ok("merge preserves saved hidden flags", m1.find(x => x.id === "myPortfolio").visible === false);
   ok("merged stale config is a full layout", m1.length === DEFAULT_LAYOUT.length);
 
@@ -138,9 +146,18 @@ async function seedUser(o, id, tag) {
   // Hero rail: while the hero is the first VISIBLE section, "top" for any
   // other section means directly under the hero; hero moved down → genuinely
   // first. A no-op returns the SAME reference (the UI hides the button on it).
-  const heroFirst = mergeLayout(null); // hero, goalCards, commandCenter, ...
+  // BUILD-86 — "top" means the top of the section's OWN SURFACE. One array
+  // holds both, so a bare move-to-index-0 sent a board section above the Home
+  // sections and, filtered back, above the hero — breaking the rail on the one
+  // screen the hero is on. The rail itself is unchanged, just scoped.
+  const heroFirst = mergeLayout(null);
   const t1 = moveToTop(heroFirst, "impact");
-  ok("hero first → moved section lands directly UNDER the hero", t1.map(x => x.id).slice(0, 2).join(",") === "hero,impact", t1.map(x => x.id));
+  const boardOrder = t1.filter(x => surfaceOf(x.id) === "board").map(x => x.id);
+  ok("hero first on its surface → moved board section lands directly UNDER the hero",
+     boardOrder.slice(0, 2).join(",") === "hero,impact", boardOrder);
+  const homeMoved = moveToTop(heroFirst, "drift").filter(x => surfaceOf(x.id) === "home").map(x => x.id);
+  ok("a HOME section moves to the top of Home, not above the whole list",
+     homeMoved[0] === "drift", homeMoved);
   ok("moveToTop keeps every section exactly once", t1.length === DEFAULT_LAYOUT.length && new Set(t1.map(x => x.id)).size === t1.length);
   const t2 = moveToTop(t1, "impact");
   ok("already at top → no-op returns the same reference", t2 === t1);
@@ -150,9 +167,15 @@ async function seedUser(o, id, tag) {
     { id: "drift", visible: true }, { id: "monthly", visible: true }, { id: "hero", visible: true },
   ]);
   const t3 = moveToTop(heroDown, "impact");
-  ok("hero moved down → moved section goes GENUINELY first", t3[0].id === "impact" && t3.map(x => x.id).indexOf("hero") > 0, t3.map(x => x.id));
+  // BUILD-86 — "first" is first ON ITS SURFACE. `drift` is a Home section and
+  // legitimately sits above every board row in the shared array; what the rail
+  // guarantees is the order the BOARD renders.
+  const t3b = t3.filter(x => surfaceOf(x.id) === "board").map(x => x.id);
+  ok("hero moved down → moved section goes GENUINELY first on its surface",
+     t3b[0] === "impact" && t3b.indexOf("hero") > 0, t3b);
   const t4 = moveToTop(heroDown, "hero");
-  ok("hero itself moves to genuinely first", t4[0].id === "hero", t4.map(x => x.id));
+  ok("hero itself moves to genuinely first on its surface",
+     t4.filter(x => surfaceOf(x.id) === "board")[0].id === "hero", t4.map(x => x.id));
 
   // A hidden section sitting above the hero in the ARRAY doesn't break the
   // rail — "first" means first VISIBLE.
