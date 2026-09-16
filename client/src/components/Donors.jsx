@@ -668,7 +668,7 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 // is why Retention Rate, Stewardship Debt, and Gifts YTD render blank
 // immediately after onboarding for every org that isn't shown the OTHER
 // import button, buried in the regular Donors tab, after the fact.
-export function DonorImport({ onClose, onImported, withHistory = false, org = null }) {
+export function DonorImport({ onClose, onImported, withHistory = false, org = null, onOpenHome = null }) {
   // The org's civil today, for the future-date test (BUILD-72's rule).
   const orgToday = orgCivilToday(org?.timezone);
   const [csvText,    setCsvText]    = useState("");
@@ -2053,6 +2053,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         {/* ── BUILD-82: a workbook is ONE import (all xlsx land here) ── */}
         {workbook && (
           <WorkbookImport workbook={workbook} fileName={srcFile?.name}
+            vocabulary={org?.vocabulary} onOpenHome={onOpenHome}
             onClose={()=>{setWorkbook(null);setSrcFile(null);setErr("");}}
             onImported={onImported} />
         )}
@@ -2720,7 +2721,7 @@ function autoDetectWideConfig(headers, rows) {
 // fixture suite drives the REAL auto-mapping, not a copy.
 
 // ── GiftHistoryImport ──────────────────────────────────────────────────────
-function GiftHistoryImport({ donors, onClose, onImported }) {
+function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome = null }) {
   const [step, setStep]             = useState("upload");
   const [csvText, setCsvText]       = useState("");
   const [srcFile, setSrcFile]       = useState(null); // the uploaded File (name/size for the file tile)
@@ -2973,6 +2974,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
             only an ID column links to existing donors by Donor ID */}
         {workbook && (
           <WorkbookImport workbook={workbook} fileName={srcFile?.name}
+            vocabulary={org?.vocabulary} onOpenHome={onOpenHome}
             onClose={()=>{setWorkbook(null);setSrcFile(null);setErr("");}}
             onImported={onImported} />
         )}
@@ -6886,15 +6888,15 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
-      {showImport&&<DonorImport org={data.org} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
-      {showGiftImport&&<GiftHistoryImport donors={data.donors} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
+      {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
+      {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
           MAGICAL import (DonorImport withHistory: shape detection + the
           "Import both" two-sheet CTA). The legacy CombinedImport, whose
           multi-sheet picker forced ONE sheet, is retired — a pilot following
           the recommended path gets the good path. */}
-      {showCombinedImport&&<DonorImport withHistory org={data.org} onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
+      {showCombinedImport&&<DonorImport withHistory org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {convoPickerOpen&&(
