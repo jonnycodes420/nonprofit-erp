@@ -475,6 +475,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [funds, setFunds] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  const [budgetErr, setBudgetErr] = useState("");
   const [summary, setSummary] = useState(null);
   const [txnYear, setTxnYear] = useState(new Date().getFullYear());
   const [budgetYear, setBudgetYear] = useState(new Date().getFullYear());
@@ -676,11 +677,29 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     } catch(e) { console.error(e); }
   };
 
-  const handleBudgetChange = async (accountId, amount) => {
+  // BUILD-88a A.3 — a budget line is (account, FUND, year, amount), and all
+  // four are editable. Re-reading after the write is what keeps the actual and
+  // the variance honest: a fund change moves which money the line is compared
+  // against, and a local patch would have shown the old comparison.
+  const handleBudgetChange = async (accountId, amount, fundId = null) => {
     try {
-      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId, year: budgetYear, amount }) });
-      setBudgets(prev => prev.map(b => b.accountId === accountId ? { ...b, budget: parseFloat(amount) || 0, variance: (parseFloat(amount)||0) - b.actual } : b));
-    } catch(e) { console.error(e); }
+      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId, year: budgetYear, amount, fundId: fundId || null }) });
+      await reloadBudgets(budgetYear);
+    } catch(e) { setBudgetErr(errorMessage(e, "That budget could not be saved.")); }
+  };
+  const handleBudgetFund = async (row, fundId) => {
+    try {
+      // Write the new line first, then remove the one it left: a budget that
+      // vanishes between two requests is worse than one that briefly exists twice.
+      await apiFetch("/finance/budgets", { method:"POST", body: JSON.stringify({ accountId: row.accountId, year: budgetYear, amount: row.budget, fundId: fundId || null }) });
+      if (row.id) await apiFetch(`/finance/budgets/${row.id}`, { method:"DELETE" });
+      await reloadBudgets(budgetYear);
+    } catch(e) { setBudgetErr(errorMessage(e, "That budget could not be moved.")); }
+  };
+  const handleBudgetDelete = async (row) => {
+    if (!row.id) return;
+    try { await apiFetch(`/finance/budgets/${row.id}`, { method:"DELETE" }); await reloadBudgets(budgetYear); }
+    catch(e) { setBudgetErr(errorMessage(e, "That budget could not be removed.")); }
   };
 
   const getFundSparkline = (fundId) => {
@@ -1057,8 +1076,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
           <select value={budgetYear} onChange={e => { const yr = parseInt(e.target.value); setBudgetYear(yr); reloadBudgets(yr); }} style={{ ...inp, width:90, cursor:"pointer" }}>
             {[2023,2024,2025,2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
-          {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline.</span>}
+          {!isReadOnly && <span style={{ fontSize:12, color:T.ink3, marginLeft:4 }}>Click any budget cell to edit inline. A budget can name a fund; leave it on "Whole account" for the whole column.</span>}
         </div>
+        {budgetErr && <div role="alert" style={{ fontSize:12.5, color:T.terra700 }}>{budgetErr}</div>}
         {budgets.length === 0 && (
           <Card><EmptyState title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts. Add a few revenue and expense accounts under the Accounts tab and they'll appear here to budget against."/></Card>
         )}
@@ -1076,6 +1096,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <thead>
                   <tr style={{ background:T.greenMid }}>
                     <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
                     <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
@@ -1090,15 +1111,27 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     const projected = monthsElapsed > 0 && b.actual > 0 ? Math.round((b.actual / monthsElapsed) * 12) : b.actual;
                     const overProj = section === "expense" && b.budget > 0 && projected > b.budget;
                     return (
-                      <tr key={b.accountId} style={{ borderTop:"1px solid "+T.bg3 }}>
+                      <tr key={b.id || b.accountId} data-budget-row={b.accountId} style={{ borderTop:"1px solid "+T.bg3 }}>
                         <td style={{ padding:"10px 12px" }}>
                           <span style={{ fontSize:11, color:T.ink3, marginRight:8 }}>{b.accountCode}</span>
                           <span style={{ fontWeight:600, color:T.ink }}>{b.accountName}</span>
                         </td>
+                        {/* A.3 — WHICH FUND this line commits. Blank is the whole
+                            account, which is every budget written before today. */}
+                        <td style={{ padding:"10px 12px" }}>
+                          {isReadOnly
+                            ? <span style={{ color:T.ink3 }}>{b.fundName || "Whole account"}</span>
+                            : <select value={b.fundId || ""} aria-label="Fund" data-testid="budget-fund"
+                                onChange={e => handleBudgetFund(b, e.target.value)}
+                                style={{ ...inp, width:170, cursor:"pointer" }}>
+                                <option value="">Whole account</option>
+                                {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                              </select>}
+                        </td>
                         <td style={{ padding:"10px 12px", textAlign:"right" }}>
                           {isReadOnly
                             ? <span style={{ fontWeight:600, color:T.ink }}>{fmtFull(b.budget)}</span>
-                            : <BudgetInput value={b.budget} onSave={val => handleBudgetChange(b.accountId, val)}/>}
+                            : <BudgetInput value={b.budget} onSave={val => handleBudgetChange(b.accountId, val, b.fundId)}/>}
                         </td>
                         <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:600, color:T.ink }}>
                           <div>{fmtFull(b.actual)}</div>
@@ -1123,6 +1156,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <tfoot>
                   <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
                     <td style={{ padding:"10px 12px", fontWeight:700, fontSize:12 }}>Total</td>
+                    <td/>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totBudget)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700 }}>{fmtFull(totActual)}</td>
                     <td style={{ padding:"10px 12px", textAlign:"right", fontWeight:700, color:totVar>=0?IN:OUT }}>{totVar>=0?"+":""}{fmtFull(totVar)}</td>

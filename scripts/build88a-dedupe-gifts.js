@@ -23,6 +23,10 @@
 // A dry run prints exactly what an --apply would delete. Run it first, read it,
 // and only then apply: a deleted gift is money off a donor's record.
 
+// A DELETING script. It resolves its target through the ONE guard, so a remote
+// database needs --i-know-this-is-prod on top of DATABASE_URL (BUILD-55), and
+// there is no BASE override to find.
+require("./lib/prodGuard").writerDbUrl();
 const { query, run } = require("../db");
 
 const args = process.argv.slice(2);

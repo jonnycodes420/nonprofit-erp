@@ -96,8 +96,17 @@ ok(has(app, 'navigateTo("settings")'), "Settings stays pinned at the bottom (its
 // sidebar has no Donor Portal item; a portal-tier org's still does).
 ok(/const CRM_HIDDEN_TABS\s*=\s*new Set\(\["portal"\]\)/.test(app),
    "CRM_HIDDEN_TABS hides the Donor Portal tab from the CRM's navigation");
-ok(has(app, 'tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id):!CRM_HIDDEN_TABS.has(id)'),
-   "…and tabAllowed is the ONE place the CRM rule and the portal-tier rule meet");
+// BUILD-88a A.3 — tabAllowed gained a third clause (the CORE plan's hidden
+// tabs: Finance). It is still the ONE place every navigation rule meets, which
+// is what this line is actually guarding.
+ok(has(app, 'tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id)')
+   && has(app, '(isCoreTier&&CORE_HIDDEN_TABS.has(id))?false')
+   && has(app, ':!CRM_HIDDEN_TABS.has(id);'),
+   "…and tabAllowed is the ONE place the CRM rule, the Core rule and the portal-tier rule meet");
+ok(/const CORE_HIDDEN_TABS\s*=\s*new Set\(\["finance"\]\)/.test(app),
+   "Finance is behind the Team flag — Cowork's recommendation, one line to overturn (BUILD-88a A.3)");
+ok(has(app, 'if(planTierOf(billing)==="core"&&CORE_HIDDEN_TABS.has(t))t="dashboard"'),
+   "…and a Core org cannot deep-link to it either");
 ok(/PORTAL_TIER_TABS\s*=\s*new Set\(\["donors","portal","settings"\]\)/.test(app),
    "a portal-tier org KEEPS the tab — its entire product is that surface");
 ok(has(app, 'CRM_HIDDEN_TABS.has(t))t="dashboard"'),
@@ -136,11 +145,15 @@ const lm = (donors.match(/const lockMajor=\([\s\S]*?\n  \);/) || [""])[0];
 ok(/const lockMajor=/.test(donors), "DonorProfile defines lockMajor (the Core/Team split wrapper)");
 ok(/isTeam\?children:/.test(lm), "lockMajor passes children through for Team, wraps only for Core (writes stay server-gated)");
 ok(/<LockedFeature/.test(lm), "lockMajor wraps the Core preview in the shared LockedFeature");
-ok((donors.match(/lockMajor\(/g) || []).length >= 3, "lockMajor is applied to the major-gifts panels (moves & asks, sequences, and the stage/wealth/actions rail)");
+ok((donors.match(/lockMajor\(/g) || []).length >= 2, "lockMajor is applied to the major-gifts panels (moves & asks, and the stage/wealth/actions rail)");
 // The major-gifts panels are the ones locked
 ok(/Pipeline: Moves & Asks[\s\S]{0,300}lockMajor\(/.test(donors), "the Pipeline moves & asks panel is wrapped in lockMajor");
 ok(/Major-gifts rail[\s\S]{0,400}lockMajor\(<>/.test(donors), "the Suggested Move / Move Stage / Wealth / Suggested Actions rail is locked as ONE preview");
-ok(/sequences\.length>0&&lockMajor\(/.test(donors), "the Sequences enroll panel is locked for Core");
+// BUILD-88a A.4 — sequences are ABSENT on Core, not a frosted preview. A Core
+// org has no sequences to enrol anybody in, and a padlock over an empty panel
+// is an advertisement rather than a feature.
+ok(/isTeam&&sequences\.length>0&&\(<div/.test(donors), "the Sequences enroll panel renders ONLY with the Team flag");
+ok(/isTeam&&<div data-testid="dp-move-stage"/.test(donors), "…and so does the Move Stage strip (BUILD-88a A.4)");
 // Reassign (owner display stays; the write control is Team)
 ok(/isAdmin&&isTeam&&<button onClick=\{\(\)=>setShowReassign/.test(donors), "the Reassign control is Team-gated (owner shown read-only for Core)");
 ok(/showReassign&&isAdmin&&isTeam&&/.test(donors), "the Reassign form is Team-gated too");

@@ -89,6 +89,30 @@ const PRIMARY_NAV=["dashboard","board","donors","fundraising","reports"];
 const MORE_NAV=["pipeline","grants","communications","tasks","workflows","finance","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 const TEAM_GATED=new Set(["pipeline"]);
+// BUILD-88a A.3 — FINANCE IS BEHIND THE TEAM FLAG. Cowork's recommendation,
+// and Jonathan's to overturn in one line by emptying this set: a ledger, a
+// chart of accounts and a budget are a bookkeeper's tools, and a one-person
+// shop that opens Finance meets an empty set of books it did not ask for and
+// cannot fill. Unlike the Pipeline this is not a locked PREVIEW — there is
+// nothing of the org's own to show behind glass, and an empty ledger under a
+// padlock is an advertisement, not a feature (BUILD-87's rule about showing
+// somebody a screen that is not for them). No customer is on Core with books
+// today, so nothing is taken away from anyone.
+const CORE_HIDDEN_TABS=new Set(["finance"]);
+// The tier rule, as a module-level function rather than a value computed
+// halfway down the component: `navigateTo` is declared above it and needs it,
+// and a `const` read from a closure that could run first is a TDZ crash
+// waiting for the right click. (BUILD-88a A.3 introduced exactly that and the
+// A.4 browser suite caught it on the next run.) Defaults to team while billing
+// is unknown, so no lock ever flashes before the plan loads.
+function planTierOf(billing){
+  if(!billing)return "team";
+  if(billing.planTier)return billing.planTier;
+  const p=billing.plan;
+  if(p==="team"||p==="growth"||p==="impact")return "team";
+  if(billing.subscriptionStatus==="trialing")return "team";
+  return "core";
+}
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
@@ -175,6 +199,10 @@ function AppShell() {
     // …and the mirror of it: a CRM org cannot navigate to a tab hidden from
     // the CRM, however it got asked to (a stale deep link, an older card).
     else if(data?.org?.plan!=="portal"&&CRM_HIDDEN_TABS.has(t))t="dashboard";
+    // BUILD-88a A.3 — and the same mirror for a tab this PLAN does not have: a
+    // deep link to Finance from a Core org lands on Home, never on a screen
+    // whose nav entry it cannot see.
+    if(planTierOf(billing)==="core"&&CORE_HIDDEN_TABS.has(t))t="dashboard";
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -329,7 +357,7 @@ function AppShell() {
   // orgPlanTier: Team = team/growth/impact OR a live trial; everything else
   // (core/seed/founding/lapsed) = Core. Defaults to team while billing is
   // unknown so we never flash a lock before the plan loads.
-  const planTier=(()=>{ if(!billing)return "team"; if(billing.planTier)return billing.planTier; const p=billing.plan; if(p==="team"||p==="growth"||p==="impact")return "team"; if(subStatus==="trialing")return "team"; return "core"; })();
+  const planTier=planTierOf(billing);
   const isCoreTier=planTier==="core";
   // BUILD-58 W-2 — the portal-tier shell. Derived from /org (synchronous with
   // the data load, no billing-fetch flash). tabAllowed filters every nav
@@ -337,7 +365,9 @@ function AppShell() {
   const isPortalTier=data.org?.plan==="portal";
   // A portal-tier org sees ONLY its own surfaces; every other org sees the CRM
   // minus whatever is hidden from it.
-  const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id):!CRM_HIDDEN_TABS.has(id);
+  const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id)
+    :(isCoreTier&&CORE_HIDDEN_TABS.has(id))?false
+    :!CRM_HIDDEN_TABS.has(id);
   const bottomTabs=isPortalTier
     ?[BOTTOM_TABS.find(t=>t.id==="donors"),MORE_TABS.find(t=>t.id==="portal"),BOTTOM_TABS.find(t=>t.id==="settings")].filter(Boolean)
     :BOTTOM_TABS;

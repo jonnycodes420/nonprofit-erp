@@ -97,7 +97,7 @@ async function seed(org, slug, plan) {
 
   const openProfile = async (auth, org) => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1600 } });
-    page.on("pageerror", e => { if (!/Unexpected token '<'/.test(e.message)) console.log("  [pageerror]", e.message.slice(0, 160)); });
+    page.on("pageerror", e => { if (!/Unexpected token '<'/.test(e.message)) console.log("  [pageerror]", e.message.slice(0, 300)); });
     await page.addInitScript(([t, u, o]) => {
       localStorage.setItem("npe_token", t); localStorage.setItem("npe_user", u); localStorage.setItem("npe_org", o);
     }, [auth.token, JSON.stringify(auth.user), JSON.stringify(auth.org)]);
@@ -107,7 +107,6 @@ async function seed(org, slug, plan) {
   };
 
   const page = await openProfile(loginT.body, ORG_TEAM);
-
   // ── §1 · one emerald primary ─────────────────────────────────────────────
   console.log("\n— §1 · one emerald primary in the header —");
   const header = await page.$eval(".dph-actions", el => {

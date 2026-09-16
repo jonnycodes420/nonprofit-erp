@@ -54,6 +54,10 @@ const GUARDED_WRITERS = [
   "seed-fundraising-demo",
   "build59-capture", "build59-install-demo-images",
   "build64-capture",
+  // BUILD-88a A.1 — the gift de-duplicator. DELETES rows, so it is a writer:
+  // dry run by default, --apply to act, and the guard is the only way it can
+  // reach a remote database.
+  "build88a-dedupe-gifts",
 ];
 
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter

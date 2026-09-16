@@ -218,6 +218,7 @@ function bResolver(routePath, param) {
   if (routePath.startsWith("/finance/accounts")) return `acct_${B}`;
   if (routePath.startsWith("/finance/funds")) return `fnd_${B}`;
   if (routePath.startsWith("/finance/transactions")) return `ft_${B}`;
+  if (routePath.startsWith("/finance/budgets")) return `bg_${B}`;   // BUILD-88a A.3
   return bySeg[seg1] || null;
 }
 

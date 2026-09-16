@@ -12302,8 +12302,36 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
     const pace = computeFundraisingPace(currentAmount, goalAmount, gr.period_start, gr.period_end);
     goal = {
       id: gr.id, label: gr.label, goalType: gr.goal_type, goalAmount, currentAmount,
-      periodStart: gr.period_start, periodEnd: gr.period_end, ...pace,
+      periodStart: gr.period_start, periodEnd: gr.period_end, source: "goal", ...pace,
     };
+  }
+
+  // ── BUILD-88a A.3 — FINANCE FEEDS FUNDRAISING ─────────────────────────────
+  // An org that budgets $200,000 of contributions for the year HAS a $200,000
+  // fundraising goal. It was typing that number twice — once into Finance and
+  // once into a fundraising goal — which is how two screens come to disagree
+  // about the same commitment. With no goal of its own set, the card reads the
+  // year's CONTRIBUTIONS BUDGET, says where the figure came from, and moves the
+  // moment an admin edits the budget. An explicit goal still wins: a goal
+  // somebody set on purpose outranks one Steward inferred.
+  if (!goal) {
+    const fyLabel = Number(String(cur.end).slice(0, 4));
+    const [bud] = await query(
+      `SELECT COALESCE(SUM(b.amount),0) AS v FROM budgets b
+         JOIN accounts a ON a.id = b.account_id AND a.org_id = b.org_id
+        WHERE b.org_id = ? AND b.year = ? AND a.type = 'revenue' AND a.subtype = 'contributions'`,
+      [orgId, yearMode === "fiscal" ? fyLabel : Number(String(cur.start).slice(0, 4))]);
+    const budgeted = parseFloat(bud?.v) || 0;
+    if (budgeted > 0) {
+      const pace = computeFundraisingPace((parseFloat(curRows[0]?.total) || 0), budgeted, cur.start, cur.end);
+      goal = {
+        id: null, label: `Contributions budget, ${yearMode === "fiscal" ? `FY${fyLabel}` : fyLabel}`,
+        goalType: "budget", goalAmount: budgeted, currentAmount: (parseFloat(curRows[0]?.total) || 0),
+        periodStart: cur.start, periodEnd: cur.end, source: "budget",
+        sourceNote: "From your Finance budget for contributions this year. Set a fundraising goal to use a different number.",
+        ...pace,
+      };
+    }
   }
 
   const periodTotal = parseFloat(curRows[0]?.total) || 0;
@@ -13891,36 +13919,81 @@ app.delete("/finance/transactions/:id", requireAuth, requireAdmin, wrap(async (r
 }));
 
 // ── Finance: Budgets ───────────────────────────────────────────────────────
+// ── BUILD-88a A.3 — THE BUDGET WINDOW, IN ONE PLACE ───────────────────────
+// A budget year is the ORG's year. `basis` says which kind — the same
+// fiscal/calendar switch the rest of Finance already carries — and the bounds
+// come from the one seam rather than from `${year}-01-01` string arithmetic,
+// which was a calendar year wearing a fiscal year's label on a screen that has
+// a fiscal toggle at the top of it.
+function budgetYearBounds(year, basis, org) {
+  if (basis === "fiscal") {
+    // The org's fiscal year LABELLED `year`: BUILD-12's July 1 boundary, so FY
+    // 2027 runs 2026-07-01 to 2027-06-30 — the year it ENDS in, which is what
+    // a board calls it.
+    const fy = orgTime.orgPeriodBounds(org || {}, "fiscal_year", 0);
+    const curLabel = Number(String(fy.end).slice(0, 4));
+    const shift = year - curLabel;
+    const b = orgTime.orgPeriodBounds(org || {}, "fiscal_year", shift);
+    return { start: b.start, end: b.end };
+  }
+  return { start: `${year}-01-01`, end: `${year}-12-31` };
+}
+
 app.get("/finance/budgets", requireAuth, wrap(async (req, res) => {
-  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const _bTz = await orgTz(req.user.orgId);                       // ORG_TZ_SEAM_OK
+  const basis = req.query.basis === "fiscal" ? "fiscal" : "calendar";
+  const year = parseInt(req.query.year) || Number(orgToday(_bTz).slice(0, 4));
+  const bounds = budgetYearBounds(year, basis, _bTz);
   const accounts = await query(
     "SELECT * FROM accounts WHERE org_id = ? AND active = TRUE AND type IN ('revenue','expense') ORDER BY code ASC",
     [req.user.orgId]
   );
   const budgets = await query(
-    "SELECT * FROM budgets WHERE org_id = ? AND year = ?",
+    `SELECT b.*, f.name AS fund_name FROM budgets b
+       LEFT JOIN fin_funds f ON f.id = b.fund_id AND f.org_id = b.org_id
+      WHERE b.org_id = ? AND b.year = ?
+      ORDER BY b.account_id, f.name NULLS FIRST`,
     [req.user.orgId, year]
   );
+  // A.3 — actuals are grouped BY FUND too, so a per-fund budget is compared
+  // against the money that actually landed in that fund rather than against
+  // the account's whole column.
   const actuals = await query(
-    `SELECT account_id, type, SUM(amount) as total
+    `SELECT account_id, fund_id, SUM(amount) as total
      FROM fin_transactions
      WHERE org_id = ? AND date >= ? AND date <= ?
-     GROUP BY account_id, type`,
-    [req.user.orgId, `${year}-01-01`, `${year}-12-31`]
+     GROUP BY account_id, fund_id`,
+    [req.user.orgId, bounds.start, bounds.end]
   );
-  const budgetMap = Object.fromEntries(budgets.map(b => [b.account_id, parseFloat(b.amount)]));
-  const actualMap = Object.fromEntries(actuals.map(a => [a.account_id, parseFloat(a.total)]));
-
-  res.json(accounts.map(a => ({
-    accountId:   a.id,
-    accountCode: a.code,
-    accountName: a.name,
-    accountType: a.type,
-    subtype:     a.subtype,
-    budget:      budgetMap[a.id] || 0,
-    actual:      actualMap[a.id] || 0,
-    variance:    (budgetMap[a.id] || 0) - (actualMap[a.id] || 0),
-  })));
+  const actualByAccount = {}, actualByAccountFund = {};
+  for (const a of actuals) {
+    actualByAccount[a.account_id] = (actualByAccount[a.account_id] || 0) + parseFloat(a.total);
+    actualByAccountFund[`${a.account_id}|${a.fund_id || ""}`] = parseFloat(a.total);
+  }
+  // One row per BUDGET, plus one row per account that has none — so an account
+  // with two fund budgets shows two lines rather than one that hides a choice.
+  const byAccount = {};
+  for (const b of budgets) (byAccount[b.account_id] = byAccount[b.account_id] || []).push(b);
+  const out = [];
+  for (const a of accounts) {
+    const rows = byAccount[a.id] || [];
+    if (!rows.length) {
+      out.push({ id: null, accountId: a.id, accountCode: a.code, accountName: a.name, accountType: a.type,
+                 subtype: a.subtype, fundId: null, fundName: null, year, basis,
+                 periodStart: bounds.start, periodEnd: bounds.end,
+                 budget: 0, actual: actualByAccount[a.id] || 0, variance: -(actualByAccount[a.id] || 0) });
+      continue;
+    }
+    for (const b of rows) {
+      const amt = parseFloat(b.amount) || 0;
+      const act = b.fund_id ? (actualByAccountFund[`${a.id}|${b.fund_id}`] || 0) : (actualByAccount[a.id] || 0);
+      out.push({ id: b.id, accountId: a.id, accountCode: a.code, accountName: a.name, accountType: a.type,
+                 subtype: a.subtype, fundId: b.fund_id || null, fundName: b.fund_name || null, year, basis,
+                 periodStart: bounds.start, periodEnd: bounds.end,
+                 budget: amt, actual: act, variance: amt - act });
+    }
+  }
+  res.json(out);
 }));
 
 app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -13929,19 +14002,42 @@ app.post("/finance/budgets", requireAuth, requireAdmin, checkWriteAccess, wrap(a
   // §1 tenant isolation: reject a foreign account id (would leak another org's
   // account code/name into this org's audit log).
   if (!(await orgOwns("accounts", accountId, req.user.orgId))) return res.status(404).json({ error: "Account not found" });
+  // BUILD-88a A.3 — AND A FUND. Same tenant guard, same reason.
+  const fundId = req.body.fundId || null;
+  if (fundId && !(await orgOwns("fin_funds", fundId, req.user.orgId))) return res.status(404).json({ error: "Fund not found" });
+  let cents;
+  try { cents = parseMoneyOrThrow(amount == null || amount === "" ? 0 : amount, "amount"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  if (cents < 0) return res.status(400).json({ error: "A budget cannot be negative." });
+  const amt = toDollars(cents);
   const id = "bgt_" + uuid().slice(0, 8);
-  await run(
-    `INSERT INTO budgets (id,org_id,account_id,year,amount)
-     VALUES (?,?,?,?,?)
-     ON CONFLICT (org_id, account_id, year) DO UPDATE SET amount=EXCLUDED.amount`,
-    [id, req.user.orgId, accountId, parseInt(year), parseFloat(amount) || 0]
+  const [row] = await query(
+    `INSERT INTO budgets (id,org_id,account_id,year,amount,fund_id)
+     VALUES (?,?,?,?,?,?)
+     ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, '')) DO UPDATE SET amount=EXCLUDED.amount
+     RETURNING id`,
+    [id, req.user.orgId, accountId, parseInt(year), amt, fundId]
   );
   const [acctRow] = await query("SELECT code, name FROM accounts WHERE id = ?", [accountId]);
-  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "budget", `${accountId}_${year}`, {
-    description: `Set ${year} budget for ${acctRow?.code || ""} ${acctRow?.name || accountId} to $${(parseFloat(amount)||0).toLocaleString()}`,
-    new: { account: acctRow?.name || accountId, year: parseInt(year), amount: parseFloat(amount) || 0 }
+  const [fundRow] = fundId ? await query("SELECT name FROM fin_funds WHERE id = ?", [fundId]) : [];
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "budget", `${accountId}_${year}_${fundId || ""}`, {
+    description: `Set ${year} budget for ${acctRow?.code || ""} ${acctRow?.name || accountId}${fundRow ? ` (${fundRow.name})` : ""} to $${amt.toLocaleString()}`,
+    new: { account: acctRow?.name || accountId, fund: fundRow?.name || null, year: parseInt(year), amount: amt }
   }).catch(() => {});
-  res.json({ success: true, accountId, year, amount: parseFloat(amount) || 0 });
+  res.json({ success: true, id: row?.id || id, accountId, fundId, year: parseInt(year), amount: amt });
+}));
+
+// A.3 — a budget can be REMOVED, which is what makes "editable" true for the
+// fund and the year: the upsert is keyed on both, so moving a budget to another
+// fund or another year is a write and then a delete of the row it left behind.
+app.delete("/finance/budgets/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [b] = await query("SELECT * FROM budgets WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!b) return res.status(404).json({ error: "Budget not found" });
+  await run("DELETE FROM budgets WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "budget", req.params.id, {
+    description: `Removed the ${b.year} budget line`, old: { year: b.year, amount: parseFloat(b.amount) || 0, fundId: b.fund_id || null },
+  }).catch(() => {});
+  res.json({ deleted: 1 });
 }));
 
 // ── Finance: period bounds ─────────────────────────────────────────────────

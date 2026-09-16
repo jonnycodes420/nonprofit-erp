@@ -1630,6 +1630,18 @@ async function initSchema() {
   // first week after the deploy.
   await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledgement_sent_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_ack_at ON gifts (org_id, acknowledgement_sent_at) WHERE acknowledgement_sent_at IS NOT NULL`);
+
+  // ── BUILD-88a A.3 — A BUDGET HAS A FUND ───────────────────────────────────
+  // A budget was (account, year, amount). An org that restricts money keeps
+  // separate budgets per fund — $60,000 of contributions to the Building
+  // Campaign is a different commitment from $60,000 unrestricted, and one row
+  // could not hold both. `fund_id` is nullable: no fund means the whole
+  // account, which is every budget that already exists. The uniqueness moves
+  // with it (COALESCE so a NULL fund is one slot, not infinitely many).
+  await pool.query(`ALTER TABLE budgets ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_org_id_account_id_year_key`).catch(() => {});
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS budgets_account_year_fund
+                      ON budgets (org_id, account_id, year, COALESCE(fund_id, ''))`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An
