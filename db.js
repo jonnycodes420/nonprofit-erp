@@ -1562,6 +1562,20 @@ async function initSchema() {
   // to backfill.
   await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS original_due_date TEXT`);
 
+  // ── BUILD-86 PART B — HER WORDS ───────────────────────────────────────────
+  // Sparrow has sponsors, not recurring donors. One JSON column on the org,
+  // fixed keys (shared/vocabulary.js), holding ONLY what differs from today's
+  // strings — so an org that answers nothing has an empty object rather than a
+  // frozen copy of the defaults, and a later default change still reaches it.
+  //
+  // PRESENTATION ONLY. No column, id, API field or route is renamed by any
+  // value in here; `donor_id` stays `donor_id` at a shop that says "sponsors".
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS vocabulary_json TEXT`);
+  // Stamped when the five-question first run is answered OR skipped, so it is
+  // offered exactly once and "skip" is a decision rather than a state that
+  // keeps re-asking.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS vocabulary_set_at TIMESTAMPTZ`);
+
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the
   // one org-wide /give/:orgSlug page. Deliberately NOT the `campaigns` table

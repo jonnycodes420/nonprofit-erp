@@ -64,7 +64,7 @@ const root = path.join(__dirname, "..");
      combos.find(c => c.on.length === 0).sentence === M.NOTHING_WAITING, combos[0].sentence);
 
   // NEVER A TEMPLATE WITH HOLES: a source that is off contributes no words.
-  const BANNED_WHEN_OFF = { threads: /conversation|day \d+/i, drift: /gone quiet/i, atRisk: /monthly gift/i };
+  const BANNED_WHEN_OFF = { threads: /conversation|day \d+/i, drift: /gone quiet/i, atRisk: /cards? failed/i };
   for (const c of combos) {
     for (const k of KEYS) {
       if (c.on.includes(k)) continue;
@@ -88,9 +88,13 @@ const root = path.join(__dirname, "..");
      M.morningSentence({ threads: { list: [THREADS.list[0]] } }, NOW));
 
   // THE WINDOW IS SEVEN DAYS, and it is pinned by INPUT, never by the clock.
+  // BUILD-86 Part B — the clause says THE CARD FAILED, which is the true thing
+  // and the one that survives her vocabulary: "Delaney's sponsorship gift
+  // stopped" read badly at one shop and "Delaney's monthly donor gift stopped"
+  // at the default. The brief's own line is "Two sponsors' cards failed."
   ok("a monthly gift that failed inside the window is in the sentence, by surname",
      M.morningSentence({ atRisk: [{ donor_name: "Recent Kowalski", first_failed_at: dayAgo(6) }] }, NOW)
-       === "Kowalski's monthly gift stopped.",
+       === "Kowalski's card failed.",
      M.morningSentence({ atRisk: [{ donor_name: "Recent Kowalski", first_failed_at: dayAgo(6) }] }, NOW));
   ok("…one that failed before it is NOT (a fortnight of failures is not a calm screen)",
      M.morningSentence({ atRisk: [{ donor_name: "Old Fail", first_failed_at: dayAgo(30) }] }, NOW) === M.NOTHING_WAITING);

@@ -1,9 +1,11 @@
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 import { morningSentence } from "../lib/morningSentence";
+import { makeT, capitalize } from "../../../shared/vocabulary";
+import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
@@ -144,7 +146,7 @@ const SETUP_ITEM_META = {
   conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
   team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
   // BUILD-83 Part 5.3 — the closer.
-  sustainers: { label: "Move your monthly donors",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
+  sustainers: { label: "Move your monthly givers",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
 };
 
 function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
@@ -234,6 +236,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
   const todayStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
+  // BUILD-86 Part B — HER WORDS. One reader, from the org's stored vocabulary;
+  // with nothing stored it returns today's strings, so this is a no-op for an
+  // org that never answered the five questions.
+  const t=useMemo(()=>makeT(data.org?.vocabulary),[data.org?.vocabulary]);
+  // BUILD-86 Part B — the five questions, ONCE, after her file is in. Gated on
+  // there being donors, because asking an empty org what it calls its people
+  // is asking before there is anything to call. Skipping stamps the same
+  // field, so it is offered once and never nags.
+  const [wordsOpen,setWordsOpen]=useState(false);
+  const [wordsDone,setWordsDone]=useState(false);
+  // IT ASKS, IT DOES NOT WALL. The brief puts the five questions in the import
+  // moment; this build does not touch the receipt, so Home offers them instead.
+  // A MODAL here would be a wall in front of every existing org's Home on its
+  // next login, and in front of anyone who just wanted to see their queue. One
+  // quiet line, her choice, and it goes when she answers OR declines.
+  const wordsOffer=surface==="home"&&isAdmin&&!wordsDone
+    &&!!data.org&&!data.org.vocabularySetAt
+    &&!!(data.donors&&data.donors.length>0);
 
   // BUILD-57 — the dashboard area is two tabs: Today (the existing section
   // stack) and Recurring (EXCEPTIONS only — counts + a path into the
@@ -1742,7 +1762,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const monthlySection=(recurringHealth&&(recurringHealth.fromFile||0)>0)?(
     <div style={{...cardWrap}}>
       <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-        <span style={sTitle}>Your monthly donors</span>
+        <span style={sTitle}>Your {t("monthly_giver",2)}</span>
         <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
       </div>
       <div style={{padding:"14px 20px",display:"flex",alignItems:"baseline",gap:18,flexWrap:"wrap"}}>
@@ -1897,7 +1917,21 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               the whole screen. It is a good morning, not an empty state. */}
           {surface==="home"&&!editMode&&threadsData&&(
             <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,lineHeight:1.4,color:T.ink,marginTop:6,maxWidth:760}}>
-              {morningSentence({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk})}
+              {morningSentence({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk},Date.now(),t)}
+            </div>
+          )}
+          {/* BUILD-86 Part B — one line, once. */}
+          {wordsOffer&&!editMode&&(
+            <div style={{marginTop:8,fontSize:12.5,color:T.ink3,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+              <span>Steward calls them donors. What do you call them?</span>
+              <button onClick={()=>setWordsOpen(true)}
+                style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:7,padding:"3px 10px",color:T.greenDk,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                Set your words
+              </button>
+              <button onClick={()=>{setWordsDone(true);apiFetch("/org/vocabulary",{method:"PUT",body:JSON.stringify({skip:true})}).catch(()=>{});}}
+                style={{background:"none",border:"none",color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>
+                Keep Steward's words
+              </button>
             </div>
           )}
           {/* The board screen says what it is and as of when, and nothing else
@@ -1994,7 +2028,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         const recurringSection=atRisk.length>0?(
           <div style={{...cardWrap}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={sTitle}>Monthly gifts that need you</span>
+              <span style={sTitle}>{capitalize(t("monthly_giver",2))} that need you</span>
               <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
             </div>
             <ul style={{listStyle:"none",margin:0,padding:0}}>
@@ -2209,6 +2243,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
       {convoFor&&<LogConversationModal donor={convoFor.donor} thread={convoFor.thread} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{loadThreads();loadDrift();}} onClose={()=>setConvoFor(null)}/>}
+      {wordsOpen&&<YourWords mode="first-run" onClose={()=>setWordsOpen(false)}
+        onDone={()=>{setWordsOpen(false);setWordsDone(true);if(setData)setData(d=>({...d,org:{...d.org,vocabularySetAt:new Date().toISOString()}}));}}/>}
       {planFor&&<PlanFollowUpModal donor={planFor.donor}
         onSaved={()=>{loadThreads();}} onClose={()=>setPlanFor(null)}/>}
     </div>

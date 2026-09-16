@@ -48,6 +48,8 @@ const GUARDED_WRITERS = [
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",
   "migrate-plans-core-team", "restore-asset", "seed-build45-asks",
   "seed-build45-portal-demo",
+  // BUILD-86 Part B — the demo org's own words.
+  "seed-build86-vocabulary",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",
   "seed-fundraising-demo",
   "build59-capture", "build59-install-demo-images",

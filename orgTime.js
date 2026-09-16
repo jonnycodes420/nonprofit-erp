@@ -35,6 +35,10 @@
 // accidentally compare one to a date.
 
 // The product's fiscal year starts July 1 (month index 6). One definition.
+// Retained ONLY as the historical export (0-indexed July) for any external
+// reader; nothing inside this file uses it any more. The one number that
+// decides a boundary is FISCAL_START_MONTH_DEFAULT, below, read through
+// orgFiscalStartMonth so the ORG can answer instead.
 const FISCAL_START_MONTH = 6;
 const DEFAULT_TZ = "America/New_York";
 
@@ -126,6 +130,20 @@ function orgDaysOverdue(dueDate, org, atInstant = new Date()) {
 // range(org, period[, offset]) — inclusive civil-date {start, end} for a named
 // period, in the organization's timezone. offset 0 = current, -1 = previous.
 const PERIODS = ["today", "week", "month", "quarter", "year", "fiscal_year"];
+// BUILD-86 Part B — the fiscal year's first month, from the org's own
+// vocabulary. Deliberately parsed here rather than imported from
+// shared/vocabulary.js: orgTime.js is CommonJS, loaded synchronously by every
+// caller, and a dynamic import for one integer would make the whole date seam
+// async. The DEFAULT is the number that was hardcoded, so the no-op path is
+// byte-identical; a malformed value degrades to it rather than throwing.
+const FISCAL_START_MONTH_DEFAULT = 7;
+function orgFiscalStartMonth(org) {
+  let v = org && org.vocabulary_json;
+  if (typeof v === "string") { try { v = JSON.parse(v); } catch { v = null; } }
+  const n = v && typeof v === "object" ? parseInt(v.fiscal_year_start_month, 10) : NaN;
+  return Number.isFinite(n) && n >= 1 && n <= 12 ? n : FISCAL_START_MONTH_DEFAULT;
+}
+
 function orgPeriodBounds(org, period, offset = 0, atInstant = new Date()) {
   const today = orgToday(org, atInstant);
   const c = parseCivil(today);
@@ -160,11 +178,17 @@ function orgPeriodBounds(org, period, offset = 0, atInstant = new Date()) {
       return { start: ymd(y, 1, 1), end: ymd(y, 12, 31), key: `cy:${y}` };
     }
     case "fiscal_year": {
-      // FY labelled by its START year: July 1 → June 30.
-      const fyStart = (c.m - 1 < FISCAL_START_MONTH ? c.y - 1 : c.y) + offset;
+      // FY labelled by its START year. BUILD-86 Part B — the start month is
+      // the ORG's, read off the row every caller already passes here; this is
+      // the ONE place the boundary is decided, so there is no second source of
+      // truth for "this year". DEFAULT 7 (July), which is what was hardcoded
+      // before, so no existing org's figure moves by a cent.
+      const startMonth = orgFiscalStartMonth(org);          // 1..12
+      const zero = startMonth - 1;                          // 0-indexed
+      const fyStart = (c.m - 1 < zero ? c.y - 1 : c.y) + offset;
       return {
-        start: ymd(fyStart, FISCAL_START_MONTH + 1, 1),
-        end: addDays(ymd(fyStart + 1, FISCAL_START_MONTH + 1, 1), -1),
+        start: ymd(fyStart, zero + 1, 1),
+        end: addDays(ymd(fyStart + 1, zero + 1, 1), -1),
         key: `fy:${fyStart}`,
       };
     }
@@ -191,10 +215,14 @@ function formatCivil(dateStr) {
   return c ? `${MONTHS_LONG[c.m - 1]} ${c.d}, ${c.y}` : "";
 }
 
-// The year a report labels "current", for both bases.
+// The year a report labels "current", for both bases. BUILD-86 Part B — reads
+// the ORG's start month, like orgPeriodBounds. It used the hardcoded constant,
+// so an org with a January fiscal year would have got the right period bounds
+// and the WRONG YEAR LABEL on the same report: two sources of truth for one
+// fact, which tests/vocabulary.test.js §5 now forbids by construction.
 function orgReportYear(org, yearMode, atInstant = new Date()) {
   const c = parseCivil(orgToday(org, atInstant));
-  if (yearMode === "fiscal") return c.m - 1 < FISCAL_START_MONTH ? c.y : c.y + 1;
+  if (yearMode === "fiscal") return c.m < orgFiscalStartMonth(org) ? c.y : c.y + 1;
   return c.y;
 }
 
@@ -202,6 +230,6 @@ module.exports = {
   DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,
-  orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil,
+  orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,
   addDays, dayOfWeek, compareCivil, daysBetween, parseCivil,
 };

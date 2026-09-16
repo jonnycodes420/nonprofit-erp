@@ -82,11 +82,12 @@ function overdueDaysOf(t) {
   return Number.isFinite(n) && n > 0 ? n : 1;
 }
 
-function driftClause(drift) {
+function driftClause(drift, t) {
   const list = Array.isArray(drift?.list) ? drift.list : [];
   if (list.length === 0) return null;
   if (list.length === 1) return `${lastName(list[0].donorName || list[0].name)} has gone quiet`;
-  return `${plural(list.length, "donor has", "donors have")} gone quiet`;
+  // HER WORD for the people who give. "Two sponsors have gone quiet."
+  return `${spell(list.length)} ${t("giver", list.length)} have gone quiet`;
 }
 
 // The window is SEVEN DAYS, not "since her last login". There is no
@@ -96,7 +97,7 @@ function driftClause(drift) {
 // hold. (audit/BUILD-86-FINDINGS.md A1.)
 export const RECURRING_WINDOW_DAYS = 7;
 
-function recurringClause(atRisk, nowMs, windowDays = RECURRING_WINDOW_DAYS) {
+function recurringClause(atRisk, nowMs, t, windowDays = RECURRING_WINDOW_DAYS) {
   const list = Array.isArray(atRisk) ? atRisk : [];
   if (list.length === 0) return null;
   const recent = list.filter(r => {
@@ -105,8 +106,14 @@ function recurringClause(atRisk, nowMs, windowDays = RECURRING_WINDOW_DAYS) {
     return Number.isFinite(t) && nowMs - t <= windowDays * 86400000;
   });
   if (recent.length === 0) return null;
-  if (recent.length === 1) return `${lastName(recent[0].donor_name)}'s monthly gift stopped`;
-  return `${plural(recent.length, "monthly gift", "monthly gifts")} stopped`;
+  // THE CARD IS WHAT FAILED, and the person is hers to name: the brief's own
+  // line is "Two sponsors' cards failed over the weekend." Using the
+  // monthly-giver word as an adjective produced "Delaney's sponsorship gift
+  // stopped" at one shop and "Delaney's monthly donor gift stopped" at the
+  // default, which is worse — so the clause takes the GIVER word and says the
+  // true thing about the card.
+  if (recent.length === 1) return `${lastName(recent[0].donor_name)}'s card failed`;
+  return `${spell(recent.length)} ${possessivePlural(t("giver", recent.length))} cards failed`;
 }
 
 // "Margaret Chen" → "Chen". A surname is how a fundraiser refers to a donor
@@ -114,6 +121,14 @@ function recurringClause(atRisk, nowMs, windowDays = RECURRING_WINDOW_DAYS) {
 // and an organisation keeps its full name — "Sunrise Foundation" must not
 // become "Foundation".
 const ORG_WORDS = /\b(foundation|trust|fund|inc|llc|ltd|company|co|corp|church|ministries|society|association|club|group|partners|charities|charity)\b/i;
+// "sponsors" → "sponsors'"; "clergy" → "clergy's". The plural is a stored word
+// and somebody's will not end in s, so the apostrophe is decided by the word
+// rather than assumed.
+export function possessivePlural(word) {
+  const w = String(word || "");
+  return /s$/i.test(w) ? `${w}'` : `${w}'s`;
+}
+
 export function lastName(full) {
   const s = String(full || "").trim().replace(/\s+/g, " ");
   if (!s) return "Someone";
@@ -128,11 +143,18 @@ export function lastName(full) {
 
 export const NOTHING_WAITING = "Nothing is waiting on you this morning.";
 
+// Today's strings, for a caller that has no vocabulary to hand.
+const DEFAULT_WORDS = { giver: ["donor", "donors"], monthly_giver: ["monthly donor", "monthly donors"] };
+const defaultT = (key, count) => (DEFAULT_WORDS[key] || [null, null])[count === 1 ? 0 : 1];
+
 // The sentence. `nowMs` is passed rather than read, so a test pins it instead
 // of racing it (the BUILD-84 rule: never write a guard that measures the
 // calendar).
-export function morningSentence({ threads, drift, atRisk } = {}, nowMs = Date.now()) {
-  const clauses = [...threadClauses(threads), driftClause(drift), recurringClause(atRisk, nowMs)].filter(Boolean);
+// `t` is the vocabulary reader (shared/vocabulary.js makeT). It is PASSED, not
+// imported, so this module stays pure and a test can drive it with any shop's
+// words. Defaulted, so a caller with no vocabulary gets today's strings.
+export function morningSentence({ threads, drift, atRisk } = {}, nowMs = Date.now(), t = defaultT) {
+  const clauses = [...threadClauses(threads), driftClause(drift, t), recurringClause(atRisk, nowMs, t)].filter(Boolean);
   if (clauses.length === 0) return NOTHING_WAITING;
   const sentence = joinClauses(clauses);
   // A leading numeral is left alone (nothing to capitalise); a leading word is

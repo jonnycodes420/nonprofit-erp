@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase } from "./shared";
+import { YourWords } from "./YourWords";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { apiFetch, API, getToken, billingErrorMessage } from "../api";
@@ -972,6 +973,8 @@ const SETTINGS_TABS=[
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
+  // BUILD-86 Part B — the five questions, reachable forever after the first run.
+  {id:"words",label:"Your words"},
   // 2026-09-10 — the Donor Portal tab is hidden from the CRM's navigation
   // (App.jsx CRM_HIDDEN_TABS), and this section was only ever a POINTER to it,
   // so it goes with it rather than becoming a link to nowhere. Still shown to a
@@ -1596,6 +1599,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       )}
 
       {/* ── Customization ─────────────────────────────────────────────────── */}
+      {section==="words"&&(
+        <Card>
+          <SecHead title="Your words"
+            sub="Steward uses these on your screens and in the emails it sends you. It never changes the words on a receipt, a year-end statement or your donor portal."/>
+          <YourWords mode="settings"/>
+        </Card>
+      )}
       {section==="customization"&&<>
       {/* BUILD-80 Part 10 — kept-raw values: what the migration stored that
           doesn't type, each fixable in place through the validated seam. */}

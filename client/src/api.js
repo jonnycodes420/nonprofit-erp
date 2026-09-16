@@ -202,6 +202,10 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       brandAccentFg: org.brand_accent_fg || "",
       // BUILD-84 — the zone every date in the product is read in, and whether
       // a HUMAN chose it. The timed step reminder is unavailable until they do.
+      // BUILD-86 Part B — her words. The RAW stored value rides through; the
+      // pure module normalises it, so there is one place defaults are decided.
+      vocabulary:  org.vocabulary_json || null,
+      vocabularySetAt: org.vocabulary_set_at || null,
       timezone:    org.timezone || "",
       timezone_confirmed_at: org.timezone_confirmed_at || null,
     },

@@ -2863,6 +2863,50 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json({ ...org, accessState: getOrgAccessState(org) });
 }));
 
+// ── BUILD-86 PART B — HER WORDS ────────────────────────────────────────────
+// Five questions, answered once, read by every staff-facing surface. The
+// answers are PRESENTATION ONLY: nothing here renames a column, an id, an API
+// field or a route, and nothing here reaches a receipt, a year-end statement
+// or the donor portal (a §170 acknowledgment is a legal document).
+//
+// GET returns the normalised vocabulary plus the org's OWN EVIDENCE for the
+// questions its file already answered — the fund names the import created —
+// so the first run never asks what she has already told us.
+app.get("/org/vocabulary", requireAuth, wrap(async (req, res) => {
+  const V = await import("./shared/vocabulary.js");
+  const [org] = await query("SELECT vocabulary_json, vocabulary_set_at FROM orgs WHERE id=?", [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  const funds = await query(
+    "SELECT name FROM fin_funds WHERE org_id=? AND COALESCE(is_sample,false)=false ORDER BY name LIMIT 12",
+    [req.user.orgId]);
+  res.json({
+    vocabulary: V.normalizeVocabulary(org.vocabulary_json),
+    stored: org.vocabulary_json ? JSON.parse(org.vocabulary_json) : {},
+    setAt: org.vocabulary_set_at || null,
+    // Her own words, already in the product, for question three.
+    evidence: { funds: funds.map(f => f.name) },
+    questions: V.VOCAB_QUESTIONS,
+    defaults: V.VOCAB_DEFAULTS,
+  });
+}));
+
+// PUT — admin + checkWriteAccess, because it changes what every screen in the
+// org says. `{skip:true}` records the DECISION not to answer: the first run is
+// offered once, and a skip must not leave a state that keeps asking.
+app.put("/org/vocabulary", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const V = await import("./shared/vocabulary.js");
+  if (req.body && req.body.skip === true) {
+    await run("UPDATE orgs SET vocabulary_set_at=NOW() WHERE id=?", [req.user.orgId]);
+    return res.json({ skipped: true, vocabulary: V.normalizeVocabulary(null) });
+  }
+  // Only the fixed keys survive: a hostile or mistyped payload cannot invent
+  // vocabulary, and only what DIFFERS from today's strings is stored.
+  const store = V.vocabularyToStore(req.body || {});
+  await run("UPDATE orgs SET vocabulary_json=?, vocabulary_set_at=NOW() WHERE id=?",
+    [JSON.stringify(store), req.user.orgId]);
+  res.json({ vocabulary: V.normalizeVocabulary(store), stored: store });
+}));
+
 // ── BUILD-35: "Set up Steward" activation checklist ─────────────────────────
 // Every item's done-state is COMPUTED live from the actual org data — never
 // stored per-step — so an item checks itself off however the underlying thing
