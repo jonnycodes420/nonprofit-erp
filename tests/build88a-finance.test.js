@@ -22,7 +22,14 @@ const ORG = "org_b88a3";
 const c = n => Math.round(Number(n) * 100);
 
 async function reset() {
-  for (const t of ["fundraising_goals", "fin_transactions", "gifts", "interactions", "donors", "campaigns",
+  // The FULL child list. A short one leaves an orgs row behind (its DELETE is
+  // .catch()ed, so it fails silently on a foreign key) and the next run of this
+  // suite dies on a duplicate primary key — which is how it failed its first
+  // trip through the battery.
+  for (const t of ["threads", "digest_sends", "notification_sends", "workflow_runs", "workflows", "moves",
+    "opportunities", "tasks", "receipts", "pledges", "fin_audit_log", "milestone_drafts", "note_reminders",
+    "metric_snapshots", "imports", "import_merges", "donor_relationships", "recurring_subscriptions",
+    "fundraising_goals", "fin_transactions", "gifts", "interactions", "donors", "campaigns",
     "budgets", "accounts", "fin_funds", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});

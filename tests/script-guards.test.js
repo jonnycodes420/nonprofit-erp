@@ -73,7 +73,10 @@ const SELF_REFUSING = [
   // entirely through tests/helpers, whose api()/q() refuse any non-loopback
   // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and
   // the source note below keeps this suite's pattern check honest.
-  "build78-repro-crossorg-fieldid"];
+  "build78-repro-crossorg-fieldid",
+  // BUILD-88a — the walk. WRITES (it logs a real conversation and a real gift
+  // on the demo org) and refuses any non-loopback API, app or database.
+  "build88a-walk"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [

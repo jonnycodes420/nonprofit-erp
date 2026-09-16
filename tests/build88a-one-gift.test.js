@@ -129,8 +129,11 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
     ok(`${key}: exactly ONE timeline entry links to that gift`, linked.length === 1, ints);
     ok(`${key}: the entry carries NO copy of the amount`,
       linked.length === 1 && !/\$\s*[\d,]/.test(String(linked[0].note || "")), linked[0]?.note);
-    // §2 — a fund and a method, always.
-    ok(`${key}: the gift carries a fund`, !!gs[0].fund_id, gs[0]);
+    // §2 — a fund and a method. A gift a STAFF MEMBER typed always carries a
+    // fund (they had the picker in front of them); a DONOR who designated
+    // nothing online has designated nothing, and that stays true.
+    if (key === "stripe") ok("stripe: an undesignated online gift stays undesignated", gs[0].fund_id === null, gs[0]);
+    else ok(`${key}: the gift carries a fund`, !!gs[0].fund_id, gs[0]);
     ok(`${key}: the gift carries a payment method`, String(gs[0].payment_method || "").trim() !== "", gs[0]);
   }
   console.log("\n— §2 · the defaults are NAMED, not blank —");
@@ -146,6 +149,16 @@ const timelineOf = id => q(`SELECT id, type, note, gift_id FROM interactions WHE
   });
   ok("a gift whose method nobody stated reads \"Needs you\", never blank",
     noMethod.status === 201 && noMethod.body.gift.paymentMethod === "Needs you", noMethod.body?.gift);
+  // A fund id that is not this org's is REFUSED, and never quietly becomes a
+  // different fund: that would turn a rejected designation into one that looks
+  // deliberate.
+  const beforeForeign = (await giftsOf(donors.form)).length;
+  const foreign = await api("POST", `/donors/${donors.form}/gifts`, tok,
+    { amount: 9, date: TODAY, type: "cash", paymentMethod: "Cash", fundId: "ff_not_this_org" });
+  ok("a gift naming a fund from another org is refused outright, not quietly given a different one",
+    foreign.status === 404, { status: foreign.status, body: JSON.stringify(foreign.body).slice(0, 120) });
+  ok("…and nothing was written", (await giftsOf(donors.form)).length === beforeForeign, null);
+
   const importGift = (await giftsOf(donors.import))[0];
   ok("an imported gift keeps the fund and method its FILE named (A.7), not the default",
     importGift && importGift.payment_method === "ACH", importGift);

@@ -614,6 +614,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
               stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
+              // A donor who designated nothing has designated nothing.
+              defaultFund: false,
               actorId: SYS_STRIPE.id, actorName: SYS_STRIPE.name,
               ledgerDescription: "Online gift via Stripe", ledgerSource: "online",
               timelineNote: "Online donation via the giving page",
@@ -1930,12 +1932,24 @@ async function recordGift(o) {
   const actorId = o.actorId || null, actorName = o.actorName || null;
   // Rule 1 — a fund and a method, always. A fund the caller names is honoured
   // only if it belongs to this org (never trust an id off a webhook payload).
+  //
+  // TWO CASES, and they are not the same case (BUILD-88a A.3 walk):
+  //  · A STAFF MEMBER typed this gift with a fund picker in front of them and
+  //    left it alone. The org's unrestricted fund is the honest reading of that
+  //    choice, and a blank there is indistinguishable from "nobody looked".
+  //  · A DONOR gave online and designated nothing. Nobody at the organisation
+  //    has said where that money goes, and a fund is an accounting fact rather
+  //    than a default — it stays undesignated (`defaultFund: false`).
+  // And a fund id that was REFUSED never silently becomes a different fund:
+  // that would turn a rejected (possibly cross-org) designation into one that
+  // LOOKS deliberate, which is worse than none at all.
   let fundId = o.fundId || null;
+  let fundRefused = false;
   if (fundId) {
     const okFund = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
-    if (!okFund.length) fundId = null;
+    if (!okFund.length) { fundId = null; fundRefused = true; console.error(`[gift] refused a fund id that is not this org's: ${o.fundId}`); }
   }
-  if (!fundId) fundId = await orgUnrestrictedFundId(orgId);
+  if (!fundId && !fundRefused && o.defaultFund !== false) fundId = await orgUnrestrictedFundId(orgId);
   const paymentMethod = String(o.paymentMethod || "").trim() || GIFT_METHOD_UNKNOWN;
 
   const cols = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "campaign_id",
@@ -13814,7 +13828,17 @@ app.get("/finance/funds", requireAuth, wrap(async (req, res) => {
     "SELECT * FROM fin_funds WHERE org_id = ? ORDER BY restricted ASC, name ASC",
     [req.user.orgId]
   );
-  res.json(rows);
+  // BUILD-88a A.1 (found by the walk) — WHICH FUND IS THE DEFAULT IS THE
+  // SERVER'S TO SAY. The conversation form was picking "the first unrestricted
+  // fund" out of this list, which is sorted by NAME — so it offered "Gala
+  // Reserve" while the write used `ensureOrgLedger`'s oldest unrestricted fund,
+  // "General Operating". The screen was stating something it could not back,
+  // which is the whole class this build exists to close. The flag comes from
+  // the same function the write uses, so the two cannot part company.
+  let defaultFundId = null;
+  try { defaultFundId = await orgUnrestrictedFundId(req.user.orgId); }
+  catch (e) { console.error("[funds] default fund probe:", e.message); }
+  res.json(rows.map(r => ({ ...r, isOrgDefault: !!defaultFundId && r.id === defaultFundId })));
 }));
 
 app.post("/finance/funds", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {

@@ -51,8 +51,11 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
     return () => { alive = false; };
   }, []);
   // The org's unrestricted fund is the default, and it is NAMED rather than
-  // implied — "General Operating" beats an empty select every time.
-  const defaultFund = funds.find(f => !f.restricted) || null;
+  // implied — "General Operating" beats an empty select every time. The SERVER
+  // says which one it is (`isOrgDefault`): picking "the first unrestricted
+  // fund" out of a name-sorted list offered a different fund from the one the
+  // write used, which the BUILD-88a walk caught on the demo org.
+  const defaultFund = funds.find(f => f.isOrgDefault) || funds.find(f => !f.restricted) || null;
   const amountTyped = String(amount).trim() !== "";
 
   // The prompt is a decision, not a guess: it prefills from the note when the
