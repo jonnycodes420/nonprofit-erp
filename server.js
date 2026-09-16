@@ -9136,10 +9136,29 @@ app.post("/tasks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const ownerId = u.length ? u[0].id : req.user.userId;
   const ownerName = (u.length && u[0].name) || assignedToName || "";
 
+  // ── BUILD-88a A.2 — NO LABEL BEGINS "FOLLOW UP:" ─────────────────────────
+  // A follow-up list every row of which starts with the words "Follow up" is a
+  // list you cannot read: the only part that differs is at the end, and the
+  // thing that tells you what to DO has been replaced by the fact that there is
+  // something to do. The label is the STEP — read out of the note by the same
+  // extractor the conversation flow uses (shared/threadShape.js stepFromNote),
+  // or the type's own default. The user's own sentence is never touched; only
+  // the prefix that says nothing is.
+  const taskTitle = await (async () => {
+    const raw = String(title).trim();
+    const m = /^follow\s*up\s*:\s*(.*)$/i.exec(raw);
+    if (!m) return raw;
+    const shape = await threadShapeMod();
+    const rest = m[1].trim();
+    const fromNote = shape.stepFromNote(req.body.note || rest);
+    if (fromNote && fromNote.label) return fromNote.label;
+    return shape.nextStepLabelFor("follow_up") || "Follow up";
+  })();
+
   const id = "t_" + uuid().slice(0, 8);
   await run(
     "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,?,?,NOW(),?,?)",
-    [id, req.user.orgId, String(title).trim(), due || "", priority || "medium", type || "donor",
+    [id, req.user.orgId, taskTitle, due || "", priority || "medium", type || "donor",
      donorId || null, ownerId, ownerName, actor(req).id, actor(req).name]
   );
   const rows = await query(
@@ -10364,10 +10383,38 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       ORDER BY t.due_date ASC, t.opened_on ASC`,
     donorId ? [orgId, donorId, ...ownerParams] : [orgId, ...ownerParams]);
 
+  // ── BUILD-88a A.2 — ONE COMPOSER, EVERY OPEN ITEM ────────────────────────
+  // A follow-up created by the conversation flow is a THREAD; one created by
+  // "+ Add task", a pipeline move or a workflow recipe is a TASK. They are two
+  // tables and they will stay two tables in this build — the thread carries an
+  // opening interaction, a close kind and a one-open-per-donor constraint that
+  // a task row has no place for. What they must not be is two LISTS: a donor
+  // with an open thread and an open task had one of them on the profile and the
+  // other on a screen nobody opens, and "what do I owe this person?" had two
+  // answers.
+  //
+  // So they are read through ONE composer, ranked by the ONE ranking
+  // (shared/threadRank.js), and carry `kind` so a row can say which it is.
+  // Only a task ATTACHED TO A DONOR joins: an org to-do ("renew the insurance")
+  // is not a follow-up and does not belong on a donor's record.
+  const taskRows = await query(
+    `SELECT k.id, k.title, k.due, k.type, k.donor_id, k.assigned_to, k.assigned_to_name,
+            k.created_at, d.name AS donor_name, d.total_giving, d.gift_count
+       FROM tasks k
+       JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
+      WHERE k.org_id = ? AND k.done = 0 AND k.donor_id IS NOT NULL AND d.deleted_at IS NULL
+        AND k.due IS NOT NULL AND k.due <> ''
+        ${donorId ? "AND k.donor_id = ?" : ""}
+        ${effScope === "all" || !userId ? "" : "AND (k.assigned_to = ? OR (k.assigned_to IS NULL AND d.assigned_to = ?))"}
+      ORDER BY k.due ASC, k.id ASC`,
+    donorId
+      ? (effScope === "all" || !userId ? [orgId, donorId] : [orgId, donorId, userId, userId])
+      : (effScope === "all" || !userId ? [orgId] : [orgId, userId, userId]));
+
   // ── The rank signals, read in BATCHES ────────────────────────────────────
   // Four queries for the whole list, never one per row (the BUILD-15 board
   // discipline). Each is scoped to the donors actually on the list.
-  const donorIds = [...new Set(rows.map(r => r.donor_id))];
+  const donorIds = [...new Set([...rows.map(r => r.donor_id), ...taskRows.map(r => r.donor_id)])];
   let asks = {}, atRisk = new Set(), majorThreshold = 0;
   if (donorIds.length) {
     const ph = donorIds.map(() => "?").join(",");
@@ -10402,7 +10449,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
         ? { kind: "gift", type: "gift", date: t.gift_date ? String(t.gift_date).slice(0, 10) : t.opened_on, amount: t.gift_amount != null ? parseFloat(t.gift_amount) : null, actor: t.created_by_name || null }
         : { kind: "none", type: null, date: t.opened_on, line: null, actor: t.created_by_name || null };
     list.push({
-      id: t.id, donorId: t.donor_id, donorName: t.donor_name,
+      id: t.id, kind: "thread", donorId: t.donor_id, donorName: t.donor_name,
       nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date, time: t.due_time || null,
                   // The day this was first promised, when a revisit has moved
                   // the due date since. Null on a thread nobody deferred.
@@ -10430,6 +10477,32 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
         // one ever comes.
         isFirstGift: !!t.opening_gift_id && Number(t.gift_count) === 1,
         lifetimeGiving: parseFloat(t.total_giving) || 0,
+        majorThreshold,
+      },
+    });
+  }
+
+  // The tasks, in the same shape, so the ranking cannot tell them apart by
+  // anything except what they actually say.
+  for (const k of taskRows) {
+    const due = String(k.due).slice(0, 10);
+    const openedOn = k.created_at ? new Date(k.created_at).toISOString().slice(0, 10) : due;
+    const daysOpen = orgTime.daysBetween(openedOn, today) ?? 0;
+    list.push({
+      id: k.id, kind: "task", donorId: k.donor_id, donorName: k.donor_name,
+      nextStep: { type: k.type || "task", label: k.title, due, time: null, originalDue: null },
+      overdue: due < today,
+      overdueDays: due < today ? (orgTime.daysBetween(due, today) ?? 0) : 0,
+      daysOpen: Math.max(0, daysOpen), openedOn,
+      owner: k.assigned_to ? { id: k.assigned_to, name: k.assigned_to_name } : null,
+      lastTouch: { kind: "none", type: null, date: openedOn, line: null, actor: k.assigned_to_name || null },
+      snoozedUntil: null, followon: null,
+      signals: {
+        dueDate: due, stepType: k.type || "task", stepLabel: k.title, daysOpen: Math.max(0, daysOpen),
+        openAskAmount: asks[k.donor_id] || 0,
+        recurringAtRisk: atRisk.has(k.donor_id),
+        isFirstGift: false,
+        lifetimeGiving: parseFloat(k.total_giving) || 0,
         majorThreshold,
       },
     });
@@ -15597,7 +15670,7 @@ function renderDailyTaskReminderBody(digest, org, user, today) {
   return `<div style="padding:22px;background:#f0ede6;font-family:'DM Sans',Helvetica,Arial,sans-serif;">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:22px;color:#0f1a12;">Your tasks for today</div>
       <div style="font-size:13px;color:#6b7d70;margin-top:2px;">${digestEsc(displayNameCase(user.name || ""))} · ${digestEsc(today)}</div>
-      ${overdueBlock}${todayBlock}
+      ${todayBlock}${overdueBlock}
       <div style="margin-top:16px;"><a href="${publicAppUrl()}/dashboard" style="color:#0d5c3a;font-weight:700;text-decoration:underline;">Open your tasks →</a></div>
     </div>`;
 }
@@ -15946,10 +16019,16 @@ function renderMorningBriefBody({ threads, more, tasks, org, user, today, team }
     return `<tr><td style="padding:7px 0;font-size:13.5px;color:${INK};">
       ${digestEsc(t.title)}<span style="color:${late ? TERRA : SAGE};font-weight:700;"> · ${late ? "Overdue" : "Due today"}</span><span style="color:${SAGE};">${donor}</span></td></tr>`;
   };
+  // BUILD-88a A.2 — DUE TODAY GOES FIRST. The late list led, so the thing she
+  // has to do TODAY sat underneath the things she is already late for, and the
+  // list she cannot fix pushed the one she can down the screen. (A JS comment,
+  // not an HTML one: a comment inside the body would be text in the email, and
+  // a word in it can make an assertion about the email's own ORDER read wrong —
+  // which is exactly what happened when this one was written the other way.)
   const taskBlock = tasks.count ? `
     <div style="margin-top:22px;padding-top:14px;border-top:2px solid ${BRASS};">
       <div style="font-family:'DM Serif Display',Georgia,serif;font-size:17px;color:${INK};">Your tasks</div>
-      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.overdue, ...tasks.dueToday].map(taskLi).join("")}</table>
+      <table style="margin-top:6px;border-collapse:collapse;width:100%;">${[...tasks.dueToday, ...tasks.overdue].map(taskLi).join("")}</table>
     </div>` : "";
 
   const teamBlock = team && team.length ? `
@@ -18168,7 +18247,8 @@ const WORKFLOW_RECIPES = [
     conditions: [],
     actions: [
       { type: "send_email", template: "recovery" },
-      { type: "create_task", title: "Follow up: recurring gift failed for {donor}", priority: "high", dueDays: 2 },
+      // A.2 — the label is the step, not the word "follow-up" and a name.
+      { type: "create_task", title: "Call {donor} about the monthly gift that failed", priority: "high", dueDays: 2 },
     ],
     defaultConfig: {},
   },

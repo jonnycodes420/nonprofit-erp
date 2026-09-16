@@ -3373,7 +3373,12 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){
   const due7=new Date();due7.setDate(due7.getDate()+7);
-  const[title,setTitle]=useState(`Follow up: ${donor.name}`);
+  // BUILD-88a A.2 — the box no longer opens on "Follow up: <name>". The donor's
+  // name is already on the screen, and a list where every row starts with the
+  // same two words is a list nobody can scan. It opens EMPTY, with the step the
+  // box is asking for as its placeholder; the server refuses a "Follow up:"
+  // prefix too, so a saved shortcut cannot put it back.
+  const[title,setTitle]=useState("");
   const[due,setDue]=useState(due7.toISOString().split("T")[0]);
   const[priority,setPriority]=useState("medium");
   const[loading,setLoading]=useState(false);
@@ -3395,7 +3400,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Task Title</div>
-            <input value={title} onChange={e=>setTitle(e.target.value)} style={inp}/>
+            <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="What happens next? e.g. Send the impact report" style={inp}/>
           </div>
           <div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Due Date</div>
@@ -3815,9 +3820,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // conversation" is the primary action; the next-step prompt rides the same
   // flow and a skip is recorded as skipped.
   const [dpThread,setDpThread]=useState(null);
+  const [dpItems,setDpItems]=useState([]);
   const [convoOpen,setConvoOpen]=useState(initialOpenConversation);
   const [planOpen,setPlanOpen]=useState(false);   // BUILD-85 — plan forward on this donor
-  const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>setDpThread((r.list&&r.list[0])||null)).catch(()=>{});
+  // BUILD-88a A.2 — EVERY OPEN ITEM FOR THIS DONOR, ranked by the one ranking.
+  // The profile showed the thread and nothing else, so a task created by
+  // "+ Add task", a pipeline move or a workflow recipe was an open promise to
+  // this person that their own record did not mention.
+  const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
+    setDpItems(Array.isArray(r.list)?r.list:[]);
+    setDpThread((r.list||[]).find(x=>x.kind!=="task")||null);
+  }).catch(()=>{});
   useEffect(()=>{loadDpThread();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id]);
@@ -4566,29 +4579,39 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Overview tab */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
-            {/* BUILD-81 — the donor's thread, above giving history. */}
-            {dpThread&&(
-              <div style={{background:T.white,border:"1px solid "+(dpThread.overdue?T.terracotta+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
+            {/* BUILD-81 — the donor's thread, above giving history.
+                BUILD-88a A.2 — and every other open item for them, in ONE list,
+                ranked by the one ranking, with the count on the label. */}
+            {dpItems.length>0&&(
+              <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+(dpItems.some(x=>x.overdue)?T.terracotta+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>The Thread</span>
-                  {dpThread.snoozedUntil&&<span style={{fontSize:10,color:T.ink3}}>· set aside until {dpThread.snoozedUntil}</span>}
+                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>
+                    {dpItems.length===1?"Open":`Open · ${dpItems.length}`}
+                  </span>
+                  {dpThread?.snoozedUntil&&<span style={{fontSize:10,color:T.ink3}}>· set aside until {dpThread.snoozedUntil}</span>}
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 220px",minWidth:0}}>
-                    <div style={{fontSize:13.5,fontWeight:700,color:dpThread.overdue?T.terracotta:T.ink}}>
-                      {dpThread.nextStep.label} · {dpThread.overdue?"overdue":"due"} {String(dpThread.nextStep.due).slice(0,10)} · day {dpThread.daysOpen}
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {dpItems.map(it=>(
+                  <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <div style={{flex:"1 1 220px",minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:700,color:it.overdue?T.terracotta:T.ink}}>
+                        {it.nextStep.label} · {it.overdue?"overdue":"due"} {String(it.nextStep.due).slice(0,10)} · day {it.daysOpen}
+                      </div>
+                      <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
+                        {it.lastTouch?.line?<>"{it.lastTouch.line}"</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
+                        {it.lastTouch?.date&&it.kind!=="task"?<> · {String(it.lastTouch.date).slice(0,10)}</>:null}
+                        {it.lastTouch?.actor?<> · {it.lastTouch.actor}</>:null}
+                      </div>
                     </div>
-                    <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
-                      {dpThread.lastTouch?.line?<>"{dpThread.lastTouch.line}"</>:dpThread.lastTouch?.kind==="gift"&&dpThread.lastTouch.amount!=null?<>{fmtFull(dpThread.lastTouch.amount)} received</>:null}
-                      {dpThread.lastTouch?.date?<> · {String(dpThread.lastTouch.date).slice(0,10)}</>:null}
-                      {dpThread.lastTouch?.actor?<> · {dpThread.lastTouch.actor}</>:null}
-                    </div>
+                    {it.kind!=="task"&&(
+                      <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                        <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
+                          style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
+                        <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
+                      </div>
+                    )}
                   </div>
-                  <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                    <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
-                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
-                    <ThreadDismissMenu thread={dpThread} onDone={loadDpThread}/>
-                  </div>
+                ))}
                 </div>
               </div>
             )}
