@@ -969,6 +969,98 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
   );
 }
 
+// ── BUILD-87 Part 1 — THE IMPORTS PAGE ──────────────────────────────────────
+// Every run this org has committed, newest first: its name, when, who, rows
+// in, gifts created, dollars in. Clicking one reopens the receipt AS IT WAS —
+// the stored summary, never a fresh computation over a database that has
+// moved on. Read only. Undo is a future part, and the screen says so rather
+// than leaving the absence to be discovered.
+const fmtMoney=n=>"$"+Number(n||0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtCount=n=>Number(n||0).toLocaleString();
+
+function ImportsHistory(){
+  const [rows,setRows]=useState(null);
+  const [err,setErr]=useState("");
+  const [open,setOpen]=useState(null);
+  useEffect(()=>{
+    apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[]))
+      .catch(e=>{setRows([]);setErr(errorMessage(e,"Could not load your import history."));});
+  },[]);
+  const openOne=async(id)=>{
+    setOpen({loading:true});
+    try{ const r=await apiFetch("/imports/"+id); setOpen(r.import||null); }
+    catch(e){ setOpen(null); setErr(errorMessage(e,"Could not open that import.")); }
+  };
+  const th={fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,textAlign:"left",padding:"0 12px 8px 0"};
+  const td={fontSize:13,color:T.ink,padding:"10px 12px 10px 0",borderTop:"1px solid "+T.bg3,verticalAlign:"top"};
+  return (
+    <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <SectionLabel>Imports</SectionLabel>
+      <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
+        Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback — undoing an import is not part of this release.
+      </div>
+      {err&&<div style={{fontSize:12.5,color:T.terra700,marginBottom:12}}>{err}</div>}
+      {rows===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
+      {rows&&rows.length===0&&<div data-testid="imports-empty" style={{fontSize:13,color:T.ink3}}>No imports yet. The first file you load will appear here with its name.</div>}
+      {rows&&rows.length>0&&(
+        <div style={{overflowX:"auto"}}>
+          <table data-testid="imports-table" style={{borderCollapse:"collapse",width:"100%",minWidth:640}}>
+            <thead><tr>
+              <th style={th}>Name</th><th style={th}>Date</th><th style={th}>Who</th>
+              <th style={{...th,textAlign:"right"}}>Rows in</th>
+              <th style={{...th,textAlign:"right"}}>Gifts created</th>
+              <th style={{...th,textAlign:"right"}}>Dollars in</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(r=>(
+                <tr key={r.id} data-testid="imports-row">
+                  <td style={td}>
+                    <button onClick={()=>openOne(r.id)} data-testid="imports-open"
+                      style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.green,cursor:"pointer",textAlign:"left"}}>
+                      {r.name}
+                    </button>
+                    {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile — open for the finding.</div>}
+                  </td>
+                  <td style={td}>{r.committedOn||""}</td>
+                  <td style={td}>{r.by||"—"}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtCount(r.rowsIn)}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtCount(r.giftsCreated)}</td>
+                  <td style={{...td,textAlign:"right"}}>{fmtMoney(r.dollarsIn)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {open&&(
+        <Modal onClose={()=>setOpen(null)} width={620}
+               title={open.loading?"Opening…":open.name}
+               subtitle={open.loading?"":`${open.sourceFilename||"a file"} · ${open.by||"unknown"}`}>
+          {open.loading?<div style={{fontSize:13,color:T.ink3}}>Loading…</div>:(
+            <div data-testid="import-receipt">
+              <div style={{display:"flex",gap:24,flexWrap:"wrap",marginBottom:16}}>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Donors</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.donorsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Gifts</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtCount(open.giftsCreated)}</div></div>
+                <div><div style={{fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3}}>Dollars</div><div style={{fontSize:26,fontWeight:700,color:T.ink}}>{fmtMoney(open.dollarsCreated)}</div></div>
+              </div>
+              <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
+                {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} created + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
+              </div>
+              {(open.findings||[]).map((f,i)=>(
+                <div key={i} data-testid="import-finding" style={{fontSize:12.5,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{f}</div>
+              ))}
+              {open.summary&&open.summary.leadSentence&&(
+                <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
+              )}
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?String(open.committedAt).slice(0,10):""}. Stored at the moment it committed — this screen never recomputes it.</div>
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
   {id:"team",label:"Team"},
@@ -984,6 +1076,9 @@ const SETTINGS_TABS=[
   // section and is untouched.
   {id:"portal",label:"Donor Portal",portalTierOnly:true},
   {id:"receipts",label:"Tax Receipts"},
+  // BUILD-87 Part 1 — every import run, newest first, with the receipt it
+  // showed when it committed. Read only: this build does not undo an import.
+  {id:"imports",label:"Imports"},
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
 ];
@@ -1728,6 +1823,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
+      {section==="imports"&&<ImportsHistory/>}
+
       {section==="data"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>

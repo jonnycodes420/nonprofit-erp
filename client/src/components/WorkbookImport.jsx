@@ -17,6 +17,8 @@ import {
   IMPORT_PROMISE_FIELDS, buildImportPromise, importReceiptValue,
 } from "../../../shared/importShape";
 import { detectExclusionColumn, proposeCustomField, proposalEvidenceText } from "../../../shared/customFieldShape";
+import { importLeadSentence, decisionsFromSubmission } from "../../../shared/importSentence";
+import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
@@ -51,11 +53,15 @@ const REASON_LABEL_RESULT = {
 };
 const _REASON_LABELS_MOVED_TO_MODULE_SCOPE = true;
 
+// BUILD-87 Part 2 — the three numbers that matter, large.
+const headNum = { fontSize: 34, fontWeight: 700, color: T.ink, lineHeight: 1.1 };
+const headNumLabel = { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, marginBottom: 2 };
+
 const SectionHead = ({ children }) => (
   <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.09em", color: T.ink3, margin: "18px 0 8px" }}>{children}</div>
 );
 
-export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose, onImported }) {
+export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose, onImported, onOpenHome, vocabulary }) {
   // workbook: { roled (classifyWorkbookSheets output over analyzeWorkbookSheet sheets) }
   const [step, setStep] = useState("sheets");        // sheets → signals → mapper → summary → result
   const [roleOverrides, setRoleOverrides] = useState({});
@@ -71,6 +77,17 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const [result, setResult] = useState(null);
   const [err, setErr] = useState("");
   const [timing, setTiming] = useState(null);   // { toSummary, write } — two different measurements, both named
+  // BUILD-87 Part 1 — the run's NAME. Defaults to the file's own name with the
+  // extension stripped ("steward-leads" beats "Import 14"), editable here on
+  // the review step, and shown on the receipt. The server makes it unique
+  // within the org, so a second run of the same file is "steward-leads (2)".
+  const [importName, setImportName] = useState(() =>
+    String(fileName || "").split(/[\\/]/).pop().replace(/\.[A-Za-z0-9]{1,8}$/, "").trim() || "Import");
+  const [savedRecord, setSavedRecord] = useState(null);   // { id, name } once the run is on the record
+  const [startedAt] = useState(() => new Date().toISOString());
+  // BUILD-86 Part B — HER WORDS. One reader, from the org's stored vocabulary;
+  // an org that answered nothing gets today's strings byte-identically.
+  const t = useMemo(() => makeT(vocabulary), [vocabulary]);
 
   useEffect(() => {
     apiFetch("/custom-fields?entity=donor").then(r => setCfDefs(p => ({ ...p, donor: Array.isArray(r) ? r : [] }))).catch(() => {});
@@ -197,6 +214,77 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     setBuilding(false); setProgressText("");
   };
 
+  // BUILD-87 Part 1 — the run goes ON THE RECORD once the write has committed.
+  // Every figure here is the one the receipt is about to render, and the
+  // summary STORES that receipt rather than leaving it to be recomputed later
+  // against a database that has moved on. A failure to record is reported on
+  // the receipt, never swallowed: an import that happened without a row is
+  // exactly the hole this part exists to close.
+  // BUILD-87 Part 2 — the lead sentence, built ONCE from the decisions the
+  // user made in the mapper and used in two places: the receipt on screen and
+  // the stored summary, so reopening the run six months later says the same
+  // thing it said the morning it ran.
+  const leadSentenceFor = (res, sem) => {
+    const rec = res && res.reconciliation ? res.reconciliation : null;
+    const dollars = (rec && rec.dollars) || {};
+    const rows = (rec && rec.rows) || {};
+    const c = v => Math.round((Number(v) || 0) * 100);
+    return importLeadSentence({
+      decisions: decisionsFromSubmission(submission, { ...(res || {}), semantics: sem || null }),
+      totals: {
+        donors: Number(res && res.created) || 0,
+        gifts: Number(rows.created) || 0,
+        cents: c(dollars.created),
+        unaccountedCents: c(dollars.inFile) - (c(dollars.created) + c(dollars.skipped) + c(dollars.errored)),
+      },
+    }, t);
+  };
+
+  const recordRun = async (res, sem) => {
+    const rec = res && res.reconciliation ? res.reconciliation : null;
+    const rows = (rec && rec.rows) || {};
+    const dollars = (rec && rec.dollars) || {};
+    const body = {
+      name: importName,
+      sourceFilename: fileName || null,
+      shape: giftAlone ? "gifts" : "workbook",
+      startedAt,
+      rowsIn: Number(rows.inFile) || 0,
+      giftsCreated: Number(rows.created) || 0,
+      donorsCreated: Number(res && res.created) || 0,
+      donorsMerged: Number(sem && sem.counts && sem.counts.merges) || 0,
+      rowsSetAside: Number(rows.skipped) || 0,
+      rowsErrored: Number(rows.errored) || 0,
+      dollarsIn: Number(dollars.inFile) || 0,
+      dollarsCreated: Number(dollars.created) || 0,
+      summary: {
+        // The BUILD-83 read-back, stored verbatim — not recomputed.
+        written: (res && res.written) || null,
+        reconciliation: rec,
+        rowsIn: Number(rows.inFile) || 0,
+        giftsCreated: Number(rows.created) || 0,
+        donorsCreated: Number(res && res.created) || 0,
+        rowsSetAside: Number(rows.skipped) || 0,
+        rowsErrored: Number(rows.errored) || 0,
+        dollarsIn: Number(dollars.inFile) || 0,
+        dollarsCreated: Number(dollars.created) || 0,
+        dollarsSetAside: Number(dollars.skipped) || 0,
+        dollarsErrored: Number(dollars.errored) || 0,
+        duplicates: Number(res && res.duplicates) || 0,
+        donorsMatched: Number(res && res.donorsMatched) || 0,
+        semantics: (sem && sem.counts) || null,
+        leadSentence: leadSentenceFor(res, sem),
+      },
+    };
+    try {
+      const r = await apiFetch("/imports", { method: "POST", body: JSON.stringify(body) });
+      setSavedRecord({ id: r.id, name: r.name, reconciled: r.reconciled !== false, findings: r.findings || [] });
+    } catch (e) {
+      console.error("[import] could not record the run:", e);
+      setSavedRecord({ error: errorMessage(e, "This import is not on your Imports list.") });
+    }
+  };
+
   const doImport = async () => {
     if (!submission) return;
     setBuilding(true); setErr("");
@@ -209,6 +297,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         const giftRows = allItems.map(i => ({ donorExternalId: i.donorId, email: i.email || "", name: i.name || "", line: i.line, ...i.gift }));
         const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: [], gifts: giftRows, linkToExisting: true }) });
         setResult({ ...res, giftAlone: true });
+        await recordRun(res, null);
       } else {
         setProgressText(`Writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts — one transaction, all or nothing…`);
         const donors = submission.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
@@ -228,6 +317,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           fileStats: submission.fileStats,
         })}).catch(e => ({ error: e.message }));
         setResult({ ...res, semantics: sem });
+        await recordRun(res, sem);
       }
       setTiming(t => ({ ...(t || {}), write: (Date.now() - tWrite0) / 1000 }));
       setStep("result");   // the Done button hands control back (onImported closes the modal + reloads)
@@ -446,6 +536,18 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       <div data-testid="wb-summary">
         <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 10 }}>One import, fully accounted — before anything is written.</div>
 
+        {/* BUILD-87 Part 1 — name this run. It is what the Imports list will
+            call it in six months, so the file's own name is the default. */}
+        <div style={{ marginBottom: 12 }}>
+          <label htmlFor="wb-import-name" style={{ display: "block", fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, marginBottom: 4 }}>
+            Name this import
+          </label>
+          <input id="wb-import-name" data-testid="wb-import-name" value={importName}
+                 onChange={e => setImportName(e.target.value)} maxLength={120}
+                 style={{ width: "100%", maxWidth: 380, fontSize: 14, padding: "8px 10px", border: "1px solid " + T.bg3, borderRadius: 8, color: T.ink, background: T.bgCard }} />
+          <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4 }}>Shown on the receipt and on Settings → Imports.</div>
+        </div>
+
         <div style={{ background: T.bg, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, lineHeight: 1.7 }}>
             {giftAlone
@@ -598,14 +700,54 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
       : Number(c2.shown) !== Number(c2.written)));
     const notReadBack = checks.filter(c2 => !c2.readBack);
     const fmtVal = (c2, v) => c2.money ? fmt$(v) : fmtN(v);
+    // BUILD-87 Part 2 — the sentence, the three numbers and the balance line,
+    // all from the ONE reconciliation the write returned.
+    const leadSentence = leadSentenceFor(result, result.semantics || null);
+    const resultRecon = result.reconciliation && result.reconciliation.rows ? result.reconciliation : null;
+    const resultDollars = resultRecon ? Number(resultRecon.dollars.created) || 0 : 0;
+    const resultBalanced = !!(resultRecon && resultRecon.balanced);
     const refusalRows = submission ? submission.refusals : [];
     const refusalsByReason = {};
     for (const r of refusalRows) (refusalsByReason[r.reason] = refusalsByReason[r.reason] || []).push(r);
     return (
       <div data-testid="wb-result">
-        <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 8 }}>
-          {result.created != null ? `Imported: ${fmtN(result.created)} donors created, ${fmtN(result.giftsInserted || 0)} gifts recorded.` : "Import finished."}
+        {/* BUILD-87 Part 2 — THE SENTENCE COMES FIRST, BEFORE ANY NUMBER, and
+            it is built from the decisions this person made, not from copy. */}
+        <div data-testid="wb-lead-sentence" style={{ fontSize: 19, lineHeight: 1.55, color: T.ink, marginBottom: 16, maxWidth: "46ch" }}>
+          {leadSentence}
         </div>
+
+        {/* Then the three numbers that matter, large. */}
+        <div data-testid="wb-headline-numbers" style={{ display: "flex", gap: 36, flexWrap: "wrap", marginBottom: 14 }}>
+          <div>
+            <div style={headNumLabel}>{capitalize(t("giver", 2) || "donors")}</div>
+            <div data-testid="wb-head-donors" style={headNum}>{fmtN(result.created || 0)}</div>
+          </div>
+          <div>
+            <div style={headNumLabel}>Gifts</div>
+            <div data-testid="wb-head-gifts" style={headNum}>{fmtN(result.giftsInserted || 0)}</div>
+          </div>
+          <div>
+            <div style={headNumLabel}>Dollars</div>
+            <div data-testid="wb-head-dollars" style={headNum}>{fmt$(resultDollars)}</div>
+          </div>
+        </div>
+
+        {/* Then the balance line. */}
+        {resultRecon && (
+          <div data-testid="wb-result-balance" style={{ fontSize: 12.5, color: resultBalanced ? T.ink3 : T.terra700, marginBottom: 12 }}>
+            {fmtN(resultRecon.rows.inFile)} rows in the file = {fmtN(resultRecon.rows.created)} created + {fmtN(resultRecon.rows.skipped)} set aside + {fmtN(resultRecon.rows.errored)} errored {resultBalanced ? "✓" : "✗"}
+          </div>
+        )}
+        {/* BUILD-87 Part 1 — the run is on the record, by name. A failure to
+            record says so: an import nobody can find later is the hole. */}
+        {savedRecord && (
+          <div data-testid="wb-import-recorded" style={{ fontSize: 12.5, color: savedRecord.error ? T.terra700 : T.ink3, marginBottom: 10 }}>
+            {savedRecord.error
+              ? `Recorded on this screen only — ${savedRecord.error}`
+              : <>Saved as <strong style={{ color: T.ink }}>{savedRecord.name}</strong> — find it again under Settings → Imports.</>}
+          </div>
+        )}
         {checks.length > 0 && (
           <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? "#f6e3dd" : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? "#eac6b8" : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
             <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? "#8a3a24" : T.ink3, marginBottom: 6 }}>
@@ -655,7 +797,11 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             {fmtN(result.semantics.counts?.pledges || 0)} pledges recorded as commitments · {fmtN(result.semantics.counts?.merges || 0)} merges logged for undo.
           </div>
         )}
-        {btn("Done", () => (onImported ? onImported() : onClose()), { testid: "wb-done" })}
+        {/* ONE primary action. No confetti, no second button competing with it. */}
+        {btn(onOpenHome ? "Open Home" : "Done", () => {
+          if (onImported) onImported(); else onClose();
+          if (onOpenHome) onOpenHome();
+        }, { testid: "wb-done" })}
       </div>
     );
   }
