@@ -79,7 +79,10 @@ const SELF_REFUSING = [
   "build88a-walk",
   // BUILD-88b B.1 — ten cheques, before and after. WRITES (it records the same
   // ten gifts twice, on its own scratch org) and refuses non-loopback.
-  "build88b-deposit-timing"];
+  "build88b-deposit-timing",
+  // BUILD-88b — the walk. WRITES (it records a real deposit on its own scratch
+  // org) and refuses non-loopback.
+  "build88b-walk"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [

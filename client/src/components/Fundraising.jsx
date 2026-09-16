@@ -128,8 +128,13 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
           onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
       )}
 
+      {/* BUILD-88b B.1 — DepositsView is deliberately NOT wired to Fundraising's
+          own `load`. Found by the walk: reloading this page's data flips
+          `loading` true, which UNMOUNTS the view and takes the "it foots"
+          confirmation with it the instant the deposit lands. The list reloads
+          itself. */}
       {!loading && subtab === "deposits" && (
-        <DepositsView isReadOnly={isReadOnly} roTip={roTip} onRecorded={load} />
+        <DepositsView isReadOnly={isReadOnly} roTip={roTip} />
       )}
 
       {!loading && subtab === "campaigns" && (
@@ -732,7 +737,7 @@ function FundsView({ data, onNavigate }) {
 // ── BUILD-88b B.1 — DEPOSITS ───────────────────────────────────────────────
 // The weekly slip, and the record of the ones already recorded. A deposit is
 // ONE act — a slip that footed — so it is one row here, and one thing to undo.
-function DepositsView({ isReadOnly, roTip, onRecorded }) {
+function DepositsView({ isReadOnly, roTip }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState(null);
   const [today, setToday] = useState("");
@@ -786,8 +791,7 @@ function DepositsView({ isReadOnly, roTip, onRecorded }) {
           </table>
         </div>
       )}
-      {open && <DepositSheetModal today={today} onClose={() => { setOpen(false); load(); }}
-        onRecorded={() => { load(); if (onRecorded) onRecorded(); }} />}
+      {open && <DepositSheetModal today={today} onClose={() => { setOpen(false); load(); }} />}
     </div>
   );
 }
