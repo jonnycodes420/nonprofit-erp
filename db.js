@@ -1419,6 +1419,40 @@ async function initSchema() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_merges_org ON import_merges (org_id)`);
 
+  // BUILD-87 Part 1 — EVERY IMPORT RUN GETS A ROW, AND THE ROW IS THE HISTORY.
+  // Before this, an import existed only as a screen that disappeared when it
+  // was closed: no name, no date, no way to answer "what did we load in
+  // March". The summary is the SAME read-back object the BUILD-83 receipt
+  // computed at commit time, STORED — reopening the receipt must never
+  // recompute it against a database that has moved on since.
+  // `shape` is the file's detected shape ('workbook' | 'transaction' |
+  // 'aggregate' | 'wide' | 'donors' | 'deposit'); BUILD-88's deposits are
+  // imports with shape='deposit' and land here rather than in a second table.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS imports (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      source_filename TEXT,
+      shape TEXT,
+      started_at TIMESTAMPTZ,
+      committed_at TIMESTAMPTZ DEFAULT NOW(),
+      rows_in INTEGER DEFAULT 0,
+      gifts_created INTEGER DEFAULT 0,
+      donors_created INTEGER DEFAULT 0,
+      donors_merged INTEGER DEFAULT 0,
+      rows_set_aside INTEGER DEFAULT 0,
+      rows_errored INTEGER DEFAULT 0,
+      dollars_in NUMERIC(14,2) DEFAULT 0,
+      dollars_created NUMERIC(14,2) DEFAULT 0,
+      actor_user_id TEXT,
+      actor_user_name TEXT,
+      summary_json JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_imports_org ON imports (org_id, committed_at DESC)`);
+
   // BUILD-80 Part 6.1 — the source system's donor id, stored AS TEXT with
   // leading zeros kept (never grouped on when spreadsheet-damaged).
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS external_donor_id TEXT`);

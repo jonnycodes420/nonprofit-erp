@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["board_reports", "donor_relationships", "donor_designations",
+    for (const t of ["imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
@@ -125,6 +125,11 @@ async function seedOrg(o, tag) {
     [`th_${o}`, o, `d_${o}`, TODAY, `u_${o}_admin`]);   // BUILD-81 — the Thread
   await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'note',$4,$5)`,
     [`i_${o}`, o, `d_${o}`, `${mark} interaction`, TODAY]);
+  // BUILD-87 Part 1 — an import RUN is a readable row with its own id, so the
+  // matrix gets a real one per org to probe across the wall.
+  await q(`INSERT INTO imports (id,org_id,name,source_filename,shape,rows_in,gifts_created,donors_created,rows_set_aside,rows_errored,dollars_in,dollars_created,summary_json)
+           VALUES ($1,$2,$3,$4,'workbook',1,1,1,0,0,$5,$5,$6)`,
+    [`imp_${o}`, o, `${mark} Import`, `${mark}-file.xlsx`, amt, JSON.stringify({ dollarsSetAside: 0, dollarsErrored: 0 })]);
   await q(`INSERT INTO events (id,org_id,name,event_type,date,status) VALUES ($1,$2,$3,'gala',$4,'upcoming')`,
     [`ev_${o}`, o, `${mark} Event`, TODAY]);
   await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'invited')`,
@@ -206,6 +211,7 @@ function bResolver(routePath, param) {
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
+    imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt
   };
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

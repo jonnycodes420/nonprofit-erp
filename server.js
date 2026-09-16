@@ -89,6 +89,9 @@ const orgTime = require("./orgTime");
 // dollars and cents. See money.js for why the eight Math.round() sites this
 // replaces were each a chance to be wrong in the same direction.
 const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
+// The same seam, as a namespace — BUILD-87 Part 1's stored-import invariant
+// reads several of its helpers at once and naming them one by one buys nothing.
+const money = require("./money");
 const { loadDefs: loadCfDefs, validateCustomFields, mergeCustomValues, migrateLegacyCustomFields } = require("./customFields");
 const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
 // BUILD-76 Part 1 — THE DRIFT ENGINE. One pure module defines "drifting"
@@ -7213,6 +7216,165 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     written = { merges: Number(mg?.c) || 0, pledges: Number(pg2?.c) || 0 };
   } catch (e) { console.error("[import-semantics] read-back failed:", e.message); written = { error: e.message }; }
   res.json({ ok: true, counts, written, merges: mergeRows });
+}));
+
+// ── BUILD-87 PART 1 — NAMED IMPORTS AND HISTORY ────────────────────────────
+// An import used to exist only as a screen. Closing it destroyed the only
+// record that it had ever happened, so "what did we load in March" had no
+// answer and "Import 14" would have been the best name anyone could give it.
+//
+// Every run gets a row. The NAME defaults to the file's own name with the
+// extension stripped ("steward-leads" beats "Import 14"), is editable on the
+// review step, and is unique within the org — a second run of the same file
+// is "steward-leads (2)", never a second row wearing the first one's name.
+//
+// The SUMMARY is the read-back object the BUILD-83 receipt already computed,
+// STORED verbatim. Reopening a receipt shows what the import said when it
+// committed; it never recomputes against a database that has moved on.
+//
+// NO UNDO IN THIS BUILD. Reading an import's history is not reversing it, and
+// a half-undo of 25,000 rows is worse than none. A future part owns that.
+
+// The name, made unique within the org. Pure: the caller supplies what is
+// already taken. " (2)" is appended, then " (3)", and so on.
+function uniqueImportName(base, taken) {
+  const b = String(base || "").trim().slice(0, 120) || "Import";
+  const used = new Set((taken || []).map(n => String(n)));
+  if (!used.has(b)) return b;
+  for (let n = 2; n < 1000; n++) { const c = `${b} (${n})`; if (!used.has(c)) return c; }
+  return `${b} (${Date.now()})`;
+}
+
+// The default name: the filename with its extension stripped. A path, a
+// Windows path and a bare name all reduce to the same thing.
+function defaultImportName(sourceFilename) {
+  const raw = String(sourceFilename || "").split(/[\\/]/).pop().trim();
+  return raw.replace(/\.[A-Za-z0-9]{1,8}$/, "").trim() || "Import";
+}
+
+// THE INVARIANT, ASSERTED AGAINST THE STORED ROW. BUILD-72 Part 1 established
+// it for the live write: rows in = created + set aside + errored, and the same
+// in dollars. It now also has to hold for the row we keep, because a history
+// that does not reconcile is a history that cannot be trusted to answer a
+// question about money. Dollars are compared in INTEGER CENTS — a float
+// comparison here would be the bug the invariant exists to catch.
+//
+// A disagreement is a FINDING, reported on the row and on the receipt. It is
+// never repaired silently: the numbers are evidence, and evidence that edits
+// itself to look consistent is worth nothing.
+function importFindings(row, summary) {
+  const out = [];
+  const n = v => Number(v) || 0;
+  const rowsIn = n(row.rows_in), created = n(row.gifts_created),
+        aside = n(row.rows_set_aside), errored = n(row.rows_errored);
+  if (rowsIn !== created + aside + errored) {
+    out.push(`Rows do not reconcile: ${rowsIn} in the file, ${created} created + ${aside} set aside + ${errored} errored = ${created + aside + errored}.`);
+  }
+  const c = v => money.toCents(v) ?? 0;
+  const s = summary && typeof summary === "object" ? summary : {};
+  const inC = c(row.dollars_in), madeC = c(row.dollars_created),
+        asideC = c(s.dollarsSetAside), errC = c(s.dollarsErrored);
+  if (inC !== madeC + asideC + errC) {
+    out.push(`Dollars do not reconcile: ${money.formatCents(inC)} in the file, ${money.formatCents(madeC)} created + ${money.formatCents(asideC)} set aside + ${money.formatCents(errC)} errored = ${money.formatCents(madeC + asideC + errC)}.`);
+  }
+  // The stored columns against the summary's own copy of the same figures.
+  // These are written in one request from one object; if they ever differ,
+  // something between the screen and the row is lying.
+  const pairs = [["rowsIn", rowsIn], ["giftsCreated", created], ["donorsCreated", n(row.donors_created)],
+                 ["rowsSetAside", aside], ["rowsErrored", errored]];
+  for (const [k, stored] of pairs) {
+    if (s[k] != null && Number(s[k]) !== stored) {
+      out.push(`Stored ${k} is ${stored} but the receipt shows ${Number(s[k])}.`);
+    }
+  }
+  if (s.dollarsIn != null && c(s.dollarsIn) !== inC) out.push(`Stored dollars in is ${money.formatCents(inC)} but the receipt shows ${money.formatCents(c(s.dollarsIn))}.`);
+  if (s.dollarsCreated != null && c(s.dollarsCreated) !== madeC) out.push(`Stored dollars created is ${money.formatCents(madeC)} but the receipt shows ${money.formatCents(c(s.dollarsCreated))}.`);
+  return out;
+}
+
+const IMPORT_SHAPES = new Set(["workbook", "transaction", "aggregate", "wide", "donors", "gifts", "deposit", "unknown"]);
+
+// Record a run. Called by the importer once the write has committed, with the
+// same object the receipt is rendering.
+app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const b = req.body || {};
+  const summary = (b.summary && typeof b.summary === "object" && !Array.isArray(b.summary)) ? b.summary : {};
+  const sourceFilename = String(b.sourceFilename || "").slice(0, 300) || null;
+  const base = String(b.name || "").trim() || defaultImportName(sourceFilename);
+  const taken = (await query("SELECT name FROM imports WHERE org_id=?", [orgId])).map(r => r.name);
+  const name = uniqueImportName(base, taken);
+  const shape = IMPORT_SHAPES.has(String(b.shape || "")) ? String(b.shape) : "unknown";
+  const int = v => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 0 ? n : 0; };
+  const dol = v => money.toDollars(money.toCents(v) ?? 0);
+  const started = b.startedAt && !isNaN(Date.parse(b.startedAt)) ? new Date(b.startedAt).toISOString() : null;
+  // WHO ran it, by the name a colleague would recognise. actor(req) carries the
+  // email (it is the identifier that is always present); the Imports page is
+  // read by a person, so the person's name is looked up once and stored beside
+  // the id — the row must still read correctly after the user has left.
+  const act = actor(req);
+  const [me] = act.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [act.id, orgId]) : [];
+  const actorName = (me && me.name) || act.name || null;
+  const id = importId("imp_");
+  await run(
+    `INSERT INTO imports (id, org_id, name, source_filename, shape, started_at, committed_at,
+       rows_in, gifts_created, donors_created, donors_merged, rows_set_aside, rows_errored,
+       dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json)
+     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, name, sourceFilename, shape, started,
+     int(b.rowsIn), int(b.giftsCreated), int(b.donorsCreated), int(b.donorsMerged),
+     int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
+     act.id, actorName, JSON.stringify(summary)]);
+  const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
+  const findings = importFindings(row, summary);
+  if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
+  res.json({ ok: true, id, name, reconciled: findings.length === 0, findings });
+}));
+
+// The history. Newest first, read only.
+app.get("/imports", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, name, source_filename, shape,
+            TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
+            committed_at, actor_user_name, rows_in, gifts_created, donors_created,
+            donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json
+       FROM imports WHERE org_id=? ORDER BY committed_at DESC, id DESC LIMIT 200`,
+    [req.user.orgId]);
+  res.json({
+    imports: rows.map(r => {
+      const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+      const findings = importFindings(r, summary);
+      return {
+        id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,
+        committedOn: r.committed_on, committedAt: r.committed_at, by: r.actor_user_name || null,
+        rowsIn: Number(r.rows_in) || 0, giftsCreated: Number(r.gifts_created) || 0,
+        donorsCreated: Number(r.donors_created) || 0, donorsMerged: Number(r.donors_merged) || 0,
+        rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
+        dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
+        reconciled: findings.length === 0, findings,
+      };
+    }),
+  });
+}));
+
+// One run, with the receipt exactly as it was shown.
+app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
+  const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!r) return res.status(404).json({ error: "import not found" });
+  const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+  const findings = importFindings(r, summary);
+  res.json({
+    import: {
+      id: r.id, name: r.name, sourceFilename: r.source_filename, shape: r.shape,
+      startedAt: r.started_at, committedAt: r.committed_at, by: r.actor_user_name || null,
+      rowsIn: Number(r.rows_in) || 0, giftsCreated: Number(r.gifts_created) || 0,
+      donorsCreated: Number(r.donors_created) || 0, donorsMerged: Number(r.donors_merged) || 0,
+      rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
+      dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
+      reconciled: findings.length === 0, findings,
+      summary,
+    },
+  });
 }));
 
 // The merge review list — every fold the importer made, newest import first.
