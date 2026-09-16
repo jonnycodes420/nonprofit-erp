@@ -24649,6 +24649,188 @@ app.post("/admin/network/run-gate-sweep", requireAuth, requireSuperAdmin, wrap(a
   res.json(await processNetworkGate());
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+// BUILD-87 PART 3 — EMAIL LOGGING BY BCC
+//
+// One logging address per org: log+<org_slug>@<INBOUND_EMAIL_DOMAIN>. BCC it
+// on any email to a donor and the message lands on that donor's record.
+//
+// THE WHOLE SURFACE IS FLAGGED OFF (INBOUND_EMAIL_ENABLED=1 to turn it on), and
+// off means 404 — the requireFlag convention: a disabled surface is invisible,
+// not "403 coming soon". With the flag unset, production behaviour is
+// byte-identical to the commit before this one.
+//
+// NO PROVIDER IS CHOSEN HERE, DELIBERATELY. Picking who receives the mail is a
+// new subprocessor and a DNS change — a decision about what leaves the system
+// — so the webhook takes a NORMALIZED payload any provider can be adapted to
+// and the choice is written up in BLOCKED-build87.md for a human. All the
+// parsing, matching and stripping is in shared/inboundEmail.js, pure, so this
+// path is provable with no mail provider in existence.
+//
+// THE TENANT WALL, stated once: the org is the plus-address and NOTHING else,
+// and the sender must be a user of that org. Both refusals are counted, not
+// guessed at, and neither can be talked around by a From header — the shared
+// secret below is what stops anyone who has seen a BCC line from writing into
+// somebody's CRM.
+// ═══════════════════════════════════════════════════════════════════════════
+const INBOUND_EMAIL_ENABLED = process.env.INBOUND_EMAIL_ENABLED === "1";
+const INBOUND_EMAIL_DOMAIN = (process.env.INBOUND_EMAIL_DOMAIN || "").trim().toLowerCase();
+async function inboundMod() { return import("./shared/inboundEmail.js"); }
+
+// The provider posts with this shared secret. Configuring it is part of
+// turning the flag on: with the surface enabled and no secret set, the route
+// answers 503 rather than accepting unauthenticated writes (the
+// RESEND_WEBHOOK_SECRET precedent above).
+function inboundSecretOk(req) {
+  const want = process.env.INBOUND_EMAIL_SECRET || "";
+  if (!want) return null; // unconfigured
+  const got = String(req.headers["x-inbound-secret"] || req.query.secret || "");
+  const a = Buffer.from(got), b = Buffer.from(want);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+async function recordInboundDrop(orgId, reason) {
+  try {
+    await run("INSERT INTO inbound_email_drops (id, org_id, reason) VALUES (?,?,?)",
+      ["ied_" + uuid().slice(0, 8), orgId || null, reason]);
+  } catch (e) { console.error("[inbound-email] drop count:", e.message); }
+}
+
+// POST /inbound-email — the provider-agnostic webhook.
+// Body: { to, from, subject, text, html, date } (cc / envelopeTo / recipient
+// are also read when a provider sends them — a BCC is invisible in the headers,
+// so the logging address usually arrives only as an envelope recipient).
+app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, res) => {
+  const authed = inboundSecretOk(req);
+  if (authed === null) return res.status(503).json({ error: "Inbound email not configured" });
+  if (!authed) return res.status(401).json({ error: "Unauthorized" });
+  if (!INBOUND_EMAIL_DOMAIN) return res.status(503).json({ error: "Inbound email not configured" });
+
+  const IE = await inboundMod();
+  const payload = req.body || {};
+
+  // 1 · the org, from the plus-address only.
+  const slug = IE.orgSlugFromPayload(payload, INBOUND_EMAIL_DOMAIN);
+  if (!slug) { await recordInboundDrop(null, "no_org"); return res.json({ received: true, action: "drop" }); }
+  const orgRows = await query("SELECT id, org_slug FROM orgs WHERE org_slug = ?", [slug]);
+  if (!orgRows.length) { await recordInboundDrop(null, "unknown_org"); return res.json({ received: true, action: "drop" }); }
+  const org = orgRows[0];
+
+  // 2 · the sender must be a user of THAT org. Scoped by org_id in the query
+  //     itself, so org B's staff mailing org A's address never even resolves.
+  const from = IE.normalizeEmail(payload.from);
+  const senderRows = from
+    ? await query("SELECT id, name FROM users WHERE org_id = ? AND LOWER(email) = ?", [org.id, from])
+    : [];
+  if (!senderRows.length) { await recordInboundDrop(org.id, "sender_not_user"); return res.json({ received: true, action: "drop" }); }
+
+  const userRows = await query("SELECT email FROM users WHERE org_id = ?", [org.id]);
+  const donorRows = await query(
+    "SELECT id, name, email FROM donors WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email <> ''",
+    [org.id]);
+
+  const decision = IE.classifyInbound(payload, {
+    domain: INBOUND_EMAIL_DOMAIN,
+    today: orgToday(await orgTz(org.id)),
+    orgSlug: org.org_slug,
+    senderIsUser: true,
+    donors: donorRows,
+    userEmails: userRows.map(u => u.email),
+  });
+
+  if (decision.action === "drop") {
+    await recordInboundDrop(org.id, decision.reason);
+    return res.json({ received: true, action: "drop" });
+  }
+
+  // 3 · exactly one donor → an `email` activity on that donor, now. Synchronous
+  //     on the webhook, no queue: the director who BCCs a test wants to see it
+  //     on the screen a minute later, and a background pass cannot promise that.
+  //     The actor is the SYSTEM path that wrote it (BUILD-75 C.1) and the
+  //     display name is the staff member whose mail it was.
+  if (decision.action === "log") {
+    const id = "int_" + uuid().slice(0, 8);
+    const note = decision.subject + (decision.body ? "\n\n" + decision.body : "");
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
+      [id, org.id, decision.donorId, "email", note, decision.date,
+       "system:inbound-email", senderRows[0].name || from,
+       JSON.stringify({ via: "inbound_email", from, to: decision.to, subject: decision.subject, direction: "outbound" })]
+    );
+    return res.json({ received: true, action: "log", donorId: decision.donorId });
+  }
+
+  // 4 · zero or several matches → held for a human. NEVER a new donor.
+  const uid = "iem_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO inbound_email_unmatched (id,org_id,kind,from_email,to_emails,subject,body,message_date,candidates,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [uid, org.id, decision.kind, from, decision.to, decision.subject, decision.body, decision.date,
+     JSON.stringify(decision.candidates || []), "system:inbound-email", senderRows[0].name || from]
+  );
+  res.json({ received: true, action: "hold", kind: decision.kind });
+}));
+
+// GET /settings/inbound-email — the address, the held messages, the drop count.
+// Readable with the flag OFF: the Settings card has to be able to say "this is
+// not switched on yet" rather than 404 at the surface a human is reading.
+app.get("/settings/inbound-email", requireAuth, wrap(async (req, res) => {
+  const IE = await inboundMod();
+  const orgRows = await query("SELECT org_slug FROM orgs WHERE id = ?", [req.user.orgId]);
+  const slug = orgRows[0]?.org_slug || "";
+  const address = INBOUND_EMAIL_DOMAIN ? IE.loggingAddress(slug, INBOUND_EMAIL_DOMAIN) : "";
+  const held = await query(
+    `SELECT id, kind, from_email, to_emails, subject, body, message_date, candidates, created_at
+       FROM inbound_email_unmatched WHERE org_id = ? ORDER BY created_at DESC LIMIT 100`,
+    [req.user.orgId]);
+  const drops = await query(
+    "SELECT COUNT(*)::int AS n FROM inbound_email_drops WHERE org_id = ?", [req.user.orgId]);
+  res.json({
+    enabled: INBOUND_EMAIL_ENABLED,
+    address,
+    unmatched: held.map(h => ({
+      id: h.id, kind: h.kind, from: h.from_email, to: h.to_emails, subject: h.subject,
+      body: h.body, date: h.message_date,
+      candidates: Array.isArray(h.candidates) ? h.candidates : [],
+      receivedAt: h.created_at,
+    })),
+    droppedCount: drops[0]?.n || 0,
+  });
+}));
+
+// POST /settings/inbound-email/assign — a human files a held message on a
+// donor. The id travels in the BODY, not the path: no new parameterized route,
+// and the org scope is in both WHERE clauses, which is where it belongs.
+app.post("/settings/inbound-email/assign", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { id, donorId } = req.body || {};
+  const rows = await query("SELECT * FROM inbound_email_unmatched WHERE id = ? AND org_id = ?", [String(id || ""), req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  const donors = await query("SELECT id FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL", [String(donorId || ""), req.user.orgId]);
+  if (!donors.length) return res.status(404).json({ error: "Not found" });
+  const m = rows[0];
+  const iid = "int_" + uuid().slice(0, 8);
+  const note = (m.subject || "") + (m.body ? "\n\n" + m.body : "");
+  const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  await run(
+    "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
+    // ORG_TZ_SEAM_OK (BUILD-72 Part 4) — the fallback day is the ORG's civil
+    // today, never the process clock's.
+    [iid, req.user.orgId, donors[0].id, "email", note, m.message_date || orgToday(await orgTz(req.user.orgId)),
+     req.user.userId, userRow[0]?.name || "",
+     JSON.stringify({ via: "inbound_email", from: m.from_email, to: m.to_emails, subject: m.subject, direction: "outbound" })]
+  );
+  await run("DELETE FROM inbound_email_unmatched WHERE id = ? AND org_id = ?", [m.id, req.user.orgId]);
+  res.json({ ok: true, interactionId: iid, donorId: donors[0].id });
+}));
+
+// POST /settings/inbound-email/discard — the message was not worth filing.
+app.post("/settings/inbound-email/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { id } = req.body || {};
+  const rows = await query("SELECT id FROM inbound_email_unmatched WHERE id = ? AND org_id = ?", [String(id || ""), req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM inbound_email_unmatched WHERE id = ? AND org_id = ?", [rows[0].id, req.user.orgId]);
+  res.json({ ok: true });
+}));
 
 // ── 404 ────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
