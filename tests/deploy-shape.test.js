@@ -142,6 +142,7 @@ function checkDeployShape(rootDir, entryRel, { useGit } = {}) {
   const artifact = artifactSet(ROOT, { useGit: true });
   ok(artifact.has("shared/customFieldShape.js"), "shared/customFieldShape.js is in the deploy artifact");
   ok(artifact.has("shared/importShape.js"), "shared/importShape.js is in the deploy artifact");
+  ok(artifact.has("shared/dashboards.js"), "shared/dashboards.js is in the deploy artifact");
   ok(artifact.has("shared/homeNote.js"), "shared/homeNote.js is in the deploy artifact");
   ok(artifact.has("shared/vocabulary.js"), "shared/vocabulary.js is in the deploy artifact");
   ok(artifact.has("shared/threadRank.js"), "shared/threadRank.js is in the deploy artifact");

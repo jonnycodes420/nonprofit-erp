@@ -22,7 +22,7 @@ const C = {
   cream2:"#e8e4db",
   white: "#ffffff",
   gold:  "#c9a84c",
-  sage:  "#8fa896",
+  sage:  "rgba(240,237,230,0.7)",
   greenDk: "#0d5c3a",
 };
 

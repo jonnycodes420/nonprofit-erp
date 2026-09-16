@@ -2863,6 +2863,287 @@ app.get("/org", requireAuth, wrap(async (req, res) => {
   res.json({ ...org, accessState: getOrgAccessState(org) });
 }));
 
+// ── BUILD-86 C.3 — FOUR DASHBOARDS, FOUR QUESTIONS ─────────────────────────
+// One route. Each dashboard is a question; every number it returns carries the
+// DEFINITION from shared/dashboards.js, so the sentence a board member reads on
+// hover and the sentence printed in the PDF footnote are the same string,
+// never two copies that drift.
+//
+// SPEED. Every dashboard is ONE parallel batch of independent reads (the
+// BUILD-54 §1 pattern), never a query per metric and never a query per row.
+// The per-donor loops that made a Home load take fifteen minutes at 25k donors
+// (BUILD-05) are the thing this shape exists to avoid.
+async function dashboardsMod() { return import("./shared/dashboards.js"); }
+
+// THE ORG'S STEWARD START DATE — 0.6's answer depends on it. A thank-you is not
+// owed for a gift that arrived before the product did: an imported file is
+// history. The first COMMITTED import is the honest boundary, and the honest
+// proxy for it is the earliest donor this org actually created, which is what
+// an import writes. Falls back to the org's own creation date.
+async function orgStewardStart(orgId) {
+  // TO_CHAR, not ::date — pg hands a DATE back as a JS Date object, and
+  // String()-then-slice on one yields "Tue Aug 12", which then compares
+  // against a TEXT ISO column as garbage and silently matches nothing. The
+  // count read zero and looked like good news. Format in SQL; the boundary
+  // leaves the database as the string it will be compared as.
+  // THE FIRST IMPORT, not the org row. An org can be created weeks before
+  // anybody loads a file, and using the earlier of the two counted a pile of
+  // imported history as thank-yous owed — which is exactly the thing 0.6's
+  // start date exists to prevent. The first donor this org created IS the
+  // first committed import; the org's own creation is only the fallback for a
+  // shop that has not imported yet.
+  const [row] = await query(
+    `SELECT TO_CHAR(COALESCE(
+        (SELECT MIN(created_at) FROM donors WHERE org_id = ?),
+        (SELECT created_at FROM orgs WHERE id = ?),
+        NOW()
+      ), 'YYYY-MM-DD') AS d`, [orgId, orgId]);
+  return row && row.d ? String(row.d) : null;
+}
+
+async function computeDashboard(orgId, key, { isTeam = false } = {}) {
+  const D = await dashboardsMod();
+  const def = D.dashboardByKey(key);
+  if (!def) return null;
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0);     // the ORG's year
+  const fyPrev = orgTime.orgPeriodBounds(org, "fiscal_year", -1);
+  // "The same point last year" — the equivalent stretch, so the comparison is
+  // like for like rather than a full year against a part of one.
+  const prevSamePoint = orgTime.addDays(fyPrev.start, orgTime.daysBetween(fy.start, today) ?? 0);
+  const qtr = orgTime.orgPeriodBounds(org, "quarter", 0);
+  const values = {};
+
+  if (key === "board") {
+    const [thisYr, lastYr, donors, byDes, rec] = await Promise.all([
+      query(`SELECT COALESCE(SUM(g.amount),0) AS v FROM gifts g JOIN donors d ON d.id=g.donor_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fy.start, today]),
+      query(`SELECT COALESCE(SUM(g.amount),0) AS v FROM gifts g JOIN donors d ON d.id=g.donor_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fyPrev.start, prevSamePoint]),
+      query(`SELECT COUNT(DISTINCT g.donor_id)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fy.start, today]),
+      query(`SELECT COALESCE(f.name,'Unrestricted') AS name, COALESCE(SUM(g.amount),0) AS v
+               FROM gifts g JOIN donors d ON d.id=g.donor_id
+               LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
+              GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, [orgId, fy.start, today]),
+      query(`SELECT
+               COUNT(*) FILTER (WHERE status IN ('active','recovered'))::int AS giving,
+               COUNT(*) FILTER (WHERE status='canceled' AND canceled_at >= ?)::int AS stopped,
+               COUNT(*) FILTER (WHERE status='recovered' AND recovered_at >= ?)::int AS recovered
+             FROM recurring_subscriptions WHERE org_id=?`, [qtr.start, qtr.start, orgId]),
+    ]);
+    const a = parseFloat(thisYr[0]?.v) || 0, b = parseFloat(lastYr[0]?.v) || 0;
+    values.revenueThisYear = a;
+    values.revenueLastYear = b;
+    // NO PRIOR YEAR IS NULL, NOT ZERO PER CENT. New money has no denominator.
+    values.revenueChangePct = b > 0 ? Math.round(((a - b) / b) * 100) : null;
+    values.donorCount = donors[0]?.n || 0;
+    const { retentionRate, thinData } = await computeRetentionRate(orgId);
+    values.retentionRate = thinData ? null : retentionRate;
+    values.byDesignation = byDes.map(r => ({ label: r.name, value: parseFloat(r.v) || 0 }));
+    values.recurringActive = rec[0]?.giving || 0;
+    values.recurringStopped = rec[0]?.stopped || 0;
+    values.recurringRecovered = rec[0]?.recovered || 0;
+  }
+
+  if (key === "fundraising") {
+    const [goalsOut, pledges, grants, funnel] = await Promise.all([
+      fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null),
+      query(`SELECT COALESCE(SUM(p.amount),0) AS pledged,
+                    COALESCE(SUM((SELECT COALESCE(SUM(g.amount),0) FROM gifts g WHERE g.pledge_id=p.id)),0) AS paid
+               FROM pledges p WHERE p.org_id=? AND p.status='open'`, [orgId]),
+      query(`SELECT funder, program, amount, deadline FROM grants
+              WHERE org_id=? AND deadline IS NOT NULL AND deadline <> '' AND deadline >= ? AND deadline <= ?
+                AND status NOT IN ('awarded','active','closed','rejected')
+              ORDER BY deadline ASC LIMIT 12`, [orgId, today, orgTime.addDays(today, 90)]),
+      isTeam ? query(`SELECT stage, COUNT(*)::int AS n FROM donors
+                       WHERE org_id=? AND deleted_at IS NULL AND assigned_to IS NOT NULL
+                       GROUP BY 1 ORDER BY 2 DESC`, [orgId]) : Promise.resolve([]),
+    ]);
+    values.goals = ((goalsOut?.goals) || []).filter(g => g.active !== false).map(g => ({
+      label: g.name, value: parseFloat(g.raised) || 0, goal: parseFloat(g.goalAmount) || 0,
+      percent: g.rawPercent ?? g.percent ?? null, pace: g.paceState || null,
+    }));
+    const pl = pledges[0] || {};
+    const pledged = parseFloat(pl.pledged) || 0, paid = parseFloat(pl.paid) || 0;
+    values.pledgedOutstanding = Math.max(0, pledged - paid);
+    values.pledgedPaid = paid;
+    values.grantDeadlines = grants.map(g => ({ label: `${g.funder}${g.program ? " · " + g.program : ""}`,
+      value: parseFloat(g.amount) || 0, when: String(g.deadline).slice(0, 10) }));
+    values.pipelineFunnel = isTeam ? funnel.map(r => ({ label: r.stage, value: r.n })) : null;
+  }
+
+  if (key === "people") {
+    const start = await orgStewardStart(orgId);
+    const [rows, drifting, milestones, unthanked] = await Promise.all([
+      query(`SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS v
+               FROM gifts g JOIN donors d ON d.id=g.donor_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
+              GROUP BY d.id, d.name ORDER BY 3 DESC`, [orgId, fy.start, today]),
+      computeDriftForDonors(orgId, {}).catch(() => ({ list: [] })),
+      query(`SELECT COUNT(*)::int AS n FROM milestone_drafts
+              WHERE org_id=? AND created_at >= ?::date`, [orgId, qtr.start]),
+      // 0.6 — GIFTS NOT YET THANKED. A count, with a start date, and the start
+      // date is what makes it honest: an imported file is history.
+      query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
+              WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false)=false
+                AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false)=false`, [orgId, start || fy.start]),
+    ]);
+    const total = rows.reduce((n, r) => n + (parseFloat(r.v) || 0), 0);
+    let run = 0; const top = [];
+    for (const r of rows) { if (run >= total * 0.9) break; run += parseFloat(r.v) || 0; top.push(r); }
+    values.concentration = total > 0
+      ? [{ label: `${top.length} of ${rows.length} people`, value: Math.round(top.length / rows.length * 100), suffix: "% of your givers" },
+         // Cents, not whole dollars: this figure is printed in a board packet
+         // beside the year's total, and a rounded one would not add up to it.
+         { label: "carry 90% of this year's giving", value: Math.round(run * 100) / 100, money: true }]
+      : [];
+    values.topDonors = top.slice(0, 20).map(r => ({ label: r.name, value: parseFloat(r.v) || 0, id: r.id }));
+    const topIds = new Set(top.map(r => r.id));
+    values.driftingAmongTop = (drifting.list || []).filter(x => topIds.has(x.donorId)).length;
+    values.milestonesThisQuarter = milestones[0]?.n || 0;
+    values.giftsNotYetThanked = unthanked[0]?.n || 0;
+    values.stewardStart = start;
+  }
+
+  if (key === "recurring") {
+    const [byStatus, mrrRows, trend, failures, months] = await Promise.all([
+      query(`SELECT status, COUNT(*)::int AS n FROM recurring_subscriptions WHERE org_id=? GROUP BY 1 ORDER BY 2 DESC`, [orgId]),
+      query(`SELECT COALESCE(SUM(CASE WHEN interval='year' THEN amount/12.0 ELSE amount END),0) AS v
+               FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','recovered')`, [orgId]),
+      query(`SELECT
+               COALESCE(SUM(CASE WHEN created_at >= ?::date THEN (CASE WHEN interval='year' THEN amount/12.0 ELSE amount END) ELSE 0 END),0) AS added,
+               COALESCE(SUM(CASE WHEN canceled_at >= ?::date THEN (CASE WHEN interval='year' THEN amount/12.0 ELSE amount END) ELSE 0 END),0) AS lost
+             FROM recurring_subscriptions WHERE org_id=?`, [orgTime.orgPeriodBounds(org, "month", 0).start, orgTime.orgPeriodBounds(org, "month", 0).start, orgId]),
+      query(`SELECT
+               COUNT(*) FILTER (WHERE type='payment_failed' AND created_at >= ?)::int AS caught,
+               COUNT(*) FILTER (WHERE type='payment_recovered' AND created_at >= ?)::int AS recovered
+             FROM payment_recovery_events WHERE org_id=?`, [qtr.start, qtr.start, orgId]),
+      query(`SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at))/2629800.0),0) AS m
+               FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','recovered')`, [orgId]),
+    ]);
+    values.byStatus = byStatus.map(r => ({ label: r.status, value: r.n }));
+    values.mrr = Math.round((parseFloat(mrrRows[0]?.v) || 0) * 100) / 100;
+    values.mrrTrend = Math.round(((parseFloat(trend[0]?.added) || 0) - (parseFloat(trend[0]?.lost) || 0)) * 100) / 100;
+    values.failuresCaught = failures[0]?.caught || 0;
+    values.failuresRecovered = failures[0]?.recovered || 0;
+    values.avgMonthsOnFile = Math.round(parseFloat(months[0]?.m) || 0);
+  }
+
+  // EVERY number leaves here WITH its definition. One string, from the
+  // registry, to the hover and to the PDF footnote.
+  const metrics = def.metrics
+    .filter(m => !m.teamOnly || isTeam)
+    .map(m => ({ key: m.key, label: m.label, kind: m.kind, rowsAre: m.rowsAre || null, definition: m.definition,
+                 value: values[m.key] === undefined ? null : values[m.key] }));
+  return { key: def.key, label: def.label, question: def.question, blurb: def.blurb,
+           asOf: today, fiscalYear: { start: fy.start, end: fy.end }, isTeam,
+           // The boundary 0.6's answer turns on, on the payload so a reader can
+           // see WHICH date decided the count rather than trusting it.
+           ...(values.stewardStart ? { stewardStart: values.stewardStart } : {}),
+           metrics };
+}
+
+app.get("/dashboards/:key", requireAuth, wrap(async (req, res) => {
+  const out = await computeDashboard(req.user.orgId, String(req.params.key),
+    { isTeam: orgPlanTier(await orgRow(req.user.orgId)) === "team" });
+  if (!out) return res.status(404).json({ error: "Unknown dashboard" });
+  res.json(out);
+}));
+
+// ── THE BOARD PACKET ───────────────────────────────────────────────────────
+// A dashboard, as a PDF, for a packet. Rendered from the SAME payload the
+// screen renders, so the totals are equal by construction rather than by two
+// pieces of arithmetic agreeing — tests/dashboards.test.js proves it in CENTS.
+//
+// Every footnote is the definition string from shared/dashboards.js. The
+// sentence a board member reads on hover and the one printed under the table
+// are one string, not two copies.
+async function renderDashboardPdf(board, org) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    const INK = "#0f1a12", EMERALD = "#0d5c3a", GREY = "#5a554f", PW = doc.page.width;
+    const fmtMoney = n => "$" + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    doc.rect(0, 0, PW, 78).fill(INK);
+    doc.font("Helvetica").fontSize(9).fillColor("#c9a84c").text(displayNameCase(org.name || ""), 50, 24);
+    doc.font("Helvetica-Bold").fontSize(19).fillColor("#f0ede6").text(board.question, 50, 40, { width: PW - 100 });
+
+    let y = 104;
+    doc.font("Helvetica").fontSize(9).fillColor(GREY)
+      .text(`As of ${board.asOf} · fiscal year ${board.fiscalYear.start} to ${board.fiscalYear.end}`, 50, y);
+    y += 22;
+
+    const notes = [];
+    for (const m of board.metrics) {
+      notes.push(`${m.label}. ${m.definition}`);
+      if (m.kind === "breakdown") {
+        const rows = Array.isArray(m.value) ? m.value : [];
+        doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(m.label, 50, y); y = doc.y + 4;
+        if (!rows.length) { doc.font("Helvetica").fontSize(9).fillColor(GREY).text("Nothing here yet.", 50, y); y = doc.y + 12; continue; }
+        for (const r of rows) {
+          if (y > doc.page.height - 120) { doc.addPage(); y = 60; }
+          doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(String(r.label), 58, y, { width: PW - 220 });
+          const right = r.suffix ? `${r.value}${r.suffix}`
+            : r.goal ? `${fmtMoney(r.value)} of ${fmtMoney(r.goal)}`
+            : typeof r.value === "number" && r.value > 999 ? fmtMoney(r.value) : String(r.value);
+          doc.font("Helvetica-Bold").fillColor(EMERALD).text(right, PW - 210, y, { width: 160, align: "right" });
+          y = Math.max(doc.y, y + 13);
+        }
+        y += 10;
+      } else {
+        if (y > doc.page.height - 140) { doc.addPage(); y = 60; }
+        // A BLANK IS PRINTED AS A BLANK. "0%" retention for an org with no
+        // history is a lie a board would act on.
+        const v = m.value === null || m.value === undefined ? "not enough history yet"
+          : m.kind === "money" ? fmtMoney(m.value)
+          : m.kind === "percent" ? `${m.value}%` : String(m.value);
+        doc.font("Helvetica").fontSize(9).fillColor(GREY).text(m.label, 50, y, { width: 260 });
+        doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(v, 320, y - 2, { width: PW - 370, align: "right" });
+        y += 20;
+      }
+    }
+
+    doc.addPage();
+    doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("What each number means", 50, 60);
+    let ny = 82;
+    for (const n of notes) {
+      if (ny > doc.page.height - 90) { doc.addPage(); ny = 60; }
+      doc.font("Helvetica").fontSize(8.5).fillColor(GREY).text(n, 50, ny, { width: PW - 100, lineGap: 1.5 });
+      ny = doc.y + 8;
+    }
+    doc.end();
+  });
+}
+
+app.get("/dashboards/:key/pdf", requireAuth, wrap(async (req, res) => {
+  const org = await orgRow(req.user.orgId);
+  const board = await computeDashboard(req.user.orgId, String(req.params.key),
+    { isTeam: orgPlanTier(org) === "team" });
+  if (!board) return res.status(404).json({ error: "Unknown dashboard" });
+  const pdf = await renderDashboardPdf(board, org);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="${board.key}-${board.asOf}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.end(pdf);
+}));
+
+// The registry itself, so the client's rail is the server's list and cannot
+// drift from it.
+app.get("/dashboards", requireAuth, wrap(async (req, res) => {
+  const D = await dashboardsMod();
+  res.json({ dashboards: D.DASHBOARDS.map(d => ({ key: d.key, label: d.label, question: d.question, blurb: d.blurb })) });
+}));
+
+async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE id=?", [orgId]); return o || {}; }
+
 // ── BUILD-86 PART B — HER WORDS ────────────────────────────────────────────
 // Five questions, answered once, read by every staff-facing surface. The
 // answers are PRESENTATION ONLY: nothing here renames a column, an id, an API

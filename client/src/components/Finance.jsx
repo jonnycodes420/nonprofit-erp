@@ -1267,7 +1267,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                     <thead>
                       <tr style={{ background:"#0f1a12" }}>
                         {["Timestamp","User","Action","Entity","Description"].map(h => (
-                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#8fa896", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
+                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"rgba(240,237,230,0.7)", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
                         ))}
                         <th style={{ padding:"10px 14px", width:40 }}/>
                       </tr>

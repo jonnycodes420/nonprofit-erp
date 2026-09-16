@@ -747,9 +747,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const GoalStat=({label,value,valueColor,sub,onClick})=>(
     <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:true})}
       style={{background:"rgba(255,255,255,0.04)",border:"1px solid #1a2e1f",borderRadius:10,padding:"8px 12px"}}>
-      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#8fa896",marginBottom:3}}>{label}</div>
+      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:3}}>{label}</div>
       <div style={{fontSize:14,fontWeight:700,color:valueColor||"#f0ede6",lineHeight:1.25}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:"#8fa896",marginTop:2}}>{sub}</div>}
+      {sub&&<div style={{fontSize:11,color:"rgba(240,237,230,0.7)",marginTop:2}}>{sub}</div>}
     </div>
   );
 
@@ -810,7 +810,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // (evening 5 PM–4 AM · morning 4 AM–noon · afternoon noon–5 PM) — a bare
   // `hour<12` used to say "Good morning" at 12:23 AM (BUILD-36 B3).
   const greeting=greetingForHour(new Date().getHours());
-  let paceLabel=null,paceColor="#8fa896",paceSub=null,daysLeftInPeriod=null;
+  let paceLabel=null,paceColor="rgba(240,237,230,0.7)",paceSub=null,daysLeftInPeriod=null;
   if(goal){
     const periodStartDate=new Date(goal.periodStart+"T00:00:00");
     const periodEndDate=new Date(goal.periodEnd+"T00:00:00");
@@ -825,7 +825,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       const paceDeltaPts=goal.percent-expectedPercent;
       if(paceDeltaPts>=8){paceLabel="Ahead of pace";paceColor=T.gold;paceSub=`${paceDeltaPts}pt ahead of schedule`;}
       else if(paceDeltaPts<=-8){paceLabel="Behind pace";paceColor=T.terracotta;paceSub=`${Math.abs(paceDeltaPts)}pt behind schedule`;}
-      else{paceLabel="On pace";paceColor="#8fa896";paceSub=Math.abs(paceDeltaPts)>=1?`within ${Math.abs(paceDeltaPts)}pt of schedule`:"right on schedule";}
+      else{paceLabel="On pace";paceColor="rgba(240,237,230,0.7)";paceSub=Math.abs(paceDeltaPts)>=1?`within ${Math.abs(paceDeltaPts)}pt of schedule`:"right on schedule";}
     }
   }
   // Trivially small vs. the goal (under 1%) reads as discouraging stated
@@ -859,7 +859,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const catMeta=c=>CAT_META[c]||CAT_META.project;
   // Faithful to computeFundraisingPace's states — no invented "ahead".
   const paceText=s=>s==="met"?"Goal met":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
-  const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"#8fa896";
+  const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"rgba(240,237,230,0.7)";
   // Exceeded-goal display rule: a beaten goal reads as a win, not a misleading
   // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line
   // names the overage. The thermometer bar still uses the capped percent (a bar
@@ -943,25 +943,25 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};
 
   const heroSection=fundOverview===undefined?(
-        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#8fa896",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
+        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"rgba(240,237,230,0.7)",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
       ):heroCtx?(<>
           <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
                 <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
                     <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:"#8fa896",display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:"rgba(240,237,230,0.7)",display:"inline-flex",alignItems:"center",flexShrink:0}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
                   )}
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
                   <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"#8fa896"}}>{goalHeadSub(rawPct,overAmt)}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
@@ -984,18 +984,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       ):(
       <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid #1a2e1f",borderRadius:16,padding:"16px 22px",color:"#f0ede6"}}>
         {goal===undefined?(
-          <div style={{display:"flex",alignItems:"center",gap:8,color:"#8fa896",fontSize:13}}><Spin/>Loading goal…</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,color:"rgba(240,237,230,0.7)",fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
           <>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#8fa896",marginBottom:4}}>Fundraising Goal</div>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>Fundraising Goal</div>
                 <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
                   <span>{goal.label}</span>
                   {isAdmin&&(
                     <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:"#8fa896",opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:"rgba(240,237,230,0.7)",opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
                   )}
@@ -1003,7 +1003,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
                   <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"#8fa896"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
+                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
                 <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
@@ -1026,7 +1026,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
             <div>
               <div style={{fontSize:15,fontWeight:600,color:"#f0ede6",marginBottom:2}}>No goal set for this period.</div>
-              <div style={{fontSize:12,color:"#8fa896"}}>Set a fundraising target to track progress here.</div>
+              <div style={{fontSize:12,color:"rgba(240,237,230,0.7)"}}>Set a fundraising target to track progress here.</div>
             </div>
             {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
           </div>

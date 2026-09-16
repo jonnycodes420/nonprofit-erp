@@ -106,9 +106,17 @@ console.log("\n— the ratchet —");
 
 // THE COUNT MAY GO DOWN AND NEVER UP. Lower this number when you remove
 // literals; raising it is the thing the guard exists to refuse.
-const HEX_CEILING = 1325;         // MEASURED 2026-09-16, after the green collapse (was 1404)
-const SAGE_CEILING = 104;         // #8fa896 — the hue the rule deletes; the next pass
-const RGB_CEILING = 124;
+const HEX_CEILING = 1217;         // MEASURED 2026-09-16 (1404 → 1325 green collapse → 1217 sage)
+// Sage is DELETED. The four that remain are on the landing and the donor-facing
+// giving dashboard, which carry their own audited palettes and their own
+// guards; repainting a public page nobody re-measured buys nothing.
+const SAGE_CEILING = 4;
+// RAISED, DELIBERATELY, ONCE. Secondary text on ink is cream at reduced
+// opacity — the sanctioned answer, because warm grey scores ~2.0:1 there and
+// cream adds no colour at all. That answer IS an rgba, so 107 of them arrived
+// with it. The tokens sage400/sage600 hold the two canonical values; the
+// literals duplicating them are the next thing to fall.
+const RGB_CEILING = 232;
 
 const hex = countIn(files, /#[0-9a-fA-F]{6}\b/g);
 const sage = countIn(files, /#8fa896/gi);

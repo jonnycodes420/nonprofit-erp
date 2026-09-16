@@ -51,14 +51,14 @@ export default function ForgotPasswordPage() {
           <div style={{ fontSize: 30, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.25, marginBottom: 12 }}>
             Forgot your<br/>password?
           </div>
-          <div style={{ fontSize: 14, color: "#8fa896", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 14, color: "rgba(240,237,230,0.7)", lineHeight: 1.6 }}>
             We'll send you a reset link.
           </div>
         </div>
 
         <div style={{ fontSize: 12, color: "#3d5245" }}>
           Remember it?{" "}
-          <Link to="/login" style={{ color: "#8fa896", textDecoration: "none", fontWeight: 600 }}>Sign in →</Link>
+          <Link to="/login" style={{ color: "rgba(240,237,230,0.7)", textDecoration: "none", fontWeight: 600 }}>Sign in →</Link>
         </div>
       </div>
 
@@ -119,7 +119,7 @@ export default function ForgotPasswordPage() {
               </form>
 
               <div style={{ marginTop: 20, textAlign: "center" }}>
-                <Link to="/login" style={{ fontSize: 13, color: "#8fa896", textDecoration: "none" }}>
+                <Link to="/login" style={{ fontSize: 13, color: "rgba(240,237,230,0.7)", textDecoration: "none" }}>
                   ← Back to login
                 </Link>
               </div>

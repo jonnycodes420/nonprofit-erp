@@ -105,7 +105,7 @@ export default function SignupPage() {
                 <div style={{ width: 20, height: 20, background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                   <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#c9a84c" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </div>
-                <span style={{ fontSize: 14, color: "#8fa896" }}>{t}</span>
+                <span style={{ fontSize: 14, color: "rgba(240,237,230,0.7)" }}>{t}</span>
               </div>
             ))}
           </div>
@@ -113,7 +113,7 @@ export default function SignupPage() {
 
         <div style={{ fontSize: 12, color: "#3d5245" }}>
           Already have an account?{" "}
-          <Link to="/login" style={{ color: "#8fa896", textDecoration: "none", fontWeight: 600 }}>Sign in →</Link>
+          <Link to="/login" style={{ color: "rgba(240,237,230,0.7)", textDecoration: "none", fontWeight: 600 }}>Sign in →</Link>
         </div>
       </div>
 
@@ -163,9 +163,9 @@ export default function SignupPage() {
 
           <div style={{ marginTop: 20, fontSize: 11, color: "#9ca896", textAlign: "center", lineHeight: 1.5 }}>
             By signing up you agree to our{" "}
-            <Link to="/terms" style={{ color: "#8fa896", textDecoration: "underline" }}>Terms of Service</Link>
+            <Link to="/terms" style={{ color: "rgba(240,237,230,0.7)", textDecoration: "underline" }}>Terms of Service</Link>
             {" "}and{" "}
-            <Link to="/privacy" style={{ color: "#8fa896", textDecoration: "underline" }}>Privacy Policy</Link>.
+            <Link to="/privacy" style={{ color: "rgba(240,237,230,0.7)", textDecoration: "underline" }}>Privacy Policy</Link>.
           </div>
         </div>
       </div>

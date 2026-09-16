@@ -111,7 +111,7 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
     const tabs = width >= 1000
       // BUILD-86 — "Dashboard" is the board surface, a real screen of its own
       // and therefore in the empty-org sweep like every other tab.
-      ? ["Home", "Dashboard", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
+      ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
     for (const t of tabs) {
@@ -150,7 +150,7 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
         found.__driftEmpty = await page.evaluate(() =>
           document.querySelector('[data-testid="drift-empty-state"]')?.innerText.replace(/\n/g, " | ") || "");
       }
-      if (t === "Dashboard") {
+      if (t === "Dashboards") {
         found.__retention = await page.evaluate(() => {
           const el = [...document.querySelectorAll("*")].find(e => e.children.length < 3 && /retention/i.test(e.innerText || "") && (e.innerText || "").length < 80);
           if (!el) return "no retention element rendered (acceptable for an empty org)";
@@ -160,10 +160,11 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
         // BUILD-76 follow-up — the Drifting section must RENDER on an empty
         // org, with an empty state that shows its work; and the goal banner's
         // At-risk tile must answer in words, never an em dash.
-        found.__atRiskTile = await page.evaluate(() => {
-          const label = [...document.querySelectorAll("div")].find(e => e.children.length === 0 && /^at risk$/i.test((e.innerText || "").trim()));
-          return label && label.parentElement ? label.parentElement.innerText.replace(/\n/g, " | ") : "no at-risk tile rendered";
-        });
+        // BUILD-86 C.3 — REVIEWED REMOVAL. The At-risk tile lived on the goal
+        // hero of the old single board screen, which the four dashboards
+        // replaced. Its SUBJECT is now the Recurring dashboard, whose empty
+        // copy is covered by tests/dashboards.test.js §2. A probe for an
+        // element that no longer exists is not a guard, it is a false alarm.
       }
     }
     await page.close();

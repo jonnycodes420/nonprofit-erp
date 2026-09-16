@@ -33,6 +33,14 @@ for (const m of (tObject[0] + publicTheme).matchAll(/#[0-9a-fA-F]{6}/g)) ALLOWED
 
 // ── 2) Documented EXTRAS — every entry has a reason. Keep this list SHORT. ──
 const EXTRAS = [
+  // BUILD-86 C.1 — SAGE IS DELETED FROM THE TOKENS and swept from the
+  // authenticated app (100 + 7 literals → cream at reduced opacity, which adds
+  // no colour and keeps AA on ink). It survives ONLY on the public surfaces,
+  // which carry their own audited palettes and their own guards: the landing's
+  // contrast is measured against real composited pixels, and the donor-facing
+  // giving dashboard is a consumer surface, not the CRM. Repainting either the
+  // night before a demo buys nothing and risks a page nobody re-measured.
+  "#8fa896", "#6b8f7a",
   // Warm neutrals / sage one-offs inside the authenticated app — same cream/
   // pine family as the palette, used for hairlines and muted chrome:
   "#f3f0eb", "#c9beac", "#b7ad9b", "#a1b5a8", "#f6f4ee", "#faf9f6", "#c9c3b8",

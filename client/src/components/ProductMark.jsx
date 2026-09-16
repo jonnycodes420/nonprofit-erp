@@ -10,7 +10,7 @@
 //   on="ink"   → transparent fill, 1.5px solid brass border, cream text
 //   on="cream" → ink fill, no border, cream text
 
-const INK = "#0F1A12", CREAM = "#F0EDE6", BRASS = "#C9A84C", FOREST = "#0D5C3A", SAGE = "#8FA896";
+const INK = "#0F1A12", CREAM = "#F0EDE6", BRASS = "#C9A84C", FOREST = "#0D5C3A", SAGE = "rgba(240,237,230,0.7)";
 
 function ThreadGlyph() {
   // a knot on a thread: the vertical line, the brass circle on it

@@ -150,7 +150,7 @@ export function TopBar({ auth, logout, onNavigate }) {
 
     {/* Global search */}
     <div ref={rootRef} style={{position:"relative",flex:"0 1 560px",minWidth:0}}>
-      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"#6b8f7a",fontSize:13,pointerEvents:"none"}}>⌕</span>
+      <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:"rgba(240,237,230,0.55)",fontSize:13,pointerEvents:"none"}}>⌕</span>
       <input
         ref={inputRef}
         className="topbar-search"
@@ -163,9 +163,9 @@ export function TopBar({ auth, logout, onNavigate }) {
         style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px 7px 30px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}
       />
       {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
-        {flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"#6b8f7a"}}>No matches for “{q.trim()}”</div>}
+        {flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
         {groups.map(gr=><div key={gr.name}>
-          <div style={{padding:"6px 14px 3px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"#6b8f7a"}}>{gr.name}</div>
+          <div style={{padding:"6px 14px 3px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
           {gr.items.map(item=>{
             flatIdx++;
             const active = flatIdx===sel;
@@ -178,7 +178,7 @@ export function TopBar({ auth, logout, onNavigate }) {
                 <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</span>
                 <DriftBadge drift={item.drift}/>
               </div>
-              {item.sub && <div style={{fontSize:11.5,color:"#8fa896",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}
+              {item.sub && <div style={{fontSize:11.5,color:"rgba(240,237,230,0.7)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.sub}</div>}
             </button>;
           })}
         </div>)}
@@ -190,12 +190,12 @@ export function TopBar({ auth, logout, onNavigate }) {
     {/* Help menu */}
     <div ref={helpRef} style={{position:"relative"}}>
       <button data-testid="topbar-help" onClick={()=>setHelpOpen(v=>!v)} title="Help"
-        style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid #2d4a35",color:"#8fa896",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
+        style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid #2d4a35",color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
       {helpOpen && <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:210,zIndex:130}}>
         <a href="mailto:jonathan@stewardapp.dev?subject=Steward%20question" onClick={()=>setHelpOpen(false)}
           style={{display:"block",padding:"8px 14px",fontSize:13,color:"#f0ede6",textDecoration:"none",fontWeight:600}}>
           Email the founder
-          <div style={{fontSize:11,color:"#8fa896",fontWeight:400}}>jonathan@stewardapp.dev</div>
+          <div style={{fontSize:11,color:"rgba(240,237,230,0.7)",fontWeight:400}}>jonathan@stewardapp.dev</div>
         </a>
       </div>}
     </div>
@@ -211,7 +211,7 @@ export function TopBar({ auth, logout, onNavigate }) {
         </div>
         <span style={{fontSize:12.5,fontWeight:600,color:"#f0ede6",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
       </button>
-      <button onClick={logout} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>Sign out</button>
+      <button onClick={logout} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
   </div>;
 }

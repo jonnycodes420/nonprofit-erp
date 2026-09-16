@@ -12,7 +12,7 @@ function Nav() {
       <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
         <span style={{ fontSize: 20, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
       </Link>
-      <Link to="/" style={{ fontSize: 13, color: "#8fa896", textDecoration: "none" }}>← Back to home</Link>
+      <Link to="/" style={{ fontSize: 13, color: "rgba(240,237,230,0.7)", textDecoration: "none" }}>← Back to home</Link>
     </nav>
   );
 }
@@ -21,7 +21,7 @@ const S = {
   page: { background: "#f0ede6", minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif" },
   body: { maxWidth: 720, margin: "0 auto", padding: "56px 32px 80px" },
   h1: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 40, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 8px" },
-  meta: { fontSize: 13, color: "#8fa896", marginBottom: 48 },
+  meta: { fontSize: 13, color: "rgba(240,237,230,0.7)", marginBottom: 48 },
   h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.01em", margin: "40px 0 12px", paddingTop: 8, borderTop: "1px solid #ddd9d0" },
   p: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, margin: "0 0 16px" },
   li: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, marginBottom: 6 },

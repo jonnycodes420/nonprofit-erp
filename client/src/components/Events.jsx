@@ -375,7 +375,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
   if (loading || !event) return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#0f1a12", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ color: "#8fa896", fontSize: 13 }}>Loading…</div>
+      <div style={{ color: "rgba(240,237,230,0.7)", fontSize: 13 }}>Loading…</div>
     </div>
   );
 
@@ -403,7 +403,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#0f1a12", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div style={{ background: "#0f1a12", borderBottom: "1px solid #1a2e1f", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #2d4a35", borderRadius: 8, padding: "6px 12px", color: "#8fa896", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #2d4a35", borderRadius: 8, padding: "6px 12px", color: "rgba(240,237,230,0.7)", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
           ← Back
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
@@ -413,7 +413,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             <TypeBadge type={event.event_type} />
             <StatusBadge status={event.status} small />
           </div>
-          <div style={{ fontSize: 12, color: "#8fa896", marginTop: 3 }}>
+          <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginTop: 3 }}>
             {fmtDate(event.date)}{event.end_date ? ` – ${fmtDate(event.end_date)}` : ""}{event.location ? ` · ${event.location}` : ""}
           </div>
         </div>
@@ -434,13 +434,13 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           {/* Stat tiles */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
-              ["Invited", totalCount, "#8fa896"],
+              ["Invited", totalCount, "rgba(240,237,230,0.7)"],
               ["Confirmed", confirmedCount, "#3b82f6"],
               ["Attended", attendedCount, "#0d5c3a"],
               ["No Show", noShowCount, "#ef4444"],
             ].map(([l, v, c]) => (
               <div key={l} style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 12, padding: "12px 14px" }}>
-                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 4 }}>{l}</div>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 4 }}>{l}</div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: c, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{v}</div>
               </div>
             ))}
@@ -454,11 +454,11 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             const maxVal = Math.max(totalRev, cost, 1);
             return (
               <div style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 14, padding: "16px 18px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 12 }}>Revenue vs Cost</div>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Revenue vs Cost</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {[["Revenue", totalRev, "#0d5c3a"], ["Cost", cost, "#ef4444"]].map(([lbl, val, col]) => (
                     <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 60, fontSize: 11, color: "#8fa896", textAlign: "right", flexShrink: 0 }}>{lbl}</div>
+                      <div style={{ width: 60, fontSize: 11, color: "rgba(240,237,230,0.7)", textAlign: "right", flexShrink: 0 }}>{lbl}</div>
                       <div style={{ flex: 1, height: 16, background: "#0f1a12", borderRadius: 4, overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${val > 0 ? Math.max((val / maxVal) * 100, 4) : 0}%`, background: col, borderRadius: 4, transition: "width 0.4s" }} />
                       </div>
@@ -467,7 +467,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                   ))}
                 </div>
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #2d4a35", display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontSize: 11, color: "#8fa896" }}>Net</span>
+                  <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Net</span>
                   <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? "#0d5c3a" : "#ef4444", fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
                 </div>
               </div>
@@ -476,7 +476,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
           {/* Notes */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 8 }}>
               Notes {notesSaved && <span style={{ color: "#0d5c3a", fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
             </div>
             <textarea
@@ -492,7 +492,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           {/* Attendee table */}
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896" }}>Attendees ({totalCount})</div>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)" }}>Attendees ({totalCount})</div>
               {attendedCount > 0 && (
                 <button onClick={() => setShowFollowUp(true)} style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 8, padding: "5px 12px", color: "#c9a84c", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   ✦ Follow-up Tasks
@@ -511,23 +511,23 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             )}
 
             {event.attendees?.length === 0 ? (
-              <div style={{ fontSize: 13, color: "#8fa896", fontStyle: "italic", padding: "16px 0" }}>No attendees yet. Add guests from the panel on the right.</div>
+              <div style={{ fontSize: 13, color: "rgba(240,237,230,0.7)", fontStyle: "italic", padding: "16px 0" }}>No attendees yet. Add guests from the panel on the right.</div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 {/* Table header */}
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "6px 10px", borderRadius: 8, background: "#0f1a12" }}>
                   {["Name", "Email", "Stage", "Status", "Gift", ""].map(h => (
-                    <div key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#8fa896" }}>{h}</div>
+                    <div key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "rgba(240,237,230,0.7)" }}>{h}</div>
                   ))}
                 </div>
                 {event.attendees.map(a => (
                   <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "8px 10px", borderRadius: 8, background: "#1a2e1f", border: "1px solid #2d4a35", alignItems: "center" }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
-                    <div style={{ fontSize: 11, color: "#8fa896", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "—"}</div>
-                    <div>{a.stage ? <Pill label={a.stage} color={SC[a.stage] || "#6b7280"} /> : <span style={{ fontSize: 11, color: "#8fa896" }}>—</span>}</div>
+                    <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "—"}</div>
+                    <div>{a.stage ? <Pill label={a.stage} color={SC[a.stage] || "#6b7280"} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>—</span>}</div>
                     <div>
                       {savingAtt === a.id ? (
-                        <span style={{ fontSize: 11, color: "#8fa896" }}>Saving…</span>
+                        <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Saving…</span>
                       ) : editingStatus === a.id ? (
                         <select
                           value={a.status}
@@ -557,7 +557,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                           style={{ background: "#0f1a12", border: "1px solid #2d4a35", borderRadius: 6, padding: "3px 6px", color: "#f0ede6", fontSize: 11, width: 72, outline: "none" }}
                         />
                       ) : (
-                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? "#0d5c3a" : "#8fa896", fontWeight: a.gift_amount ? 700 : 400 }}>
+                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? "#0d5c3a" : "rgba(240,237,230,0.7)", fontWeight: a.gift_amount ? 700 : 400 }}>
                           {a.gift_amount ? fmtFull(a.gift_amount) : "—"}
                         </button>
                       )}
@@ -575,15 +575,15 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
           {/* Quick stats */}
           <div style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 14, padding: "16px" }}>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 12 }}>Event Stats</div>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Event Stats</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? "#0d5c3a" : convRate >= 40 ? "#f59e0b" : "#8fa896"],
+                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? "#0d5c3a" : convRate >= 40 ? "#f59e0b" : "rgba(240,237,230,0.7)"],
                 ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "—", "#0d5c3a"],
                 ["Top Donor", topDonor ? topDonor.name : "—", "#c9a84c"],
               ].map(([label, value, color]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 12, color: "#8fa896" }}>{label}</span>
+                  <span style={{ fontSize: 12, color: "rgba(240,237,230,0.7)" }}>{label}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color }}>{value}</span>
                 </div>
               ))}
@@ -592,12 +592,12 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
           {/* Add attendees */}
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 10 }}>Add Attendees</div>
+            <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>Add Attendees</div>
 
             {/* Toggle */}
             <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#1a2e1f", borderRadius: 8, padding: 3 }}>
               {[["directory", "From Directory"], ["guest", "Add Guest"]].map(([mode, label]) => (
-                <button key={mode} onClick={() => setAddMode(mode)} style={{ flex: 1, background: addMode === mode ? "#0f1a12" : "transparent", border: addMode === mode ? "1px solid #2d4a35" : "none", borderRadius: 6, padding: "5px 0", color: addMode === mode ? "#f0ede6" : "#8fa896", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                <button key={mode} onClick={() => setAddMode(mode)} style={{ flex: 1, background: addMode === mode ? "#0f1a12" : "transparent", border: addMode === mode ? "1px solid #2d4a35" : "none", borderRadius: 6, padding: "5px 0", color: addMode === mode ? "#f0ede6" : "rgba(240,237,230,0.7)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   {label}
                 </button>
               ))}
@@ -622,12 +622,12 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
-                        {d.lastAmount > 0 && <div style={{ fontSize: 10, color: "#8fa896" }}>Last gift: {fmtFull(d.lastAmount)}</div>}
+                        {d.lastAmount > 0 && <div style={{ fontSize: 10, color: "rgba(240,237,230,0.7)" }}>Last gift: {fmtFull(d.lastAmount)}</div>}
                       </div>
                       {d.stage && <Pill label={d.stage} color={SC[d.stage] || "#6b7280"} />}
                     </button>
                   ))}
-                  {filteredDonors.length === 0 && <div style={{ fontSize: 12, color: "#8fa896", padding: "12px 0", textAlign: "center" }}>No donors to add</div>}
+                  {filteredDonors.length === 0 && <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>No donors to add</div>}
                 </div>
                 {selectedIds.size > 0 && (
                   <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
@@ -650,7 +650,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           {attendedCount > 0 && (
             <div style={{ background: "#1a2e1f", border: "1px solid #c9a84c44", borderRadius: 14, padding: "14px 16px" }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#c9a84c", marginBottom: 8 }}>Follow-up Tasks</div>
-              <div style={{ fontSize: 12, color: "#8fa896", marginBottom: 10 }}>{attendedCount} donor{attendedCount !== 1 ? "s" : ""} attended — create follow-up tasks for each.</div>
+              <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{attendedCount} donor{attendedCount !== 1 ? "s" : ""} attended — create follow-up tasks for each.</div>
               <button onClick={() => setShowFollowUp(true)} style={{ background: "#c9a84c22", border: "1px solid #c9a84c44", borderRadius: 8, padding: "8px 14px", color: "#c9a84c", fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}>
                 ✦ Create Follow-up Tasks
               </button>

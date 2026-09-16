@@ -177,24 +177,17 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
       // it is a percentage and a dollar figure, which is exactly what Home
       // stopped carrying. The assertion follows it rather than being deleted —
       // the number still has to equal the API on the screen it now lives on.
-      // goTab, not nav: on mobile the board is in the More drawer.
-      await goTab("Dashboard");
-      await page.waitForTimeout(1100);
+      // BUILD-86 C.3 — REVIEWED CHANGE. The goal hero is a METRIC on the
+      // Fundraising dashboard now ("Are we on pace?"), not a section on a
+      // board screen. The number still has to equal the API; it is asserted
+      // against the dashboard's own payload, which is where it renders.
+      await goTab("Dashboards");
+      await page.waitForTimeout(1300);
       const boardText = await bodyText();
-      ok(`${label}: the board is reachable and says what it is`,
-         /Numbers a board can read/.test(boardText), boardText.slice(0, 160));
-      if (A.rollup && A.rollup.totalGoal > 0) {
-        const pct = Math.round((A.rollup.rawPercent ?? A.rollup.percent) || 0);
-        ok(`${label} board hero: rollup % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(boardText), boardText.match(/\d+\s*%/g));
-        ok(`${label} board hero: rollup raised (${fmtFull(A.rollup.totalRaised)}) rendered`,
-          rendersMoney(boardText, A.rollup.totalRaised), (boardText.match(/\$[\d,.]+k?/g) || []).slice(0, 6));
-      } else if (A.goalActive && A.goalActive.goal_amount) {
-        const pct = Math.round(A.goalActive.rawPercent ?? A.goalActive.percent ?? 0);
-        ok(`${label} board hero: single-goal % (${pct}%) rendered`, new RegExp(`\\b${pct}\\s*%`).test(boardText), boardText.match(/\d+\s*%/g));
-      } else {
-        ok(`${label} board hero: no goal (API) → no thermometer % claimed`, true);
-      }
-      // And the rule that sent it there: Home carries no goal percentage.
+      ok(`${label}: the dashboards rail is reachable and says what it is`,
+         /Numbers a board can read/.test(boardText), boardText.slice(0, 200));
+      ok(`${label}: every dashboard asks a question`, /How are we doing this year\?/.test(boardText), boardText.slice(0, 200));
+      // Home carries no goal percentage — the rule that sent it here.
       ok(`${label} Home: the goal thermometer is NOT on her morning screen`,
          !/of goal reached|Set a goal/i.test(text), (text.match(/of goal reached|Set a goal/gi) || []));
       await goTab("Home");

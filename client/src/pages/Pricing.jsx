@@ -188,7 +188,7 @@ export default function Pricing() {
 
   const CAL = "https://calendly.com/xjca2006/new-meeting";
 
-  const cream = "#f0ede6", ink = "#0f1a12", sage = "#8fa896", gold = "#c9a84c";
+  const cream = "#f0ede6", ink = "#0f1a12", sage = "rgba(240,237,230,0.7)", gold = "#c9a84c";
   const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#0d5c3a", emerald = "#0d5c3a";
 
   return (

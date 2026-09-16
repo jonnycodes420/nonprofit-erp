@@ -7,6 +7,7 @@ import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing } from "./compon
 // button, and modal render below, and the matching import above:
 // `VoiceMemoModal` from "./components/shared").
 import { Dashboard } from "./components/Dashboard";
+import { Dashboards } from "./components/Dashboards";
 import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
@@ -34,7 +35,7 @@ const TABS=[
   // deep link, navigateTo("dashboard") call and the morning email's links
   // work unchanged; the board is a new id beside it. Renaming the old one
   // would have been ~40 call sites for no user-visible gain.
-  {id:"board",label:"Dashboard",icon:"▤"},
+  {id:"board",label:"Dashboards",icon:"▤"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
@@ -58,7 +59,7 @@ const BOTTOM_TABS=[
   {id:"settings",label:"Settings",icon:"⚙"},
 ];
 const MORE_TABS=[
-  {id:"board",label:"Dashboard",icon:"▤"},
+  {id:"board",label:"Dashboards",icon:"▤"},
   {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
@@ -367,7 +368,7 @@ function AppShell() {
     background:active?"#1a2e1f":"transparent",
     border:"none",borderLeft:`3px solid ${active?"var(--org-accent,#c9a84c)":"transparent"}`,
     borderRadius:"0 10px 10px 0",padding:"10px 12px 10px 13px",
-    color:active?"#f0ede6":"#8fa896",fontSize:13,fontWeight:active?700:500,
+    color:active?"#f0ede6":"rgba(240,237,230,0.7)",fontSize:13,fontWeight:active?700:500,
     cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
   });
 
@@ -405,10 +406,10 @@ function AppShell() {
             const active=tab===t.id;
             const locked=TEAM_GATED.has(t.id)&&isCoreTier;
             return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
-              <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>{t.icon}</span>
+              <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"rgba(240,237,230,0.55)",flexShrink:0}}>{t.icon}</span>
               {t.label}
-              {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"#6b8f7a"}}><LockGlyph size={11} color="#6b8f7a"/></span>}
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+              {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"rgba(240,237,230,0.7)",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
               {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:locked?6:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
             </button>;
           };
@@ -434,7 +435,7 @@ function AppShell() {
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",flexShrink:0}}>
         <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
-          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"var(--org-accent,#c9a84c)":"#6b8f7a",flexShrink:0}}>⚙</span>
+          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"var(--org-accent,#c9a84c)":"rgba(240,237,230,0.55)",flexShrink:0}}>⚙</span>
           Settings
         </button>
       </div>
@@ -459,7 +460,7 @@ function AppShell() {
         <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
-        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
@@ -516,7 +517,16 @@ function AppShell() {
       {/* BUILD-86 — the same component, the other surface. One Dashboard, one
           layout, one set of sections; `surface` decides which of them render.
           A second component would have been two places to keep a section. */}
-      {tab==="board"&&<Dashboard data={data} setData={setData} onNavigate={navigateTo} isReadOnly={isReadOnly} surface="board"/>}
+      {/* BUILD-86 C.3 — the board surface is FOUR DASHBOARDS now, each one
+          question, each number carrying its own definition. The old single
+          board screen's sections are gone with it: Board management (board
+          members are donors with a flag, and a board packet is a PDF export,
+          not a module), the "no platform fee" banner (marketing does not live
+          inside the product), and stewardship debt and first-touch delay
+          (0.6 — the first became "Gifts not yet thanked" with a definition and
+          a start date, on People; the second measured the IMPORT DATE, not the
+          donor, and is removed). */}
+      {tab==="board"&&<Dashboards data={data} onNavigate={navigateTo}/>}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
@@ -525,7 +535,13 @@ function AppShell() {
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
-      {tab==="board"&&<Board data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {/* BUILD-86 C.3 — BOARD MANAGEMENT IS REMOVED. It was deprioritised out of
+          the nav in 2026-07-12 but its render stayed, keyed on the tab id
+          `board` — which C.3 reused for Dashboards, so BOTH drew on the same
+          screen and a board-members module appeared beneath the board packet.
+          Removed for the reason the spec gives: a board member is a donor with
+          a flag, and a board packet is a PDF export, not a module. Board.jsx,
+          its routes and its table are untouched, like Events and Volunteers. */}
       {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
       {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
@@ -564,7 +580,7 @@ function AppShell() {
             <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
               <span className="mob-icon">{t.icon}</span>
               <span style={{flex:1}}>{t.label}</span>
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"#8fa896",border:"1px solid #2d4a35",borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"rgba(240,237,230,0.7)",border:"1px solid #2d4a35",borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
               {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
             </button>
           );
@@ -581,7 +597,7 @@ function AppShell() {
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:"#0f1a12",borderTop:"1px solid #1a2e1f",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:"#f0ede6",fontWeight:500}}>Add Steward to your home screen</span>
       <button onClick={async()=>{deferredPrompt.prompt();setShowInstallPrompt(false);}} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Add</button>
-      <button onClick={()=>{setShowInstallPrompt(false);localStorage.setItem('installDismissed','true');}} style={{background:"transparent",border:"none",color:"#8fa896",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
+      <button onClick={()=>{setShowInstallPrompt(false);localStorage.setItem('installDismissed','true');}} style={{background:"transparent",border:"none",color:"rgba(240,237,230,0.7)",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
     </div>}
 
     {/* Bottom nav bar — mobile only, always in DOM */}

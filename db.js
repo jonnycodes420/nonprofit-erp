@@ -2606,7 +2606,10 @@ async function seedData() {
   await pool.query(
     `INSERT INTO users (id, org_id, email, password_hash, name, role)
      VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
-    [userId, orgId, "admin@creoarts.org", hash, "Admin User", "admin"]
+    // BUILD-86 C.3 — a REAL first name. The greeting, the actor stamp on every
+    // write and the officer chip on every row all render this; "Admin User" on
+    // a demo screen tells a prospect they are looking at a fixture.
+    [userId, orgId, "admin@creoarts.org", hash, "Maya Reyes", "admin"]
   );
 
   const donors = [

@@ -225,6 +225,13 @@ const PARAM_EXEMPT = [
   [/^\/account\//, "donor-account cookie auth — deep isolation lives in org-blindness.test.js (48 asserts)"],
   [/^\/recurring\/(update-card|proposal)/, "signed-token donor surface"],
   [/^\/reports\/:key$/, "param is a report NAME, not a row id"],
+  // BUILD-86 C.3 — the param is a DASHBOARD NAME from the fixed registry in
+  // shared/dashboards.js (board · fundraising · people · recurring), never a
+  // row id. There is no cross-org value to probe: the org comes from the token
+  // and an unknown key is a 404. Tenancy for what these screens RETURN is
+  // proven directly in tests/dashboards.test.js §6, which asserts org B never
+  // sees org A's people or figures on any of the four.
+  [/^\/dashboards\/:key(\/pdf)?$/, "param is a dashboard NAME from a fixed registry, not a row id — see dashboards.test.js §6"],
   [/^\/portfolio\/officers\/:userId\/color$/, "cross-org userId probed via bResolver userId map"], // resolved, listed for clarity
 ];
 

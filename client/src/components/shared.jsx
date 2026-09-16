@@ -54,9 +54,16 @@ export const T = {
   green500:   "#2f8f62",  // emerald — links, accents, active toggles
   green200:   "#dce7df",  // sage — card hover tint, section bands
   green100:   "#edf3ee",  // mist — subtle fills, zebra rows, hover wash
-  // Sage — muted green-greys for text/labels ON dark panels (BUILD-33).
-  sage400:    "#8fa896",  // section labels / secondary text on dark
-  sage600:    "#6b8f7a",  // placeholder / tertiary text on dark
+  // ── BUILD-86 C.1 — SAGE IS DELETED ───────────────────────────────────────
+  // Sage was the secondary-text colour ON INK, and the four-colour rule has no
+  // room for it. Its replacement cannot be warm grey: #5A554F scores about
+  // 2.0:1 on ink, a clear AA failure the contrast guard would rightly refuse.
+  // It is CREAM AT REDUCED OPACITY instead, which adds no colour at all —
+  // cream is white's warm shade by the rule's own wording — and lands near
+  // 8.5:1. Warm grey keeps secondary text on LIGHT surfaces, where it belongs.
+  // The names survive so call sites did not have to move.
+  sage400:    "rgba(240,237,230,0.7)",   // secondary text on ink
+  sage600:    "rgba(240,237,230,0.55)",  // tertiary text on ink
   // Accents
   gold:       "#c9a84c",
   terracotta: "#b8593f",   // negative/attention — LOCKED, do not repurpose
@@ -292,7 +299,7 @@ export function GlobalStyles() {
     .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
     .app-sidebar{user-select:none;}
     .app-topbar{user-select:none;}
-    .topbar-search::placeholder{color:#8fa896;}
+    .topbar-search::placeholder{color:rgba(240,237,230,0.7);}
     .topbar-search:focus{border-color:#c9a84c!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
     .side-nav-btn:hover{color:#f0ede6!important;}
     .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
@@ -347,7 +354,7 @@ export function GlobalStyles() {
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
     .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:#0f1a12;border-top:1px solid #1a2e1f;box-shadow:0 -1px 0 rgba(0,0,0,.2),0 -4px 20px rgba(0,0,0,.15);padding-bottom:env(safe-area-inset-bottom,0px);}
-    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
+    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
     .mobile-bottom-tab.active{color:#c9a84c;}
     .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);align-items:flex-end;}
@@ -356,7 +363,7 @@ export function GlobalStyles() {
     .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid #1a2e1f;padding:16px 24px;color:#f0ede6;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
     .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
     .mobile-more-row.active{color:#c9a84c;font-weight:700;}
-    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:#8fa896;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
+    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
     /* BUILD-41 mobile donor rows + Select toggle — desktop never shows them */
     .dir-row-mobile{display:none;}

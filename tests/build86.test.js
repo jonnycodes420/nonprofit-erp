@@ -139,8 +139,17 @@ const root = path.join(__dirname, "..");
 
   ok("Home is the queue, the names, and the things she set up",
      ["thread", "drift", "recurring", "setup"].every(id => home.includes(id)), home);
-  ok("the board has the goal, the retention and the stat rows",
-     ["hero", "retentionPipeline", "myPortfolio", "impact", "monthly"].every(id => board.includes(id)), board);
+  // BUILD-86 C.3 — REVIEWED CHANGE. The board TAB is four dashboards now, each
+  // one question with a defined number. The section registry's `board` entries
+  // are no longer what that tab renders; their CONTENT survives on the
+  // dashboards (the goal on Fundraising, retention on Board), and the registry
+  // keeps them so Home's saved-layout machinery is untouched. What the split
+  // still guarantees is that none of them is on HOME.
+  ok("no board-surface section leaks onto Home",
+     ["hero", "retentionPipeline", "myPortfolio", "impact", "monthly"].every(id => !home.includes(id)), home);
+  const DB = await import("../shared/dashboards.js");
+  ok("the board tab is four dashboards, each a question",
+     DB.DASHBOARD_KEYS.join(",") === "board,fundraising,people,recurring", DB.DASHBOARD_KEYS);
   ok("Home can never be blank: the Thread is not hideable there",
      L.sectionMeta("thread").hideable === false);
 
@@ -177,9 +186,9 @@ const root = path.join(__dirname, "..");
 
   const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");
   ok("the board is a NEW tab id — `dashboard` keeps its route, its label and every deep link",
-     /\{id:"board",label:"Dashboard"/.test(app) && /\{id:"dashboard",label:"Home"/.test(app));
-  ok("both surfaces render the SAME component, differing only by prop",
-     /tab==="dashboard"&&<Dashboard[^>]*surface="home"/.test(app) && /tab==="board"&&<Dashboard[^>]*surface="board"/.test(app));
+     /\{id:"board",label:"Dashboards"/.test(app) && /\{id:"dashboard",label:"Home"/.test(app));
+  ok("Home renders the section surface; the board tab renders the four dashboards",
+     /tab==="dashboard"&&<Dashboard[^>]*surface="home"/.test(app) && /tab==="board"&&<Dashboards/.test(app));
   ok("Dashboard sits directly under Home in the sidebar, not buried in a group",
      /navItem\(home\)\}[\s\S]{0,400}?navItem\(board\)/.test(app));
   ok("…and is reachable on mobile", /const MORE_TABS=\[\s*\n\s*\{id:"board"/.test(app));

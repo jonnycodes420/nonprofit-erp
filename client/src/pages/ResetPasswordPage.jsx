@@ -75,13 +75,13 @@ export default function ResetPasswordPage() {
           <div style={{ fontSize: 30, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.25, marginBottom: 12 }}>
             Set a new<br/>password.
           </div>
-          <div style={{ fontSize: 14, color: "#8fa896", lineHeight: 1.6 }}>
+          <div style={{ fontSize: 14, color: "rgba(240,237,230,0.7)", lineHeight: 1.6 }}>
             Choose something strong and memorable.
           </div>
         </div>
 
         <div style={{ fontSize: 12, color: "#3d5245" }}>
-          <Link to="/login" style={{ color: "#8fa896", textDecoration: "none", fontWeight: 600 }}>← Back to login</Link>
+          <Link to="/login" style={{ color: "rgba(240,237,230,0.7)", textDecoration: "none", fontWeight: 600 }}>← Back to login</Link>
         </div>
       </div>
 

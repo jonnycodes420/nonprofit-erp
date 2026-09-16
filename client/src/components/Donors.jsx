@@ -5347,14 +5347,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           )}
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Relationship Owner</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Relationship Owner</div>
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
                 <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{donor.assignedToName||"Unassigned"}</div>
                 {/* Reassigning a relationship owner is portfolio management → Team.
                     Core sees the owner read-only; the server 403s the assign route. */}
-                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"#8fa896",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"rgba(240,237,230,0.7)",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
               </div>
               {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
                 <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer"}}>
@@ -5369,7 +5369,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>
 
           {sequences.length>0&&lockMajor(<div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Sequences</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Sequences</div>
             {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #0d5c3a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#0d5c3a",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
               {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#0d5c3a",cursor:"pointer"}}>+ Enroll in sequence</button>
@@ -5390,7 +5390,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 }} style={{background:seqId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"6px 12px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
                   {seqLoading?"…":"Enroll"}
                 </button>
-                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
+                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
             </div>
           </div>,{title:"Email sequences",blurb:"Enroll this donor in an automated stewardship sequence. Part of the Team portfolio toolkit.",minHeight:120})}
@@ -5422,11 +5422,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               }
             };
             return <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Custom Fields</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Custom Fields</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {shown.map(f=>(
                 <div key={f.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:"#8fa896",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
+                  <div style={{fontSize:12,color:"rgba(240,237,230,0.7)",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
                   {cfEditing===f.key?(
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.type==="checkbox"?(
@@ -5450,7 +5450,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             return <button key={o} onClick={()=>{
                               const next=on?cur.filter(x=>x!==o):[...cur,o];
                               setCfEditVal(next.join("; "));
-                            }} style={{background:on?T.greenDk:"transparent",border:"1px solid #2d4a35",borderRadius:12,padding:"2px 8px",fontSize:11,color:on?"#f0ede6":"#8fa896",cursor:"pointer"}}>{o}</button>;
+                            }} style={{background:on?T.greenDk:"transparent",border:"1px solid #2d4a35",borderRadius:12,padding:"2px 8px",fontSize:11,color:on?"#f0ede6":"rgba(240,237,230,0.7)",cursor:"pointer"}}>{o}</button>;
                           })}
                         </div>
                       ):f.type==="long_text"?(
@@ -5470,11 +5470,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         />
                       )}
                       <button onClick={()=>saveCf(f)} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#f0ede6",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:"#8fa896",fontSize:12,cursor:"pointer"}}>✕</button>
+                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?"#f0ede6":"#8fa896",fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
+                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?"#f0ede6":"rgba(240,237,230,0.7)",fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
                         {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
                       </span>
                       <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
@@ -5485,7 +5485,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               ))}
               {cfError&&<div style={{fontSize:11.5,color:"#b8593f"}}>{cfError}</div>}
               {hidden>0&&(
-                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:"#8fa896",cursor:"pointer",textAlign:"left"}}>
+                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:"rgba(240,237,230,0.7)",cursor:"pointer",textAlign:"left"}}>
                   {cfShowAll?"Hide empty fields":`Show all ${cfData.length} fields (${hidden} empty)`}
                 </button>
               )}
@@ -5494,7 +5494,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           })()}
 
           {donorEvents.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Events</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Events</div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {donorEvents.slice(0,5).map(e=>{
                 const EVT_ICONS={gala:"•",cultivation:"•",site_visit:"•",board_meeting:"•",volunteer:"•",webinar:"•",other:"•"};
@@ -5514,7 +5514,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:12,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
-                      <div style={{fontSize:10,color:"#8fa896"}}>{d}</div>
+                      <div style={{fontSize:10,color:"rgba(240,237,230,0.7)"}}>{d}</div>
                     </div>
                     <span style={{background:attCol+"22",color:attCol,border:`1px solid ${attCol}44`,borderRadius:99,padding:"2px 8px",fontSize:9,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
                   </div>
@@ -5547,7 +5547,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
                           </button>
                         )}
-                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:7,padding:"5px 12px",color:"#8fa896",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:7,padding:"5px 12px",color:"rgba(240,237,230,0.7)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
                       </div>
                     </div>
                   ))}
@@ -5557,43 +5557,43 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           })()}
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
-                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"#8fa896",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"rgba(240,237,230,0.7)",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                   {s.label}
                 </button>
               ))}
             </div>
-            <div style={{marginTop:8,fontSize:11,color:"#8fa896",lineHeight:1.5,borderLeft:`2px solid ${stage.color}`,paddingLeft:8}}>
+            <div style={{marginTop:8,fontSize:11,color:"rgba(240,237,230,0.7)",lineHeight:1.5,borderLeft:`2px solid ${stage.color}`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Wealth Score</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Wealth Score</div>
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:14,padding:"16px"}}>
               {localScore!==null?(
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                     <div style={{textAlign:"center",background:wsc+"22",border:`2px solid ${wsc}`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
                       <div style={{fontSize:26,fontWeight:800,color:wsc,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
-                      <div style={{fontSize:9,color:"#8fa896",fontWeight:600,marginTop:2}}>/ 10</div>
+                      <div style={{fontSize:9,color:"rgba(240,237,230,0.7)",fontWeight:600,marginTop:2}}>/ 10</div>
                     </div>
                     <div>
                       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
-                        <span style={{background:(TIER_COLOR[localTier]||"#8fa896")+"33",color:TIER_COLOR[localTier]||"#8fa896",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
+                        <span style={{background:(TIER_COLOR[localTier]||"rgba(240,237,230,0.7)")+"33",color:TIER_COLOR[localTier]||"rgba(240,237,230,0.7)",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
                       </div>
-                      <div style={{fontSize:10,color:"#8fa896",fontWeight:600}}>{localConf} confidence</div>
+                      <div style={{fontSize:10,color:"rgba(240,237,230,0.7)",fontWeight:600}}>{localConf} confidence</div>
                     </div>
                   </div>
-                  {localRationale&&<p style={{fontSize:12,color:"#8fa896",lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid #2d4a35",paddingLeft:10}}>{localRationale}</p>}
+                  {localRationale&&<p style={{fontSize:12,color:"rgba(240,237,230,0.7)",lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid #2d4a35",paddingLeft:10}}>{localRationale}</p>}
                   <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
                 </>
               ):(
                 <div style={{textAlign:"center",padding:"4px 0"}}>
-                  <div style={{fontSize:12,color:"#8fa896",marginBottom:10}}>No score yet</div>
+                  <div style={{fontSize:12,color:"rgba(240,237,230,0.7)",marginBottom:10}}>No score yet</div>
                   <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
                 </div>
               )}
@@ -5601,7 +5601,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Suggested Actions</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Suggested Actions</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
@@ -5616,22 +5616,22 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
                   <div>
                     <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>Send via Gmail</span>
-                    {gmailEmail&&<span style={{fontSize:11,color:"#8fa896",marginLeft:8}}>{gmailEmail}</span>}
+                    {gmailEmail&&<span style={{fontSize:11,color:"rgba(240,237,230,0.7)",marginLeft:8}}>{gmailEmail}</span>}
                   </div>
-                  <button onClick={()=>{setComposeOpen(false);setComposeSent(false);setComposeErr("");}} style={{background:"transparent",border:"none",color:"#8fa896",fontSize:18,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
+                  <button onClick={()=>{setComposeOpen(false);setComposeSent(false);setComposeErr("");}} style={{background:"transparent",border:"none",color:"rgba(240,237,230,0.7)",fontSize:18,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
                 </div>
                 {gmailConnected===false?(
-                  <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>
+                  <div style={{fontSize:13,color:"rgba(240,237,230,0.7)",textAlign:"center",padding:"12px 0"}}>
                     <a href="/dashboard" onClick={e=>{e.preventDefault();window.location.href="/dashboard?tab=settings";}} style={{color:"#0d5c3a",textDecoration:"none"}}>Connect Gmail in Settings</a> to send emails from donor profiles.
                   </div>
                 ):!donor.email?(
-                  <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>No email address on file for this donor.</div>
+                  <div style={{fontSize:13,color:"rgba(240,237,230,0.7)",textAlign:"center",padding:"12px 0"}}>No email address on file for this donor.</div>
                 ):(
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
                     <input value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="To" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
                     <input value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
                     <textarea value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",minHeight:120,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:11,color:"#8fa896"}}>Use <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{donor_name}}"}</code> and <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{org_name}}"}</code></div>
+                    <div style={{fontSize:11,color:"rgba(240,237,230,0.7)"}}>Use <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{donor_name}}"}</code> and <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{org_name}}"}</code></div>
                     {composeErr&&<div style={{fontSize:12,color:T.terra200,background:T.green950,border:"1px solid "+T.terracotta+"66",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
                     {composeSent&&<div style={{fontSize:12,color:T.green,background:T.green900,border:"1px solid "+T.green650,borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
                     <div style={{display:"flex",gap:8}}>

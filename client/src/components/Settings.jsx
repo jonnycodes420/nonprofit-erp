@@ -15,11 +15,11 @@ import { errorMessage } from "../lib/domainError";
 // rows may have been written with either spelling (see server.js).
 const BILLING_STATUS_META = {
   active:        { label:"Active",        bg:"#edf3ee", color:"#0d5c3a", border:"#0d5c3a" },
-  trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
+  trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
   past_due:      { label:"Past Due",      bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
   trial_expired: { label:"Trial Expired", bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
-  canceled:      { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
-  cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
+  canceled:      { label:"Canceled",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
+  cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
 };
 
 // QrCodeBlock/EmbedCodeBlock now live in ./ShareBlocks (factored out so
