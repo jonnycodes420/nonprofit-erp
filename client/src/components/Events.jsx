@@ -5,7 +5,7 @@ import { errorMessage } from "../lib/domainError";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
-  cultivation:   { label: "Cultivation",    icon: "•", color: "#10b981" },
+  cultivation:   { label: "Cultivation",    icon: "•", color: "#0d5c3a" },
   site_visit:    { label: "Site Visit",     icon: "•", color: "#3b82f6" },
   board_meeting: { label: "Board Meeting",  icon: "•", color: "#0d5c3a" },
   volunteer:     { label: "Volunteer Day",  icon: "•", color: "#f59e0b" },
@@ -13,10 +13,10 @@ const EVENT_TYPES = {
   other:         { label: "Other",          icon: "•", color: "#6b7280" },
 };
 
-const STATUS_COLORS = { upcoming: "#3b82f6", completed: "#10b981", cancelled: "#6b7280" };
+const STATUS_COLORS = { upcoming: "#3b82f6", completed: "#0d5c3a", cancelled: "#6b7280" };
 
 const ATT_COLORS = {
-  invited: "#6b7280", confirmed: "#3b82f6", attended: "#10b981",
+  invited: "#6b7280", confirmed: "#3b82f6", attended: "#0d5c3a",
   no_show: "#ef4444", cancelled: "#6b7280",
 };
 const ATT_LABELS = {
@@ -175,7 +175,7 @@ function EventCard({ event, onManage, onAddAttendees }) {
         )}
 
         {revenue > 0 && (
-          <div style={{ fontSize: 12, color: "#1a6b4a", fontWeight: 700, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, color: "#0d5c3a", fontWeight: 700, marginBottom: 6 }}>
             {fmtFull(revenue)} raised
           </div>
         )}
@@ -225,7 +225,7 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
 
         {result !== null ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#1a6b4a", marginBottom: 8 }}>{result}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: "#0d5c3a", marginBottom: 8 }}>{result}</div>
             <div style={{ fontSize: 14, color: T.ink3, marginBottom: 20 }}>tasks created ✓</div>
             <button onClick={onDone} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Done</button>
           </div>
@@ -436,7 +436,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             {[
               ["Invited", totalCount, "#8fa896"],
               ["Confirmed", confirmedCount, "#3b82f6"],
-              ["Attended", attendedCount, "#10b981"],
+              ["Attended", attendedCount, "#0d5c3a"],
               ["No Show", noShowCount, "#ef4444"],
             ].map(([l, v, c]) => (
               <div key={l} style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 12, padding: "12px 14px" }}>
@@ -456,7 +456,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               <div style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 14, padding: "16px 18px" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 12 }}>Revenue vs Cost</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[["Revenue", totalRev, "#10b981"], ["Cost", cost, "#ef4444"]].map(([lbl, val, col]) => (
+                  {[["Revenue", totalRev, "#0d5c3a"], ["Cost", cost, "#ef4444"]].map(([lbl, val, col]) => (
                     <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 60, fontSize: 11, color: "#8fa896", textAlign: "right", flexShrink: 0 }}>{lbl}</div>
                       <div style={{ flex: 1, height: 16, background: "#0f1a12", borderRadius: 4, overflow: "hidden" }}>
@@ -468,7 +468,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                 </div>
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #2d4a35", display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "#8fa896" }}>Net</span>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? "#10b981" : "#ef4444", fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? "#0d5c3a" : "#ef4444", fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
                 </div>
               </div>
             );
@@ -477,7 +477,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           {/* Notes */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 8 }}>
-              Notes {notesSaved && <span style={{ color: "#10b981", fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
+              Notes {notesSaved && <span style={{ color: "#0d5c3a", fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
             </div>
             <textarea
               value={notes}
@@ -505,7 +505,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               <button onClick={async () => {
                 const confirmed = event.attendees.filter(a => a.status === "confirmed");
                 for (const a of confirmed) await patchAttendee(a.id, { status: "attended" });
-              }} style={{ background: "#10b98122", border: "1px solid #10b98144", borderRadius: 8, padding: "6px 12px", color: "#10b981", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
+              }} style={{ background: "#0d5c3a22", border: "1px solid #0d5c3a44", borderRadius: 8, padding: "6px 12px", color: "#0d5c3a", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
                 ✓ Mark all confirmed as attended
               </button>
             )}
@@ -557,7 +557,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                           style={{ background: "#0f1a12", border: "1px solid #2d4a35", borderRadius: 6, padding: "3px 6px", color: "#f0ede6", fontSize: 11, width: 72, outline: "none" }}
                         />
                       ) : (
-                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? "#10b981" : "#8fa896", fontWeight: a.gift_amount ? 700 : 400 }}>
+                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? "#0d5c3a" : "#8fa896", fontWeight: a.gift_amount ? 700 : 400 }}>
                           {a.gift_amount ? fmtFull(a.gift_amount) : "—"}
                         </button>
                       )}
@@ -578,8 +578,8 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#8fa896", marginBottom: 12 }}>Event Stats</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? "#10b981" : convRate >= 40 ? "#f59e0b" : "#8fa896"],
-                ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "—", "#10b981"],
+                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? "#0d5c3a" : convRate >= 40 ? "#f59e0b" : "#8fa896"],
+                ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "—", "#0d5c3a"],
                 ["Top Donor", topDonor ? topDonor.name : "—", "#c9a84c"],
               ].map(([label, value, color]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -616,8 +616,8 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                       const n = new Set(s);
                       n.has(d.id) ? n.delete(d.id) : n.add(d.id);
                       return n;
-                    })} style={{ display: "flex", alignItems: "center", gap: 8, background: selectedIds.has(d.id) ? "#0d5c3a22" : "#1a2e1f", border: `1px solid ${selectedIds.has(d.id) ? "#10b981" : "#2d4a35"}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedIds.has(d.id) ? "#10b981" : "#2d4a35"}`, background: selectedIds.has(d.id) ? "#10b981" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    })} style={{ display: "flex", alignItems: "center", gap: 8, background: selectedIds.has(d.id) ? "#0d5c3a22" : "#1a2e1f", border: `1px solid ${selectedIds.has(d.id) ? "#0d5c3a" : "#2d4a35"}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedIds.has(d.id) ? "#0d5c3a" : "#2d4a35"}`, background: selectedIds.has(d.id) ? "#0d5c3a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {selectedIds.has(d.id) && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -771,7 +771,7 @@ export function Events({ data, isReadOnly }) {
         {[
           ["Events This Year", thisYear.length, T.ink],
           ["Total Attendees", totalAttendees, "#3b82f6"],
-          ["Event Revenue", fmtFull(totalRevenue), "#10b981"],
+          ["Event Revenue", fmtFull(totalRevenue), "#0d5c3a"],
           ["Avg Attendance Rate", `${avgRate}%`, "#8b5cf6"],
         ].map(([label, value, color]) => (
           <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: "14px 16px", boxShadow: T.shadow }}>

@@ -19,7 +19,7 @@ class ErrorBoundary extends Component {
         <div style={{padding:"32px 24px",textAlign:"center",color:"#b8593f",fontSize:14}}>
           <div style={{fontWeight:700,marginBottom:8}}>Something went wrong loading this profile.</div>
           <div style={{color:"#6b6560",marginBottom:16}}>{this.state.error?.message}</div>
-          <button onClick={()=>this.setState({error:null})} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
+          <button onClick={()=>this.setState({error:null})} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
         </div>
       );
     }
@@ -2004,7 +2004,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
-          <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </div>
     );
@@ -2111,7 +2111,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
                 <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
-                  style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>
               </div>
@@ -2934,7 +2934,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
             </div>
           )}
           <div style={{fontSize:12,color:T.ink3,marginBottom:28}}>Donor giving totals have been recalculated from the gifts table.</div>
-          <button onClick={onImported} style={{background:"#10b981",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </div>
     );
@@ -3012,7 +3012,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
                 <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
-                  style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>
               </div>
@@ -3149,7 +3149,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           {/* Summary card */}
           <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:8}}>
-              <span style={{color:"#10b981"}}>{stats.toImportCount}</span> gifts ready to import, attaching to{" "}
+              <span style={{color:"#0d5c3a"}}>{stats.toImportCount}</span> gifts ready to import, attaching to{" "}
               <span style={{color:T.ink}}>{stats.donorCount}</span> donors
               {stats.lowPending>0&&<> · <span style={{color:"#a97f22"}}>{stats.lowPending} need review</span></>}
               {stats.unmatched>0&&<> · <span style={{color:T.ink3}}>{stats.unmatched} unmatched (will skip)</span></>}
@@ -3207,7 +3207,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                         </div>
                       )}
                       {(ov?.action==="confirm"||ov?.action==="pick")&&(
-                        <div style={{fontSize:12,color:"#10b981",marginBottom:5}}>✓ Will attach to: <strong>{ov.donorName}</strong></div>
+                        <div style={{fontSize:12,color:"#0d5c3a",marginBottom:5}}>✓ Will attach to: <strong>{ov.donorName}</strong></div>
                       )}
                       {ov?.action==="skip"&&(
                         <div style={{fontSize:12,color:T.ink3,marginBottom:5}}>✗ Skipped</div>
@@ -3236,7 +3236,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                         {!ov&&g.suggestedDonor&&(
                           <button onClick={()=>setOverrides(p=>({...p,[i]:{action:"confirm",donorId:g.suggestedDonor.id,donorName:g.suggestedDonor.name}}))}
-                            style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                            style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                             ✓ Confirm
                           </button>
                         )}
@@ -3343,7 +3343,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
           </div>
         </div>
         <div style={{display:"flex",gap:8,marginTop:20}}>
-          <button onClick={save} disabled={loading||!title.trim()} style={{flex:1,background:title.trim()?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:title.trim()?"pointer":"not-allowed"}}>{loading?"Creating…":"Create Task"}</button>
+          <button onClick={save} disabled={loading||!title.trim()} style={{flex:1,background:title.trim()?"#0d5c3a":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:title.trim()?"pointer":"not-allowed"}}>{loading?"Creating…":"Create Task"}</button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Skip</button>
         </div>
       </div>
@@ -3447,7 +3447,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
-          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#10b981":T.bg2,border:`1px solid ${type===v?"#10b981":T.bg3}`,borderRadius:7,padding:"5px 13px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#0d5c3a":T.bg2,border:`1px solid ${type===v?"#0d5c3a":T.bg3}`,borderRadius:7,padding:"5px 13px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
         </div>
         <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
@@ -3533,7 +3533,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
           </>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?"#10b981":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?"#0d5c3a":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
@@ -3601,7 +3601,7 @@ function EditDonorModal({donor,onSave,onClose}){
           </div>
           {err&&<div style={{color:"#b8593f",fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
-            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:"#10b981",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:"#0d5c3a",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
               {loading?"Saving…":"Save Changes"}
             </button>
             <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -4190,7 +4190,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-  const sc=donorScore(donor);const scoreColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
+  const sc=donorScore(donor);const scoreColor=sc>70?"#0d5c3a":sc>45?"#a97f22":"#b8593f";
   const urg=moveUrgency(donor);
 
   const interactionCount=donor.interactions?.length||0;
@@ -4522,7 +4522,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             )}
             <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#1a6b4a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3]].map(([l,v,c])=>(
+              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#0d5c3a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3]].map(([l,v,c])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                   <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
                   <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
@@ -4554,7 +4554,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 is surfaced on hover so this reads as informed, not magic. */}
             {donor.matchingGift&&(
               <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
-                style={{background:"#10b98112",border:"1px solid #10b98140",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
+                style={{background:"#0d5c3a12",border:"1px solid #0d5c3a40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
                 <div>
                   <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio} — ask {donor.name.split(" ")[0]} to submit a match request.</div>
                   <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed — verify current terms before outreach.</div>
@@ -4573,7 +4573,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {/* Household & planned giving (BUILD-14) */}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Household</span>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a"}}>Household</span>
                 {household
                   ?<span style={{fontSize:12,color:T.ink,fontWeight:700}}>{household.name}</span>
                   :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
@@ -4586,11 +4586,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
                     <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
                     <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:"#a97f22"}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(household.combined_giving)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:"#0d5c3a"}}>{fmtFull(household.combined_giving)}</div></div>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
-                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?"#1a6b4a10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?"#0d5c3a10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
                         {m.is_primary&&<span style={{background:"#c9a84c",color:"#0f1a12",borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
                         <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
@@ -4601,11 +4601,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </>
               )}
               <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a",marginBottom:7}}>Planned giving & designations</div>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a",marginBottom:7}}>Planned giving & designations</div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
                     <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                      style={{background:on?"#1a6b4a":"transparent",color:on?"#fff":T.ink3,border:"1px solid "+(on?"#1a6b4a":T.bg3),borderRadius:99,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer"}}>
+                      style={{background:on?"#0d5c3a":"transparent",color:on?"#fff":T.ink3,border:"1px solid "+(on?"#0d5c3a":T.bg3),borderRadius:99,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer"}}>
                       {on?"✓ ":""}{label}
                     </button>
                   );})}
@@ -4616,7 +4616,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {lockMajor(
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#1a6b4a"}}>Pipeline — moves & asks</div>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a"}}>Pipeline — moves & asks</div>
                     <div style={{display:"flex",gap:6}}>
                       {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":"#c9a84c",border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:"#0f1a12",cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
                       {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#a97f22",cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
@@ -4626,7 +4626,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
                       <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
                       <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <button onClick={addAsk} style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer"}}>Save</button>
+                      <button onClick={addAsk} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer"}}>Save</button>
                     </div>
                   )}
                   {opps.length>0&&(
@@ -4635,11 +4635,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?"#c9a84c14":T.bg2}}>
                           <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
                           <span style={{color:"#a97f22",fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
-                          {o.status==="won"&&<span style={{color:"#1a6b4a",fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
+                          {o.status==="won"&&<span style={{color:"#0d5c3a",fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
                           {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
                           <span style={{marginLeft:"auto",display:"flex",gap:6}}>
                             {o.status==="open"&&isTeam&&!isReadOnly&&<>
-                              <button onClick={()=>closeAsk(o,"won")} style={{background:"#1a6b4a",border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:"#fff",cursor:"pointer"}}>Won</button>
+                              <button onClick={()=>closeAsk(o,"won")} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:"#fff",cursor:"pointer"}}>Won</button>
                               <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
                             </>}
                             {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
@@ -4672,8 +4672,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
                         const picked=hhPick.has(x.id);
                         return(
-                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?"#1a6b4a12":T.white,border:"1px solid "+(picked?"#1a6b4a55":T.bg3),cursor:"pointer"}}>
-                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:"#1a6b4a"}}/>
+                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?"#0d5c3a12":T.white,border:"1px solid "+(picked?"#0d5c3a55":T.bg3),cursor:"pointer"}}>
+                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:"#0d5c3a"}}/>
                             <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
                             <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
                           </label>
@@ -4682,7 +4682,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                     <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
                       <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
-                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?"#1a6b4a":T.bg3,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
+                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?"#0d5c3a":T.bg3,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
                     </div>
                   </div>
                 </div>
@@ -4692,7 +4692,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
                 Follow-up Tasks
-                {tasks.filter(t=>!t.done).length>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+                {tasks.filter(t=>!t.done).length>0&&<span style={{background:"#0d5c3a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
                 {onAddTask&&<button onClick={onAddTask} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Add a follow-up task"} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 9px",color:isReadOnly?T.ink3:T.greenMid,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",letterSpacing:0,textTransform:"none",opacity:isReadOnly?0.5:1}}>+ Add task</button>}
               </div>
               {tasks.length===0
@@ -4705,8 +4705,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     const badge=t.due&&!t.done?dueBadge(t.due):null;
                     const overdue=badge?.state==="overdue";
                     const badgeColor=overdue?T.terracotta:badge?.state==="today"?T.gold500:T.ink3;
-                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#1a6b4a30":overdue?"#b8593f30":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#1a6b4a":SC[t.priority]}`,background:t.done?"#1a6b4a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#0d5c3a30":overdue?"#b8593f30":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#0d5c3a":SC[t.priority]}`,background:t.done?"#0d5c3a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                         {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
@@ -4728,7 +4728,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
-                <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+                <button onClick={onLogTouchpoint} style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
               </div>
               <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction}/>
             </div>
@@ -4750,7 +4750,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:"#1a6b4a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                  Total: <strong style={{color:"#0d5c3a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
                   {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
                     <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
                   )}
@@ -4764,7 +4764,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     Year-end statement
                   </button>
                 )}
-                <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
+                <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
               </div>
             </div>
 
@@ -4780,7 +4780,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:T.ink3}}>Tax year</span>
                   <input type="number" value={yearEndYear} onChange={e=>setYearEndYear(e.target.value)} style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"6px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:"#10b981",border:"none",borderRadius:6,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
+                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
                     {yearEndBusy?"Generating…":"Generate & email"}
                   </button>
                   <button onClick={()=>setShowYearEnd(false)} style={{background:T.bg,border:"none",borderRadius:6,padding:"7px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
@@ -4793,10 +4793,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {/* Recurring gift health — failed-payment recovery status */}
             {recurringSub&&(()=>{
               const RS_META={
-                active:      {label:"Active",         color:"#1a6b4a"},
+                active:      {label:"Active",         color:"#0d5c3a"},
                 past_due:    {label:"Payment failed",  color:T.terracotta},
                 recovering:  {label:"Recovering",      color:"#c9a84c"},
-                recovered:   {label:"Card fixed",      color:"#10b981"},
+                recovered:   {label:"Card fixed",      color:"#0d5c3a"},
                 canceled:    {label:"Canceled",        color:T.ink3},
               };
               const meta=RS_META[recurringSub.status]||{label:recurringSub.status,color:T.ink3};
@@ -4847,12 +4847,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               )}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
-                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
+                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#0d5c3a"}}/>
                   Acknowledgement sent
                 </label>
               </div>
               <div style={{display:"flex",gap:8}}>
-                <button onClick={addGift} disabled={giftSaving} style={{background:"#10b981",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
+                <button onClick={addGift} disabled={giftSaving} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
                 <button onClick={()=>setAddGiftOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
               </div>
             </div>}
@@ -4860,7 +4860,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
               {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px",textAlign:"center",gap:0}}>
-                  <div style={{marginBottom:16,color:"#10b981",opacity:0.7}}>
+                  <div style={{marginBottom:16,color:"#0d5c3a",opacity:0.7}}>
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                     </svg>
@@ -4868,7 +4868,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
                   <div style={{fontSize:13,color:"#6b6560",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
                   <button onClick={()=>setAddGiftOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                    style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+                    style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
                     Record a gift →
                   </button>
                 </div>
@@ -4905,27 +4905,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                                 )
                               ))}
                               <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink,cursor:"pointer",flexShrink:0}}>
-                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#1a6b4a"}}/>
+                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#0d5c3a"}}/>
                                 Ack
                               </label>
-                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:"#10b981",border:"none",borderRadius:6,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
                               <button onClick={()=>setGiftEditId(null)} style={{background:T.bg,border:"none",borderRadius:6,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>Cancel</button>
                             </div>
                           </td>
                         ):(
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date}</td>
-                            <td style={{padding:"9px 12px",fontWeight:700,color:"#1a6b4a",whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
+                            <td style={{padding:"9px 12px",fontWeight:700,color:"#0d5c3a",whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:"#1a6b4a",fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:"#0d5c3a",fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {(()=>{
                                 const r=receiptForGift(g.id);
-                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:"#1a6b4a",fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
+                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:"#0d5c3a",fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
                                 if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:13}}>—</span>;
                                 const busy=receiptBusyId===g.id;
-                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
+                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:"#0d5c3a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
                               })()}
                             </td>
                             <td style={{padding:"9px 12px",color:T.ink3,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
@@ -5000,7 +5000,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?"not-allowed":"pointer",opacity:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?0.5:1}}>
                               {pledgeResentIds.has(pl.id)?"Sent ✓":pledgeResendBusyId===pl.id?"Sending…":"Resend reminder"}
                             </button>}
-                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#edf3ee",border:"1px solid #10b981",borderRadius:6,padding:"5px 9px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
+                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#edf3ee",border:"1px solid #0d5c3a",borderRadius:6,padding:"5px 9px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
                             <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
                           <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
@@ -5074,12 +5074,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.gold700,background:T.gold100,borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
                             </div>
                             <div style={{textAlign:"right"}}>
-                              <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a"}}>{fmtFull(f.total)}</div>
+                              <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a"}}>{fmtFull(f.total)}</div>
                               <div style={{fontSize:10,color:T.ink3}}>{f.pct}% of lifetime</div>
                             </div>
                           </div>
                           <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
-                            <div style={{height:"100%",background:"#1a6b4a",borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
+                            <div style={{height:"100%",background:"#0d5c3a",borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
                           </div>
                           <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {f.lastDate}</div>
                         </div>
@@ -5096,11 +5096,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     return(<>
                       <div style={{height:10,borderRadius:99,overflow:"hidden",display:"flex",marginBottom:8}}>
                         <div style={{width:`${rPct}%`,background:T.gold500,transition:"width 0.4s"}}/>
-                        <div style={{flex:1,background:"#10b981"}}/>
+                        <div style={{flex:1,background:"#0d5c3a"}}/>
                       </div>
                       <div style={{display:"flex",gap:16,fontSize:12}}>
                         <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
-                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#10b981",display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#0d5c3a",display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
                       </div>
                     </>);
                   })():<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No giving data yet</div>}
@@ -5139,7 +5139,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked Donors</div>
-              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:"#10b981",border:"none",borderRadius:7,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
+              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
             </div>
 
             {relPickerOpen&&(
@@ -5236,11 +5236,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   ))}
                 </div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:8,padding:"7px 12px",color:"#10b981",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
-                  <button onClick={onLogTouchpoint} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
+                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#0d5c3a10",border:"1px solid #0d5c3a30",borderRadius:8,padding:"7px 12px",color:"#0d5c3a",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
+                  <button onClick={onLogTouchpoint} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
                 </div>
               </div>
-              {stwOpen&&<div style={{background:T.white,border:"1px solid #10b98130",borderRadius:12,padding:"14px 16px"}}>
+              {stwOpen&&<div style={{background:T.white,border:"1px solid #0d5c3a30",borderRadius:12,padding:"14px 16px"}}>
                 <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Log Stewardship Touch</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                   <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
@@ -5251,7 +5251,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:"#10b981",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
                   <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
@@ -5314,7 +5314,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               if(events.length===0)return<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No timeline events yet. Log touchpoints and gifts to build the relationship arc.</div>;
 
               return(<div style={{position:"relative",paddingLeft:28}}>
-                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, #10b981, #c9a84c44)"}}/>
+                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, #0d5c3a, #c9a84c44)"}}/>
                 {events.map((ev,i)=>(
                   <div key={i} style={{position:"relative",marginBottom:ev.big?20:14}}>
                     <div style={{position:"absolute",left:-28,width:ev.big?20:16,height:ev.big?20:16,borderRadius:"50%",background:ev.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:ev.big?11:9,border:`2px solid ${T.white}`,boxShadow:`0 0 0 2px ${ev.color}44`,top:0,flexShrink:0,zIndex:1}}>
@@ -5338,10 +5338,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         {/* RIGHT */}
         <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
           {donor.stripeSubscriptionStatus==="active"&&(
-            <div style={{background:"#10b98110",border:"1px solid #10b98130",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
+            <div style={{background:"#0d5c3a10",border:"1px solid #0d5c3a30",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>↻</span>
               <div>
-                <div style={{fontSize:12,fontWeight:700,color:"#1a6b4a"}}>Recurring Donor</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#0d5c3a"}}>Recurring Donor</div>
                 <div style={{fontSize:11,color:"#0d5c3a",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
               </div>
             </div>
@@ -5350,7 +5350,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Relationship Owner</div>
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#10b981",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
                 <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{donor.assignedToName||"Unassigned"}</div>
                 {/* Reassigning a relationship owner is portfolio management → Team.
                     Core sees the owner read-only; the server 403s the assign route. */}
@@ -5370,9 +5370,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {sequences.length>0&&lockMajor(<div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#8fa896",marginBottom:8}}>Sequences</div>
-            {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #10b981",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#10b981",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+            {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #0d5c3a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#0d5c3a",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#10b981",cursor:"pointer"}}>+ Enroll in sequence</button>
+              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#0d5c3a",cursor:"pointer"}}>+ Enroll in sequence</button>
               :<>
                 <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
                   <option value="">Select sequence…</option>
@@ -5478,7 +5478,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
                       </span>
                       <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
-                        style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#10b981",cursor:"pointer"}}>Edit</button>
+                        style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#0d5c3a",cursor:"pointer"}}>Edit</button>
                     </div>
                   )}
                 </div>
@@ -5589,7 +5589,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                   </div>
                   {localRationale&&<p style={{fontSize:12,color:"#8fa896",lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid #2d4a35",paddingLeft:10}}>{localRationale}</p>}
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px",color:"#10b981",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
                 </>
               ):(
                 <div style={{textAlign:"center",padding:"4px 0"}}>
@@ -5622,7 +5622,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </div>
                 {gmailConnected===false?(
                   <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>
-                    <a href="/dashboard" onClick={e=>{e.preventDefault();window.location.href="/dashboard?tab=settings";}} style={{color:"#10b981",textDecoration:"none"}}>Connect Gmail in Settings</a> to send emails from donor profiles.
+                    <a href="/dashboard" onClick={e=>{e.preventDefault();window.location.href="/dashboard?tab=settings";}} style={{color:"#0d5c3a",textDecoration:"none"}}>Connect Gmail in Settings</a> to send emails from donor profiles.
                   </div>
                 ):!donor.email?(
                   <div style={{fontSize:13,color:"#8fa896",textAlign:"center",padding:"12px 0"}}>No email address on file for this donor.</div>
@@ -5636,7 +5636,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     {composeSent&&<div style={{fontSize:12,color:T.green,background:T.green900,border:"1px solid "+T.green650,borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
                     <div style={{display:"flex",gap:8}}>
                       <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft this email"}</button>
-                      <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#10b981",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
+                      <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#0d5c3a",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
                     </div>
                   </div>
                 )}
@@ -5708,7 +5708,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
       </div>
       {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
       <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
-        <div className="reEngage-header" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:"#1a6b4a",borderBottom:"1px solid "+T.bg3}}>
+        <div className="reEngage-header" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:"#0d5c3a",borderBottom:"1px solid "+T.bg3}}>
           <div className="re-col-name" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em"}}>Donor</div>
           <div className="re-col-lifetime" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Lifetime Giving</div>
           <div className="re-col-lastgift" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Last Gift</div>
@@ -5719,7 +5719,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
         {lapsed.map((d,idx)=>{
           const days=(d.lastGift||d.lastTouchpoint)?daysDiff(d.lastGift||d.lastTouchpoint):null;
           const sc=donorScore(d);
-          const scColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
+          const scColor=sc>70?"#0d5c3a":sc>45?"#a97f22":"#b8593f";
           const rowBg=days>730?"#b8593f09":days>365?"#a97f2209":"#a97f2209";
           const rowBorderColor=days>730?"#b8593f25":days>365?"#a97f2225":"#a97f2225";
           const daysColor=days>730?"#b8593f":days>365?"#a97f22":"#8a6d1f";
@@ -5751,7 +5751,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                <button onClick={()=>onSelectDonor(d)} style={{background:"#1a6b4a14",border:"1px solid #1a6b4a40",borderRadius:7,padding:"4px 10px",color:"#1a6b4a",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                <button onClick={()=>onSelectDonor(d)} style={{background:"#0d5c3a14",border:"1px solid #0d5c3a40",borderRadius:7,padding:"4px 10px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
               </div>
             </div>
           );
@@ -5788,7 +5788,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
           {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
         </select>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!selectedId} style={{flex:1,background:selectedId?"#1a6b4a":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:selectedId?"pointer":"not-allowed"}}>
+          <button onClick={save} disabled={loading||!selectedId} style={{flex:1,background:selectedId?"#0d5c3a":T.bg2,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:selectedId?"pointer":"not-allowed"}}>
             {loading?"Saving…":"Assign"}
           </button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -5927,7 +5927,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
   if(totalDonors===0&&!hasSampleData){
     return(
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",gap:0,textAlign:"center"}}>
-        <div style={{marginBottom:18,color:"#10b981",opacity:0.7}}>
+        <div style={{marginBottom:18,color:"#0d5c3a",opacity:0.7}}>
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
             <circle cx="9" cy="7" r="4"/>
@@ -5938,8 +5938,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
         <div style={{fontSize:14,color:"#6b6560",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
-          {onAddDonor&&<button onClick={onAddDonor} style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
-          {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#1a6b4a",border:"1.5px solid #1a6b4a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
+          {onAddDonor&&<button onClick={onAddDonor} style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
+          {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#0d5c3a",border:"1.5px solid #0d5c3a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
         </div>
       </div>
     );
@@ -5994,7 +5994,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           nothing (graceful, no empty "assign" clutter). */}
       {showPortfolios&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"11px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:14}}>
-          <span style={{fontSize:10,fontWeight:800,color:"#1a6b4a",textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
+          <span style={{fontSize:10,fontWeight:800,color:"#0d5c3a",textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
           {/* Chip row shows only officers who actually hold donors — an officer
               with 0 assigned donors is noise here. They remain in Settings → Team
               and in every owner/assign dropdown (those read a different list). */}
@@ -6004,7 +6004,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               <div key={o.id} style={{display:"flex",alignItems:"center",gap:7}}>
                 <label style={{position:"relative",display:"inline-flex",cursor:teamPortfolios&&isAdmin?"pointer":"default"}} title={teamPortfolios&&isAdmin?"Set portfolio color":undefined}>
                   <span style={{width:14,height:14,borderRadius:"50%",background:col||"#c9beac",border:"1px solid "+(col?col+"88":"#b7ad9b"),display:"inline-block"}}/>
-                  {teamPortfolios&&isAdmin&&<input type="color" value={col||"#1a6b4a"} onChange={e=>saveOfficerColor(o.id,e.target.value)} style={{position:"absolute",inset:0,opacity:0,width:14,height:14,cursor:"pointer"}}/>}
+                  {teamPortfolios&&isAdmin&&<input type="color" value={col||"#0d5c3a"} onChange={e=>saveOfficerColor(o.id,e.target.value)} style={{position:"absolute",inset:0,opacity:0,width:14,height:14,cursor:"pointer"}}/>}
                 </label>
                 <span style={{fontSize:12,color:T.ink,fontWeight:600}}>{o.name}</span>
                 <span style={{fontSize:11,color:T.ink3}}>{o.portfolio_count} · {fmtFull(o.portfolio_giving)}</span>
@@ -6041,7 +6041,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           {/* Move to stage — managed stage changes are Team (major-gifts). */}
           {teamPortfolios&&<div style={{position:"relative"}}>
             <button onClick={()=>{setStageDrop(v=>!v);setAssignDrop(false);}} disabled={busy}
-              style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+              style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
               Move to stage ▾
             </button>
             {stageDrop&&(
@@ -6064,7 +6064,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           {isAdmin&&teamPortfolios&&(orgTeam.length>0||pendingInvites.length>0)&&(
             <div style={{position:"relative"}}>
               <button onClick={()=>{setAssignDrop(v=>!v);setStageDrop(false);}} disabled={busy}
-                style={{background:"#1a6b4a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
+                style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",opacity:busy?0.6:1}}>
                 Assign owner ▾
               </button>
               {assignDrop&&(
@@ -6114,21 +6114,21 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               reads as its own surface instead of blurring into the Kanban
               stage headers and Home hero banner, which are both solid dark
               green. Green identity stays via text color + underline accent. */}
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#f6f4ee",borderBottom:"2px solid #1a6b4a",alignItems:"center"}}>
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:"#f6f4ee",borderBottom:"2px solid #0d5c3a",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
-                style={{width:15,height:15,cursor:"pointer",accentColor:"#1a6b4a"}}/>
+                style={{width:15,height:15,cursor:"pointer",accentColor:"#0d5c3a"}}/>
             </div>
             {["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{fontSize:10,fontWeight:800,color:"#1a6b4a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+                  style={{fontSize:10,fontWeight:800,color:"#0d5c3a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
               ))}
           </div>
           {/* Rows */}
           {filtered.map((d,idx)=>{
             const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
-            const sc=donorScore(d);const scColor=sc>70?"#1a6b4a":sc>45?"#a97f22":"#b8593f";
+            const sc=donorScore(d);const scColor=sc>70?"#0d5c3a":sc>45?"#a97f22":"#b8593f";
             const isLast=idx===filtered.length-1;
             const checked=selIds.has(d.id);
             const rowBg=checked?"#edf3ee":idx%2===0?T.white:"#faf9f6";
@@ -6139,7 +6139,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
                 <div onClick={e=>toggleOne(d.id,e)} style={{display:"flex",alignItems:"center",justifyContent:"center",padding:"4px"}}>
                   <input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}}
-                    style={{width:15,height:15,cursor:"pointer",accentColor:"#10b981"}} onClick={e=>e.stopPropagation()}/>
+                    style={{width:15,height:15,cursor:"pointer",accentColor:"#0d5c3a"}} onClick={e=>e.stopPropagation()}/>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                   <div style={{width:compact?22:32,height:compact?22:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:compact?10:12,fontWeight:800,color:stage.color,flexShrink:0,transition:"width 0.12s,height 0.12s"}}>{d.name[0]}</div>
@@ -6164,7 +6164,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     const label = d.assignedToName || d.pendingAssigneeName || "";
                     const oc=officerColorMap[d.assignedTo];
                     return(<>
-                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:"#1a6b4a22"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?(T.gold600||"#a97f22"):(oc?"#fff":"#1a6b4a"),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
+                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:"#0d5c3a22"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?(T.gold600||"#a97f22"):(oc?"#fff":"#0d5c3a"),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
                       <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"—"}{pending&&<span style={{color:T.gold600||"#a97f22",fontWeight:600}}> · pending</span>}</span>
                     </>);
                   })()}
@@ -6194,7 +6194,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 onClick={e=>selectMode?toggleOne(d.id,e):onSelectDonor(d)}
                 style={{display:"none",alignItems:"center",gap:12,padding:"13px 14px",background:checked?"#edf3ee":idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",minHeight:64}}>
                 {selectMode&&<input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}} onClick={e=>e.stopPropagation()}
-                  style={{width:20,height:20,cursor:"pointer",accentColor:"#1a6b4a",flexShrink:0}}/>}
+                  style={{width:20,height:20,cursor:"pointer",accentColor:"#0d5c3a",flexShrink:0}}/>}
                 <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
                 <div style={{flex:1,minWidth:0}}>
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
@@ -6270,7 +6270,7 @@ function TeamView({donors,orgTeam,onSelectDonor}){
         return(
           <div key={member.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:16}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingBottom:10,borderBottom:"1px solid "+T.bg3}}>
-              <div style={{width:36,height:36,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{member.name[0]}</div>
+              <div style={{width:36,height:36,borderRadius:"50%",background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{member.name[0]}</div>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{member.name}</div>
                 <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{md.length} donor{md.length!==1?"s":""} · {fmtFull(tv)}</div>
@@ -6934,7 +6934,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
             <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b6560",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
-              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#1a6b4a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
+              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#0d5c3a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
@@ -7027,7 +7027,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}
         </select>}
         <div style={{display:"flex",gap:8}}>
-          <button onClick={addDonor} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
+          <button onClick={addDonor} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
           <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}

@@ -1244,7 +1244,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     {retentionTooEarly?"—":retentionThin?"Not enough history yet":`${retentionCurrent}%`}
                   </div>
                   {!retentionTooEarly&&!retentionThin&&stewardMetrics.retentionRate.deltaVsTrendStart!=null&&(
-                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#1a6b4a":T.terracotta}}>
+                    <span style={{fontSize:13,fontWeight:700,color:stewardMetrics.retentionRate.deltaVsTrendStart===0?T.ink3:stewardMetrics.retentionRate.deltaVsTrendStart>0?"#0d5c3a":T.terracotta}}>
                       {stewardMetrics.retentionRate.deltaVsTrendStart===0
                         ?"No change vs 3 weeks ago"
                         :`${stewardMetrics.retentionRate.deltaVsTrendStart>0?"↑":"↓"} ${Math.abs(stewardMetrics.retentionRate.deltaVsTrendStart)}pt vs 3 weeks ago`}
@@ -1320,7 +1320,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               <span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.05em"}}>Stewardship debt</span>
               <span style={{fontSize:15,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{stewardMetrics.stewardshipDebt.current.toLocaleString()}</span>
               {stewardMetrics.stewardshipDebt.deltaVsTrendStart!=null&&stewardMetrics.stewardshipDebt.deltaVsTrendStart!==0&&(
-                <span style={{fontSize:11,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:"#1a6b4a"}}>
+                <span style={{fontSize:11,fontWeight:700,color:stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?T.terracotta:"#0d5c3a"}}>
                   {stewardMetrics.stewardshipDebt.deltaVsTrendStart>0?"↑":"↓"}{Math.abs(stewardMetrics.stewardshipDebt.deltaVsTrendStart).toLocaleString()}
                 </span>
               )}
@@ -1570,7 +1570,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // always answer "why this one first?" without the reader guessing. The score
   // itself never reaches the screen — an unsourced number on a row reads as
   // invented precision, and this product does not do that.
-  const BAND_STYLE={overdue:{label:"Overdue",color:T.terracotta},today:{label:"Today",color:T.gold600},ahead:{label:"Coming up",color:T.ink3}};
+  // BUILD-86 C.1 — OVERDUE IS BRASS, NOT RED. Red is reserved for a
+  // destructive confirm; a late follow-up is emphasis, not danger, and a
+  // screen that shouts in red every morning stops being read.
+  const BAND_STYLE={overdue:{label:"Overdue",color:T.gold700},today:{label:"Today",color:T.gold600},ahead:{label:"Coming up",color:T.ink3}};
   const threadRows=[];
   let lastBand=null;
   threadList.forEach((t,i)=>{
@@ -1584,7 +1587,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </li>);
     }
     threadRows.push(
-    <li key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.terracotta:T.greenMid)}}>
+    <li key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
       <a href={`/donors/${t.donorId}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
         <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
@@ -1594,11 +1597,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           {t.lastTouch?.actor?<> · {t.lastTouch.actor}</>:null}
         </div>
         {t.rank?.why&&(
-          <div style={{fontSize:11.5,color:t.overdue?T.terra700:T.greenDk,marginTop:3,fontWeight:600}}>{t.rank.why}</div>
+          <div style={{fontSize:11.5,color:t.overdue?T.gold700:T.greenDk,marginTop:3,fontWeight:600}}>{t.rank.why}</div>
         )}
       </a>
       <div style={{textAlign:"right",flexShrink:0}}>
-        <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.terracotta:T.ink}}>
+        <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.gold700:T.ink}}>
           {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
         </div>
         {/* A deferred step says so, and says what it was first promised for.
@@ -2035,12 +2038,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {atRisk.map((r,i)=>{
                 const days=r.first_failed_at?Math.max(0,Math.floor((Date.now()-new Date(r.first_failed_at).getTime())/86400000)):null;
                 return(
-                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.terracotta,
+                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.gold500,
                                          borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
                     <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
                       onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
                       <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
-                      <div style={{fontSize:11.5,color:T.terra700,marginTop:3,fontWeight:600}}>
+                      <div style={{fontSize:11.5,color:T.gold700,marginTop:3,fontWeight:600}}>
                         {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
                         {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
                       </div>

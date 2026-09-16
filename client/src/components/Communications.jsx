@@ -75,7 +75,7 @@ function CampaignBriefing({ campaign }) {
           {goalAmt > 0 && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#1a6b4a" }}>{fmtFull(raisedAmt)} raised</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#0d5c3a" }}>{fmtFull(raisedAmt)} raised</span>
                 <span style={{ fontSize: 12, color: T.ink3 }}>of {fmtFull(goalAmt)} goal · {pct}%</span>
               </div>
               <div style={{ height: 8, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
@@ -323,7 +323,7 @@ function BarChart({ data }) {
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
       {data.map((d, i) => (
         <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: "#1a6b4a", borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
+          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: "#0d5c3a", borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
           <div style={{ fontSize: 9, color: T.ink3 }}>{d.label}</div>
         </div>
       ))}
@@ -944,7 +944,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       });
       if (editorRef.current) {
         editorRef.current.focus();
-        const linkHtml = `<p><a href="${r.url}" style="background:#1a6b4a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
+        const linkHtml = `<p><a href="${r.url}" style="background:#0d5c3a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
         document.execCommand("insertHTML", false, linkHtml);
       }
     } catch (e) {
@@ -1215,7 +1215,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         onMouseLeave={e => { e.currentTarget.style.background = "transparent"; setHoveredRowId(null); }}
                       >
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? "#1a6b4a" : T.ink, transition: "color 0.1s" }}>{c.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? "#0d5c3a" : T.ink, transition: "color 0.1s" }}>{c.name}</div>
                           <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
@@ -1371,7 +1371,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>No donors in this segment.</div>
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: "#1a6b4a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: "#0d5c3a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Donor</span><span>Email</span><span>Stage</span><span>Total Giving</span>
                 </div>
                 {audDonors.slice(0, 50).map(d => (

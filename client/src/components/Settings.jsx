@@ -14,7 +14,7 @@ import { errorMessage } from "../lib/domainError";
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
 // rows may have been written with either spelling (see server.js).
 const BILLING_STATUS_META = {
-  active:        { label:"Active",        bg:"#edf3ee", color:"#1a6b4a", border:"#10b981" },
+  active:        { label:"Active",        bg:"#edf3ee", color:"#0d5c3a", border:"#0d5c3a" },
   trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"#8fa896", border:"#2d4a35" },
   past_due:      { label:"Past Due",      bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
   trial_expired: { label:"Trial Expired", bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
@@ -31,7 +31,7 @@ function slugifyPreview(s){
 }
 
 const GP_STATUS_META={
-  active:   {label:"Active",   bg:"#edf3ee", color:"#1a6b4a", border:"#10b981"},
+  active:   {label:"Active",   bg:"#edf3ee", color:"#0d5c3a", border:"#0d5c3a"},
   archived: {label:"Archived", bg:"#f3f0eb", color:"#6b6b6b", border:"#d4cfc6"},
 };
 
@@ -217,7 +217,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 {isAdmin&&<>
                   <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
-                    style={{background:p.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(p.status==="active"?"#eac6b8":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#8a3a24":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                    style={{background:p.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(p.status==="active"?"#eac6b8":"#0d5c3a"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#8a3a24":"#0d5c3a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {p.status==="active"?"Archive":"Reactivate"}
                   </button>
                   <button onClick={()=>deletePage(p)}
@@ -266,7 +266,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                         </div>
                         {isAdmin&&(
                           <button onClick={()=>toggleFundraiserArchive(p.id,f)} disabled={isReadOnly}
-                            style={{flexShrink:0,background:f.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(f.status==="active"?"#eac6b8":"#10b981"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#8a3a24":"#1a6b4a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                            style={{flexShrink:0,background:f.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(f.status==="active"?"#eac6b8":"#0d5c3a"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#8a3a24":"#0d5c3a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                             {f.status==="active"?"Archive":"Reactivate"}
                           </button>
                         )}
@@ -370,7 +370,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 // server response is the source of truth (it may hand back a slightly deepened
 // color for legibility — we show a note when it does). Applied only to accent
 // moments across app/emails/receipts, never a full re-skin.
-const PRESET_ACCENTS=["#1a6b4a","#0d5c3a","#b8593f","#7c3a12","#3f5c8a","#6b3f8a","#8a5a1f","#0f1a12"];
+const PRESET_ACCENTS=["#0d5c3a","#0d5c3a","#b8593f","#7c3a12","#3f5c8a","#6b3f8a","#8a5a1f","#0f1a12"];
 function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [logo,setLogo]=useState("");        // data URI or ""
   const [accent,setAccent]=useState("");    // hex or ""
@@ -384,7 +384,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
   },[]);
   const disabled=!isAdmin||isReadOnly;
-  const effAccent=accent||"#1a6b4a";
+  const effAccent=accent||"#0d5c3a";
   async function save(){
     if(disabled||saving)return;
     setSaving(true);setErr("");setMsg("");
@@ -420,7 +420,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <input type="color" value={effAccent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
-              <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder="#1a6b4a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
+              <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder="#0d5c3a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
               {accent&&!disabled&&<button onClick={()=>setAccent("")} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Reset to Steward gold</button>}
             </div>
             <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
@@ -519,7 +519,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
           {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
         </select>
         {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
-        {savedAt>0&&<span style={{fontSize:12,color:T.green||"#10b981"}}>Saved</span>}
+        {savedAt>0&&<span style={{fontSize:12,color:T.green||"#0d5c3a"}}>Saved</span>}
       </div>
       {err&&<div style={{fontSize:12,color:T.terracotta,marginTop:8}}>{err}</div>}
       {!isAdmin&&<div style={{fontSize:12,color:T.ink3,marginTop:8}}>Only an admin can change this.</div>}
@@ -667,7 +667,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
           <SectionLabel>Tax Receipts</SectionLabel>
-          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?"#edf3ee":"#f3f0eb",color:form.receiptsEnabled?"#1a6b4a":"#6b6b6b",border:"1px solid "+(form.receiptsEnabled?"#10b981":"#d4cfc6")}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?"#edf3ee":"#f3f0eb",color:form.receiptsEnabled?"#0d5c3a":"#6b6b6b",border:"1px solid "+(form.receiptsEnabled?"#0d5c3a":"#d4cfc6")}}>
             {form.receiptsEnabled?"Enabled":"Not enabled"}
           </span>
         </div>
@@ -716,7 +716,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             <button onClick={downloadPreview} disabled={previewLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 16px",color:T.ink2,fontSize:12,fontWeight:600,cursor:previewLoading?"not-allowed":"pointer"}}>
               {previewLoading?"Generating…":"Preview receipt"}
             </button>
-            {saveMsg&&<span style={{fontSize:12,color:"#1a6b4a",fontWeight:600}}>✓ {saveMsg}</span>}
+            {saveMsg&&<span style={{fontSize:12,color:"#0d5c3a",fontWeight:600}}>✓ {saveMsg}</span>}
           </div>
         )}
       </div>
@@ -748,7 +748,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             </div>
           )}
           {runResult&&(
-            <div style={{background:"#edf3ee",border:"1px solid #10b981",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#1a6b4a"}}>
+            <div style={{background:"#edf3ee",border:"1px solid #0d5c3a",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#0d5c3a"}}>
               ✓ Generated <strong>{runResult.generated}</strong> statement{runResult.generated===1?"":"s"}, emailed <strong>{runResult.emailed}</strong>{runResult.skipped>0?`, skipped ${runResult.skipped}`:""}.
             </div>
           )}
@@ -1424,7 +1424,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
           <div style={{background:"#faf9f6",border:"1px solid #d4cfc6",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#4a5e4f",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
             <span>You're using all {billing.limits.seats} seat{billing.limits.seats!==1?"s":""}.</span>
-            <a href="/pricing" style={{color:"#1a6b4a",fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
+            <a href="/pricing" style={{color:"#0d5c3a",fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
           </div>
         )}
         {team.map((m,i)=>(

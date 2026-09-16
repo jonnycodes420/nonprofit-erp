@@ -189,7 +189,7 @@ export default function Pricing() {
   const CAL = "https://calendly.com/xjca2006/new-meeting";
 
   const cream = "#f0ede6", ink = "#0f1a12", sage = "#8fa896", gold = "#c9a84c";
-  const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#1a6b4a", emerald = "#10b981";
+  const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#0d5c3a", emerald = "#0d5c3a";
 
   return (
     <div style={{ minHeight: "100vh", background: ink, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 24px 72px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>

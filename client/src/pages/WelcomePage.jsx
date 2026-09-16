@@ -36,7 +36,7 @@ function Spin() {
       <style>{`@keyframes ws{to{transform:rotate(360deg)}}`}</style>
       <span style={{
         display: "inline-block", width: 15, height: 15,
-        border: "2px solid #e8e4db", borderTopColor: "#1a6b4a",
+        border: "2px solid #e8e4db", borderTopColor: "#0d5c3a",
         borderRadius: "50%", animation: "ws 0.8s linear infinite", flexShrink: 0,
       }} />
     </>

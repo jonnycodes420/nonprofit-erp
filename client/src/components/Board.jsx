@@ -107,8 +107,8 @@ export function Board({data, setData, isReadOnly}) {
   const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",width:"100%",boxSizing:"border-box"};
 
   const tabStyle = (active) => ({
-    padding:"7px 16px", borderRadius:8, border:`1px solid ${active ? "#1a6b4a" : T.bg3}`, cursor:"pointer", fontSize:13, fontWeight:600,
-    background: active ? "#1a6b4a" : T.bg2,
+    padding:"7px 16px", borderRadius:8, border:`1px solid ${active ? "#0d5c3a" : T.bg3}`, cursor:"pointer", fontSize:13, fontWeight:600,
+    background: active ? "#0d5c3a" : T.bg2,
     color: active ? "#fff" : T.ink3,
     transition:"background 0.15s,color 0.15s",
   });
@@ -116,9 +116,9 @@ export function Board({data, setData, isReadOnly}) {
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     <PageTitle main="Board" accent="management."/>
     <div className="board-metric-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-      <MetricCard label="Board Members" value={data.board.length} sub={`${avgAttendance}% avg attendance`} color="#1a6b4a"/>
-      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#1a6b4a"/>
-      <MetricCard label="Committees" value={[...new Set(data.board.flatMap(b=>b.committees))].length} sub="active committees" color="#1a6b4a"/>
+      <MetricCard label="Board Members" value={data.board.length} sub={`${avgAttendance}% avg attendance`} color="#0d5c3a"/>
+      <MetricCard label="Board Giving" value={fmt(totalGiving)} sub="100% board participation" color="#0d5c3a"/>
+      <MetricCard label="Committees" value={[...new Set(data.board.flatMap(b=>b.committees))].length} sub="active committees" color="#0d5c3a"/>
     </div>
 
     <div style={{display:"flex",gap:8}}>
@@ -130,7 +130,7 @@ export function Board({data, setData, isReadOnly}) {
         <AIBtn onClick={generateBrief} loading={briefLoading} label="✦ Generate Q2 Board Report"/>
         <AIBtn onClick={draftEmail} loading={emailLoading} label="✦ Draft Board Ask Email"/>
         <button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-          style={{marginLeft:"auto",background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+          style={{marginLeft:"auto",background:"#0d5c3a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
           + Add Board Member
         </button>
       </div>
@@ -154,7 +154,7 @@ export function Board({data, setData, isReadOnly}) {
         </div>
         <div style={{display:"flex",gap:8,marginTop:12}}>
           <button onClick={addMember} disabled={saving||!form.name.trim()}
-            style={{background:"#1a6b4a",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
+            style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
             {saving?"Saving…":"Save Board Member"}
           </button>
           <button onClick={()=>setShowAdd(false)}
@@ -165,20 +165,20 @@ export function Board({data, setData, isReadOnly}) {
       </Card>}
       {data.board.length===0&&!showAdd&&<EmptyState icon="◆" title="No board members yet" message="Track your board's giving, attendance, committees, and terms."/>}
       {data.board.map(b=>{
-        const attColor=b.attendance>=90?"#1a6b4a":b.attendance>=75?"#f59e0b":"#ef4444";
+        const attColor=b.attendance>=90?"#0d5c3a":b.attendance>=75?"#f59e0b":"#ef4444";
         return <Card key={b.id}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:42,height:42,borderRadius:"50%",background:"#1a6b4a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#1a6b4a",flexShrink:0}}>{b.name[0]}</div>
+            <div style={{width:42,height:42,borderRadius:"50%",background:"#0d5c3a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{b.name[0]}</div>
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{b.name}</div>
-                <Pill label={b.role} color="#1a6b4a"/>
+                <Pill label={b.role} color="#0d5c3a"/>
               </div>
               <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{b.employer}</div>
               <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{b.committees.map(c=><Pill key={c} label={c} color="#6b7280"/>)}</div>
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
-              <div style={{fontSize:15,fontWeight:800,color:"#1a6b4a"}}>{b.givingLevel}</div>
+              <div style={{fontSize:15,fontWeight:800,color:"#0d5c3a"}}>{b.givingLevel}</div>
               <div style={{fontSize:11,color:attColor,marginTop:3,fontWeight:600}}>{b.attendance}% attendance</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1}}>Term: {b.term}</div>
             </div>
@@ -194,7 +194,7 @@ export function Board({data, setData, isReadOnly}) {
             <div style={{fontSize:15,fontWeight:700,color:T.ink}}>Board Report</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:2}}>Generates a PDF with Executive Summary, Financial Snapshot, Donor Dashboard, and Grants & Operations — powered by AI.</div>
           </div>
-          <button onClick={generateReport} disabled={generating} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:8,border:"none",background:"#1a6b4a",color:"#fff",fontWeight:700,fontSize:13,cursor:generating?"not-allowed":"pointer",opacity:generating?0.7:1}}>
+          <button onClick={generateReport} disabled={generating} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 20px",borderRadius:8,border:"none",background:"#0d5c3a",color:"#fff",fontWeight:700,fontSize:13,cursor:generating?"not-allowed":"pointer",opacity:generating?0.7:1}}>
             {generating ? <><Spin/> Generating…</> : "✦ Generate Board Report"}
           </button>
         </div>
@@ -217,13 +217,13 @@ export function Board({data, setData, isReadOnly}) {
             <div style={{flex:1}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
                 <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Board Report — {qLabel}</div>
-                <Pill label="PDF" color="#1a6b4a"/>
+                <Pill label="PDF" color="#0d5c3a"/>
               </div>
               <div style={{fontSize:11,color:T.ink3,marginBottom:10}}>Generated {genDate}{r.generated_by_name ? ` by ${r.generated_by_name}` : ""}</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8}}>
                 {m.ytdRevenue != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>YTD Revenue</div>
-                  <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a",marginTop:2}}>{fmtFull(m.ytdRevenue)}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a",marginTop:2}}>{fmtFull(m.ytdRevenue)}</div>
                 </div>}
                 {m.ytdExpenses != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>YTD Expenses</div>
@@ -231,15 +231,15 @@ export function Board({data, setData, isReadOnly}) {
                 </div>}
                 {m.totalDonors != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Total Donors</div>
-                  <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a",marginTop:2}}>{m.totalDonors.toLocaleString()}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a",marginTop:2}}>{m.totalDonors.toLocaleString()}</div>
                 </div>}
                 {m.activeGrants != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Active Grants</div>
-                  <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a",marginTop:2}}>{m.activeGrants}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a",marginTop:2}}>{m.activeGrants}</div>
                 </div>}
                 {m.pipelineValue != null && <div style={{background:T.bg2,borderRadius:6,padding:"8px 10px"}}>
                   <div style={{fontSize:10,color:T.ink3,fontWeight:600,textTransform:"uppercase",letterSpacing:0.5}}>Grant Pipeline</div>
-                  <div style={{fontSize:14,fontWeight:800,color:"#1a6b4a",marginTop:2}}>{fmtFull(m.pipelineValue)}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a",marginTop:2}}>{fmtFull(m.pipelineValue)}</div>
                 </div>}
               </div>
             </div>

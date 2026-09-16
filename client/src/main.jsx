@@ -134,7 +134,7 @@ function RootErrorFallback() {
       <div style={{ maxWidth: 420, textAlign: "center", background: "#fff", border: "1px solid #e0dccf", borderRadius: 16, padding: "30px 26px" }}>
         <div style={{ fontSize: 22, color: "#b8593f", fontFamily: "'DM Serif Display',Georgia,serif", marginBottom: 8 }}>Something went wrong</div>
         <div style={{ fontSize: 13.5, color: "#5b6b60", lineHeight: 1.6, marginBottom: 18 }}>The app hit an unexpected error and it's been reported. Reloading usually clears it.</div>
-        <button onClick={() => window.location.reload()} style={{ background: "#1a6b4a", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+        <button onClick={() => window.location.reload()} style={{ background: "#0d5c3a", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
       </div>
     </div>
   );

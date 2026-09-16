@@ -57,7 +57,7 @@ export function Programs({data}) {
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     <PageTitle main="Your" accent="programs."/>
-    <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:"#10b981",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
+    <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:"#0d5c3a",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
 
     {showAdd&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
       <SectionLabel>New Program</SectionLabel>
@@ -87,7 +87,7 @@ export function Programs({data}) {
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={save} style={{background:"#10b981",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
+        <button onClick={save} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
         <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </Card>}
@@ -101,7 +101,7 @@ export function Programs({data}) {
         const grants=p.grants||[];
         const pct=p.budget>0?Math.round(p.spent/p.budget*100):0;
         const totalAllocated=grants.reduce((s,g)=>s+g.allocated,0);
-        const statusColor={active:"#1a6b4a",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
+        const statusColor={active:"#0d5c3a",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
         return <Card key={p.id} selected={isOpen} accent={statusColor} onClick={()=>setSelected(isOpen?null:p)}>
           <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
             <div style={{flex:1}}>
@@ -117,7 +117,7 @@ export function Programs({data}) {
             </div>
           </div>
           <div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}>
-            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#1a6b4a",borderRadius:99}}/>
+            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#0d5c3a",borderRadius:99}}/>
           </div>
           <div style={{display:"flex",gap:16,marginTop:10}}>
             <span style={{fontSize:11,color:T.ink3}}>{p.participant_count} participants</span>

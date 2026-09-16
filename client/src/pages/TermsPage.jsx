@@ -26,7 +26,7 @@ const S = {
   p: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, margin: "0 0 16px" },
   li: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, marginBottom: 6 },
   ul: { paddingLeft: 20, margin: "0 0 16px" },
-  a: { color: "#1a6b4a", textDecoration: "none" },
+  a: { color: "#0d5c3a", textDecoration: "none" },
 };
 
 export default function TermsPage() {

@@ -170,7 +170,7 @@ export function DonorMap({ donors, userId, onSelectDonor, apiFetch }) {
                   {d.city && <div style={{ fontSize: 11, color: "#6b6560" }}>{[d.city, d.state].filter(Boolean).join(", ")}</div>}
                   <div style={{ fontSize: 11, color: "#6b6560", marginTop: 2 }}>Total: {fmt(d.total ?? d.total_giving)}</div>
                   <div style={{ fontSize: 11, color: STAGE_COLOR[d.stage] || "#6b6560", marginTop: 2, fontWeight: 600, textTransform: "capitalize" }}>{d.stage}</div>
-                  <button onClick={() => onSelectDonor(d)} style={{ marginTop: 8, background: "#10b981", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
+                  <button onClick={() => onSelectDonor(d)} style={{ marginTop: 8, background: "#0d5c3a", border: "none", borderRadius: 6, padding: "5px 10px", color: "#fff", fontSize: 11, cursor: "pointer", fontWeight: 600 }}>
                     Open profile →
                   </button>
                 </div>

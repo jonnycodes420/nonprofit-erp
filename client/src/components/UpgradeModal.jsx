@@ -32,7 +32,7 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
         <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
           <button
             onClick={() => { onClose(); navigate("/pricing"); }}
-            style={{ flex:1,background:"#1a6b4a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}
+            style={{ flex:1,background:"#0d5c3a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}
           >
             Upgrade plan →
           </button>

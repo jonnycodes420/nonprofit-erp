@@ -29,10 +29,21 @@ export const T = {
   ink2:       "#2d2d2d",
   ink3:       "#6b6560",
   inkInverse: "#f0ede6",
-  // Greens (legacy names — kept exactly, still valid tokens)
-  green:      "#10b981",
+  // ── BUILD-86 C.1 — ONE ACTION COLOUR ─────────────────────────────────────
+  // Emerald #0d5c3a is it. `green` was the retired Tailwind emerald #10b981
+  // and `greenMid` was #1a6b4a, so the authenticated app had THREE greens
+  // competing for "this is the thing to click". All three names survive —
+  // 358 call sites do not need touching to change what they render — and all
+  // three now point at the one colour. Every literal of the other two was
+  // swept in the same commit, so the brand allowlist (which derives what is
+  // legal from THIS object) still permits exactly what exists.
+  //
+  // Contrast IMPROVES by the collapse, in both directions: #10b981 carried
+  // white text at ~2.3:1 and now carries it at 8.6:1; #1a6b4a read on cream
+  // at ~4.6:1 and now reads at ~7.4:1.
+  green:      "#0d5c3a",
   greenDk:    "#0d5c3a",
-  greenMid:   "#1a6b4a",
+  greenMid:   "#0d5c3a",
   // Green ramp (BUILD-12) — deep pine to mist. Use these for depth + hover.
   green950:   "#0e1a13",  // sidebar / ink — deep near-black pine
   green900:   "#102418",  // one step up from ink for layered dark panels
@@ -550,7 +561,7 @@ export function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
 }
 export function AIBtn({onClick,loading,label="✦ Suggest",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2e1f":"linear-gradient(135deg,#0d5c3a,#1a6b4a)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#f0ede6",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
+  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2e1f":"linear-gradient(135deg,#0d5c3a,#0d5c3a)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#f0ede6",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
     {loading?<><Spin/>Thinking…</>:label}
   </button>;
 }
@@ -724,15 +735,15 @@ export function GivingHistoryChart({gifts}) {
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
       <defs>
         <linearGradient id="giftGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1a6b4a" stopOpacity="0.22"/>
-          <stop offset="100%" stopColor="#1a6b4a" stopOpacity="0.01"/>
+          <stop offset="0%" stopColor="#0d5c3a" stopOpacity="0.22"/>
+          <stop offset="100%" stopColor="#0d5c3a" stopOpacity="0.01"/>
         </linearGradient>
       </defs>
       {area&&<path d={area} fill="url(#giftGrad)"/>}
-      {sorted.length>1&&<polyline points={pts} stroke="#1a6b4a" strokeWidth="2" fill="none" strokeLinejoin="round"/>}
+      {sorted.length>1&&<polyline points={pts} stroke="#0d5c3a" strokeWidth="2" fill="none" strokeLinejoin="round"/>}
       {sorted.map((g,i)=>(
         <g key={i}>
-          <circle cx={xs[i]} cy={ys[i]} r={4} fill="#1a6b4a" stroke={T.white} strokeWidth={1.5}/>
+          <circle cx={xs[i]} cy={ys[i]} r={4} fill="#0d5c3a" stroke={T.white} strokeWidth={1.5}/>
           <title>${g.amount.toLocaleString()} · {g.date}</title>
         </g>
       ))}
@@ -754,7 +765,7 @@ export function TpField({label,children}){
 }
 export function TpYesNo({val,set}){
   return <div style={{display:"flex",gap:6}}>
-    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?"#10b981":T.bg,border:`1px solid ${val===v?"#10b981":T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?"#fff":T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
+    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?"#0d5c3a":T.bg,border:`1px solid ${val===v?"#0d5c3a":T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?"#fff":T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
   </div>;
 }
 // onDelete (optional): called with the interaction after the user confirms —
