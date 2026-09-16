@@ -71,6 +71,10 @@ export const NEXT_STEP_TYPES = [
   { type: "send",               label: "Send" },
   { type: "follow_up_no_reply", label: "Follow up if no reply" },
   { type: "check_in_ask",       label: "Check in on the ask" },
+  // BUILD-88b B.2 — a pledge instalment thirty days past due. The label says
+  // which promise, because "follow up" tells the officer nothing about what
+  // they are walking into, and this is the most delicate note they send.
+  { type: "pledge_reminder",    label: "Pledge instalment reminder" },
 ];
 
 // Pure civil-date addition (YYYY-MM-DD + n days), no Date-object timezone

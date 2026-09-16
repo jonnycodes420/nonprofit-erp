@@ -1718,6 +1718,12 @@ async function initSchema() {
   // Her voice, from three samples she pastes in Settings. Until they exist the
   // default is one plain sentence — never an invented voice.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS voice_samples JSONB`);
+  // ── BUILD-88b B.2 — THE DRAFT A THREAD CARRIES ────────────────────────────
+  // A late pledge instalment opens a thread with a note already written in her
+  // voice. It rides ON the thread because the thread is the thing she opens,
+  // and a draft in a second place is a draft she never sees. Steward does not
+  // send it: she copies it and it leaves from her own mail.
+  await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS draft_note TEXT`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An

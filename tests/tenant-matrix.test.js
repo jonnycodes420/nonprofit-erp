@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["imports", "board_reports", "donor_relationships", "donor_designations",
+    for (const t of ["thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
@@ -186,6 +186,10 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO donor_designations (id,org_id,donor_id,kind) VALUES ($1,$2,$3,'estate')`,
     [`dd_${o}`, o, `d_${o}`]).catch(() => {});
   await q(`INSERT INTO budgets (id,org_id,account_id,year,amount) VALUES ($1,$2,$3,2026,1000)`, [`bg_${o}`, o, `acct_${o}`]).catch(() => {});
+  // BUILD-88b B.3 — a thank-you draft per org, so the queue's three routes are
+  // probed across the wall like everything else.
+  await q(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body) VALUES ($1,$2,$3,$4,$5)`,
+    [`ty_${o}`, o, `d_${o}`, `g_${o}`, `${mark} thank-you draft`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -212,6 +216,7 @@ function bResolver(routePath, param) {
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
     imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt
+    "thank-yous": `ty_${B}`,       // BUILD-88b B.3 — the thank-you queue
   };
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

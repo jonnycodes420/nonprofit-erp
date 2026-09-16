@@ -203,7 +203,25 @@ export function possessivePlural(word) {
 // thing she acts on; Drift and the failed cards share the second, joined with
 // "and", because they are both things that happened TO her rather than things
 // she promised.
-export function homeNote({ threads, drift, atRisk, vocabulary } = {}, todayMs = Date.now()) {
+// ── BUILD-88b B.2 — LATE PLEDGE INSTALMENTS, IN THE MORNING SENTENCE ──────
+// A pledge somebody signed and then stopped paying is the quietest kind of bad
+// news: nothing fails, nothing bounces, and the money simply never arrives. It
+// belongs in the sentence she reads at twenty to eight.
+//
+// It is its OWN sentence rather than a clause, because it is a different kind
+// of fact from the other two (drift is a pattern, a failing card is an event,
+// and this is a promise). The count is spelled under ten, like everything else
+// in this voice, and a SHELL pledge — one Steward inferred from payments, with
+// no schedule anybody wrote down — is never counted late: it is unfinished.
+export function pledgeSentence(latePledgeInstallments) {
+  const n = Number(latePledgeInstallments) || 0;
+  if (n < 1) return null;
+  return n === 1
+    ? "One pledge instalment is late."
+    : `${cap(spell(n))} pledge instalments are late.`;
+}
+
+export function homeNote({ threads, drift, atRisk, latePledgeInstallments, vocabulary } = {}, todayMs = Date.now()) {
   const t = makeT(vocabulary);
   const sentences = [];
 
@@ -213,6 +231,9 @@ export function homeNote({ threads, drift, atRisk, vocabulary } = {}, todayMs = 
   const second = [driftClause(drift, t), recurringClause(atRisk, todayMs, t)].filter(Boolean);
   if (second.length === 1) sentences.push(cap(second[0]) + ".");
   if (second.length === 2) sentences.push(`${cap(second[0])}, and ${second[1]}.`);
+
+  const pledge = pledgeSentence(latePledgeInstallments);
+  if (pledge) sentences.push(pledge);
 
   if (sentences.length === 0) return NOTHING_WAITING;
   return sentences.join(" ");

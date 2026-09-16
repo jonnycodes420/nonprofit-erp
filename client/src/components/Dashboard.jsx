@@ -1922,7 +1922,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                here and the column's own 24px gap completes the 48 the brief
                asks for; putting the whole 48 here would have made it 72. */
             <div className="home-note" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.18,letterSpacing:"-0.02em",color:T.ink,marginTop:14,marginBottom:24,maxWidth:"24ch"}}>
-              {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,vocabulary:data.org?.vocabulary})}
+              {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,
+                         /* BUILD-88b B.2 — a promise nobody is keeping belongs in the sentence she reads at twenty to eight. */
+                         latePledgeInstallments:homeData?.latePledgeInstallments,
+                         vocabulary:data.org?.vocabulary})}
             </div>
           )}
           {/* BUILD-86 Part B — one line, once. */}

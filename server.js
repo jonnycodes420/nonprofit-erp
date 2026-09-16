@@ -2028,7 +2028,346 @@ async function recordGift(o) {
   }
 
   const [gift] = await query("SELECT * FROM gifts WHERE id=?", [giftId]);
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted };
+
+  // ── BUILD-88b B.2 — A PAYMENT THAT MATCHES AN INSTALMENT APPLIES ──────────
+  // Automatically, from EVERY door, because this is the one place every gift
+  // passes through. A caller that already named an instalment (the deposit
+  // sheet, which asked her) is left alone; anything else is matched by donor
+  // and amount against the open schedule, oldest due first. WITHIN ten per
+  // cent is deliberately NOT matched here — that is a question, and a
+  // background path has nobody to ask, so a near miss stays a plain gift.
+  let appliedInstallment = null;
+  if (o.installmentId === undefined && o.applyInstallment !== false) {
+    try {
+      const [inst] = await query(
+        `SELECT i.id, i.pledge_id FROM pledge_installments i
+           JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+          WHERE i.org_id=? AND p.donor_id=? AND i.paid_gift_id IS NULL
+            AND p.status='open' AND round(i.amount::numeric * 100)::bigint = ?
+          ORDER BY i.due_date ASC, i.seq ASC LIMIT 1`,
+        [orgId, o.donorId, Math.round(amount * 100)]).catch(() => []);
+      if (inst) {
+        const upd = await query(
+          `UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW()
+            WHERE id=? AND org_id=? AND paid_gift_id IS NULL RETURNING id`, [giftId, inst.id, orgId]);
+        if (upd.length) {
+          await run("UPDATE gifts SET pledge_id=COALESCE(pledge_id,?), type=CASE WHEN type='cash' THEN 'pledge payment' ELSE type END WHERE id=?", [inst.pledge_id, giftId]);
+          appliedInstallment = { installmentId: inst.id, pledgeId: inst.pledge_id };
+          await recalcPledgePayment(inst.pledge_id, orgId).catch(e => console.error("[pledge] recalc:", e.message));
+          await onPledgeSettled(orgId, inst.pledge_id).catch(e => console.error("[pledge] settle:", e.message));
+        }
+      }
+    } catch (e) { console.error("[pledge] instalment auto-apply:", e.message); }
+  } else if (o.pledgeId) {
+    await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
+  }
+
+  // ── BUILD-88b B.3 — THE THANK-YOU IS DRAFTED, NEVER SENT ──────────────────
+  // Every gift through this path earns a draft in her queue. The exclusions are
+  // the ones that would make a thank-you wrong rather than merely unnecessary.
+  //
+  // AFTER the instalment apply, on purpose: the small-pledge-payment exclusion
+  // reads the gift's TYPE, and a gift that arrives as "cash" and is recognised
+  // as an instalment a line later is a pledge payment. Queueing first meant the
+  // floor never applied to the very payments it exists for.
+  if (o.thankYou !== false) {
+    await queueThankYouDraft(orgId, { giftId, donorId: o.donorId, cents: Math.round(amount * 100),
+                                      fundId, type: appliedInstallment ? "pledge payment" : (o.type || "cash") })
+      .catch(e => console.error("[thank-you] draft:", e.message));
+  }
+
+
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment };
+}
+
+// ── BUILD-88b B.3 — THE THANK-YOU QUEUE ───────────────────────────────────
+// Every gift through the one path earns a DRAFT. Steward never sends it: it
+// writes one, she opens it, copies it, and it leaves from her own mail where
+// she can read it as the donor will.
+//
+// FOUR EXCLUSIONS, and each is a case where a thank-you would be WRONG rather
+// than merely unnecessary:
+//   · a pledge payment under $100 — she thanked them for the pledge; thanking
+//     them again every month for the instalment is a receipt pretending to be
+//     a letter. A LARGE instalment still earns one.
+//   · anonymous — there is nobody to write to, and guessing is worse.
+//   · do-not-contact, and deceased — the no-ask family. A thank-you is outbound
+//     mail, and the flags exist so nobody has to remember.
+//   · a sample donor — demo fiction never generates work.
+// Receipts are untouched: a §170 acknowledgment is a legal document on its own
+// path, and this is a letter.
+const THANK_YOU_PLEDGE_FLOOR_CENTS = 10000;
+
+async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null, type = "cash", reason = "gift", force = false, replace = false }) {
+  const [d] = await query(
+    `SELECT id, name, kind, deceased, do_not_contact, is_sample FROM donors
+      WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!d) return null;
+  if (d.is_sample) return null;
+  if (d.deceased || d.do_not_contact) return null;
+  if (d.kind === "anonymous") return null;
+  if (!force && /pledge payment/i.test(String(type)) && (cents || 0) < THANK_YOU_PLEDGE_FLOOR_CENTS) return null;
+
+  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
+    : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+  const [fund] = fundId ? await query("SELECT name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
+  const draftMod = await import("./shared/draftNote.js");
+  const voice = draftMod.voiceFrom(samples);
+  const draft = reason === "pledge_completed"
+    ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
+               return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
+  // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
+  // better thing to say about a gift it has already drafted (a final pledge
+  // payment that COMPLETED the pledge) — and it never overwrites a letter she
+  // has already sent or deliberately skipped.
+  const conflict = replace
+    ? `ON CONFLICT (org_id, gift_id) DO UPDATE SET body=EXCLUDED.body, voice=EXCLUDED.voice
+        WHERE thank_you_drafts.sent_at IS NULL AND thank_you_drafts.skipped_at IS NULL`
+    : "ON CONFLICT (org_id, gift_id) DO NOTHING";
+  const rows = await query(
+    `INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice)
+     VALUES (?,?,?,?,?,?) ${conflict} RETURNING id`,
+    ["ty_" + uuid().slice(0, 10), orgId, donorId, giftId, draft.body, draft.voice]);
+  return rows[0] ? { id: rows[0].id, voice: draft.voice } : null;
+}
+
+// ── BUILD-88b B.2 — THIRTY DAYS PAST DUE ──────────────────────────────────
+// An instalment thirty days past due with no payment opens EXACTLY ONE thread
+// on the donor, with the step "Pledge instalment reminder" and a note already
+// written in her voice. The thirty days is the point: a fortnight is the post,
+// and chasing a donor who has already said yes is how a yes becomes a last gift.
+//
+// FOUR THINGS THIS DOES NOT DO, each for a reason:
+//   · it never opens a SECOND thread on a donor who already has one open (the
+//     `threads_one_open` index makes that structural, not a check);
+//   · it never touches a deceased or do-not-contact donor;
+//   · a SHELL pledge (BUILD-88a A.7, inferred from payments) has no schedule
+//     and NEVER goes late — it is unfinished, not overdue, and it says which
+//     part is missing;
+//   · it sends nothing. The draft waits on the thread.
+async function processPledgeInstallmentReminders(opts = {}) {
+  const out = { opened: 0, skipped: 0, orgs: 0, rows: [] };
+  const orgs = opts.orgId
+    ? await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE id=?", [opts.orgId])
+    : await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE onboarding_complete=1", []);
+  const draftMod = await import("./shared/draftNote.js");
+  for (const org of orgs) {
+    out.orgs++;
+    const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
+    const cutoff = orgTime.addDays(today, -draftMod.PLEDGE_LATE_DAYS);
+    const late = await query(
+      `SELECT i.id, i.pledge_id, i.due_date, i.amount, p.donor_id, p.amount AS pledge_amount,
+              d.name AS donor_name, d.assigned_to, d.assigned_to_name,
+              COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.pledge_id = p.id), 0) AS paid
+         FROM pledge_installments i
+         JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+         JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+        WHERE i.org_id = ? AND i.paid_gift_id IS NULL AND i.due_date <= ?
+          AND i.reminder_thread_id IS NULL
+          AND p.status = 'open' AND COALESCE(p.is_shell,false) = false
+          AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+          AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE
+          AND d.do_not_solicit IS NOT TRUE
+          AND (d.kind IS NULL OR d.kind = 'person')
+        ORDER BY i.due_date ASC`,
+      [org.id, cutoff]);
+    const samples = Array.isArray(org.voice_samples) ? org.voice_samples
+      : (typeof org.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+    const voice = draftMod.voiceFrom(samples);
+    const seenDonor = new Set();
+    for (const i of late) {
+      // ONE per donor per sweep, before the database is even asked: two late
+      // instalments on one pledge are one conversation.
+      if (seenDonor.has(i.donor_id)) { out.skipped++; continue; }
+      seenDonor.add(i.donor_id);
+      const instCents = money.toCents(i.amount) ?? 0;
+      const draft = draftMod.pledgeReminderDraft({
+        donorName: i.donor_name, installmentCents: instCents, dueDate: i.due_date,
+        pledgeCents: money.toCents(i.pledge_amount) ?? null, paidCents: money.toCents(i.paid) ?? 0,
+        orgName: org.name, voice,
+      });
+      const thread = await withTransaction(client => openThreadTx(client, {
+        orgId: org.id, donorId: i.donor_id,
+        step: { type: draftMod.PLEDGE_REMINDER_STEP.type, label: draftMod.PLEDGE_REMINDER_STEP.label, due: today },
+        openedOn: today, ownerId: i.assigned_to || null, ownerName: i.assigned_to_name || null,
+        actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+      }));
+      if (!thread) { out.skipped++; continue; }   // a thread is already open on this donor
+      await run("UPDATE threads SET draft_note=? WHERE id=?", [draft.body, thread.id]);
+      await run("UPDATE pledge_installments SET reminder_thread_id=? WHERE id=? AND org_id=?", [thread.id, i.id, org.id]);
+      out.opened++;
+      out.rows.push({ orgId: org.id, donorId: i.donor_id, installmentId: i.id, threadId: thread.id, dueDate: i.due_date });
+    }
+  }
+  return out;
+}
+
+// ── BUILD-88b B.3 — THE QUEUE, AND THE THREE THINGS SHE CAN DO WITH IT ────
+// Copy, Mark sent, Skip. That is all, and "Mark all as sent" only after every
+// draft has been OPENED — a bulk action over letters nobody read is the thing
+// that makes a thank-you queue a lie.
+app.get("/thank-yous", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT t.id, t.donor_id, t.gift_id, t.body, t.voice, t.opened_at, t.created_at,
+            d.name AS donor_name, d.email AS donor_email,
+            g.amount::float AS amount, g.date AS gift_date, f.name AS fund_name
+       FROM thank_you_drafts t
+       JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+       JOIN gifts g ON g.id = t.gift_id AND g.org_id = t.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = t.org_id
+      WHERE t.org_id = ? AND t.sent_at IS NULL AND t.skipped_at IS NULL
+        AND d.deleted_at IS NULL
+      ORDER BY g.amount DESC, t.created_at ASC`, [orgId]);
+  const [org] = await query("SELECT voice_samples FROM orgs WHERE id=?", [orgId]);
+  const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
+    : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+  const draftMod = await import("./shared/draftNote.js");
+  const voice = draftMod.voiceFrom(samples);
+  res.json({
+    count: rows.length,
+    // The sentence Home shows. Numbers under ten spelled, BUILD-86 C.2's rule.
+    headline: rows.length === 0 ? null
+      : `${["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"][rows.length] || rows.length} thank-you${rows.length === 1 ? "" : "s"} ready.`,
+    // "Mark all as sent" is offered only when every draft has been opened.
+    allOpened: rows.length > 0 && rows.every(r => !!r.opened_at),
+    voice: { ready: voice.ready, samples: voice.count, needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - voice.count) },
+    drafts: rows.map(r => ({ id: r.id, donorId: r.donor_id, giftId: r.gift_id, donorName: r.donor_name,
+      donorEmail: r.donor_email || null, amount: r.amount, giftDate: r.gift_date,
+      fundName: r.fund_name || null, body: r.body, voiceUsed: r.voice, opened: !!r.opened_at })),
+  });
+}));
+
+// Opening a draft is recorded, because "Mark all as sent" depends on it.
+app.post("/thank-yous/:id/opened", requireAuth, wrap(async (req, res) => {
+  const r = await run("UPDATE thank_you_drafts SET opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?",
+    [req.params.id, req.user.orgId]);
+  if (!r.changes) return res.status(404).json({ error: "Draft not found" });
+  res.json({ ok: true });
+}));
+
+// MARK SENT logs a conversation, which is what runs the Thread cycle: closing
+// one conversation opens the next (BUILD-81's spine). Steward did not send it —
+// she did — so the timeline says so in her name.
+app.post("/thank-yous/:id/sent", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT * FROM thank_you_drafts WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Draft not found" });
+  if (d.sent_at) return res.json({ ok: true, alreadySent: true });
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
+  const act = actor(req);
+  const intId = "int_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, act.id, act.name, d.gift_id,
+     JSON.stringify({ via: "thank_you_queue", draftId: d.id })]);
+  await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
+  await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+  // The thread cycle: a thank-you thread this closes closes as an OUTCOME.
+  const closed = await query(
+    `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+      WHERE org_id=? AND donor_id=? AND closed_at IS NULL
+        AND next_step_type IN ('thank','thank_you_note') RETURNING id`,
+    [intId, orgId, d.donor_id]);
+  res.json({ ok: true, interactionId: intId, threadClosed: closed[0]?.id || null });
+}));
+
+// SKIP, with no reason asked. Sometimes a gift does not need a letter and
+// making her justify that is how a queue stops being used.
+app.post("/thank-yous/:id/skip", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run("UPDATE thank_you_drafts SET skipped_at=NOW() WHERE id=? AND org_id=? AND sent_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!r.changes) return res.status(404).json({ error: "Draft not found" });
+  res.json({ ok: true });
+}));
+
+app.post("/thank-yous/mark-all-sent", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const open = await query(
+    "SELECT id, opened_at FROM thank_you_drafts WHERE org_id=? AND sent_at IS NULL AND skipped_at IS NULL", [orgId]);
+  if (!open.length) return res.json({ marked: 0 });
+  const unopened = open.filter(d => !d.opened_at).length;
+  if (unopened) {
+    return res.status(409).json({ error: "unopened_drafts", unopened,
+      message: `${unopened} draft${unopened === 1 ? " has" : "s have"} not been opened. Marking a letter sent that nobody read is how this queue stops meaning anything.` });
+  }
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
+  const act = actor(req);
+  let marked = 0;
+  for (const d of open) {
+    const [full] = await query("SELECT donor_id, gift_id FROM thank_you_drafts WHERE id=?", [d.id]);
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      ["int_" + uuid().slice(0, 8), orgId, full.donor_id, "stewardship", "Thank-you sent.", today, act.id, act.name,
+       full.gift_id, JSON.stringify({ via: "thank_you_queue_all", draftId: d.id })]);
+    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [full.gift_id, orgId]);
+    marked++;
+  }
+  await run("UPDATE thank_you_drafts SET sent_at=NOW() WHERE org_id=? AND sent_at IS NULL AND skipped_at IS NULL", [orgId]);
+  res.json({ marked });
+}));
+
+// Her voice: three samples she pastes in Settings. Fewer than three and the
+// draft stays one plain sentence — Steward never invents a voice.
+app.put("/org/voice-samples", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const raw = Array.isArray(req.body?.samples) ? req.body.samples : [];
+  const samples = raw.map(x => String(x || "").trim()).filter(x => x.length >= 40).slice(0, 5).map(x => x.slice(0, 4000));
+  await run("UPDATE orgs SET voice_samples=?::jsonb WHERE id=?", [samples.length ? JSON.stringify(samples) : null, req.user.orgId]);
+  const draftMod = await import("./shared/draftNote.js");
+  const voice = draftMod.voiceFrom(samples);
+  res.json({ samples: samples.length, ready: voice.ready,
+             needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - samples.length),
+             greeting: voice.greeting || null, signoff: voice.signoff || null, signature: voice.signature || null });
+}));
+
+app.get("/org/voice-samples", requireAuth, wrap(async (req, res) => {
+  const [org] = await query("SELECT voice_samples FROM orgs WHERE id=?", [req.user.orgId]);
+  const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
+    : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+  const draftMod = await import("./shared/draftNote.js");
+  const voice = draftMod.voiceFrom(samples);
+  res.json({ samples, ready: voice.ready, needs: Math.max(0, draftMod.VOICE_SAMPLE_MIN - samples.length),
+             greeting: voice.greeting || null, signoff: voice.signoff || null, signature: voice.signature || null });
+}));
+
+// POST /pledges/run-reminders — drive the sweep for the caller's org now
+// (ops/test hook, the /nudges/run bar). {today} pins the date.
+app.post("/pledges/run-reminders", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const today = (req.body && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.today))) ? String(req.body.today) : null;
+  const out = await processPledgeInstallmentReminders({ orgId: req.user.orgId, today });
+  res.json(out);
+}));
+
+// ── BUILD-88b B.2 — A FULLY PAID PLEDGE CLOSES ITSELF ─────────────────────
+// `recalcPledgePayment` already decides fulfilment from the payment total (the
+// BUILD-72 rule: status is DERIVED, never an independent flag). This is what
+// happens next: the donor finished what they promised, which is the single best
+// moment to say thank you, and nobody was telling her.
+async function onPledgeSettled(orgId, pledgeId) {
+  const [p] = await query("SELECT id, donor_id, amount, status FROM pledges WHERE id=? AND org_id=?", [pledgeId, orgId]);
+  if (!p || p.status !== "fulfilled") return null;
+  // Its open instalments close with it: a pledge that is paid cannot be late.
+  await run(`UPDATE pledge_installments SET paid_at=COALESCE(paid_at, NOW())
+              WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NULL
+                AND EXISTS (SELECT 1 FROM pledges q WHERE q.id=? AND q.status='fulfilled')`,
+    [orgId, pledgeId, pledgeId]);
+  const [last] = await query(
+    "SELECT id FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date DESC, id DESC LIMIT 1", [orgId, pledgeId]);
+  if (!last) return null;
+  // ONE DRAFT PER GIFT is the queue's rule, so this does not add a second
+  // letter — it REPLACES the one the final payment already earned with the
+  // better thing to say. She sends one letter, and it is about the promise
+  // they finished rather than the last instalment of it.
+  const upgraded = await queueThankYouDraft(orgId, { giftId: last.id, donorId: p.donor_id,
+    cents: money.toCents(p.amount) ?? 0, fundId: null, type: "pledge completed",
+    reason: "pledge_completed", force: true, replace: true }).catch(() => null);
+  return { pledgeId, closed: true, thankYou: upgraded?.id || null };
 }
 
 app.get("/health", (req, res) => {
@@ -6462,9 +6801,17 @@ app.get("/donors/:id/pledges", requireAuth, wrap(async (req, res) => {
 app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { amount, dueDate, notes } = req.body;
   const campaignId = req.body.campaignId || req.body.campaign_id || null;
-  if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+  // BUILD-88b B.2 — THE GUARD READS THE MONEY SEAM, not `Number()`. A pledge
+  // typed as "1,000.00" — which is how a person writes a thousand pounds — was
+  // refused as "A positive amount is required", because Number("1,000.00") is
+  // NaN and the guard ran BEFORE the seam that knows better. Found by this
+  // part's own suite on its first run.
+  if (amount === undefined || amount === null || String(amount).trim() === "") {
     return res.status(400).json({ error: "A positive amount is required" });
   }
+  { let probe; try { probe = parseMoneyOrThrow(amount, "amount"); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+    if (probe <= 0) return res.status(400).json({ error: "A positive amount is required" }); }
   if (!dueDate) return res.status(400).json({ error: "A due date is required" });
 
   const donorExists = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -7903,6 +8250,11 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
       paymentMethod: l.check ? "Check" : (body.paymentMethod || "Check"),
       notes: [l.memo, l.check ? `Check ${l.check}` : ""].filter(Boolean).join(" · "),
       pledgeId: l.pledgeId || null,
+      // B.2's auto-apply is for gifts that arrive with nobody to ask. The
+      // deposit sheet ASKED (or matched exactly and said so on the line), so it
+      // names the instalment — `installmentId` present, even as null, is what
+      // tells recordGift this decision is already made.
+      installmentId: l.installmentId || null,
       idempotencyKey: `deposit:${importId2}:${l.line}`, conflict: "idempotency",
       actorId: actorInfo.id, actorName: actorInfo.name,
       timelineNote: l.memo || `Deposited ${depositDate}`,
@@ -9861,7 +10213,33 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
     };
   }
 
-  res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer });
+  // ── BUILD-88b B.2 — LATE PLEDGE INSTALMENTS, for the morning sentence ────
+  // A pledge somebody signed and then stopped paying is the quietest kind of
+  // bad news: nothing fails, nothing bounces, and the money simply never
+  // arrives. A SHELL pledge (BUILD-88a A.7, inferred from payments) is never
+  // counted late — it has no schedule anybody wrote down, so it is unfinished
+  // rather than overdue, and it is reported separately so it can be finished.
+  const orgForPledges = await orgTz(orgId);
+  const pledgeToday = orgToday(orgForPledges);                     // ORG_TZ_SEAM_OK
+  const { PLEDGE_LATE_DAYS } = await import("./shared/draftNote.js");
+  const [lateRow] = await query(
+    `SELECT COUNT(*)::int AS late FROM pledge_installments i
+       JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+       JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+      WHERE i.org_id=? AND i.paid_gift_id IS NULL AND i.due_date <= ?
+        AND p.status='open' AND COALESCE(p.is_shell,false) = false
+        AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`,
+    [orgId, orgTime.addDays(pledgeToday, -PLEDGE_LATE_DAYS)]);
+  const [shellRow] = await query(
+    `SELECT COUNT(*)::int AS n FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+      WHERE p.org_id=? AND p.status='open' AND d.deleted_at IS NULL
+        AND (COALESCE(p.is_shell,false) = true
+             OR NOT EXISTS (SELECT 1 FROM pledge_installments i WHERE i.pledge_id = p.id))`,
+    [orgId]);
+
+  res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
+             latePledgeInstallments: lateRow?.late || 0,
+             pledgesNeedingSchedule: shellRow?.n || 0 });
 }));
 
 // Per-stat drill-downs behind the My Portfolio bar. Each mirrors the exact
@@ -16795,6 +17173,12 @@ async function processThreadNudges(now = new Date()) {
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processThreadNudges().catch(console.error), 50000);
   setInterval(() => processThreadNudges().catch(console.error), 5 * 60 * 1000);
+  // BUILD-88b B.2 — the late-instalment sweep rides the SAME timer family, not
+  // a second scheduler. It opens threads and sends nothing, so it is safe to
+  // run hourly: the `threads_one_open` index makes a repeat a no-op, and
+  // `reminder_thread_id` makes it a no-op per instalment too.
+  setTimeout(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 70000);
+  setInterval(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
 }
 
 // POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
