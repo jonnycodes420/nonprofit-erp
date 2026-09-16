@@ -390,7 +390,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
 const filterInp = { padding: "7px 10px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 13, fontFamily: "'DM Sans',sans-serif", background: T.bgCard, color: T.ink };
 function Stat({ label, value, sub, color, empty }) {
   // D-2 Fix A (BUILD-45): an empty tile shows an em dash in warm grey (T.ink3 =
-  // #6b6560) + "No asks logged yet" — never a $0 that asserts "you have nothing."
+  // #5a554f) + "No asks logged yet" — never a $0 that asserts "you have nothing."
   return (
     <div style={{ textAlign: "right" }}>
       <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>{label}</div>

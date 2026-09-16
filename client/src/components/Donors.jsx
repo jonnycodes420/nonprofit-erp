@@ -18,7 +18,7 @@ class ErrorBoundary extends Component {
       return (
         <div style={{padding:"32px 24px",textAlign:"center",color:"#b8593f",fontSize:14}}>
           <div style={{fontWeight:700,marginBottom:8}}>Something went wrong loading this profile.</div>
-          <div style={{color:"#6b6560",marginBottom:16}}>{this.state.error?.message}</div>
+          <div style={{color:"#5a554f",marginBottom:16}}>{this.state.error?.message}</div>
           <button onClick={()=>this.setState({error:null})} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
         </div>
       );
@@ -4866,7 +4866,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </svg>
                   </div>
                   <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
-                  <div style={{fontSize:13,color:"#6b6560",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
+                  <div style={{fontSize:13,color:"#5a554f",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
                   <button onClick={()=>setAddGiftOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                     style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
                     Record a gift →
@@ -5501,7 +5501,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 const EVT_COLORS={gala:T.greenDk,cultivation:T.green,site_visit:T.green500,board_meeting:T.greenDk,volunteer:T.gold600,webinar:T.gold500,other:T.ink3};
                 const ATT_COL={invited:T.ink3,confirmed:T.green500,attended:T.green,no_show:T.terracotta,cancelled:T.ink3};
                 const icon=EVT_ICONS[e.event_type]||"•";
-                const attCol=ATT_COL[e.attendee_status]||"#6b6560";
+                const attCol=ATT_COL[e.attendee_status]||"#5a554f";
                 // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
                 // sample seed writes timestamps) — blindly appending T12:00:00
                 // to the latter produced "Invalid Date" on the profile card.
@@ -5936,7 +5936,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           </svg>
         </div>
         <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:10}}>No donors yet.</div>
-        <div style={{fontSize:14,color:"#6b6560",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
+        <div style={{fontSize:14,color:"#5a554f",maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {onAddDonor&&<button onClick={onAddDonor} style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
           {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:"#0d5c3a",border:"1.5px solid #0d5c3a",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
@@ -6932,7 +6932,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#6b6560",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#5a554f",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
               {v==="reengage"&&lapsedCount>0&&<span style={{background:"#0d5c3a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>

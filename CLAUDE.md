@@ -26,6 +26,19 @@ Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewar
 - **org_creo is DEMO-ONLY and carries FABRICATED legal/tax identity** (invented legal name "CREO Arts Collective, Inc.", an invented NYC receipt address, invented ED signature "Maya Reyes" — set 2026-08-12 so demo receipts could be issued). **When the real CREO Arts onboards, it starts as a FRESH org record — NEVER by converting/renaming org_creo** — the fabricated identity must never appear on a real organization's receipts, and org_creo's donors/gifts/receipts are demo fiction end to end.
 - Demo DONOR (portal): xjca2006+demo@gmail.com = Renee Castillo (`dseed_03`, $2,500 lifetime, quiet mid-level) in org_creo — request a magic link at https://www.stewardapp.dev/portal/creo-arts-creo (set up 2026-08-11; proof shots in docs/demo-donor-2026-08-11/)
 
+## THE DESIGN RULE (BUILD-86 — standing, applies to every build from here on)
+**FOUR COLOURS reach a screen. Nothing else.**
+- **Ink `#0F1A12`** — nav, headings, primary text, the one dark surface.
+- **White `#FFFFFF`**, with **Cream `#F0EDE6`** as the page ground and **`#E8E4DB`** as a hairline. Cream is white's warm shade, **not a fifth colour**.
+- **Emerald `#0D5C3A`** — the ONE action colour. Every primary button is emerald. **There is no second green.** `T.green`, `T.greenMid` and `T.greenDk` all point at it (BUILD-86 C.1); the names survive so 358 call sites did not have to move.
+- **Brass `#C9A84C`** — emphasis, progress, the underline under a heading, the marker on an overdue row.
+
+**Secondary text** is warm grey `#5A554F` on LIGHT surfaces and **cream at 70%** (`T.sage400`) on INK. Warm grey cannot take the dark job — it scores ~2.0:1 on ink and `tests/palette.test.js` would rightly refuse it; cream at opacity adds no colour and lands near 8.5:1. **Sage is deleted.**
+
+**OVERDUE IS BRASS, NOT RED.** Red exists ONLY for a destructive confirm ("Delete this donor"), never for status. A screen that shouts in red every morning stops being read, and nothing on a follow-up list is dangerous — it is late.
+
+**The token census RATCHETS DOWN, NEVER UP** (`tests/palette-census.test.js`). The finished parts are held at ZERO (no second green, no bright library red, overdue brass, sage gone from the app); every other count is a ceiling that may only fall, and the suite prints a note telling you to lower it when the gap opens. **A ratchet is not a weaker rule than "zero" — it is the same rule with a date on it, and unlike a TODO it cannot be quietly lost.** Public surfaces (landing, donor portal, giving dashboard) keep their own audited palettes and their own guards; they are excluded by name, with the reason, in the census.
+
 ## Design system
 - Colors: cream #f0ede6, dark green #0f1a12, primary green #1a6b4a, accent green #10b981, gold #c9a84c, terracotta (gold-tinted brown accent) #b8593f
 - Fonts: DM Serif Display + DM Sans
@@ -230,6 +243,17 @@ Found in one hour importing the REAL 444-row `steward-leads.csv` into a live org
 - **The landing page says the same sentence** (BUILD-81 §4.4 order): the question H1 ("Who did you mean to call back?") + the five-knot thread visual (brass knot breathes opacity/transform-only; full-opacity static under reduced motion) · how-it-works beats (DOM renders of the real UI; invented names collision-checked against every fixture/seed) · when-a-card-stops (the reader's arithmetic, no number computed) · Drift (the dot field moved DOWN as evidence, FEP "full-year 2025" caption byte-intact) · the record (the one raster: the Donor Map over the SAMPLE fixture, OSM attribution on-page per ODbL) · your-data (four true sentences) · closing. **CTA semantics rule: navigation is a real `<a href>`, `<button>` is for on-page actions** (`.lp a { color: inherit }` outranks class selectors — scope CTA classes as `.lp .lp-btn-*` or ship ink-on-ink text, found by the compositing contrast sweep). Gates: `scripts/landing-prod-verify.js` **grew 29→40 and must never shrink** (CLS === 0.0000 at 1440 AND 390, em-dash ban, H1, knots, placeholder-must-render-flagged); tests/landing-field.test.js (43) is the local mirror; the retired year-panel/verticals assertions are listed with reasons in audit/BUILD-81-FINDINGS.md.
 - **Language (asserted)**: "recovery" is a feature noun, "recovered" a banned outcome (reserved-recovered scans landing+app+email incl. nudge subjects); no sector statistics (FEP is the one sourced exception); Steward reports counts, never congratulates; NO em dashes in Jonathan-voice copy (landing/email/empty states — the landing gate greps the rendered text); nudge subjects are facts, no exclamation marks.
 - Suites: threads (56) · thread-nudge (24) in run-all; walk `scripts/build81-capture.js` → docs/build81/. Known seams: audit/BUILD-81-FINDINGS.md §worry (thank-queue action doesn't close the thread — BUILD-82 candidate; org-wide nudge at Team scale). BLOCKED-build81.md: the © entity fill + Cowork artifact update are Jonathan's.
+
+## THE SPEED RULE (BUILD-87 — standing, applies to every build from here on)
+The verification discipline is not negotiable; the CEREMONY around it is. Five ways to stop paying for ceremony that caught nothing:
+
+1. **Part 0 findings are a DOCUMENT only for an area not touched in the last three builds.** Otherwise the census is **five lines at the top of the first commit**. A findings file re-deriving what the previous build already established is archaeology, not verification.
+2. **A test family is the SMALLEST set that catches the regression** — not every combination that could be enumerated. The question is "what would have to break for this to fail", answered once, honestly; a suite that cannot fail is ceremony with a pass count.
+3. **Screenshots only when a walkthrough FOUND a defect.** A green walk needs its assertions committed, not its pictures. (The walks that earned their images — BUILD-84's import, BUILD-86's `day 0` and the Board-management collision — all found something.)
+4. **Independent parts run in PARALLEL WORKTREES and merge in order.** Sequential work that has no dependency between its halves is just a longer build.
+5. **Prod smoke ONCE per push**, not once per commit. `node scripts/status.js` after the push that deploys, not after each one that does not.
+
+**What this does NOT relax:** the full battery stays green before every push, the pre-push hook is never bypassed, a new route still needs its tenant probe or a reasoned exemption, and a guard still has to be PROVEN able to fail. Speed comes out of the paperwork, never out of the evidence.
 
 ## CRITICAL WORKING RULES
 - **THE LINE THAT DOES NOT GET CROSSED (BUILD-75 C.2): agents read, draft and propose. A human commits anything that moves money or reaches a donor.** No automation, workflow, AI feature, or future agent may charge/refund/reprice money or send donor-facing communication without a human having committed that specific action — the existing transactional exceptions (receipt auto-send, failed-card dunning, recurring-change confirmations) are documented product decisions about TRANSACTIONAL mail made by humans in advance, and the set must not grow without the same deliberate decision. An agent emailing the wrong thing to a major donor costs a relationship built over ten years, and there is no undo for that.

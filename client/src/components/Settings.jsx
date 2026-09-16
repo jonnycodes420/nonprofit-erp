@@ -1402,7 +1402,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div>
             <div style={{fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.01em"}}>{userName}</div>
             <div style={{fontSize:13,color:T.ink3,marginTop:2}}>{userEmail}</div>
-            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#6b6560"}/></div>
+            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#5a554f"}/></div>
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
@@ -1436,7 +1436,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
-            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#6b6560"}/>
+            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#5a554f"}/>
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps

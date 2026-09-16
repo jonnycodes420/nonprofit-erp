@@ -589,7 +589,7 @@ export default function WelcomePage() {
             <p style={{ fontSize: 13, color: ink3, margin: "0 0 28px", textAlign: "center" }}>Just a moment.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
               {setupItems.map((item, i) => (
-                <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "11px 0", borderBottom: i < setupItems.length - 1 ? "1px solid #e8e4dc" : "none" }}>
+                <div key={i} style={{ display: "flex", gap: 12, alignItems: "center", padding: "11px 0", borderBottom: i < setupItems.length - 1 ? "1px solid #e8e4db" : "none" }}>
                   <span style={{ color: green, fontWeight: 800, fontSize: 14, flexShrink: 0 }}>✓</span>
                   <span style={{ fontSize: 14, color: ink }}>{item}</span>
                 </div>

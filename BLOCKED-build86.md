@@ -74,3 +74,23 @@ sage → cream-alpha on dark, terracotta → brass for the remaining status uses
 then the long tail of literals to tokens — each with the census ceiling lowered
 in the same commit. Nothing about it is urgent, and all of it is safer with
 daylight.
+
+## THE HAIRLINE THE DESIGN RULE NAMES IS NOT THE TOKEN DOING THE JOB
+
+The standing design rule names `#E8E4DB` as the hairline. In the token object
+that value is `bg2` — a background TINT, used as a fill 147 times. The token
+actually drawn as a hairline is `bg3` `#d4cfc6`, on 654 borders.
+
+I aligned `bg2` to the stated value (a one-bit change, no visual consequence)
+and left `bg3` alone. Repainting 654 borders from `#d4cfc6` to `#e8e4db` would
+lighten every division in the product by a visible step — that is a design
+decision about how much structure the page shows, not a token typo, and it is
+not mine to make at 11pm on the night before a demo.
+
+**The question for Jonathan:** does the rule mean the hairline should become
+`#E8E4DB` (lighter, airier, fewer visible divisions), or does it mean `bg3`
+`#d4cfc6` IS the hairline and the rule should name that value? One line either
+way and the rule and the code agree.
+
+Everything else in the rule now matches the code exactly, including the warm
+grey, which was not in the codebase at all before tonight.

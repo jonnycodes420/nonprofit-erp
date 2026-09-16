@@ -18,7 +18,7 @@ import { streamAI, apiFetch } from "../api";
 export const T = {
   // Backgrounds
   bg:         "#f0ede6",
-  bg2:        "#e8e4dc",
+  bg2:        "#e8e4db",   // the stated hairline/tint value
   bg3:        "#d4cfc6",
   bgDeep:     "#e6dfd0",
   bgDark:     "#0f1a12",
@@ -27,7 +27,11 @@ export const T = {
   // Ink
   ink:        "#0f1a12",
   ink2:       "#2d2d2d",
-  ink3:       "#6b6560",
+  // BUILD-86 design rule — WARM GREY, the stated value. ink3 IS "secondary
+  // text on light surfaces"; the rule's #5A554F was nowhere in the codebase.
+  // 1,084 call sites repaint through this one line, and contrast improves:
+  // ~5.4:1 on cream before, ~6.8:1 now.
+  ink3:       "#5a554f",
   inkInverse: "#f0ede6",
   // ── BUILD-86 C.1 — ONE ACTION COLOUR ─────────────────────────────────────
   // Emerald #0d5c3a is it. `green` was the retired Tailwind emerald #10b981
@@ -288,7 +292,7 @@ export function GlobalStyles() {
     body{font-family:'DM Sans',system-ui,sans-serif;color:#0f1a12;}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
     ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-track{background:#e8e4dc;}
+    ::-webkit-scrollbar-track{background:#e8e4db;}
     ::-webkit-scrollbar-thumb{background:#c9a84c;border-radius:99px;}
     ::-webkit-scrollbar-thumb:hover{background:#a97f22;}
     ::selection{background:#0d5c3a22;color:#0f1a12;}
@@ -576,7 +580,7 @@ export function AIPanel({text,onClose}) {
   if(!text) return null;
   return <div className="fade-in modal-anim" style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderLeft:"3px solid #c9a84c",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
     <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#c9a84c",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
-    <div style={{fontSize:13,color:"#e8e4dc",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
+    <div style={{fontSize:13,color:"#e8e4db",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
     {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:6,color:T.sage400,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
