@@ -6,31 +6,24 @@ pass, and none of them blocks the build. Full report:
 
 ---
 
-## 1 · Snooze still distorts the two urgency signals
+## 1 · ~~Snooze distorts the two urgency signals~~ — **RESOLVED 2026-09-15**
 
-`POST /threads/:id/dismiss {reason:"revisit"}` sets `snoozed_until` and
-**leaves `due_date` where it was**. `opened_on` also stays put. So a thread
-deliberately deferred for six months comes back reading *"overdue, day 180"*,
-sorts to the top of the morning brief, and — because `composeThreadNudge`
-orders by `opened_on ASC` and the subject is built from the oldest — **becomes
-the headline of every morning email.**
+Fixed with **option (b)**, as recommended. `threads.original_due_date` (nullable,
+nothing to backfill: NULL means never deferred). A `revisit` dismissal now
+**moves `due_date` to the chosen date** and stores the day first promised,
+`COALESCE`d so a thread deferred twice still remembers the *first* one. The row
+says "moved from Sep 3" rather than the product quietly editing somebody's
+commitment.
 
-After a season of real use the subject line is always a big number, and a
-number that is always big stops being a signal.
+The second half of the same finding went with it: **the morning subject named
+the OLDEST thread**, so a deferred thread carried a huge `daysOpen` and owned
+the headline for as long as it stayed open. It names the thread the queue says
+to do first now (`threads[0]` arrives rank-ordered), with its day count, which
+is the part of BUILD-81's line that did the work. Picking the oldest was right
+when nothing was ranked and stopped being right the moment a thread could be
+deliberately deferred.
 
-**Why it is not fixed here.** It is a one-line change with a schema question
-attached, and the question is Jonathan's:
-
-- **(a)** On revisit, move `due_date` to the revisit date. Clean, and
-  "overdue" goes back to meaning overdue. Cost: the original commitment date is
-  lost, so "you said you'd do this on the 3rd" is no longer recoverable.
-- **(b)** Add `original_due_date`, move `due_date`, keep the first one for the
-  record. Honest and slightly more schema.
-- **(c)** Leave it and change only the *display* — show "day N since last
-  touch" rather than since opened. Smallest, but the sort order stays wrong.
-
-**Recommended: (b).** The date somebody first committed to is exactly the kind
-of fact this product does not throw away.
+Pinned by `tests/build85.test.js` §8.
 
 ## 2 · `tests/affected.sh` still omits two landing suites
 

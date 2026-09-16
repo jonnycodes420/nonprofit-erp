@@ -1547,6 +1547,21 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS timezone_confirmed_at TIMESTAMPTZ`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_threads_org_timed ON threads (org_id, due_date, due_time) WHERE closed_at IS NULL AND due_time IS NOT NULL`);
 
+  // ── BUILD-86 FIX — SNOOZE MOVES THE DUE DATE, AND KEEPS THE FIRST ONE ─────
+  // BUILD-85 shipped with this named in BLOCKED-build85.md: a "revisit"
+  // dismissal set `snoozed_until` and left `due_date` where it was, so a
+  // thread deliberately deferred for six months came back reading "overdue,
+  // day 180", sorted to the top, and OWNED THE SUBJECT LINE of every morning
+  // email. A number that is always big stops being a signal.
+  //
+  // The revisit now MOVES `due_date` to the chosen date, so "overdue" goes
+  // back to meaning overdue. `original_due_date` keeps the day somebody first
+  // committed to — the kind of fact this product does not throw away, and the
+  // reason option (b) was chosen over simply overwriting. NULL means never
+  // snoozed, so every pre-existing row is correct by construction with nothing
+  // to backfill.
+  await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS original_due_date TEXT`);
+
   // ── Giving Pages (2026-07-14) ────────────────────────────────────────────
   // Campaign-specific donation pages (gala/appeal/etc.), distinct from the
   // one org-wide /give/:orgSlug page. Deliberately NOT the `campaigns` table

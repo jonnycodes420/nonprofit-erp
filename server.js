@@ -9694,7 +9694,10 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
         : { kind: "none", type: null, date: t.opened_on, line: null, actor: t.created_by_name || null };
     list.push({
       id: t.id, donorId: t.donor_id, donorName: t.donor_name,
-      nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date, time: t.due_time || null },
+      nextStep: { type: t.next_step_type, label: t.next_step_label, due: t.due_date, time: t.due_time || null,
+                  // The day this was first promised, when a revisit has moved
+                  // the due date since. Null on a thread nobody deferred.
+                  originalDue: t.original_due_date || null },
       overdue: t.due_date < today, daysOpen, openedOn: t.opened_on,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
@@ -9857,8 +9860,16 @@ app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(on)) return res.status(400).json({ error: "revisitOn must be a date (YYYY-MM-DD)" });
     const org = await orgTz(orgId);
     if (on <= orgToday(org)) return res.status(400).json({ error: "revisitOn must be a future date — a revisit today is just the open thread" });   // ORG_TZ_SEAM_OK
-    await run("UPDATE threads SET snoozed_until = ? WHERE id = ?", [on, req.params.id]);
-    return res.json({ ok: true, snoozedUntil: on });
+    // MOVE the due date, and keep the first one. A revisit is a new promise
+    // about when; leaving due_date behind made every deferred thread return as
+    // a false alarm, and dropping it would lose the day she originally said.
+    // COALESCE means a thread snoozed twice still remembers the FIRST date.
+    await run(
+      `UPDATE threads
+          SET original_due_date = COALESCE(original_due_date, due_date),
+              due_date = ?, snoozed_until = ?
+        WHERE id = ?`, [on, on, req.params.id]);
+    return res.json({ ok: true, snoozedUntil: on, dueDate: on, originalDue: t.original_due_date || t.due_date });
   }
   await run(
     "UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = ? WHERE id = ?",
@@ -14984,8 +14995,18 @@ function morningBriefSubject(threads, taskCount, org) {
   if (threads.length === 0) {
     return `${taskCount} task${taskCount === 1 ? "" : "s"} need${taskCount === 1 ? "s" : ""} you today — ${displayNameCase(org.name || "")}`;
   }
-  const oldest = threads.reduce((m, t) => (t.daysOpen > m.daysOpen ? t : m), threads[0]);
-  return `${total} waiting on you · ${oldest.donorName}, day ${oldest.daysOpen}`;
+  // BUILD-86 FIX — the escalation names the thread the QUEUE says to do first,
+  // not the one that has been open longest. `threads` arrives rank-ordered
+  // (shared/threadRank.js), so threads[0] is that one.
+  //
+  // Picking the oldest was BUILD-81's idea and it was right when nothing was
+  // ranked. It stopped being right the moment a thread could be deliberately
+  // deferred: a revisit-snoozed thread carries a huge `daysOpen` and would own
+  // the subject line of every morning email for as long as it was open. The
+  // day count still rides along, because a number in the subject is what made
+  // the line work.
+  const lead = threads[0];
+  return `${total} waiting on you · ${lead.donorName}, day ${lead.daysOpen}`;
 }
 
 // BUILD-85 — the brief's body. Threads first (the spine), then the tasks that

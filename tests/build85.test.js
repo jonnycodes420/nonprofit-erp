@@ -331,6 +331,47 @@ const mkThread = (id, org, donor, label, due, opened, { type = "follow_up", owne
   ok("the open count and time-to-close are reported alongside it",
      typeof health.open === "number" && health.medianDaysToClose !== undefined, health);
 
+  // ── §8 · a revisit is a new promise about WHEN ───────────────────────────
+  // Shipped as BLOCKED-build85.md item 1 and fixed here. A "revisit"
+  // dismissal used to set `snoozed_until` and leave `due_date` alone, so a
+  // thread deliberately deferred came back reading "overdue, day 180" and, by
+  // owning the oldest-thread slot, headlined every morning email.
+  console.log("\n— §8 · snooze moves the due date, and keeps the first one —");
+  await q(`DELETE FROM digest_sends WHERE org_id=$1`, [ORG]);
+  await mkDonor("d_b85_sn", ORG, "Deferred Donor", 100, 2, "u_b85_a", "Officer Aisha");
+  await mkThread("th_b85_sn", ORG, "d_b85_sn", "Call about the gala", daysAgo(40), daysAgo(60), { owner: "u_b85_a", ownerName: "Officer Aisha" });
+  const before = (await api("GET", "/threads?donorId=d_b85_sn", tokA)).body.list[0];
+  ok("before the revisit it is genuinely overdue", before.overdue === true, before.nextStep);
+
+  const revisitOn = daysAhead(30);
+  const snz = await api("POST", "/threads/th_b85_sn/dismiss", tokA, { reason: "revisit", revisitOn });
+  ok("the revisit is accepted", snz.status === 200 && snz.body.snoozedUntil === revisitOn, snz.body);
+  const after = (await api("GET", "/threads?donorId=d_b85_sn", tokA)).body.list[0];
+  ok("the due date MOVED to the revisit date, so overdue means overdue again",
+     after.nextStep.due === revisitOn && after.overdue === false, after.nextStep);
+  ok("…and the day she FIRST promised is kept, not thrown away",
+     after.nextStep.originalDue === daysAgo(40), after.nextStep);
+  ok("the thread is still open — a revisit defers, it does not close",
+     !!after.id && after.snoozedUntil === revisitOn, after.snoozedUntil);
+
+  // Snoozed twice: the FIRST promise survives.
+  await q(`UPDATE threads SET snoozed_until = NULL WHERE id='th_b85_sn'`);
+  const again = daysAhead(60);
+  await api("POST", "/threads/th_b85_sn/dismiss", tokA, { reason: "revisit", revisitOn: again });
+  const reDeferred = (await api("GET", "/threads?donorId=d_b85_sn", tokA)).body.list[0];
+  ok("deferred a second time, the ORIGINAL date is still the original",
+     reDeferred.nextStep.originalDue === daysAgo(40) && reDeferred.nextStep.due === again, reDeferred.nextStep);
+
+  // And the headline: a long-open deferred thread no longer owns the subject.
+  await q(`UPDATE threads SET snoozed_until = NULL, due_date = $1 WHERE id='th_b85_sn'`, [daysAgo(0)]);
+  captured = [];
+  await api("POST", "/nudges/run", tokAdmin, { today: WEDNESDAY, force: true });
+  const subj = mailTo("b85a@test.local")[0]?.body?.subject || "";
+  ok("a deferred thread that just came back does NOT headline the morning email",
+     !subj.includes("Deferred Donor"), subj);
+  ok("…the subject names the thread the QUEUE says to do first, with its day count",
+     /waiting on you · .+, day \d+/.test(subj), subj);
+
   // ── §7 · org isolation on every new route ────────────────────────────────
   console.log("\n— §7 · nothing crosses an org boundary —");
   const tok2 = await login("b85o2@test.local");

@@ -1580,7 +1580,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false}) {
         <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.terracotta:T.ink}}>
           {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
         </div>
-        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>day {t.daysOpen}{t.owner?` · ${t.owner.name}`:""}</div>
+        {/* A deferred step says so, and says what it was first promised for.
+            Moving the due date without saying you moved it would be the
+            product quietly editing somebody's commitment. */}
+        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>
+          day {t.daysOpen}{t.owner?` · ${t.owner.name}`:""}
+          {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
+        </div>
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
         <button onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
