@@ -22043,7 +22043,37 @@ const PORTAL_IMG_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp", 
 // The header rule exists because the takeover renders it as a ~5:1 banner
 // crop: a portrait image can only decapitate its subject, so it's rejected
 // outright (with the Settings crop preview showing WHY before upload).
+// ── BUILD-86 FIX — THE BYTES MUST BE WHAT THE UPLOAD SAYS THEY ARE ────────
+// Rejection of malformed uploads used to rest entirely on `imageSize` failing
+// to parse them, which is a DEPENDENCY'S FAILURE MODE, not a check. Three junk
+// bytes declared as PNG return {width:0,height:0,type:"tga"} on one machine
+// and something else on another — so the same upload was refused locally and
+// accepted in CI, and the suite that caught it (portal-page) was right both
+// times. A guard that only works where its library happens to give up is not a
+// guard.
+//
+// This is the deterministic half: the magic number has to agree with the MIME
+// the caller declared. It is also strictly STRONGER than what it replaces,
+// because it closes "declare PNG, send something else" — which parsed fine and
+// was never refused at all.
+const IMAGE_MAGIC = {
+  "image/png":  b => b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a,
+  "image/jpeg": b => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/gif":  b => b.length >= 6 && (b.slice(0, 6).toString("latin1") === "GIF87a" || b.slice(0, 6).toString("latin1") === "GIF89a"),
+  "image/webp": b => b.length >= 12 && b.slice(0, 4).toString("latin1") === "RIFF" && b.slice(8, 12).toString("latin1") === "WEBP",
+  // SVG is text: it must actually contain an <svg> element, not merely claim to.
+  "image/svg+xml": b => /<svg[\s>]/i.test(b.slice(0, 2048).toString("utf8")),
+};
+function imageBytesMatchMime(contentType, buffer) {
+  const check = IMAGE_MAGIC[contentType];
+  if (!check) return false;                 // an unlisted mime never gets in
+  try { return !!check(buffer); } catch { return false; }
+}
+
 function checkThemeImageDimensions(kind, contentType, buffer) {
+  if (!imageBytesMatchMime(contentType, buffer)) {
+    return { ok: false, message: "That file doesn't parse as an image — try re-exporting it as PNG or JPEG." };
+  }
   if (contentType === "image/svg+xml") return { ok: true, width: null, height: null };
   let d;
   try { d = imageSize(buffer); } catch { d = null; }

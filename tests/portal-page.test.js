@@ -122,6 +122,14 @@ async function fixture() {
     ["campaign: foreign/unknown id", [{ type: "campaign", campaignId: "cmp_nope" }]],
     ["stats: empty items", [{ type: "stats", items: [] }]],
     ["image: junk bytes", [{ type: "image", image: "data:image/png;base64,AAAA" }]],
+    // BUILD-86 FIX — the bytes must BE what the upload says they are. Refusing
+    // junk used to rest on image-size failing to parse it, which is a
+    // dependency's failure mode rather than a check: the same three bytes were
+    // refused locally and ACCEPTED in CI. A magic-number check is deterministic
+    // everywhere, and it also closes the case below, which parsed fine and was
+    // never refused at all.
+    ["image: real JPEG bytes declared as PNG", [{ type: "image", image: "data:image/png;base64," + Buffer.from("ffd8ffe000104a46494600010101006000600000ffdb", "hex").toString("base64") }]],
+    ["image: text declared as SVG", [{ type: "image", image: "data:image/svg+xml;base64," + Buffer.from("just some text, not markup").toString("base64") }]],
     ["richtext: raw html block type", [{ type: "richtext", blocks: [{ type: "script", text: "x" }] }]],
   ]) {
     const r = await api("PUT", "/portal-page/draft", tokA, { widgets });
