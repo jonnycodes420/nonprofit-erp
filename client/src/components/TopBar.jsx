@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, DriftBadge } from "./shared";
+import { T, DriftBadge, firstNameOf } from "./shared";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -137,7 +137,10 @@ export function TopBar({ auth, logout, onNavigate }) {
     else last.items.push(item);
   });
 
-  const userName = auth?.user?.name || "You";
+  // BUILD-88a A.4 — FIRST NAME EVERYWHERE. The bar showed the whole stored
+  // name, so a seeded "Admin User" sat at the top of every screen in the
+  // product. It is how a colleague is addressed, not how a row is keyed.
+  const userName = firstNameOf(auth?.user?.name) || "You";
 
   return <div className="app-topbar" style={{height:52,background:"#0f1a12",borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 

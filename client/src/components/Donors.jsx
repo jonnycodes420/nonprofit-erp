@@ -26,7 +26,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf } from "./shared";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
@@ -90,6 +90,19 @@ const CSV_STANDARD_FIELDS = [
   { key: "doNotContact", label: "Do not contact" },
 ].filter((f, i, arr) => arr.findIndex(x => x.key === f.key) === i)
  .map(f => ({ ...f, flag: false }));
+// ── BUILD-88a A.4 — A NUMBER NOBODY CAN DEFINE IS NOT SHOWN ───────────────
+// The wealth score rendered a figure out of 10, a capacity tier and a
+// confidence word, with nothing on the screen saying how any of them is arrived
+// at or what they were computed from. BUILD-86 C.3's rule — "a number a board
+// cannot define is a number it should not be shown" — applies to the officer's
+// own screen too, and harder: this is the number they use to decide how much to
+// ask a person for. Both of these must carry a real string before the panel
+// renders again: the DEFINITION (what the number means, in a sentence a
+// fundraiser would accept) and the SOURCE (where its inputs come from, named).
+// The panel's code is intact; turning it back on is these two lines.
+const WEALTH_SCORE_DEFINITION = null;
+const WEALTH_SCORE_SOURCE = null;
+
 const IMPORT_STAGES = ["prospect","qualify","cultivate","solicit","steward","lapsed"];
 
 // Donor-to-donor relationship types (server.js's DONOR_RELATIONSHIP_TYPES) —
@@ -3914,18 +3927,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [reassignId,setReassignId]=useState(donor.assignedTo||"");
   const [reassignLoading,setReassignLoading]=useState(false);
 
-  const [gmailConnected,setGmailConnected]=useState(null);
-  const [gmailEmail,setGmailEmail]=useState("");
-  const [composeOpen,setComposeOpen]=useState(false);
-  const [composeTo,setComposeTo]=useState(donor.email||"");
-  const [composeSubject,setComposeSubject]=useState("");
-  const [composeBody,setComposeBody]=useState("");
-  const [composeSending,setComposeSending]=useState(false);
-  const [composeSent,setComposeSent]=useState(false);
-  const [composeErr,setComposeErr]=useState("");
-  const [draftLoading,setDraftLoading]=useState(false);
+  // A.4 — the draft is copied, never sent from here.
+  const [draftCopied,setDraftCopied]=useState(false);
+  const copyDraftEmail=async(text)=>{
+    try{ await navigator.clipboard.writeText(String(text||"")); setDraftCopied(true); setTimeout(()=>setDraftCopied(false),2500); }
+    catch(e){ rethrowProgrammerError(e); alert("Your browser would not let Steward reach the clipboard. Select the draft above and copy it."); }
+  };
   useEffect(()=>{
-    apiFetch("/gmail/status").then(s=>{setGmailConnected(!!s.connected);setGmailEmail(s.email||"");}).catch(()=>setGmailConnected(false));
+    // A.4 — the Gmail probe went with the send panel it was for.
   },[]);
 
   const handleReassign=async()=>{
@@ -3945,40 +3954,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     setReassignLoading(false);
   };
 
-  const sendEmail=async()=>{
-    if(!composeTo||!composeSubject)return;
-    setComposeSending(true);setComposeErr("");
-    const first=donor.name.split(" ")[0];
-    const resolvedSubj=composeSubject.replace(/\{\{donor_name\}\}/g,first).replace(/\{\{org_name\}\}/g,orgName);
-    const resolvedBody=composeBody.replace(/\{\{donor_name\}\}/g,first).replace(/\{\{org_name\}\}/g,orgName);
-    try{
-      await apiFetch("/gmail/send",{method:"POST",body:JSON.stringify({donorId:donor.id,to:composeTo,subject:resolvedSubj,body:resolvedBody})});
-      setComposeSent(true);
-      setTimeout(()=>{setComposeSent(false);setComposeOpen(false);setComposeSubject("");setComposeBody("");if(onInteractionAdded)onInteractionAdded();},3000);
-    }catch(e){setComposeErr(errorMessage(e, "Failed to send email"));}
-    setComposeSending(false);
-  };
-
-  const draftWithAI=async()=>{
-    setDraftLoading(true);setComposeBody("");setComposeSubject("");
-    try{
-      let thread=[];
-      try{thread=await apiFetch(`/gmail/thread/${donor.id}`);}catch(e){}
-      const threadCtx=thread.length>0?`\n\nRecent email thread:\n${thread.map(t=>`[${t.direction}] ${t.subject}: ${t.snippet}`).join("\n")}`:"";
-      const sys=`You are a nonprofit development officer assistant. Draft a warm, personal email.`;
-      const prompt=`Draft a warm, personal email to ${donor.name} from ${orgName}.\n\nDonor context:\n- Lifetime giving: ${fmtFull(donor.total)}\n- Stage: ${donor.stage||"cultivate"}\n- Last gift: ${donor.lastGift}\n- Notes: ${donor.notes||"none"}${threadCtx}\n\nWrite a professional but warm email. Subject line first (starting with "Subject: "), then body. Keep it under 200 words. Address them by first name.`;
-      await askClaude(sys,prompt,(chunk)=>{
-        const lines=chunk.split("\n");
-        const sIdx=lines.findIndex(l=>l.startsWith("Subject: "));
-        if(sIdx>=0){
-          setComposeSubject(lines[sIdx].replace("Subject: ","").trim());
-          setComposeBody(lines.slice(sIdx+1).join("\n").replace(/^\n+/,""));
-        }else{setComposeBody(chunk);}
-      });
-    }catch(e){console.error(e);}
-    setDraftLoading(false);
-  };
-
+  // BUILD-88a A.4 — `sendEmail` and `draftWithAI` lived here and are gone with
+  // the panel they drove. The profile does not send. "Draft Email" (the AI
+  // button above) still writes one, and A.4's rule is where it goes next: the
+  // clipboard, then her own mail client, where she reads it as the donor will.
   const [showGiftModal,setShowGiftModal]=useState(false);
   const [seqOpen,setSeqOpen]=useState(false);
   const [seqId,setSeqId]=useState("");
@@ -4520,7 +4499,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             it now lives at the bottom of the Overview record (still behind
             the existing confirm). */}
         <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
-          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" style={{background:T.gold500,border:"none",borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+          {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
+              buttons in two different colours (a brass "Log a conversation" and
+              an emerald "Request Gift"), so nothing on it was the obvious thing
+              to press. Emerald means "this is the button" and exactly one thing
+              may mean that; the rest are outlines. */}
+          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Log a conversation
           </button>
           {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
@@ -4531,7 +4515,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Plan a follow-up
           </button>}
-          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Request Gift
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -4600,7 +4584,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
                         {it.lastTouch?.line?<>"{it.lastTouch.line}"</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
                         {it.lastTouch?.date&&it.kind!=="task"?<> · {String(it.lastTouch.date).slice(0,10)}</>:null}
-                        {it.lastTouch?.actor?<> · {it.lastTouch.actor}</>:null}
+                        {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
                       </div>
                     </div>
                     {it.kind!=="task"&&(
@@ -4699,6 +4683,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
                     <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                      aria-pressed={on} data-designation={k} data-on={on?"1":"0"}
                       style={{background:on?"#0d5c3a":"transparent",color:on?"#fff":T.ink3,border:"1px solid "+(on?"#0d5c3a":T.bg3),borderRadius:99,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer"}}>
                       {on?"✓ ":""}{label}
                     </button>
@@ -5364,7 +5349,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,fontWeight:700,color:typeColor,textTransform:"capitalize"}}>{(i.type||"note").replace(/_/g," ")}</span>
                         <span style={{fontSize:11,color:T.ink3}}>{i.date}</span>
-                        {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {i.logged_by_name}</span>}
+                        {/* BUILD-88a A.4 — a colleague is a FIRST NAME. "by Admin User"
+                            is the software talking to itself. */}
+                        {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(i.logged_by_name)}</span>}
                       </div>
                       {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{fmtFull(linkedGift.amount)}{linkedGift.payment_method?` · ${linkedGift.payment_method}`:""}</div>}
                       {(()=>{const txt=linkedGift?stripGiftAmountPrefix(i.note):i.note;
@@ -5405,7 +5392,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 if(giftIdsOnTimeline.has(g.id))continue;
                 const m=milestoneFor(g);
                 milestones.push({date:g.date,icon:m?"✦":"•",label:m||"Gift",
-                  desc:`${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${m==="First gift"?" — relationship began":""}`,
+                  desc:`${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${m==="First gift"?" · the relationship began":""}`,
                   color:"#c9a84c",big:!!m});
               }
               if(firstGiftDate){
@@ -5429,7 +5416,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     icon:m?"✦":"•",
                     label:m||(i.type||"note").replace(/_/g," "),
                     desc:g?(()=>{const t=stripGiftAmountPrefix(i.note);
-                      return `${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${t?` — ${t}`:""}`;})():(i.note||""),
+                      return `${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${t?` · ${t}`:""}`;})():(i.note||""),
                     color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
                     big:!!m,
                     loggedBy:i.logged_by_name,
@@ -5451,7 +5438,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:ev.big?800:700,color:ev.color,textTransform:"capitalize"}}>{ev.label}</span>
                         <span style={{fontSize:11,color:T.ink3}}>{ev.date}</span>
-                        {ev.loggedBy&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {ev.loggedBy}</span>}
+                        {ev.loggedBy&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(ev.loggedBy)}</span>}
                       </div>
                       {ev.desc&&<div style={{fontSize:12,color:T.ink,marginTop:2,lineHeight:1.4}}>{ev.desc}</div>}
                     </div>
@@ -5478,7 +5465,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
                 <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{donor.assignedToName||"Unassigned"}</div>
+                {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
                 {/* Reassigning a relationship owner is portfolio management → Team.
                     Core sees the owner read-only; the server 403s the assign route. */}
                 {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"rgba(240,237,230,0.7)",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
@@ -5495,7 +5483,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
           </div>
 
-          {sequences.length>0&&lockMajor(<div>
+          {/* BUILD-88a A.4 — sequences render ONLY with the Team flag. */}
+          {isTeam&&sequences.length>0&&(<div data-testid="dp-sequences">
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Sequences</div>
             {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #0d5c3a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#0d5c3a",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -5520,7 +5509,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
             </div>
-          </div>,{title:"Email sequences",blurb:"Enroll this donor in an automated stewardship sequence. Part of the Team portfolio toolkit.",minHeight:120})}
+          </div>)}
 
           {cfData.length>0&&(()=>{
             // BUILD-78 5.1 — custom fields in position order, empty fields
@@ -5683,7 +5672,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             );
           })()}
 
-          <div>
+          {/* BUILD-88a A.4 — the Move Stage strip renders ONLY with the Team
+              flag, not as a frosted preview. A stage is a position in a pipeline
+              somebody moves people through; a Core org has no pipeline and no
+              Kanban, and showing them the strip teaches them the product is not
+              for them. */}
+          {isTeam&&<div data-testid="dp-move-stage">
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
@@ -5696,9 +5690,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{marginTop:8,fontSize:11,color:"rgba(240,237,230,0.7)",lineHeight:1.5,borderLeft:`2px solid ${stage.color}`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
-          </div>
+          </div>}
 
-          <div>
+          {/* BUILD-88a A.4 — THE WEALTH SCORE IS HIDDEN UNTIL IT CAN SAY WHAT IT
+              IS. It renders a number out of 10, a tier and a confidence word,
+              and nothing on the screen says how any of them are arrived at or
+              what they were computed from. A number a board member — or a
+              fundraiser about to decide how much to ask for — cannot define is a
+              number they should not be shown; that is BUILD-86 C.3's rule, and
+              it applies to the officer's own screen as much as to the board's.
+              It comes back when WEALTH_SCORE_DEFINITION carries a sentence AND
+              WEALTH_SCORE_SOURCE names where the inputs come from. The panel's
+              code is untouched below so that is a one-line change, not a
+              rebuild. */}
+          {WEALTH_SCORE_DEFINITION&&WEALTH_SCORE_SOURCE&&<div data-testid="dp-wealth-score">
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Wealth Score</div>
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:14,padding:"16px"}}>
               {localScore!==null?(
@@ -5724,8 +5729,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
                 </div>
               )}
+              <div style={{fontSize:10.5,color:"rgba(240,237,230,0.7)",marginTop:10,lineHeight:1.5}}>{WEALTH_SCORE_DEFINITION} Source: {WEALTH_SCORE_SOURCE}.</div>
             </div>
-          </div>
+          </div>}
 
           <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Suggested Actions</div>
@@ -5734,41 +5740,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
               <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
               <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
-              <button onClick={()=>setComposeOpen(o=>!o)} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#c9a84c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✉ Send Email</button>
+              {/* BUILD-88a A.4 — SEND EMAIL IS GONE FROM THE PROFILE. Steward
+                  prepares, she sends. A draft written here went out from this
+                  screen without ever passing through the place she reads her
+                  own mail, so a sentence she would have changed left in her
+                  name. The draft goes to the clipboard and into her mail
+                  client, where she can read it as the donor will. */}
+              {aiMap[`${donor.id}_email`]&&(
+                <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft"
+                  style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#c9a84c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {draftCopied?"Copied ✓":"Copy the draft"}
+                </button>
+              )}
             </div>
             {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
 
-            {composeOpen&&(
-              <div style={{marginTop:12,background:"#1a2e1f",borderRadius:12,padding:"20px",border:"1px solid #2d4a35"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-                  <div>
-                    <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>Send via Gmail</span>
-                    {gmailEmail&&<span style={{fontSize:11,color:"rgba(240,237,230,0.7)",marginLeft:8}}>{gmailEmail}</span>}
-                  </div>
-                  <button onClick={()=>{setComposeOpen(false);setComposeSent(false);setComposeErr("");}} style={{background:"transparent",border:"none",color:"rgba(240,237,230,0.7)",fontSize:18,cursor:"pointer",lineHeight:1,padding:0}}>×</button>
-                </div>
-                {gmailConnected===false?(
-                  <div style={{fontSize:13,color:"rgba(240,237,230,0.7)",textAlign:"center",padding:"12px 0"}}>
-                    <a href="/dashboard" onClick={e=>{e.preventDefault();window.location.href="/dashboard?tab=settings";}} style={{color:"#0d5c3a",textDecoration:"none"}}>Connect Gmail in Settings</a> to send emails from donor profiles.
-                  </div>
-                ):!donor.email?(
-                  <div style={{fontSize:13,color:"rgba(240,237,230,0.7)",textAlign:"center",padding:"12px 0"}}>No email address on file for this donor.</div>
-                ):(
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    <input value={composeTo} onChange={e=>setComposeTo(e.target.value)} placeholder="To" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
-                    <input value={composeSubject} onChange={e=>setComposeSubject(e.target.value)} placeholder="Subject…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box",width:"100%"}}/>
-                    <textarea value={composeBody} onChange={e=>setComposeBody(e.target.value)} placeholder="Write your message…" style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"8px 10px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit",resize:"vertical",minHeight:120,width:"100%",boxSizing:"border-box"}}/>
-                    <div style={{fontSize:11,color:"rgba(240,237,230,0.7)"}}>Use <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{donor_name}}"}</code> and <code style={{background:"#0f1a12",padding:"1px 5px",borderRadius:4,fontFamily:"monospace"}}>{"{{org_name}}"}</code></div>
-                    {composeErr&&<div style={{fontSize:12,color:T.terra200,background:T.green950,border:"1px solid "+T.terracotta+"66",borderRadius:7,padding:"8px 10px"}}>{composeErr}</div>}
-                    {composeSent&&<div style={{fontSize:12,color:T.green,background:T.green900,border:"1px solid "+T.green650,borderRadius:7,padding:"8px 10px"}}>✓ Sent and logged to timeline</div>}
-                    <div style={{display:"flex",gap:8}}>
-                      <button onClick={draftWithAI} disabled={draftLoading} style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"9px",color:"#c9a84c",fontSize:12,fontWeight:700,cursor:draftLoading?"not-allowed":"pointer",fontFamily:"inherit"}}>{draftLoading?"Drafting…":"✦ Draft this email"}</button>
-                      <button onClick={sendEmail} disabled={composeSending||!composeTo||!composeSubject} style={{flex:1,background:composeSending||!composeTo||!composeSubject?"#2d4a35":"#0d5c3a",border:"none",borderRadius:8,padding:"9px",color:"#fff",fontSize:12,fontWeight:700,cursor:composeSending||!composeTo||!composeSubject?"not-allowed":"pointer",fontFamily:"inherit"}}>{composeSending?"Sending…":"Send →"}</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* BUILD-88a A.4 — THE SEND PANEL IS GONE FROM THE PROFILE.
+                Steward prepares, she sends. A draft written and sent from here
+                never passed through the place she reads her own mail, so a
+                sentence she would have changed went out in her name. The draft
+                is copied to the clipboard instead; Gmail's send route still
+                exists for the surfaces that are genuinely about sending. */}
           </div>
           </>,{title:"Major-gift tools",blurb:"Suggested moves, stage management, capacity scoring, and outreach drafting — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:520})}
         </div>

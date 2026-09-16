@@ -235,13 +235,16 @@ export const STAGES = [
   {id:"lapsed",    label:"Lapsed",    color:T.terracotta, hint:"Needs re-engagement"},
 ];
 export const STAGE_THRESH = {prospect:[60,120],qualify:[14,30],cultivate:[30,60],solicit:[7,14],steward:[30,90],lapsed:[90,180]};
+// BUILD-88a A.4 — the voice guard reaches these: no em dashes in a rendered
+// sentence. A dash is a pause somebody typed; Steward's own copy uses a full
+// stop, which is what the sentence meant.
 export const STAGE_ACTION = {
-  prospect:"Research capacity — find a warm intro",
+  prospect:"Research capacity. Find a warm introduction.",
   qualify: "Schedule a discovery call or coffee",
   cultivate:"Share an impact story or invite to a program visit",
   solicit: "Book a gift conversation and make the ask",
   steward: "Send personalized impact update or thank you",
-  lapsed:  "Personal outreach — acknowledge lapse, invite back",
+  lapsed:  "Personal outreach. Acknowledge the lapse and invite them back.",
 };
 export const TIER_COLOR = {Micro:T.ink3,Small:T.green500,Mid:T.greenMid,Major:T.greenDk,Principal:T.gold600};
 
