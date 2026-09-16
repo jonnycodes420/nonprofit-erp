@@ -1623,7 +1623,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 )}
                 {threadStat&&threadStat.open>0&&(
                   <span style={{fontSize:11.5,color:T.ink3}}>
-                    {threadStat.open} open · {threadStat.overdue} overdue · oldest {threadStat.oldestDays} day{threadStat.oldestDays===1?"":"s"}
+                    {/* "oldest 0 days" is the same non-phrase as "day 0": a
+                        queue planned this morning has no age yet, and saying
+                        so in numerals is a machine counting. */}
+                    {threadStat.open} open · {threadStat.overdue} overdue
+                    {threadStat.oldestDays>=1?` · oldest ${threadStat.oldestDays} day${threadStat.oldestDays===1?"":"s"}`:""}
                   </span>
                 )}
                 <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
