@@ -23,10 +23,13 @@ const REPORT_DEFS = [
   { key: "three-year", label: "3-Year Comparison" },
   { key: "annual", label: "Annual Report" },
   { key: "solicitations", label: "Solicitations", team: true },
+  // BUILD-87 Part 4 — the file the person who reconciles the bank actually
+  // needs. Fixed columns, one row per gift, and a totals-by-fund section.
+  { key: "bookkeeper", label: "Gifts for the bookkeeper" },
 ];
 
 // Which reports take which controls
-const PERIOD_REPORTS = ["giving-summary", "by-group", "top-donors"];
+const PERIOD_REPORTS = ["giving-summary", "by-group", "top-donors", "bookkeeper"];
 const YEAR_REPORTS = ["lybunt", "sybunt"];
 // Reports that take a year dropdown + fiscal/calendar toggle (BUILD-17 added
 // three-year/annual to the year-selecting family).
@@ -142,7 +145,7 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
-  const showFilters = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
+  const showFilters = PERIOD_REPORTS.includes(active) && active !== "bookkeeper" && !(active === "top-donors" && scope === "lifetime");
   const presetPending = isPeriodReport && !effPreset;
 
   useEffect(() => {
@@ -357,6 +360,31 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
             <ReportTable cols={[{ key: "name", label: "Fund" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
           <div><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>By campaign</div>
             <ReportTable cols={[{ key: "name", label: "Campaign" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
+        </div>
+      </>;
+    } else if (active === "bookkeeper") {
+      empty = d.rows.length === 0;
+      narrative = <>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{d.from}</strong> and <strong>{d.to}</strong>, totalling <strong>${d.total}</strong>. One row per gift, sorted by date then donor.</>;
+      table = <>
+        {/* ONE line, above the button, saying what is deliberately not here. */}
+        <div data-testid="bk-exclusion-note" style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, lineHeight: 1.6 }}>
+          Soft credits and matched-gift relationships are left out on purpose: the bookkeeper reconciles money that arrived, and a soft credit is not money. A donor-advised fund grant is money, so it is here under the fund that sent it.
+        </div>
+        {!d.balanced && <div data-testid="bk-refused" style={{ fontSize: 12.5, color: T.terra700, background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
+          {d.exportRefused}
+        </div>}
+        <ReportTable cols={d.columns.map(c => ({ key: c.key, label: c.label, align: c.money ? "right" : undefined }))} rows={d.rows} />
+        <div data-testid="bk-total" style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginTop: 10, textAlign: "right" }}>
+          TOTAL ${d.total}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, margin: "22px 0 8px" }}>Totals by fund</div>
+        <ReportTable cols={[
+          { key: "name", label: "Fund or designation" },
+          { key: "giftCount", label: "Gifts", align: "right" },
+          { key: "amount", label: "Amount", align: "right", render: r => `$${r.amount}` },
+        ]} rows={d.byFund} />
+        <div data-testid="bk-fund-total" style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginTop: 10, textAlign: "right" }}>
+          TOTAL ${d.total}
         </div>
       </>;
     } else if (active === "solicitations") {

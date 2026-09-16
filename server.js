@@ -92,6 +92,9 @@ const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 // The same seam, as a namespace — BUILD-87 Part 1's stored-import invariant
 // reads several of its helpers at once and naming them one by one buys nothing.
 const money = require("./money");
+// BUILD-87 Part 4 — the one rule that gates the bookkeeper's file, stated as
+// a pure function so it can be proven able to fire without a database.
+const { bookkeeperRefusals, bookkeeperRefusalMessage } = require("./bookkeeper");
 const { loadDefs: loadCfDefs, validateCustomFields, mergeCustomValues, migrateLegacyCustomFields } = require("./customFields");
 const { orgToday, orgIsOverdue, orgDaysOverdue, orgPeriodBounds, orgFiscalYearStart, orgReportYear } = orgTime;
 // BUILD-76 Part 1 — THE DRIFT ENGINE. One pure module defines "drifting"
@@ -14733,6 +14736,128 @@ async function reportSolicitations(orgId, p) {
 // a TEXT cell gets a ' prefix so Excel/Sheets treat it as literal text, not
 // a formula (numbers pass through untouched — a negative total isn't an
 // injection). These exports land in real spreadsheets at real orgs.
+// ── BUILD-87 PART 4 — THE BOOKKEEPER'S EXPORT ──────────────────────────────
+// One row per gift, for the person who reconciles the bank. The column list is
+// FIXED and in this order; nothing else goes in it. No custom fields, no
+// notes — a bookkeeper's file is not a CRM dump, and every extra column is
+// another thing they have to decide whether to ignore.
+//
+// SOFT CREDITS AND MATCHED-GIFT RELATIONSHIPS ARE EXCLUDED ON PURPOSE. The
+// bookkeeper reconciles MONEY THAT ARRIVED, and a soft credit is not money —
+// it is an attribution. Structurally they cannot appear: those live in
+// `donor_relationships`, and this query reads `gifts`. The one way one could
+// leak in is a human typing "soft credit" into a gift's type, so that is
+// refused by name too. The DAF GRANT ITSELF is money that arrived and stays.
+//
+// It is a READ path on the BUILD-79 report/file layer — `/reports/:key`,
+// `reportToCsv`, `sendReportCsv`. There is no second export path.
+const BOOKKEEPER_EXCLUDED_TYPES = ["soft credit", "soft-credit", "soft_credit",
+  "matching gift credit", "matched gift credit", "hard credit reversal"];
+
+// The fixed columns, in the fixed order, declared ONCE so the screen and the
+// file cannot disagree about either.
+const BOOKKEEPER_COLUMNS = [
+  { key: "date", label: "Gift date" },
+  { key: "donorName", label: "Donor" },
+  { key: "donorId", label: "Donor ID" },
+  { key: "amount", label: "Amount", money: true },
+  { key: "fund", label: "Fund or designation" },
+  { key: "paymentMethod", label: "Payment method" },
+  { key: "reference", label: "Check or reference number" },
+  { key: "pledgePayment", label: "Pledge payment" },
+  { key: "recurring", label: "Recurring" },
+  { key: "receiptNumber", label: "Receipt number" },
+  { key: "giftId", label: "Steward gift ID" },
+];
+
+// Dollars from the database, as INTEGER CENTS, through the one money seam.
+// Nothing here ever adds two floats.
+const bkCents = v => money.toCents(v) ?? 0;
+const bkDollars = c => (c / 100).toFixed(2);
+
+async function reportBookkeeper(orgId, p) {
+  const params = [];
+  let where = reportGiftWhere(p, orgId, params);
+  where += ` AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])`;
+  params.push(BOOKKEEPER_EXCLUDED_TYPES);
+
+  const rows = await query(
+    `SELECT LEFT(g.date, 10) AS date,
+            d.name AS donor_name,
+            g.donor_id AS donor_id,
+            g.amount AS amount,
+            COALESCE(f.name, '') AS fund,
+            COALESCE(g.payment_method, '') AS payment_method,
+            COALESCE(NULLIF(g.external_id, ''), NULLIF(g.stripe_payment_id, ''), '') AS reference,
+            (g.pledge_id IS NOT NULL) AS pledge_payment,
+            (g.recurring_subscription_id IS NOT NULL) AS recurring,
+            COALESCE(r.receipt_number, '') AS receipt_number,
+            g.id AS gift_id
+       FROM gifts g
+       JOIN donors d ON d.id = g.donor_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+       LEFT JOIN receipts r ON r.gift_id = g.id AND r.org_id = g.org_id AND r.type = 'gift' AND r.voided_at IS NULL
+      WHERE ${where}
+      ORDER BY g.date, LOWER(d.name), g.id`, params);
+
+  // The grand total, asked of the DATABASE — a second, independent answer to
+  // the same question, and the thing the row sum is checked against. It is
+  // asked for EXACTLY, not pre-rounded to the same two decimals the file uses:
+  // rounding it here would make the two sides agree by construction, and a
+  // number that cannot disagree is not a check.
+  const tParams = [];
+  let tWhere = reportGiftWhere(p, orgId, tParams);
+  tWhere += ` AND LOWER(COALESCE(g.type,'')) <> ALL(?::text[])`;
+  tParams.push(BOOKKEEPER_EXCLUDED_TYPES);
+  const [tot] = await query(
+    `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount * 100), 0)::text AS cents
+       ${REPORT_GIFT_FROM} ${tWhere}`, tParams);
+
+  const out = rows.map(r => ({
+    date: r.date,
+    donorName: r.donor_name,
+    donorId: r.donor_id,
+    cents: bkCents(r.amount),
+    amount: bkDollars(bkCents(r.amount)),
+    fund: r.fund,
+    paymentMethod: r.payment_method,
+    reference: r.reference,
+    pledgePayment: r.pledge_payment ? "Yes" : "No",
+    recurring: r.recurring ? "Yes" : "No",
+    receiptNumber: r.receipt_number,
+    giftId: r.gift_id,
+  }));
+
+  // TOTALS BY FUND, over the same rows. A gift with no fund is its own line,
+  // named for what it is — never silently dropped and never folded into
+  // whichever fund happens to sort first.
+  const byFundMap = new Map();
+  for (const row of out) {
+    const name = row.fund || "(no fund)";
+    const e = byFundMap.get(name) || { name, cents: 0, giftCount: 0 };
+    e.cents += row.cents; e.giftCount += 1;
+    byFundMap.set(name, e);
+  }
+  const byFund = [...byFundMap.values()].sort((a, b) => b.cents - a.cents || a.name.localeCompare(b.name))
+    .map(f => ({ ...f, amount: bkDollars(f.cents) }));
+
+  // THE ASSERTION, IN CENTS, BEFORE ANY FILE IS WRITTEN — bookkeeper.js.
+  const rowCents = out.reduce((s, r) => s + r.cents, 0);
+  const refusals = bookkeeperRefusals(out, byFund, Number(tot?.cents || 0), Number(tot?.n || 0));
+
+  return {
+    from: p.from, to: p.to,
+    columns: BOOKKEEPER_COLUMNS,
+    rows: out,
+    byFund,
+    totalCents: rowCents,
+    total: bkDollars(rowCents),
+    giftCount: out.length,
+    balanced: refusals.length === 0,
+    exportRefused: bookkeeperRefusalMessage(refusals),
+  };
+}
+
 function reportCsvCell(v) {
   if (v === null || v === undefined) return "";
   let s = String(v);
@@ -14793,6 +14918,30 @@ function reportToCsv(key, data) {
       ];
       return { headers: ["Metric", "Value"], rows };
     }
+    case "bookkeeper": {
+      // The fixed columns, then a totals row, then the SAME data a second way
+      // as a trailing section. One file, two views, one set of cents.
+      const headers = data.columns.map(c => c.label);
+      const rows = data.rows.map(r => data.columns.map(c => r[c.key]));
+      rows.push(new Array(headers.length).fill(""));
+      const totalRow = new Array(headers.length).fill("");
+      totalRow[0] = "TOTAL";
+      totalRow[3] = data.total;
+      rows.push(totalRow);
+      rows.push(new Array(headers.length).fill(""));
+      const head = new Array(headers.length).fill("");
+      head[0] = "TOTALS BY FUND"; head[1] = "Gifts"; head[3] = "Amount";
+      rows.push(head);
+      for (const f of data.byFund) {
+        const r = new Array(headers.length).fill("");
+        r[0] = f.name; r[1] = String(f.giftCount); r[3] = f.amount;
+        rows.push(r);
+      }
+      const fundTotal = new Array(headers.length).fill("");
+      fundTotal[0] = "TOTAL"; fundTotal[1] = String(data.giftCount); fundTotal[3] = data.total;
+      rows.push(fundTotal);
+      return { headers, rows };
+    }
     case "solicitations": {
       const rows = [
         ["FORECAST — open asks", data.forecast.open], ["FORECAST — stage-weighted", data.forecast.weighted],
@@ -14816,6 +14965,9 @@ const REPORT_HANDLERS = {
   "three-year": reportThreeYear,
   "annual": reportAnnual,
   "solicitations": reportSolicitations,
+  // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other
+  // report, on the BUILD-79 file layer; there is no second export path.
+  "bookkeeper": reportBookkeeper,
 };
 // [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
 // org gets 403 plan_required (the client renders an upgrade state).
@@ -14845,6 +14997,13 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
   const data = await REPORT_HANDLERS[key](req.user.orgId, p);
   if (reportLocked && data && typeof data === "object" && !Array.isArray(data)) data.locked = true;
   if (p.format === "csv") {
+    // BUILD-87 Part 4 — a report that has declared itself unbalanced REFUSES
+    // to become a file, and says why. Asserted in cents by the handler, before
+    // a single byte is written.
+    if (data && data.exportRefused) {
+      console.error("[report] export refused:", key, data.exportRefused);
+      return res.status(409).json({ error: "export_unbalanced", message: data.exportRefused });
+    }
     const { headers, rows } = reportToCsv(key, data);
     const suffix = key === "retention" ? p.yearMode
       : key === "top-donors" && p.scope === "lifetime" ? "lifetime"
