@@ -74,16 +74,25 @@ const MORE_TABS=[
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 
-// Desktop sidebar grouping (BUILD-20 Part 3) — Home stays ungrouped at top,
-// Settings pinned at bottom; the rest read as labeled sections. Pipeline stays
-// a TOP-LEVEL item within People (NOT nested under Donors). Team-gated items
-// (see TEAM_GATED) show a lock indicator for Core users but stay visible.
-const NAV_GROUPS=[
-  {label:"People",      ids:["donors","pipeline","tasks"]},
-  {label:"Fundraising", ids:["fundraising","grants","communications","portal","workflows"]},
-  {label:"Insight",     ids:["reports","finance"]},
-];
+// ── BUILD-87 F.3.5 — SIX THINGS, THEN THE REST ─────────────────────────────
+// The sidebar had eleven items in three labeled groups (BUILD-20 Part 3), and
+// every one of them was equally loud. Five stay on the rail — Home, Dashboards,
+// Donors, Fundraising, Reports — with Settings pinned at the bottom where it
+// already was; the other six fold into ONE collapsible "More", shut by default
+// and remembered per browser. Nothing is hidden and nothing is deleted: the
+// group opens on click, and opens ITSELF whenever the surface you are on lives
+// inside it, so you can never be standing somewhere the nav does not show.
+//
+// MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
+// and four slots is a different constraint from a 220px rail.
+const PRIMARY_NAV=["dashboard","board","donors","fundraising","reports"];
+const MORE_NAV=["pipeline","grants","communications","tasks","workflows","finance","portal"];
+const NAV_MORE_KEY="steward_nav_more";
 const TEAM_GATED=new Set(["pipeline"]);
+// Written once: the same due-count badge now rides a nav item AND the "More"
+// group that can be holding it. Two copies would be two hex literals, and the
+// palette census ratchets DOWN.
+const DUE_BADGE={background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
 
 // BUILD-58 W-2 — the Portal tier is NOT the CRM, and its shell says so
 // honestly: only the surfaces the tier's own capabilities live on (gift
@@ -118,6 +127,12 @@ function AppShell() {
   const [stripeToast,setStripeToast]=useState(false);
   const [subscribedToast,setSubscribedToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
+  // BUILD-87 F.3.5 — the "More" group remembers whether it is open, per
+  // browser. It also opens ITSELF whenever the current tab lives inside it:
+  // the nav must always be able to show you where you are standing.
+  const [navMoreOpen,setNavMoreOpen]=useState(()=>{try{return localStorage.getItem(NAV_MORE_KEY)==="1";}catch{return false;}});
+  useEffect(()=>{if(MORE_NAV.includes(tab))setNavMoreOpen(true);},[tab]);
+
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
   const [exportingBanner,setExportingBanner]=useState(false);
@@ -410,25 +425,32 @@ function AppShell() {
               {t.label}
               {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
               {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"rgba(240,237,230,0.7)",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
-              {t.id==="tasks"&&tasksDue>0&&<span style={{marginLeft:locked?6:"auto",background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>{tasksDue}</span>}
+              {t.id==="tasks"&&tasksDue>0&&<span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>}
             </button>;
           };
-          const home=byId["dashboard"];
-          const board=byId["board"];
+          // A portal-tier org's ENTIRE product is the portal tab — it is never
+          // folded away behind a disclosure. Everything else follows the split.
+          const primaryIds=(isPortalTier?["dashboard","donors","portal"]:PRIMARY_NAV).filter(tabAllowed);
+          const moreIds=MORE_NAV.filter(tabAllowed).filter(id=>!primaryIds.includes(id));
+          const moreTasksDue=moreIds.includes("tasks")?tasksDue:0;
           return <>
-            {home&&tabAllowed("dashboard")&&navItem(home)}
-            {/* BUILD-86 — Dashboard sits directly under Home, ungrouped: it is
-                the one click the brief promises when somebody asks for a
-                number. Putting it in Insight would have buried it. */}
-            {board&&tabAllowed("board")&&navItem(board)}
-            {NAV_GROUPS.map(g=>{
-              const ids=g.ids.filter(tabAllowed);
-              if(!ids.length)return null;
-              return <div key={g.label} style={{marginTop:12}}>
-                <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:"#5a7566",padding:"0 12px 4px 13px"}}>{g.label}</div>
-                {ids.map(id=>byId[id]).filter(Boolean).map(navItem)}
-              </div>;
-            })}
+            {/* BUILD-86 — Dashboards sits directly under Home: it is the one
+                click the brief promises when somebody asks for a number. */}
+            {primaryIds.map(id=>byId[id]).filter(Boolean).map(navItem)}
+            {moreIds.length>0&&(
+              <div style={{marginTop:12}}>
+                <button onClick={()=>setNavMoreOpen(o=>{try{localStorage.setItem(NAV_MORE_KEY,o?"0":"1");}catch{/* private mode */}return !o;})}
+                  aria-expanded={navMoreOpen} aria-controls="side-nav-more"
+                  className="side-nav-btn" style={{...sideBtn(false),color:"#5a7566",fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 13px"}}>
+                  <span aria-hidden style={{fontSize:9,width:18,textAlign:"center",flexShrink:0,display:"inline-block",transform:navMoreOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▸</span>
+                  More
+                  {/* A count that vanishes when its tab folds away is worse
+                      than no count — it moves to the group that holds it. */}
+                  {!navMoreOpen&&moreTasksDue>0&&<span style={{...DUE_BADGE,marginLeft:"auto"}}>{moreTasksDue}</span>}
+                </button>
+                {navMoreOpen&&<div id="side-nav-more">{moreIds.map(id=>byId[id]).filter(Boolean).map(navItem)}</div>}
+              </div>
+            )}
           </>;
         })()}
       </div>

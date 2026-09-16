@@ -166,11 +166,19 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
     {
       const text = await bodyText();
       // FIX (product marks): The Thread and Drift render as NAMED PRODUCTS on
-      // Home via the shared ProductMark pill — the same component the landing
-      // uses — and the naggy phrases are banned from the rendered surface.
+      // Home — and the naggy phrases are banned from the rendered surface.
+      //
+      // BUILD-87 F.3.2 — REVIEWED CHANGE. The names are no longer set in the
+      // ProductMark PILL on this screen. A pill introduces a product to someone
+      // who has not met it, which is the landing page's job and not the job of
+      // a screen she opens every morning; the names are plain serif section
+      // titles with the brass underline the page titles already use. What is
+      // asserted is what actually mattered: the two products are NAMED on Home,
+      // and the pill is gone from it rather than quietly still there.
       const marks = await page.evaluate(() => [...document.querySelectorAll(".pm-mark")].map(m => m.textContent.trim()));
-      ok(`${label} Home: ProductMark renders the literal "The Thread"`, marks.includes("The Thread"), marks);
-      ok(`${label} Home: ProductMark renders the literal "Drift"`, marks.includes("Drift"), marks);
+      ok(`${label} Home: the ProductMark pill is NOT on the morning screen`, marks.length === 0, marks);
+      ok(`${label} Home: The Thread and Drift are still named`,
+         /The Thread/.test(text) && /\bDrift\b/.test(text), text.slice(0, 200));
       ok(`${label} Home: no naggy language ("keeps asking" / "until you've done it")`,
          !/keeps asking/i.test(text) && !/until you['\u2019]ve done it/i.test(text), null);
       // BUILD-86 — REVIEWED CHANGE. The goal hero MOVED to the board surface:

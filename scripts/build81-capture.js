@@ -238,8 +238,16 @@ if (process.argv.includes("--landing-shots")) {
     const tc = await page.evaluate(() => document.body.textContent);
     if (w === 1440) {
       ok('"The Thread" renders on Home (the literal string)', tc.includes("The Thread"), null);
-      ok("the empty state reads as written",
-         tc.includes("No conversations logged yet. Log your first call from a donor's record and the next step will come back to you."), null);
+      // BUILD-87 F.3.4 — the empty state is ONE line now and the sentence that
+      // tells you what to do next sits behind its "why" link, unmounted until
+      // asked for. Both halves are still asserted, in the two places they now
+      // live: the line on the screen, the working one click away.
+      ok("the empty state's one line reads as written", tc.includes("No conversations logged yet."), null);
+      await page.click('[data-testid="thread-empty-state-why"]').catch(() => {});
+      await page.waitForTimeout(150);
+      const opened = await page.evaluate(() => document.body.textContent);
+      ok('…and "why" still says what to do next',
+         opened.includes("Log your first call from a donor's record and the next step will come back to you."), null);
     }
     const threadEl = await page.locator("#dash-thread").first();
     if (await threadEl.count()) await threadEl.scrollIntoViewIfNeeded();

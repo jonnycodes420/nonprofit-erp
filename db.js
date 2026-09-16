@@ -2604,12 +2604,21 @@ async function seedData() {
 
   const hash = bcrypt.hashSync("demo1234", 10);
   await pool.query(
-    `INSERT INTO users (id, org_id, email, password_hash, name, role)
-     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (id) DO NOTHING`,
     // BUILD-86 C.3 — a REAL first name. The greeting, the actor stamp on every
     // write and the officer chip on every row all render this; "Admin User" on
     // a demo screen tells a prospect they are looking at a fixture.
-    [userId, orgId, "admin@creoarts.org", hash, "Maya Reyes", "admin"]
+    //
+    // BUILD-87 F.3.7 — AND IT HAS TO REACH THE ORG THAT ALREADY EXISTS. C.3
+    // changed the literal and stopped there, so a fresh scratch database got
+    // the real name and PRODUCTION's demo org — created long before, and
+    // therefore hitting `ON CONFLICT DO NOTHING` on every boot since — kept
+    // saying "Admin User" on every row. That is what was on the screen on 16
+    // September. The name is the ONE column this upsert may correct: the
+    // password, the email and the role are somebody's login and stay put.
+    `INSERT INTO users (id, org_id, email, password_hash, name, role)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
+    [userId, orgId, "admin@creoarts.org", hash, "Mike Henderson", "admin"]
   );
 
   const donors = [

@@ -128,6 +128,12 @@ import { fmt, fmtFull, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
 export { fmt, fmtFull, quietPhrase };
 export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
+// BUILD-87 F.3.7 — A COLLEAGUE IS A FIRST NAME. "Admin User" on a row tells a
+// prospect they are looking at a fixture; "Margaret Chen · Admin User" tells a
+// real office that the software does not know who they are. Inside one org
+// everybody is on first-name terms, so that is what a row prints. The stored
+// full name is untouched — this is a rendering rule, not a data change.
+export const firstNameOf = n => String(n || "").trim().split(/\s+/)[0] || "";
 export const daysUntil = d => Math.floor((new Date(d)-new Date())/86400000);
 
 // ── Error boundary (BUILD-21 Part 2 — crash insurance) ──────────────────────
@@ -344,6 +350,14 @@ export function GlobalStyles() {
        affordance so it reads as clickable, not broken — cream-alt wash + the
        donor name underlines. Colour change only, so no transition is needed
        under prefers-reduced-motion. Brass focus ring for keyboard. */
+    /* BUILD-87 F.3.3 — the row's record is there when you want it and silent
+       when you do not. opacity (not display) so the row never changes height;
+       focus-within so a keyboard reaches it; and always-on where there is no
+       hover, because a phone cannot ask for it. */
+    .attn-meta{opacity:0;transition:opacity 0.12s ease;}
+    .attn-row:hover .attn-meta,.attn-row:focus-within .attn-meta{opacity:1;}
+    @media (hover:none),(pointer:coarse){.attn-meta{opacity:1;}}
+    @media (prefers-reduced-motion:reduce){.attn-meta{transition:none;}}
     .attn-row-main{cursor:default;}
     a.attn-row-main{cursor:pointer;}
     a.attn-row-main:hover{background:#e8e4db;}
@@ -415,7 +429,26 @@ export function GlobalStyles() {
       /* Dashboard mobile comprehensive */
       .dash-root{font-size:14px!important;}
       .dash-bleed{margin:-20px -16px calc(-68px - env(safe-area-inset-bottom,0px)) -16px!important;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0px)) 16px!important;}
-      .dash-cpad{padding:12px!important;}
+      .dash-cpad{padding:16px!important;}
+      /* BUILD-87 F.3 — 32px of card padding is a desktop measure; at 390px it
+         would leave a donor's name about 300px to live in. */
+      .attn-row,.attn-band{padding:12px 16px!important;}
+      /* …and the row's THREE regions cannot share one line on a phone. Found
+         by looking at the walk's 390px capture, not by an assertion: name,
+         next step and buttons all collided and the Dismiss button ran off the
+         right edge. They stack, the next step goes left-aligned under the
+         name, and the buttons take the row below it. */
+      .attn-row{flex-wrap:wrap!important;}
+      .attn-row .attn-row-main{flex:1 1 100%!important;}
+      .attn-row .attn-clause{flex-wrap:wrap!important;}
+      .attn-row .attn-meta{flex-basis:100%!important;white-space:normal!important;}
+      .attn-row .attn-row-next{flex:1 1 100%!important;text-align:left!important;margin-top:6px!important;}
+      .attn-row .attn-row-next>div{max-width:100%!important;}
+      .attn-row .attn-row-actions{flex:1 1 100%!important;margin-top:10px!important;}
+      .attn-row .attn-row-action{flex:1!important;}
+      /* A 40px headline at 24ch overflows a 390px screen. The measure is the
+         point, not the size. */
+      .home-note{font-size:27px!important;margin-bottom:16px!important;}
       .dash-briefing-body{padding:12px 14px!important;}
       .dash-briefing-hdr{flex-wrap:wrap!important;align-items:flex-start!important;gap:8px!important;}
       .dash-briefing-hdr>div:last-child{align-self:flex-start!important;}

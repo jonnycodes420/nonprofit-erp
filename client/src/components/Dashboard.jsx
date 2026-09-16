@@ -1,11 +1,11 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
+import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
-import { homeNote } from "../../../shared/homeNote";
+import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
@@ -13,7 +13,7 @@ import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
-import { ProductMark } from "./ProductMark";
+
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage } from "../lib/domainError";
 
@@ -28,6 +28,35 @@ const todayCivil=()=>new Date().toISOString().split("T")[0];
 // widget grid. The 150ms drag lift is the only motion, off under
 // prefers-reduced-motion.
 const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// BUILD-87 F.3.4 — AN EMPTY STATE IS ONE LINE. Steward's empty states earned
+// their length honestly (BUILD-76: a bare zero cannot be told apart from a
+// silently failed import, so the zero shows its work) and then four of them
+// stacked up on one morning screen and the working answer — "No donors
+// drifting." — was the smallest text in its own card. The work is still there
+// and still says what was checked; it is one click away instead of always on.
+// NB the detail is UNMOUNTED when closed, not hidden with CSS: text that is
+// present but invisible is how an empty state quietly lies to a test.
+function OneLineEmpty({line,detail,testId}){
+  const [open,setOpen]=useState(false);
+  return(
+    <div data-testid={testId} className="dash-cpad" style={{padding:"24px 32px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:14,color:T.ink}}>{line}</span>
+        {detail&&(
+          <button data-testid={testId?testId+"-why":undefined} onClick={()=>setOpen(o=>!o)}
+            aria-expanded={open}
+            style={{background:"none",border:"none",padding:0,fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",textDecoration:"underline"}}>
+            {open?"less":"why"}
+          </button>
+        )}
+      </div>
+      {open&&detail&&(
+        <div style={{fontSize:12.5,color:T.ink3,marginTop:8,lineHeight:1.6,maxWidth:620}}>{detail}</div>
+      )}
+    </div>
+  );
+}
 // The shared scope toggle renders above the FIRST visible section that reads
 // it, wherever the user put that section.
 const SCOPED_SECTION_IDS = ["commandCenter", "retention", "work"];
@@ -694,9 +723,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   const sHdr={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:0};
   const sTitle={fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3};
+  // BUILD-87 F.3.2 — A SECTION TITLE IS A PLAIN SERIF WORD WITH THE BRASS
+  // UNDERLINE the page titles already use ("Your fundraising."). The ProductMark
+  // pills are gone from Home: a badge introduces a product to someone who has
+  // not met it, and she opens this screen every morning. The pill is still the
+  // right thing on the landing page, which is where it stays.
+  const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.2,borderBottom:"3px solid "+T.gold500,paddingBottom:2};
   const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
   const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
-  const cPad={padding:"14px 20px"};
+  // BUILD-87 F.3.6 — 32px of horizontal padding on every card, and the row
+  // padding matches it so a list's left edge lines up with its own header.
+  // Vertical stays tighter than 32 on rows: a 32px gap above and below each
+  // name would turn a twelve-row queue into a scroll.
+  const cPad={padding:"24px 32px"};
+  const rowPad="16px 32px";
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
   const MiniEmpty=({icon,text,cta,onCta})=>(
@@ -799,9 +839,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Goal banner: greeting is real (time-of-day + the logged-in user's own
   // `name` field from the DB — not a role label or placeholder; an empty
   // firstName just omits the ", Name" suffix rather than substituting
-  // something generic. "Good evening, Admin" for the demo account is real
-  // data — the seeded demo user's stored name is literally "Admin User" —
-  // not a fallback bug). Pace is real math (% of the period elapsed vs. %
+  // something generic. (This note used to say the demo account's stored name
+  // was literally "Admin User"; since BUILD-86 C.3 it is a real name, and
+  // BUILD-87 F.3.7 made the seed correct the org that already existed.)
+  // Pace is real math (% of the period elapsed vs. %
   // of the goal reached — not a fabricated "on track" claim), and the
   // driver hint is real trailing-7-day gift activity from the backend
   // (goal.recentAmount/recentDonorCount), never invented copy.
@@ -1390,7 +1431,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div id="dash-drifting" style={{...cardWrap,borderColor:driftRows.length>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
         <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
           <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-            <ProductMark product="drift" on="cream"/>
+            <span style={sSerif}>Drift</span>
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
                 ?`${fmtFull(driftData.atRiskAmount)} at risk — the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
@@ -1408,10 +1449,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
         </div>
         {driftRows.length===0&&driftEmptyState&&(
-          <div data-testid="drift-empty-state" style={{padding:"18px 20px"}}>
-            <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{driftEmptyState.head}</div>
-            <div style={{fontSize:12,color:T.ink3,marginTop:5,lineHeight:1.55,maxWidth:560}}>{driftEmptyState.body}</div>
-          </div>
+          <OneLineEmpty testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
         )}
         {driftRows.length>0&&(
         <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
@@ -1530,6 +1568,22 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const threadList=threadsData?.list||[];
   const threadStat=threadsData?.stat;
   const TOUCH_WORD={call:"Call",meeting:"Meeting",email:"Email",gift:"Gift",other:"Note",stewardship:"Stewardship",note:"Note",event:"Event"};
+  // BUILD-87 F.3.3 — ONE CLAUSE INSTEAD OF FOUR FACTS. The row said
+  // "Meeting · 2026-09-09 · She asked for the import report · Admin User",
+  // which is a database record read aloud. It says "She asked for the import
+  // report a week ago." now, and the touch type, the exact date and the person
+  // move to hover — they are the answer to a question she has not asked yet.
+  // Presentation only: every value here is already on the row.
+  const threadClause=t=>{
+    const lt=t.lastTouch||{};
+    const base=lt.line
+      ?String(lt.line).trim().replace(/[.\s]+$/,"")
+      :lt.kind==="gift"&&lt.amount!=null?`${fmtFull(lt.amount)} received`
+      :lt.kind==="none"?"Planned"
+      :(TOUCH_WORD[lt.type]||"Logged");
+    const on=lt.date||t.openedOn;
+    return on?`${base} ${agoPhrase(daysDiff(on))}.`:`${base}.`;
+  };
   // BUILD-85 — a row now carries its REASON. shared/threadRank.js decided the
   // order; this prints the sentence that order was built from, so the queue can
   // always answer "why this one first?" without the reader guessing. The score
@@ -1546,7 +1600,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       lastBand=t.band;
       const b=BAND_STYLE[t.band]||BAND_STYLE.ahead;
       threadRows.push(
-        <li key={"band-"+t.band} style={{padding:"9px 20px 5px",background:T.bg2,borderBottom:"1px solid "+T.bg3}}>
+        // The 3px transparent left border is the row's brass/emerald marker,
+        // reserved: without it a band header starts three pixels to the left of
+        // every name it labels, which is exactly visible and exactly wrong.
+        <li key={"band-"+t.band} className="attn-band" style={{padding:"10px 32px 6px",background:T.bg2,borderBottom:"1px solid "+T.bg3,borderLeft:"3px solid transparent"}}>
           <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:b.color}}>{b.label}</span>
           <span style={{fontSize:10.5,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
         </li>);
@@ -1557,35 +1614,44 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // the action button as a SIBLING, never nested (keyboard and new-tab both
     // break otherwise). The queue that finding was written against is gone from
     // Home; the property is not, and the guard that holds it follows the rows.
-    <li key={t.id} className="attn-row" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
+    <li key={t.id} className="attn-row" style={{display:"flex",alignItems:"center",gap:12,padding:rowPad,borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
       <a href={`/donors/${t.donorId}`} className="attn-row-main" style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
-        <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
-        <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.45,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-          {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Touch")} · {String(t.lastTouch?.date||t.openedOn).slice(0,10)}
-          {t.lastTouch?.line?<> · {t.lastTouch.line}</>:t.lastTouch?.kind==="gift"&&t.lastTouch.amount!=null?<> · {fmtFull(t.lastTouch.amount)} received</>:null}
-          {t.lastTouch?.actor?<> · {t.lastTouch.actor}</>:null}
+        <div className="attn-donor-name" style={{fontSize:13.5,fontWeight:700,color:T.ink}}>{t.donorName}</div>
+        <div className="attn-clause" style={{display:"flex",alignItems:"baseline",gap:8,marginTop:3,fontSize:12.5,lineHeight:1.45}}>
+          <span style={{color:T.ink2,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{threadClause(t)}</span>
+          {/* F.3.3 — THE RECORD, ON HOVER. opacity, not display: the row must
+              not change height when the pointer crosses it. Revealed on
+              keyboard focus too, and always visible where there is no hover
+              (a phone), because "hover to see it" is not an answer there. */}
+          <span className="attn-meta" style={{flexShrink:0,fontSize:11,color:T.ink3,whiteSpace:"nowrap"}}>
+            {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Logged")}
+            {(t.lastTouch?.date||t.openedOn)?` · ${String(t.lastTouch?.date||t.openedOn).slice(0,10)}`:""}
+            {/* Who logged it, then who owns it — and one name when they are
+                the same person, which in a one-officer shop they always are.
+                "Mike · Mike" is the software talking to itself. */}
+            {[firstNameOf(t.lastTouch?.actor),firstNameOf(t.owner?.name)]
+              .filter((n,i,a)=>n&&a.indexOf(n)===i).map(n=>` · ${n}`).join("")}
+            {/* A deferred step says so, and says what it was first promised
+                for. Moving the due date without saying you moved it would be
+                the product quietly editing somebody's commitment. */}
+            {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
+            {t.daysOpen>=1?` · day ${t.daysOpen}`:""}
+          </span>
         </div>
-        {t.rank?.why&&(
-          <div style={{fontSize:11.5,color:t.overdue?T.gold700:T.greenDk,marginTop:3,fontWeight:600}}>{t.rank.why}</div>
-        )}
       </a>
-      <div style={{textAlign:"right",flexShrink:0}}>
+      <div className="attn-row-next" style={{textAlign:"right",flexShrink:0}}>
         <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.gold700:T.ink}}>
           {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
         </div>
-        {/* A deferred step says so, and says what it was first promised for.
-            Moving the due date without saying you moved it would be the
-            product quietly editing somebody's commitment. */}
-        <div style={{fontSize:11,color:T.ink3,marginTop:2}}>
-          {/* "day 0" is not a thing anybody says. A thread planned this morning
-              against a date already past has no age yet, and its lateness is
-              already on the left; so the age appears only once there is one. */}
-          {t.daysOpen>=1?`day ${t.daysOpen}`:"planned today"}{t.owner?` · ${t.owner.name}`:""}
-          {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
-        </div>
+        {/* BUILD-85 — the row always answers "why this one first?". It is no
+            longer emerald: on this screen emerald means "this is the button",
+            and exactly one thing per row gets to mean that. */}
+        {t.rank?.why&&(
+          <div style={{fontSize:11,color:t.overdue?T.gold700:T.ink3,marginTop:2,fontWeight:600,maxWidth:280}}>{t.rank.why}</div>
+        )}
       </div>
-      <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+      <div className="attn-row-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
         <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
           style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Done</button>
         <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
@@ -1605,9 +1671,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div id="dash-thread" style={{...cardWrap,borderColor:threadStat?.overdue>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={{display:"flex",alignItems:"center",gap:8}}>
-                <ProductMark product="thread" on="cream"/>
-              </span>
+              <span style={sSerif}>The Thread</span>
               <span style={{display:"flex",alignItems:"center",gap:10}}>
                 {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
                     shop with more than one officer (the BUILD-32 standing rule:
@@ -1638,11 +1702,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               </span>
             </div>
             {threadsData&&threadList.length===0&&(
-              <div style={{...cPad,fontSize:12.5,color:T.ink3,lineHeight:1.6}}>
-                {threadsData.hasAny
-                  ?<>Nothing waiting. Every conversation has its next step scheduled{threadStat?.snoozed>0?` — ${threadStat.snoozed} set aside to revisit later`:""}.</>
-                  :<>No conversations logged yet. Log your first call from a donor's record and the next step will come back to you.</>}
-              </div>
+              threadsData.hasAny
+                ?<OneLineEmpty testId="thread-empty-state" line="Nothing waiting."
+                    detail={`Every conversation has its next step scheduled${threadStat?.snoozed>0?`, and ${threadStat.snoozed} are set aside to revisit later`:""}.`}/>
+                :<OneLineEmpty testId="thread-empty-state" line="No conversations logged yet."
+                    detail="Log your first call from a donor's record and the next step will come back to you."/>
             )}
             {threadList.length>0&&(
               <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
@@ -1681,7 +1745,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const monthlySection=(recurringHealth&&(recurringHealth.fromFile||0)>0)?(
     <div style={{...cardWrap}}>
       <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-        <span style={sTitle}>Your {t("monthly_giver",2)}</span>
+        <span style={sSerif}>Your {t("monthly_giver",2)}</span>
         <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
       </div>
       <div style={{padding:"14px 20px",display:"flex",alignItems:"baseline",gap:18,flexWrap:"wrap"}}>
@@ -1815,6 +1879,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
   return(
     <div className="dash-root dash-bleed" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+      {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
+          which on a 27" monitor stretched a four-section morning screen across
+          1800px and made every card look like a table. 1100px is the column.
+          The breakdown panels and the three modals sit OUTSIDE it, and the
+          set-goal modal inside it is fine either way: a max-width ancestor does
+          not constrain a position:fixed child, only a TRANSFORMED one does —
+          which is the BUILD-22 trap the dash-root comment above guards against,
+          and the reason nothing here gets a `fade-in`. The board keeps the full
+          width: it is a grid of numbers, not a page of prose. */}
+      <div className="dash-col" style={{width:"100%",maxWidth:surface==="home"?1100:"none",margin:"0 auto",display:"flex",flexDirection:"column",gap:surface==="home"?24:16}}>
 
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
@@ -1822,11 +1896,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           BUILD-13: when the org has set branding, the greeting leads with the
           org's logo + name in their accent — the "this is OUR system" payoff
           the moment they finish onboarding. Falls back to the plain greeting. */}
-      <div style={{display:"flex",alignItems:"center",gap:11,padding:"0 2px"}}>
-        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:34,maxWidth:120,objectFit:"contain",borderRadius:6}}/>}
-        <div>
-          {data.org?.name&&<div style={{fontSize:16,fontWeight:800,color:data.org?.brandAccent||T.ink,lineHeight:1.15,letterSpacing:"-0.01em"}}>{data.org.name}</div>}
-          <div style={{fontSize:data.org?.name?12.5:15,fontWeight:data.org?.name?500:700,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</div>
+      {/* BUILD-87 F.3.1 — THE HEADER IS A GREETING AND A SENTENCE, IN THAT
+          ORDER OF SIZE. It used to be the other way round: the org name at 16px
+          bold sat above the note, so the biggest thing on her morning screen was
+          the name of the place she already works. The org mark and the greeting
+          are now ONE small line (the BUILD-13 "this is OUR system" payoff is
+          kept, just demoted), and the note is the headline. */}
+      <div style={{display:"flex",alignItems:"flex-start",gap:11,padding:"0 2px"}}>
+        {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:22,maxWidth:100,objectFit:"contain",borderRadius:4,marginTop:1}}/>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",fontSize:12.5,lineHeight:1.3}}>
+            {data.org?.name&&<span style={{fontWeight:700,color:data.org?.brandAccent||T.ink3,letterSpacing:"-0.01em"}}>{data.org.name}</span>}
+            <span style={{fontWeight:500,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</span>
+          </div>
           {/* ── BUILD-86 — THE SENTENCE ────────────────────────────────────
               What is actually waiting, assembled from the three sources that
               already exist, in her words, before she has clicked anything. A
@@ -1835,7 +1917,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               And "Nothing is waiting on you this morning." is allowed to be
               the whole screen. It is a good morning, not an empty state. */}
           {surface==="home"&&!editMode&&threadsData&&(
-            <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,lineHeight:1.4,color:T.ink,marginTop:6,maxWidth:760}}>
+            /* 24ch keeps the sentence at editorial measure — the line breaks
+               land where a person would break them aloud. marginBottom is 24
+               here and the column's own 24px gap completes the 48 the brief
+               asks for; putting the whole 48 here would have made it 72. */
+            <div className="home-note" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.18,letterSpacing:"-0.02em",color:T.ink,marginTop:14,marginBottom:24,maxWidth:"24ch"}}>
               {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,vocabulary:data.org?.vocabulary})}
             </div>
           )}
@@ -1865,7 +1951,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             greeting, not a floating pencil. Done saves optimistically
             (rollback on error); Esc cancels; Reset restores the default. */}
         {layout!==undefined&&(
-          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0}}>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:16,flexShrink:0,marginTop:1}}>
             {editMode?(
               <>
                 <button onClick={resetLayout} style={{background:"transparent",border:"none",padding:0,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer"}}>Reset to default</button>
@@ -2091,6 +2177,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       )}
       </>)}
+      </div>{/* /dash-col */}
 
       <MetricBreakdownPanel
         open={debtBreakdownOpen}

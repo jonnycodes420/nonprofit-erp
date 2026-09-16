@@ -189,8 +189,12 @@ const root = path.join(__dirname, "..");
      /\{id:"board",label:"Dashboards"/.test(app) && /\{id:"dashboard",label:"Home"/.test(app));
   ok("Home renders the section surface; the board tab renders the four dashboards",
      /tab==="dashboard"&&<Dashboard[^>]*surface="home"/.test(app) && /tab==="board"&&<Dashboards/.test(app));
+  // BUILD-87 F.3.5 rebuilt the sidebar as PRIMARY_NAV + a collapsible More, so
+  // this reads the rail's own order rather than the two call sites it used to
+  // pin. The property is the same one and it is now stated more directly:
+  // Dashboards is the SECOND thing on the rail and is not behind a disclosure.
   ok("Dashboard sits directly under Home in the sidebar, not buried in a group",
-     /navItem\(home\)\}[\s\S]{0,400}?navItem\(board\)/.test(app));
+     /const PRIMARY_NAV=\["dashboard","board"/.test(app) && !/const MORE_NAV=\[[^\]]*"board"/.test(app));
   ok("…and is reachable on mobile", /const MORE_TABS=\[\s*\n\s*\{id:"board"/.test(app));
 
   // ── §4 · names on the at-risk count (live) ───────────────────────────────

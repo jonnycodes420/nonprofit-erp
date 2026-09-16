@@ -56,16 +56,37 @@ ok(/import\s*\{[^}]*LockedFeature/.test(reports), "Reports imports LockedFeature
 ok(has(reports, "setPlanLocked(!!d?.locked)"), "Reports reads the server's locked flag from the payload");
 ok(/if \(planLocked\) return \(\s*<LockedFeature/.test(reports), "Reports wraps the real report body in LockedFeature when locked");
 
-// ── App.jsx Part 3: grouped sidebar, Pipeline top-level in People ──────────
-ok(/const NAV_GROUPS\s*=/.test(app), "App defines NAV_GROUPS for the grouped sidebar");
-for (const label of ["People", "Fundraising", "Insight"]) ok(has(app, `label:"${label}"`), `sidebar has a "${label}" section`);
-const people = (app.match(/\{label:"People",\s*ids:\[([^\]]*)\]/) || [,""])[1];
-ok(/"donors"/.test(people) && /"pipeline"/.test(people) && /"tasks"/.test(people), "People group = Donors · Pipeline · Tasks (Pipeline top-level, not nested under Donors)");
-const fund = (app.match(/\{label:"Fundraising",\s*ids:\[([^\]]*)\]/) || [,""])[1];
-ok(/"fundraising"/.test(fund) && /"grants"/.test(fund) && /"communications"/.test(fund) && /"workflows"/.test(fund), "Fundraising group = Fundraising · Grants · Communications · Workflows");
-const insight = (app.match(/\{label:"Insight",\s*ids:\[([^\]]*)\]/) || [,""])[1];
-ok(/"reports"/.test(insight) && /"finance"/.test(insight), "Insight group = Reports · Finance");
-ok(!/ids:\[[^\]]*"dashboard"/.test(app), "Home (dashboard) stays ungrouped at the top");
+// ── App.jsx: the sidebar is FIVE items and a "More" ───────────────────────
+// REVIEWED CONTRACT CHANGE (BUILD-87 F.3.5). BUILD-20 Part 3's three labeled
+// groups (People / Fundraising / Insight) put eleven items on the rail at equal
+// weight. They are replaced by ONE split: five primary items plus Settings,
+// and everything else inside a collapsible "More". The properties the old
+// assertions were protecting are the ones asserted here — every tab is still
+// reachable, Pipeline is still top-level rather than nested under Donors, Home
+// leads, and Settings is still pinned at the bottom — so they follow the
+// structure instead of being deleted with it.
+const nav = id => (app.match(new RegExp(`const ${id}=\\[([^\\]]*)\\]`)) || [, ""])[1];
+const primary = nav("PRIMARY_NAV"), more = nav("MORE_NAV");
+ok(/const PRIMARY_NAV=\[/.test(app) && /const MORE_NAV=\[/.test(app), "App splits the sidebar into PRIMARY_NAV and MORE_NAV");
+ok(/^"dashboard","board"/.test(primary), "Home leads the rail and Dashboards is the item under it");
+for (const id of ["donors", "fundraising", "reports"])
+  ok(primary.includes(`"${id}"`), `${id} is a primary rail item`);
+for (const id of ["pipeline", "grants", "communications", "tasks", "workflows", "finance"])
+  ok(more.includes(`"${id}"`), `${id} folds into "More"`);
+// Nothing may be in both lists, and nothing that has a tab may be in neither —
+// a nav that loses a surface is the one failure this split could cause.
+const navIds = [...primary.matchAll(/"([a-z]+)"/g), ...more.matchAll(/"([a-z]+)"/g)].map(m => m[1]);
+ok(new Set(navIds).size === navIds.length, "no id is in both PRIMARY_NAV and MORE_NAV");
+const tabsBlock = (app.match(/const TABS=\[([\s\S]*?)\n\];/) || [, ""])[1]
+  .split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");   // the DEPRIORITIZED entries are commented out
+const tabIds = [...tabsBlock.matchAll(/\{id:"([a-z]+)"/g)].map(m => m[1])
+  .filter(id => id !== "settings");   // Settings is pinned at the bottom, outside both lists
+ok(tabIds.every(id => navIds.includes(id)), "every tab in TABS is reachable from the rail or from More",
+   tabIds.filter(id => !navIds.includes(id)));
+ok(!more.includes('"donors"') && more.includes('"pipeline"'),
+   "Pipeline is still its own item, not nested under Donors");
+ok(/setNavMoreOpen\(true\)/.test(app) && /MORE_NAV\.includes\(tab\)/.test(app),
+   "More opens ITSELF when the surface you are on lives inside it — the nav can always show you where you are standing");
 ok(has(app, 'navigateTo("settings")'), "Settings stays pinned at the bottom (its own nav call)");
 
 // ── The Donor Portal tab is HIDDEN FROM THE CRM (2026-09-10) ──────────────
@@ -81,12 +102,12 @@ ok(/PORTAL_TIER_TABS\s*=\s*new Set\(\["donors","portal","settings"\]\)/.test(app
    "a portal-tier org KEEPS the tab — its entire product is that surface");
 ok(has(app, 'CRM_HIDDEN_TABS.has(t))t="dashboard"'),
    "a CRM org cannot navigate to a hidden tab however it was asked to (a stale deep link, an older card)");
-// NAV_GROUPS and MORE_TABS deliberately still CARRY the id: they are the
+// MORE_NAV and MORE_TABS deliberately still CARRY the id: they are the
 // lookup source for BOTH tiers, and a portal-tier org renders its Donor Portal
 // item out of them. The hiding happens at `tabAllowed`, in one place, which is
 // why there is exactly one rule to read and one Set to edit to bring it back.
-ok(/ids:\[[^\]]*"portal"/.test(app),
-   "the id stays in NAV_GROUPS — it is the lookup source for the portal tier too; tabAllowed is what hides it");
+ok(/const MORE_NAV=\[[^\]]*"portal"/.test(app) && /isPortalTier\?\["dashboard","donors","portal"\]/.test(app),
+   "the id stays in the nav lists — they are the lookup source for the portal tier too, and a portal-tier org gets it on the RAIL, never folded away behind a disclosure; tabAllowed is what hides it from the CRM");
 ok(/\{id:"portal",label:"Donor Portal"/.test(app),
    "the tab DEFINITION survives in TABS — hidden, not deleted, and re-enabled by editing one Set");
 ok(has(app, "moreTabs=MORE_TABS.filter(t=>tabAllowed(t.id))"),

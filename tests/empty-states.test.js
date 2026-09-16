@@ -114,17 +114,26 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
       ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
+    // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,
+    // shortest visible button wins (avoids content buttons that mention the word)
+    const clickNav = name => page.evaluate(n => {
+      const btns = [...document.querySelectorAll("button")]
+        .filter(b => b.offsetParent && b.innerText.toLowerCase().includes(n.toLowerCase()))
+        .sort((a, b) => a.innerText.length - b.innerText.length);
+      if (!btns.length) return false;
+      btns[0].click();
+      return true;
+    }, name);
     for (const t of tabs) {
-      const clicked = await page.evaluate(name => {
-        // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,
-        // shortest visible button wins (avoids content buttons that mention the word)
-        const btns = [...document.querySelectorAll("button")]
-          .filter(b => b.offsetParent && b.innerText.toLowerCase().includes(name.toLowerCase()))
-          .sort((a, b) => a.innerText.length - b.innerText.length);
-        if (!btns.length) return false;
-        btns[0].click();
-        return true;
-      }, t);
+      // BUILD-87 F.3.5 — REVIEWED CHANGE. Six of the eleven desktop tabs now
+      // live inside a collapsible "More" on the rail, the same shape the mobile
+      // drawer has always had. The sweep opens it and carries on: the property
+      // this suite guards is that EVERY surface is reachable and renders
+      // honestly at zero, not that every surface is one click from Home.
+      let clicked = await clickNav(t);
+      if (!clicked && t !== "More") {
+        if (await clickNav("More")) { await page.waitForTimeout(500); clicked = await clickNav(t); }
+      }
       if (!clicked) { found[t] = "nav button not found"; continue; }
       await page.waitForTimeout(1100);
       const text = await page.evaluate(() => document.body.innerText);
@@ -147,6 +156,14 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
       // probes are desktop-only now — which is honest: they cannot be reached
       // in the mobile path this suite walks.
       if (t === "Home") {
+        // BUILD-87 F.3.4 — REVIEWED CHANGE. The empty state is ONE LINE now and
+        // its working ("checked N donors with giving history…") sits behind a
+        // "why" link. The guard keeps its teeth by OPENING it: the detail must
+        // still exist, still name what was checked, and still be reachable in
+        // one click. It is deliberately unmounted until then, so a detail that
+        // silently stopped rendering cannot pass this by hiding in the DOM.
+        await page.click('[data-testid="drift-empty-state-why"]').catch(() => {});
+        await page.waitForTimeout(150);
         found.__driftEmpty = await page.evaluate(() =>
           document.querySelector('[data-testid="drift-empty-state"]')?.innerText.replace(/\n/g, " | ") || "");
       }

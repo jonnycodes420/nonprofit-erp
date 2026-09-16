@@ -77,6 +77,8 @@ const LOOPBACK_HARDCODED = [
   "build85-capture",
   // BUILD-86 — the Home/Dashboard walk. Loopback :5601/:4173, hardcoded.
   "build86-capture",
+  // BUILD-87 F.3 — the Home layout walk. Loopback :5601/:4173, hardcoded.
+  "build87-f3-walk",
   "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only
