@@ -76,7 +76,8 @@ const LOOPBACK_HARDCODED = [
   // BUILD-85 — the follow-up engine walk. Loopback :5601/:4173, hardcoded.
   "build85-capture",
   // BUILD-86 — the Home/Dashboard walk. Loopback :5601/:4173, hardcoded.
-  "build86-capture","build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
+  "build86-capture",
+  "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only
 // write-shaped call is POST /auth/login. Verified below, not just trusted.
@@ -123,6 +124,10 @@ const PROD_READONLY = [
   // finds any money value rounded to a whole dollar). No server, no database,
   // no network. Run BY tests/money-cents.test.js so the enumeration cannot drift.
   "build73-money-audit",
+  // BUILD-86 C.2 — renders twenty notes from shared/homeNote.js to a fixture a
+  // human reads in a row. Pure: no server, no database, no network, and the
+  // date is pinned so a regeneration only moves when the grammar moves.
+  "build86-notes-fixture",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

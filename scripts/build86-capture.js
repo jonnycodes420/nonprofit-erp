@@ -74,16 +74,21 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
   ok("Home is where a cold login lands", /The Thread/i.test(text), text.slice(0, 200));
 
   // §2 — the sentence.
+  // BUILD-86 C.2 — the note, not the Part A sentence. Matched on the VOICE
+  // (what a note says) rather than on one phrasing, so the grammar can grow.
   const sentence = await page.evaluate(() => {
     const el = [...document.querySelectorAll("div")].find(d =>
-      /(is at day \d+|has gone quiet|conversation|monthly gift|Nothing is waiting)/.test(d.textContent || "") &&
-      (d.textContent || "").trim().endsWith(".") && (d.textContent || "").trim().length < 220 && d.children.length === 0);
+      /(asked for|meant to call|waiting on you|has been waiting|gone quiet|card failed|hasn't been thanked|picked back up|Nothing is waiting)/i.test(d.textContent || "") &&
+      (d.textContent || "").trim().endsWith(".") && (d.textContent || "").trim().length < 300 && d.children.length === 0);
     return el ? el.textContent.trim() : null;
   });
   ok("the sentence is on screen", !!sentence, sentence);
   console.log("\n  she reads: " + sentence + "\n");
   ok("…it names a person, not just counts", /Harmon|Chen|Torres|Grange|Delaney/.test(sentence || ""), sentence);
   ok("…it is not a template with holes (no zero of anything)", !/\b0\b|\bno conversations\b/i.test(sentence || ""), sentence);
+  // C.2's voice rules, read off the real screen.
+  ok("…it reads like a note, not a log line (no day count, no colon, no em dash)",
+     !/\bday \d+/i.test(sentence || "") && !/:/.test(sentence || "") && !/—/.test(sentence || ""), sentence);
   ok("…it ends as a sentence", (sentence || "").endsWith("."), sentence);
 
   // §3/§4 — what is on Home.

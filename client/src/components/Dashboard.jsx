@@ -3,7 +3,9 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
-import { morningSentence } from "../lib/morningSentence";
+// BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
+// which read like a log line ("Chen is at day 7.").
+import { homeNote } from "../../../shared/homeNote";
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
@@ -646,7 +648,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     if(item.action==="lapsed")return "Re-engage →";
     if(item.action==="recurring")return resentIds.has(item.donorId)?"Sent ✓":(busyDonorId===item.donorId?"Sending…":"Resend update link");
     if(item.action==="matching_gift")return "View donor →";
-    if(item.taskId)return busyDonorId===item.donorId?"Saving…":"Mark done ✓";
     if(item.action==="thank")return "Log thank-you →";
     if(item.action==="email")return "Log email →";
     return "Log call →";
@@ -1099,48 +1100,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           giving snapshot); Team adds Portfolio + Pipeline. First-touch-delay
           and stewardship-debt are demoted to the small "Signals" chips below —
           never headline cards. */
-  const commandCenterSection=homeData?(()=>{
-        const isTeam=homeData.tier==="team";
-        const t=homeData.tasks||{overdue:0,today:0,upcoming:0,total:0};
-        const needCount=visibleQueue.length;
-        const scrollToQueue=()=>{document.getElementById("dash-needtodo")?.scrollIntoView({behavior:"smooth",block:"start"});};
-        const cards=[];
-        if(isTeam&&homeData.portfolio){
-          const pc=homeData.portfolio;
-          cards.push({key:"portfolio",label:"Portfolio",accent:pc.color||T.greenDk,value:pc.count,unit:"donors",
-            sub:`${fmt(pc.value)} lifetime giving`,onClick:()=>onNavigate("pipeline",{scope:"mine"}),aria:"View your portfolio"});
-        }
-        cards.push({key:"tasks",label:"Tasks",accent:t.overdue>0?T.terracotta:T.gold,value:t.total,unit:t.total===1?"open task":"open tasks",
-          sub:(<span>{t.overdue>0&&<b style={{color:T.terracotta}}>{t.overdue} overdue</b>}{t.overdue>0&&(t.today>0||t.upcoming>0)?" · ":""}{t.today>0&&<b style={{color:T.gold600}}>{t.today} today</b>}{t.today>0&&t.upcoming>0?" · ":""}{t.upcoming>0&&<span style={{color:T.greenMid}}>{t.upcoming} upcoming</span>}{t.total===0&&"All clear"}</span>),
-          onClick:()=>onNavigate("tasks",{scope}),aria:"View tasks"});
-        cards.push({key:"needtodo",label:"Need to Do",accent:needCount>0?T.terracotta:T.greenMid,value:needCount,unit:needCount===1?"needs you":"need you",
-          sub:needCount>0?"gifts to thank, moves due, receipts & more":"you're all caught up",onClick:scrollToQueue,aria:"Jump to what needs your attention"});
-        if(isTeam&&homeData.pipeline){
-          const pl=homeData.pipeline;
-          cards.push({key:"pipeline",label:"Pipeline",accent:T.greenDk,value:pl.total,unit:pl.total===1?"prospect":"prospects",
-            sub:pl.forecastOpen>0?`${fmt(pl.forecastOpen)} in open asks`:`${fmt(pl.value)} lifetime`,onClick:()=>onNavigate("pipeline",{scope}),aria:"View pipeline board"});
-        }
-        // De-templated (BUILD-31 Part 5.2): no per-stat boxes / colored left
-        // borders / shadows — the four stats read as TYPOGRAPHY separated by
-        // whitespace, the accent carried by the NUMBER, not a decorative border.
-        // Still clickable + keyboard-accessible via interactive() (hover wash +
-        // gold focus ring). Hierarchy comes from type weight + space, not boxes.
-        return(
-          <div className="dash-cmd-grid" style={{display:"grid",gridTemplateColumns:`repeat(${cards.length},minmax(0,1fr))`,gap:6,margin:"2px 0"}}>
-            {cards.map(c=>(
-              <div key={c.key} {...interactive(c.onClick,{label:c.aria})}
-                style={{padding:"10px 14px",borderRadius:10,display:"flex",flexDirection:"column",gap:3,minWidth:0}}>
-                <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3}}>{c.label}</span>
-                <span style={{display:"flex",alignItems:"baseline",gap:6}}>
-                  <span style={{fontSize:32,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:c.accent,lineHeight:1}}>{c.value}</span>
-                  <span style={{fontSize:11,color:T.ink3}}>{c.unit}</span>
-                </span>
-                <span style={{fontSize:11.5,color:T.ink3,lineHeight:1.4,minHeight:16}}>{c.sub}</span>
-              </div>
-            ))}
-          </div>
-        );
-      })():null;
+  // BUILD-86 C.2 — `commandCenterSection` DELETED. It was retired from the
+  // section registry in BUILD-83 (four tiles whose contents lived in the cards
+  // below and contradicted them) and has rendered nowhere since; it survived as
+  // sixty lines of code holding the last references to the tasks queue, one of
+  // which scrolled to an element this build removed. Dead code that still
+  // points at a deleted thing is how a screen breaks two builds from now.
 
   // BUILD-83 Part 3.4 — an unassigned org reads "no one assigned to you yet",
   // never "0 donors · $0 lifetime giving" the screen after importing 25,034.
@@ -1587,10 +1552,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </li>);
     }
     threadRows.push(
-    <li key={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
-      <a href={`/donors/${t.donorId}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
+    // BUILD-86 C.2 — the `attn-*` hooks move HERE with the surface. BUILD-45
+    // D-1 proved a row's left region must be a real <a href="/donors/:id"> with
+    // the action button as a SIBLING, never nested (keyboard and new-tab both
+    // break otherwise). The queue that finding was written against is gone from
+    // Home; the property is not, and the guard that holds it follows the rows.
+    <li key={t.id} className="attn-row" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
+      <a href={`/donors/${t.donorId}`} className="attn-row-main" style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
-        <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
+        <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{t.donorName}</div>
         <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.45,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
           {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Touch")} · {String(t.lastTouch?.date||t.openedOn).slice(0,10)}
           {t.lastTouch?.line?<> · {t.lastTouch.line}</>:t.lastTouch?.kind==="gift"&&t.lastTouch.amount!=null?<> · {fmtFull(t.lastTouch.amount)} received</>:null}
@@ -1616,7 +1586,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       </div>
       <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-        <button onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
+        <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
           style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Done</button>
         <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
       </div>
@@ -1681,74 +1651,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 and {threadsData.more} more open. The {threadList.length} above are the ones that cost the most to leave.
               </div>
             )}
-          <div id="dash-needtodo" style={{scrollMarginTop:64,borderTop:"1px solid "+T.bg3}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
-              <span style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{...sTitle,fontSize:11.5,color:T.ink2}}>Needs Your Attention</span>
-                {scope==="mine"&&<span style={{fontSize:9,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"2px 7px",borderRadius:99}}>Mine</span>}
-              </span>
-              {!queueLoading&&<span style={{fontSize:11,color:T.ink3}}>{foldedQueue.length} {foldedQueue.length===1?"item":"items"}</span>}
-            </div>
-            {queueLoading&&<div style={{...cPad}}><Spin/></div>}
-            {!queueLoading&&foldedQueue.length===0&&<MiniEmpty icon="✓" text="You're all caught up — nothing needs attention right now."/>}
-            {/* D-1 (BUILD-45): each row's left region is a REAL <a href="/donors/:id">
-                (cmd/middle-click open the donor in a new tab), NOT an onClick div.
-                The action button is a SIBLING of the anchor — never nested — so
-                keyboard traversal and open-in-new-tab both work. Orphaned rows
-                (no resolvable donor) render the main as a <span>, never a dead link. */}
-            {!queueLoading&&foldedQueue.length>0&&(
-              <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
-                {foldedQueue.map((item,i)=>{
-                  const color=rowColor(item);
-                  const busy=busyDonorId===item.donorId;
-                  const href=item.donorId?`/donors/${item.donorId}`:null;
-                  const mainInner=(
-                    <>
-                      <div style={{width:38,height:38,borderRadius:"50%",background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color,flexShrink:0}}>
-                        {(item.donorName||"?")[0]}
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{item.donorName}</div>
-                        {item.action==="note"&&Array.isArray(item.talkingPoints)?(
-                          <ul style={{margin:"4px 0 0",padding:"0 0 0 16px",fontSize:12,color:T.ink3,lineHeight:1.5}}>
-                            {item.talkingPoints.map((p,pi)=><li key={pi} style={{marginBottom:2}}>{p}</li>)}
-                          </ul>
-                        ):(
-                          <div style={{fontSize:12,color:T.ink3,marginTop:2,lineHeight:1.4}}>{item.reason}</div>
-                        )}
-                      </div>
-                    </>
-                  );
-                  const mainStyle={flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 20px",textDecoration:"none",color:"inherit"};
-                  return(
-                    <li key={item.donorId+"_"+item.action} className="attn-row" style={{
-                      display:"flex",alignItems:"stretch",
-                      borderBottom:i<foldedQueue.length-1?"1px solid "+T.bg3:"none",
-                      borderLeft:"3px solid "+color,
-                    }}>
-                      {href?(
-                        <a className="attn-row-main" href={href} style={mainStyle}
-                          onClick={e=>{ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return; e.preventDefault(); onNavigate("donors",{selectDonorId:item.donorId}); }}>
-                          {mainInner}
-                        </a>
-                      ):(
-                        <span className="attn-row-main" style={mainStyle}>{mainInner}</span>
-                      )}
-                      <div style={{display:"flex",alignItems:"center",padding:"8px 20px 8px 8px",flexShrink:0}}>
-                        <button onClick={e=>{e.stopPropagation();handleQueueAction(item);}} disabled={busy||(item.taskId&&isReadOnly)}
-                          title={item.taskId&&isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                          className="attn-row-action dash-queue-action" style={{
-                            background:color,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,
-                            cursor:(busy||(item.taskId&&isReadOnly))?"not-allowed":"pointer",whiteSpace:"nowrap",
-                            opacity:(busy||(item.taskId&&isReadOnly))?0.45:1,
-                          }}>{actionLabel(item)}</button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          {/* BUILD-86 C.2 — "NEEDS YOUR ATTENTION" IS GONE FROM HOME.
+              Home is exactly the note, the Thread, Drift and the failing
+              monthly gifts. That list duplicated the queue directly above it (a
+              gift not yet thanked IS a thread whose next step is thank) and
+              carried a "Mark done" button, which is the tasks vocabulary this
+              product deliberately left behind. The two things it showed that
+              the four sections do not both have homes already, and neither
+              belongs on the screen she reads at 7:40 — milestone drafts sit in
+              Communications with their own count, and the un-receipted-gift
+              prompt in Settings → Tax Receipts. */}
           </div>
 
           {/* BUILD-83 Part 3.1 — "Today's Suggested Outreach" is GONE. The
@@ -1920,7 +1832,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               the whole screen. It is a good morning, not an empty state. */}
           {surface==="home"&&!editMode&&threadsData&&(
             <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,lineHeight:1.4,color:T.ink,marginTop:6,maxWidth:760}}>
-              {morningSentence({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk},Date.now(),t)}
+              {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,vocabulary:data.org?.vocabulary})}
             </div>
           )}
           {/* BUILD-86 Part B — one line, once. */}

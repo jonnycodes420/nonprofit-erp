@@ -27,7 +27,7 @@ const root = path.join(__dirname, "..");
 (async () => {
   // ── §1 · the sentence ────────────────────────────────────────────────────
   console.log("\n— §1 · one sentence, assembled, never generic —");
-  const M = await import("../client/src/lib/morningSentence.js");
+  const M = await import("../shared/homeNote.js");
   // Pinned clock: a sentence that reads the wall clock is a guard measuring
   // the calendar (the BUILD-84 rule).
   const NOW = Date.parse("2026-09-16T12:00:00Z");
@@ -47,75 +47,70 @@ const root = path.join(__dirname, "..");
   // THE FAMILY: every combination of the three sources.
   const SOURCES = { threads: THREADS, drift: DRIFT, atRisk: ATRISK };
   const KEYS = ["threads", "drift", "atRisk"];
-  const all0 = cs => cs.every(c => !/\b(1|2|3) (conversation|donor|monthly)/.test(c.sentence));
   const combos = [];
   for (let mask = 0; mask < 8; mask++) {
     const input = {};
     const on = [];
     KEYS.forEach((k, i) => { if (mask & (1 << i)) { input[k] = SOURCES[k]; on.push(k); } });
-    combos.push({ on, sentence: M.morningSentence(input, NOW) });
+    combos.push({ on, note: M.homeNote(input, NOW) });
   }
-  ok("every combination of sources produces a sentence", combos.every(c => typeof c.sentence === "string" && c.sentence.length > 0));
-  ok("…each ends in a full stop and opens with a capital, never a numeral",
-     combos.every(c => /^[A-Z]/.test(c.sentence) && c.sentence.endsWith(".")), combos.map(c => c.sentence));
-  ok("…and small numbers are SPELLED, the way the sentence is read aloud",
-     !combos.some(c => /^\d/.test(c.sentence)) && all0(combos), combos.map(c => c.sentence));
+  ok("every combination of sources produces a note", combos.every(c => typeof c.note === "string" && c.note.length > 0));
+  ok("…each opens with a capital and ends in a full stop",
+     combos.every(c => /^[A-Z]/.test(c.note) && c.note.endsWith(".")), combos.map(c => c.note));
   ok("NO SOURCE AT ALL is an answer, not an empty state",
-     combos.find(c => c.on.length === 0).sentence === M.NOTHING_WAITING, combos[0].sentence);
+     combos.find(c => c.on.length === 0).note === M.NOTHING_WAITING, combos[0].note);
+  ok("…and it is at most three sentences", combos.every(c => (c.note.match(/\. /g) || []).length <= 2), combos.map(c => c.note));
 
   // NEVER A TEMPLATE WITH HOLES: a source that is off contributes no words.
-  const BANNED_WHEN_OFF = { threads: /conversation|day \d+/i, drift: /gone quiet/i, atRisk: /cards? failed/i };
+  const BANNED_WHEN_OFF = { threads: /asked for|meant to call|thanked|conversation|people are waiting|has been waiting/i, drift: /gone quiet/i, atRisk: /card/i };
   for (const c of combos) {
+    if (c.on.length === 0) continue;   // "Nothing is waiting on you" is the answer, not a clause
     for (const k of KEYS) {
       if (c.on.includes(k)) continue;
       ok(`with ${k} empty, its clause is ABSENT (not "0 ...")`,
-         !BANNED_WHEN_OFF[k].test(c.sentence), { on: c.on, sentence: c.sentence });
+         !BANNED_WHEN_OFF[k].test(c.note), { on: c.on, note: c.note });
     }
   }
-  ok("no sentence anywhere in the family says zero of anything",
-     !combos.some(c => /\b0\b|\bno\s+(conversations|donors|gifts)\b/i.test(c.sentence)), combos.map(c => c.sentence));
 
-  // A NAME BEATS A COUNT.
-  const all = combos.find(c => c.on.length === 3).sentence;
-  ok("the full sentence names the person who has waited longest",
-     all.includes("Harmon is at day 24"), all);
-  ok("…and a surname is used, the way a fundraiser says it out loud",
-     !all.includes("Robert Harmon"), all);
-  ok("an ORGANISATION keeps its whole name (never 'Foundation')",
-     M.morningSentence({ atRisk: [ATRISK[0]] }, NOW).includes("Sunrise Foundation"));
-  ok("a single overdue thread is named rather than counted",
-     M.morningSentence({ threads: { list: [THREADS.list[0]] } }, NOW) === "Harmon is at day 24.",
-     M.morningSentence({ threads: { list: [THREADS.list[0]] } }, NOW));
+  // ── C.2 · IT READS LIKE A NOTE, NOT A LOG LINE ──────────────────────────
+  // The Part A defect, named: "Chen is at day 7." was true and written by a
+  // machine. These are the rules that make it a note, asserted on the family.
+  console.log("\n— §1b · the voice —");
+  for (const rule of M.BANNED_PUNCTUATION) {
+    ok(`no ${rule.name} in any note in the family`,
+       !combos.some(c => rule.re.test(c.note)), combos.filter(c => rule.re.test(c.note)).map(c => c.note));
+  }
+  const oneLate = M.homeNote({ threads: { list: [{ donorName: "Margaret Chen", overdue: true, overdueDays: 7, nextStep: { label: "Send the import report" } }] } }, NOW);
+  ok("ONE thing late leads with the PERSON, in full, and says what they asked for",
+     oneLate === "Margaret Chen asked for the import report a week ago and hasn't heard back.", oneLate);
+  const manyLate = M.homeNote({ threads: { list: [
+    { donorName: "Margaret Chen", overdue: true, overdueDays: 11, nextStep: { label: "Send the report" } },
+    { donorName: "Robert Harmon", overdue: true, overdueDays: 3, nextStep: { label: "Call" } },
+    { donorName: "Diana Torres", overdue: true, overdueDays: 2, nextStep: { label: "Call" } }] } }, NOW);
+  ok("SEVERAL leads with the count and still names who has waited longest",
+     manyLate === "Three people are waiting on you; Chen has been waiting a week and a half.", manyLate);
+  ok("time is in WORDS, never a day count",
+     M.agoPhrase(1) === "yesterday" && M.agoPhrase(7) === "a week ago" && M.agoPhrase(30) === "a month ago",
+     [M.agoPhrase(1), M.agoPhrase(7), M.agoPhrase(30)]);
+  ok("…and a duration is not an 'ago' (\"waited longest, a week ago\" is not English)",
+     M.durationPhrase(11) === "a week and a half" && M.agoPhrase(11) === "a week and a half ago");
+  ok("a surname that is a bare number is not a name — the whole name is used",
+     M.surname("Donor 1") === "Donor 1" && M.surname("Margaret Chen") === "Chen");
+  ok("an ORGANISATION keeps its whole name at every mention",
+     M.surname("Sunrise Foundation") === "Sunrise Foundation");
+  ok("her words reach the note",
+     M.homeNote({ drift: DRIFT, vocabulary: { giver_plural: "sponsors" } }, NOW).includes("sponsors"),
+     M.homeNote({ drift: DRIFT, vocabulary: { giver_plural: "sponsors" } }, NOW));
 
-  // THE WINDOW IS SEVEN DAYS, and it is pinned by INPUT, never by the clock.
-  // BUILD-86 Part B — the clause says THE CARD FAILED, which is the true thing
-  // and the one that survives her vocabulary: "Delaney's sponsorship gift
-  // stopped" read badly at one shop and "Delaney's monthly donor gift stopped"
-  // at the default. The brief's own line is "Two sponsors' cards failed."
-  ok("a monthly gift that failed inside the window is in the sentence, by surname",
-     M.morningSentence({ atRisk: [{ donor_name: "Recent Kowalski", first_failed_at: dayAgo(6) }] }, NOW)
-       === "Kowalski's card failed.",
-     M.morningSentence({ atRisk: [{ donor_name: "Recent Kowalski", first_failed_at: dayAgo(6) }] }, NOW));
-  ok("…one that failed before it is NOT (a fortnight of failures is not a calm screen)",
-     M.morningSentence({ atRisk: [{ donor_name: "Old Fail", first_failed_at: dayAgo(30) }] }, NOW) === M.NOTHING_WAITING);
-  ok("the window is a named constant, not a literal in the logic", M.RECURRING_WINDOW_DAYS === 7);
-
-  // ONE NUMBER FOR ONE FACT. The sentence must read lateness off the row the
-  // server sent, never re-derive it from the browser clock — doing that put
-  // "24 days overdue" directly above a row reading "Overdue 23 days".
-  const late = { list: [{ donorName: "Robert Harmon", overdue: true, daysOpen: 0, overdueDays: 23 }] };
-  ok("lateness is READ from the row, not recomputed",
-     M.morningSentence({ threads: late }, NOW) === "Harmon is 23 days overdue.", M.morningSentence({ threads: late }, NOW));
-  ok("…and a thread with no age yet never says 'day 0'",
-     !/day 0/.test(M.morningSentence({ threads: late }, NOW)));
-  const src = fs.readFileSync(path.join(root, "client/src/lib/morningSentence.js"), "utf8");
-  ok("the sentence module reads no clock of its own for lateness",
-     !/Date\.now\(\)[\s\S]{0,200}overdue/i.test(src) && !/Date\.UTC/.test(src), null);
-
-  // A queue with nothing overdue still has something to say.
-  ok("threads that are not overdue read as work to pick up, not as an alarm",
-     M.morningSentence({ threads: { list: [THREADS.list[2]] } }, NOW) === "One conversation to pick back up.",
-     M.morningSentence({ threads: { list: [THREADS.list[2]] } }, NOW));
+  // The twenty-note fixture exists and covers the shapes a human should hear.
+  const fixture = fs.readFileSync(path.join(root, "docs/build86/notes.txt"), "utf8");
+  ok("the twenty-note fixture is checked in for a human to read in a row",
+     (fixture.match(/\n\S.*  .+\./g) || []).length >= 20, (fixture.match(/\n\S.*  .+\./g) || []).length);
+  // Only the NOTES, not the header that explains the rules by quoting them.
+  const notesOnly = (fixture.split("=".repeat(78))[1] || "");
+  ok("…and no note in it sounds like a log line",
+     !/\bday \d+/i.test(notesOnly) && !/—/.test(notesOnly) && !/:\s/.test(notesOnly),
+     (notesOnly.match(/\bday \d+|—|:\s/gi) || []).slice(0, 3));
 
   // ── §2 · the split ───────────────────────────────────────────────────────
   console.log("\n— §2 · two surfaces, one registry —");
@@ -125,6 +120,23 @@ const root = path.join(__dirname, "..");
   ok("every section declares exactly one surface",
      L.HOME_SECTIONS.every(s => s.surface === "home" || s.surface === "board"), L.HOME_SECTIONS.map(s => [s.id, s.surface]));
   ok("no section is on both", home.filter(id => board.includes(id)).length === 0, { home, board });
+  // C.4 — HOME IS EXACTLY FOUR SECTIONS. The Part A leftovers are gone: the
+  // tasks list ("Needs your attention", Mark done) and the milestone card.
+  ok("Home renders EXACTLY the note, the Thread, Drift and the failing gifts",
+     home.slice().sort().join(",") === "drift,recurring,setup,thread", home);
+  // COMMENTS ARE NOT A SCREEN. The note explaining what was removed names the
+  // thing it removed; a guard that cannot tell a comment from a render forces
+  // you to stop writing down why.
+  const dashSrc = require("fs").readFileSync(require("path").join(root, "client/src/components/Dashboard.jsx"), "utf8")
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  ok("the tasks list is gone from Home — no 'Needs your attention', no 'Mark done'",
+     !/dash-needtodo/.test(dashSrc) && !/Mark done/i.test(dashSrc),
+     (dashSrc.match(/dash-needtodo|Mark done/gi) || []).slice(0, 3));
+  ok("the setup checklist is still there, and still retires itself",
+     home.includes("setup") && /setupStatus\.complete/.test(dashSrc));
+  ok("the note is the NOTE module, not Part A's sentence",
+     /shared\/homeNote/.test(dashSrc) && !/morningSentence/.test(dashSrc));
+
   ok("Home is the queue, the names, and the things she set up",
      ["thread", "drift", "recurring", "setup"].every(id => home.includes(id)), home);
   ok("the board has the goal, the retention and the stat rows",

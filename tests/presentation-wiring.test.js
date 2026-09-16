@@ -125,7 +125,14 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
   const attnScope = (Number(myStats.body?.portfolioCount) || 0) > 0 ? "mine" : "all";
   const todayItems = (await api("GET", `/dashboard/today?scope=${attnScope}`, token)).body || [];
   const donorIdSet = new Set((dsum.body || []).map(d => d.id));
-  const expectedAttnCount = todayItems.filter(i => donorIdSet.has(i.donorId)).slice(0, 6).length;
+  // BUILD-86 C.2 — REVIEWED CHANGE. "Needs your attention" is gone from Home
+  // (it duplicated the Thread queue above it and carried a "Mark done" button,
+  // the tasks vocabulary this product left behind). BUILD-45 D-1's finding is
+  // NOT gone: a row's left region must be a real <a href="/donors/:id"> with
+  // the action button as a SIBLING. The rows it guards are the THREAD rows now,
+  // which carry the same attn-* hooks, and the expected count is the queue's.
+  const threadsApi = (await api("GET", "/threads?scope=mine", token)).body || {};
+  const expectedAttnCount = (threadsApi.list || []).length;
   const lr = await fetch(API + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: EMAIL, password: "loadtest1234" }) });
   const j = await lr.json();
 
