@@ -90,10 +90,11 @@ const columnAxis = {
   headerCells: header.length,
   orphanColumns: 2,
   dispositions: {
-    core: 8,                 // Donor Name, Email, Phone, Gift Date, Amount, Campaign, Payment Method, Notes(1st)
+    core: 9,                 // Donor Name, Email, Phone, Gift Date, Amount, Campaign, Payment Method, Notes(1st), Legacy ID
+                             // (BUILD-88a A.7: Legacy ID is the standard external Gift ID; it was discarded before)
     custom: 8,               // Board Member, Matching Employer, Preferred Name, In Memory Of, Appeal Code, Soft Credit To, Last Contact, Gift Level
     flag: 1,                 // Deceased? — THE trap; a custom-field offer is a test failure
-    discarded: 2,            // Legacy ID, Notes (2nd)
+    discarded: 1,            // Notes (2nd)
     refused: 3,              // blank header + 2 orphan columns
   },
   customFields: [
@@ -196,7 +197,13 @@ for (const { r, line } of body) {
   if (amtInfo.kind === "zero") { rec("skipped", "zero_amount", 0); continue; }
   const dt = dateOf(col(r, "Gift Date"));
   if (!dt) { rec("errored", "unparseable_date", amtInfo.v); continue; }
-  if (dt > new Date().toISOString().slice(0, 10)) { rec("errored", "future_date", amtInfo.v); continue; }
+  if (dt > new Date().toISOString().slice(0, 10)) {
+    // BUILD-88a A.7 — the BUILD-80 notes vocabulary decides the gift type when
+    // the export carries no Gift Type column, and a future-dated PLEDGE PAYMENT
+    // is the pledge's schedule, not a failed row (importShape's own rule).
+    if (/pledge\s+(payment|installment)/i.test(col(r, "Notes"))) { rec("skipped", "pledge_scheduled", amtInfo.v); continue; }
+    rec("errored", "future_date", amtInfo.v); continue;
+  }
   const gcf = {};
   for (const [k, hdr] of [["in_memory_of", "In Memory Of"], ["appeal_code", "Appeal Code"], ["soft_credit_to", "Soft Credit To"]]) {
     const v = col(r, hdr); if (v) gcf[k] = v;

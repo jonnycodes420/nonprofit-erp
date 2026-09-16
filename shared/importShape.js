@@ -462,8 +462,23 @@ export function matchNamesCompatible(a, b) {
   const endsWithKey = (k, suffix) => k.key === suffix || k.key.endsWith(" " + suffix);
   if (a.lastOnly) return endsWithKey(b, a.key);
   if (b.lastOnly) return endsWithKey(a, b.key);
+  // BUILD-88a A.7 — A HOUSEHOLD FORM THAT NAMES A PERSON JOINS ONLY THAT
+  // PERSON. The old rule was "either side is a household form and the surnames
+  // agree", which folded "Mr. and Mrs. Gerald Kane", "Gerald Kane" AND
+  // "Marilyn Kane" into ONE record behind their shared family email — a
+  // household of two people arriving as one merged person, with both their
+  // giving histories on a name only one of them answers to. A couple's record
+  // that names Gerald is Gerald's; Marilyn is her own record, and the two are
+  // offered as a HOUSEHOLD (identity.householdCandidates), which is a link,
+  // not a merge. Only a surname-only household form ("Mr. and Mrs. Kane",
+  // "The Kane Family") still matches on the surname alone — it names nobody,
+  // so the surname is the whole of what it says.
   const lastOf = k => k.key.split(" ").slice(-1)[0];
-  if ((a.household || b.household) && lastOf(a) === lastOf(b)) return true;
+  if (a.household || b.household) {
+    const hh = a.household ? a : b, other = a.household ? b : a;
+    if (hh.key.split(" ").filter(Boolean).length <= 1) return lastOf(hh) === lastOf(other);
+    return false;
+  }
   return false;
 }
 
@@ -1424,7 +1439,14 @@ export function autoDetectTxMapping(headers, rows) {
   // silently discarded ("an org that imports and then cannot mail anyone has
   // lost the thing they came for"); anything that still has no home is named
   // on the mapping screen and requires an acknowledgement before the write.
-  const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"" };
+  // BUILD-88a A.7 — the CSV mapper's vocabulary is now the SAME vocabulary the
+  // workbook mapper has had since BUILD-82 (STANDARD_GIFT_FIELDS): Fund and
+  // Designation have a standard home, Payment Method has its own, and a
+  // legacy/reference id is a gift id. Before this, Fund fell through to
+  // Campaign-or-nothing and Payment Method was read as the GIFT TYPE, which is
+  // how "Fund → new custom field" and "Payment Method → type" reached a real
+  // org's receipt. A column with a standard home never falls through to custom.
+  const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"",fund:"",paymentMethod:"",donorType:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
     const hl = h.toLowerCase().trim();
@@ -1436,13 +1458,25 @@ export function autoDetectTxMapping(headers, rows) {
     // BUILD-45 §1.2 F-4 — a source-system gift/transaction id is the ONLY safe
     // gift dedup key; (donor, amount, date) never is. Anchored so a bare "ID"
     // (usually the donor id) or "Donor ID" is never grabbed.
-    if (!map.externalId && /^(gift.?id|transaction.?id|txn.?id|payment.?id|external.?id|reference(.?(no|number|id))?)$/.test(hl)) map.externalId = h;
+    // A.7 — "Legacy ID" and a bare "Ref" join the family: a source-system gift
+    // reference is the only safe gift dedup key, and the one that makes a
+    // re-import of the same file a no-op. Still anchored so a bare "ID" or
+    // "Donor ID" (the DONOR key) is never grabbed.
+    if (!map.externalId && /^(gift.?id|gift.?ref(erence)?|legacy.?(id|ref|gift.?id)|transaction.?id|txn.?id|payment.?id|external.?id|ref|ref.?(no|number|id)|reference(.?(no|number|id))?)$/.test(hl)) map.externalId = h;
     if (!map.amount     && /^(amount|gift.?amount|donation.?amount|gift|giving|sum)$/.test(hl)) {
       if (sample.some(r => !isNaN(parseFloat(String(r[h]||"").replace(/^[A-Za-z]{3}\s+/,"").replace(/[$,]/g,""))))) map.amount = h;
     }
     if (!map.date     && /^(date|gift.?date|donation.?date|when)$/.test(hl))           map.date     = h;
-    if (!map.type     && /^(type|gift.?type|payment.?(type|method)|method|payment)$/.test(hl)) map.type     = h;
-    if (!map.campaign && /^(campaign|appeal|designation)$/.test(hl))                   map.campaign = h;
+    // A.7 — TYPE IS THE GIFT TYPE. A payment method is HOW the money moved and
+    // has its own column below; conflating them is what put "Venmo" and "DAF"
+    // in the gift-type field on every imported gift.
+    if (!map.type     && /^(gift.?type|type|transaction.?type)$/.test(hl))             map.type     = h;
+    if (!map.paymentMethod && /^(payment.?method|payment.?type|pay.?method|method|payment|tender(.?type)?)$/.test(hl)) map.paymentMethod = h;
+    // A.7 — Fund and Designation are the same standard field (the workbook
+    // mapper's STANDARD_GIFT_FIELDS aliases, verbatim).
+    if (!map.fund     && /^(fund|fund.?name|designation|restriction|purpose|allocation)$/.test(hl)) map.fund = h;
+    if (!map.campaign && /^(campaign|appeal|appeal.?code|solicitation)$/.test(hl))     map.campaign = h;
+    if (!map.donorType && /^(donor.?type|constituent.?type|record.?type|entity.?type)$/.test(hl)) map.donorType = h;
     if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
     if (!map.phone    && /^(phone|phone.?number|telephone|mobile|cell)$/.test(hl))     map.phone    = h;
     if (!map.address  && /^(address|street(.?address)?|address.?1|mailing.?address)$/.test(hl)) map.address = h;
@@ -1451,9 +1485,8 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.zip      && /^(zip(.?code)?|postal(.?code)?)$/.test(hl))                  map.zip      = h;
     if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
   }
-  // "Fund" maps to campaign ONLY if no campaign column exists (both present →
-  // Fund has no home of its own and lands on the acknowledge list).
-  if (!map.campaign) { const f = headers.find(h => /^fund$/i.test(String(h).trim())); if (f) map.campaign = f; }
+  // A.7 — the old "Fund maps to campaign if no campaign column exists" fallback
+  // is GONE. Fund has a home of its own now, and a fund is not an appeal.
   return map;
 }
 
@@ -1791,6 +1824,20 @@ export function resolveIdentities(rows = [], txMap = {}, opts = {}) {
   };
 }
 
+// ── BUILD-88a A.7 — A FUND CELL THAT IS A NUMBER IS NOT A FUND ────────────
+// A restriction has a name ("Building Campaign", "Scholarship"). A report
+// export with a shifted row puts the AMOUNT where the fund belongs, and a
+// fund is a permanent object on the org's chart of accounts — "500.00" would
+// sit there forever, next to Youth Ministry, and no one would know why. A
+// money- or number-shaped cell names no fund; the gift simply has none, which
+// is the truth about that row.
+export function fundNameFromCell(raw) {
+  const s = String(raw ?? "").trim();
+  if (!s) return "";
+  if (/^[$\u20ac\u00a3]?\s*-?[\d.,\s]+%?$/.test(s)) return "";
+  return s;
+}
+
 // ── BUILD-80 Part 5 — GIFT TYPE IS A CLOSED VOCABULARY WITH MEANING ────────
 // blank/cash/check/cc/ach/online/venmo/stock/recurring/grant → a gift.
 // Bequest → a gift, and the donor is never solicited again. Matching Gift →
@@ -1912,6 +1959,14 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   const refusedByKey = new Map();
   const bumpRefused = k => { if (k) refusedByKey.set(k, (refusedByKey.get(k) || 0) + 1); };
   const freqCol = rows.length ? Object.keys(rows[0]).find(h => /^frequency$/i.test(String(h).trim())) : null;
+  // BUILD-88a A.7 — the file's own appeal vocabulary, read ONCE off the campaign
+  // column. A value that the file itself uses as an appeal ("Spring Appeal") is
+  // an appeal wherever it turns up: landing in a Type or Payment Method column
+  // is a shifted cell, not a new kind of gift. It routes to Campaign and leaves
+  // the type and the method blank rather than inventing either.
+  const campaignVocabulary = txMap.campaign
+    ? new Set(rows.map(r => String(r[txMap.campaign] ?? "").trim().toLowerCase()).filter(Boolean))
+    : new Set();
   // BUILD-80 Part 5 — the rows that are NOT gifts, collected for their own
   // surfaces: pledges (commitments), in-kind (FMV records), soft credits and
   // matching/DAF attributions (relationship links), plus the review-queue
@@ -2009,6 +2064,10 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     if (txMap.address && row[txMap.address]) donor.address = String(row[txMap.address]).trim() || null;
     if (txMap.zip && row[txMap.zip]) donor.zip = String(row[txMap.zip]).trim() || null;
     if (txMap.owner && row[txMap.owner]) donor.owner = String(row[txMap.owner]).trim() || undefined;
+    // BUILD-88a A.7 — Donor Type is a STANDARD donor field (donors.donor_type,
+    // the column BUILD-82's workbook path has written since it existed); it
+    // does not become a custom field on the CSV path either.
+    if (txMap.donorType && row[txMap.donorType]) donor.donorType = String(row[txMap.donorType]).trim().slice(0, 64) || undefined;
 
     const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
     const markers = detectNoteMarkers(noteText);
@@ -2124,11 +2183,37 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const rowGiftCf = donor._giftCustomFields || undefined;
     delete donor._giftCustomFields;
     const key = dkey;
+    // ── BUILD-88a A.7 — THREE COLUMNS, THREE FIELDS ──────────────────────
+    // The gift type is what KIND of gift this is; the payment method is how
+    // the money moved; the fund is where it is restricted to. They were one
+    // field ("type") and two of them were thrown away.
+    const rawTypeCell = txMap.type ? String(row[txMap.type] || "").trim() : "";
+    const rawPayCell = txMap.paymentMethod ? String(row[txMap.paymentMethod] || "").trim() : "";
+    // An appeal name in either column is a shifted cell — route it, don't store it.
+    const appealInTypeCol = rawTypeCell && classifyGiftType(rawTypeCell).kind === "unrecognized"
+      && campaignVocabulary.has(rawTypeCell.toLowerCase()) ? rawTypeCell : "";
+    const appealInPayCol = rawPayCell && campaignVocabulary.has(rawPayCell.toLowerCase()) ? rawPayCell : "";
+    const typeCell = appealInTypeCol ? "" : rawTypeCell;
+    const payCell = appealInPayCol ? "" : rawPayCell;
+    // Routed, never overwritten: if the row already states an appeal, the
+    // stray cell is simply NOT a payment method or a gift type; it does not
+    // get to replace an appeal the file actually named.
+    const campaignCell = txMap.campaign ? String(row[txMap.campaign] || "").trim() : "";
+    const routedAppeal = campaignCell ? "" : (appealInTypeCol || appealInPayCol || "");
+    // No Gift Type column → the BUILD-80 NOTES VOCABULARY says what kind of
+    // gift this is. "Pledge payment 8 of 12" is a pledge payment whether or
+    // not the export carried a type column, and "monthly EFT" is recurring.
+    const typeFromNote = markers.pledgePayment ? "pledge payment"
+      : markers.sustainerNote ? "recurring" : "";
+    const giftTypeValue = (typeCell || typeFromNote || "cash").toLowerCase();
+    const fundValue = txMap.fund ? fundNameFromCell(row[txMap.fund]) : "";
     const mkGift = (amount) => ({
       amount,
       date: null, // filled below
-      type: txMap.type ? (String(row[txMap.type] || "").toLowerCase().trim() || "cash") : "cash",
-      campaign: txMap.campaign ? String(row[txMap.campaign] || "") : "",
+      type: giftTypeValue,
+      campaign: routedAppeal || (txMap.campaign ? String(row[txMap.campaign] || "") : ""),
+      fund: fundValue || undefined,
+      paymentMethod: payCell || undefined,
       notes: noteText,
       externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
       customFields: rowGiftCf,   // BUILD-78: raw, re-validated by the server seam
@@ -2142,7 +2227,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       if (fv && /^(monthly|m|every month|12|mo)$/.test(fv)) donor._freqMonthlyClaim = true;
     }
     // ── BUILD-80 Part 5 — the row's MEANING comes before its money ────────
-    const typeRaw = txMap.type ? String(row[txMap.type] || "").trim() : "";
+    const typeRaw = typeCell || typeFromNote;
     const typed = classifyGiftType(typeRaw);
     if (typed.kind === "unrecognized") {
       const e = semantics.unrecognizedTypes.get(typeRaw) || { count: 0, examples: [] };
@@ -2336,6 +2421,53 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       // future is on schedule — due when the last installment is, so no
       // reminder chases a donor who is paying as agreed.
       if (p.status === "open" && lastSched && (!p.date || lastSched > p.date)) p.dueDate = lastSched;
+    }
+
+    // ── BUILD-88a A.7 — A PLEDGE PAYMENT IMPLIES A PLEDGE ────────────────
+    // "Pledge payment 8 of 12 — Capital Campaign" is a payment against a
+    // commitment the export never wrote a row for. Seven payments used to
+    // land as seven unrelated gifts and the pledge simply did not exist, so
+    // nothing on the record said this donor had promised twelve. We create a
+    // SHELL — the commitment the payments already prove — and link them to
+    // it. The shell is never counted as money (a pledge never is); its
+    // amount is the schedule the notes state (installment × the stated
+    // total), or the sum of what actually arrived when the notes state no
+    // schedule. Shells are marked so the receipt can say one was inferred.
+    const claimed = new Set(semantics.pledges.map(p => String(p.donorKey || "")));
+    const claimedRefs = new Set(semantics.pledges.map(p => String(p.externalId || "")).filter(Boolean));
+    const shellByKey = new Map();
+    for (const g of gifts) {
+      if (!g._pledgePayment) continue;
+      if (g.pledgeExternalRef && claimedRefs.has(g.pledgeExternalRef)) continue;
+      const d = donors[g.donorIndex];
+      if (!d) continue;
+      const gkey = keyByIndex.get(g.donorIndex) || String(d.email || d.name || "").toLowerCase();
+      if (claimed.has(gkey)) continue;
+      if (!shellByKey.has(gkey)) shellByKey.set(gkey, { key: gkey, donor: d, payments: [], installments: 0 });
+      const sh = shellByKey.get(gkey);
+      sh.payments.push(g);
+      const m = String(g.notes || "").match(/pledge\s+(?:payment|installment)\s+(\d+)\s+of\s+(\d+)/i);
+      if (m) sh.installments = Math.max(sh.installments, Number(m[2]) || 0);
+    }
+    for (const sh of shellByKey.values()) {
+      const paid = Math.round(sh.payments.reduce((t, g) => t + g.amount, 0) * 100) / 100;
+      const perInstallment = sh.payments.map(g => g.amount).sort((a, b) => b - a)[0] || 0;
+      const amount = sh.installments > 0
+        ? Math.round(perInstallment * sh.installments * 100) / 100
+        : paid;
+      const dates = sh.payments.map(g => g.date).filter(Boolean).sort();
+      semantics.pledges.push({
+        donorKey: sh.key, donorName: sh.donor.name, donorEmail: sh.donor.email || "",
+        amount, date: dates[0] || null,
+        notes: sh.installments > 0
+          ? `Pledge of ${sh.installments} installments, recorded from ${sh.payments.length} payment${sh.payments.length === 1 ? "" : "s"} in the imported file.`
+          : `Pledge recorded from ${sh.payments.length} payment${sh.payments.length === 1 ? "" : "s"} in the imported file.`,
+        externalId: undefined, shell: true,
+        status: amount > 0 && paid >= amount ? "fulfilled" : "open",
+        paidObserved: paid, scheduledObserved: 0,
+        installments: sh.installments || null,
+        paymentLines: sh.payments.map(g => g.externalId).filter(Boolean),
+      });
     }
   }
   // BUILD-80 Part 4.3 — the conflicts, shown: "Status says Active, Notes say
@@ -3341,13 +3473,19 @@ export function buildWorkbookGiftRows(sheet, opts = {}) {
     if (m.flag) flags.push({ ...base, kind: m.flag.kind, text: m.flag.text, dollars });
     if (m.floatNoise) floatNoiseRows++;
 
+    // BUILD-88a A.7 — the workbook mapper has DETECTED Fund and Payment Method
+    // since BUILD-82 and then buried them: the fund went into a notes string
+    // ("Fund: Building") and the payment method stood in for the gift TYPE
+    // when no type column existed. Both are standard fields with standard
+    // columns; they travel as fields now, and the server writes them.
     const gift = {
       amount: dollars,                      // decimal dollars — the server's toCents seam keeps the pennies
       date: d.value,
-      type: typeRaw ? typeRaw.toLowerCase() : (payCol ? String(row[payCol] || "").toLowerCase() || "cash" : "cash"),
+      type: typeRaw ? typeRaw.toLowerCase() : "cash",
       campaign: campaignCol ? String(row[campaignCol] || "") : "",
+      fund: (fundCol && fundNameFromCell(row[fundCol])) || undefined,
+      paymentMethod: payCol && row[payCol] ? String(row[payCol]).trim() || undefined : undefined,
       notes: [notesCol ? String(row[notesCol] || "") : "",
-              fundCol && row[fundCol] ? `Fund: ${row[fundCol]}` : "",
               receiptCol && row[receiptCol] ? `Receipt ${row[receiptCol]}` : "",
               pledgeCol && row[pledgeCol] ? `on pledge ${row[pledgeCol]}` : "",
               softCol && row[softCol] ? `soft credit to ${row[softCol]}` : ""].filter(Boolean).join(" · "),

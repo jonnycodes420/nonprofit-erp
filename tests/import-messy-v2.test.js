@@ -329,8 +329,13 @@ async function reset() {
   console.log("\n— §3f · BUILD-80 Part 6: identity — ID before email before name, conflicts block merges —");
   ok("the Constituent ID column is recognised as the donor id and grouped on FIRST",
     built.identity.donorIdColumn === "Constituent ID", built.identity.donorIdColumn);
-  ok("donor count lands at 496 — variants folded by ID, real email and matching name; anonymous collapses to one holding record",
-    built.donors.length === 496, built.donors.length);
+  // BUILD-88a A.7 raised this from 496 to 503: a household form that NAMES a
+  // person ("Mr. and Mrs. Kwame Fennimore") used to fold into ANY person of
+  // the same surname behind that email, so seven couples arrived as one
+  // merged person carrying two people's giving. They are two records and a
+  // household candidate now — a link, never a merge.
+  ok("donor count lands at 503 — variants folded by ID, real email and matching name; anonymous collapses to one holding record",
+    built.donors.length === 503, built.donors.length);
   const paul6 = built.donors.filter(d => /Paul/.test(d.name) && /Briain/.test(d.name));
   ok("Paul Ó Briain is ONE person — the '@@' email row grouped by his ID, no refusal tag",
     paul6.length === 1 && paul6[0].externalDonorId === "81481" && !(paul6[0].tags || []).some(t => /has-refused-rows/.test(t)),
@@ -346,8 +351,8 @@ async function reset() {
   const nmConf = built.donors.filter(d => (d.tags || []).includes("name-conflict"));
   ok("Name-vs-First/Last disagreements: the Name column wins and the conflict is flagged (5 reachable of the 8 planted)",
     nmConf.length >= 5, nmConf.map(d => d.name));
-  ok("the merge review list names every fold with its reason and its gift ids (165 groups on v2)",
-    built.identity.mergeReview.length === 165 &&
+  ok("the merge review list names every fold with its reason and its gift ids (161 groups on v2)",
+    built.identity.mergeReview.length === 161 &&
     built.identity.mergeReview.every(m => m.surviving && m.folded.length && m.folded.every(f => f.via)),
     built.identity.mergeReview.length);
   const sowandeMerge = built.identity.mergeReview.find(m => /Sowande/.test(m.surviving));
@@ -527,8 +532,11 @@ async function reset() {
   // broken link. The rest (board members and distinct-identity spouses) link.
   const scLinks = relMap.soft_credit || 0;
   const folds = sem1.body?.counts?.householdFolds || 0;
+  // A.7 moved one of these from a FOLD to a LINK: the spouse whose only
+  // appearance was a household form is now her own record, so the credit links
+  // to a person instead of dissolving into her husband's record. 57 either way.
   ok(`every soft credit is accounted: ${scLinks} links + ${folds} household folds + 3 whose base gift sits on a refused row = 60`,
-    scLinks === 54 && folds === 3, { scLinks, folds });
+    scLinks === 55 && folds === 2, { scLinks, folds });
   ok("matching-gift attributions became links (≥25 of 29)", (relMap.matching_gift || 0) >= 25, relMap);
   const sem2 = await semPost();
   const [plCount2] = await q(`SELECT COUNT(*)::int n FROM pledges WHERE org_id=$1`, [ORG]);

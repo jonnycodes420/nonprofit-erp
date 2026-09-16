@@ -552,7 +552,7 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
   const totals = { created: 0, giftsInserted: 0, duplicates: 0, duplicatesOnFile: 0, duplicatesInFile: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0,
     // BUILD-72 Part 1 — the file-level reconciliation, summed across chunks.
     // The server asserts it per request; this is what the user is shown.
-    donorsMatched: 0, matchesExistingCount: 0, roundingAdjustment: 0,
+    donorsMatched: 0, matchesExistingCount: 0, roundingAdjustment: 0, fundsCreated: 0,
     reconciliation: { rows: { inFile: 0, created: 0, skipped: 0, errored: 0 },
                       dollars: { inFile: 0, created: 0, skipped: 0, errored: 0 },
                       skippedReasons: {}, erroredReasons: {}, balanced: true },
@@ -571,7 +571,8 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
         // BUILD-78 — the column ledger + saved mappings ride every chunk
         // (idempotent server-side); the ledger is validated per request.
-        ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters } : {}) }) });
+        ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters,
+                       identityResolved: extras.identityResolved === true } : {}) }) });
     } else {
       res = await apiFetch("/donors/import", { method: "POST", body: JSON.stringify({ donors: slice }) });
     }
@@ -586,6 +587,7 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     totals.donorsMatched += res.donorsMatched || 0;
     totals.matchesExistingCount += res.matchesExistingCount || 0;
     totals.roundingAdjustment += res.roundingAdjustment || 0;
+    totals.fundsCreated  += res.fundsCreated  || 0;   // BUILD-88a A.7
     if (res.duplicateGroups?.length) totals.duplicateGroups.push(...res.duplicateGroups);
     // Sum the per-request equations into one file-level equation. If ANY chunk
     // failed to balance the whole file is reported unbalanced — a file is only
@@ -700,6 +702,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   const [savedCfMappings, setSavedCfMappings] = useState([]);
   const [cfDecisions, setCfDecisions] = useState({});       // columnIndex → { action, entity?, type?, label?, options?, role? }
   const [progress,   setProgress]   = useState(null);       // { done, total } during chunked submit
+  const [flaggedPage,setFlaggedPage]= useState(1);          // A.7 — the flagged list pages at 50 DONORS
   const [aiLoading,  setAiLoading]  = useState(false);
   const [result,     setResult]     = useState(null);       // {created,giftsInserted,duplicates,warned,skipped,batchErrors}
   const [err,        setErr]        = useState("");
@@ -1068,6 +1071,13 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           fieldMappings,
           customFieldDelimiters: Object.fromEntries(finalCfColumns.filter(c => c.delimiter).map(c => [c.key, c.delimiter])),
           columnLedgerFull: ledger,
+          // BUILD-88a A.7 — this path runs the FULL BUILD-80 Part 6 identity
+          // pass (id → email-with-a-compatible-name → name) before it submits,
+          // exactly as the workbook path does. Without this flag the server's
+          // blunt within-file email fold undid it and put "Mr. and Mrs. Gerald
+          // Kane" and "Marilyn Kane" back on one record — a household of two
+          // arriving as one merged person.
+          identityResolved: true,
         };
       }
     } catch (e) {
@@ -1895,23 +1905,49 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {/* BUILD-77 Part 1c — WE FLAGGED THESE. Every row where a free-text
               safety marker was detected, with the matched phrase, so a human
               confirms now rather than discovering after an ask goes out. */}
-          {result.flaggedRows?.length > 0 && (
-            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+          {result.flaggedRows?.length > 0 && (() => {
+            // BUILD-88a A.7 — ONE LINE PER DONOR, WITH A COUNT. This list is
+            // built from FILE ROWS, and a donor with forty gifts and one
+            // "deceased" note in their notes column filled forty lines of it
+            // with the same sentence. It is a list of PEOPLE to confirm, so it
+            // collapses onto the person: their flags, the phrase we matched,
+            // the line it first appeared on, and how many rows said it. Paged
+            // at fifty, because a page of names nobody can finish reading is
+            // the same failure a second time.
+            const byDonor = [];
+            const seen = new Map();
+            for (const f of result.flaggedRows) {
+              const key = String(f.name || "").toLowerCase();
+              if (!seen.has(key)) { seen.set(key, { ...f, rows: 0 }); byDonor.push(seen.get(key)); }
+              const e = seen.get(key);
+              e.rows++;
+              e.flags = { deceased: e.flags.deceased||f.flags.deceased, doNotSolicit: e.flags.doNotSolicit||f.flags.doNotSolicit,
+                          doNotContact: e.flags.doNotContact||f.flags.doNotContact, doNotMail: e.flags.doNotMail||f.flags.doNotMail,
+                          doNotEmail: e.flags.doNotEmail||f.flags.doNotEmail };
+            }
+            const shown = byDonor.slice(0, flaggedPage * 50);
+            return <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:6}}>
-                We flagged these — from the notes column, please confirm
+                We flagged these — {byDonor.length.toLocaleString()} {byDonor.length===1?"person":"people"} from the notes column, please confirm
               </div>
-              {result.flaggedRows.slice(0,30).map((f,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
+              {shown.map((f,i)=>(
+                <div key={i} data-flagged-donor={f.name} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     <strong style={{color:T.ink}}>{f.name}</strong>{" — "}
                     {[f.flags.deceased&&"deceased",f.flags.doNotSolicit&&"do-not-solicit",f.flags.doNotContact&&"do-not-contact",f.flags.doNotMail&&"do-not-mail",f.flags.doNotEmail&&"do-not-email"].filter(Boolean).join(", ")}
+                    {f.rows>1 && <span style={{color:T.ink3}}>{` (${f.rows.toLocaleString()} rows)`}</span>}
                   </span>
                   <span style={{color:T.ink3,flexShrink:0}}>line {f.line} · "{String(f.matched[0]||"").slice(0,32)}"</span>
                 </div>
               ))}
-              {result.flaggedRows.length > 30 && <div style={{color:T.ink3}}>+{result.flaggedRows.length-30} more — every one is on the donor's record with its flag set.</div>}
-            </div>
-          )}
+              {byDonor.length > shown.length && (
+                <button onClick={()=>setFlaggedPage(p2=>p2+1)}
+                  style={{background:"none",border:"none",padding:0,marginTop:6,color:T.greenDk,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>
+                  Show {Math.min(50, byDonor.length - shown.length).toLocaleString()} more of {byDonor.length.toLocaleString()} — every one is on the donor's record with its flag set
+                </button>
+              )}
+            </div>;
+          })()}
           {/* BUILD-80 Part 4.3 — the CONFLICTS, shown: most restrictive won,
               and the human is told which homes disagreed before an ask can
               go out on a column's say-so. */}
@@ -2176,8 +2212,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {/* Officer routing (Team) — owner column on the donor sheet → teammates */}
           {ownerRoutingUI()}
 
-          {/* Progress bar */}
-          {progress && (
+          {/* Progress bar — see A.7: only while the import is running. */}
+          {progress && loading && (
             <div style={{marginBottom:12}}>
               <div style={{fontSize:12,color:T.ink,fontWeight:600,marginBottom:6}}>Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()}…</div>
               <div style={{height:8,background:T.bg3,borderRadius:99,overflow:"hidden"}}>
@@ -2447,8 +2483,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             </div>
           </div>
 
-          {/* Smart stage assignment preview */}
-          {Object.keys(stagePreview).length>0 && (
+          {/* Smart stage assignment preview — BUILD-88a A.7: behind the Team
+              flag, with the officer routing above it. A stage is a position in
+              a pipeline somebody moves people through, and a Core org has no
+              pipeline and no Kanban to override it in; showing the split there
+              is a promise about a screen they do not have. */}
+          {isTeam && Object.keys(stagePreview).length>0 && (
             <div style={{background:T.bg,borderRadius:10,padding:"10px 14px",marginBottom:12}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:6}}>{stageBasis.hasGivingData ? "Smart Stage Assignment Preview" : "Starting stage"}</div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2465,8 +2505,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             </div>
           )}
 
-          {/* Progress bar during a chunked import */}
-          {progress && (
+          {/* Progress bar during a chunked import. BUILD-88a A.7 — it renders
+              only while the import is RUNNING, and the mapper below is made
+              non-interactive for the same span: "Importing 0 of 2,500…" above a
+              live dropdown invites a change that can no longer reach the write. */}
+          {progress && loading && (
             <div style={{marginBottom:12}}>
               <div style={{fontSize:12,color:T.ink,fontWeight:600,marginBottom:6}}>Importing {progress.done.toLocaleString()} of {progress.total.toLocaleString()}…</div>
               <div style={{height:8,background:T.bg3,borderRadius:99,overflow:"hidden"}}>
@@ -2490,7 +2533,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             const clearDecision = idx => setCfDecisions(p=>{ const n={...p}; delete n[idx]; return n; });
             const openRoles = Object.entries(txMap).filter(([,h])=>!h).map(([role])=>role);
             if (!flagCols.length && !existingCols.length && !proposedCols.length && !refusedCols.length) return null;
-            return <div style={{textAlign:"left",marginBottom:12}}>
+            // A.7 — once the write is under way the decisions are made. The
+            // mapper stops taking input rather than accepting edits that
+            // silently do not apply.
+            return <div aria-disabled={loading?"true":undefined} data-mapper-editable={loading?"0":"1"}
+              style={{textAlign:"left",marginBottom:12,...(loading?{pointerEvents:"none",opacity:0.55}:null)}}>
               {flagCols.length>0 && (
                 <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:4}}>These columns set safety flags</div>
@@ -2578,6 +2625,14 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                         )}
                         {d.action==="accept"&&<span style={{color:T.greenDk,fontWeight:700}}>Will be stored ✓</span>}
                         {d.action==="discard"&&<span style={{color:T.ink3,fontWeight:600}}>Discarded (acknowledged)</span>}
+                        {/* BUILD-88a A.7 — ONE DROPDOWN PER COLUMN answers "what
+                            does this column become?" (the ColumnTargetSelect
+                            above). Type, entity and label are the SHAPE of a new
+                            custom field, so they appear only once the answer is
+                            "a new custom field" — beside a column already headed
+                            for a standard field or the bin they were three more
+                            controls competing with the one that decides. */}
+                        {d.action==="accept"&&(<>
                         <select value={type} onChange={e=>setDecision(c.index,{...d,type:e.target.value})}
                           style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 6px",fontSize:11,color:T.ink2}}>
                           {CF_TYPES.map(t=><option key={t} value={t}>{({text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"})[t]}</option>)}
@@ -2589,6 +2644,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                         </select>
                         <input value={label} onChange={e=>setDecision(c.index,{...d,label:e.target.value})}
                           style={{background:T.white,border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 8px",fontSize:11,color:T.ink,width:140}}/>
+                        </>)}
                         {/* the rival standard-field select lived here — see the
                             ColumnTargetSelect above, which is the one control */}
                         {d.action!=="discard"&&(

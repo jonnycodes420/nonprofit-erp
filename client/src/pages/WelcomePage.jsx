@@ -438,10 +438,10 @@ export default function WelcomePage() {
               Import your donors
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 22px", lineHeight: 1.6 }}>
-              This is the single biggest thing you can do right now — your home screen (queue, goals, funnel) only
-              gets useful once there's real donor data behind it. Bring a spreadsheet from your current system, a
-              bank/CRM export, or even a rough list — Steward auto-maps common columns (name, email, giving total,
-              last gift date) and handles messy rows gracefully.
+              This is the single biggest thing you can do right now. Home, Drift and the dashboards only have
+              something to say once there are real donors behind them. Bring a spreadsheet from your current
+              system, a bank or CRM export, or even a rough list. Steward maps the columns it recognises (name,
+              email, fund, payment method, gift date and amount) and asks you about the ones it does not.
             </p>
 
             {donorsSnapshot.length > 0 ? (

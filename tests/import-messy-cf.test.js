@@ -159,8 +159,16 @@ async function reset() {
   const notesDup = plan.columns.find(c => c.field === "Notes_1");
   ok("the duplicate Notes header counts physically and needs its own decision", notesDup && notesDup.status === "custom-proposed", notesDup && notesDup.status);
 
-  // the golden decisions (spec Part 8): accept the eight, discard Legacy ID +
-  // the duplicate Notes; Soft Credit To is TYPE-OVERRIDDEN to text (it stores
+  // BUILD-88a A.7 — Legacy ID is CORE now (the standard external Gift ID), so
+  // it is no longer one of the columns a human has to discard: core went 8→9
+  // and discarded 2→1. That is the point of the part — a column with a
+  // standard home never reaches the custom/discard decision at all.
+  ok("Legacy ID is claimed as the standard Gift ID, not offered as a custom field",
+    plan.columns.some(c => String(c.header).trim() === "Legacy ID" && c.status === "core" && c.role === "externalId"),
+    plan.columns.find(c => String(c.header).trim() === "Legacy ID"));
+
+  // the golden decisions (spec Part 8): accept the eight, discard the
+  // duplicate Notes; Soft Credit To is TYPE-OVERRIDDEN to text (it stores
   // as text, creates no donors, touches no drift).
   const decisions = {};
   for (const spec of KEY.columnAxis.customFields) {
@@ -168,7 +176,6 @@ async function reset() {
     decisions[c.index] = { action: "accept", entity: spec.entity, type: spec.type, label: spec.header,
       options: spec.type === "select" ? c.proposal.options : [] };
   }
-  decisions[byHeader("Legacy ID").index] = { action: "discard" };
   decisions[notesDup.index] = { action: "discard" };
 
   const ledger = cf.buildColumnLedger(plan, decisions);
@@ -352,8 +359,7 @@ async function reset() {
 
   // actually re-import (existing fields, no creations) and assert prevention
   const decisions2 = {};
-  decisions2[byHeader("Legacy ID").index] = { action: "discard" };
-  decisions2[notesDup.index] = { action: "discard" };
+  decisions2[notesDup.index] = { action: "discard" };   // A.7: Legacy ID is core, nothing to discard
   const ledger2 = cf.buildColumnLedger(plan3, decisions2);
   const cfColumns2 = plan3.columns.filter(c => c.status === "custom-existing")
     .map(c => ({ field: c.field, entity: c.def.entity, key: c.def.key, def: c.def }));

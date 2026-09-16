@@ -4741,8 +4741,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   let sabotageBudget = rateLimitDisabled() ? (Number(req.body.__sabotageDropRows) || 0) : 0;
   // Hoisted above the transaction: the post-commit recalcs and the response
   // below read these, and they must survive the callback's scope.
-  let externalIdDupes = 0;
-  let giftsInserted = 0, financeSynced = 0;
+  let externalIdDupes = 0, externalIdCollisionCount = 0;
+  let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
   const affectedDonorIds = new Set();
@@ -4843,11 +4843,31 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // $1,800 of new gifts landed $0. Matching a donor is not a reason to lose
   // their money; it is the reason to attach it to the right record.
   const existingEmailRows = await queryTx(txc,
-    "SELECT id, LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+    "SELECT id, name, LOWER(email) AS e FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL ORDER BY created_at, id",
     [orgId]
   );
   const existingByEmail = new Map();
   for (const r of existingEmailRows) if (!existingByEmail.has(r.e)) existingByEmail.set(r.e, r.id);
+  // BUILD-88a A.7 — a shared email is a HOUSEHOLD, not a person. Two people
+  // behind kanefamily59@gmail.com are two records; matching the second import
+  // of Marilyn to Gerald because they share an inbox is the same merge this
+  // part exists to stop, one run later. When the caller has already resolved
+  // identity, an existing donor is claimed by email AND a compatible name
+  // (the ONE name-matching seam, shared/importShape.js).
+  const { matchNameKey, matchNamesCompatible } = await import("./shared/importShape.js");
+  const existingHouseholds = new Map();   // email → [{ id, mk }]
+  for (const r of existingEmailRows) {
+    if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
+    existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name) });
+  }
+  const existingMatch = (emailLower, name) => {
+    const list = existingHouseholds.get(emailLower);
+    if (!list || !list.length) return undefined;
+    if (list.length === 1) return list[0].id;
+    const mk = matchNameKey(name);
+    const hit = list.find(x => matchNamesCompatible(x.mk, mk));
+    return hit ? hit.id : undefined;   // a name nobody at that address answers to is a NEW member of the household
+  };
   // BUILD-82 Part 2.5 — the existing-record resolver for a gift-sheet-alone
   // import, built INSIDE the transaction so it sees a consistent snapshot.
   const resolveExisting = linkToExisting ? await buildExistingResolver((sql, params) => queryTx(txc, sql, params)) : null;
@@ -4869,7 +4889,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
-      const priorId = existingByEmail.get(emailLower) || (identityResolved ? undefined : seenEmails.get(emailLower));
+      const priorId = (identityResolved ? existingMatch(emailLower, d.name) : existingByEmail.get(emailLower))
+        || (identityResolved ? undefined : seenEmails.get(emailLower));
       if (priorId) {
         duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
         // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
@@ -4986,7 +5007,33 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // Same-(donor,amount,date) twins WITHOUT an external ID are all inserted and
   // COUNTED into duplicateCandidates so a human can review the report — never
   // silently collapsed.
-  const seenExternalIds = new Set(); // within-file external-ID dedup
+  // ── BUILD-88a A.7 — AN ID THAT REPEATS IS NOT ALWAYS A DUPLICATE ────────
+  // Mapping "Legacy ID" to the standard gift id (A.7) made a latent rule
+  // visible: the external id was treated as globally unique, so ANY repeat was
+  // dropped as "already imported". In the 2,500-row file 28 pairs of rows share
+  // a legacy number and are plainly different gifts — different donors,
+  // different dates, different amounts. A four-digit legacy number collides;
+  // that is arithmetic, not duplication, and dropping those rows loses real
+  // money behind a balanced-looking equation.
+  //
+  // THE RULE: an id identifies a gift only together with what the gift IS. A
+  // repeat carrying the same date and amount is the same gift and still
+  // dedupes (that is what makes a re-import a no-op). A repeat carrying a
+  // DIFFERENT date or amount is an id collision: the row is imported, it does
+  // NOT claim the id (external_id stays NULL, so the database's unique index
+  // cannot drop it either), and the collision is counted and reported.
+  const giftIdent = (date, amount) => `${date}|${amount}`;
+  const externalIdsInRequest = [...new Set(gifts
+    .map(g => (g.externalId || g.external_id || "").toString().trim().slice(0, 128))
+    .filter(Boolean))];
+  const existingByExternalId = new Map();
+  if (externalIdsInRequest.length) {
+    const rows = await queryTx(txc,
+      "SELECT external_id, date, amount FROM gifts WHERE org_id=? AND external_id = ANY(?)",
+      [orgId, externalIdsInRequest]);
+    for (const r of rows) if (!existingByExternalId.has(r.external_id)) existingByExternalId.set(r.external_id, giftIdent(r.date, parseFloat(r.amount)));
+  }
+  const seenExternalIds = new Map(); // within-file external id → the gift it identifies
   const fpCounts = new Map();        // informational twin report, NOT a filter
   const giftsToInsert = [];
   // BUILD-72 Part 1 — every row announces itself to the ledger BEFORE any
@@ -5023,16 +5070,33 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     // a row is dropped on purpose, and it is counted as such.
     if (skipRowKeys.has(rowKey)) { ledger.skipped("user_deselected", amt); continue; }
 
-    const externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
+    let externalId = (g.externalId || g.external_id || "").toString().trim().slice(0, 128) || null;
     if (externalId) {
-      if (seenExternalIds.has(externalId)) {
+      const ident = giftIdent(date, amt);
+      const seen = seenExternalIds.get(externalId);
+      const onFile = existingByExternalId.get(externalId);
+      if (seen !== undefined && seen === ident) {
         externalIdDupes++; ledger.skipped("external_id_repeated_in_file", amt); continue;
       }
-      seenExternalIds.add(externalId);
+      if (seen !== undefined || (onFile !== undefined && onFile !== ident)) {
+        // A collision, not a duplicate: keep the money, surrender the id.
+        externalIdCollisionCount++;
+        externalId = null;
+        fpCounts.set(rowKey, (fpCounts.get(rowKey) || 0) + 1);
+      } else {
+        seenExternalIds.set(externalId, ident);
+      }
     } else {
       fpCounts.set(rowKey, (fpCounts.get(rowKey) || 0) + 1);
     }
     giftsToInsert.push({ donorId, amount:amt, date, type:g.type||"cash", campaign:g.campaign||"", notes:g.notes||"", externalId, rowKey,
+      // BUILD-88a A.7 — the fund the gift is restricted to and the method the
+      // money arrived by. Both columns were detected by the mapper and then
+      // hardcoded to NULL here, which is why every imported gift in every org
+      // has no fund and no payment method, and why a column with a standard
+      // home read as "→ new custom field" on the receipt.
+      fund: String(g.fund || "").trim().slice(0, 120) || null,
+      paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null,
       customFields: giftCfByIdx.get(gi) || null });   // BUILD-78 — validated above
   }
   duplicateCandidates = {
@@ -5094,6 +5158,42 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // BUILD-83 Part 6: the chart is still PROVISIONED on import (an org must have
   // its accounts), but the import posts nothing to it. See the note below.
   void ledgerC;
+  // ── BUILD-88a A.7 — A FUND NAMED IN THE FILE IS A FUND ──────────────────
+  // The file's Fund/Designation column carries the org's own restrictions
+  // ("Building Campaign", "Scholarship", "Youth Ministry"). They are matched
+  // to the funds the org already has, case- and space-insensitively, and the
+  // rest are CREATED — once, here, before the gifts are written, so every
+  // gift that named a fund gets a real fund_id. A fund is not guessed at: the
+  // match is on the name the file wrote, never on what it might have meant
+  // ("GENERAL" and "General Operating" are two funds until a human merges
+  // them). New funds arrive UNRESTRICTED — a restriction is a board decision,
+  // not a spreadsheet column — and the import says how many it made.
+  const fundKey = n => String(n || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const fundIdByKey = new Map();
+  {
+    const wanted = new Map();   // key → the file's own spelling (first wins)
+    for (const g of giftsToInsert) { const k = fundKey(g.fund); if (k && !wanted.has(k)) wanted.set(k, String(g.fund).trim()); }
+    if (wanted.size) {
+      const existing = await queryTx(txc, "SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+      for (const f of existing) { const k = fundKey(f.name); if (k && !fundIdByKey.has(k)) fundIdByKey.set(k, f.id); }
+      const toCreate = [...wanted.entries()].filter(([k]) => !fundIdByKey.has(k));
+      for (let fi = 0; fi < toCreate.length; fi += 200) {
+        const slice = toCreate.slice(fi, fi + 200);
+        const params = [], tuples = [];
+        for (const [k, name] of slice) {
+          const id = importId("ff_");
+          fundIdByKey.set(k, id);
+          params.push(id, orgId, name.slice(0, 120), "Created by import", false);
+          tuples.push("(?,?,?,?,?)");
+        }
+        const fres = await withSavepoint(txc, `fbatch_${fi}`, () => runTx(txc,
+          `INSERT INTO fin_funds (id,org_id,name,description,restricted) VALUES ${tuples.join(",")}`, params));
+        if (fres.ok) fundsCreated += slice.length;
+        else { for (const [k] of slice) fundIdByKey.delete(k); console.error("[combined-import] fund batch failed:", fres.error.message); }
+      }
+    }
+  }
+
   // Donor names map: built from the already-prepared donorsToInsert list (no extra query)
   const donorNameMap = Object.fromEntries(donorsToInsert.map(d => [d._id, String(d.name).trim()]));
 
@@ -5105,10 +5205,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // (~0.1ms) that is invisible — the write measured 16s. Against a hosted
   // database (~50-100ms round trip) it is three to four minutes, which is
   // exactly the 221.4s Jonathan measured on production against the same file.
-  // Postgres caps a statement at 65,535 bound parameters: gifts bind 13 each,
-  // interactions 8, so 2,000 rows/batch is 26,000 and 16,000 — comfortably
+  // Postgres caps a statement at 65,535 bound parameters: gifts bind 14 each
+  // (13 before A.7 added payment_method), interactions 8, so 2,000 rows/batch
+  // is 28,000 and 16,000 — comfortably
   // inside it — and takes the trip count from ~1,800 to ~185.
-  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 13 params/row → 26,000 of the 65,535 cap
+  const GIFT_BATCH = IMPORT_GIFT_BATCH;   // 14 params/row → 28,000 of the 65,535 cap
 
   for (let bi = 0; bi < giftsToInsert.length; bi += GIFT_BATCH) {
     const batch = giftsToInsert.slice(bi, bi + GIFT_BATCH);
@@ -5117,9 +5218,13 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     batch.forEach(g => {
       const gid = importId("g_");
       rowByGid.set(gid, g);
-      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign, null, g.notes, g.externalId || null, actor(req).id, actor(req).name,
-        g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+      giftParams.push(gid, orgId, g.donorId, g.amount, g.date, g.type, g.campaign,
+        // A.7 — was a hardcoded NULL. The fund the row named, resolved above.
+        (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
+        g.notes, g.externalId || null, actor(req).id, actor(req).name,
+        g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
+        g.paymentMethod || null);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -5133,7 +5238,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -5365,6 +5470,9 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              duplicateCandidates, externalIdDupes,
+             // A.7 — rows whose source id was already taken by a DIFFERENT
+             // gift: imported, un-idded, and said out loud.
+             externalIdCollisions: externalIdCollisionCount,
              columns: columnSummary,
              // BUILD-72 Part 1 — matched donors are now reported, and their
              // gifts actually landed. `duplicates` still counts donors NOT
@@ -5374,6 +5482,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              // arithmetic, not a reassurance that it worked.
              reconciliation: ledger.report(),
              roundingAdjustment: round2(roundingAdjustment),
+             // BUILD-88a A.7 — the funds this chunk had to create, so the
+             // summary can say "fifteen funds" instead of leaving it to be
+             // discovered on the Finance page.
+             fundsCreated,
              duplicateGroups, matchesExistingCount });
 }));
 
@@ -7086,6 +7198,17 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
         await run(
           `UPDATE gifts SET pledge_id=? WHERE org_id=? AND pledge_id IS NULL AND notes ILIKE ?`,
           [ins[0].id, orgId, `%on pledge ${p.externalId}%`]);
+      } else if (p.shell) {
+        // BUILD-88a A.7 — a SHELL pledge: the export carried the payments and
+        // no commitment row. Its payments are this donor's gifts whose notes
+        // are in the pledge-payment family (the same BUILD-80 vocabulary that
+        // made the shell); they are linked to it so the record shows twelve
+        // promised and seven arrived instead of seven unrelated gifts.
+        const linked = await query(
+          `UPDATE gifts SET pledge_id=? WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
+             AND notes ~* 'pledge[[:space:]]+(payment|installment)' RETURNING id`,
+          [ins[0].id, orgId, donor.id]);
+        counts.pledgePaymentsLinked = (counts.pledgePaymentsLinked || 0) + linked.length;
       }
     }
   }
@@ -7266,6 +7389,23 @@ function defaultImportName(sourceFilename) {
 // A disagreement is a FINDING, reported on the row and on the receipt. It is
 // never repaired silently: the numbers are evidence, and evidence that edits
 // itself to look consistent is worth nothing.
+// ── BUILD-88a A.7 — THE IMPORTS MADE BEFORE THE FIX ───────────────────────
+// Until this build /donors/import-combined hardcoded NULL for a gift's fund
+// and had no payment_method column at all, so every gift imported before it
+// carries neither — including in orgs already running. We do NOT back-fill by
+// guessing which fund a gift belonged to; a fund is an accounting fact and a
+// guess at one is worse than a blank. The runs that predate the fix say so on
+// their own row instead, and the remedy is the file the org already has:
+// re-importing is a no-op for anything carrying an external gift id.
+const FUND_METHOD_FIX_AT = "2026-09-16T00:00:00.000Z";
+function importNotices(row) {
+  const out = [];
+  const at = row.committed_at ? new Date(row.committed_at).toISOString() : null;
+  if (at && at < FUND_METHOD_FIX_AT)
+    out.push("Funds and payment methods from this import were not stored. Re-import the file to fill them.");
+  return out;
+}
+
 function importFindings(row, summary) {
   const out = [];
   const n = v => Number(v) || 0;
@@ -7355,7 +7495,7 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         donorsCreated: Number(r.donors_created) || 0, donorsMerged: Number(r.donors_merged) || 0,
         rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
         dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
-        reconciled: findings.length === 0, findings,
+        reconciled: findings.length === 0, findings, notices: importNotices(r),
       };
     }),
   });
@@ -7375,7 +7515,7 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       donorsCreated: Number(r.donors_created) || 0, donorsMerged: Number(r.donors_merged) || 0,
       rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
       dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
-      reconciled: findings.length === 0, findings,
+      reconciled: findings.length === 0, findings, notices: importNotices(r),
       summary,
     },
   });

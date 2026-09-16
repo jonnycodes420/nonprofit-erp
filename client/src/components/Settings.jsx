@@ -1020,6 +1020,11 @@ function ImportsHistory(){
                       {r.name}
                     </button>
                     {r.reconciled===false&&<div style={{fontSize:11.5,color:T.terra700,marginTop:2}}>Does not reconcile — open for the finding.</div>}
+                    {/* BUILD-88a A.7 — a run made before funds and payment
+                        methods were written says so, and says what to do. */}
+                    {(r.notices||[]).map((n,i)=>(
+                      <div key={i} data-testid="imports-notice" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{n}</div>
+                    ))}
                   </td>
                   <td style={td}>{r.committedOn||""}</td>
                   <td style={td}>{r.by||"—"}</td>
@@ -1046,6 +1051,9 @@ function ImportsHistory(){
               <div data-testid="import-receipt-balance" style={{fontSize:12.5,color:open.reconciled?T.ink3:T.terra700,marginBottom:12}}>
                 {fmtCount(open.rowsIn)} rows in the file = {fmtCount(open.giftsCreated)} created + {fmtCount(open.rowsSetAside)} set aside + {fmtCount(open.rowsErrored)} errored {open.reconciled?"✓":"✗"}
               </div>
+              {(open.notices||[]).map((n,i)=>(
+                <div key={`n${i}`} data-testid="import-receipt-notice" style={{fontSize:12.5,color:T.ink3,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{n}</div>
+              ))}
               {(open.findings||[]).map((f,i)=>(
                 <div key={i} data-testid="import-finding" style={{fontSize:12.5,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 10px",marginBottom:8}}>{f}</div>
               ))}

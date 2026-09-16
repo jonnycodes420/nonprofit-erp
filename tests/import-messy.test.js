@@ -109,15 +109,20 @@ async function reset() {
   ok("physical non-blank rows = 2,502 (counted once, at parse entry)", bodyRows.length === KEY.file.physicalRows, bodyRows.length);
 
   const txMap = lib.autoDetectTxMapping(headers, bodyRows.slice(0, 10));
+  // BUILD-88a A.7 — Fund, Payment Method, Donor Type and Legacy ID all have a
+  // STANDARD home now; only Source is genuinely homeless. Payment Method is no
+  // longer read as the gift TYPE (this file has no Gift Type column at all).
   for (const [role, col] of [["donorName", "Donor Name"], ["donorEmail", "Email"], ["amount", "Amount"], ["date", "Gift Date"],
     ["phone", "Phone"], ["address", "Address"], ["city", "City"], ["state", "State"], ["zip", "ZIP"],
-    ["type", "Payment Method"], ["campaign", "Campaign"], ["notes", "Notes"]]) {
+    ["paymentMethod", "Payment Method"], ["fund", "Fund"], ["donorType", "Donor Type"],
+    ["externalId", "Legacy ID"], ["campaign", "Campaign"], ["notes", "Notes"]]) {
     ok(`auto-map claims ${col}`, txMap[role] === col, { role, got: txMap[role] });
   }
+  ok("Payment Method is NOT the gift type (no Gift Type column in this file)", txMap.type === "", { got: txMap.type });
   const mapped = new Set(Object.values(txMap).filter(Boolean));
   const homeless = headers.filter(h => h && !mapped.has(h));
-  ok("exactly the four homeless columns remain for acknowledgement (Fund, Donor Type, Source, Legacy ID)",
-    homeless.sort().join("|") === ["Donor Type", "Fund", "Legacy ID", "Source"].join("|"), homeless);
+  ok("exactly ONE homeless column remains for acknowledgement (Source)",
+    homeless.sort().join("|") === ["Source"].join("|"), homeless);
 
   // ── §2 · the accounted builder: every row, exactly one disposition ───────
   console.log("\n— §2 · dispositions by count AND by dollars —");
