@@ -603,37 +603,32 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               const fundOk = await query("SELECT id FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, orgId]);
               if (!fundOk.length) fundId = null;
             }
-            const reservedGift = pi.id
-              ? await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id, created_by, created_by_name)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-                   ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING
-                   RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId, SYS_STRIPE.id, SYS_STRIPE.name]
-                )
-              : await query(
-                  `INSERT INTO gifts (id, org_id, donor_id, amount, date, notes, stripe_payment_id, campaign_id, giving_page_id, peer_fundraiser_id, cover_fee_amount, fund_id, recurring_subscription_id, created_by, created_by_name)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-                  [giftId, orgId, donorId, amount, today, "Online payment via Stripe", pi.id, campaignId, givingPageId, peerFundraiserId, coverFeeAmount, fundId, recurringSubDbId, SYS_STRIPE.id, SYS_STRIPE.name]
-                );
-            if (!reservedGift.length) {
+            // BUILD-88a A.1 — THROUGH THE ONE FUNCTION. The reservation, the
+            // donor rollup, the ledger stamp and the timeline entry were four
+            // statements here; the conflict key is still Stripe's payment
+            // intent, which is what makes a redelivery a no-op. A card gift
+            // knows its payment method, and used to write none.
+            const written = await recordGift({
+              orgId, donorId, giftId, amount, date: today,
+              type: "cash", notes: "Online payment via Stripe",
+              paymentMethod: "Card", fundId, campaignId, givingPageId,
+              peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
+              stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
+              actorId: SYS_STRIPE.id, actorName: SYS_STRIPE.name,
+              ledgerDescription: "Online gift via Stripe", ledgerSource: "online",
+              timelineNote: "Online donation via the giving page",
+              source: "stripe",
+            });
+            if (written.duplicate) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
               return res.json({ received: true, duplicate: true });
             }
+            // Stage promotion is a decision ABOUT the gift, not the gift.
             await run(
               `UPDATE donors SET
-                 total_giving = total_giving + $1,
-                 gift_count = gift_count + 1,
-                 last_gift_date = GREATEST(COALESCE(last_gift_date,'0001-01-01')::date, $2::date)::text,
-                 last_gift_amount = CASE WHEN ($2::date >= COALESCE(last_gift_date,'0001-01-01')::date) THEN $3 ELSE last_gift_amount END,
                  stage = CASE WHEN stage = 'lapsed' THEN 'steward' WHEN stage IN ('prospect','cultivate') THEN 'steward' ELSE stage END
-               WHERE id = $4`,
-              [amount, today, amount, donorId]
+               WHERE id = $1`, [donorId]
             );
-            // Log gift interaction
-            await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'gift',$4,$5)",
-              ["i_"+uuid().slice(0,8), orgId, donorId, `Online donation: $${amount} via Steward Giving Page`, today]
-            ).catch(()=>{});
             // BUILD-22 — auto-unlapse is logged as a move + timeline entry so a
             // lapsed→steward jump on an online gift is transparent, not silent.
             if (wasLapsed) {
@@ -647,15 +642,8 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  new Date(Date.now()+2*24*60*60*1000).toISOString().slice(0,10), SYS_STRIPE.id, SYS_STRIPE.name]
               ).catch(()=>{});
             }
-            // BUILD-58 W-3: resolve the stamp target through the ONE ledger
-            // helper — a chartless org gets provisioned on the spot (loudly),
-            // never a silently skipped stamp.
-            const ledger = await ensureOrgLedger(orgId, { heal: true });
-            const txnId = "ft_" + uuid().slice(0, 8);
-            await run(
-              "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-              [txnId, orgId, today, "Online gift via Stripe", thankName, amount, "income", ledger.contribAcctId, fundId || ledger.genFundId, donorId, "online", giftId, SYS_STRIPE.id, SYS_STRIPE.name]
-            );
+            // The ledger stamp is recordGift's — one place, BUILD-58 W-3's
+            // self-healing chart included, under the BUILD-83 posting rule.
             const taskId = "t_" + uuid().slice(0, 8);
             await run(
               `INSERT INTO tasks (id, org_id, title, priority, done, created_at, created_by, created_by_name)
@@ -1896,6 +1884,137 @@ async function ensureOrgLedger(orgId, { heal = false } = {}) {
     try { if (process.env.SENTRY_DSN) Sentry.captureMessage(`ledger chart self-heal for org ${orgId}`, "error"); } catch { /* surfacing must never fail the stamp */ }
   }
   return ids;
+}
+
+// ── BUILD-88a A.1 — ONE GIFT, ONE PATH ────────────────────────────────────
+// A gift typed anywhere — the gift form, Log a conversation, an event's
+// attendee row, a Stripe charge, and later the deposit sheet — is written ONCE,
+// as a gift row, through this function. Before it there were five inserts, and
+// they disagreed about what a gift IS: two wrote no fund, four wrote no payment
+// method, three bumped the donor's totals with their own UPDATE, and each wrote
+// its own timeline sentence with the AMOUNT COPIED INTO THE TEXT. That copy is
+// the Renee Castillo defect: the profile drew the gift once from the gift row
+// and once from the sentence beside it, and the record showed one $5,000 gift
+// twice.
+//
+// THREE RULES, and they are the whole of it.
+//  1. A gift row always carries a fund and a payment method. With no fund
+//     chosen it takes the org's unrestricted fund; with no method it says
+//     "Needs you" rather than nothing, because a blank is indistinguishable
+//     from "nobody has looked".
+//  2. The timeline entry LINKS to the gift (interactions.gift_id) and holds no
+//     copy of the amount. Every reader — the header total, Giving this year,
+//     Drift, the bookkeeper's export, receipts, the Finance ledger — reads the
+//     gift row.
+//  3. The ledger is posted under the BUILD-83 rule: imported history never
+//     posts; a live gift posts if the org keeps posting on.
+//
+// The caller owns everything that is not writing the gift: attribution,
+// pledges, receipts, workflows, threads, tasks. Those are decisions ABOUT a
+// gift; this is the gift.
+const GIFT_METHOD_UNKNOWN = "Needs you";
+
+async function orgUnrestrictedFundId(orgId) {
+  const ids = await ensureOrgLedger(orgId, { heal: true });
+  return ids.genFundId || null;
+}
+
+// recordGift(o) → { gift, duplicate } — `duplicate` means the conflict key had
+// already claimed this gift and NOTHING was written a second time (no donor
+// delta, no ledger stamp, no timeline entry). Every caller must honour it.
+async function recordGift(o) {
+  const orgId = o.orgId;
+  const amount = round2(Number(o.amount) || 0);
+  const date = o.date;
+  const giftId = o.giftId || ("g_" + uuid().slice(0, 8));
+  const actorId = o.actorId || null, actorName = o.actorName || null;
+  // Rule 1 — a fund and a method, always. A fund the caller names is honoured
+  // only if it belongs to this org (never trust an id off a webhook payload).
+  let fundId = o.fundId || null;
+  if (fundId) {
+    const okFund = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+    if (!okFund.length) fundId = null;
+  }
+  if (!fundId) fundId = await orgUnrestrictedFundId(orgId);
+  const paymentMethod = String(o.paymentMethod || "").trim() || GIFT_METHOD_UNKNOWN;
+
+  const cols = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "campaign_id",
+                "notes", "fund_id", "payment_method", "pledge_id", "external_id", "idempotency_key",
+                "stripe_payment_id", "giving_page_id", "peer_fundraiser_id", "cover_fee_amount",
+                "recurring_subscription_id", "created_by", "created_by_name"];
+  const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
+                o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
+                o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
+                o.givingPageId || null, o.peerFundraiserId || null, o.coverFeeAmount || 0,
+                o.recurringSubscriptionId || null, actorId, actorName];
+  // The conflict key is the caller's, because what makes a gift the SAME gift
+  // differs by door: Stripe's payment intent, the form's idempotency key, the
+  // source system's gift id. One of them, never a guess at (donor, amount, date)
+  // — forty $100 Sunday gifts are forty gifts.
+  const conflict = o.conflict === "stripe" ? "ON CONFLICT (org_id, stripe_payment_id) WHERE stripe_payment_id IS NOT NULL DO NOTHING"
+    : o.conflict === "idempotency" ? "ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING"
+    : o.conflict === "external" ? "ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING"
+    : "";
+  const inserted = await query(
+    `INSERT INTO gifts (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")}) ${conflict} RETURNING id`,
+    vals);
+  if (!inserted.length) return { gift: null, duplicate: true };
+
+  // The donor's rollup, in one place. `last_gift_*` only move when this gift is
+  // at least as recent as the one on file — a back-dated gift is history, not
+  // the latest news.
+  // NULLIF guards the empty string: `''::date` throws, and a donor whose
+  // last_gift_date was never set carries '' on some legacy rows.
+  const LAST_GIFT_IS_NEWER = "COALESCE(NULLIF(last_gift_date,''),'0001-01-01')::date <= ?::date";
+  await run(
+    `UPDATE donors
+        SET total_giving = total_giving + ?,
+            gift_count = gift_count + 1,
+            last_gift_amount = CASE WHEN ${LAST_GIFT_IS_NEWER} THEN ? ELSE last_gift_amount END,
+            last_gift_date   = CASE WHEN ${LAST_GIFT_IS_NEWER} THEN ? ELSE last_gift_date END,
+            status = CASE WHEN total_giving + ? > 20000 THEN 'major'
+                          WHEN total_giving + ? > 5000  THEN 'mid'
+                          ELSE status END,
+            updated_at = NOW()
+      WHERE id = ? AND org_id = ?`,
+    [amount, date, amount, date, date, amount, amount, o.donorId, orgId]);
+
+  // Rule 3 — the ledger.
+  let posted = false;
+  if (o.post !== false) {
+    try {
+      const [orgRow] = await query("SELECT ledger_posting_enabled FROM orgs WHERE id=?", [orgId]);
+      if (!orgRow || orgRow.ledger_posting_enabled !== false) {
+        const ledgerIds = await ensureOrgLedger(orgId, { heal: true });
+        const [dn] = await query("SELECT name FROM donors WHERE id=?", [o.donorId]);
+        await run(
+          `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
+          ["ft_" + uuid().slice(0, 8), orgId, date, o.ledgerDescription || `Gift from ${dn?.name || "Donor"}`,
+           dn?.name || "", amount, "income", ledgerIds.contribAcctId, fundId || ledgerIds.genFundId,
+           o.donorId, o.ledgerSource || "gift", giftId, actorId, actorName]);
+        posted = true;
+      }
+    } catch (e) { console.error("[gift] ledger stamp:", e.message); }
+  }
+
+  // Rule 2 — ONE timeline entry, linked, with no copy of the amount. When the
+  // gift came out of a conversation the conversation's own line is the note;
+  // otherwise the gift's note, or nothing at all. The screen reads the money
+  // off the gift this row points at.
+  let interactionId = null;
+  if (o.timeline !== false) {
+    interactionId = "int_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [interactionId, orgId, o.donorId, "gift", String(o.timelineNote || o.notes || "").slice(0, 2000),
+       date, actorId, actorName, giftId,
+       o.source ? JSON.stringify({ via: o.source }) : null]);
+  }
+
+  const [gift] = await query("SELECT * FROM gifts WHERE id=?", [giftId]);
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted };
 }
 
 app.get("/health", (req, res) => {
@@ -5249,9 +5368,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         const g = rowByGid.get(r.id);
         if (!g) continue;
         keptRows.push(g);
-        const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes?" — "+g.notes:""}`;
-        intParams.push(importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName);
-        intTuples.push("(?,?,?,?,?,?,?,?)");
+        // BUILD-88a A.1 — the timeline entry LINKS to its gift and carries no
+        // copy of the amount. It used to read "Gift received: $5,000 (cash)",
+        // which is how the same gift came to be drawn twice on a donor's
+        // record — once from the gift row, once from this sentence.
+        intParams.push(importId("int_"), orgId, g.donorId, "gift", g.notes || "", g.date, importerId, importerName, r.id);
+        intTuples.push("(?,?,?,?,?,?,?,?,?)");
         // BUILD-83 Part 6 — IMPORT NEVER POSTS TO THE LEDGER. Gift history is
         // CRM data: it is what the org already raised, not money moving through
         // Steward. Ledger entries are created by the org, or by LIVE gifts
@@ -5264,7 +5386,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       }
       if (intTuples.length) {
         await runTx(txc,
-          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES ${intTuples.join(",")}`,
+          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id) VALUES ${intTuples.join(",")}`,
           intParams
         );
       }
@@ -6045,16 +6167,17 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const idemKey = typeof req.body.idempotencyKey === "string" && req.body.idempotencyKey.trim()
     ? req.body.idempotencyKey.trim().slice(0, 128) : null;
 
-  const insertedRows = await query(
-    `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,campaign_id,notes,fund_id,pledge_id,idempotency_key,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-     ON CONFLICT (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
-     RETURNING id`,
-    [giftId, req.user.orgId, req.params.id, amt, giftDate, type || "cash", campaignName || "",
-     effectiveCampaignId || null, notes || "", fundId || null, pledgeRow ? pledgeRow.id : null, idemKey,
-     actor(req).id, actor(req).name]
-  );
-  if (!insertedRows.length) {
+  // BUILD-88a A.1 — THROUGH THE ONE FUNCTION. The insert, the donor rollup,
+  // the ledger stamp and the timeline entry all lived here as four separate
+  // statements, each with its own idea of a gift; they are recordGift's now.
+  const written = await recordGift({
+    orgId: req.user.orgId, donorId: req.params.id, giftId, amount: amt, date: giftDate,
+    type: type || "cash", campaign: campaignName || "", campaignId: effectiveCampaignId || null,
+    notes: notes || "", fundId: fundId || null, paymentMethod: req.body.paymentMethod,
+    pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
+    actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
+  });
+  if (written.duplicate) {
     const dupGift = await query("SELECT * FROM gifts WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
     const dupDonor = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
     return res.status(200).json({ gift: dupGift[0] || null, donor: dupDonor[0] || null, duplicate: true });
@@ -6064,53 +6187,8 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     // payment leaves the pledge open with an honest remaining balance.
     await recalcPledgePayment(pledgeRow.id, req.user.orgId);
   }
-  // Delta kept here (correct for a fresh gift) so status tier promotion fires.
-  // PUT/DELETE use recalcDonorSummary instead — see those routes.
-  await run(
-    `UPDATE donors
-     SET total_giving     = total_giving + ?,
-         last_gift_amount = ?,
-         last_gift_date   = CASE WHEN last_gift_date IS NULL OR ? >= last_gift_date THEN ? ELSE last_gift_date END,
-         gift_count       = gift_count + 1,
-         status           = CASE
-           WHEN total_giving + ? > 20000 THEN 'major'
-           WHEN total_giving + ? > 5000  THEN 'mid'
-           ELSE status
-         END,
-         updated_at = NOW()
-     WHERE id = ?`,
-    [amt, amt, giftDate, giftDate, amt, amt, req.params.id]
-  );
-
-  const giftRows  = await query("SELECT * FROM gifts  WHERE id = ?", [giftId]);
+  const giftRows  = [written.gift];
   const donorRows = await query("SELECT * FROM donors WHERE id = ?", [req.params.id]);
-  // Auto-sync gift to Finance ledger
-  try {
-    // BUILD-58 W-3: resolve the stamp target through the ONE ledger helper —
-    // a chartless org gets provisioned on the spot (loudly), never a skipped
-    // stamp. The gift's own fund (if the officer chose one) wins; otherwise
-    // the general unrestricted fund. ON CONFLICT keeps the stamp idempotent.
-    const ledgerG = await ensureOrgLedger(req.user.orgId, { heal: true });
-    const stampFund = fundId || ledgerG.genFundId;
-    await run(
-      "INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,donor_id,source,gift_id,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING",
-      ["ft_"+uuid().slice(0,8), req.user.orgId, giftDate,
-       `Gift from ${donorRows[0]?.name || "Donor"}`, donorRows[0]?.name || "",
-       amt, "income", ledgerG.contribAcctId, stampFund, req.params.id, "gift", giftId, actor(req).id, actor(req).name]
-    );
-  } catch(e) { console.error("Finance sync:", e.message); }
-  // Log gift interaction
-  try {
-    const userRow = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
-    const userName = userRow[0]?.name || "";
-    const fundNote = type || "cash";
-    await run(
-      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-      ["int_"+uuid().slice(0,8), req.user.orgId, req.params.id, "gift",
-       `Gift received: $${amt.toLocaleString()} (${fundNote})${notes ? " — " + notes : ""}`,
-       giftDate, req.user.userId, userName]
-    );
-  } catch(e) { console.error("Gift interaction log:", e.message); }
   calcWealthScore(req.params.id, req.user.orgId).catch(e => console.error("score recalc:", e.message));
   // BUILD-22 — a lapsed donor who just gave auto-moves out of Lapsed to Steward
   // (logged move + timeline entry, editable). No-op unless they were lapsed.
@@ -7710,10 +7788,10 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
           );
           if (!kept.length) { g._conflicted = true; continue; }
           keptInBatch++; keptRows.push(g);
-          const intNote = `Gift received: $${g.amount.toLocaleString()} (${g.type})${g.notes ? " — " + g.notes : ""}`;
+          // BUILD-88a A.1 — linked, not copied (see /donors/import-combined).
           await runTx(client,
-            "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,?,?,?,?,?)",
-            [importId("int_"), orgId, g.donorId, "gift", intNote, g.date, importerId, importerName]
+            "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id) VALUES (?,?,?,?,?,?,?,?,?)",
+            [importId("int_"), orgId, g.donorId, "gift", g.notes || "", g.date, importerId, importerName, kept[0].id]
           );
           affectedDonorIds.add(g.donorId);
           // BUILD-83 Part 6 — IMPORT NEVER POSTS TO THE LEDGER. Gift history is
@@ -10441,11 +10519,39 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   const userRow = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRow[0]?.name || "";
 
+  // ── BUILD-88a A.1 — THE OPTIONAL AMOUNT ──────────────────────────────────
+  // A gift mentioned in a conversation IS a gift: it is written as a gift row,
+  // through the one function, with its fund and method inline. It defaults to
+  // the org's unrestricted fund and to "Needs you" as the method — a blank
+  // reads the same as "nobody has looked", and this one is worth asking about.
+  // The gift is written BEFORE the conversation, because the money must land
+  // even if the follow-up write fails; the idempotency key is this exact
+  // conversation, so a retried save cannot mint a second gift.
+  let giftWritten = null;
+  const giftIn = req.body && req.body.gift;
+  if (giftIn && giftIn.amount != null && String(giftIn.amount).trim() !== "") {
+    let giftAmt;
+    try { giftAmt = toDollars(parseMoneyOrThrow(giftIn.amount, "gift.amount")); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+    if (!(giftAmt > 0)) return res.status(400).json({ error: "A gift on a conversation must be more than zero — leave it blank if there was none." });
+    if (giftIn.fundId && !(await orgOwns("fin_funds", giftIn.fundId, orgId)))
+      return res.status(404).json({ error: "Fund not found" });
+    giftWritten = await recordGift({
+      orgId, donorId: req.params.id, amount: giftAmt, date, type: "cash",
+      fundId: giftIn.fundId || null, paymentMethod: giftIn.paymentMethod,
+      notes: line, timeline: false,          // the conversation IS the timeline entry
+      idempotencyKey: `conversation:${req.params.id}:${date}:${giftAmt}:${line}`.slice(0, 128),
+      conflict: "idempotency",
+      actorId: userId, actorName: userName, source: "conversation",
+    });
+  }
+  const giftIdForTimeline = giftWritten && giftWritten.gift ? giftWritten.gift.id : null;
+
   const out = await withTransaction(async (client) => {
     const intId = "int_" + uuid().slice(0, 8);
     await runTx(client,
-      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,?,?,?,?,?,?)",
-      [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName,
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata) VALUES (?,?,?,?,?,?,?,?,?,?)",
+      [intId, orgId, req.params.id, touch.interactionType, line, date, userId, userName, giftIdForTimeline,
        JSON.stringify({ via: "thread_log", touch: touch.key, next_step: nsSkipped ? "skipped" : "set",
                         ...(step ? { next_step_label: step.label } : {}), ...(nsSource ? { next_step_source: nsSource } : {}) })]);
 
@@ -10475,7 +10581,13 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   });
 
   calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
-  res.status(201).json({ ...out, skipped: nsSkipped });
+  // A.1 — the gift the conversation carried, named in the response so the
+  // screen can say what it recorded instead of the user going to look.
+  const giftOut = giftWritten && giftWritten.gift
+    ? { id: giftWritten.gift.id, amount: round2(parseFloat(giftWritten.gift.amount) || 0),
+        fundId: giftWritten.fundId, paymentMethod: giftWritten.paymentMethod }
+    : (giftWritten && giftWritten.duplicate ? { duplicate: true } : null);
+  res.status(201).json({ ...out, skipped: nsSkipped, gift: giftOut });
 }));
 
 // POST /threads/:id/dismiss — the other way out. reason ∈ the short fixed
@@ -21564,27 +21676,22 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       const evtRows = await query("SELECT * FROM events WHERE id=$1", [att.event_id]);
       const evt = evtRows[0];
       const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK (BUILD-75) — the gift date is the org's civil date
-      const giftId = "g_" + uuid().slice(0, 8);
-      await run(
-        `INSERT INTO gifts (id, org_id, donor_id, amount, date, type, campaign, notes, created_by, created_by_name)
-         VALUES ($1,$2,$3,$4,$5,'cash',$6,$7,$8,$9)
-         ON CONFLICT DO NOTHING`,
-        [giftId, orgId, att.donor_id, newGift, today, evt?.name || "Event", `Gift at ${evt?.name || "event"}`,
-         actor(req).id, actor(req).name]
-      );
-      await run(
-        `UPDATE donors SET total_giving=total_giving+$1, last_gift_amount=$1,
-         last_gift_date=$2, gift_count=gift_count+1 WHERE id=$3 AND org_id=$4`,
-        [newGift, today, att.donor_id, orgId]
-      );
-      // BUILD-58 W-3: through the ONE ledger helper — never a skipped stamp.
-      const ledgerE = await ensureOrgLedger(orgId, { heal: true });
-      await run(
-        `INSERT INTO fin_transactions (id, org_id, date, description, vendor_donor, amount, type, account_id, fund_id, donor_id, source, gift_id, created_by, created_by_name)
-         VALUES ($1,$2,$3,$4,$5,$6,'income',$7,$8,$9,'gift',$10,$11,$12)
-         ON CONFLICT (gift_id) WHERE gift_id IS NOT NULL DO NOTHING`,
-        ["ft_" + uuid().slice(0,8), orgId, today, `Event Gift — ${evt?.name||"event"}`, att.name, newGift, ledgerE.contribAcctId, ledgerE.genFundId, att.donor_id, giftId, actor(req).id, actor(req).name]
-      );
+      // BUILD-88a A.1 — THROUGH THE ONE FUNCTION, and idempotent at last. This
+      // wrote a gift with `ON CONFLICT DO NOTHING` and no conflict TARGET, so
+      // every subsequent PATCH of an attended row minted another gift and
+      // bumped the donor's lifetime total again. The attendee row is the key:
+      // one attendee, one gift.
+      const written = await recordGift({
+        orgId, donorId: att.donor_id, amount: newGift, date: today, type: "cash",
+        campaign: evt?.name || "Event", notes: `Gift at ${evt?.name || "event"}`,
+        paymentMethod: req.body.paymentMethod, idempotencyKey: `event_attendee:${att.id}`,
+        conflict: "idempotency",
+        actorId: actor(req).id, actorName: actor(req).name,
+        ledgerDescription: `Event Gift — ${evt?.name || "event"}`,
+        timelineNote: `Gift at ${evt?.name || "event"}`, source: "event",
+      });
+      const giftId = written.gift ? written.gift.id : null;
+      void giftId;
     }
     // On attendance: +5 wealth score, log interaction, advance prospect/qualify stage
     if (newStatus === 'attended' && att.donor_id) {

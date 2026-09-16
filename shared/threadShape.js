@@ -22,7 +22,11 @@ export const TOUCH_TYPES = [
   { key: "visit",          label: "Visit",                 interactionType: "meeting" },
   { key: "email",          label: "Email sent",            interactionType: "email" },
   { key: "ask",            label: "Ask or proposal made",  interactionType: "ask" },
-  { key: "gift",           label: "Gift received",         interactionType: "other" },
+  // BUILD-88a A.1 — a gift is a GIFT. This said `other`, so logging "Gift
+  // received" produced a touchpoint of type Other and no gift row at all: the
+  // money never existed, and the one screen that was supposed to make recording
+  // it effortless recorded nothing.
+  { key: "gift",           label: "Gift received",         interactionType: "gift" },
   { key: "note_only",      label: "Note (no touch)",       interactionType: "note" },
 ];
 

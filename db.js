@@ -1596,6 +1596,43 @@ async function initSchema() {
   // to backfill.
   await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS original_due_date TEXT`);
 
+  // ── BUILD-88a A.1 — ONE GIFT, ONE PATH ────────────────────────────────────
+  // The timeline entry a gift produces LINKS to the gift instead of carrying a
+  // copy of its amount in a sentence. The copy is why the Renee Castillo demo
+  // record showed one $5,000 gift twice: the profile drew a "First gift $5,000"
+  // milestone from the gift row AND a "Gift received: $5,000" line from an
+  // interaction written beside it. A fact with two homes disagrees eventually;
+  // this one disagreed immediately.
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS gift_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_interactions_gift ON interactions (gift_id) WHERE gift_id IS NOT NULL`);
+  // The BUILD-83 posting rule, made a switch instead of a constant: import
+  // history NEVER posts (that is not negotiable — it is what the org already
+  // raised, not money moving through Steward), and a LIVE gift posts if the org
+  // keeps it on. Default TRUE, which is exactly what every org does today, so
+  // nobody's books move on deploy.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ledger_posting_enabled BOOLEAN DEFAULT true`);
+  // BACKFILL, once and idempotently: every gift timeline entry already written
+  // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
+  // (same org, same donor, same date, and the amount the sentence named). An
+  // ambiguous match is left alone — a wrong link is worse than an unlinked row,
+  // and an unlinked row still renders correctly from the gift. Nothing is
+  // deleted and no note is rewritten; the screen simply stops drawing the same
+  // gift twice, which is what the copy in the text was causing.
+  await pool.query(`
+    UPDATE interactions i SET gift_id = m.gid
+      FROM (
+        SELECT i2.id AS iid, MIN(g.id) AS gid, COUNT(*) AS n
+          FROM interactions i2
+          JOIN gifts g ON g.org_id = i2.org_id AND g.donor_id = i2.donor_id AND g.date = i2.date
+         WHERE i2.type = 'gift' AND i2.gift_id IS NULL
+           AND i2.note ~ '^(Gift received|Online donation): \\$[0-9,.]+'
+           AND round(g.amount::numeric, 2) = round(
+                 replace(replace(substring(i2.note from '\\$([0-9,.]+)'), ',', ''), '$', '')::numeric, 2)
+         GROUP BY i2.id
+        HAVING COUNT(*) = 1
+      ) m
+     WHERE i.id = m.iid`).catch(e => console.error("[migrate] gift-interaction backfill:", e.message));
+
   // ── BUILD-86 PART B — HER WORDS ───────────────────────────────────────────
   // Sparrow has sponsors, not recurring donors. One JSON column on the org,
   // fixed keys (shared/vocabulary.js), holding ONLY what differs from today's

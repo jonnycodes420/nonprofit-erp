@@ -31,10 +31,29 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const [nsDirty, setNsDirty] = useState(false);
   const [nsSource, setNsSource] = useState(null);   // which rule proposed this
   const [ignoreNote, setIgnoreNote] = useState(false);
+  // BUILD-88a A.1 — the optional amount. A gift mentioned in a conversation is
+  // a GIFT: it is written as a gift row through the one server function, with
+  // its fund and method inline rather than left for a second screen. Blank is
+  // the whole existing behaviour.
+  const [amount, setAmount] = useState("");
+  const [fundId, setFundId] = useState("");
+  const [method, setMethod] = useState("");
+  const [funds, setFunds] = useState([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const lineRef = useRef(null);
   useEffect(() => { lineRef.current?.focus(); }, []);
+  useEffect(() => {
+    let alive = true;
+    apiFetch("/finance/funds")
+      .then(r => { if (alive) setFunds(Array.isArray(r) ? r : []); })
+      .catch(() => { if (alive) setFunds([]); });
+    return () => { alive = false; };
+  }, []);
+  // The org's unrestricted fund is the default, and it is NAMED rather than
+  // implied — "General Operating" beats an empty select every time.
+  const defaultFund = funds.find(f => !f.restricted) || null;
+  const amountTyped = String(amount).trim() !== "";
 
   // The prompt is a decision, not a guess: it prefills from the note when the
   // note names an ask or a promise, and from the defaults table for the chosen
@@ -68,6 +87,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
         method: "POST",
         body: JSON.stringify({
           touch, line: line.trim(), date,
+          ...(amountTyped ? { gift: { amount: String(amount).trim(),
+                                      fundId: fundId || (defaultFund ? defaultFund.id : null),
+                                      paymentMethod: method || undefined } } : {}),
           nextStep: skipped ? { skipped: true }
             : { type: nextStepTypeForLabel(nsLabel), label: sanitizeStepLabel(nsLabel), due: nsDue,
                 time: sanitizeStepTime(nsTime) || undefined,
@@ -111,10 +133,39 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
             onKeyDown={e => { if (e.key === "Enter" && line.trim()) save(false); }}
             placeholder="One line. She asked for the impact report." style={inp} />
         </div>
-        <div style={{ marginBottom: 16, maxWidth: 180 }}>
-          <span style={lbl}>When</span>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: "0 1 170px" }}>
+            <span style={lbl}>When</span>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+          </div>
+          <div style={{ flex: "0 1 150px" }}>
+            <span style={lbl}>Gift (optional)</span>
+            <input value={amount} onChange={e => setAmount(e.target.value)} inputMode="decimal"
+              aria-label="Gift amount" data-testid="conv-gift-amount"
+              placeholder="e.g. 250" style={inp} />
+          </div>
         </div>
+        {/* Fund and method are INLINE, revealed by the amount — a gift with no
+            fund and no method is the thing A.7 spent a build fixing, and the
+            one screen most likely to record a gift should not create more. */}
+        {amountTyped && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }} data-testid="conv-gift-detail">
+            <div style={{ flex: "1 1 180px" }}>
+              <span style={lbl}>Fund</span>
+              <select value={fundId} onChange={e => setFundId(e.target.value)} aria-label="Fund" style={inp}>
+                <option value="">{defaultFund ? defaultFund.name : "Unrestricted"}</option>
+                {funds.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: "1 1 150px" }}>
+              <span style={lbl}>How it arrived</span>
+              <select value={method} onChange={e => setMethod(e.target.value)} aria-label="Payment method" style={inp}>
+                <option value="">Needs you</option>
+                {["Check", "Cash", "Card", "ACH", "Wire", "Stock", "DAF", "Online"].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
 
         <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 14, marginBottom: 16 }}>
           <span style={lbl}>Next step</span>

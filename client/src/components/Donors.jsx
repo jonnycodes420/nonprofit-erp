@@ -103,6 +103,15 @@ const DONOR_RELATIONSHIP_LABELS = [
   ["employer_match","Employer Match"],
 ];
 
+// BUILD-88a A.1 — the machine-written gift sentence, which used to CARRY the
+// amount ("Gift received: $5,000 (check)", "Online donation: $250 via Steward
+// Giving Page"). Where a timeline row links to its gift, the money is read off
+// the gift and this prefix is dropped, so the same gift is never stated twice.
+// Anything a human typed after it survives.
+const stripGiftAmountPrefix = note => String(note || "")
+  .replace(/^(?:Gift received|Online donation):\s*\$[\d,.]+(?:\s*\([^)]*\))?(?:\s+via[^—-]*)?\s*(?:[—-]\s*)?/i, "")
+  .trim();
+
 // Headers that negate a contact field — never map to that field
 const NEGATOR_PHRASES = ["do not", "don't", "opt out", "opt-out", "unsubscribe", "no email", "no phone", "no mail", "do not contact"];
 
@@ -5322,6 +5331,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {(localInts??donor.interactions??[]).filter(i=>actFilter==="all"||i.type===actFilter).map(i=>{
                   const typeIcon="•";
+                  // BUILD-88a A.1 — the row LINKS to its gift and holds no copy
+                  // of the amount; the money is read off the gift itself.
+                  const linkedGift=i.gift_id?giftsFull.find(g=>g.id===i.gift_id):null;
                   const typeColor={call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700,material:T.ink3}[i.type]||T.ink3;
                   return(<div key={i.id||i.date} className="tp-row" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",display:"flex",gap:10,alignItems:"flex-start"}}>
                     <div style={{fontSize:16,flexShrink:0,marginTop:1,color:typeColor}}>{typeIcon}</div>
@@ -5331,7 +5343,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         <span style={{fontSize:11,color:T.ink3}}>{i.date}</span>
                         {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {i.logged_by_name}</span>}
                       </div>
-                      {i.note&&<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{i.note}</div>}
+                      {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{fmtFull(linkedGift.amount)}{linkedGift.payment_method?` · ${linkedGift.payment_method}`:""}</div>}
+                      {(()=>{const txt=linkedGift?stripGiftAmountPrefix(i.note):i.note;
+                        return txt?<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{txt}</div>:null;})()}
                     </div>
                     {i.id&&<button className="tp-del-btn" title="Delete this entry" aria-label="Delete this entry"
                       onClick={()=>{if(window.confirm("Delete this timeline entry? This can't be undone."))deleteInteraction(i);}}
@@ -5347,9 +5361,30 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               const sortedGiftsForTimeline=[...giftsFull].sort((a,b)=>new Date(a.date)-new Date(b.date));
               const firstGiftDate=sortedGiftsForTimeline[0]?.date;
               const largestGift=sortedGiftsForTimeline.reduce((m,g)=>g.amount>m.amount?g:m,{amount:0,date:""});
+              // BUILD-88a A.1 — A GIFT APPEARS ONCE. The record used to draw
+              // the same gift twice: a "First gift $5,000" milestone from the
+              // gift row AND a "Gift received: $5,000" line from an interaction
+              // written beside it with the amount copied into its text. That is
+              // what the Renee Castillo demo record was showing. The gift row is
+              // the fact; a milestone is a LABEL ON it, not a second card, and a
+              // linked timeline entry renders its money from the gift.
+              const giftIdsOnTimeline=new Set(ints.filter(i=>i.gift_id).map(i=>i.gift_id));
+              const milestoneFor=g=>{
+                if(!g||!g.id)return null;
+                if(g.date===firstGiftDate&&g.id===sortedGiftsForTimeline[0]?.id)return "First gift";
+                if(largestGift.amount>0&&g.id===largestGift.id&&g.date!==firstGiftDate)return "Largest gift";
+                return null;
+              };
               const milestones=[];
-              if(firstGiftDate)milestones.push({date:firstGiftDate,icon:"✦",label:"First gift",desc:`$${sortedGiftsForTimeline[0]?.amount?.toLocaleString()} — relationship began`,color:"#c9a84c",big:true});
-              if(largestGift.amount>0&&largestGift.date!==firstGiftDate)milestones.push({date:largestGift.date,icon:"✦",label:"Largest gift",desc:`$${largestGift.amount.toLocaleString()} — record gift`,color:"#c9a84c",big:true});
+              // A gift with no timeline entry of its own (imported history, or a
+              // gift logged before A.1) still earns its card — once.
+              for(const g of sortedGiftsForTimeline){
+                if(giftIdsOnTimeline.has(g.id))continue;
+                const m=milestoneFor(g);
+                milestones.push({date:g.date,icon:m?"✦":"•",label:m||"Gift",
+                  desc:`${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${m==="First gift"?" — relationship began":""}`,
+                  color:"#c9a84c",big:!!m});
+              }
               if(firstGiftDate){
                 const ann=new Date(firstGiftDate);ann.setFullYear(ann.getFullYear()+1);
                 const annStr=ann.toISOString().split("T")[0];
@@ -5363,15 +5398,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               });
 
               const events=[
-                ...ints.filter(i=>["call","meeting","email","gift","event","stewardship","stage_change","planned_gift"].includes(i.type)).map(i=>({
-                  date:i.date,
-                  icon:"•",
-                  label:(i.type||"note").replace(/_/g," "),
-                  desc:i.note||"",
-                  color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
-                  big:false,
-                  loggedBy:i.logged_by_name,
-                })),
+                ...ints.filter(i=>["call","meeting","email","gift","event","stewardship","stage_change","planned_gift","ask"].includes(i.type)).map(i=>{
+                  const g=i.gift_id?sortedGiftsForTimeline.find(x=>x.id===i.gift_id):null;
+                  const m=g?milestoneFor(g):null;
+                  return{
+                    date:i.date,
+                    icon:m?"✦":"•",
+                    label:m||(i.type||"note").replace(/_/g," "),
+                    desc:g?(()=>{const t=stripGiftAmountPrefix(i.note);
+                      return `${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${t?` — ${t}`:""}`;})():(i.note||""),
+                    color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
+                    big:!!m,
+                    loggedBy:i.logged_by_name,
+                  };
+                }),
                 ...milestones,
               ].sort((a,b)=>new Date(b.date)-new Date(a.date));
 
