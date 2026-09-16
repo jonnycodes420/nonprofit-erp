@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase } from "./shared";
+import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase, Modal } from "./shared";
 import { YourWords } from "./YourWords";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
@@ -281,8 +281,10 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       })}
 
       {showAdd&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={e=>{if(e.target===e.currentTarget)closeModal();}}>
-          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:480,maxWidth:"calc(100vw - 32px)",maxHeight:"calc(100vh - 32px)",overflowY:"auto",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+        <Modal onClose={closeModal} width={480} zIndex={500} backdrop="rgba(0,0,0,0.45)" blur={false}
+          padding="32px 28px" ariaLabel={editing?"Edit giving page":"New giving page"}
+          dialogStyle={{borderRadius:20}}>
+          <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editing?"Edit giving page":"New giving page"}</div>
               <button onClick={closeModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
@@ -355,7 +357,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -1952,8 +1954,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       </>}
 
       {showAddField&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeCfModal();}}>
-          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:440,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+        <Modal onClose={closeCfModal} width={440} zIndex={500} backdrop="rgba(0,0,0,0.45)" blur={false}
+          padding="32px 28px" ariaLabel={editingField?"Edit field":"Add custom field"}
+          dialogStyle={{borderRadius:20}}>
+          <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editingField?"Edit field":"Add custom field"}</div>
               <button onClick={closeCfModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
@@ -2006,12 +2010,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showAddMetric&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeImModal();}}>
-          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:440,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+        <Modal onClose={closeImModal} width={440} zIndex={500} backdrop="rgba(0,0,0,0.45)" blur={false}
+          padding="32px 28px" ariaLabel={editingMetric?"Edit impact metric":"Add impact metric"}
+          dialogStyle={{borderRadius:20}}>
+          <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:17,fontWeight:700,color:T.ink}}>{editingMetric?"Edit impact metric":"Add impact metric"}</div>
               <button onClick={closeImModal} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
@@ -2042,12 +2048,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showInvite&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)closeInvite();}}>
-          <div style={{background:T.white,borderRadius:20,padding:"32px 28px",width:420,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 40px rgba(0,0,0,0.16)"}}>
+        <Modal onClose={closeInvite} width={420} zIndex={500} backdrop="rgba(0,0,0,0.45)" blur={false}
+          padding="32px 28px" ariaLabel={"Invite a team member"}
+          dialogStyle={{borderRadius:20}}>
+          <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
               <div style={{fontSize:17,fontWeight:700,color:T.ink}}>Invite a team member</div>
               <button onClick={closeInvite} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
@@ -2095,7 +2103,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               </>
             )}
           </div>
-        </div>
+        </Modal>
       )}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
     </div>

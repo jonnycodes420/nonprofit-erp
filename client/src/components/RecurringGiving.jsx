@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { createPortal } from "react-dom";
 import { apiFetch } from "../api";
-import { T, fmtFull, interactive, EmptyState } from "./shared";
+import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
@@ -163,24 +162,11 @@ function ActionsMenu({ sub, isReadOnly, onAction }) {
   );
 }
 
-// ── Modal scaffold — PORTALED to document.body (the BUILD-22 lesson: a
-// `.fade-in` ancestor's retained transform makes it the containing block for
-// position:fixed, dropping overlays below the fold on tall pages). ─────────
-function Modal({ title, onClose, children, width = 440 }) {
-  return createPortal(
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,26,18,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div role="dialog" aria-modal="true" aria-label={title} style={{ background: T.bgCard, borderRadius: 14, padding: "24px 26px", width, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto", boxShadow: T.shadowLg }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontFamily: "'DM Serif Display',serif", fontWeight: 400, color: T.ink }}>{title}</h3>
-          <button onClick={onClose} aria-label="Close" style={{ background: "transparent", border: "none", fontSize: 18, color: T.ink3, cursor: "pointer", padding: 4 }}>✕</button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body
-  );
-}
+// BUILD-87 F.1 — this file's own portalled Modal is GONE; it was the first
+// component to learn the BUILD-22 lesson (a `.fade-in` ancestor's retained
+// transform makes it the containing block for position:fixed, dropping
+// overlays below the fold on tall pages) and the shared shell in shared.jsx is
+// that lesson applied once, for everybody. The call signature is unchanged.
 
 const inputStyle = { width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 8, border: `1px solid ${T.bg3}`, fontSize: 13.5, color: T.ink, background: T.white };
 const labelStyle = { display: "block", fontSize: 11.5, fontWeight: 700, color: T.ink3, margin: "12px 0 5px", letterSpacing: "0.04em", textTransform: "uppercase" };

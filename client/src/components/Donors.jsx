@@ -26,7 +26,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
@@ -1590,16 +1590,15 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   }
 
   // ── Shared styles ──
-  const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:700,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
   const inp     = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
   // ── Result screen ──
   if (result !== null) {
     const hasBatchErrors = result.batchErrors?.length > 0;
     return (
-      <div style={overlay} className="modal-sheet-overlay">
-        <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
+      <Modal onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+        padding={28} ariaLabel={"Import result"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+        <div style={{textAlign:"center"}}>
           {/* BUILD-79 Part 3.3 — the check mark is EARNED: amount + date
               mapped, non-zero dollars, both axes balanced. Anything less is
               amber and names what is missing. */}
@@ -2006,7 +2005,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           )}
           <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
-      </div>
+      </Modal>
     );
   }
 
@@ -2020,8 +2019,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   ];
 
   return (
-    <div style={overlay} className="modal-sheet-overlay">
-      <div style={modal} className="modal-sheet-inner">
+    <Modal onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding={28} ariaLabel={"Import donors"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+      <div>
 
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
@@ -2622,7 +2622,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         </>)}
       </div>
       {upgradeInfo&&<UpgradeModal open={true} onClose={()=>{setUpgradeInfo(null);onClose();}} reason={upgradeInfo.error} current={upgradeInfo.current} limit={upgradeInfo.limit} plan={upgradeInfo.plan}/>}
-    </div>
+    </Modal>
   );
 }
 
@@ -2749,8 +2749,6 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState(null);
 
-  const overlay = { position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20 };
-  const modal   = { background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:720,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box" };
   const inp     = { width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box" };
 
   const handleFile = async (e) => {
@@ -2903,8 +2901,9 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
 
   if (step === "result" && result) {
     return (
-      <div style={overlay} className="modal-sheet-overlay">
-        <div style={{...modal,textAlign:"center"}} className="modal-sheet-inner">
+      <Modal onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+        padding={28} ariaLabel={"Import result"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+        <div style={{textAlign:"center"}}>
           <div style={{fontSize:36,marginBottom:12}}>✓</div>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             Import complete.
@@ -2936,13 +2935,14 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
           <div style={{fontSize:12,color:T.ink3,marginBottom:28}}>Donor giving totals have been recalculated from the gifts table.</div>
           <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div style={overlay} className="modal-sheet-overlay">
-      <div style={modal} className="modal-sheet-inner">
+    <Modal onClose={onClose} width={720} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding={28} ariaLabel={"Import gift history"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+      <div>
 
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
@@ -3299,7 +3299,7 @@ function GiftHistoryImport({ donors, onClose, onImported }) {
         </>)}
 
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3320,8 +3320,9 @@ function FollowUpTaskModal({donor,onSave,onClose}){
     setLoading(false);
   };
   return(
-    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <Modal onClose={onClose} width={420} zIndex={400} padding={24}
+      ariaLabel="Create follow-up task" dialogStyle={{border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Create Follow-up Task</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>For {donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
@@ -3347,7 +3348,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Skip</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3442,8 +3443,9 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const canSave=buildNote().trim().length>0;
 
   return(
-    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in modal-sheet-inner" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:520,maxHeight:"92vh",overflowY:"auto",padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <Modal onClose={onClose} width={520} zIndex={300} padding={24}
+      ariaLabel="Log touchpoint" dialogStyle={{border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
@@ -3537,7 +3539,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3567,8 +3569,9 @@ function EditDonorModal({donor,onSave,onClose}){
   };
 
   return(
-    <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#000c",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="modal-sheet-inner" style={{background:"#ffffff",border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:480,padding:28,boxSizing:"border-box",overflowY:"auto"}}>
+    <Modal onClose={onClose} width={480} zIndex={400} backdrop="#000c" blur={false} padding={28}
+      ariaLabel="Edit donor profile" dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>{donor.name}</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -3608,7 +3611,7 @@ function EditDonorModal({donor,onSave,onClose}){
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -3656,8 +3659,9 @@ function GiftLinkModal({donor,orgName,onClose}){
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit"};
 
   return(
-    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:480,padding:24,boxShadow:"0 8px 40px rgba(0,0,0,0.18)"}}>
+    <Modal onClose={onClose} width={480} zIndex={500} blur={false} padding={24}
+      ariaLabel="Request a gift" dialogStyle={{border:"1px solid "+T.bg3}}>
+      <div>
         {!showEmail?(
           <>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -3728,7 +3732,7 @@ function GiftLinkModal({donor,orgName,onClose}){
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -4663,8 +4667,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
               )}
               {hhModalOpen&&(
-                <div onClick={()=>setHhModalOpen(false)} style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-                  <div onClick={e=>e.stopPropagation()} style={{background:T.bg,borderRadius:16,padding:20,width:"min(440px,94vw)",maxHeight:"80vh",display:"flex",flexDirection:"column",gap:12}}>
+                <Modal onClose={()=>setHhModalOpen(false)} width={440} zIndex={1000}
+                  backdrop="rgba(15,26,18,0.5)" blur={false} padding={20}
+                  ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
                     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
                     <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor — only the relationship view combines.</div>
                     <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
@@ -4685,7 +4691,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?"#0d5c3a":T.bg3,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
                     </div>
                   </div>
-                </div>
+                </Modal>
               )}
             </div>
 
@@ -5779,8 +5785,9 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
     onClose();
   };
   return(
-    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:360,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <Modal onClose={onClose} width={360} zIndex={500} blur={false} padding={24}
+      ariaLabel="Assign relationship owner" dialogStyle={{border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:4}}>Assign Relationship Owner</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <select value={selectedId} onChange={e=>setSelectedId(e.target.value)} style={{...inp,marginBottom:16}}>
@@ -5794,7 +5801,7 @@ function AssignModal({donor,orgTeam,onSave,onClose}){
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -6233,9 +6240,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
 
       {/* Delete confirmation modal — never auto-confirm */}
       {delModal&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}
-          onClick={e=>{if(e.target===e.currentTarget)setDelModal(false);}}>
-          <div style={{background:"#f0ede6",borderRadius:20,padding:"36px 32px",maxWidth:420,width:"100%",boxShadow:"0 24px 60px rgba(0,0,0,0.22)"}}>
+        <Modal onClose={()=>setDelModal(false)} width={420} zIndex={900}
+          backdrop="rgba(15,26,18,0.72)" blur={false} padding="36px 32px"
+          ariaLabel="Delete donors" dialogStyle={{background:"#f0ede6",borderRadius:20}}>
+          <div>
             <div style={{fontSize:24,fontWeight:400,color:"#0f1a12",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em",marginBottom:12,lineHeight:1.2}}>
               Delete {selFiltered.length} donor{selFiltered.length!==1?"s":""}?
             </div>
@@ -6253,7 +6261,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
@@ -6428,8 +6436,6 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
 // keep, and POST /donors/merge folds each other record into it — children
 // reassigned, blanks filled, secondary soft-deleted with a merge note.
 function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
-  const overlay={position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20};
-  const modal={background:T.white,border:"1px solid "+T.bg3,borderRadius:20,width:"100%",maxWidth:760,maxHeight:"90vh",overflowY:"auto",padding:28,boxSizing:"border-box"};
   const[groups,setGroups]=useState(null); // null = loading
   const[open,setOpen]=useState(null);     // group index expanded
   const[primaryId,setPrimaryId]=useState(null);
@@ -6470,8 +6476,9 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
   ];
 
   return(
-    <div style={overlay} className="modal-sheet-overlay">
-      <div style={modal} className="modal-sheet-inner">
+    <Modal onClose={onClose} width={760} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding={28} ariaLabel={"Merge duplicates"} dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Merge Duplicates</div>
@@ -6548,7 +6555,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
           );
         })}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -6891,9 +6898,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
       {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
       {convoPickerOpen&&(
-        <div className="modal-sheet-overlay" style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"10vh 20px 20px"}}
-          onClick={e=>{if(e.target===e.currentTarget)setConvoPickerOpen(false);}}>
-          <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,width:"100%",maxWidth:420,maxHeight:"70vh",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 4px 32px rgba(15,15,15,0.14)"}}>
+        <Modal onClose={()=>setConvoPickerOpen(false)} width={420} zIndex={300} align="top" padding={0}
+          ariaLabel="Log a conversation" dialogStyle={{borderRadius:16,border:"1px solid "+T.bg3,maxHeight:"70vh"}}>
+          <div style={{display:"flex",flexDirection:"column",overflow:"hidden",maxHeight:"100%"}}>
             <div style={{padding:"16px 18px 10px"}}>
               <div style={{fontSize:15,fontWeight:800,color:T.ink,marginBottom:8}}>Who did you talk to?</div>
               <input autoFocus value={convoSearch} onChange={e=>setConvoSearch(e.target.value)} placeholder="Search donors…"
@@ -6910,7 +6917,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
               {data.donors.length===0&&<div style={{fontSize:12.5,color:T.ink3,padding:"6px 10px 12px"}}>No donors yet. Import your donors first, then log the first call.</div>}
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       {convoTarget&&<LogConversationModal donor={{id:convoTarget.id,name:convoTarget.name}} org={data.org} onNavigate={onNavigate}
         onSaved={()=>{reloadDonors&&reloadDonors();}} onClose={()=>setConvoTarget(null)}/>}

@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs } from "./shared";
+import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
@@ -2144,8 +2144,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
       {/* Set-goal modal */}
       {showSetGoal&&(
-        <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-          <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:420,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+        <Modal onClose={()=>setShowSetGoal(false)} width={420} zIndex={300} padding={24}
+          ariaLabel={goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}
+          dialogStyle={{border:"1px solid "+T.bg3}}>
+          <div>
             <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:16}}>{goalModalMode==="edit"?"Edit fundraising goal":"Set a fundraising goal"}</div>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Label</div>
             <input value={goalForm.label} onChange={e=>setGoalForm(f=>({...f,label:e.target.value}))} placeholder="e.g. Win back $50,000 in lapsed giving" style={inp}/>
@@ -2174,7 +2176,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               <button onClick={()=>setShowSetGoal(false)} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
       </>)}
       </div>{/* /dash-col */}

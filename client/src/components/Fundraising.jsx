@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive } from "./shared";
+import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { RecurringView } from "./RecurringGiving";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
@@ -525,10 +525,21 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const lbl = { fontSize: 12, fontWeight: 700, color: T.ink2, marginBottom: 6, display: "block" };
 
   return (
-    <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,0.5)", zIndex: 400, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "8vh 16px 16px", overflowY: "auto" }}>
-      <div onClick={e => e.stopPropagation()} onChangeCapture={() => setDirty(true)} className="modal-anim" style={{ background: T.white, borderRadius: 18, padding: "26px 28px", width: "100%", maxWidth: 460, boxShadow: T.shadowLg }}>
-        <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: T.ink, marginBottom: 4 }}>{mode === "edit" ? "Edit campaign" : "New campaign"}</div>
-        <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Raised is tracked automatically from gifts attributed to this campaign.</div>
+    // BUILD-87 F.1 — THE DIALOG THIS FIX WAS WRITTEN FOR. It was clipped below
+    // "Start date" on a tall Campaigns page, under a backdrop that stopped
+    // partway down. It is the shared Modal now: portalled to document.body, so
+    // no transformed ancestor can claim it, capped at 90vh with its own body
+    // scrolling, and its Save button lives in a sticky footer where a long form
+    // cannot push it out of reach.
+    <Modal onClose={close} title={mode === "edit" ? "Edit campaign" : "New campaign"}
+      subtitle="Raised is tracked automatically from gifts attributed to this campaign."
+      width={460}
+      footer={<>
+        {dirty && !saving && <span style={{ fontSize: 12, color: T.ink3, marginRight: "auto" }}>Unsaved changes</span>}
+        <button onClick={close} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>
+        <button onClick={save} disabled={saving} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Create campaign"}</button>
+      </>}>
+      <div onChangeCapture={() => setDirty(true)}>
         <div style={{ marginBottom: 16 }}>
           <label style={lbl}>Campaign name</label>
           <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Spring Studio Scholarships" style={field} autoFocus />
@@ -616,14 +627,9 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
             </span>
           </label>
         </div>
-        {err && <div style={{ fontSize: 13, color: T.terracotta, marginBottom: 14 }}>{err}</div>}
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
-          {dirty && !saving && <span style={{ fontSize: 12, color: T.ink3, marginRight: "auto" }}>Unsaved changes</span>}
-          <button onClick={close} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 18px", fontSize: 13, fontWeight: 600, color: T.ink2, cursor: "pointer" }}>Cancel</button>
-          <button onClick={save} disabled={saving} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "10px 20px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: saving ? "wait" : "pointer", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : mode === "edit" ? "Save changes" : "Create campaign"}</button>
-        </div>
+        {err && <div style={{ fontSize: 13, color: T.terracotta, marginTop: 14 }}>{err}</div>}
       </div>
-    </div>
+    </Modal>
   );
 }
 

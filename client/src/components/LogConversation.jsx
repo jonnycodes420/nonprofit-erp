@@ -5,7 +5,7 @@
 // user to create a task; logging the conversation IS creating the follow-up.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import {
   TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
@@ -90,9 +90,9 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
   const lbl = { fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5, display: "block" };
 
   return (
-    <div className="modal-sheet-overlay" style={{ position: "fixed", inset: 0, background: "#0f1a12cc", backdropFilter: "blur(4px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
-      onKeyDown={e => { if (e.key === "Escape") onClose && onClose(); }}>
-      <div className="fade-in modal-sheet-inner" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 18, width: "100%", maxWidth: 460, maxHeight: "92vh", overflowY: "auto", padding: 24, boxShadow: "0 4px 32px rgba(15,15,15,0.12)" }}>
+    <Modal onClose={onClose} width={460} zIndex={300} padding={24}
+      ariaLabel="Log a conversation" dialogStyle={{ border: "1px solid " + T.bg3 }}>
+      <div>
         <div style={{ fontSize: 16, fontWeight: 800, color: T.ink, marginBottom: 2 }}>Log a conversation</div>
         <div style={{ fontSize: 12, color: T.ink3, marginBottom: 14 }}>{donor.name}</div>
 
@@ -186,7 +186,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 12.5, cursor: "pointer" }}>Cancel</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

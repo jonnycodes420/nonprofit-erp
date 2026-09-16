@@ -6,7 +6,7 @@
 // upgrade state, not a broken tab.
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
-import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge } from "./shared";
+import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
@@ -40,8 +40,9 @@ function MoveModal({ card, onClose, onMoved }) {
   };
   const inp = { width: "100%", padding: "9px 11px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 14, fontFamily: "'DM Sans',sans-serif", boxSizing: "border-box" };
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: T.bgCard, borderRadius: T.radiusLg, padding: 24, width: "100%", maxWidth: 460, boxShadow: T.shadowLg }}>
+    <Modal onClose={onClose} width={460} backdrop="rgba(15,26,18,.55)" blur={false} padding={24}
+      ariaLabel={`Move ${card.name}`} dialogStyle={{ background: T.bgCard, borderRadius: T.radiusLg }}>
+      <div>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 22, color: T.ink }}>Move {card.name}</div>
         <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 16 }}>Currently in <strong style={{ color: T.ink }}>{STAGE_META.find(s => s.id === card.stage)?.label || card.stage}</strong>. Every move is logged with your name and note.</div>
         <label style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em" }}>Move to stage</label>
@@ -57,7 +58,7 @@ function MoveModal({ card, onClose, onMoved }) {
           <button onClick={save} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Log move"}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -77,8 +78,9 @@ function DropNotePrompt({ card, fromStage, toStage, onSave, onCancel }) {
     onSave(desc.trim()); // parent owns the request + closes / rolls back
   };
   return (
-    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(15,26,18,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: T.bgCard, borderRadius: T.radiusLg, padding: 22, width: "100%", maxWidth: 440, boxShadow: T.shadowLg }}>
+    <Modal onClose={onCancel} width={440} backdrop="rgba(15,26,18,.55)" blur={false} padding={22}
+      ariaLabel={`Move ${card.name}`} dialogStyle={{ background: T.bgCard, borderRadius: T.radiusLg }}>
+      <div>
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink }}>{card.name}</div>
         <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 14 }}>
           <strong style={{ color: T.ink }}>{fromL}</strong> <span style={{ color: T.gold600 }}>→</span> <strong style={{ color: T.ink }}>{toL}</strong> · every move is logged with your note.
@@ -93,7 +95,7 @@ function DropNotePrompt({ card, fromStage, toStage, onSave, onCancel }) {
           <button onClick={submit} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Save move ↵"}</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

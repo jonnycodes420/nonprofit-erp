@@ -10,7 +10,7 @@
 // so a skip leaves the product exactly as it was.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { VOCAB_DEFAULTS, MONTH_NAMES } from "../../../shared/vocabulary";
 
@@ -134,16 +134,10 @@ export function YourWords({ mode = "settings", onDone, onClose }) {
   if (!firstRun) return body;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(15,26,18,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-      <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Your words"
-        style={{ background: T.bg, borderRadius: 14, width: "100%", maxWidth: 560, padding: 26, maxHeight: "88vh", overflowY: "auto" }}>
-        <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink }}>Your words</div>
-        <div style={{ fontSize: 13, color: T.ink3, marginTop: 4, marginBottom: 22, lineHeight: 1.6 }}>
-          Five questions, once. Steward will use your words on your screens and in the emails it sends you.
-          It never changes the words on a receipt or a year‑end statement, because those are legal documents.
-        </div>
-        {body}
-      </div>
-    </div>
+    <Modal onClose={onClose} title="Your words" width={560}
+      subtitle={"Five questions, once. Steward will use your words on your screens and in the emails it sends you. It never changes the words on a receipt or a year‑end statement, because those are legal documents."}
+      dialogStyle={{ background: T.bg, borderRadius: 14 }}>
+      {body}
+    </Modal>
   );
 }

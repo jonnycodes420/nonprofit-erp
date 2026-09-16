@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
-import { T, fmtFull, SC, Pill, Card, PageTitle } from "./shared";
+import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
 const EVENT_TYPES = {
@@ -218,8 +218,9 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#0f1a12cc", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div style={{ background: T.white, borderRadius: 18, padding: "28px 28px 24px", width: "100%", maxWidth: 440, boxShadow: T.shadowLg }}>
+    <Modal onClose={onClose} width={440} zIndex={400} blur={false} padding="28px 28px 24px"
+      ariaLabel="Create follow-up tasks">
+      <div>
         <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 4 }}>Create Follow-up Tasks</div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Creates tasks for all <strong>Attended</strong> donors from {eventName}</div>
 
@@ -261,7 +262,7 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -661,8 +662,9 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
       {/* Edit event modal */}
       {editing && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 400, background: "#0f1a12cc", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ background: T.white, borderRadius: 18, padding: "28px", width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto", boxShadow: T.shadowLg }}>
+        <Modal onClose={()=>setEditing(null)} width={480} zIndex={400} blur={false} padding={28}
+          ariaLabel="Edit event">
+          <div>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
               <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>Edit Event</div>
               <button onClick={() => setEditing(false)} style={{ background: "none", border: "none", fontSize: 22, color: T.ink3, cursor: "pointer" }}>×</button>
@@ -699,7 +701,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               <button onClick={() => setEditing(false)} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {showFollowUp && (

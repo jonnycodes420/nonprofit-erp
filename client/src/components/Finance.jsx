@@ -1,5 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
-import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive } from "./shared";
+import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
@@ -60,11 +60,10 @@ function AccountModal({ account, onSave, onClose }) {
       : { code:"", name:"", type:"revenue", subtype:"", active:true }
   );
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
-  const box = { background:T.white, borderRadius:16, padding:28, width:420, display:"flex", flexDirection:"column", gap:14 };
   return (
-    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-sheet-inner" style={box}>
+    <Modal onClose={onClose} width={420} backdrop="rgba(0,0,0,0.4)" blur={false} zIndex={1000} padding={28}
+      dialogStyle={{borderRadius:16}}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{account ? "Edit account" : "New account"}</div>
         <div style={{ display:"flex", gap:8 }}>
           <div style={{ flex:"0 0 90px" }}>
@@ -99,7 +98,7 @@ function AccountModal({ account, onSave, onClose }) {
           <button style={btn()} onClick={() => onSave(form)}>Save</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -111,11 +110,10 @@ function FundModal({ fund, onSave, onClose }) {
       : { name:"", description:"", restricted:false }
   );
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
-  const box = { background:T.white, borderRadius:16, padding:28, width:400, display:"flex", flexDirection:"column", gap:14 };
   return (
-    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-sheet-inner" style={box}>
+    <Modal onClose={onClose} width={400} backdrop="rgba(0,0,0,0.4)" blur={false} zIndex={1000} padding={28}
+      dialogStyle={{borderRadius:16}}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{fund ? "Edit fund" : "New fund"}</div>
         <div>
           <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Fund name</div>
@@ -134,7 +132,7 @@ function FundModal({ fund, onSave, onClose }) {
           <button style={btn()} onClick={() => onSave(form)}>Save</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -250,8 +248,6 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
     onSave({ ...form, donorId });
   };
 
-  const overlay = { position:"fixed", inset:0, background:"rgba(0,0,0,0.4)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center" };
-  const box = { background:T.white, borderRadius:16, padding:28, width:460, display:"flex", flexDirection:"column", gap:14 };
   const sugBtn = { display:"block", width:"100%", textAlign:"left", background:"none", border:"none", padding:"8px 11px", fontSize:13, color:T.ink, cursor:"pointer" };
 
   // Routing prompt view — replaces the form until answered.
@@ -259,8 +255,9 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
     const isGrant = routing.kind === "grant";
     const g = routing.entity;
     return (
-      <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-        <div className="modal-sheet-inner" style={{ ...box, width:480 }}>
+      <Modal onClose={()=>{ if(!busy) onClose(); }} width={480} backdrop="rgba(0,0,0,0.4)" blur={false} zIndex={1000} padding={28}
+        dialogStyle={{borderRadius:16,width:480}}>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>
             {isGrant ? "This looks like a grant arriving" : "This looks like a donor's money"}
           </div>
@@ -288,13 +285,14 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
             </button>
           </div>
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div className="modal-sheet-overlay" style={overlay} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-sheet-inner" style={box}>
+    <Modal onClose={onClose} width={460} backdrop="rgba(0,0,0,0.4)" blur={false} zIndex={1000} padding={28}
+      dialogStyle={{borderRadius:16}}>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Log transaction</div>
         <div style={{ display:"flex", gap:6 }}>
           {["income","expense"].map(t => (
@@ -385,7 +383,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

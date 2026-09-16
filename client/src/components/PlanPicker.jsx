@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 import { CHECKOUT_PLANS } from "../pages/Pricing";
 import { errorMessage } from "../lib/domainError";
 
@@ -42,15 +42,14 @@ export default function PlanPicker({ open, onClose }) {
   }
 
   return (
-    <div
-      style={{ position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:24,overflowY:"auto" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{ background:T.bg,borderRadius:20,padding:"36px 32px 32px",maxWidth:920,width:"100%",boxShadow:"0 24px 60px rgba(0,0,0,0.2)",border:"1px solid "+T.bg3,position:"relative" }}>
+    <Modal onClose={onClose} width={920} zIndex={900} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding="36px 32px 32px" dialogStyle={{ background:T.bg,borderRadius:20,border:"1px solid "+T.bg3 }}
+      ariaLabel="Choose a plan">
+      <div style={{ position:"relative" }}>
         <button
           onClick={onClose}
           aria-label="Close"
-          style={{ position:"absolute",top:20,right:20,background:"transparent",border:"none",color:T.ink3,fontSize:20,cursor:"pointer",lineHeight:1,padding:4 }}
+          style={{ position:"absolute",top:-8,right:-8,background:"transparent",border:"none",color:T.ink3,fontSize:20,cursor:"pointer",lineHeight:1,padding:4 }}
         >
           ×
         </button>
@@ -124,6 +123,6 @@ export default function PlanPicker({ open, onClose }) {
           You'll be redirected to Stripe to complete secure checkout.
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

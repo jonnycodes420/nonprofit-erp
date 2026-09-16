@@ -16,7 +16,7 @@
 // a skip instead of pretending it planned something.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { addCivilDays, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 
@@ -79,9 +79,9 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
   const lbl = { fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: T.ink3, display: "block", marginBottom: 5 };
 
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(15,26,18,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }}>
-      <div onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Plan a follow-up"
-        style={{ background: T.bg, borderRadius: 14, width: "100%", maxWidth: 480, padding: 22, maxHeight: "88vh", overflowY: "auto" }}>
+    <Modal onClose={onClose} width={480} backdrop="rgba(15,26,18,0.5)" blur={false} padding={22}
+      ariaLabel="Plan a follow-up" dialogStyle={{ background: T.bg, borderRadius: 14 }}>
+      <div>
         <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, color: T.ink }}>Plan a follow-up</div>
         <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3, lineHeight: 1.55 }}>
           {bulk
@@ -152,6 +152,6 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

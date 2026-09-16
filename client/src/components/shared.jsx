@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, Component } from "react";
+import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
 
@@ -321,13 +322,26 @@ export function GlobalStyles() {
     @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
     @keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}
-    .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) both;}
+    .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) backwards;}
     .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e7cf91 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
     @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
-    .fade-in{animation:fadeIn 0.2s ease-out both;}
-    .slide-in{animation:slideIn 0.18s ease-out both;}
-    .slide-up{animation:slideup 0.25s ease both;}
-    .modal-anim{animation:slideUp 0.2s ease-out both;}
+    /* BUILD-87 F.1 — animation-fill-mode is "backwards", NOT "both". Every one
+       of these animations ends on the identity transform, so "both" retained a
+       transform of translateY(0) forever, and an element with any transform
+       other than none is a CONTAINING BLOCK for every position:fixed
+       descendant. That is how the Edit-campaign dialog ended up drawn at the
+       middle of a tall page under a backdrop that covered only part of it
+       (BUILD-22 found this; two components had worked around it locally).
+       "backwards" holds the from-keyframe before the animation starts, which is
+       the only part that was ever needed, and reverts to the element's own
+       style afterwards. Visually identical; structurally inert.
+       The Modal shell portals to document.body anyway — this is the belt to
+       that pair of braces, so the next component to grow a transform cannot
+       break dialogs for everybody. */
+    .fade-in{animation:fadeIn 0.2s ease-out backwards;}
+    .slide-in{animation:slideIn 0.18s ease-out backwards;}
+    .slide-up{animation:slideup 0.25s ease backwards;}
+    .modal-anim{animation:slideUp 0.2s ease-out backwards;}
     .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
     .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:#0d5c3a!important;}
     /* BUILD-12 shared interactive treatment — see interactive() in shared.jsx.
@@ -564,6 +578,139 @@ export function GlobalStyles() {
 }
 
 // ── UI Atoms ───────────────────────────────────────────────────────────────
+
+// ── Modal — THE ONE MODAL SHELL (BUILD-87 F.1) ─────────────────────────────
+// Every dialog in the app renders through this. There were twenty-eight ad hoc
+// shells before it, each re-deciding its own backdrop, z-index, scroll and
+// dismissal, and the Edit-campaign dialog on Fundraising > Campaigns was
+// clipped below "Start date" with the backdrop covering only the top of a tall
+// page. The cause is old and documented (BUILD-22): `.fade-in` and friends
+// animate a TRANSFORM with `animation-fill-mode: both`, so the final keyframe's
+// `translateY(0)` is retained forever and the element becomes the containing
+// block for every `position:fixed` descendant. A fixed overlay inside one is
+// not fixed to the viewport at all — it is fixed to a div that may be 4,000px
+// tall. `RecurringGiving.jsx` had already learned this and portalled its own.
+//
+// So: PORTAL TO document.body, where no ancestor can ever do that again. The
+// fill-mode is fixed too (`backwards`, below) — belt and braces, because the
+// next component to grow a transform should not be able to break dialogs.
+//
+// What every dialog gets, once, instead of twenty-eight times:
+//   · backdrop `position:fixed; inset:0` on document.body
+//   · `max-height:90vh` with the BODY scrolling, so nothing is ever cut off
+//   · an optional sticky footer, so a long form's primary action stays put
+//   · body scroll locked while open (ref-counted, so nested dialogs nest)
+//   · Escape closes; focus moves in on open and RETURNS TO THE OPENER on close
+//   · the mobile bottom-sheet treatment (`.modal-sheet-*`) for all of them
+//
+// `padding`, `width` and `dialogStyle` exist so a call site can keep the
+// appearance it had: this commit consolidates the SHELL, and is not a licence
+// to restyle thirty screens in the same breath.
+let scrollLocks = 0;
+export function Modal({
+  onClose, title, subtitle, header, footer, children,
+  width = 460, align = "center", zIndex = 400,
+  backdrop = "#0f1a12cc", blur = true,
+  padding = "24px 26px", dialogStyle, overlayStyle,
+  className = "", dismissOnBackdrop = true, ariaLabel,
+}) {
+  const dialogRef = useRef(null);
+  // THE OPENER IS CAPTURED DURING RENDER, NOT IN THE EFFECT. React applies a
+  // child's `autoFocus` during COMMIT, which is before useEffect runs — so an
+  // effect that reads `document.activeElement` on mount reads the dialog's own
+  // first field and "returns focus" to a node that is about to be unmounted.
+  // Closing the Edit-campaign dialog dropped focus to <body> every time, and
+  // the only way to see that was to measure where focus actually landed.
+  // At first render the dialog is not in the DOM yet, so this is the opener.
+  const openerRef = useRef(null);
+  if (openerRef.current === null && typeof document !== "undefined") openerRef.current = document.activeElement;
+  // `onClose` is almost always an inline arrow at the call site, so its
+  // identity changes on every render of the parent. Keeping it in the effect's
+  // dependency list therefore re-ran the whole open/close cycle on every
+  // render: each re-run's CLEANUP restored focus and each new run re-read
+  // `document.activeElement`, so by the time the dialog actually closed the
+  // "opener" it remembered was <body>. Found by the F.1 walk, which measured
+  // where focus landed instead of trusting that it landed somewhere.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    // Ref-counted: a dialog opened FROM a dialog must not unlock the page when
+    // only the inner one closes.
+    if (scrollLocks === 0) {
+      document.body.dataset.modalScrollY = String(document.body.style.overflow || "");
+      document.body.style.overflow = "hidden";
+    }
+    scrollLocks++;
+    // Move focus in, so Escape and Tab land somewhere sensible. `preventScroll`
+    // because focusing a control inside a freshly portalled dialog otherwise
+    // scrolls the page behind it.
+    const first = dialogRef.current?.querySelector(
+      "[autofocus],input:not([type=hidden]):not([disabled]),select,textarea,button:not([disabled]),[href],[tabindex]:not([tabindex='-1'])");
+    (first || dialogRef.current)?.focus?.({ preventScroll: true });
+
+    const onKey = e => { if (e.key === "Escape") { e.stopPropagation(); onCloseRef.current?.(); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("keydown", onKey, true);
+      scrollLocks = Math.max(0, scrollLocks - 1);
+      if (scrollLocks === 0) document.body.style.overflow = document.body.dataset.modalScrollY || "";
+      // Returning focus to the opener is the half of "Escape closes it" that
+      // keyboard users actually feel: without it focus falls to <body> and the
+      // next Tab starts from the top of the page.
+      const back = openerRef.current;
+      if (back && back !== document.body && document.contains(back)) back.focus?.({ preventScroll: true });
+    };
+    // Mount/unmount ONLY. Everything inside reads through a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const overlay = {
+    position: "fixed", inset: 0, zIndex, background: backdrop,
+    backdropFilter: blur ? "blur(4px)" : undefined,
+    display: "flex", alignItems: align === "top" ? "flex-start" : "center",
+    justifyContent: "center", padding: align === "top" ? "6vh 16px 16px" : 20,
+    overflowY: "auto", ...overlayStyle,
+  };
+  const dialog = {
+    display: "flex", flexDirection: "column",
+    background: T.white, borderRadius: 18, boxShadow: T.shadowLg,
+    width: "100%", maxWidth: width, maxHeight: "90vh",
+    boxSizing: "border-box", overflow: "hidden", outline: "none",
+    ...dialogStyle,
+  };
+
+  return createPortal(
+    <div className="modal-overlay modal-sheet-overlay" style={overlay}
+      onMouseDown={e => { if (dismissOnBackdrop && e.target === e.currentTarget) onClose?.(); }}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={ariaLabel || title || undefined}
+        tabIndex={-1} className={"modal-anim modal-sheet-inner " + className} style={dialog}>
+        {/* A dialog whose header is more than a title and a line of prose
+            passes its own node; it still does not scroll with the body. */}
+        {header && <div style={{ flexShrink: 0 }}>{header}</div>}
+        {title && (
+          <div style={{ flexShrink: 0, padding: "22px 26px 0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, fontWeight: 400, color: T.ink, lineHeight: 1.2 }}>{title}</div>
+              {subtitle && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>{subtitle}</div>}
+            </div>
+            <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", fontSize: 19, lineHeight: 1, color: T.ink3, cursor: "pointer", padding: 4, flexShrink: 0 }}>✕</button>
+          </div>
+        )}
+        <div className="modal-body" style={{ overflowY: "auto", minHeight: 0, flex: "1 1 auto", padding: title ? "16px 26px 24px" : padding }}>
+          {children}
+        </div>
+        {footer && (
+          <div style={{ flexShrink: 0, borderTop: "1px solid " + T.bg3, padding: "14px 26px", background: T.white,
+                        display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10 }}>
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body);
+}
+
 export function Spin() {
   return <span style={{display:"inline-block",width:11,height:11,border:"2px solid #ffffff30",borderTopColor:"#fff",borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
@@ -1008,8 +1155,9 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
     :[];
 
   return(
-    <div style={{position:"fixed",inset:0,background:"#0f1a12cc",backdropFilter:"blur(4px)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div className="fade-in" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:18,width:"100%",maxWidth:460,padding:24,boxShadow:"0 4px 32px rgba(15,15,15,0.12)"}}>
+    <Modal onClose={close} width={460} padding={24} ariaLabel="Voice memo"
+      dialogStyle={{border:"1px solid "+T.bg3}}>
+      <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <div style={{fontSize:16,fontWeight:800,color:T.ink}}>Voice memo</div>
           <button onClick={close} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3,lineHeight:1}}>×</button>
@@ -1102,6 +1250,6 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }

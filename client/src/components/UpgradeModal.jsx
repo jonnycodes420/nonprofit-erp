@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { T } from "./shared";
+import { T, Modal } from "./shared";
 
 const PLAN_NAME = { seed: "Seed", growth: "Growth", impact: "Impact", trial: "Trial" };
 
@@ -12,11 +12,10 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
   const planName = PLAN_NAME[plan] || (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : "");
 
   return (
-    <div
-      style={{ position:"fixed",inset:0,background:"rgba(15,26,18,0.72)",zIndex:900,display:"flex",alignItems:"center",justifyContent:"center",padding:24 }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div style={{ background:T.bg,borderRadius:20,padding:"36px 32px",maxWidth:440,width:"100%",boxShadow:"0 24px 60px rgba(0,0,0,0.2)",border:"1px solid "+T.bg3 }}>
+    <Modal onClose={onClose} width={440} zIndex={900} backdrop="rgba(15,26,18,0.72)" blur={false}
+      padding="36px 32px" dialogStyle={{ background:T.bg,borderRadius:20,border:"1px solid "+T.bg3 }}
+      ariaLabel="Upgrade your plan">
+      <div>
         <div style={{ fontSize:26,fontWeight:400,color:T.ink,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em",marginBottom:12,lineHeight:1.2 }}>
           {isSeat ? "Your team is growing." : "You're building real momentum."}
         </div>
@@ -44,6 +43,6 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

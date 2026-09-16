@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
@@ -1060,10 +1060,10 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
         {/* Preview modal */}
         {showPreview && (
-          <div style={{ position: "fixed", inset: 0, background: "#0009", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
-            onClick={() => setShowPreview(false)}>
-            <div style={{ background: "#fff", borderRadius: 16, padding: 32, maxWidth: 600, width: "90%", maxHeight: "80vh", overflowY: "auto" }}
-              onClick={e => e.stopPropagation()}>
+          <Modal onClose={() => setShowPreview(false)} width={600} zIndex={1000}
+            backdrop="#0009" blur={false} padding={32} ariaLabel="Email preview"
+            dialogStyle={{ borderRadius: 16, maxHeight: "80vh" }}>
+            <div>
               <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
               <div style={{ fontSize: 16, fontWeight: 700, color: "#0f1a12", marginBottom: 16 }}>
                 {form.subject.replace(/{{org_name}}/g, data?.org?.name || "Org").replace(/{{first_name}}/g, "Margaret")}
@@ -1073,7 +1073,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ marginTop: 10, fontSize: 11, color: T.ink3 }}>Preview — merge tags replaced with sample data when sent.</div>
               <button onClick={() => setShowPreview(false)} style={{ marginTop: 16, ...S.btn("subtle") }}>Close</button>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     );
