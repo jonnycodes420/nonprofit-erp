@@ -8,7 +8,7 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
-import { errorMessage } from "../lib/domainError";
+import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -1290,6 +1290,38 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     try{ await apiFetch(`/orgs/${auth?.org?.id}`,{method:"PATCH",body:JSON.stringify({otherIncomeEnabled:next})}); }
     catch{ setOtherIncomeOn(!next); }
   }
+  // BUILD-88c C.1 — the org's own sending domain.
+  const [sd,setSd]=useState(null);
+  const [sdEmail,setSdEmail]=useState("");
+  const [sdBusy,setSdBusy]=useState(false);
+  const [sdErr,setSdErr]=useState("");
+  const [sdCopied,setSdCopied]=useState(null);
+  useEffect(()=>{apiFetch("/org/sending-domain").then(setSd).catch(()=>setSd(null));},[]);
+  async function claimDomain(){
+    setSdBusy(true);setSdErr("");
+    try{ setSd(await apiFetch("/org/sending-domain",{method:"POST",body:JSON.stringify({fromEmail:sdEmail.trim()})})); }
+    catch(e){ setSdErr(errorMessage(e,"That address could not be set up.")); }
+    setSdBusy(false);
+  }
+  async function checkDomain(){
+    setSdBusy(true);setSdErr("");
+    try{ const r=await apiFetch("/org/sending-domain/check",{method:"POST"}); setSd(r);
+         if(!r.verified)setSdErr("The records have not reached the internet yet. Give it a few minutes and check again."); }
+    catch(e){ setSdErr(errorMessage(e,"Steward could not check that just now.")); }
+    setSdBusy(false);
+  }
+  async function releaseDomain(){
+    setSdBusy(true);setSdErr("");
+    try{ await apiFetch("/org/sending-domain",{method:"DELETE"});
+         setSd(await apiFetch("/org/sending-domain")); setSdEmail(""); }
+    catch(e){ setSdErr(errorMessage(e,"That could not be released.")); }
+    setSdBusy(false);
+  }
+  async function copyRecord(i,value){
+    try{ await navigator.clipboard.writeText(String(value||"")); setSdCopied(i); setTimeout(()=>setSdCopied(null),2500); }
+    catch(e){ rethrowProgrammerError(e); setSdErr("Your browser would not let Steward reach the clipboard. Select the value and copy it."); }
+  }
+
   // BUILD-88b B.3 — her voice: three samples, and Steward takes two lines.
   const [voice,setVoice]=useState(null);
   const [voiceDraft,setVoiceDraft]=useState(["","",""]);
@@ -2189,6 +2221,71 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:12,color:T.ink3,marginTop:1}}>Whole organization. Off means weekday mornings only. A next step you gave a <em>time</em> still fires on a Saturday — setting one is a commitment to a moment.</div>
             </div>
           </label>
+        )}
+        {/* ── BUILD-88c C.1 — SEND FROM YOUR OWN ADDRESS ─────────────────────
+            Every email has left through Steward's domain with the organisation's
+            NAME on it. That closed the "bare unfamiliar domain" trust gap and
+            did nothing about the other one: an unfamiliar SENDING domain costs
+            deliverability, and on a shared domain one organisation's spam
+            complaints drag down everybody else's. Publish three DNS records and
+            donors see your address instead. Nothing is blocked while you wait. */}
+        {isAdmin&&sd!==null&&(
+          <div style={{padding:"10px 0 0",borderTop:"1px solid "+T.bg2}} data-testid="sending-domain">
+            <div style={{fontSize:14,fontWeight:600,color:T.ink}}>Send from your own address</div>
+            <div style={{fontSize:12,color:T.ink3,marginTop:2,maxWidth:600,lineHeight:1.55}}>{sd.sentence}</div>
+            {!sd.domain&&(
+              <div style={{display:"flex",gap:8,alignItems:"center",marginTop:10,flexWrap:"wrap"}}>
+                <input value={sdEmail} onChange={e=>setSdEmail(e.target.value)} data-testid="sd-email"
+                  aria-label="The address donors should see" placeholder="ada@yourcharity.org"
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",width:260}}/>
+                <button onClick={claimDomain} disabled={sdBusy} data-testid="sd-claim"
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
+                  {sdBusy?"Setting up…":"Use this address"}</button>
+              </div>
+            )}
+            {sd.domain&&(
+              <div style={{marginTop:10}}>
+                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
+                  <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
+                  {sd.verified
+                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.green100||"#edf3ee",color:T.greenDk,border:"1px solid "+(T.green200||"#dce7df"),borderRadius:99,padding:"2px 9px"}}>
+                       Verified {String(sd.verifiedAt||"").slice(0,10)}</span>
+                    :<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
+                       Waiting for DNS</span>}
+                  {!sd.verified&&(
+                    <button onClick={checkDomain} disabled={sdBusy} data-testid="sd-check"
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 13px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
+                      {sdBusy?"Checking…":"Check"}</button>
+                  )}
+                  <button onClick={releaseDomain} disabled={sdBusy}
+                    style={{background:"none",border:"none",padding:0,color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Use Steward's address instead</button>
+                </div>
+                {!sd.verified&&sd.records.length>0&&(
+                  <div style={{border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
+                    <div style={{padding:"8px 12px",background:T.bg2,fontSize:11.5,color:T.ink3}}>
+                      Add these to {sd.domain}'s DNS, then press Check. They usually take a few minutes.
+                    </div>
+                    {sd.records.map((r,i)=>(
+                      <div key={i} data-testid="sd-record" style={{padding:"10px 12px",borderTop:"1px solid "+T.bg3,display:"flex",gap:10,alignItems:"flex-start",flexWrap:"wrap"}}>
+                        <span style={{fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ink3,width:44,flexShrink:0}}>{r.type}</span>
+                        <div style={{flex:"1 1 260px",minWidth:0}}>
+                          <div style={{fontSize:12.5,color:T.ink,fontWeight:600,wordBreak:"break-all"}}>{r.name}</div>
+                          <div style={{fontSize:11.5,color:T.ink3,wordBreak:"break-all",fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace"}}>{r.value}{r.priority?` · priority ${r.priority}`:""}</div>
+                        </div>
+                        <button onClick={()=>copyRecord(i,r.value)} data-testid="sd-copy"
+                          style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 11px",color:T.ink3,fontSize:11.5,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                          {sdCopied===i?"Copied ✓":"Copy"}</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {sd.checkedAt&&!sd.verified&&(
+                  <div style={{fontSize:11.5,color:T.ink3,marginTop:6}}>Last checked {String(sd.checkedAt).slice(0,16).replace("T"," ")}.</div>
+                )}
+              </div>
+            )}
+            {sdErr&&<div role="alert" style={{fontSize:12.5,color:T.terra700,marginTop:8}}>{sdErr}</div>}
+          </div>
         )}
         {/* ── BUILD-88b B.3 — YOUR VOICE ────────────────────────────────────
             Steward drafts the thank-yous; she sends them. Three notes she has
