@@ -76,7 +76,10 @@ const SELF_REFUSING = [
   "build78-repro-crossorg-fieldid",
   // BUILD-88a — the walk. WRITES (it logs a real conversation and a real gift
   // on the demo org) and refuses any non-loopback API, app or database.
-  "build88a-walk"];
+  "build88a-walk",
+  // BUILD-88b B.1 — ten cheques, before and after. WRITES (it records the same
+  // ten gifts twice, on its own scratch org) and refuses non-loopback.
+  "build88b-deposit-timing"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [

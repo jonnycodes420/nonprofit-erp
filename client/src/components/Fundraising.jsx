@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
+import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
@@ -99,6 +100,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
 
   const SUBTABS = [
     { id: "overview", label: "Overview" },
+    // BUILD-88b B.1 — the deposit sheet. The brief calls this surface "Gifts";
+    // no tab of that name exists, and Fundraising is where money-in lives
+    // (Overview, Campaigns, Giving Pages, Recurring, Funds), so it lives here.
+    { id: "deposits", label: "Deposits" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -121,6 +126,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
       {!loading && subtab === "overview" && (
         <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
           onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+      )}
+
+      {!loading && subtab === "deposits" && (
+        <DepositsView isReadOnly={isReadOnly} roTip={roTip} onRecorded={load} />
       )}
 
       {!loading && subtab === "campaigns" && (
@@ -716,6 +725,69 @@ function FundsView({ data, onNavigate }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── BUILD-88b B.1 — DEPOSITS ───────────────────────────────────────────────
+// The weekly slip, and the record of the ones already recorded. A deposit is
+// ONE act — a slip that footed — so it is one row here, and one thing to undo.
+function DepositsView({ isReadOnly, roTip, onRecorded }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [today, setToday] = useState("");
+  const [err, setErr] = useState("");
+  const load = () => {
+    apiFetch("/imports").then(r => setRows((r.imports || []).filter(i => i.shape === "deposit")))
+      .catch(e => { setRows([]); setErr(errorMessage(e, "Could not load your deposits.")); });
+    apiFetch("/dashboard/home?scope=mine").then(r => setToday(r?.today || "")).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+  const th = { fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3, textAlign: "left", padding: "0 12px 8px 0" };
+  const td = { fontSize: 13, color: T.ink, padding: "10px 12px 10px 0", borderTop: "1px solid " + T.bg3 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ maxWidth: 560, fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+          A bank slip, in one pass. Paste its lines and Steward places what it can stand behind, asks about the
+          rest, and refuses to record the deposit until the cents add up. Nothing is sent.
+        </div>
+        <button onClick={() => !isReadOnly && setOpen(true)} disabled={isReadOnly} title={roTip} data-testid="add-a-deposit"
+          style={{ background: isReadOnly ? T.bg2 : T.greenDk, border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+          Add a deposit
+        </button>
+      </div>
+      {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700 }}>{err}</div>}
+      {rows === null && <div style={{ fontSize: 13, color: T.ink3 }}>Loading…</div>}
+      {rows && rows.length === 0 && (
+        <EmptyState title="No deposits yet" message="The first slip you record appears here, with its own total and what it placed." />
+      )}
+      {rows && rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table data-testid="deposits-table" style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
+            <thead><tr>
+              <th style={th}>Deposit</th><th style={th}>Date</th><th style={th}>Who</th>
+              <th style={{ ...th, textAlign: "right" }}>Lines</th>
+              <th style={{ ...th, textAlign: "right" }}>Gifts</th>
+              <th style={{ ...th, textAlign: "right" }}>Total</th>
+            </tr></thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.id} data-testid="deposit-row">
+                  <td style={td}>{r.name}{r.reconciled === false && <div style={{ fontSize: 11.5, color: T.terra700, marginTop: 2 }}>Does not reconcile — open it on the Imports page.</div>}</td>
+                  <td style={td}>{r.committedOn || ""}</td>
+                  <td style={td}>{r.by || "—"}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{r.rowsIn}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{r.giftsCreated}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{fmtFull(r.dollarsCreated)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {open && <DepositSheetModal today={today} onClose={() => { setOpen(false); load(); }}
+        onRecorded={() => { load(); if (onRecorded) onRecorded(); }} />}
     </div>
   );
 }

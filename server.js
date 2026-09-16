@@ -6510,8 +6510,95 @@ app.post("/donors/:id/pledges", requireAuth, checkWriteAccess, wrap(async (req, 
     const dup = await query("SELECT * FROM pledges WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
     if (dup.length) return res.status(200).json({ ...dup[0], duplicate: true });
   }
+  // ── BUILD-88b B.1/B.2 — A PLEDGE STORES ITS INSTALMENTS ──────────────────
+  // A pledge was one amount and one due date, so "the March instalment
+  // arrived" had nowhere to land and a twelve-month pledge could only ever be
+  // all or nothing. An explicit schedule is honoured; a stated CADENCE
+  // (frequency + count) generates one, with the remainder on the first
+  // instalment so the schedule SUMS to the pledge; neither given leaves the
+  // pledge with no schedule, which B.2 surfaces as "Needs you: amount and
+  // schedule" rather than treating as late.
+  await writePledgeInstallments(req.user.orgId, id, {
+    amountCents: parseMoneyOrThrow(pledgeAmt, "amount"),
+    schedule: req.body.installments, frequency: req.body.frequency,
+    count: req.body.installmentCount, firstDue: dueDate,
+  }).catch(e => console.error("[pledge] instalments:", e.message));
+
   const rows = await query("SELECT * FROM pledges WHERE id=?", [id]);
-  res.status(201).json(rows[0]);
+  const insts = await query("SELECT id, seq, due_date, amount::float AS amount FROM pledge_installments WHERE pledge_id=? ORDER BY seq", [id]);
+  res.status(201).json({ ...rows[0], installments: insts });
+}));
+
+// The ONE writer of a pledge's schedule. Called on create, on a schedule edit,
+// and by the shell-pledge repair in B.2 — so "what a schedule is" is decided
+// once. Never rewrites an instalment that has already been PAID: a payment is
+// a fact and a new schedule is a plan.
+async function writePledgeInstallments(orgId, pledgeId, { amountCents, schedule, frequency, count, firstDue }) {
+  const dep = await depositMod();
+  let rows = [];
+  if (Array.isArray(schedule) && schedule.length) {
+    rows = schedule.map((r, i) => ({ seq: i + 1, dueDate: String(r.dueDate || r.due_date || ""),
+                                     amountCents: money.toCents(r.amount != null ? r.amount : r.amountCents / 100) ?? 0 }))
+      .filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate) && r.amountCents > 0);
+    const sum = rows.reduce((s, r) => s + r.amountCents, 0);
+    if (rows.length && amountCents && sum !== amountCents) {
+      const e = new Error(`a schedule must sum to the pledge: ${money.formatCents(sum)} of ${money.formatCents(amountCents)}`);
+      e.code = "schedule_does_not_sum"; throw e;
+    }
+  } else if (frequency && count) {
+    rows = dep.generateInstallments({ amountCents, frequency, count, firstDue });
+  }
+  if (!rows.length) return { installments: 0 };
+  const paid = await query("SELECT seq FROM pledge_installments WHERE pledge_id=? AND paid_gift_id IS NOT NULL", [pledgeId]);
+  const paidSeqs = new Set(paid.map(p => p.seq));
+  await run("DELETE FROM pledge_installments WHERE org_id=? AND pledge_id=? AND paid_gift_id IS NULL", [orgId, pledgeId]);
+  for (const r of rows) {
+    if (paidSeqs.has(r.seq)) continue;
+    await run(
+      `INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount)
+       VALUES (?,?,?,?,?,?) ON CONFLICT (pledge_id, seq) DO NOTHING`,
+      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, r.seq, r.dueDate, money.toDollars(r.amountCents)]);
+  }
+  await run("UPDATE pledges SET frequency=COALESCE(?,frequency), installment_count=? WHERE id=? AND org_id=?",
+    [frequency || null, rows.length, pledgeId, orgId]);
+  return { installments: rows.length };
+}
+
+// GET /pledges/:id/installments — the schedule, with what has paid each one.
+app.get("/pledges/:id/installments", requireAuth, wrap(async (req, res) => {
+  const [p] = await query("SELECT id, amount::float AS amount, status, is_shell FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!p) return res.status(404).json({ error: "Pledge not found" });
+  const rows = await query(
+    `SELECT i.id, i.seq, i.due_date, i.amount::float AS amount, i.paid_gift_id, i.paid_at,
+            g.date AS paid_date, g.amount::float AS paid_amount
+       FROM pledge_installments i LEFT JOIN gifts g ON g.id = i.paid_gift_id
+      WHERE i.pledge_id=? AND i.org_id=? ORDER BY i.seq`, [req.params.id, req.user.orgId]);
+  res.json({ pledge: p, installments: rows,
+             // A pledge with no schedule is not late — it is unfinished, and it
+             // says which part is missing rather than chasing a donor for a
+             // number nobody wrote down.
+             needsSchedule: rows.length === 0 });
+}));
+
+// PUT /pledges/:id/installments — set or regenerate the schedule.
+app.put("/pledges/:id/installments", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [p] = await query("SELECT id, amount FROM pledges WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!p) return res.status(404).json({ error: "Pledge not found" });
+  try {
+    const out = await writePledgeInstallments(req.user.orgId, req.params.id, {
+      amountCents: money.toCents(p.amount) ?? 0,
+      schedule: req.body.installments, frequency: req.body.frequency,
+      count: req.body.installmentCount, firstDue: req.body.firstDue,
+    });
+    if (!out.installments) return res.status(400).json({ error: "no_schedule", message: "Give a schedule, or a frequency and a number of instalments." });
+    // A pledge that now has a schedule is no longer a shell.
+    await run("UPDATE pledges SET is_shell=false WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  } catch (e) {
+    if (e.code === "schedule_does_not_sum") return res.status(400).json({ error: e.code, message: e.message });
+    throw e;
+  }
+  const rows = await query("SELECT id, seq, due_date, amount::float AS amount, paid_gift_id FROM pledge_installments WHERE pledge_id=? ORDER BY seq", [req.params.id]);
+  res.json({ installments: rows });
 }));
 
 app.put("/pledges/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -7665,6 +7752,262 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       summary,
     },
   });
+}));
+
+// ── BUILD-88b B.1 — THE DEPOSIT SHEET ─────────────────────────────────────
+// A treasurer's Monday: eleven lines on a bank slip, a name, an amount, and a
+// memo somebody wrote on the back of a cheque. Eleven trips through the gift
+// form, and nothing told her she had finished except adding it up herself.
+//
+// Two routes and no third: PLAN (reads, writes nothing, can be asked again as
+// she answers each question) and COMMIT (one transaction, one `imports` row
+// with shape='deposit', every gift through BUILD-88a's ONE gift path). The
+// engine is shared/depositSheet.js — pure, and built on A.7's own matching
+// rules, so a name the importer would fold and a name the deposit sheet would
+// fold are the same name.
+//
+// NOTHING IS SENT. A deposit records money; the thank-yous it earns are drafts
+// in B.3's queue, which she opens.
+const depositMod = () => import("./shared/depositSheet.js");
+
+// The org's own data the plan is matched against, in ONE batch of reads.
+async function depositContext(orgId) {
+  const [donors, funds, installments, org] = await Promise.all([
+    // Every person on file, once. A deposit is an explicit act on a small
+    // slip, so one indexed read of (id, name, email) is the right cost — and it
+    // means the name rule lives in shared/depositSheet.js rather than in SQL.
+    query("SELECT id, name, email FROM donors WHERE org_id=? AND deleted_at IS NULL", [orgId]),
+    query("SELECT id, name, restricted, aliases FROM fin_funds WHERE org_id=? ORDER BY restricted ASC, name ASC", [orgId]),
+    query(`SELECT i.id, i.pledge_id, i.due_date, i.amount, p.donor_id
+             FROM pledge_installments i
+             JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
+            WHERE i.org_id=? AND i.paid_gift_id IS NULL AND p.status='open'
+            ORDER BY i.due_date ASC`, [orgId]),
+    query("SELECT default_fund_id FROM orgs WHERE id=?", [orgId]),
+  ]);
+  return {
+    donors: donors.map(d => ({ id: d.id, name: d.name, email: d.email })),
+    funds: funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted,
+                             aliases: Array.isArray(f.aliases) ? f.aliases : (typeof f.aliases === "string" ? JSON.parse(f.aliases || "[]") : []) })),
+    installments: installments.map(i => ({ id: i.id, pledgeId: i.pledge_id, donorId: i.donor_id,
+                                           dueDate: i.due_date, amountCents: money.toCents(i.amount) ?? 0 })),
+    defaultFundId: org[0]?.default_fund_id || null,
+  };
+}
+
+async function planDeposit(orgId, body) {
+  const dep = await depositMod();
+  const parsed = Array.isArray(body.rows) && body.rows.length
+    ? { rows: body.rows.map((r, i) => ({ line: Number(r.line) || i + 1, raw: r.raw || "",
+                                          name: String(r.name || ""), amount: r.amount,
+                                          memo: String(r.memo || ""), check: String(r.check || "") })), refused: [] }
+    : dep.parseDepositPaste(body.paste || "");
+  const ctx = await depositContext(orgId);
+  const plan = dep.buildDepositPlan({
+    rows: parsed.rows, refused: parsed.refused,
+    donors: ctx.donors, funds: ctx.funds, installments: ctx.installments,
+    defaultFundId: ctx.defaultFundId,
+    slipTotal: body.slipTotal, depositDate: body.depositDate || null,
+    resolutions: body.resolutions && typeof body.resolutions === "object" ? body.resolutions : {},
+  });
+  return { ...plan, funds: ctx.funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted })) };
+}
+
+// POST /deposits/plan — read only. Called again after every answer she gives.
+app.post("/deposits/plan", requireAuth, wrap(async (req, res) => {
+  const org = await orgTz(req.user.orgId);
+  const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
+  const body = req.body || {};
+  if (body.depositDate && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.depositDate)))
+    return res.status(400).json({ error: "depositDate must be a date (YYYY-MM-DD)" });
+  if (body.depositDate && String(body.depositDate) > today)
+    return res.status(400).json({ error: "A deposit is a thing that happened — its date cannot be in the future." });
+  const plan = await planDeposit(req.user.orgId, body);
+  res.json({ ...plan, today });
+}));
+
+// POST /deposits/commit — one transaction, every gift through recordGift.
+app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
+  const body = req.body || {};
+  const depositDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.depositDate || "")) ? String(body.depositDate) : null;
+  if (!depositDate) return res.status(400).json({ error: "A deposit needs the date it was deposited." });
+  if (depositDate > today) return res.status(400).json({ error: "A deposit is a thing that happened — its date cannot be in the future." });
+
+  // THE GATE, RE-EVALUATED HERE. The screen disables the button; the server
+  // refuses the write. A client that has drifted from the plan (a stale tab, a
+  // replayed request) cannot commit a slip that does not foot.
+  const plan = await planDeposit(orgId, { ...body, depositDate });
+  if (!plan.canCommit) {
+    return res.status(409).json({
+      error: "deposit_not_ready",
+      message: plan.counts.needsYou > 0
+        ? `${plan.counts.needsYou} line${plan.counts.needsYou === 1 ? "" : "s"} still need${plan.counts.needsYou === 1 ? "s" : ""} you.`
+        : plan.totals.slipCents == null
+          ? "Type the slip total so Steward can check its own arithmetic."
+          : `The lines come to ${money.formatCents(plan.totals.accountedCents)} and the slip says ${money.formatCents(plan.totals.slipCents)}.`,
+      counts: plan.counts, totals: plan.totals,
+    });
+  }
+
+  const actorInfo = actor(req);
+  const importId2 = "imp_" + uuid().slice(0, 8);
+  const created = { gifts: 0, donors: 0, payments: 0, giftCents: 0, installments: 0 };
+  const written = [];
+
+  // Donors first, OUTSIDE the gift loop, so a name that appears twice on one
+  // slip becomes one person with two gifts (a treasurer writes the same name
+  // twice when two cheques arrive together).
+  const newDonorIds = new Map();
+  for (const l of plan.lines) {
+    if (l.state !== "placed_new_donor") continue;
+    const key = String(l.donorName || "").toLowerCase().trim();
+    if (newDonorIds.has(key)) continue;
+    const did = "d_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO donors (id,org_id,name,stage,status,tags,notes,created_by,created_by_name,created_import_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [did, orgId, l.donorName, "steward", "new", JSON.stringify([]),
+       `Added from the deposit of ${depositDate}.`, actorInfo.id, actorInfo.name, importId2]);
+    newDonorIds.set(key, did);
+    created.donors++;
+  }
+
+  for (const l of plan.lines) {
+    if (l.state === "not_a_gift") {
+      // MONEY ON THE SLIP THAT IS NOT A CONTRIBUTION. On a known person it is a
+      // PAYMENT on their record — visible on the timeline, out of every giving
+      // total, because a bookstore purchase is not a gift and counting it as
+      // one overstates what the organisation raised.
+      if (l.donorId) {
+        await run(
+          `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,import_id,metadata)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          ["int_" + uuid().slice(0, 8), orgId, l.donorId, "payment",
+           `Payment, not a gift: ${money.formatCents(l.cents)}${l.memo ? ` — ${l.memo}` : ""} (${l.reason.replace(/_/g, " ")})`,
+           depositDate, actorInfo.id, actorInfo.name, importId2,
+           JSON.stringify({ via: "deposit", kind: l.reason, cents: l.cents, check: l.check || null })]);
+        created.payments++;
+      }
+      continue;
+    }
+    if (l.state !== "placed" && l.state !== "placed_new_donor") continue;
+    const donorId = l.donorId || newDonorIds.get(String(l.donorName || "").toLowerCase().trim());
+    if (!donorId) continue;
+    const w = await recordGift({
+      orgId, donorId, amount: money.toDollars(l.cents), date: depositDate,
+      type: l.installmentId ? "pledge payment" : "cash",
+      fundId: l.fundId || null,
+      paymentMethod: l.check ? "Check" : (body.paymentMethod || "Check"),
+      notes: [l.memo, l.check ? `Check ${l.check}` : ""].filter(Boolean).join(" · "),
+      pledgeId: l.pledgeId || null,
+      idempotencyKey: `deposit:${importId2}:${l.line}`, conflict: "idempotency",
+      actorId: actorInfo.id, actorName: actorInfo.name,
+      timelineNote: l.memo || `Deposited ${depositDate}`,
+      source: "deposit",
+    });
+    if (w.duplicate || !w.gift) continue;
+    await run("UPDATE gifts SET import_id=? WHERE id=?", [importId2, w.gift.id]);
+    await run("UPDATE interactions SET import_id=? WHERE gift_id=?", [importId2, w.gift.id]);
+    created.gifts++; created.giftCents += l.cents;
+    written.push({ line: l.line, giftId: w.gift.id, donorId, cents: l.cents });
+    if (l.installmentId) {
+      const upd = await query(
+        `UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW()
+          WHERE id=? AND org_id=? AND paid_gift_id IS NULL RETURNING id`,
+        [w.gift.id, l.installmentId, orgId]);
+      if (upd.length) created.installments++;
+      if (l.pledgeId) await recalcPledgePayment(l.pledgeId, orgId).catch(e => console.error("[deposit] pledge recalc:", e.message));
+    }
+  }
+
+  // THE DEPOSIT IS AN `imports` ROW. One act, one record, one thing to undo.
+  const takenNames = (await query("SELECT name FROM imports WHERE org_id=?", [orgId])).map(r => r.name);
+  const name = uniqueImportName(String(body.name || "").trim() || `Deposit ${depositDate}`, takenNames);
+  const summary = {
+    depositDate, slipCents: plan.totals.slipCents, giftCents: created.giftCents,
+    notGiftCents: plan.totals.notGiftCents, counts: plan.counts,
+    lines: plan.lines.map(l => ({ line: l.line, state: l.state, name: l.donorName || l.name, cents: l.cents,
+                                  fund: l.fundName || null, reason: l.reason || null })),
+    rowsIn: plan.counts.total, giftsCreated: created.gifts, donorsCreated: created.donors,
+    rowsSetAside: plan.counts.notAGift, rowsErrored: 0,
+    dollarsIn: money.toDollars(plan.totals.slipCents || 0), dollarsCreated: money.toDollars(created.giftCents),
+  };
+  await run(
+    `INSERT INTO imports (id,org_id,name,source_filename,shape,started_at,rows_in,gifts_created,donors_created,
+                          donors_merged,rows_set_aside,rows_errored,dollars_in,dollars_created,
+                          actor_user_id,actor_user_name,summary_json)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [importId2, orgId, name, body.sourceFilename || null, "deposit", null,
+     plan.counts.total, created.gifts, created.donors, 0, plan.counts.notAGift, 0,
+     money.toDollars(plan.totals.slipCents || 0), money.toDollars(created.giftCents),
+     actorInfo.id, actorInfo.name, JSON.stringify(summary)]);
+
+  // THE ARITHMETIC, READ BACK FROM THE DATABASE. The plan is a promise; this is
+  // what landed. A disagreement is reported, never repaired.
+  const [rb] = await query(
+    "SELECT COUNT(*)::int AS n, COALESCE(SUM(amount),0) AS cash FROM gifts WHERE org_id=? AND import_id=?",
+    [orgId, importId2]);
+  const writtenCents = money.toCents(rb?.cash) ?? 0;
+  const footed = writtenCents === created.giftCents && Number(rb?.n || 0) === created.gifts;
+  if (!footed) console.error(`[deposit] READ-BACK DISAGREES for ${importId2}: planned ${created.giftCents}c/${created.gifts} rows, database holds ${writtenCents}c/${rb?.n} rows`);
+
+  res.status(201).json({
+    id: importId2, name, depositDate,
+    gifts: created.gifts, donorsCreated: created.donors, payments: created.payments,
+    installmentsApplied: created.installments,
+    giftCents: created.giftCents, slipCents: plan.totals.slipCents,
+    notGiftCents: plan.totals.notGiftCents,
+    written, footed,
+    reversibleUntil: new Date(Date.now() + DEPOSIT_REVERSE_HOURS * 3600e3).toISOString(),
+  });
+}));
+
+// A deposit is REVERSIBLE AS A WHOLE, for twenty-four hours. A slip keyed wrong
+// is discovered the same day, and unpicking eleven gifts by hand is how a total
+// stops matching. After the window it is history: correct it gift by gift, on
+// the record, where the correction is visible.
+const DEPOSIT_REVERSE_HOURS = 24;
+
+app.post("/imports/:id/reverse", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!imp) return res.status(404).json({ error: "Deposit not found" });
+  if (imp.shape !== "deposit") return res.status(400).json({ error: "only_deposits_reverse", message: "Only a deposit can be reversed as a whole. An import is undone gift by gift, on the record." });
+  if (imp.reversed_at) return res.status(409).json({ error: "already_reversed", reversedAt: imp.reversed_at });
+  const ageHours = (Date.now() - new Date(imp.committed_at).getTime()) / 3600e3;
+  if (ageHours > DEPOSIT_REVERSE_HOURS) {
+    return res.status(409).json({ error: "window_closed",
+      message: `This deposit was recorded ${Math.round(ageHours)} hours ago. A deposit reverses as a whole for ${DEPOSIT_REVERSE_HOURS} hours; after that, correct it gift by gift so the correction is visible on the record.` });
+  }
+
+  const gifts = await query("SELECT id, donor_id, pledge_id FROM gifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
+  const giftIds = gifts.map(g => g.id);
+  const pledgeIds = [...new Set(gifts.map(g => g.pledge_id).filter(Boolean))];
+  const donorIds = [...new Set(gifts.map(g => g.donor_id))];
+  if (giftIds.length) {
+    await run("UPDATE pledge_installments SET paid_gift_id=NULL, paid_at=NULL WHERE org_id=? AND paid_gift_id = ANY(?)", [orgId, giftIds]);
+    await run("DELETE FROM thank_you_drafts WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]).catch(() => {});
+    await run("DELETE FROM fin_transactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]);
+    await run("DELETE FROM interactions WHERE org_id=? AND gift_id = ANY(?)", [orgId, giftIds]);
+    await run("DELETE FROM gifts WHERE org_id=? AND id = ANY(?)", [orgId, giftIds]);
+  }
+  // The not-a-gift payments the deposit recorded, and the people it created —
+  // a person created by a reversed deposit has no gift and no history, so
+  // leaving them behind is leaving a record nobody asked for.
+  await run("DELETE FROM interactions WHERE org_id=? AND import_id=? AND type='payment'", [orgId, req.params.id]);
+  const orphans = await query(
+    `SELECT d.id FROM donors d WHERE d.org_id=? AND d.created_import_id=?
+       AND NOT EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id)
+       AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.donor_id=d.id)`, [orgId, req.params.id]);
+  if (orphans.length) await run("DELETE FROM donors WHERE org_id=? AND id = ANY(?)", [orgId, orphans.map(o => o.id)]);
+  // Totals RECOMPUTED from what remains, never decremented.
+  for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
+  for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
+  await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [actor(req).name || actor(req).id, req.params.id, orgId]);
+  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length });
 }));
 
 // The merge review list — every fold the importer made, newest import first.
@@ -13861,9 +14204,19 @@ app.put("/finance/funds/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(
   const { name, description, restricted } = req.body;
   if (!name) return res.status(400).json({ error: "name required" });
   const [oldFund] = await query("SELECT * FROM fin_funds WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
+  // BUILD-88b B.1 — THE ALIASES A MEMO LINE USES. "Xenia", "Xenia UMC", "for
+  // Xenia trip" are all the Xenia Mission Trip fund, and only this org knows
+  // that. Typed once here rather than guessed once per deposit.
+  let aliases = oldFund ? oldFund.aliases : null;
+  if (req.body.aliases !== undefined) {
+    const raw = Array.isArray(req.body.aliases) ? req.body.aliases
+      : String(req.body.aliases || "").split(/[,\n]/);
+    aliases = [...new Set(raw.map(a => String(a).trim()).filter(a => a.length >= 2).map(a => a.slice(0, 80)))].slice(0, 25);
+  }
   const affected = await run(
-    "UPDATE fin_funds SET name=?,description=?,restricted=? WHERE id=? AND org_id=?",
-    [name, description || "", restricted ? true : false, req.params.id, req.user.orgId]
+    "UPDATE fin_funds SET name=?,description=?,restricted=?,aliases=?::jsonb WHERE id=? AND org_id=?",
+    [name, description || "", restricted ? true : false,
+     aliases && aliases.length ? JSON.stringify(aliases) : null, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Fund not found" });
   const rows = await query("SELECT * FROM fin_funds WHERE id = ?", [req.params.id]);

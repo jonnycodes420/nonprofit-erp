@@ -1642,6 +1642,82 @@ async function initSchema() {
   await pool.query(`ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_org_id_account_id_year_key`).catch(() => {});
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS budgets_account_year_fund
                       ON budgets (org_id, account_id, year, COALESCE(fund_id, ''))`);
+
+  // ── BUILD-88b B.1 — A FUND ANSWERS TO MORE THAN ONE NAME ──────────────────
+  // A deposit slip's memo line says "Xenia", "Xenia UMC" or "for Xenia trip";
+  // the fund is called "Xenia Mission Trip". The aliases are the org's own —
+  // typed once, on the fund — because a memo that matches no fund is a question
+  // for a human, and NEVER quietly General. A guessed designation is an audit
+  // finding.
+  await pool.query(`ALTER TABLE fin_funds ADD COLUMN IF NOT EXISTS aliases JSONB`);
+  // The org's unrestricted DEFAULT, set deliberately. A blank memo goes here
+  // only if somebody chose one; with nothing chosen a blank memo is Needs you,
+  // because "we do not know" is not the same as "unrestricted".
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS default_fund_id TEXT`);
+
+  // ── BUILD-88b B.1/B.2 — A PLEDGE HAS INSTALMENTS ──────────────────────────
+  // A pledge was one amount and one due date, so "the March instalment arrived"
+  // had nowhere to land and a twelve-month pledge could only ever be all or
+  // nothing. Instalments are rows: a due date, an amount, and the gift that
+  // paid it. Created here (B.1) because the deposit sheet matches against them;
+  // B.2 is what makes them keep themselves.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pledge_installments (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      pledge_id TEXT NOT NULL REFERENCES pledges(id) ON DELETE CASCADE,
+      seq INTEGER NOT NULL,
+      due_date TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      paid_gift_id TEXT REFERENCES gifts(id) ON DELETE SET NULL,
+      paid_at TIMESTAMPTZ,
+      reminder_thread_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (pledge_id, seq)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_org_due ON pledge_installments (org_id, due_date) WHERE paid_gift_id IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_pledge ON pledge_installments (pledge_id)`);
+  // A pledge that states a cadence but no schedule can generate one; a SHELL
+  // pledge (BUILD-88a A.7, inferred from payments) states neither and says so.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS installment_count INTEGER`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS is_shell BOOLEAN DEFAULT false`);
+
+  // ── BUILD-88b B.1 — THE DEPOSIT, REVERSIBLE AS A WHOLE ────────────────────
+  // A deposit is one act: a slip that footed. Undoing it is also one act, for
+  // twenty-four hours, because a slip keyed wrong is discovered the same day
+  // and unpicking eleven gifts by hand is how a total stops matching.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_import ON gifts (org_id, import_id) WHERE import_id IS NOT NULL`);
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS reversed_by TEXT`);
+  await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS created_import_id TEXT`);
+
+  // ── BUILD-88b B.3 — THANK-YOUS, DRAFTED ───────────────────────────────────
+  // Steward never sends the thank-you. It writes one and puts it in a queue she
+  // opens; Copy, Mark sent, Skip. One row per gift, so the queue cannot
+  // double-count and a skip is a decision on the record rather than an absence.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS thank_you_drafts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      gift_id TEXT NOT NULL REFERENCES gifts(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      voice TEXT,
+      opened_at TIMESTAMPTZ,
+      sent_at TIMESTAMPTZ,
+      skipped_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (org_id, gift_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ty_open ON thank_you_drafts (org_id, created_at DESC) WHERE sent_at IS NULL AND skipped_at IS NULL`);
+  // Her voice, from three samples she pastes in Settings. Until they exist the
+  // default is one plain sentence — never an invented voice.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS voice_samples JSONB`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An
