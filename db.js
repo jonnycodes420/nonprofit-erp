@@ -1655,35 +1655,6 @@ async function initSchema() {
   // because "we do not know" is not the same as "unrestricted".
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS default_fund_id TEXT`);
 
-  // ── BUILD-88b B.1/B.2 — A PLEDGE HAS INSTALMENTS ──────────────────────────
-  // A pledge was one amount and one due date, so "the March instalment arrived"
-  // had nowhere to land and a twelve-month pledge could only ever be all or
-  // nothing. Instalments are rows: a due date, an amount, and the gift that
-  // paid it. Created here (B.1) because the deposit sheet matches against them;
-  // B.2 is what makes them keep themselves.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS pledge_installments (
-      id TEXT PRIMARY KEY,
-      org_id TEXT NOT NULL REFERENCES orgs(id),
-      pledge_id TEXT NOT NULL REFERENCES pledges(id) ON DELETE CASCADE,
-      seq INTEGER NOT NULL,
-      due_date TEXT NOT NULL,
-      amount NUMERIC(12,2) NOT NULL,
-      paid_gift_id TEXT REFERENCES gifts(id) ON DELETE SET NULL,
-      paid_at TIMESTAMPTZ,
-      reminder_thread_id TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (pledge_id, seq)
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_org_due ON pledge_installments (org_id, due_date) WHERE paid_gift_id IS NULL`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_pledge ON pledge_installments (pledge_id)`);
-  // A pledge that states a cadence but no schedule can generate one; a SHELL
-  // pledge (BUILD-88a A.7, inferred from payments) states neither and says so.
-  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);
-  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS installment_count INTEGER`);
-  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS is_shell BOOLEAN DEFAULT false`);
-
   // ── BUILD-88b B.1 — THE DEPOSIT, REVERSIBLE AS A WHOLE ────────────────────
   // A deposit is one act: a slip that footed. Undoing it is also one act, for
   // twenty-four hours, because a slip keyed wrong is discovered the same day
@@ -1865,6 +1836,40 @@ async function initSchema() {
   // legacy and keyless rows are unaffected.
   await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS idempotency_key TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_idem ON pledges (org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+  // MOVED HERE, and it must stay here: this block was written beside the rest
+  // of BUILD-88b's schema work, ~180 lines BEFORE the pledges table is created.
+  // On an existing database that is invisible; on a FRESH one the FK to
+  // pledges(id) does not resolve, the create throws, and the server never
+  // finishes booting — which is exactly what CI does on every push.
+  // ── BUILD-88b B.1/B.2 — A PLEDGE HAS INSTALMENTS ──────────────────────────
+  // A pledge was one amount and one due date, so "the March instalment arrived"
+  // had nowhere to land and a twelve-month pledge could only ever be all or
+  // nothing. Instalments are rows: a due date, an amount, and the gift that
+  // paid it. Created here (B.1) because the deposit sheet matches against them;
+  // B.2 is what makes them keep themselves.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pledge_installments (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      pledge_id TEXT NOT NULL REFERENCES pledges(id) ON DELETE CASCADE,
+      seq INTEGER NOT NULL,
+      due_date TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      paid_gift_id TEXT REFERENCES gifts(id) ON DELETE SET NULL,
+      paid_at TIMESTAMPTZ,
+      reminder_thread_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (pledge_id, seq)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_org_due ON pledge_installments (org_id, due_date) WHERE paid_gift_id IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pl_inst_pledge ON pledge_installments (pledge_id)`);
+  // A pledge that states a cadence but no schedule can generate one; a SHELL
+  // pledge (BUILD-88a A.7, inferred from payments) states neither and says so.
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS frequency TEXT`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS installment_count INTEGER`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS is_shell BOOLEAN DEFAULT false`);
 
   // BUILD-72 Part 3 — a donor who OVERPAYS a pledge is a good problem, and the
   // money must still appear. The old code clamped the balance to 0 and the
