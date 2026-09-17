@@ -1724,6 +1724,35 @@ async function initSchema() {
   // and a draft in a second place is a draft she never sees. Steward does not
   // send it: she copies it and it leaves from her own mail.
   await pool.query(`ALTER TABLE threads ADD COLUMN IF NOT EXISTS draft_note TEXT`);
+
+  // ── BUILD-88c C.1 — HER OWN DOMAIN ────────────────────────────────────────
+  // Every donor-facing email has left through `stewardapp.dev` with the org's
+  // NAME in the display slot (BUILD-64) — which closes the "bare unfamiliar
+  // domain" trust gap and does nothing about the other one: an unfamiliar
+  // SENDING domain costs deliverability, and on a shared domain one org's spam
+  // complaints drag down every other org's reputation. This is the other half
+  // (BLOCKED-sending-domains.md's shape, built).
+  //
+  // The state machine is deliberately small: a domain, Resend's id for it, the
+  // records the org must publish, a status, and the moment it verified. An org
+  // with nothing here sends on the Steward domain exactly as before — nobody is
+  // ever blocked from sending by a DNS record they have not published yet.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain_id TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain_status TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain_records JSONB`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain_verified_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_domain_checked_at TIMESTAMPTZ`);
+  // The address the donor sees. It is a PERSON's, at the org's own domain,
+  // because a reply to an appeal should reach the person who sent it.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS sending_from_email TEXT`);
+  // A DOMAIN BELONGS TO ONE ORG. Not a per-org uniqueness — a GLOBAL one, at
+  // the database, because the whole point of authenticating a domain is that
+  // mail from it is cryptographically that organisation's. Two orgs claiming
+  // one domain is the tenant boundary failing in the one place a customer's
+  // donors would see it.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_orgs_sending_domain
+                      ON orgs (LOWER(sending_domain)) WHERE sending_domain IS NOT NULL`);
   // BACKFILL, once and idempotently: every gift timeline entry already written
   // is linked to the gift it was about, WHERE THERE IS EXACTLY ONE CANDIDATE
   // (same org, same donor, same date, and the amount the sentence named). An

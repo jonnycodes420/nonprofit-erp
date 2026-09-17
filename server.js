@@ -2204,6 +2204,267 @@ async function processPledgeInstallmentReminders(opts = {}) {
   return out;
 }
 
+// ── BUILD-88c C.2 — NEVER A BLANK BOX ─────────────────────────────────────
+// Communications opened on an empty editor and a blinking cursor. That is the
+// moment a fundraiser closes the tab: writing an appeal from nothing, in a box,
+// with a send button underneath, is the hardest thing on the screen and Steward
+// was asking for it first. Six real emails instead, in the org's own words and
+// colours.
+const templatesMod = () => import("./shared/emailTemplates.js");
+
+app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await templatesMod();
+  const [org] = await query("SELECT name, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("./shared/vocabulary.js");
+  const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const t = V.makeT(vocab);
+  const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
+  const dfName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
+  const list = T.templatesFor({ orgName: dfName, t });
+  res.json({
+    orgName: dfName,
+    // The org's own colours and logo, so the gallery is THEIR email and not a
+    // stock one with their name pasted in.
+    brand: theme ? { band: theme.band, bandFg: theme.bandFg, logo: theme.logoDataUri || theme.logoAbsUrl || null, displayName: theme.displayName } : null,
+    mergeFields: T.MERGE_FIELDS,
+    templates: list.map(x => ({ key: x.key, label: x.label, blurb: x.blurb, subject: x.subject, body: x.body })),
+  });
+}));
+
+// The segment, as PEOPLE. "17 recipients" is a number; "17 sponsors, including
+// Margaret Chen and Bob Harmon" is a group — and a name that should not be on
+// the list is the only thing anybody actually notices.
+app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await templatesMod();
+  const seg = req.body?.segment && typeof req.body.segment === "object" ? req.body.segment : {};
+  const donors = await resolveCampaignRecipients({ segment: JSON.stringify(seg) }, orgId).catch(() => []);
+  const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("./shared/vocabulary.js");
+  const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const t = V.makeT(vocab);
+  // The vocabulary key for a giver is `giver`, not `donor` — asking for
+  // "donor" returns null and the sentence reads "3 null, including Margaret".
+  const noun = seg.mode === "recurring" ? t("monthly_giver", 2) : t("giver", 2);
+  const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
+  res.json({
+    count: donors.length,
+    names: donors.slice(0, 8).map(d => ({ id: d.id, name: displayNameCase(d.name || ""), email: d.email })),
+    sentence: T.segmentSentence(donors.length, names, noun),
+    // The first recipient is whose name the preview shows, so what she reads on
+    // the right of the screen is the email the first person will get.
+    first: donors[0] ? { name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+  });
+}));
+
+// SEND ME A TEST — one copy, to the person pressing the button, under whatever
+// sending identity is in force. It is not a recipient: no `campaign_recipients`
+// row, no interaction on anybody's record, and the campaign's own count does
+// not move. A test that counted would make every campaign's numbers wrong by
+// one, forever.
+app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [campaign] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+  const [me] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const to = String(req.body?.to || me?.email || "").trim();
+  if (!to) return res.status(400).json({ error: "No address to send the test to." });
+  if (to !== me?.email) return res.status(403).json({ error: "test_to_self",
+    message: "A test goes to you. Sending a draft to somebody else is a send, and it belongs on the campaign." });
+
+  const T = await templatesMod();
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const first = String(me?.name || "").trim().split(/\s+/)[0] || "Margaret";
+  const html = await brandEmailHeaderHtml(orgId)
+    + T.renderMergeFields(campaign.body || "", {
+        first_name: first, donor_name: me?.name || first,
+        org_name: displayNameCase(org?.name || ""), gift_amount: "$250", total_giving: "$4,150",
+        year: String(new Date().getUTCFullYear()),
+      })
+    + `<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
+         This is a test of "${escapeHtml(campaign.name || "")}". Nobody else received it, and it is not counted.
+       </div>`;
+  const identity = await orgSendingIdentity(orgId);
+  let delivered = false;
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error } = await resend.emails.send({
+        from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
+        to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        html: T.renderMergeFields(html, { first_name: first }),
+      });
+      if (error) throw new Error(error.message);
+      delivered = true;
+    } catch (e) {
+      console.error("[campaign] test send failed:", e.message);
+      return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the campaign changed." });
+    }
+  }
+  res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false });
+}));
+
+// ── BUILD-88c C.1 — HER OWN DOMAIN, VERIFIED ──────────────────────────────
+// Three routes and no fourth: READ the state, CLAIM a domain, CHECK it. The
+// claim creates the domain on Resend and stores the DNS records the org must
+// publish; the check asks Resend whether they hold and flips the state.
+//
+// A DOMAIN BELONGS TO ONE ORG. The uniqueness is a GLOBAL index at the
+// database, not an application check, because "mail from this domain is that
+// organisation's" is the entire content of the claim. A second org asking for
+// a domain the first has is refused with the reason, never a silent no-op.
+//
+// Nobody is ever blocked from sending while unverified: the identity seam falls
+// back to Steward's shared domain with the org's name in the display slot and a
+// Reply-To that reaches a human, and every screen says which of the two is in
+// force.
+const DOMAIN_RE = /^(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$/i;
+const RESERVED_SENDING_DOMAINS = new Set(["stewardapp.dev", "send.stewardapp.dev", "resend.dev", "gmail.com",
+  "googlemail.com", "outlook.com", "hotmail.com", "yahoo.com", "icloud.com", "aol.com", "me.com", "live.com"]);
+
+function sendingDomainPayload(org) {
+  const records = Array.isArray(org?.sending_domain_records) ? org.sending_domain_records
+    : (typeof org?.sending_domain_records === "string" ? JSON.parse(org.sending_domain_records || "[]") : []);
+  const verified = org?.sending_domain_status === "verified";
+  return {
+    domain: org?.sending_domain || null,
+    fromEmail: org?.sending_from_email || null,
+    status: org?.sending_domain_status || "none",
+    verified,
+    verifiedAt: org?.sending_domain_verified_at || null,
+    checkedAt: org?.sending_domain_checked_at || null,
+    records,
+    // The one sentence the screen shows, written HERE so the screen and the
+    // send agree about what is happening.
+    sentence: verified
+      ? `Your email goes out from ${org.sending_from_email}. Donors see your address and your domain, and nothing of Steward's.`
+      : org?.sending_domain
+        ? `Until ${org.sending_domain} verifies, your email goes out from Steward's address with your organisation's name on it, and replies come to you.`
+        : "Your email goes out from Steward's address with your organisation's name on it, and replies come to you. Add your own domain and donors will see yours instead.",
+  };
+}
+
+app.get("/org/sending-domain", requireAuth, wrap(async (req, res) => {
+  const [org] = await query(
+    `SELECT sending_domain, sending_domain_status, sending_domain_records, sending_domain_verified_at,
+            sending_domain_checked_at, sending_from_email FROM orgs WHERE id=?`, [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+  res.json(sendingDomainPayload(org));
+}));
+
+app.post("/org/sending-domain", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const fromEmail = String(req.body?.fromEmail || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+$/.test(fromEmail)) return res.status(400).json({ error: "A real address at your own domain is required, for example ada@yourcharity.org." });
+  const domain = String(req.body?.domain || fromEmail.split("@")[1] || "").trim().toLowerCase().replace(/^@/, "");
+  if (!DOMAIN_RE.test(domain)) return res.status(400).json({ error: `"${domain}" is not a domain Steward can send from.` });
+  if (RESERVED_SENDING_DOMAINS.has(domain)) {
+    return res.status(400).json({ error: "reserved_domain",
+      message: `${domain} cannot be used: it is either Steward's own, or a mailbox provider you do not control the DNS for. Use a domain your organisation owns.` });
+  }
+  if (fromEmail.split("@")[1] !== domain) {
+    return res.status(400).json({ error: "address_domain_mismatch",
+      message: `${fromEmail} is not at ${domain}. The address donors see has to be at the domain you are verifying.` });
+  }
+  // THE WALL. Claimed at the database by a global unique index, so two orgs
+  // racing for one domain cannot both win.
+  const [taken] = await query("SELECT id FROM orgs WHERE LOWER(sending_domain)=? AND id<>?", [domain, orgId]);
+  if (taken) {
+    return res.status(409).json({ error: "domain_taken",
+      message: `${domain} is already verified for another organisation on Steward. A sending domain belongs to one organisation; if this is yours, the other organisation has to release it first.` });
+  }
+
+  // Resend owns the DNS records; Steward stores what it is told and never
+  // invents one. A provider failure is reported, not swallowed into a screen
+  // that shows records nobody can publish.
+  let created = null;
+  try {
+    const out = await resend.domains.create({ name: domain });
+    if (out?.error) throw new Error(out.error.message || String(out.error));
+    created = out?.data || out;
+  } catch (e) {
+    console.error("[sending-domain] create failed:", e.message);
+    return res.status(502).json({ error: "provider_unavailable",
+      message: "Steward could not reach the mail provider to set up that domain. Nothing was changed; try again in a minute." });
+  }
+  const records = Array.isArray(created?.records) ? created.records : [];
+  try {
+    await run(
+      `UPDATE orgs SET sending_domain=?, sending_domain_id=?, sending_domain_status=?,
+                       sending_domain_records=?::jsonb, sending_domain_verified_at=NULL,
+                       sending_domain_checked_at=NOW(), sending_from_email=?
+        WHERE id=?`,
+      [domain, created?.id || null, created?.status === "verified" ? "verified" : "pending",
+       JSON.stringify(records), fromEmail, orgId]);
+  } catch (e) {
+    if (/uq_orgs_sending_domain/.test(e.message)) {
+      return res.status(409).json({ error: "domain_taken",
+        message: `${domain} was claimed by another organisation a moment ago. A sending domain belongs to one organisation.` });
+    }
+    throw e;
+  }
+  writeAuditLog(orgId, req.user.userId, req.user.email, "updated", "sending_domain", domain, {
+    description: `Claimed ${domain} as the organisation's sending domain (from ${fromEmail})`,
+    new: { domain, fromEmail },
+  }).catch(() => {});
+  const [org] = await query(
+    `SELECT sending_domain, sending_domain_status, sending_domain_records, sending_domain_verified_at,
+            sending_domain_checked_at, sending_from_email FROM orgs WHERE id=?`, [orgId]);
+  res.status(201).json(sendingDomainPayload(org));
+}));
+
+// CHECK — ask the provider whether the records she published hold. Every press
+// is a real call; the answer is stored with the moment it was asked, so the
+// screen shows a fact with a date on it rather than a spinner's memory.
+app.post("/org/sending-domain/check", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [org0] = await query("SELECT sending_domain, sending_domain_id FROM orgs WHERE id=?", [orgId]);
+  if (!org0?.sending_domain) return res.status(400).json({ error: "no_domain", message: "Add your domain first." });
+  let got = null;
+  try {
+    const out = org0.sending_domain_id
+      ? await resend.domains.get(org0.sending_domain_id)
+      : await resend.domains.list();
+    if (out?.error) throw new Error(out.error.message || String(out.error));
+    got = out?.data ?? out;
+    if (Array.isArray(got?.data)) got = got.data.find(d => String(d.name).toLowerCase() === org0.sending_domain) || null;
+    else if (Array.isArray(got)) got = got.find(d => String(d.name).toLowerCase() === org0.sending_domain) || null;
+  } catch (e) {
+    console.error("[sending-domain] check failed:", e.message);
+    return res.status(502).json({ error: "provider_unavailable",
+      message: "Steward could not reach the mail provider just now. Nothing has changed; try the check again in a minute." });
+  }
+  const status = String(got?.status || "pending").toLowerCase();
+  const verified = status === "verified";
+  await run(
+    `UPDATE orgs SET sending_domain_status=?, sending_domain_checked_at=NOW(),
+                     sending_domain_verified_at = CASE WHEN ? THEN COALESCE(sending_domain_verified_at, NOW()) ELSE NULL END,
+                     sending_domain_records = COALESCE(?::jsonb, sending_domain_records)
+      WHERE id=?`,
+    [verified ? "verified" : status === "failed" ? "failed" : "pending", verified,
+     Array.isArray(got?.records) && got.records.length ? JSON.stringify(got.records) : null, orgId]);
+  const [org] = await query(
+    `SELECT sending_domain, sending_domain_status, sending_domain_records, sending_domain_verified_at,
+            sending_domain_checked_at, sending_from_email FROM orgs WHERE id=?`, [orgId]);
+  res.json(sendingDomainPayload(org));
+}));
+
+// Releasing it drops back to the shared domain — and frees the domain for
+// whichever organisation actually owns it.
+app.delete("/org/sending-domain", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [org0] = await query("SELECT sending_domain FROM orgs WHERE id=?", [req.user.orgId]);
+  await run(
+    `UPDATE orgs SET sending_domain=NULL, sending_domain_id=NULL, sending_domain_status=NULL,
+                     sending_domain_records=NULL, sending_domain_verified_at=NULL,
+                     sending_domain_checked_at=NULL, sending_from_email=NULL WHERE id=?`, [req.user.orgId]);
+  if (org0?.sending_domain) {
+    writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "deleted", "sending_domain", org0.sending_domain, {
+      description: `Released ${org0.sending_domain}; email goes out on Steward's shared domain again`,
+    }).catch(() => {});
+  }
+  res.json({ released: org0?.sending_domain || null });
+}));
+
 // ── BUILD-88b B.3 — THE QUEUE, AND THE THREE THINGS SHE CAN DO WITH IT ────
 // Copy, Mark sent, Skip. That is all, and "Mark all as sent" only after every
 // draft has been OPENED — a bulk action over letters nobody read is the thing
@@ -2459,7 +2720,7 @@ app.post("/invitation-request", invitationLimiter, wrap(async (req, res) => {
       resend.emails.send({
         from: "Steward <noreply@stewardapp.dev>",
         to: founderEmail,
-        reply_to: e,
+        replyTo: e,   // BUILD-88c C.1 — the SDK ignores `reply_to`; see donorSendOpts
         subject: `Invitation request — ${org}`,
         html: `<div style="font-family:Georgia,serif;line-height:1.7;color:#0f1a12">
           <p><strong>${esc(n)}</strong> (${esc(e)})<br/>${esc(org)}${role ? " · " + esc(clean(role, 120)) : ""}</p>
@@ -7231,7 +7492,11 @@ function givingAccountEmailFooterHtml(slug, email, linkColor) {
 async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
   if (!process.env.RESEND_API_KEY) return false;
   try {
-    const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
+    // BUILD-88c C.1 — the org's own identity when their domain is verified,
+    // and a Reply-To that reaches a human when it is not. A donor answering a
+    // receipt was writing to `noreply@` and the answer went nowhere.
+    const ident = await orgSendingIdentity(org.id);
+    const from = ident.from;
     // Subject names the artifact honestly (a year-end statement is not a
     // "donation receipt") and the cover carries the branded org header like
     // every other donor-facing email — both live-test findings, 2026-08-05.
@@ -7256,7 +7521,8 @@ async function sendReceiptEmail(org, donor, snapshot, pdfBuffer, filename) {
     // addresses (below, before this is ever called) to protect the shared
     // stewardapp.dev sending domain's reputation.
     const { error } = await resend.emails.send({
-      from, to: donor.email, subject, html,
+      from, ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
+      to: donor.email, subject, html,
       attachments: [{ filename, content: pdfBuffer }],
     });
     if (error) { console.error("[receipts] email send failed:", error.message || JSON.stringify(error)); return false; }
@@ -12134,9 +12400,78 @@ function fromWithDisplayName(displayName, addr) {
   const clean = String(displayName || "").replace(/[\r\n"<>]/g, "").trim().slice(0, 78);
   return clean ? `${clean} <${addr}>` : addr;
 }
-async function donorFromAddress(orgId) {
+
+// ── BUILD-88c C.1 — THE ONE PLACE A SENDING IDENTITY IS DECIDED ───────────
+// Every donor-facing send asks this, and nothing else decides it. Two answers:
+//
+//   VERIFIED — the org published Resend's DNS records for a domain it controls,
+//   Steward checked, and it holds. From is a PERSON at that domain
+//   ("Ada Trelawney <ada@sparrowmissions.org>"), Reply-To is the same address,
+//   and the List-Unsubscribe mailto is on their domain too. Nothing the
+//   recipient's inbox shows them says "steward".
+//
+//   NOT VERIFIED — exactly today's behaviour, unchanged: the org's NAME in the
+//   display slot over Steward's shared address, with the user's address as
+//   Reply-To. Nobody is ever blocked from sending by a DNS record they have not
+//   published yet, and the screen says which of the two is in force.
+//
+// A verified domain is a fact about the ORG, so this reads the org row and
+// never a request parameter: a caller cannot ask to send as somebody else.
+async function orgSendingIdentity(orgId, { replyTo = null } = {}) {
+  const [org] = await query(
+    `SELECT name, sending_domain, sending_domain_status, sending_from_email, sending_domain_verified_at
+       FROM orgs WHERE id=?`, [orgId]).catch(() => []);
   const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
-  return fromWithDisplayName(theme && theme.displayName, DONOR_MAIL_ADDR());
+  const displayName = (theme && theme.displayName) || (org && org.name) || "";
+  const verified = !!(org && org.sending_domain && org.sending_domain_status === "verified"
+                      && org.sending_from_email
+                      && String(org.sending_from_email).toLowerCase().endsWith("@" + String(org.sending_domain).toLowerCase()));
+  const addr = verified ? org.sending_from_email : DONOR_MAIL_ADDR();
+  // ON THE SHARED DOMAIN A REPLY HAS TO REACH A HUMAN. It did not: donor-facing
+  // mail carried no Reply-To at all, so a donor answering a receipt or an
+  // appeal was writing to `noreply@stewardapp.dev`, and the answer went nowhere.
+  // The org's chosen sending address if it has one, else its first admin.
+  let reply = null;
+  if (!verified) {
+    reply = replyTo || (org && org.sending_from_email) || null;
+    if (!reply) {
+      const [admin] = await query(
+        "SELECT email FROM users WHERE org_id=? AND email IS NOT NULL AND role='admin' ORDER BY created_at ASC, id ASC LIMIT 1",
+        [orgId]).catch(() => []);
+      reply = admin?.email || null;
+    }
+  }
+  return {
+    verified,
+    domain: verified ? org.sending_domain : null,
+    verifiedAt: verified ? org.sending_domain_verified_at : null,
+    address: addr,
+    from: fromWithDisplayName(displayName, addr),
+    // On the org's own domain the From IS a human at their own address, and a
+    // second header saying the same thing is noise.
+    replyTo: reply,
+    displayName,
+  };
+}
+
+// The three headers every donor-facing send needs, resolved together so they
+// cannot disagree about which identity is in force. ONE call site per send.
+// NOTE, and it cost this build an assertion to find: the Resend SDK maps
+// `payload.replyTo` onto the wire's `reply_to` and IGNORES a `reply_to` key
+// passed in. Three call sites in this file were passing the snake_case one and
+// silently sending no Reply-To at all — including the founder's onboarding
+// drip. Every one of them is `replyTo` now.
+async function donorSendOpts(orgId, donorEmail, source = "campaign") {
+  const identity = await orgSendingIdentity(orgId);
+  return {
+    from: identity.from,
+    ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
+    headers: unsubscribeHeaders(donorEmail, orgId, source, identity),
+  };
+}
+
+async function donorFromAddress(orgId) {
+  return (await orgSendingIdentity(orgId)).from;
 }
 
 // Branded email header band (BUILD-13 Part 2, rewired in BUILD-64) — the org's
@@ -12163,10 +12498,15 @@ async function brandEmailHeaderHtml(orgId) {
 // one-click unsubscribe button. The mailto: address isn't monitored/processed —
 // it's included only to satisfy the two-part format some older clients expect;
 // modern one-click support (Gmail/Outlook) relies on the https: URL + POST below.
-function unsubscribeHeaders(email, orgId, source) {
+// BUILD-88c C.1 — the mailto half of this header carries a DOMAIN, and on a
+// verified org it must be theirs: it is one of the four things an inbox will
+// show a curious recipient. `identity` is `orgSendingIdentity`'s result; with
+// none (a legacy caller) the shared address stands, which is today's behaviour.
+function unsubscribeHeaders(email, orgId, source, identity = null) {
   const url = buildUnsubscribeUrl(email, orgId, source);
+  const mailto = identity && identity.verified ? `unsubscribe@${identity.domain}` : "unsubscribe@stewardapp.dev";
   return {
-    "List-Unsubscribe": `<mailto:unsubscribe@stewardapp.dev>, <${url}>`,
+    "List-Unsubscribe": `<mailto:${mailto}>, <${url}>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
   };
 }
@@ -12464,7 +12804,7 @@ async function sendRecurringDonorEmail(org, donor, subject, bodyText, { actionUr
     </div>`;
   try {
     const { error: sendErr } = await resend.emails.send({
-      from: await donorFromAddress(org.id), // BUILD-64: the org's name in the inbox
+      ...(await donorSendOpts(org.id, donor.email, "campaign")), // BUILD-88c C.1
       to: donor.email, subject: `${subject} — ${orgName}`, html,
     });
     if (sendErr) { console.error("[recurring] donor notification error:", sendErr.message); return false; }
@@ -12584,8 +12924,8 @@ async function sendDunningEmail(org, donor, subscriptionRow) {
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
-        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
-        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+        ...(await donorSendOpts(org.id, donor.email, "campaign")),
+        to: donor.email, subject, html: bodyHtml,
       });
       if (sendErr) {
         // W-4 log honesty: a provider rejection is a FAILED send — callers
@@ -12616,8 +12956,8 @@ async function sendRecoveredThankYouEmail(org, donor, subscriptionRow) {
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
-        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
-        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+        ...(await donorSendOpts(org.id, donor.email, "campaign")),
+        to: donor.email, subject, html: bodyHtml,
       });
       if (sendErr) console.error("[dunning] recovered-email send error:", sendErr.message);
     } catch (e) { console.error("[dunning] recovered-email resend error:", e.message); }
@@ -13269,12 +13609,17 @@ async function resolveCampaignRecipients(campaign, orgId) {
     donors = donors.filter(d => Number(d.total_giving) >= 10000);
   } else if (mode === "lapsed") {
     donors = donors.filter(d => d.stage === "lapsed");
+  // AN EMPTY SELECTION SELECTS NOBODY. Each of these three used to fall
+  // THROUGH to the unfiltered list when its list was empty, so a campaign that
+  // named no stages, no tiers or no people went to EVERY donor with an email
+  // address. That is the exact thing C.2's rule forbids: nothing goes to a
+  // donor she did not press send on. An empty explicit segment is zero people.
   } else if (mode === "byStage") {
-    if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
+    donors = (segment.stages || []).length ? donors.filter(d => segment.stages.includes(d.stage)) : [];
   } else if (mode === "byTier") {
-    if (segment.tiers && segment.tiers.length) donors = donors.filter(d => segment.tiers.includes(d.capacity_tier));
+    donors = (segment.tiers || []).length ? donors.filter(d => segment.tiers.includes(d.capacity_tier)) : [];
   } else if (mode === "manual") {
-    if (segment.donorIds && segment.donorIds.length) donors = donors.filter(d => segment.donorIds.includes(d.id));
+    donors = (segment.donorIds || []).length ? donors.filter(d => segment.donorIds.includes(d.id)) : [];
   } else {
     // "all" or legacy format
     if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
@@ -13370,15 +13715,34 @@ async function runCampaignSend(campaign, org, donors) {
         try {
           if (resendApiKey && smtpFrom) {
             const { error: sendError } = await resend.emails.send({
-              from: campaignFrom, // BUILD-64: org name in the inbox (resolved once per send)
+              // BUILD-88c C.1 — the org's own identity, resolved per recipient
+              // so the From, the Reply-To and the List-Unsubscribe mailto
+              // cannot disagree about which domain is in force.
+              ...(await donorSendOpts(org.id, donor.email, "campaign")),
               to: donor.email,
               subject: campaign.subject || "",
               html: htmlFull,
-              headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
             });
             if (sendError) throw new Error(sendError.message);
           }
           await run("UPDATE campaign_recipients SET sent_at=NOW() WHERE id=?", [recipientId]);
+          // ── BUILD-88c C.2 — AN APPEAL IS A CONVERSATION ──────────────────
+          // A campaign left no trace on anybody's record, so the timeline never
+          // showed it and DRIFT — which measures silence — counted a donor as
+          // untouched in the same week the organisation wrote to them. One
+          // interaction per recipient, written only after a REAL delivery (the
+          // BUILD-85 W-4 rule: no timeline entry claims an email that never
+          // left), and only once, because `campaign_recipients` is unique per
+          // recipient and this sits inside that same successful branch.
+          await run(
+            `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
+            ["int_" + uuid().slice(0, 8), org.id, donor.id, "email",
+             `Sent "${(campaign.name || "a campaign").slice(0, 120)}".`,
+             orgToday(await orgTz(org.id)),                          // ORG_TZ_SEAM_OK
+             campaign.created_by || SYS_AUTO.id, campaign.created_by_name || SYS_AUTO.name,
+             JSON.stringify({ via: "campaign", campaignId: campaign.id, recipientId })]
+          ).catch(e => console.error(`[campaign:${campaign.id}] timeline entry failed for ${donor.id}:`, e.message));
           sentCount++;
         } catch (err) {
           failCount++;
@@ -17473,7 +17837,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
     } else if (process.env.RESEND_API_KEY) {
       try {
         const { error: sendErr } = await resend.emails.send({
-          from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, reply_to: founderEmail,
+          from: founderEmail, to: userEmail, subject: subject0, html: bodyHtml0, replyTo: founderEmail,
           headers: unsubscribeHeaders(userEmail, orgId, "sequence"),
         });
         if (sendErr) console.error("[onboarding] email 1 send error:", sendErr.message);
@@ -17645,11 +18009,15 @@ async function processSequences() {
         if (process.env.RESEND_API_KEY && smtpFrom) {
           seqDelivered = false;
           try {
-            const sendOpts = {
-              from: smtpFrom, to: recipient.email, subject, html: bodyHtml,
-              headers: unsubscribeHeaders(recipient.email, enr.org_id, "sequence"),
-            };
-            if (enr.seq_trigger === "onboarding") sendOpts.reply_to = founderEmail;
+            // BUILD-88c C.1 — a DONOR-facing sequence carries the org's own
+            // identity; the onboarding drip is founder-to-staff mail and keeps
+            // the founder's From and Reply-To.
+            const sendOpts = enr.seq_trigger === "onboarding"
+              ? { from: smtpFrom, to: recipient.email, subject, html: bodyHtml,
+                  headers: unsubscribeHeaders(recipient.email, enr.org_id, "sequence"),
+                  replyTo: founderEmail }
+              : { ...(await donorSendOpts(enr.org_id, recipient.email, "sequence")),
+                  to: recipient.email, subject, html: bodyHtml };
             const { error: sendErr } = await resend.emails.send(sendOpts);
             if (sendErr) console.error("[seq] send error:", sendErr.message);
             else seqDelivered = true;
@@ -18580,8 +18948,8 @@ app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAcce
       + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
     try {
       const { error: sendErr } = await resend.emails.send({
-        from: smtpFrom, to: donor.email, subject: draft.subject, html: bodyHtml,
-        headers: unsubscribeHeaders(donor.email, req.user.orgId, "sequence"),
+        ...(await donorSendOpts(req.user.orgId, donor.email, "sequence")),
+        to: donor.email, subject: draft.subject, html: bodyHtml,
       });
       if (sendErr) return res.status(502).json({ error: `Send failed: ${sendErr.message}` });
     } catch (e) {
@@ -19196,8 +19564,8 @@ async function sendCardExpiringEmail(org, donor, rs) {
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
-        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
-        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+        ...(await donorSendOpts(org.id, donor.email, "campaign")),
+        to: donor.email, subject, html: bodyHtml,
       });
       if (sendErr) { console.error("[card-expiry] send error:", sendErr.message); return { sent: false, refused: null }; }
     } catch (e) { console.error("[card-expiry] resend error:", e.message); return { sent: false, refused: null }; }
@@ -19418,7 +19786,7 @@ async function sendWorkflowEmail(org, donor, subject, bodyHtml) {
   const from = await donorFromAddress(org.id); // BUILD-64: the org's name in the inbox
   if (process.env.RESEND_API_KEY) {
     try {
-      const { error } = await resend.emails.send({ from, to: donor.email, subject, html, headers: unsubscribeHeaders(donor.email, org.id, "campaign") });
+      const { error } = await resend.emails.send({ ...(await donorSendOpts(org.id, donor.email, "campaign")), to: donor.email, subject, html });
       if (error) { console.error("[workflow] email error:", error.message); return false; }
     } catch (e) { console.error("[workflow] email threw:", e.message); return false; }
   }
@@ -21536,8 +21904,8 @@ async function sendPledgeReminderEmail(org, donor, pledgeRow) {
   if (process.env.RESEND_API_KEY) {
     try {
       const { error: sendErr } = await resend.emails.send({
-        from: smtpFrom, to: donor.email, subject, html: bodyHtml,
-        headers: unsubscribeHeaders(donor.email, org.id, "campaign"),
+        ...(await donorSendOpts(org.id, donor.email, "campaign")),
+        to: donor.email, subject, html: bodyHtml,
       });
       if (sendErr) console.error("[pledge-reminder] send error:", sendErr.message);
     } catch (e) { console.error("[pledge-reminder] resend error:", e.message); }
@@ -23415,8 +23783,11 @@ async function sendPortalMutationEmail(org, email, subject, bodyText) {
       ${theme.contactEmail ? `<p style="font-size:13px;color:#555;">Questions? Write to <a href="mailto:${escHtmlWf(theme.contactEmail)}">${escHtmlWf(theme.contactEmail)}</a>.</p>` : ""}
     </div>`;
   try {
+    // BUILD-88c C.1 — the org's own identity, resolved once.
+    const ident = await orgSendingIdentity(org.id);
     const { error: sendErr } = await resend.emails.send({
-      from: fromWithDisplayName(theme.displayName, DONOR_MAIL_ADDR()), // BUILD-64: org name in the inbox
+      from: ident.from,
+      ...(ident.replyTo ? { replyTo: ident.replyTo } : {}),
       to: email, subject: `${subject} — ${theme.displayName}`, html,
     });
     if (sendErr) console.error("[portal] mutation email error:", sendErr.message);

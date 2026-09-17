@@ -191,7 +191,15 @@ const comms = read("src/components/Communications.jsx");
 ok("Communications primary buttons are gold with ink text", comms.includes('primary: { background: T.gold500, border: "none", borderRadius: 8, padding: "9px 18px", color: T.ink'));
 ok("Communications destructive buttons are quiet terracotta outlines", comms.includes('danger:  { background: "transparent", border: "1px solid " + T.terracotta'));
 ok("no giant-letter template thumbnails", !comms.includes("{t.name[0]}"));
-ok("template thumbnails are serif type-samples with a gold rule", comms.includes("'DM Serif Display',serif\", fontSize: 19") && comms.includes("background: T.gold500, borderRadius: 2"));
+// BUILD-88c C.2 SUPERSEDES the BUILD-33 thumbnail. It was a serif name on a
+// gold band — Steward's colours on Steward's card. The six are the ORG's
+// emails now, so the card wears the ORG's band, the ORG's logo and its own
+// name in serif; the gold rule went with the stock thumbnail it belonged to.
+// The rule that survives is the one that mattered: a type sample, never a grey
+// letter block.
+ok("template cards wear the ORG's band and logo, with the name in serif",
+  comms.includes("brand?.band || T.greenDk") && comms.includes("brand?.logo") &&
+  comms.includes("'DM Serif Display',serif\", fontSize: 21"));
 ok("sequence rows are cream cards, not near-black panels", comms.includes('<div key={seq.id} style={{ background: T.white') && !comms.includes('background: "#0f1a12", borderRadius: 12, border: "1px solid #1a2e1f"'));
 
 // shared.jsx: the status/tier pill sets are on-palette by construction.

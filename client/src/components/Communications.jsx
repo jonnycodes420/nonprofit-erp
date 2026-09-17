@@ -1,8 +1,14 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, Modal } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive } from "./shared";
 import { errorMessage } from "../lib/domainError";
+// BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
+// live preview and the send all read ONE copy of the words. The server route
+// adds the org's colours, logo and vocabulary on top; this import is what keeps
+// the box from ever being blank if that call fails.
+import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor } from "../../../shared/emailTemplates";
+import { makeT } from "../../../shared/vocabulary";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -108,6 +114,8 @@ const S = {
     danger:  { background: "transparent", border: "1px solid " + T.terracotta, borderRadius: 8, padding: "8px 14px", color: T.terracotta, fontSize: 13, cursor: "pointer" },
     amber:   { background: T.gold600, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
     subtle:  { background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 13, cursor: "pointer" },
+    // BUILD-88c C.2 — the one emerald action. A screen gets one of these.
+    send:    { background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" },
   })[variant],
 };
 
@@ -127,39 +135,9 @@ function StatusBadge({ status }) {
   );
 }
 
-// ── Templates ─────────────────────────────────────────────────────────────────
-const TEMPLATES = [
-  {
-    id: "yearend", name: "Year End Appeal",
-    subject: "Your year-end gift makes a difference, {{first_name}}",
-    body: `<p>Dear {{first_name}},</p><p>As the year draws to a close, we're reflecting on everything we've accomplished together — and it wouldn't be possible without you.</p><p>Your support of {{org_name}} has helped us create real, lasting change. Your previous gift of {{gift_amount}} made a direct impact on the lives we serve.</p><p>This year-end, would you consider renewing your commitment with a gift? Every dollar goes directly to our programs.</p><p>With gratitude,<br>The {{org_name}} Team</p>`,
-  },
-  {
-    id: "event", name: "Event Invitation",
-    subject: "You're invited — join us for a special evening",
-    body: `<p>Dear {{first_name}},</p><p>We'd love to have you join us for an exclusive evening with {{org_name}}. As one of our valued supporters, you'll get an inside look at our programs and the impact your generosity is creating.</p><p><strong>Date:</strong> [Date]<br><strong>Time:</strong> [Time]<br><strong>Location:</strong> [Venue]</p><p>Space is limited — please RSVP by [Date].</p><p>We hope to see you there!<br>The {{org_name}} Team</p>`,
-  },
-  {
-    id: "volunteer", name: "Volunteer Thank You",
-    subject: "Thank you for giving your time, {{first_name}}",
-    body: `<p>Dear {{first_name}},</p><p>We wanted to take a moment to say a sincere thank you for volunteering with {{org_name}}. Your time and dedication mean everything to us and to the people we serve.</p><p>Volunteers like you are the backbone of our mission. Because of your generosity with your time, we've been able to expand our reach and deepen our impact.</p><p>With heartfelt thanks,<br>The {{org_name}} Team</p>`,
-  },
-  {
-    id: "grant", name: "Grant Announcement",
-    subject: "Exciting news from {{org_name}}",
-    body: `<p>Dear {{first_name}},</p><p>We have exciting news to share! {{org_name}} has recently been awarded a significant grant that will allow us to expand our work in meaningful ways.</p><p>This milestone is a testament to the strength of our community — supporters like you who believe in our mission and make our work possible.</p><p>Thank you for being part of this journey with us.</p><p>Warmly,<br>The {{org_name}} Team</p>`,
-  },
-  {
-    id: "newsletter", name: "Monthly Newsletter",
-    subject: "{{org_name}} — [Month] Update",
-    body: `<p>Dear {{first_name}},</p><h2>What We've Been Up To</h2><p>[Highlight 1 — program update, milestone, or story]</p><h2>By the Numbers</h2><p>[Key stat or metric from this month]</p><h2>Coming Up</h2><p>[Upcoming event or opportunity to get involved]</p><p>Thank you for staying connected with {{org_name}}. Your support makes all of this possible.</p><p>Until next month,<br>The {{org_name}} Team</p>`,
-  },
-  {
-    id: "lapsed", name: "Lapsed Donor Re-engagement",
-    subject: "We miss you, {{first_name}}",
-    body: `<p>Dear {{first_name}},</p><p>It's been a while since we've heard from you, and we wanted to reach out personally. Your past gift of {{gift_amount}} to {{org_name}} made a real difference, and we'd love to reconnect.</p><p>A lot has changed since your last gift — and there's so much we'd love to share with you about where your support went and the impact it created.</p><p>If you're open to it, we'd love to have you back. Even a small gift goes a long way.</p><p>With hope,<br>The {{org_name}} Team</p>`,
-  },
-];
+// The hard-coded template list that used to live here is gone. The six now
+// come from shared/emailTemplates.js through GET /campaigns/templates, so the
+// gallery, the preview and the send read the same words. BUILD-88c C.2.
 
 // ── Segment helpers ───────────────────────────────────────────────────────────
 const STAGE_OPTS = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
@@ -213,13 +191,17 @@ function SegmentPicker({ seg, onChange, allDonors }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {/* A CHOSEN SEGMENT IS A STATE, NOT AN ACTION. Filled emerald used to
+            say "All Donors" louder than the send button said "Send to 3", and
+            one thing on a screen may mean "this is the button". */}
         {SEG_MODES.map(m => (
           <button key={m.id} onClick={() => upd({ mode: m.id })}
+            aria-pressed={mode === m.id}
             style={{
-              background: mode === m.id ? T.green : T.bg2,
-              border: "1px solid " + (mode === m.id ? T.green : T.bg3),
+              background: mode === m.id ? T.green100 : T.bg2,
+              border: "1px solid " + (mode === m.id ? T.greenDk : T.bg3),
               borderRadius: 99, padding: "5px 12px", fontSize: 11,
-              color: mode === m.id ? "#fff" : T.ink3, cursor: "pointer",
+              color: mode === m.id ? T.greenDk : T.ink3, cursor: "pointer",
               fontWeight: mode === m.id ? 700 : 400,
             }}>{m.label}</button>
         ))}
@@ -228,7 +210,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {STAGE_OPTS.map(s => (
             <button key={s} onClick={() => tog("stages", s)}
-              style={{ background: (seg.stages || []).includes(s) ? T.greenDk : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? "#fff" : T.ink3, cursor: "pointer" }}>
+              style={{ background: (seg.stages || []).includes(s) ? T.green100 : T.bg2, border: "1px solid " + ((seg.stages || []).includes(s) ? T.greenDk : T.bg3), borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.stages || []).includes(s) ? T.greenDk : T.ink3, cursor: "pointer" }}>
               {s}
             </button>
           ))}
@@ -268,20 +250,18 @@ function SegmentPicker({ seg, onChange, allDonors }) {
 }
 
 // ── RichEditor (module-level) ─────────────────────────────────────────────────
-function RichEditor({ editorRef, initialHtml }) {
+function RichEditor({ editorRef, initialHtml, onInput }) {
   useEffect(() => {
     if (editorRef.current) editorRef.current.innerHTML = initialHtml || "";
+    if (onInput) onInput(initialHtml || "");
   }, []);
 
   const exec = (cmd, val) => { editorRef.current?.focus(); document.execCommand(cmd, false, val ?? undefined); };
 
-  const TAGS = [
-    ["{{first_name}}", "First"],
-    ["{{last_name}}", "Last"],
-    ["{{org_name}}", "Org"],
-    ["{{gift_amount}}", "Last gift"],
-    ["{{total_giving}}", "Total giving"],
-  ];
+  // ONE list, and it is the renderer's. `{{last_name}}` used to be offered here
+  // and renderMergeFields has never replaced it — every email that used the chip
+  // went out with the braces still in it.
+  const TAGS = MERGE_FIELDS.map(f => [f.token, f.label]);
 
   const TB = ({ cmd, val, children }) => (
     <button onMouseDown={e => { e.preventDefault(); exec(cmd, val); }}
@@ -304,13 +284,15 @@ function RichEditor({ editorRef, initialHtml }) {
         <span style={{ fontSize: 10, color: T.ink3 }}>Insert:</span>
         {TAGS.map(([tag, lbl]) => (
           <button key={tag} title={tag}
-            onMouseDown={e => { e.preventDefault(); editorRef.current?.focus(); document.execCommand("insertText", false, tag); }}
+            onMouseDown={e => { e.preventDefault(); editorRef.current?.focus(); document.execCommand("insertText", false, tag); if (onInput) onInput(editorRef.current?.innerHTML || ""); }}
             style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 4, padding: "2px 7px", fontSize: 10, color: T.greenDk, cursor: "pointer" }}>
             {lbl}
           </button>
         ))}
       </div>
       <div ref={editorRef} contentEditable suppressContentEditableWarning
+        data-testid="campaign-editor"
+        onInput={e => onInput && onInput(e.currentTarget.innerHTML)}
         style={{ minHeight: 260, padding: "14px 16px", background: T.bg, color: T.ink, fontSize: 14, lineHeight: 1.8, outline: "none" }} />
     </div>
   );
@@ -788,7 +770,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [form, setForm]               = useState(BLANK);
   const [editingId, setEditingId]     = useState(null);
   const [sending, setSending]         = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [aiLoading, setAiLoading]     = useState(false);
   const [aiDraft, setAiDraft]         = useState("");
   const [linkLoading, setLinkLoading] = useState(false);
@@ -802,6 +783,30 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [audienceSeg, setAudienceSeg] = useState("all");
   const [newBtnHover, setNewBtnHover] = useState(false);
   const [hoveredRowId, setHoveredRowId] = useState(null);
+
+  // ── BUILD-88c C.2 — never a blank box ──────────────────────────────────────
+  const [gallery, setGallery]       = useState(null);  // server: the six + brand
+  const [segPreview, setSegPreview] = useState(null);  // the segment, as people
+  const [testState, setTestState]   = useState(null);  // send-me-a-test result
+  const [liveHtml, setLiveHtml]     = useState("");    // what the editor holds, now
+  const [showSchedule, setShowSchedule] = useState(false);
+  const t = useMemo(() => makeT(data?.org?.vocabulary), [data?.org?.vocabulary]);
+  // The server's six carry the org's real name and vocabulary. If that call
+  // fails the same six are built here from the shared module — the gallery is
+  // never empty, because an empty gallery is a blank box with extra steps.
+  const templates = useMemo(() => (
+    gallery?.templates?.length ? gallery.templates
+      : templatesFor({ orgName: data?.org?.name || "your organisation", t })
+  ), [gallery, data?.org?.name, t]);
+  const brand = gallery?.brand || null;
+  // Which sending identity is in force — hers, or Steward's with her name on
+  // it. The preview says so under the email, because "who is this from" is the
+  // first thing a donor decides and she should see the same answer they will.
+  const [sendingIdentity, setSendingIdentity] = useState(null);
+  useEffect(() => {
+    apiFetch("/campaigns/templates").then(setGallery).catch(() => {});
+    apiFetch("/org/sending-domain").then(setSendingIdentity).catch(() => {});
+  }, []);
 
   const loadCampaigns = async () => {
     try { setCampaigns(await apiFetch("/campaigns")); } catch (e) { console.error(e); }
@@ -854,18 +859,47 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       .slice(0, 5);
   }, [campaigns]);
 
+  // The segment, as PEOPLE, answered by the side that does the sending. The
+  // client's countSegment can only count what /donors/summaries returned; the
+  // send resolves its own list. Two answers to "who gets this" is one too many.
+  const segKey = JSON.stringify(form.seg);
+  useEffect(() => {
+    if (view !== "builder") return;
+    let dead = false;
+    const tid = setTimeout(() => {
+      apiFetch("/campaigns/segment-preview", { method: "POST", body: JSON.stringify({ segment: JSON.parse(segKey) }) })
+        .then(r => { if (!dead) setSegPreview(r); })
+        .catch(() => { if (!dead) setSegPreview(null); });
+    }, 250);
+    return () => { dead = true; clearTimeout(tid); };
+  }, [view, segKey]);
+
   // ── Builder actions ─────────────────────────────────────────────────────────
   const openBuilder = (campaign = null) => {
-    if (campaign) {
-      const raw = typeof campaign.segment === "string" ? JSON.parse(campaign.segment || "{}") : (campaign.segment || {});
-      const mode = raw.mode || "all";
-      setForm({ name: campaign.name || "", subject: campaign.subject || "", bodyHtml: campaign.body || "",
-        seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [] },
-        scheduledAt: campaign.scheduled_at ? new Date(campaign.scheduled_at).toISOString().slice(0, 16) : "" });
-      setEditingId(campaign.id);
-    } else {
-      setForm(BLANK); setEditingId(null);
-    }
+    setTestState(null); setSegPreview(null); setShowSchedule(false);
+    // NEVER A BLANK BOX. A new campaign starts at the six, not at a cursor —
+    // writing an appeal from nothing is the hardest thing on the screen and it
+    // is not what Steward should ask for first.
+    if (!campaign) { setView("gallery"); return; }
+    const raw = typeof campaign.segment === "string" ? JSON.parse(campaign.segment || "{}") : (campaign.segment || {});
+    const mode = raw.mode || "all";
+    const body = normalizeMergeFields(campaign.body || "");
+    setForm({ name: campaign.name || "", subject: campaign.subject || "", bodyHtml: body,
+      seg: { mode, stages: raw.stages || [], tiers: raw.tiers || [], donorIds: raw.donorIds || [] },
+      scheduledAt: campaign.scheduled_at ? new Date(campaign.scheduled_at).toISOString().slice(0, 16) : "" });
+    setEditingId(campaign.id);
+    setShowSchedule(!!campaign.scheduled_at);
+    setLiveHtml(body);
+    setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
+  };
+
+  // One of the six, opened as a campaign. The words arrive already written and
+  // already in the org's name; what is left is the part that is hers.
+  const openTemplate = (tpl) => {
+    const body = normalizeMergeFields(tpl.body || "");
+    setForm({ name: tpl.label || tpl.name || "", subject: tpl.subject || "", bodyHtml: body,
+      seg: { mode: "all" }, scheduledAt: "" });
+    setEditingId(null); setLiveHtml(body); setTestState(null); setShowSchedule(false);
     setEditorKey(k => k + 1); setAiDraft(""); setView("builder");
   };
 
@@ -920,6 +954,30 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     setSending(false);
   };
 
+  // One save path for the two things that need a campaign id — the test and the
+  // send — so a test never creates a second draft beside the one on screen.
+  const saveForSend = async () => {
+    const body = editorRef.current?.innerHTML || form.bodyHtml || "";
+    const payload = { name: form.name || "Untitled", subject: form.subject, body, segment: form.seg, status: "draft" };
+    if (editingId) { await apiFetch(`/campaigns/${editingId}`, { method: "PUT", body: JSON.stringify(payload) }); return editingId; }
+    const saved = await apiFetch("/campaigns", { method: "POST", body: JSON.stringify(payload) });
+    setEditingId(saved.id);
+    return saved.id;
+  };
+
+  // SEND ME A TEST. One copy, to her, under whatever sending identity is in
+  // force — and it is not a recipient: nobody's record gets an email on it and
+  // the campaign's count does not move.
+  const sendTest = async () => {
+    setTestState({ state: "sending" });
+    try {
+      const id = await saveForSend();
+      const r = await apiFetch(`/campaigns/${id}/test`, { method: "POST", body: JSON.stringify({}) });
+      setTestState({ state: "sent", to: r.to, from: r.from, verified: r.verified });
+      await loadCampaigns();
+    } catch (e) { setTestState({ state: "error", message: errorMessage(e) }); }
+  };
+
   const deleteCampaign = async (id) => {
     try { await apiFetch(`/campaigns/${id}`, { method: "DELETE" }); await loadCampaigns(); }
     catch (e) { alert(errorMessage(e)); }
@@ -946,6 +1004,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         editorRef.current.focus();
         const linkHtml = `<p><a href="${r.url}" style="background:#0d5c3a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
         document.execCommand("insertHTML", false, linkHtml);
+        setLiveHtml(editorRef.current.innerHTML);
       }
     } catch (e) {
       alert(errorMessage(e, "Could not generate donation link. Make sure Stripe is connected in Settings."));
@@ -962,22 +1021,80 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       const html = bodyText.startsWith("<") ? bodyText
         : bodyText.split(/\n\n+/).map(p => `<p>${p.replace(/\n/g, "<br>")}</p>`).join("");
       editorRef.current.innerHTML = html;
+      setLiveHtml(html);
     }
     setAiDraft("");
   };
 
-  const getPreviewHtml = () => (editorRef.current?.innerHTML || form.bodyHtml || "")
-    .replace(/{{first_name}}/g, "Margaret")
-    .replace(/{{last_name}}/g, "Chen")
-    .replace(/{{org_name}}/g, data?.org?.name || "Org")
-    .replace(/{{gift_amount}}/g, "$5,000")
-    .replace(/{{total_giving}}/g, "$24,500")
-    .replace(/{{year}}/g, String(new Date().getFullYear()));
+  // THE PREVIEW IS THE EMAIL. Same renderer as the server's send, and the name
+  // in it is the FIRST RECIPIENT's — what she reads on the right of the screen
+  // is what the first person on the list will open. "Margaret" only when the
+  // segment is still empty.
+  const previewFirst = segPreview?.first || null;
+  const previewOrgName = gallery?.orgName || data?.org?.name || "your organisation";
+  const renderPreview = (html) => renderMergeFields(html || "", {
+    first_name: previewFirst?.firstName || "Margaret",
+    donor_name: previewFirst?.name || "Margaret Chen",
+    org_name: previewOrgName,
+  });
+  const getPreviewHtml = () => renderPreview(liveHtml || editorRef.current?.innerHTML || form.bodyHtml || "");
+
+  // ── THE SIX — full screen, in the org's own colours ─────────────────────────
+  // This is what "New Campaign" is now. Six emails that could go out today,
+  // each one already carrying the org's name, its colours and its logo, so the
+  // first decision is "which of these", not "what do I write".
+  if (view === "gallery") {
+    const stripTags = h => String(h || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return (
+      <div data-testid="campaign-gallery" style={{ position: "fixed", inset: 0, zIndex: 200, background: T.bg, color: T.ink, overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", background: T.white, borderBottom: "1px solid " + T.bg3 }}>
+          <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>New Campaign</span>
+        </div>
+
+        <div style={{ maxWidth: 880, margin: "0 auto", padding: "32px 20px 64px" }}>
+          <h2 style={{ margin: 0, fontFamily: "'DM Serif Display',serif", fontSize: 28, fontWeight: 400, color: T.ink }}>Start from one of these.</h2>
+          <p style={{ margin: "10px 0 28px", fontSize: 14, color: T.ink3, lineHeight: 1.6, maxWidth: 560 }}>
+            Every one is a finished email in {previewOrgName}&rsquo;s words — not a skeleton. Change the parts that are yours and press send.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 20 }}>
+            {templates.map(tpl => (
+              <div key={tpl.key} data-testid={"template-" + tpl.key}
+                {...interactive(() => openTemplate(tpl), { label: `Use the ${tpl.label} email` })}
+                style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: 32,
+                  display: "flex", flexDirection: "column", gap: 12 }}>
+                {/* The org's band and logo, because this is THEIR email. */}
+                <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, minHeight: 20 }}>
+                  {brand?.logo
+                    ? <img src={brand.logo} alt="" style={{ height: 22, maxWidth: 110, objectFit: "contain" }} />
+                    : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{brand?.displayName || previewOrgName}</span>}
+                </div>
+                <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 21, color: T.ink, lineHeight: 1.2 }}>{tpl.label}</div>
+                <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>{tpl.blurb}</div>
+                <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{renderPreview(tpl.subject)}</div>
+                  <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
+                    {stripTags(renderPreview(tpl.body))}
+                  </div>
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: T.greenDk }}>Use this &rarr;</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Builder full-screen ─────────────────────────────────────────────────────
   if (view === "builder") {
-    const recipCount = countSegment(allDonors, form.seg);
+    // The count comes from the side that does the sending when it has answered;
+    // the local count is the stand-in for the 250ms before it does.
+    const recipCount = segPreview ? segPreview.count : countSegment(allDonors, form.seg);
     const subjLen = form.subject.length;
+    const segSentence = segPreview?.sentence || "";
+    const previewName = previewFirst?.firstName || "Margaret";
     return (
       <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", flexDirection: "column", background: T.white, color: T.ink }}>
         {/* Header */}
@@ -986,25 +1103,21 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
             <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{editingId ? "Edit Campaign" : "New Campaign"}</span>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            {/* Draft campaign copy */}
-            <button onClick={draftAI} disabled={aiLoading}
-              style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 8, padding: "8px 14px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 13, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              {aiLoading ? <><Spin /> Drafting…</> : "✦ Draft Copy"}
+          {/* ONE action, and it is emerald. Everything else here is a way back
+              to the draft; scheduling is a link, because a campaign that is
+              scheduled is still a campaign that was sent on purpose. */}
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button onClick={saveDraft} style={S.btn("ghost")}>Save draft</button>
+            <button onClick={() => { setShowSchedule(v => !v); }}
+              style={{ background: "transparent", border: "none", padding: 0, color: T.greenDk, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+              {showSchedule ? "Send it myself instead" : "Schedule it instead"}
             </button>
-            <button onClick={addDonationLink} disabled={linkLoading}
-              style={{ background: linkLoading ? T.bg3 : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: linkLoading ? T.ink3 : T.greenDk, fontSize: 13, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-              {linkLoading ? <><Spin /> Generating…</> : "Donation Link"}
-            </button>
-            <button onClick={() => setShowPreview(true)} style={S.btn("ghost")}>Preview</button>
-            <button onClick={saveDraft} style={S.btn("subtle")}>Save Draft</button>
-            {form.scheduledAt && <button onClick={scheduleIt} style={S.btn("amber")}>⏰ Schedule</button>}
-            {isAdmin && (
-              <button onClick={() => sendNow(null)} disabled={sending}
-                style={{ ...S.btn("primary"), opacity: sending ? 0.6 : 1, cursor: sending ? "not-allowed" : "pointer" }}>
-                {sending ? <><Spin /> Sending…</> : `↑ Send to ${recipCount}`}
-              </button>
-            )}
+            {isAdmin && (showSchedule
+              ? <button onClick={scheduleIt} style={S.btn("send")}>Schedule</button>
+              : <button onClick={() => sendNow(null)} disabled={sending} data-testid="campaign-send"
+                  style={{ ...S.btn("send"), opacity: sending ? 0.6 : 1, cursor: sending ? "not-allowed" : "pointer" }}>
+                  {sending ? <><Spin /> Sending…</> : `↑ Send to ${recipCount}`}
+                </button>)}
           </div>
         </div>
 
@@ -1033,14 +1146,23 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <SegmentPicker seg={form.seg}
                 onChange={seg => { setForm(f => ({ ...f, seg })); if (seg.mode === "manual") loadDonors(); }}
                 allDonors={allDonors} />
+              {/* THE SEGMENT, AS PEOPLE. Nobody notices that 17 is too many;
+                  everybody notices a name that should not be on the list. */}
+              {segSentence && (
+                <div data-testid="segment-sentence" style={{ marginTop: 10, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+                  {segSentence}
+                </div>
+              )}
             </div>
 
-            <div>
-              <label style={S.label}>Schedule for later (optional)</label>
-              <input type="datetime-local" value={form.scheduledAt}
-                onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                style={{ ...S.input, width: "auto" }} />
-            </div>
+            {showSchedule && (
+              <div>
+                <label style={S.label}>Send it at</label>
+                <input type="datetime-local" value={form.scheduledAt}
+                  onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
+                  style={{ ...S.input, width: "auto" }} />
+              </div>
+            )}
 
             {aiDraft && (
               <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
@@ -1051,30 +1173,71 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             )}
           </div>
 
-          {/* Right: editor */}
-          <div style={{ flex: 1, padding: 20, overflowY: "auto", background: T.white }}>
-            <label style={S.label}>Email Body</label>
-            <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} />
+          {/* Middle: the editor */}
+          <div style={{ flex: 1, minWidth: 0, padding: 20, overflowY: "auto", background: T.white, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <label style={{ ...S.label, marginBottom: 0 }}>Email Body</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={draftAI} disabled={aiLoading}
+                  style={{ background: aiLoading ? T.bg3 : T.gold100, border: "1px solid " + T.gold300, borderRadius: 8, padding: "6px 12px", color: aiLoading ? T.ink3 : T.gold700, fontSize: 12, fontWeight: 700, cursor: aiLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  {aiLoading ? <><Spin /> Drafting…</> : "✦ Draft copy"}
+                </button>
+                <button onClick={addDonationLink} disabled={linkLoading}
+                  style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", color: linkLoading ? T.ink3 : T.ink2, fontSize: 12, fontWeight: 700, cursor: linkLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  {linkLoading ? <><Spin /> Generating…</> : "Donation link"}
+                </button>
+              </div>
+            </div>
+            <RichEditor key={editorKey} editorRef={editorRef} initialHtml={form.bodyHtml} onInput={setLiveHtml} />
+          </div>
+
+          {/* Right: THE EMAIL, at the width it will be read at. Not a preview
+              of the markup — the same renderer the send uses, with the first
+              recipient's own first name in it. */}
+          <div className="comm-preview" style={{ width: 390, flexShrink: 0, borderLeft: "1px solid " + T.bg3, background: T.bg, padding: "20px 20px 32px", overflowY: "auto" }}>
+            <div style={{ ...S.label, marginBottom: 12 }}>What {previewName} will see</div>
+            <div data-testid="campaign-preview" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, overflow: "hidden" }}>
+              <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, padding: "14px 18px", display: "flex", alignItems: "center", gap: 10, minHeight: 22 }}>
+                {brand?.logo
+                  ? <img src={brand.logo} alt="" style={{ height: 24, maxWidth: 120, objectFit: "contain" }} />
+                  : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 16 }}>{brand?.displayName || previewOrgName}</span>}
+              </div>
+              <div style={{ padding: "18px 18px 26px" }}>
+                <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>
+                  From {brand?.displayName || previewOrgName}{sendingIdentity?.verified && sendingIdentity.fromEmail ? ` · ${sendingIdentity.fromEmail}` : ""}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, lineHeight: 1.35, marginBottom: 14 }}>
+                  {renderPreview(form.subject) || "No subject yet"}
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid " + T.bg3, margin: "0 0 14px" }} />
+                <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.8 }}
+                  dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
+              </div>
+            </div>
+
+            {/* SEND ME A TEST — one copy, to her, and it counts against nothing. */}
+            <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 8 }}>
+              <button onClick={sendTest} disabled={testState?.state === "sending"} data-testid="send-me-a-test"
+                style={{ ...S.btn("ghost"), fontWeight: 700, color: T.ink, cursor: testState?.state === "sending" ? "not-allowed" : "pointer" }}>
+                {testState?.state === "sending" ? <><Spin /> Sending…</> : "Send me a test"}
+              </button>
+              {testState?.state === "sent" && (
+                <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.55 }}>
+                  Sent to {testState.to}. It went out from {testState.from} and is not counted against this campaign.
+                </div>
+              )}
+              {testState?.state === "error" && (
+                <div style={{ fontSize: 12, color: T.terracotta, lineHeight: 1.55 }}>{testState.message}</div>
+              )}
+              {sendingIdentity?.sentence && (
+                <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.55 }}>{sendingIdentity.sentence}</div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Preview modal */}
-        {showPreview && (
-          <Modal onClose={() => setShowPreview(false)} width={600} zIndex={1000}
-            backdrop="#0009" blur={false} padding={32} ariaLabel="Email preview"
-            dialogStyle={{ borderRadius: 16, maxHeight: "80vh" }}>
-            <div>
-              <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Subject</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#0f1a12", marginBottom: 16 }}>
-                {form.subject.replace(/{{org_name}}/g, data?.org?.name || "Org").replace(/{{first_name}}/g, "Margaret")}
-              </div>
-              <hr style={{ border: "none", borderTop: "1px solid " + T.bg3, marginBottom: 16 }} />
-              <div style={{ fontSize: 14, color: "#0f1a12", lineHeight: 1.8 }} dangerouslySetInnerHTML={{ __html: getPreviewHtml() }} />
-              <div style={{ marginTop: 10, fontSize: 11, color: T.ink3 }}>Preview — merge tags replaced with sample data when sent.</div>
-              <button onClick={() => setShowPreview(false)} style={{ marginTop: 16, ...S.btn("subtle") }}>Close</button>
-            </div>
-          </Modal>
-        )}
+        {/* The preview used to be a modal you had to ask for. It is the right
+            half of the screen now, and it is live. */}
       </div>
     );
   }
@@ -1310,31 +1473,23 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         {nav === "templates" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: T.ink }}>Templates</h2>
-            <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>One-click to load into the campaign builder with placeholder content.</p>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
-              {TEMPLATES.map(t => (
-                <div key={t.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
-                  {/* Thumbnail — a type sample on cream (serif name, subject
-                      line, gold rule), never a grey letter block (BUILD-33). */}
-                  <div style={{ background: T.gold50, border: "1px solid " + T.bg2, borderRadius: 8, minHeight: 100, padding: "16px 16px 14px", display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
-                    <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 19, color: T.ink, lineHeight: 1.15 }}>{t.name}</div>
-                    <div style={{ width: 34, height: 3, background: T.gold500, borderRadius: 2 }} />
-                    <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{t.subject}</div>
+            <p style={{ margin: 0, fontSize: 13, color: T.ink3 }}>
+              The same six &ldquo;New Campaign&rdquo; opens on — finished emails in {previewOrgName}&rsquo;s words, not skeletons.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+              {templates.map(tpl => (
+                <div key={tpl.key} data-testid={"template-card-" + tpl.key}
+                  {...interactive(isReadOnly ? null : () => openTemplate(tpl), { label: `Use the ${tpl.label} email` })}
+                  style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: 32, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ background: brand?.band || T.greenDk, color: brand?.bandFg || T.white, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, minHeight: 20 }}>
+                    {brand?.logo
+                      ? <img src={brand.logo} alt="" style={{ height: 22, maxWidth: 110, objectFit: "contain" }} />
+                      : <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 15 }}>{brand?.displayName || previewOrgName}</span>}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.subject}</div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setForm({ name: t.name, subject: t.subject, bodyHtml: t.body, seg: { mode: "all" }, scheduledAt: "" });
-                      setEditingId(null);
-                      setEditorKey(k => k + 1);
-                      setAiDraft("");
-                      setView("builder");
-                    }}
-                    style={S.btn("primary")}>
-                    Use Template →
-                  </button>
+                  <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 20, color: T.ink, lineHeight: 1.2 }}>{tpl.label}</div>
+                  <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>{tpl.blurb}</div>
+                  <div style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, fontSize: 13, fontWeight: 700, color: T.ink }}>{renderPreview(tpl.subject)}</div>
+                  {!isReadOnly && <span style={{ fontSize: 13, fontWeight: 700, color: T.greenDk }}>Use this &rarr;</span>}
                 </div>
               ))}
             </div>

@@ -96,3 +96,26 @@ aws s3api put-bucket-lifecycle-configuration --bucket steward-portal-assets \
 
 Verify: `aws s3api get-bucket-versioning --bucket steward-portal-assets
 --endpoint-url https://t3.storageapi.dev` → `"Status": "Enabled"`.
+
+## Founding-partner onboarding call — verify the org's sending domain (BUILD-88c C.1)
+
+Add to the import call, after the file is in and before the first appeal goes out:
+
+1. Settings → **Send from your own address** → type the address donors should
+   see (`ada@theircharity.org`) → **Use this address**.
+2. Steward shows the three DNS records Resend asked for (DKIM TXT, an MX and a
+   TXT for the return path). Copy each and give them to whoever runs the
+   organisation's DNS — usually their web host, sometimes a volunteer.
+3. Press **Check** when they say it is published. Records usually propagate in
+   minutes; occasionally hours. **Nothing is blocked while it is pending** —
+   appeals, receipts and reconnect links all still send on Steward's shared
+   domain with the org's name on them and a Reply-To that reaches them.
+4. When it flips to **Verified**, send yourself one test from Communications and
+   read it on a phone: the From should be their address at their domain, and
+   nothing in the header should say Steward.
+
+Why it is on the call and not left to them: an unfamiliar sending domain costs
+deliverability, and a receipt in a donor's spam folder becomes a support ticket
+the donor opens **with the organisation**. It is fifteen minutes on a call and
+it is the difference between their mail arriving and their mail arriving
+sometimes.
