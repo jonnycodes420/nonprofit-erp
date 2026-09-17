@@ -6,7 +6,7 @@
 // screen and Steward was asking for it first.
 //
 // So it opens on six real emails. Not "templates" in the sense of a skeleton
-// with `[YOUR TEXT HERE]` in it — each one is a message somebody could send
+// full of shouted placeholders — each one is a message somebody could send
 // today, with the org's name, its colours and its logo already in it, written
 // the way a small shop writes. She changes the parts that are hers and presses
 // send.

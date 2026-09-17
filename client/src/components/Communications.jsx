@@ -1222,7 +1222,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 {testState?.state === "sending" ? <><Spin /> Sending…</> : "Send me a test"}
               </button>
               {testState?.state === "sent" && (
-                <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.55 }}>
+                <div data-testid="test-result" style={{ fontSize: 12, color: T.ink2, lineHeight: 1.55 }}>
                   Sent to {testState.to}. It went out from {testState.from} and is not counted against this campaign.
                 </div>
               )}
