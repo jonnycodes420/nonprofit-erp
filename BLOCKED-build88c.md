@@ -45,3 +45,13 @@ snake_case one, so they sent **no Reply-To at all** — including the founder's
 onboarding drip to new staff. Every one is `replyTo` now, and donor-facing mail
 gained a Reply-To it never had. Worth knowing when the SDK is next upgraded:
 this is a silently-dropped field, not an error.
+
+## 4. The walk's last step is Jonathan's (C.2, by construction)
+
+`scripts/build88c-walk.js` runs everything the brief's walk asks for except the
+inbox: it opens Communications, picks Appeal, presses "Send me a test", captures
+the email that leaves, and reads it in a 390px browser (no sideways scroll,
+nothing off the right edge, no body type under 14px, no merge braces). What it
+cannot do is send to **jonathan@stewardapp.dev** and look at it on a phone — the
+scratch stack's `RESEND_API_KEY` is a dummy and the mail lands in the local sink
+on :5602. One press of "Send me a test" on prod, read on a real phone, closes it.
