@@ -12,11 +12,15 @@ checks because nothing was left to re-run. These files are the debt paid back
 
 ## Setup — scratch Postgres 16 with SSL
 
+**Do NOT put the cluster in `/tmp`.** macOS reaps files there and it took the
+cluster out from under a running battery (26 suites failed at once with
+`could not open file "global/pg_filenode.map"`). `$HOME/steward-test-pg`.
+
 `db.js` hardcodes `ssl: { rejectUnauthorized: false }`, so the scratch cluster
 must serve SSL (self-signed is fine):
 
 ```bash
-DIR=/tmp/steward-test-pg
+DIR=$HOME/steward-test-pg
 initdb -D $DIR/data -U steward --no-locale -E UTF8
 openssl req -new -x509 -days 2 -nodes -out $DIR/server.crt -keyout $DIR/server.key -subj "/CN=localhost"
 chmod 600 $DIR/server.key && cp $DIR/server.crt $DIR/server.key $DIR/data/

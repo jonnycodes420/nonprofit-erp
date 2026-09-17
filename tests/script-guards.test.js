@@ -86,7 +86,11 @@ const SELF_REFUSING = [
   // BUILD-88c — the walk. WRITES (it seeds its own scratch org and saves a
   // draft campaign there) and refuses any non-loopback API, app or database;
   // the test send it presses is captured by the walk's own :5602 sink.
-  "build88c-walk"];
+  "build88c-walk",
+  // BUILD-89 — the demo file. WRITES 1,000 donors and their giving through the
+  // API; loopback by default, and a non-loopback BASE needs
+  // --i-know-this-is-prod, because seeding the demo org IS a prod write.
+  "build89-demo-seed"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [
@@ -98,9 +102,10 @@ const LOOPBACK_HARDCODED = [
   "build87-f3-walk",
   // BUILD-87 F.1 — the modal-shell walk. Loopback :5601/:4173, hardcoded.
   "build87-f1-walk",
-  // BUILD-88d — the Home proportions walk. Loopback :5601/:4173, hardcoded;
-  // it registers its own throwaway org and writes only through the API.
-  "build88d-walk",
+  // BUILD-89 — the Home walk (BUILD-88d's, folded forward: 88d's proportions
+  // live inside 89's shape, and two walks measuring one screen is one too
+  // many). Loopback :5601/:4173, hardcoded.
+  "build89-walk",
   "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only

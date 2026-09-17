@@ -79,40 +79,22 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     const text = await page.evaluate(() => document.body.innerText);
 
     // ── §1 the header ──────────────────────────────────────────────────────
-    const note = await page.evaluate(() => {
-      const el = document.querySelector(".home-note"); if (!el) return null;
-      const cs = getComputedStyle(el), r = el.getBoundingClientRect();
-      return { size: parseFloat(cs.fontSize), family: cs.fontFamily, maxWidth: cs.maxWidth,
-               width: Math.round(r.width), text: el.innerText.trim() };
-    });
-    ok(`${label}: the note is the headline`, !!note, note);
-    if (note) {
-      console.log(`\n  she reads: ${note.text}\n`);
-      // BUILD-88d SUPERSEDES F.3's PROPORTIONS. Seven numbers on this walk are
-      // 88d's now — the headline size and measure, the column gap and the card
-      // padding — and they moved as one deliberate pass with its own walk
-      // (scripts/build88d-walk.js). Everything else F.3 proved still holds and
-      // is still checked here: one column of prose, one emerald action per row,
-      // one-line empty states, the hairline, no shadow, no surnames.
-      ok(`${label}: …at ${w >= 1000 ? 34 : 26}px in DM Serif`, note.size === (w >= 1000 ? 34 : 26) && /DM Serif/.test(note.family), note);
-      // getComputedStyle resolves ch to px, so the measure is checked as the
-      // width it actually produces: 28 characters of DM Serif at this size.
-      const ch = note.size * 0.502;  // DM Serif Display's "0" advance, measured off this page
-      ok(`${label}: …at a 28ch measure`, Math.abs(parseFloat(note.maxWidth) - 28 * ch) < 28 * ch * 0.15,
-         { declared: "28ch", computed: note.maxWidth, expected: Math.round(28 * ch) });
-    }
+    // BUILD-89 SUPERSEDES F.3's HEADER AND ITS CARD GEOMETRY. The morning
+    // sentence is no longer the headline (it lives in the Thread's own header,
+    // and the page header is the greeting and the day), Home is ONE PANEL
+    // rather than a stack of bordered cards in a 1100px column, and the
+    // padding moved from each card to the panel. Those measurements are
+    // scripts/build89-walk.js's now; what F.3 proved that still stands is
+    // checked below — the greeting is small and first-name only, the products
+    // are named in plain serif with the brass underline, a row is a name and
+    // one emerald action, empty states are one line, the rail is five items
+    // and a More, and no colleague's surname reaches a screen.
     const greet = await page.evaluate(() => {
       const el = [...document.querySelectorAll("span")].find(s => /^(Good (morning|afternoon|evening))/.test(s.textContent || ""));
-      return el ? { size: parseFloat(getComputedStyle(el).fontSize), text: el.textContent.trim() } : null;
+      return el ? { size: parseFloat(getComputedStyle(el.parentElement).fontSize), text: el.textContent.trim() } : null;
     });
     ok(`${label}: the greeting is one small line`, greet && greet.size <= 14, greet);
     ok(`${label}: …and it uses a first name only`, !!greet && /Mike$/.test(greet.text), greet && greet.text);
-    const col = await page.evaluate(() => {
-      const el = document.querySelector(".dash-col"); if (!el) return null;
-      return { max: getComputedStyle(el).maxWidth, gap: getComputedStyle(el).gap, width: Math.round(el.getBoundingClientRect().width) };
-    });
-    ok(`${label}: Home is one centred column`, col && (w >= 1000 ? col.max === "1100px" : col.width <= w), col);
-    ok(`${label}: …with a 16px gap between cards`, col && /^16px/.test(col.gap), col && col.gap);
 
     // ── §2 the pills ───────────────────────────────────────────────────────
     const marks = await page.evaluate(() => document.querySelectorAll(".pm-mark").length);
@@ -188,14 +170,12 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     }
 
     // ── §6 cards ───────────────────────────────────────────────────────────
-    const cards = await page.evaluate(() => [...document.querySelectorAll("#dash-thread,#dash-drifting")].map(c => {
-      const cs = getComputedStyle(c), hdr = getComputedStyle(c.firstElementChild);
-      return { shadow: cs.boxShadow, border: cs.borderTopWidth, pad: hdr.paddingLeft };
-    }));
-    ok(`${label}: cards carry a hairline and no shadow`,
-       cards.length > 0 && cards.every(c => c.shadow === "none" && c.border === "1px"), cards);
-    ok(`${label}: …and ${w >= 1000 ? "24px" : "16px"} of padding`,
-       cards.every(c => c.pad === (w >= 1000 ? "24px" : "16px")), cards);
+    // BUILD-89: the panel draws the edge, so what is asserted here is the part
+    // that must never come back — a shadow on the morning screen.
+    const shadows = await page.evaluate(() => [...document.querySelectorAll("#dash-thread,#dash-drifting,.home-shell")]
+      .map(c => getComputedStyle(c).boxShadow));
+    ok(`${label}: nothing on the morning screen casts a shadow`,
+       shadows.length > 0 && shadows.every(v => v === "none"), shadows);
 
     // ── §7 names ───────────────────────────────────────────────────────────
     ok(`${label}: "Admin User" is nowhere on the screen`, !/Admin User/.test(text), (text.match(/.{0,40}Admin User.{0,40}/) || [])[0]);

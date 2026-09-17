@@ -184,8 +184,14 @@ const root = path.join(__dirname, "..");
   ok("…and renders on the board instead", /const threadHealthLine=/.test(dash) && /retentionPipeline:<>\{retentionPipelineSection\}\{threadHealthLine\}<\/>/.test(dash));
   ok("the at-risk monthly gifts render a donor NAME on every row",
      /atRisk\.map\(/.test(dash) && /r\.donor_name/.test(dash), null);
+  // BUILD-89 moved the sentence OUT of the page header and INTO the Thread's
+  // own header — it is a summary of that list, not the first thing the screen
+  // says to you. The property this guard holds is unchanged and still true:
+  // the sentence renders only on Home and the as-of line only on the board.
   ok("the sentence renders only on Home, the as-of line only on the board",
-     /surface==="home"&&!editMode&&threadsData/.test(dash) && /surface==="board"&&!editMode/.test(dash));
+     /surface==="home"&&threadsData&&\(/.test(dash) && /surface==="board"&&!editMode/.test(dash));
+  ok("…and the sentence sits in the Thread's header, not the page's",
+     /className="thread-note"/.test(dash) && !/className="home-note"/.test(dash));
   ok("the board says what it is and as of when", /Numbers a board can read/.test(dash));
 
   const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");

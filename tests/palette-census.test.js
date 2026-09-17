@@ -106,7 +106,7 @@ console.log("\n— the ratchet —");
 
 // THE COUNT MAY GO DOWN AND NEVER UP. Lower this number when you remove
 // literals; raising it is the thing the guard exists to refuse.
-const HEX_CEILING = 1174;         // MEASURED 2026-09-17 (1404 → 1325 green collapse → 1217 sage → 1174 the composer)
+const HEX_CEILING = 1172;         // MEASURED 2026-09-17 (1404 → 1325 green collapse → 1217 sage → 1174 the composer → 1172 the panel)
 // Sage is DELETED. The four that remain are on the landing and the donor-facing
 // giving dashboard, which carry their own audited palettes and their own
 // guards; repainting a public page nobody re-measured buys nothing.

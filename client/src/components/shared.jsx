@@ -382,29 +382,36 @@ export function GlobalStyles() {
     @media (prefers-reduced-motion:reduce){.attn-meta{transition:none;}}
     .attn-row-main{cursor:default;}
     a.attn-row-main{cursor:pointer;}
-    a.attn-row-main:hover{background:#e8e4db;}
+    .attn-row:hover{background:#f7f5f0;}
+    .attn-row[data-railsel="1"]{background:#f7f5f0;}
     a.attn-row-main:hover .attn-donor-name{text-decoration:underline;}
     a.attn-row-main:focus-visible{outline:2px solid #c9a84c;outline-offset:-2px;border-radius:2px;}
     /* Touch: each of the row's two targets clears the 44px minimum, and a tap
        on one never fires the other (they're siblings, not nested). */
     .attn-row-main{min-height:44px;}
     .attn-row-action{min-height:44px;}
-    /* ── BUILD-88d — HOME PROPORTIONS ─────────────────────────────────────
-       Two columns from 1100px up: the cards at 2fr, the Today rail at 1fr.
-       The rail is FIRST in the DOM and placed into column 2 by grid, so the
-       single-column fallback puts it above the cards with no second rule and
-       no duplicated markup. minmax(0,Nfr) not Nfr: a long donor name in a
-       flex child otherwise refuses to shrink and the grid overflows. */
-    .home-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
-    .home-cards{display:flex;flex-direction:column;gap:16px;min-width:0;}
-    .home-rail{display:flex;flex-direction:column;gap:16px;min-width:0;}
+    /* ── BUILD-89 — HOME IS ONE PANEL ──────────────────────────────────────
+       White panel on the light ground, the work on the left and the rail on
+       the right with ONE hairline between them. Below 1100 it stacks and the
+       rail goes FIRST (order:-1) — three numbers are the right thing to meet
+       on a phone, and the work follows. minmax/min-width:0 everywhere: a long
+       donor name in a flex child otherwise refuses to shrink. */
+    .home-shell{background:#ffffff;border:1px solid #e8e4db;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;}
+    .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
+    .home-rail{min-width:0;padding:32px;border-top:1px solid #e8e4db;order:-1;}
     @media (min-width:1100px){
-      .home-grid{grid-template-columns:minmax(0,2fr) minmax(0,1fr);}
-      .home-grid>.home-cards{grid-column:1;grid-row:1;}
-      /* sticky, never transformed — a transform here would make the rail the
-         containing block for any position:fixed descendant (BUILD-22). */
-      .home-grid>.home-rail{grid-column:2;grid-row:1;position:sticky;top:64px;}
+      .home-shell{flex-direction:row;align-items:stretch;}
+      .home-shell-main{flex:1;}
+      .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid #e8e4db;}
     }
+    /* A row in the rail is pressable and says so quietly. */
+    .home-rail-row{cursor:pointer;transition:background 0.12s ease;}
+    .home-rail-row+.home-rail-row{border-top:1px solid #e8e4db;}
+    .home-rail-row:hover,.home-rail-row:focus-visible{background:#f7f5f0;}
+    @media (prefers-reduced-motion:reduce){.home-rail-row{transition:none;}}
+    /* A section inside the panel is separated by air and a rule, never by a
+       second border — the panel already drew one. */
+    .home-block+.home-block{border-top:1px solid #e8e4db;margin-top:28px;padding-top:28px;}
     /* A row is 64px and its three regions share one line. 9px of air, a 44px
        touch target, 9px of air; the height is fixed rather than minimum so a
        half-pixel of line box cannot turn one row in a queue into 65. */
@@ -472,6 +479,11 @@ export function GlobalStyles() {
       .dash-root{font-size:14px!important;}
       .dash-bleed{margin:-20px -16px calc(-68px - env(safe-area-inset-bottom,0px)) -16px!important;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0px)) 16px!important;}
       .dash-cpad{padding:16px!important;}
+      /* BUILD-89 — the panel's own padding on a phone. */
+      .home-shell{border-radius:12px!important;}
+      .home-shell-main{padding:20px!important;}
+      .home-rail{padding:20px!important;}
+      .home-rail-date{display:none!important;}
       /* BUILD-88d — a card header is a title and a link, and at 390px they run
          into each other on one line ("20 thank-yous ready.Teach Steward your
          voice"). They wrap, with a gap, on a phone. Seen in the walk's own
@@ -479,7 +491,9 @@ export function GlobalStyles() {
       .dash-cpad{flex-wrap:wrap!important;gap:8px!important;}
       /* BUILD-87 F.3 — 32px of card padding is a desktop measure; at 390px it
          would leave a donor's name about 300px to live in. */
-      .attn-row,.attn-band{padding:12px 16px!important;}
+      /* BUILD-89 — the panel supplies the horizontal padding on a phone. */
+      .attn-row{padding:12px 0!important;}
+      .attn-band{padding:18px 0 6px!important;}
       /* …and the row's THREE regions cannot share one line on a phone. Found
          by looking at the walk's 390px capture, not by an assertion: name,
          next step and buttons all collided and the Dismiss button ran off the
