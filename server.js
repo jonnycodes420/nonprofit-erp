@@ -2204,6 +2204,106 @@ async function processPledgeInstallmentReminders(opts = {}) {
   return out;
 }
 
+// ── BUILD-88c C.2 — NEVER A BLANK BOX ─────────────────────────────────────
+// Communications opened on an empty editor and a blinking cursor. That is the
+// moment a fundraiser closes the tab: writing an appeal from nothing, in a box,
+// with a send button underneath, is the hardest thing on the screen and Steward
+// was asking for it first. Six real emails instead, in the org's own words and
+// colours.
+const templatesMod = () => import("./shared/emailTemplates.js");
+
+app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await templatesMod();
+  const [org] = await query("SELECT name, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("./shared/vocabulary.js");
+  const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const t = V.makeT(vocab);
+  const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
+  const dfName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
+  const list = T.templatesFor({ orgName: dfName, t });
+  res.json({
+    orgName: dfName,
+    // The org's own colours and logo, so the gallery is THEIR email and not a
+    // stock one with their name pasted in.
+    brand: theme ? { band: theme.band, bandFg: theme.bandFg, logo: theme.logoDataUri || theme.logoAbsUrl || null, displayName: theme.displayName } : null,
+    mergeFields: T.MERGE_FIELDS,
+    templates: list.map(x => ({ key: x.key, label: x.label, blurb: x.blurb, subject: x.subject, body: x.body })),
+  });
+}));
+
+// The segment, as PEOPLE. "17 recipients" is a number; "17 sponsors, including
+// Margaret Chen and Bob Harmon" is a group — and a name that should not be on
+// the list is the only thing anybody actually notices.
+app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const T = await templatesMod();
+  const seg = req.body?.segment && typeof req.body.segment === "object" ? req.body.segment : {};
+  const donors = await resolveCampaignRecipients({ segment: JSON.stringify(seg) }, orgId).catch(() => []);
+  const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("./shared/vocabulary.js");
+  const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const t = V.makeT(vocab);
+  // The vocabulary key for a giver is `giver`, not `donor` — asking for
+  // "donor" returns null and the sentence reads "3 null, including Margaret".
+  const noun = seg.mode === "recurring" ? t("monthly_giver", 2) : t("giver", 2);
+  const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
+  res.json({
+    count: donors.length,
+    names: donors.slice(0, 8).map(d => ({ id: d.id, name: displayNameCase(d.name || ""), email: d.email })),
+    sentence: T.segmentSentence(donors.length, names, noun),
+    // The first recipient is whose name the preview shows, so what she reads on
+    // the right of the screen is the email the first person will get.
+    first: donors[0] ? { name: displayNameCase(donors[0].name || ""), firstName: String(donors[0].name || "").trim().split(/\s+/)[0] || "Margaret" } : null,
+  });
+}));
+
+// SEND ME A TEST — one copy, to the person pressing the button, under whatever
+// sending identity is in force. It is not a recipient: no `campaign_recipients`
+// row, no interaction on anybody's record, and the campaign's own count does
+// not move. A test that counted would make every campaign's numbers wrong by
+// one, forever.
+app.post("/campaigns/:id/test", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [campaign] = await query("SELECT * FROM campaigns WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!campaign) return res.status(404).json({ error: "Campaign not found" });
+  const [me] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const to = String(req.body?.to || me?.email || "").trim();
+  if (!to) return res.status(400).json({ error: "No address to send the test to." });
+  if (to !== me?.email) return res.status(403).json({ error: "test_to_self",
+    message: "A test goes to you. Sending a draft to somebody else is a send, and it belongs on the campaign." });
+
+  const T = await templatesMod();
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const first = String(me?.name || "").trim().split(/\s+/)[0] || "Margaret";
+  const html = await brandEmailHeaderHtml(orgId)
+    + T.renderMergeFields(campaign.body || "", {
+        first_name: first, donor_name: me?.name || first,
+        org_name: displayNameCase(org?.name || ""), gift_amount: "$250", total_giving: "$4,150",
+        year: String(new Date().getUTCFullYear()),
+      })
+    + `<div style="margin-top:28px;padding-top:14px;border-top:1px solid #e5e0d5;font-family:'DM Sans',Helvetica,Arial,sans-serif;font-size:12px;color:#8fa896;">
+         This is a test of "${escapeHtml(campaign.name || "")}". Nobody else received it, and it is not counted.
+       </div>`;
+  const identity = await orgSendingIdentity(orgId);
+  let delivered = false;
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const { error } = await resend.emails.send({
+        from: identity.from, ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
+        to, subject: `[Test] ${campaign.subject || campaign.name || ""}`,
+        html: T.renderMergeFields(html, { first_name: first }),
+      });
+      if (error) throw new Error(error.message);
+      delivered = true;
+    } catch (e) {
+      console.error("[campaign] test send failed:", e.message);
+      return res.status(502).json({ error: "send_failed", message: "The test could not be sent just now. Nothing about the campaign changed." });
+    }
+  }
+  res.json({ sent: delivered, to, from: identity.from, verified: identity.verified, counted: false });
+}));
+
 // ── BUILD-88c C.1 — HER OWN DOMAIN, VERIFIED ──────────────────────────────
 // Three routes and no fourth: READ the state, CLAIM a domain, CHECK it. The
 // claim creates the domain on Resend and stores the DNS records the org must
@@ -13509,12 +13609,17 @@ async function resolveCampaignRecipients(campaign, orgId) {
     donors = donors.filter(d => Number(d.total_giving) >= 10000);
   } else if (mode === "lapsed") {
     donors = donors.filter(d => d.stage === "lapsed");
+  // AN EMPTY SELECTION SELECTS NOBODY. Each of these three used to fall
+  // THROUGH to the unfiltered list when its list was empty, so a campaign that
+  // named no stages, no tiers or no people went to EVERY donor with an email
+  // address. That is the exact thing C.2's rule forbids: nothing goes to a
+  // donor she did not press send on. An empty explicit segment is zero people.
   } else if (mode === "byStage") {
-    if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
+    donors = (segment.stages || []).length ? donors.filter(d => segment.stages.includes(d.stage)) : [];
   } else if (mode === "byTier") {
-    if (segment.tiers && segment.tiers.length) donors = donors.filter(d => segment.tiers.includes(d.capacity_tier));
+    donors = (segment.tiers || []).length ? donors.filter(d => segment.tiers.includes(d.capacity_tier)) : [];
   } else if (mode === "manual") {
-    if (segment.donorIds && segment.donorIds.length) donors = donors.filter(d => segment.donorIds.includes(d.id));
+    donors = (segment.donorIds || []).length ? donors.filter(d => segment.donorIds.includes(d.id)) : [];
   } else {
     // "all" or legacy format
     if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
@@ -13621,6 +13726,23 @@ async function runCampaignSend(campaign, org, donors) {
             if (sendError) throw new Error(sendError.message);
           }
           await run("UPDATE campaign_recipients SET sent_at=NOW() WHERE id=?", [recipientId]);
+          // ── BUILD-88c C.2 — AN APPEAL IS A CONVERSATION ──────────────────
+          // A campaign left no trace on anybody's record, so the timeline never
+          // showed it and DRIFT — which measures silence — counted a donor as
+          // untouched in the same week the organisation wrote to them. One
+          // interaction per recipient, written only after a REAL delivery (the
+          // BUILD-85 W-4 rule: no timeline entry claims an email that never
+          // left), and only once, because `campaign_recipients` is unique per
+          // recipient and this sits inside that same successful branch.
+          await run(
+            `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+             VALUES (?,?,?,?,?,?,?,?,?)`,
+            ["int_" + uuid().slice(0, 8), org.id, donor.id, "email",
+             `Sent "${(campaign.name || "a campaign").slice(0, 120)}".`,
+             orgToday(await orgTz(org.id)),                          // ORG_TZ_SEAM_OK
+             campaign.created_by || SYS_AUTO.id, campaign.created_by_name || SYS_AUTO.name,
+             JSON.stringify({ via: "campaign", campaignId: campaign.id, recipientId })]
+          ).catch(e => console.error(`[campaign:${campaign.id}] timeline entry failed for ${donor.id}:`, e.message));
           sentCount++;
         } catch (err) {
           failCount++;
