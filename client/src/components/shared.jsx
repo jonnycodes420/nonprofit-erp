@@ -411,7 +411,8 @@ export function GlobalStyles() {
     @media (prefers-reduced-motion:reduce){.home-rail-row{transition:none;}}
     /* A section inside the panel is separated by air and a rule, never by a
        second border — the panel already drew one. */
-    .home-block+.home-block{border-top:1px solid #e8e4db;margin-top:28px;padding-top:28px;}
+    .home-block{margin-top:28px;}
+    .home-block+.home-block{border-top:1px solid #e8e4db;padding-top:28px;}
     /* A row is 64px and its three regions share one line. 9px of air, a 44px
        touch target, 9px of air; the height is fixed rather than minimum so a
        half-pixel of line box cannot turn one row in a queue into 65. */
