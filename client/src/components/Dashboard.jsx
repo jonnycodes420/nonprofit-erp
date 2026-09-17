@@ -749,21 +749,32 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const briefRest=pullQuote?briefing.slice(briefing.indexOf(pullQuote)+pullQuote.length).trim():"";
 
   const sHdr={display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:0};
+  // BUILD-88d — 16px below a section header, and the hairline under it is the
+  // card's own. Spread AFTER cPad at every header.
+  const sHdrPad={paddingBottom:16,borderBottom:"1px solid "+T.bg2};
   const sTitle={fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3};
   // BUILD-87 F.3.2 — A SECTION TITLE IS A PLAIN SERIF WORD WITH THE BRASS
   // UNDERLINE the page titles already use ("Your fundraising."). The ProductMark
   // pills are gone from Home: a badge introduces a product to someone who has
   // not met it, and she opens this screen every morning. The pill is still the
   // right thing on the landing page, which is where it stays.
-  const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:21,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.2,borderBottom:"3px solid "+T.gold500,paddingBottom:2};
+  // BUILD-88d — 18px, and the brass underline stays. A section title at 21px
+  // competed with the headline; at 18 it labels the card it sits in.
+  const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:18,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25,borderBottom:"3px solid "+T.gold500,paddingBottom:2};
   const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
-  const cardWrap={background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"};
+  // BUILD-88d — the hairline is bg2 (#e8e4db), the radius is 12, and nothing
+  // on this page casts a shadow. bg3 (#d4cfc6) drew a card's edge harder than
+  // its own contents.
+  const cardWrap={background:T.white,border:"1px solid "+T.bg2,borderRadius:12,overflow:"hidden"};
   // BUILD-87 F.3.6 — 32px of horizontal padding on every card, and the row
   // padding matches it so a list's left edge lines up with its own header.
   // Vertical stays tighter than 32 on rows: a 32px gap above and below each
   // name would turn a twelve-row queue into a scroll.
-  const cPad={padding:"24px 32px"};
-  const rowPad="16px 32px";
+  // BUILD-88d — 24px of padding, on both axes. 32 was a desktop measure that
+  // left a two-column card 24px narrower than it needed to be on each side.
+  const cPad={padding:24};
+  // A row is 64px tall: 10px of air above and below two lines of type.
+  const rowPad="9px 24px";
   const inp={width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",marginBottom:10};
 
   const MiniEmpty=({icon,text,cta,onCta})=>(
@@ -1455,15 +1466,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     };
   })();
   const driftSection=driftData?(
-      <div id="dash-drifting" style={{...cardWrap,borderColor:driftRows.length>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
-        <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+      <div id="dash-drifting" style={{...cardWrap,scrollMarginTop:64}}>
+        <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
           <span style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             <span style={sSerif}>Drift</span>
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
                 ?`${fmtFull(driftData.atRiskAmount)} at risk — the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
-              {driftData.importCaveat && <span style={{color:T.gold700||"#8a6d1f"}}> · {driftData.importCaveat}</span>}
+              {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
             </span>
           </span>
           {driftData.total>driftData.list.length&&!driftAllData&&(
@@ -1630,7 +1641,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         // The 3px transparent left border is the row's brass/emerald marker,
         // reserved: without it a band header starts three pixels to the left of
         // every name it labels, which is exactly visible and exactly wrong.
-        <li key={"band-"+t.band} className="attn-band" style={{padding:"10px 32px 6px",background:T.bg2,borderBottom:"1px solid "+T.bg3,borderLeft:"3px solid transparent"}}>
+        <li key={"band-"+t.band} className="attn-band" style={{padding:"8px 24px 6px",background:T.ground,borderBottom:"1px solid "+T.bg2,borderLeft:"3px solid transparent"}}>
           <span style={{fontSize:10,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:b.color}}>{b.label}</span>
           <span style={{fontSize:10.5,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
         </li>);
@@ -1641,12 +1652,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // the action button as a SIBLING, never nested (keyboard and new-tab both
     // break otherwise). The queue that finding was written against is gone from
     // Home; the property is not, and the guard that holds it follows the rows.
-    <li key={t.id} className="attn-row" style={{display:"flex",alignItems:"center",gap:12,padding:rowPad,borderBottom:i<threadList.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
+    <li key={t.id} className="attn-row" style={{display:"flex",alignItems:"center",gap:12,padding:rowPad,borderBottom:i<threadList.length-1?"1px solid "+T.bg2:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
       <a href={`/donors/${t.donorId}`} className="attn-row-main" style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:t.donorId});}}>
-        <div className="attn-donor-name" style={{fontSize:13.5,fontWeight:700,color:T.ink}}>{t.donorName}</div>
-        <div className="attn-clause" style={{display:"flex",alignItems:"baseline",gap:8,marginTop:3,fontSize:12.5,lineHeight:1.45}}>
-          <span style={{color:T.ink2,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{threadClause(t)}</span>
+        {/* BUILD-88d — a name is 15px medium and a clause is 14px warm grey.
+            Bold at 13.5 read as a label; this reads as a person. */}
+        <div className="attn-donor-name" style={{fontSize:15,fontWeight:500,color:T.ink}}>{t.donorName}</div>
+        <div className="attn-clause" style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2,fontSize:14,lineHeight:1.4}}>
+          <span style={{color:T.ink3,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{threadClause(t)}</span>
           {/* F.3.3 — THE RECORD, ON HOVER. opacity, not display: the row must
               not change height when the pointer crosses it. Revealed on
               keyboard focus too, and always visible where there is no hover
@@ -1667,15 +1680,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </span>
         </div>
       </a>
-      <div className="attn-row-next" style={{textAlign:"right",flexShrink:0}}>
-        <div style={{fontSize:12.5,fontWeight:700,color:t.overdue?T.gold700:T.ink}}>
+      <div className="attn-row-next" style={{textAlign:"right",flexShrink:0,maxWidth:220}}>
+        {/* one line, or the row is no longer 64px */}
+        <div style={{fontSize:12.5,fontWeight:600,color:t.overdue?T.gold700:T.ink2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
           {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
         </div>
         {/* BUILD-85 — the row always answers "why this one first?". It is no
             longer emerald: on this screen emerald means "this is the button",
             and exactly one thing per row gets to mean that. */}
         {t.rank?.why&&(
-          <div style={{fontSize:11,color:t.overdue?T.gold700:T.ink3,marginTop:2,fontWeight:600,maxWidth:280}}>{t.rank.why}</div>
+          <div style={{fontSize:11,color:t.overdue?T.gold700:T.ink3,marginTop:1,fontWeight:500,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.rank.why}</div>
         )}
       </div>
       <div className="attn-row-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
@@ -1696,8 +1710,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the first thing on Home after the greeting and the setup card.
   const threadSection=(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div id="dash-thread" style={{...cardWrap,borderColor:threadStat?.overdue>0?T.gold500+"55":T.bg3,scrollMarginTop:64}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+          <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
+            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={sSerif}>The Thread</span>
               <span style={{display:"flex",alignItems:"center",gap:10}}>
                 {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
@@ -1771,7 +1785,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // and that is a fact Stripe never needed to confirm.
   const monthlySection=(recurringHealth&&(recurringHealth.fromFile||0)>0)?(
     <div style={{...cardWrap}}>
-      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <span style={sSerif}>Your {t("monthly_giver",2)}</span>
         <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
       </div>
@@ -1801,7 +1815,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // what turns a thank-you queue into a lie.
   const thankYouSection=(thankYous&&thankYous.count>0)?(
     <div style={{...cardWrap}} data-testid="thank-you-queue">
-      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <span style={sSerif}>{thankYous.headline}</span>
         {thankYous.voice&&!thankYous.voice.ready&&(
           <button onClick={()=>onNavigate("settings")} style={sLink}>Teach Steward your voice →</button>
@@ -1869,7 +1883,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // LABEL the named rows beneath them; this one goes where numbers go.
   const threadHealthLine=(threadHealth&&threadHealth.continuationRate!=null)?(
     <div style={{...cardWrap}}>
-      <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <span style={sTitle}>Follow-up, last 30 days</span>
       </div>
       <div style={{padding:"14px 20px",fontSize:13.5,color:T.ink,lineHeight:1.6}}>
@@ -1888,7 +1902,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={sTitle}>Pipeline Funnel</span>
               <button onClick={()=>onNavigate("donors")} style={sLink}>View all →</button>
             </div>
@@ -1957,6 +1971,47 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           Sits at the foot of the home column, small and on-palette. */
   // Nothing-to-say guard mirrored from ImpactLine's own early return, so the
   // section reads as absent (not an empty edit-mode shell) when silent.
+  // ── BUILD-88d — THE TODAY RAIL ─────────────────────────────────────────────
+  // Three numbers, stacked, on the right at 1440 and above the cards below
+  // 1100. Every one of them is a count this page already carried buried in a
+  // card header ("12 open · 3 overdue"), which is where a number goes to be
+  // skipped. Each tile is the link to its own list.
+  const railFailedThisWeek=(recurringHealth?.atRisk||[]).filter(r=>{
+    if(!r.first_failed_at)return false;
+    return (Date.now()-new Date(r.first_failed_at).getTime())<=7*86400000;
+  }).length;
+  const railDueToday=(threadsData?.bands||[]).find(b=>b.key==="today")?.count||0;
+  // A jump to a card on this page when the card is here, and the tab that owns
+  // the list when it is not. Never a dead tile.
+  const railJump=(id,fallback)=>()=>{
+    const el=typeof document!=="undefined"?document.getElementById(id):null;
+    if(el){el.scrollIntoView({behavior:REDUCED_MOTION?"auto":"smooth",block:"start"});return;}
+    fallback&&fallback();
+  };
+  const railTiles=[
+    {key:"open",n:threadStat?.open||0,label:"Open follow-ups",
+     go:railJump("dash-thread",()=>onNavigate("donors"))},
+    {key:"today",n:railDueToday,label:"Due today",
+     go:railJump("dash-thread",()=>onNavigate("donors"))},
+    {key:"failed",n:railFailedThisWeek,label:`${capitalize(t("monthly_giver",2))} whose card failed this week`,
+     go:railJump("dash-recurring",()=>onNavigate("fundraising",{frSection:"recurring"}))},
+  ];
+  const todayRail=(
+    <div className="home-rail">
+      {/* 16px below the header, like every section header on the page —
+          the rail's own 16px gap supplies it. */}
+      <div><span style={sSerif}>Today</span></div>
+      {railTiles.map(tile=>(
+        <div key={tile.key} {...interactive(tile.go,{label:`${tile.n} ${tile.label}`})}
+          className="dash-cpad"
+          style={{...cardWrap,...cPad,display:"flex",flexDirection:"column",gap:4}}>
+          <span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>
+          <span style={{fontSize:13,lineHeight:1.4,color:T.ink3}}>{tile.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+
   const impactVisible=!!impact&&((impact.atRiskAmount||0)>0||(impact.recoveredAmount||0)>0||(impact.reengagedAmount||0)>0||(impact.watchingRecurringCount||0)>0||(impact.onlineGivingProcessed||0)>0);
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
 
@@ -1967,7 +2022,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // dropping the set-goal modal (and any drill-down not portalled to body) at
   // the vertical middle of the whole tall page, below the fold (BUILD-22 Part 2).
   return(
-    <div className="dash-root dash-bleed" style={{background:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
+    <div className="dash-root dash-bleed" style={{background:surface==="home"?T.ground:T.bgDeep,margin:"-20px -24px -28px -24px",padding:"20px 24px 28px 24px",display:"flex",flexDirection:"column",gap:16,minHeight:"calc(100vh - 92px)"}}>
       {/* BUILD-87 F.3.1 — ONE CONTENT COLUMN. Home was as wide as the window,
           which on a 27" monitor stretched a four-section morning screen across
           1800px and made every card look like a table. 1100px is the column.
@@ -1977,7 +2032,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           which is the BUILD-22 trap the dash-root comment above guards against,
           and the reason nothing here gets a `fade-in`. The board keeps the full
           width: it is a grid of numbers, not a page of prose. */}
-      <div className="dash-col" style={{width:"100%",maxWidth:surface==="home"?1100:"none",margin:"0 auto",display:"flex",flexDirection:"column",gap:surface==="home"?24:16}}>
+      <div className="dash-col" style={{width:"100%",maxWidth:surface==="home"?1100:"none",margin:"0 auto",display:"flex",flexDirection:"column",gap:16}}>
 
       {/* Greeting lives on the page's own cream background, between the nav
           and the goal card — not inside the dark card, where it read as a
@@ -1994,9 +2049,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div style={{display:"flex",alignItems:"flex-start",gap:11,padding:"0 2px"}}>
         {data.org?.logo&&<img src={data.org.logo} alt={data.org.name} style={{height:22,maxWidth:100,objectFit:"contain",borderRadius:4,marginTop:1}}/>}
         <div style={{flex:1,minWidth:0}}>
-          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",fontSize:12.5,lineHeight:1.3}}>
-            {data.org?.name&&<span style={{fontWeight:700,color:data.org?.brandAccent||T.ink3,letterSpacing:"-0.01em"}}>{data.org.name}</span>}
-            <span style={{fontWeight:500,color:T.ink3}}>{greeting}{firstName?`, ${firstName}`:""}</span>
+          {/* BUILD-88d — ONE GREETING LINE, 14px, warm grey. The org's name
+              keeps its place and loses its accent: on this line the brand
+              colour was a third colour competing with the headline under it,
+              and the org mark beside it already says whose system this is. */}
+          <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",fontSize:14,lineHeight:1.35,color:T.ink3}}>
+            {data.org?.name&&<span style={{fontWeight:600,letterSpacing:"-0.01em"}}>{data.org.name}</span>}
+            <span style={{fontWeight:400}}>{greeting}{firstName?`, ${firstName}`:""}</span>
           </div>
           {/* ── BUILD-86 — THE SENTENCE ────────────────────────────────────
               What is actually waiting, assembled from the three sources that
@@ -2006,11 +2065,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               And "Nothing is waiting on you this morning." is allowed to be
               the whole screen. It is a good morning, not an empty state. */}
           {surface==="home"&&!editMode&&threadsData&&(
-            /* 24ch keeps the sentence at editorial measure — the line breaks
-               land where a person would break them aloud. marginBottom is 24
-               here and the column's own 24px gap completes the 48 the brief
-               asks for; putting the whole 48 here would have made it 72. */
-            <div className="home-note" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.18,letterSpacing:"-0.02em",color:T.ink,marginTop:14,marginBottom:24,maxWidth:"24ch"}}>
+            /* BUILD-88d — 34px, 28ch, TWO LINES, and 32px below it. The
+               measure is still editorial (the breaks land where a person would
+               break them aloud); the clamp is what keeps a long morning from
+               pushing the first card under the fold. marginBottom carries the
+               whole 32: the column's gap is 16 and sits between the grid's
+               children, not here. */
+            <div className="home-note" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:34,lineHeight:1.2,letterSpacing:"-0.02em",color:T.ink,marginTop:10,marginBottom:32,maxWidth:"28ch",display:"-webkit-box",WebkitBoxOrient:"vertical",WebkitLineClamp:2,overflow:"hidden"}}>
               {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,
                          /* BUILD-88b B.2 — a promise nobody is keeping belongs in the sentence she reads at twenty to eight. */
                          latePledgeInstallments:homeData?.latePledgeInstallments,
@@ -2076,7 +2137,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         </div>
       )}
 
-      {(<>
+      {(()=>{
+      const cardsBlock=(<>
       {/* One-time gold moments (BUILD-08 Phase D) — the product's only
           celebration pattern, each fires once per org (localStorage-keyed
           inside GoldMoment). Goal completion keys on the goal id, so a NEW
@@ -2123,8 +2185,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         // person, an amount, how long it has been failing, and one action.
         const atRisk=recurringHealth?.atRisk||[];
         const recurringSection=atRisk.length>0?(
-          <div style={{...cardWrap}}>
-            <div className="dash-cpad" style={{...cPad,borderBottom:"1px solid "+T.bg3,...sHdr}}>
+          <div id="dash-recurring" style={{...cardWrap,scrollMarginTop:64}}>
+            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={sTitle}>{capitalize(t("monthly_giver",2))} that need you</span>
               <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
             </div>
@@ -2270,7 +2332,20 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         </Modal>
       )}
-      </>)}
+      </>);
+      // BUILD-88d — TWO COLUMNS FROM 1100px. The rail is first in the DOM and
+      // grid puts it in column 2; below the breakpoint the single column keeps
+      // DOM order and the rail lands above the cards, which is where three
+      // numbers belong on a phone. The board is one wide grid of numbers and
+      // takes none of this.
+      if(surface!=="home")return cardsBlock;
+      return(
+        <div className="home-grid">
+          {todayRail}
+          <div className="home-cards">{cardsBlock}</div>
+        </div>
+      );
+      })()}
       </div>{/* /dash-col */}
 
       <MetricBreakdownPanel

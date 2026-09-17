@@ -10,7 +10,7 @@
 //   §3 a thread row is a name, one clause and one emerald action
 //   §4 empty states are one line with the working behind "why"
 //   §5 the rail is five items and a "More" — and nothing is unreachable
-//   §6 cards: 32px padding, 24px gap, hairline, no shadow
+//   §6 cards: 24px padding (BUILD-88d; F.3 shipped 32), hairline, no shadow
 //   §7 no "Admin User", and no colleague's surname on a row
 //
 //   PLAYWRIGHT_DIR=$HOME/steward-qa node scripts/build87-f3-walk.js
@@ -88,12 +88,18 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     ok(`${label}: the note is the headline`, !!note, note);
     if (note) {
       console.log(`\n  she reads: ${note.text}\n`);
-      ok(`${label}: …at ${w >= 1000 ? 40 : 27}px in DM Serif`, note.size === (w >= 1000 ? 40 : 27) && /DM Serif/.test(note.family), note);
+      // BUILD-88d SUPERSEDES F.3's PROPORTIONS. Seven numbers on this walk are
+      // 88d's now — the headline size and measure, the column gap and the card
+      // padding — and they moved as one deliberate pass with its own walk
+      // (scripts/build88d-walk.js). Everything else F.3 proved still holds and
+      // is still checked here: one column of prose, one emerald action per row,
+      // one-line empty states, the hairline, no shadow, no surnames.
+      ok(`${label}: …at ${w >= 1000 ? 34 : 26}px in DM Serif`, note.size === (w >= 1000 ? 34 : 26) && /DM Serif/.test(note.family), note);
       // getComputedStyle resolves ch to px, so the measure is checked as the
-      // width it actually produces: 24 characters of DM Serif at this size.
+      // width it actually produces: 28 characters of DM Serif at this size.
       const ch = note.size * 0.502;  // DM Serif Display's "0" advance, measured off this page
-      ok(`${label}: …at a 24ch measure`, Math.abs(parseFloat(note.maxWidth) - 24 * ch) < 24 * ch * 0.15,
-         { declared: "24ch", computed: note.maxWidth, expected: Math.round(24 * ch) });
+      ok(`${label}: …at a 28ch measure`, Math.abs(parseFloat(note.maxWidth) - 28 * ch) < 28 * ch * 0.15,
+         { declared: "28ch", computed: note.maxWidth, expected: Math.round(28 * ch) });
     }
     const greet = await page.evaluate(() => {
       const el = [...document.querySelectorAll("span")].find(s => /^(Good (morning|afternoon|evening))/.test(s.textContent || ""));
@@ -106,7 +112,7 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
       return { max: getComputedStyle(el).maxWidth, gap: getComputedStyle(el).gap, width: Math.round(el.getBoundingClientRect().width) };
     });
     ok(`${label}: Home is one centred column`, col && (w >= 1000 ? col.max === "1100px" : col.width <= w), col);
-    ok(`${label}: …with a 24px gap between cards`, col && /^24px/.test(col.gap), col && col.gap);
+    ok(`${label}: …with a 16px gap between cards`, col && /^16px/.test(col.gap), col && col.gap);
 
     // ── §2 the pills ───────────────────────────────────────────────────────
     const marks = await page.evaluate(() => document.querySelectorAll(".pm-mark").length);
@@ -188,8 +194,8 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     }));
     ok(`${label}: cards carry a hairline and no shadow`,
        cards.length > 0 && cards.every(c => c.shadow === "none" && c.border === "1px"), cards);
-    ok(`${label}: …and ${w >= 1000 ? "32px" : "16px"} of padding`,
-       cards.every(c => c.pad === (w >= 1000 ? "32px" : "16px")), cards);
+    ok(`${label}: …and ${w >= 1000 ? "24px" : "16px"} of padding`,
+       cards.every(c => c.pad === (w >= 1000 ? "24px" : "16px")), cards);
 
     // ── §7 names ───────────────────────────────────────────────────────────
     ok(`${label}: "Admin User" is nowhere on the screen`, !/Admin User/.test(text), (text.match(/.{0,40}Admin User.{0,40}/) || [])[0]);

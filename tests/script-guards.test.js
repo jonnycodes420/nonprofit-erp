@@ -98,6 +98,9 @@ const LOOPBACK_HARDCODED = [
   "build87-f3-walk",
   // BUILD-87 F.1 — the modal-shell walk. Loopback :5601/:4173, hardcoded.
   "build87-f1-walk",
+  // BUILD-88d — the Home proportions walk. Loopback :5601/:4173, hardcoded;
+  // it registers its own throwaway org and writes only through the API.
+  "build88d-walk",
   "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only

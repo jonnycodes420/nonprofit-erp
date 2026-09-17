@@ -5,7 +5,7 @@ import { T, DriftBadge, firstNameOf } from "./shared";
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
 // above the sidebar (which starts at top:52). Ink background, hairline
-// elevated-green bottom border. Left→right: wordmark (over the 220px rail
+// elevated-green bottom border. Left→right: wordmark (over the 240px rail
 // zone, links to Home), global search (⌘K, cap ~560px), help menu, user
 // chip/sign-out. zIndex 250 sits above the z-200 full-screen takeovers so the
 // bar stays visible over DonorProfile/GrantProfile. Hidden ≤768px by
@@ -144,10 +144,10 @@ export function TopBar({ auth, logout, onNavigate }) {
 
   return <div className="app-topbar" style={{height:52,background:"#0f1a12",borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 
-    {/* Wordmark — over the 220px sidebar rail zone (20px inset matches the
+    {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
         old sidebar wordmark), links to Home */}
     <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward — Home"
-      style={{width:220,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
+      style={{width:240,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
       <span style={{fontSize:21,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
     </button>
 

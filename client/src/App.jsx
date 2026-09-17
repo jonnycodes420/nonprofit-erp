@@ -412,8 +412,8 @@ function AppShell() {
     display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
     background:active?"#1a2e1f":"transparent",
     border:"none",borderLeft:`3px solid ${active?"var(--org-accent,#c9a84c)":"transparent"}`,
-    borderRadius:"0 10px 10px 0",padding:"10px 12px 10px 13px",
-    color:active?"#f0ede6":"rgba(240,237,230,0.7)",fontSize:13,fontWeight:active?700:500,
+    borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 13px",
+    color:active?"#f0ede6":"rgba(240,237,230,0.7)",fontSize:14,fontWeight:active?700:500,
     cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
   });
 
@@ -429,7 +429,7 @@ function AppShell() {
   // that never sets branding is visually identical to before.
   const orgAccent=data.org?.brandAccent||"#c9a84c";
   const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
-  return <div className="app-root" style={{...BASE,background:(tab==="dashboard"||tab==="board")?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -443,7 +443,7 @@ function AppShell() {
     {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
         moved into the bar's left edge, user chip/sign-out live in the bar. */}
-    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:220,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
+    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:240,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {(()=>{
           const byId=Object.fromEntries(TABS.map(t=>[t.id,t]));
@@ -495,7 +495,7 @@ function AppShell() {
 
     {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
         (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
-    <div className="app-main" style={{marginLeft:220,marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+    <div className="app-main" style={{marginLeft:240,marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
     <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>

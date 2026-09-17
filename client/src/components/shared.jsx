@@ -19,6 +19,11 @@ import { streamAI, apiFetch } from "../api";
 export const T = {
   // Backgrounds
   bg:         "#f0ede6",
+  // BUILD-88d — HOME'S GROUND. Cream at #f0ede6 put a card's white a long way
+  // from the page behind it; at 1440 the whole morning screen read as a stack
+  // of tiles on a beach. This is the page, one step off white, so the cards
+  // separate by their hairline and not by their contrast.
+  ground:     "#f7f5f0",
   bg2:        "#e8e4db",   // the stated hairline/tint value
   bg3:        "#d4cfc6",
   bgDeep:     "#e6dfd0",
@@ -384,6 +389,26 @@ export function GlobalStyles() {
        on one never fires the other (they're siblings, not nested). */
     .attn-row-main{min-height:44px;}
     .attn-row-action{min-height:44px;}
+    /* ── BUILD-88d — HOME PROPORTIONS ─────────────────────────────────────
+       Two columns from 1100px up: the cards at 2fr, the Today rail at 1fr.
+       The rail is FIRST in the DOM and placed into column 2 by grid, so the
+       single-column fallback puts it above the cards with no second rule and
+       no duplicated markup. minmax(0,Nfr) not Nfr: a long donor name in a
+       flex child otherwise refuses to shrink and the grid overflows. */
+    .home-grid{display:grid;grid-template-columns:1fr;gap:16px;align-items:start;}
+    .home-cards{display:flex;flex-direction:column;gap:16px;min-width:0;}
+    .home-rail{display:flex;flex-direction:column;gap:16px;min-width:0;}
+    @media (min-width:1100px){
+      .home-grid{grid-template-columns:minmax(0,2fr) minmax(0,1fr);}
+      .home-grid>.home-cards{grid-column:1;grid-row:1;}
+      /* sticky, never transformed — a transform here would make the rail the
+         containing block for any position:fixed descendant (BUILD-22). */
+      .home-grid>.home-rail{grid-column:2;grid-row:1;position:sticky;top:64px;}
+    }
+    /* A row is 64px and its three regions share one line. 9px of air, a 44px
+       touch target, 9px of air; the height is fixed rather than minimum so a
+       half-pixel of line box cannot turn one row in a queue into 65. */
+    @media (min-width:1100px){.attn-row{height:64px;box-sizing:border-box;}}
     .rpt-row-click:hover td{background:#f0ede6;}
     .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
 
@@ -447,6 +472,11 @@ export function GlobalStyles() {
       .dash-root{font-size:14px!important;}
       .dash-bleed{margin:-20px -16px calc(-68px - env(safe-area-inset-bottom,0px)) -16px!important;padding:16px 16px calc(84px + env(safe-area-inset-bottom,0px)) 16px!important;}
       .dash-cpad{padding:16px!important;}
+      /* BUILD-88d — a card header is a title and a link, and at 390px they run
+         into each other on one line ("20 thank-yous ready.Teach Steward your
+         voice"). They wrap, with a gap, on a phone. Seen in the walk's own
+         capture, not in an assertion. */
+      .dash-cpad{flex-wrap:wrap!important;gap:8px!important;}
       /* BUILD-87 F.3 — 32px of card padding is a desktop measure; at 390px it
          would leave a donor's name about 300px to live in. */
       .attn-row,.attn-band{padding:12px 16px!important;}
@@ -465,7 +495,10 @@ export function GlobalStyles() {
       .attn-row .attn-row-action{flex:1!important;}
       /* A 40px headline at 24ch overflows a 390px screen. The measure is the
          point, not the size. */
-      .home-note{font-size:27px!important;margin-bottom:16px!important;}
+      .home-note{font-size:26px!important;margin-bottom:20px!important;}
+      /* the rail's numbers step down with everything else on a phone */
+      .home-rail-n{font-size:32px!important;}
+      .attn-row{height:auto!important;}
       .dash-briefing-body{padding:12px 14px!important;}
       .dash-briefing-hdr{flex-wrap:wrap!important;align-items:flex-start!important;gap:8px!important;}
       .dash-briefing-hdr>div:last-child{align-self:flex-start!important;}

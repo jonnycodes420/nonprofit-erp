@@ -272,9 +272,14 @@ export function ThreadDismissMenu({ thread, onDone }) {
 
   return (
     <span ref={wrapRef} style={{ position: "relative", display: "inline-block" }}>
-      <button onClick={() => setOpen(o => !o)}
-        style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "6px 10px", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-        Dismiss
+      {/* BUILD-88d — ONE ACTION PER ROW. Dismiss was a second bordered button
+          beside the emerald verb, so every row offered two things at equal
+          weight and the eye had to choose before it had read the name. It is a
+          quiet overflow menu now; what it opens is unchanged. */}
+      <button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
+        aria-label={"More actions for " + (thread?.donorName || "this follow-up")} title="More"
+        style={{ background: "transparent", border: "none", borderRadius: 7, padding: "6px 8px", color: T.ink3, fontSize: 16, lineHeight: 1, fontWeight: 700, cursor: "pointer", minWidth: 32 }}>
+        <span aria-hidden>{"\u2026"}</span>
       </button>
       {open && (
         <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 28px rgba(15,26,18,0.14)", padding: 6, zIndex: 50, minWidth: 220 }}>
