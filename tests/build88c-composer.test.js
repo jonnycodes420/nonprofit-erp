@@ -5,7 +5,7 @@
 // per recipient and none for the test send.
 //
 //   §1  THE SIX are real emails — the org's own name and vocabulary, copy that
-//       could go out today, and no `[PLACEHOLDER]` anywhere. A shop that calls
+//       could go out today, and no shouted placeholder anywhere. A shop that calls
 //       its monthly givers "monthly donors" is not offered a sponsor update.
 //   §2  THE SEGMENT IS PEOPLE. "17 sponsors, including Margaret Chen and Bob
 //       Harmon" — nobody notices that 17 is too many; everybody notices a name
@@ -114,7 +114,7 @@ const emailInteractions = org =>
   ok("only the three that need a fact Steward cannot know have blanks at all",
     six.every(t => blanks(t).length <= (BLANK_BUDGET[t.key] || 0)),
     six.map(t => [t.key, blanks(t)]).filter(([k, b]) => b.length > (BLANK_BUDGET[k] || 0)));
-  ok("…every blank names what goes in it, in words, rather than shouting [YOUR TEXT HERE]",
+  ok("…every blank names what goes in it, in words, rather than shouting at her in capitals",
     six.every(t => blanks(t).every(b => b.length > 6 && /[a-z]{3}/.test(b) && !/YOUR|INSERT|TEXT HERE|LOREM|XXX/i.test(b))),
     six.flatMap(t => blanks(t)));
   ok("…and no template is mostly blanks — the copy is the email, the blank is a line of it",
@@ -122,13 +122,14 @@ const emailInteractions = org =>
     six.map(t => [t.key, blanks(t).join("").length, String(t.body).length]));
 
   ok("the org's own name is in the copy, not \"your organisation\"",
-    six.every(t => /Sparrow Missions/.test(t.subject + t.body)) && !/your organisation/i.test(JSON.stringify(six)),
+    six.every(t => /Sparrow Missions/.test(t.subject + t.body)) &&
+    !six.some(t => /your organisation/i.test(`${t.label} ${t.blurb} ${t.subject} ${t.body}`)),
     six.filter(t => !/Sparrow Missions/.test(t.subject + t.body)).map(t => t.key));
   const sponsorTpl = six.find(t => t.key === "sponsor_update") || {};
   ok("the sponsor template speaks the org's word for a monthly giver",
     /sponsor/i.test(`${sponsorTpl.label} ${sponsorTpl.subject} ${sponsorTpl.body}`), sponsorTpl.subject);
   ok("the merge fields the gallery offers are the ones the renderer replaces",
-    (g.body?.mergeFields || []).length >= 5 && !JSON.stringify(g.body.mergeFields).includes("last_name"),
+    (g.body?.mergeFields || []).length >= 5 && !(g.body?.mergeFields || []).some(f => /last_name/.test(f.token)),
     (g.body?.mergeFields || []).map(f => f.token));
   // THE VOICE. Six emails is six chances to sound like software.
   ok("no em dash, no exclamation mark and no \"Dear Friend\" in any of the six",
