@@ -192,30 +192,56 @@ const near = (a, b, tol) => Math.abs(a - b) <= tol;
     // ── §4b a thread row, and NO CREAM BARS ────────────────────────────────
     const rows = await page.evaluate(() => [...document.querySelectorAll(".attn-row")].map(r => {
       const rr = r.getBoundingClientRect();
-      const name = r.querySelector(".attn-donor-name"), clause = r.querySelector(".attn-clause span");
+      const name = r.querySelector(".attn-donor-name"), clause = r.querySelector(".attn-clause");
       const buttons = [...r.querySelectorAll("button")].map(b => {
         const cs = getComputedStyle(b), br = b.getBoundingClientRect();
         return { text: (b.innerText || "").trim(), bg: cs.backgroundColor, right: br.right, label: b.getAttribute("aria-label") || "" };
       });
       const ncs = name ? getComputedStyle(name) : null, ccs = clause ? getComputedStyle(clause) : null;
+      const next = r.querySelector(".attn-row-next");
+      const why = [...r.querySelectorAll(".attn-clause ~ div")].find(d => !d.classList.contains("attn-meta"));
       return { h: rr.height, right: rr.right, padRight: parseFloat(getComputedStyle(r).paddingRight),
+               hasAvatar: !!r.querySelector('[aria-hidden="true"]'),
                nameSize: ncs && parseFloat(ncs.fontSize), nameWeight: ncs && ncs.fontWeight,
-               clauseSize: ccs && parseFloat(ccs.fontSize), clauseColor: ccs && ccs.color, buttons };
+               clauseSize: ccs && parseFloat(ccs.fontSize), clauseColor: ccs && ccs.color,
+               clauseWrap: ccs && ccs.whiteSpace, clauseEllipsis: ccs && ccs.textOverflow,
+               clauseText: clause ? clause.innerText.replace(/\s+/g, " ").trim() : "",
+               factValue: next ? (next.children[0] && next.children[0].textContent.trim()) : null,
+               factLabel: next ? (next.children[1] && next.children[1].textContent.trim()) : null,
+               whyText: why ? why.textContent.trim() : "",
+               buttons };
     }));
     ok(`${label}: the queue has rows to read`, rows.length >= 4, rows.length);
-    ok(`${label}: a name is 15px medium`, rows.every(r => r.nameSize === 15 && r.nameWeight === "500"), rows.map(r => [r.nameSize, r.nameWeight])[0]);
-    ok(`${label}: …its clause 14px warm grey`,
-       rows.every(r => r.clauseSize === 14 && r.clauseColor === "rgb(90, 85, 79)"), rows.map(r => [r.clauseSize, r.clauseColor])[0]);
+    // FIX (2026-09-18) — THE ROW TOOK DRIFT'S SHAPE. Drift sat under this list
+    // looking twice as good; the row is its anatomy now, so these measurements
+    // moved with it: a face, a name at Drift's weight, ONE SENTENCE THAT WRAPS
+    // (the clause was being cut off mid-word), and one fact on the right with
+    // its label under it instead of "overdue" printed twice.
+    ok(`${label}: every row has a face`,
+       rows.every(r => r.hasAvatar), rows.map(r => r.hasAvatar)[0]);
+    ok(`${label}: a name is 15px at Drift's weight`,
+       rows.every(r => r.nameSize === 15 && r.nameWeight === "700"), rows.map(r => [r.nameSize, r.nameWeight])[0]);
+    ok(`${label}: …and its sentence WRAPS rather than being cut off`,
+       rows.every(r => r.clauseWrap !== "nowrap" && r.clauseEllipsis !== "ellipsis"),
+       rows.map(r => [r.clauseWrap, r.clauseEllipsis])[0]);
+    ok(`${label}: …and carries the next step inside it`,
+       rows.every(r => /Next:/.test(r.clauseText || "")), rows.map(r => r.clauseText)[0]);
+    ok(`${label}: the right-hand fact says how late it is, once`,
+       rows.every(r => /^(\d+ days?|Today|\d\d-\d\d)$/.test(r.factValue || "") && /^(overdue|due|due on)$/.test(r.factLabel || "")),
+       rows.map(r => [r.factValue, r.factLabel])[0]);
+    ok(`${label}: …and that fact is not ALSO printed under the sentence`,
+       rows.every(r => !/^Overdue \d/i.test(r.whyText || "")), rows.map(r => r.whyText).filter(Boolean)[0]);
     ok(`${label}: exactly ONE emerald action per row`,
        rows.every(r => r.buttons.filter(b => b.bg === "rgb(13, 92, 58)").length === 1), rows.map(r => r.buttons.map(b => [b.text, b.bg]))[0]);
     ok(`${label}: …and the rest is behind a "…" menu`,
        rows.every(r => r.buttons.some(b => b.text === "…" && /More actions/.test(b.label)) && !r.buttons.some(b => /^Dismiss$/.test(b.text))), rows[0]?.buttons);
     if (w >= 1100) {
-      ok("1440: a row is 64px tall", rows.every(r => Math.round(r.h) === 64), rows.map(r => Math.round(r.h)));
-      ok("1440: …and its action sits on the row's right edge",
-         rows.every(r => Math.abs(Math.max(...r.buttons.map(b => b.right)) - (r.right - r.padRight)) <= 2),
-         rows.map(r => ({ btn: Math.round(Math.max(...r.buttons.map(b => b.right))), edge: Math.round(r.right - r.padRight) }))[0]);
+      ok("1440: a row clears the 64px touch target", rows.every(r => r.h >= 64), rows.map(r => Math.round(r.h)));
+      ok("1440: …and nothing on it runs past the row's own edge",
+         rows.every(r => r.buttons.every(b => b.right <= r.right + 1)),
+         rows.map(r => ({ btn: Math.round(Math.max(...r.buttons.map(b => b.right))), edge: Math.round(r.right) }))[0]);
     }
+
     // THE CREAM BARS ARE GONE. A band is a label on the same white as the list.
     const bands = await page.evaluate(() => [...document.querySelectorAll(".attn-band")].map(b => {
       const cs = getComputedStyle(b);

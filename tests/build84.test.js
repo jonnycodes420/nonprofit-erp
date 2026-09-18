@@ -462,7 +462,22 @@ async function reset() {
   ok("…and nothing at nine in the morning", (early.body.sent || []).length === 0, early.body);
 
   // Tomorrow, still open: it rejoins the digest as overdue and sends nothing.
-  const tomorrow = threads.addCivilDays(today, 1);
+  // FIX (2026-09-18) — "the next morning" must be the next MORNING THE DIGEST
+  // RUNS. A flat +1 day passed Sunday through Thursday and failed on a Friday,
+  // when tomorrow is a Saturday and the weekend rule correctly sends nothing:
+  // the suite was measuring which day it ran on, not the product. The property
+  // being tested — a timed task left open rejoins the digest — is unchanged.
+  const nextWeekday = d => {
+    let n = threads.addCivilDays(d, 1);
+    for (let i = 0; i < 7; i++) {
+      const [y, m, dd] = n.split("-").map(Number);
+      const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay();
+      if (w !== 0 && w !== 6) return n;
+      n = threads.addCivilDays(n, 1);
+    }
+    return n;
+  };
+  const tomorrow = nextWeekday(today);
   const nudge2 = await api("POST", "/nudges/run", tok, { today: tomorrow, force: true, dryRun: true });
   ok("left open, it REJOINS the digest the next morning as overdue",
     (nudge2.body.sent || []).some(s => s.count === 1), nudge2.body);

@@ -413,10 +413,11 @@ export function GlobalStyles() {
        second border — the panel already drew one. */
     .home-block{margin-top:28px;}
     .home-block+.home-block{border-top:1px solid #e8e4db;padding-top:28px;}
-    /* A row is 64px and its three regions share one line. 9px of air, a 44px
-       touch target, 9px of air; the height is fixed rather than minimum so a
-       half-pixel of line box cannot turn one row in a queue into 65. */
-    @media (min-width:1100px){.attn-row{height:64px;box-sizing:border-box;}}
+    /* FIX (2026-09-18) — the row is Drift's shape now: a face, a sentence that
+       WRAPS, one fact on the right. A fixed 64px is what forced the sentence
+       into one truncated line in the first place, so the height is the
+       content's and the minimum is the touch target. */
+    .attn-row{min-height:64px;box-sizing:border-box;}
     .rpt-row-click:hover td{background:#f0ede6;}
     .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
 
@@ -494,7 +495,7 @@ export function GlobalStyles() {
          would leave a donor's name about 300px to live in. */
       /* BUILD-89 — the panel supplies the horizontal padding on a phone. */
       .attn-row{padding:12px 0!important;}
-      .attn-band{padding:18px 0 6px!important;}
+      .attn-band{padding:18px 0 6px 13px!important;}
       /* …and the row's THREE regions cannot share one line on a phone. Found
          by looking at the walk's 390px capture, not by an assertion: name,
          next step and buttons all collided and the Dismiss button ran off the
@@ -513,7 +514,7 @@ export function GlobalStyles() {
       .home-note{font-size:26px!important;margin-bottom:20px!important;}
       /* the rail's numbers step down with everything else on a phone */
       .home-rail-n{font-size:32px!important;}
-      .attn-row{height:auto!important;}
+      .attn-row{min-height:0!important;}
       .dash-briefing-body{padding:12px 14px!important;}
       .dash-briefing-hdr{flex-wrap:wrap!important;align-items:flex-start!important;gap:8px!important;}
       .dash-briefing-hdr>div:last-child{align-self:flex-start!important;}

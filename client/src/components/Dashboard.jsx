@@ -20,6 +20,17 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
 const todayCivil=()=>new Date().toISOString().split("T")[0];
+// FIX (2026-09-18) — "Next: send the proposal." A step label is written as a
+// heading ("Send the proposal"); inside a sentence it is mid-sentence. Only the
+// first letter moves, and only when the word is not already a name or an
+// acronym — "Send the LOI" keeps its LOI.
+const lowerFirst=s=>{
+  const str=String(s||"").trim();
+  if(!str)return str;
+  const first=str.split(/\s+/)[0];
+  if(first.length>1&&first===first.toUpperCase())return str;
+  return str.charAt(0).toLowerCase()+str.slice(1);
+};
 
 // BUILD-34 — customizable Home. Sections render from a per-user ordered
 // [{id,visible}] config (client/src/lib/homeLayout.js is the canonical list +
@@ -1663,39 +1674,73 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         // bars running the width of the card, and they chopped one list into
         // three blocks you had to re-read. The label is a quiet line on the
         // same white; the list underneath reads as one list.
-        <li key={"band-"+t.band} className="attn-band" style={{padding:"22px 0 8px",borderLeft:"3px solid transparent"}}>
+        // The label lines up with the row's own content edge: the row's anchor
+        // pads 13px past its 3px marker, so the band does too, or the word
+        // OVERDUE starts thirteen pixels left of every face it labels. (A JSX
+        // comment here is inside a function CALL, not inside JSX.)
+        <li key={"band-"+t.band} className="attn-band" style={{padding:"22px 0 8px 13px",borderLeft:"3px solid transparent"}}>
           <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.09em",textTransform:"uppercase",color:b.color}}>{b.label}</span>
           <span style={{fontSize:11,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
         </li>);
     }
     threadRows.push(
-    // BUILD-86 C.2 — the `attn-*` hooks move HERE with the surface. BUILD-45
-    // D-1 proved a row's left region must be a real <a href="/donors/:id"> with
-    // the action button as a SIBLING, never nested (keyboard and new-tab both
-    // break otherwise). The queue that finding was written against is gone from
-    // Home; the property is not, and the guard that holds it follows the rows.
+    // ── FIX (2026-09-18) — THE THREAD ROW TAKES DRIFT'S SHAPE ──────────────
+    // Drift sat directly under this list looking twice as good, and the
+    // difference was not colour: a Drift row gives you a face, a whole
+    // sentence that WRAPS, one fact on the right with its label under it, and
+    // buttons big enough to mean something. The Thread row gave you a name, a
+    // clause cut off mid-word with an ellipsis, and then said "overdue" TWICE
+    // — once beside the step and again underneath it.
+    //
+    // So: the same anatomy, in the Thread's own words. The step moved into the
+    // sentence ("Next: send the proposal"), which is where a person would say
+    // it, and the right-hand fact is the only thing a queue is really sorted
+    // by — how late this is.
+    //
+    // BUILD-86 C.2 — the `attn-*` hooks stay. BUILD-45 D-1 proved a row's left
+    // region must be a real <a href="/donors/:id"> with the action button as a
+    // SIBLING, never nested (keyboard and new-tab both break otherwise).
     <li key={t.id} className="attn-row"
       data-railsel={railView.kind==="donor"&&railView.donorId===t.donorId?"1":undefined}
-      style={{display:"flex",alignItems:"center",gap:12,padding:rowPad,borderBottom:i<threadList.length-1?"1px solid "+T.bg2:"none",borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
+      style={{display:"flex",alignItems:"stretch",borderBottom:i<threadList.length-1?"1px solid "+T.bg2:"none",
+              borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
       {/* BUILD-89 — a plain click opens the donor in the RAIL, beside the list,
           instead of throwing the whole screen away and landing on a profile. It
           is still a real anchor to /donors/:id, so cmd-click and middle-click
           still open the record in a new tab (BUILD-45 D-1 is the reason that
           anchor exists and it is not being undone). A comment may not sit
           between an element's attributes. */}
-      <a href={`/donors/${t.donorId}`} className="attn-row-main" style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
+      <a href={`/donors/${t.donorId}`} className="attn-row-main"
+        style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
           if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>
-        {/* BUILD-88d — a name is 15px medium and a clause is 14px warm grey.
-            Bold at 13.5 read as a label; this reads as a person. */}
-        <div className="attn-donor-name" style={{fontSize:15,fontWeight:500,color:T.ink}}>{t.donorName}</div>
-        <div className="attn-clause" style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2,fontSize:14,lineHeight:1.4}}>
-          <span style={{color:T.ink3,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{threadClause(t)}</span>
-          {/* F.3.3 — THE RECORD, ON HOVER. opacity, not display: the row must
-              not change height when the pointer crosses it. Revealed on
-              keyboard focus too, and always visible where there is no hover
-              (a phone), because "hover to see it" is not an answer there. */}
-          <span className="attn-meta" style={{flexShrink:0,fontSize:11,color:T.ink3,whiteSpace:"nowrap"}}>
+        {/* The face. Brass when it is late, emerald when it is not — the same
+            two colours the row's own edge already uses. */}
+        <div aria-hidden style={{width:38,height:38,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+                                 fontSize:14,fontWeight:800,
+                                 background:t.overdue?T.gold100:T.green100,
+                                 color:t.overdue?T.gold600:T.greenDk}}>
+          {(t.donorName||"?")[0]}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{t.donorName}</div>
+          {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two
+              columns saying one thing between them; a person says it in a
+              breath, so the row does too. */}
+          <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
+            {threadClause(t)} <span style={{color:t.overdue?T.gold700:T.ink,fontWeight:600}}>Next: {lowerFirst(t.nextStep.label)}.</span>
+          </div>
+          {/* BUILD-85 — the row still answers "why this one first?", and F.3.3's
+              record still arrives on hover. Both live under the sentence now
+              rather than competing with it on the right. */}
+          {/* BUILD-85's reason, MINUS the one the right-hand fact already
+              states. "Overdue 14 days" on the right and "Overdue 14 days"
+              underneath is the same duplication this row was rebuilt to end —
+              the same class as BUILD-85's own `supersedes` rule. */}
+          {t.rank?.why&&!/^Overdue /i.test(t.rank.why)&&(
+            <div style={{fontSize:12,color:t.overdue?T.gold700:T.ink3,marginTop:3,fontWeight:500}}>{t.rank.why}</div>
+          )}
+          <div className="attn-meta" style={{marginTop:3,fontSize:11,color:T.ink3}}>
             {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Logged")}
             {(t.lastTouch?.date||t.openedOn)?` · ${String(t.lastTouch?.date||t.openedOn).slice(0,10)}`:""}
             {/* Who logged it, then who owns it — and one name when they are
@@ -1707,25 +1752,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 for. Moving the due date without saying you moved it would be
                 the product quietly editing somebody's commitment. */}
             {t.nextStep.originalDue?` · moved from ${String(t.nextStep.originalDue).slice(5)}`:""}
-            {t.daysOpen>=1?` · day ${t.daysOpen}`:""}
-          </span>
+          </div>
+        </div>
+        {/* ONE FACT ON THE RIGHT, with its label under it — Drift puts the
+            money there; a queue's fact is how late it is. It is not repeated
+            in the sentence any more. */}
+        <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
+          <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:t.overdue?T.gold700:T.ink}}>
+            {t.overdue?`${t.overdueDays||0} day${(t.overdueDays||0)===1?"":"s"}`:(t.band==="today"?"Today":String(t.nextStep.due).slice(5))}
+          </div>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
+            {t.overdue?"overdue":(t.band==="today"?"due":"due on")}
+          </div>
         </div>
       </a>
-      <div className="attn-row-next" style={{textAlign:"right",flexShrink:0,maxWidth:220}}>
-        {/* one line, or the row is no longer 64px */}
-        <div style={{fontSize:12.5,fontWeight:600,color:t.overdue?T.gold700:T.ink2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-          {t.nextStep.label}{t.overdue?` · overdue`:` · due ${String(t.nextStep.due).slice(5)}`}
-        </div>
-        {/* BUILD-85 — the row always answers "why this one first?". It is no
-            longer emerald: on this screen emerald means "this is the button",
-            and exactly one thing per row gets to mean that. */}
-        {t.rank?.why&&(
-          <div style={{fontSize:11,color:t.overdue?T.gold700:T.ink3,marginTop:1,fontWeight:500,maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.rank.why}</div>
-        )}
-      </div>
-      <div className="attn-row-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+      <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
         <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
-          style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>Done</button>
+          title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
+          style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
         <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
       </div>
     </li>);

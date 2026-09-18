@@ -111,7 +111,7 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     const rows = await page.evaluate(() => [...document.querySelectorAll(".attn-row")].map(li => {
       const main = li.querySelector(".attn-row-main");
       const meta = li.querySelector(".attn-meta");
-      const clause = main && main.children[1] && main.children[1].children[0];
+      const clause = li.querySelector(".attn-clause");
       const greens = [...li.querySelectorAll("*")].filter(e => getComputedStyle(e).backgroundColor === "rgb(13, 92, 58)").length;
       return {
         tag: main && main.tagName, href: main && main.getAttribute("href"),
@@ -126,8 +126,13 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     ok(`${label}: the queue has rows`, rows.length > 0, rows.length);
     if (rows.length) {
       console.log("  a row reads: " + rows[0].name + " / " + rows[0].clause);
+      // FIX (2026-09-18) — the row took Drift's shape and the STEP moved into
+      // the sentence ("…a week ago. Next: send the proposal."), so the clause
+      // no longer ENDS on the time phrase. What F.3 was protecting is that it
+      // is a sentence with time in WORDS rather than a row of facts, and that
+      // is what is asserted.
       ok(`${label}: the clause is one sentence with time in words`,
-         rows.every(r => r.clause && /\.$/.test(r.clause) && /(today|yesterday|ago)\.$/.test(r.clause)), rows.map(r => r.clause));
+         rows.every(r => r.clause && /\.$/.test(r.clause) && /(today|yesterday|ago)/.test(r.clause)), rows.map(r => r.clause));
       ok(`${label}: …and it is not the old four-fact line`,
          rows.every(r => !/\d{4}-\d{2}-\d{2}/.test(r.clause || "")), rows.map(r => r.clause));
       ok(`${label}: the date and the owner are ${w >= 1000 ? "on hover" : "shown (no hover on a phone)"}`,
@@ -161,9 +166,14 @@ const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
       // Measured off the rendered TEXT, not off a padding value: the row
       // carries a 3px left marker the band has to reserve too, and reading the
       // padding alone would have called a three-pixel step "aligned".
+      // FIX (2026-09-18) — a row begins with a face now, so the thing a band
+      // label must line up with is the row's own content edge (the avatar),
+      // not the name that sits 52px to the right of it.
       const bandAlign = await page.evaluate(() => {
-        const b = document.querySelector(".attn-band span"), n = document.querySelector(".attn-donor-name");
-        return b && n ? [Math.round(b.getBoundingClientRect().left), Math.round(n.getBoundingClientRect().left)] : null;
+        const b = document.querySelector(".attn-band span");
+        const row = document.querySelector(".attn-row");
+        const first = row && (row.querySelector('[aria-hidden="true"]') || row.querySelector(".attn-donor-name"));
+        return b && first ? [Math.round(b.getBoundingClientRect().left), Math.round(first.getBoundingClientRect().left)] : null;
       });
       ok(`${label}: the band header's left edge lines up with the names it labels`,
          !!bandAlign && Math.abs(bandAlign[0] - bandAlign[1]) <= 1, bandAlign);

@@ -180,11 +180,23 @@ async function reset() {
   // ── §5 · the subject escalates ───────────────────────────────────────────
   console.log("\n— §5 · escalation —");
   captured = [];
-  const later = daysAgo(-8);   // civil-date arithmetic (see daysAgo) — never UTC's clock
+  // FIX (2026-09-18) — A STEP FORWARD MUST LAND ON A WEEKDAY. This was a flat
+  // +8 days, so it passed from Sunday through Thursday and failed on a Friday,
+  // when +8 lands on a Saturday and the weekend rule correctly sends nothing —
+  // the suite was measuring which day it happened to run on, not the product.
+  // (`force` overrides the CLOCK WINDOW, never the weekday rule; see the ops
+  // route's own note.) The expected day count is DERIVED from the date chosen,
+  // so the assertion still tests escalation rather than a hard-coded number.
+  const isWeekend = d => { const [y, m, dd] = d.split("-").map(Number); const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay(); return w === 0 || w === 6; };
+  let ahead = 8;
+  while (isWeekend(daysAgo(-ahead))) ahead++;
+  const later = daysAgo(-ahead);   // civil-date arithmetic (see daysAgo) — never UTC's clock
   const r5 = await api("POST", "/nudges/run", tok, { today: later, force: true });
   const m5 = mails()[0]?.body || {};
-  ok("a week later the SAME thread carries a bigger number: day 32",
-     r5.body.sent.length === 1 && /day 32$/.test(m5.subject || ""), m5.subject);
+  const expectedDay = 24 + ahead;  // the oldest thread opened daysAgo(24)
+  ok(`a week later the SAME thread carries a bigger number: day ${expectedDay}`,
+     r5.body.sent.length === 1 && new RegExp(`day ${expectedDay}$`).test(m5.subject || ""),
+     { subject: m5.subject, ahead });
 
   // ── §6 · no address on file ──────────────────────────────────────────────
   console.log("\n— §6 · the honest footer —");
