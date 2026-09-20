@@ -51,6 +51,13 @@ const sink = http.createServer((req, res) => {
 // days, a card collected anyway, and the sentence she reads above the button.
 let sessions = [];
 let SUB = null;
+// What Stripe says each price actually is. The suite moves this to drive the
+// mismatch case, which is the one production was actually exposed to.
+let PRICES = {
+  price_test_founding: { unit_amount: 19900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
+  price_test_core:     { unit_amount: 24900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
+  price_test_team:     { unit_amount: 49900, currency: "usd", recurring: { interval: "month", interval_count: 1 } },
+};
 function startBillingMock(port = BILLING_MOCK_PORT) {
   return new Promise(resolve => {
     const srv = http.createServer((req, res) => {
@@ -65,6 +72,12 @@ function startBillingMock(port = BILLING_MOCK_PORT) {
         }
         const sub = req.url.match(/^\/v1\/subscriptions\/([^/?]+)/);
         if (req.method === "GET" && sub) return res.end(JSON.stringify(SUB));
+        const price = req.url.match(/^\/v1\/prices\/([^/?]+)/);
+        if (req.method === "GET" && price) {
+          const p = PRICES[price[1]];
+          if (!p) { res.statusCode = 404; return res.end(JSON.stringify({ error: { code: "resource_missing", message: "No such price: " + price[1], param: "price" } })); }
+          return res.end(JSON.stringify({ id: price[1], object: "price", ...p }));
+        }
         if (req.method === "POST" && req.url.startsWith("/v1/customers")) {
           return res.end(JSON.stringify({ id: "cus_test_cl", object: "customer" }));
         }
@@ -155,6 +168,28 @@ async function reset() {
      r.status === 409 && r.body.error === "email_in_use", r.body);
   const sessionsBefore = sessions.length;
   ok("…and no Checkout session was created for any of those", sessions.length === sessionsBefore, sessions.length);
+
+  console.log("\n— §2b · THE PRICE ON THE PAGE MUST BE THE PRICE IN STRIPE —");
+  // Production was live in this exact state: STRIPE_PRICE_* set, every id
+  // resolving, and every AMOUNT from the retired lower price set. "Configured"
+  // was true and Checkout would have read the sentence closeLink.js composes
+  // ("$249") while Stripe charged the old one. A configured price id is not
+  // enough; the number is checked.
+  PRICES.price_test_core = { unit_amount: 14900, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
+  r = await api("POST", "/admin/close-links", supr, { orgName: "Sparrow Ministries", contactEmail: NEW_ED, plan: "core" });
+  ok("a price at the WRONG AMOUNT refuses the link", r.status === 400 && r.body.error === "plan_price_mismatch", r.body);
+  ok("…and the refusal names both numbers, so it is actionable",
+     /\$149\.00 USD/.test(r.body.message || "") && /\$249\/month/.test(r.body.message || ""), r.body.message);
+  ok("…and no Checkout session was created", sessions.length === sessionsBefore, sessions.length);
+  ok("…and no close_links row was written",
+     (await q(`SELECT id FROM close_links WHERE contact_email=$1`, [NEW_ED])).length === 0);
+
+  PRICES.price_test_core = { unit_amount: 24900, currency: "usd", recurring: { interval: "year", interval_count: 1 } };
+  r = await api("POST", "/admin/close-links", supr, { orgName: "Sparrow Ministries", contactEmail: NEW_ED, plan: "core" });
+  ok("a price at the right amount but the WRONG CADENCE also refuses",
+     r.status === 400 && r.body.error === "plan_price_mismatch" && /every 1 year/.test(r.body.message || ""), r.body);
+
+  PRICES.price_test_core = { unit_amount: 24900, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
 
   console.log("\n— §3 · the link, and what it leaves behind before it is walked —");
   r = await api("POST", "/admin/close-links", supr, { orgName: "Sparrow Ministries", contactEmail: NEW_ED, plan: "core" });
@@ -267,8 +302,13 @@ async function reset() {
   const listed = await api("GET", "/admin/close-links", supr);
   ok("the super-admin can see what was handed out and what it became",
      listed.status === 200 && listed.body.links.some(l => l.id === linkId && l.orgId === org.id), listed.body);
-  ok("…and which plans actually have a Stripe price configured",
-     listed.body.plans.every(p => typeof p.configured === "boolean"), listed.body.plans);
+  ok("…and whether each plan's Stripe price is not merely CONFIGURED but the right amount",
+     listed.body.plans.every(p => p.ready === true && p.stripeAmountUsd === p.monthlyUsd), listed.body.plans);
+  PRICES.price_test_team = { unit_amount: 29900, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
+  const stale = await api("GET", "/admin/close-links", supr);
+  const teamRow = stale.body.plans.find(p => p.id === "team");
+  ok("…so a price left at a retired amount reads as CONFIGURED BUT NOT READY, not as fine",
+     teamRow.configured === true && teamRow.ready === false && teamRow.stripeAmountUsd === 299, teamRow);
 
   mockSrv.close(); sink.close();
   await closeDb();

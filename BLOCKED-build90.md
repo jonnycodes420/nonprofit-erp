@@ -30,12 +30,25 @@ STRIPE_BILLING_SECRET_KEY=sk_live_… node scripts/create-billing-products.js --
 
 It prints the three `STRIPE_PRICE_*` lines. Paste them into Railway.
 
-**A note on the old prices.** The script previously created Core at $149, Team
-at $299 and a founding coupon of 34% off. Those Stripe objects still exist and
-are untouched — nothing here deletes or edits a price, because a price with a
-subscription on it must not move. No org is on one. The founding coupon's id
-now carries its percentage (`steward_founding_20off`), so changing the discount
-cannot silently reuse the previous coupon.
+**A note on the old prices, and the trap they set.** The script previously
+created Core at $149, Team at $299 and a founding coupon of 34% off. Those
+Stripe objects still exist and are untouched — nothing here deletes or edits a
+price, because a price with a subscription on it must not move. No org is on
+one. The founding coupon's id now carries its percentage
+(`steward_founding_20off`), so changing the discount cannot silently reuse the
+previous coupon.
+
+**The trap: production already has all three `STRIPE_PRICE_*` set, in live
+mode, at the RETIRED amounts.** The prod smoke after this build's deploy
+showed `/health` reporting `billing.ok: true` — every id resolves. So
+"configured" was true and the amounts were wrong, and a close link would have
+shown the executive director "$249" on the Checkout page while Stripe charged
+$149. That is exactly the contradiction between the contract and the product
+this build exists to remove, so **the amount is now verified against Stripe
+before a link is minted**: a mismatch refuses with `plan_price_mismatch` and
+names both numbers. `GET /admin/close-links` reports `ready` per plan — the
+amount Stripe actually holds against the amount the page would quote — rather
+than the false comfort of `configured`.
 
 **`closeLink.js`'s `CLOSE_PLANS` is the source of truth for the amounts.** If a
 price changes, change it there; `tests/one-date.test.js` fails until the

@@ -23498,6 +23498,40 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   }
   if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
 
+  // THE PRICE ON THE PAGE MUST BE THE PRICE IN STRIPE.
+  // A configured price id is not enough. Production already carried live price
+  // ids from BUILD-24's retired lower set, so "configured" was true and the
+  // amounts were wrong: Checkout would have read the sentence closeLink.js
+  // composes while Stripe charged the retired amount. That is precisely the
+  // contradiction between the contract and the product this build exists to
+  // remove, so the amount is CHECKED against Stripe before a link is ever
+  // minted, and a mismatch names both numbers rather than failing quietly.
+  // (The retired figures are deliberately not written here: a dead price in a
+  // comment is a dead price somebody copies — tests/invitation-only.test.js
+  // bans them from this file, comments included.)
+  try {
+    const price = await billingStripe.prices.retrieve(priceId);
+    const expected = plan.monthlyUsd * 100;
+    const monthly = price.recurring && price.recurring.interval === "month" && price.recurring.interval_count === 1;
+    if (price.unit_amount !== expected || price.currency !== "usd" || !monthly) {
+      const actual = price.unit_amount != null ? `$${(price.unit_amount / 100).toFixed(2)} ${String(price.currency).toUpperCase()}` : "an unreadable amount";
+      const cadence = price.recurring ? `every ${price.recurring.interval_count || 1} ${price.recurring.interval}` : "not recurring";
+      console.error(
+        `[close-link] PRICE MISMATCH: ${plan.env} (${priceId}) is ${actual}, ${cadence}, ` +
+        `but the ${plan.name} plan is $${plan.monthlyUsd}/month. Refusing to mint a link that would ` +
+        `quote one number and charge another. Run scripts/create-billing-products.js and update ${plan.env}.`
+      );
+      return res.status(400).json({
+        error: "plan_price_mismatch",
+        message: `${plan.env} points at a Stripe price of ${actual} ${cadence}, but ${plan.name} is $${plan.monthlyUsd}/month. `
+               + `Create the price at the right amount and update ${plan.env} before closing anyone.`,
+      });
+    }
+  } catch (err) {
+    if (handleBillingConfigError(err, res, { plan: plan.id, surface: "close-link price check" })) return;
+    throw err;
+  }
+
   const closeLinkId = "cl_" + uuid().slice(0, 8);
   const params = checkoutSessionParams({
     plan, orgName, contactEmail, closeLinkId, priceId,
@@ -23535,8 +23569,24 @@ app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, r
     `SELECT c.*, o.name AS created_org_name, o.trial_ends_at
        FROM close_links c LEFT JOIN orgs o ON o.id = c.org_id
       ORDER BY c.created_at DESC LIMIT 100`, []);
+  // "Configured" is not "correct" — production proved that: every price id was
+  // set and every AMOUNT was the retired one. So this reports what Stripe
+  // actually holds, and whether it matches what the page would quote.
+  const plans = await Promise.all(CLOSE_PLANS.map(async p => {
+    const priceId = process.env[p.env] || null;
+    const row = { id: p.id, name: p.name, monthlyUsd: p.monthlyUsd, env: p.env, configured: !!priceId, ready: false };
+    if (!priceId || !billingStripe) return row;
+    try {
+      const price = await billingStripe.prices.retrieve(priceId);
+      row.stripeAmountUsd = price.unit_amount != null ? price.unit_amount / 100 : null;
+      row.stripeInterval = price.recurring ? `${price.recurring.interval_count || 1} ${price.recurring.interval}` : null;
+      row.ready = price.unit_amount === p.monthlyUsd * 100 && price.currency === "usd"
+        && !!price.recurring && price.recurring.interval === "month" && (price.recurring.interval_count || 1) === 1;
+    } catch (e) { row.error = "price_unreadable"; }
+    return row;
+  }));
   res.json({
-    plans: CLOSE_PLANS.map(p => ({ id: p.id, name: p.name, monthlyUsd: p.monthlyUsd, configured: !!process.env[p.env] })),
+    plans,
     links: rows.map(r => ({
       id: r.id, orgName: r.org_name, contactEmail: r.contact_email, plan: r.plan,
       status: r.status, url: r.checkout_url, orgId: r.org_id,
