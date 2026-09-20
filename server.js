@@ -2588,9 +2588,11 @@ async function findCrossSourceGift(orgId, source, row, donor) {
 // The line a human reads. One sentence, the money and the place it already
 // came from, because that is what makes the answer obvious.
 function crossSourceSentence(amountCents, otherSourceName, otherDate) {
-  const dollars = (amountCents % 100 === 0)
-    ? `$${Math.round(amountCents / 100).toLocaleString("en-US")}`
-    : `$${(amountCents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // money.js is the ONE renderer. A whole-dollar amount drops the ".00" by
+  // TRIMMING THE RENDERED STRING - never by rounding the number, which is the
+  // fingerprint tests/money-cents.test.js §5 exists to refuse and which caught
+  // the first draft of this line.
+  const dollars = money.formatCents(amountCents).replace(/\.00$/, "");
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(otherDate || ""));
   const MONTHS = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
   const when = m ? `${MONTHS[+m[2] - 1]} ${+m[3]}` : String(otherDate || "");

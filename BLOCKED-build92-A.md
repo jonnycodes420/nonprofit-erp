@@ -45,12 +45,23 @@ three seams the carve-out disappears on its own.
 **Needs Jonathan:** nothing, unless he wants the battery boot recipe to set
 `PAYPAL_API_BASE` / `ZEFFY_API_BASE` / `GIVEBUTTER_API_BASE` at an unbound port.
 
-## 3. `tests/drift.test.js` hardcodes port 5631, which is Track C's band
-Not a BUILD-92 change and not a defect in the product: `drift.test.js` spawns a
-threshold-override child server on a hardcoded `PORT: "5631"`. This build's
-parallel-worktree ports assign 563x to Track C. If two agents run the battery
-at the same moment, that child server collides. It did not collide during this
-run. Worth moving to a free port the way `build92-seed` and
-`build92-source-errors` do.
+## 3. Two suites spawn child servers on HARDCODED ports, and one of them is 5611
+Not a BUILD-92 change and not a defect in the product.
 
-**Needs Jonathan:** nothing; a one-line fix for whoever touches drift next.
+- **`tests/donor-accounts.test.js` spawns its flag-off child on `PORT: "5611"`.**
+  That is the port this build's parallel-worktree plan assigned to Track A, so
+  the child could not bind, and its four "flags off" assertions were answered
+  by the Track A server instead - which has the flags ON. It read exactly like
+  a feature-flag regression and is not one. **Proven environmental**: the same
+  commit, the same database, the only change being the Track A server moved to
+  5619, gives `donor-accounts 52 passed, 0 failed`.
+- **`tests/drift.test.js` spawns its threshold-override child on
+  `PORT: "5631"`**, which is Track C's band. It did not collide during this
+  run, but it is the same defect waiting.
+
+Both should take a free port the way `build92-seed` and `build92-source-errors`
+do (`net.createServer().listen(0)`), or read one from the environment.
+
+**Needs Jonathan:** nothing; two one-line fixes. Worth doing before the next
+parallel build, because a hardcoded port makes a green suite go red for a
+reason that has nothing to do with the code under test.
