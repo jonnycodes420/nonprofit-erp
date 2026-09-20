@@ -259,6 +259,21 @@ const FIXTURE_FEE_CENTS = fixtureRows().reduce((s, r) => s + (r.feeCents || 0), 
            VALUES ($1,$2,'Sarah Whitfield','sarah.whitfield@oldmail.example','new','steward')`,
     [`d_sarah_${A}`, A]);
 
+  // THE SERVER MUST BE BOOTED WITH A CREDENTIAL KEY, and when it is not, this
+  // says so in one line instead of failing forty lines later on a TypeError.
+  // The refusal itself is correct behaviour (there is no plaintext path), so
+  // the fault is the BOOT, and the message names the variable to set.
+  const ready = await api("GET", "/giving-sources/providers", tok);
+  ok("the server was booted with a credential key (tests/README.md boot recipe)",
+    ready.body?.credentialsReady === true,
+    `STEWARD_CREDENTIAL_KEY is ${ready.body?.credentialsProblem || "missing"} on the server under test`);
+  if (ready.body?.credentialsReady !== true) {
+    console.log("\n  STOPPING: without STEWARD_CREDENTIAL_KEY the connect path correctly refuses, so nothing below can run.");
+    await closeDb();
+    summary();
+    return;
+  }
+
   const connected = await api("POST", "/giving-sources", tok, {
     provider: "paypal",
     credentials: { clientId: "pp_client_id_value", clientSecret: "pp_client_secret_value" },

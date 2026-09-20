@@ -55,6 +55,12 @@ jobs:
       NETWORK_SIGNUP_ENABLED: "1"              # OFF in prod (unset) until launch
       MIGC_CONTACT_EMAIL: migc-contact@example.org   # MIGC client-site suite captures the contact
       MIGC_EMAIL_FROM: noreply@stewardapp.dev        # notification through the :5602 sink
+      # BUILD-89S 89a — the sealer that giving-source credentials are stored
+      # behind. A THROWAWAY value: it protects nothing here, because CI holds
+      # no real provider key. But it must be SET, because the feature refuses
+      # to store a credential without one (there is no plaintext path), and a
+      # suite that connects a source is correctly refused otherwise.
+      STEWARD_CREDENTIAL_KEY: ci-only-throwaway-credential-key-0123456789
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.
                                       # CI still runs the FULL battery — no suite selection here.

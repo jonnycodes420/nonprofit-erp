@@ -20,6 +20,7 @@
 #        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
 #        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
 #        DISABLE_BACKGROUND_TICKS=1 \
+#        STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
 #        node server.js
 #      (DISABLE_BACKGROUND_TICKS=1 is THE flake fix: it turns off every periodic
 #      background job (digest/dunning/sweep/sequence timers) so no tick fires

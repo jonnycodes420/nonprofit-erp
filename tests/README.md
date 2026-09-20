@@ -69,6 +69,7 @@ the local API. It refuses any non-loopback `API` by construction.
 DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
   DISABLE_BACKGROUND_TICKS=1 \
+  STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
   RESEND_API_KEY=re_dummy_local node server.js
 
 # seed the 25k-donor load-test org (needed by donors-pagination; the other
@@ -93,6 +94,7 @@ online-gift path is drivable:
 DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   JWT_SECRET=local-test-secret PORT=5601 DISABLE_RATE_LIMIT=1 \
   DISABLE_BACKGROUND_TICKS=1 \
+  STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
   RESEND_API_KEY=re_dummy_local RESEND_BASE_URL=http://localhost:5602 \
   DEMO_SMTP_FROM=noreply@stewardapp.dev STRIPE_SECRET_KEY=sk_test_dummy \
   STRIPE_WEBHOOK_SECRET=whsec_localtest STRIPE_API_BASE=http://localhost:5603 \
