@@ -137,6 +137,48 @@ export const SOURCE_PRESETS = {
     completedStatuses: ["complete", "completed", "settled", "paid"],
     required: ["date", "amount"],
   },
+
+  // ── A BANK OR OTHER STATEMENT (BUILD-92 A4) ──────────────────────────────
+  // THE GENERIC ONE, and deliberately the ONLY new preset this build adds.
+  //
+  // The brief's rule, kept: no named preset for Givelify, Tithe.ly or anyone
+  // else without a REAL exported file in the repo to build it against. There
+  // is none for any of them (and none for the three above either — see
+  // BLOCKED-build89d.md), so guessing a vendor's column spellings would be a
+  // preset that fails quietly on the one file that matters. Instead there is
+  // one preset that admits it knows nothing about the file and asks.
+  //
+  // She picks the date, amount and name columns ONCE, names the source
+  // ("Zelle at Central Bank"), says whether negative rows are dropped, and the
+  // mapping is SAVED under that name. Next month is zero clicks.
+  //
+  // `generic: true` keeps it out of detectSourcePreset: a preset that matches
+  // any file with a date and an amount would win against every real one.
+  generic_statement: {
+    key: "generic_statement",
+    label: "A bank or other statement",
+    provider: "statement",
+    paymentMethod: "Bank statement",
+    confidence: "asked",
+    generic: true,
+    help: "Export the month from your bank or payment app as CSV. Steward will ask which columns are the date, the amount and the name, and remember your answer.",
+    // Candidates are a STARTING GUESS for the three questions, never an
+    // answer: whatever the file calls its columns, the human confirms.
+    columns: {
+      date: ["date", "transaction date", "posted date", "posting date", "value date"],
+      amount: ["amount", "credit", "deposit", "amount (usd)", "transaction amount"],
+      donorName: ["name", "description", "payer", "sender", "from", "counterparty", "payee"],
+      donorEmail: ["email", "from email", "payer email"],
+      notes: ["memo", "note", "notes", "reference", "details", "description"],
+      externalId: ["transaction id", "reference id", "id", "reference number", "confirmation number"],
+    },
+    typeColumn: ["type", "transaction type"],
+    statusColumn: ["status"],
+    completedStatuses: ["complete", "completed", "settled", "posted", "cleared", "paid"],
+    // NO externalId requirement. That is the whole point: a bank statement
+    // usually has no transaction id, and the hash below stands in for one.
+    required: ["date", "amount"],
+  },
 };
 
 export const PRESET_KEYS = Object.keys(SOURCE_PRESETS);
@@ -230,6 +272,9 @@ export function detectSourcePreset(headers = []) {
   const idx = headerIndex(headers);
   let best = null;
   for (const p of Object.values(SOURCE_PRESETS)) {
+    // BUILD-92 A4 — the generic statement is CHOSEN, never detected. It would
+    // match any file carrying a date and an amount, which is every file.
+    if (p.generic) continue;
     let score = 0, required = 0;
     for (const [field, candidates] of Object.entries(p.columns)) {
       if (findColumn(idx, candidates)) {
@@ -315,4 +360,65 @@ export function presetSentence(applied) {
   return left
     ? `${n} columns mapped from your ${applied.label}, and every gift will read "${method}". ${left} column${left === 1 ? "" : "s"} had no home and ${left === 1 ? "was" : "were"} left alone.`
     : `${n} columns mapped from your ${applied.label}, and every gift will read "${method}".`;
+}
+
+
+// ── BUILD-92 A4 — AN EXTERNAL ID FOR A FILE THAT HAS NONE ──────────────────
+//
+// A bank statement rarely carries a transaction id, and without one every
+// re-upload writes the overlap again. So the id IS the row: a hash of the
+// date, the amount, the name and the memo — the four things that identify a
+// line on a statement to the person reading it.
+//
+// NAMESPACED BY THE SAVED SOURCE, not just by "statement". Two banks can
+// honestly produce the same $50 from the same name on the same day, and
+// folding those into one gift would lose real money. Within one named source
+// the hash is stable, which is what makes next month's overlapping upload
+// safe; across two named sources it deliberately is not.
+//
+// SHA-256, first 20 hex. Not a cryptographic requirement — it only has to be
+// stable across uploads and not collide within one org's statements.
+//
+// Kept beside presetExternalId for the same reason that one is: the two halves
+// agreeing about what an id looks like is the whole mechanism.
+export function statementRowKey({ date, amountCents, name, memo }) {
+  return [
+    String(date || "").trim().slice(0, 10),
+    String(Math.round(Number(amountCents) || 0)),
+    String(name || "").trim().toLowerCase().replace(/\s+/g, " "),
+    String(memo || "").trim().toLowerCase().replace(/\s+/g, " "),
+  ].join(" ");
+}
+
+// `hashHex` is injected so this module stays pure and runs unchanged in a
+// browser and in Node. Callers pass a sha256-hex function.
+export function statementExternalId(sourceKey, row, hashHex) {
+  const k = String(sourceKey || "").trim();
+  if (!k) return null;
+  const digest = hashHex(statementRowKey(row));
+  return `statement:${k}:${String(digest).slice(0, 20)}`;
+}
+
+// ── THE SAVED MAPPING ──────────────────────────────────────────────────────
+// "Steward SAVES that mapping under that name for next month." Next month's
+// file has the same columns, so the match is on the COLUMN SET — never on the
+// filename, which changes every month, and never on the row contents.
+//
+// A saved mapping matches when EVERY column it names is present in the file.
+// Extra columns in the file are fine (a bank adds a "Running balance" one
+// month and the mapping still applies). When more than one matches, the one
+// naming the MOST columns wins, and ties break on the most recently used, so
+// a specific mapping cannot silently lose to an older, vaguer one.
+export function matchSavedMapping(headers = [], saved = []) {
+  const present = new Set(headers.map(h => normalizeHeader(h)).filter(Boolean));
+  const fits = [];
+  for (const m of saved) {
+    const cols = Object.values(m.mapping || {}).filter(Boolean).map(h => normalizeHeader(h));
+    if (!cols.length) continue;
+    if (!cols.every(c => present.has(c))) continue;
+    fits.push({ saved: m, named: cols.length, usedAt: m.lastUsedAt || m.createdAt || "" });
+  }
+  if (!fits.length) return null;
+  fits.sort((a, b) => (b.named - a.named) || String(b.usedAt).localeCompare(String(a.usedAt)));
+  return fits[0].saved;
 }

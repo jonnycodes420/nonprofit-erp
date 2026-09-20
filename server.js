@@ -2433,6 +2433,12 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     centsCreated: 0, feeCents: 0,
     refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0, failedRecurring: [],
     dropped: {}, nameCollisions: [], notices: [],
+    // BUILD-92 A3 — two counters, deliberately separate. `duplicateQuestions`
+    // is money Steward did NOT write and a human still has to answer for;
+    // `ridesOnTop` is money the shortcut resolved without asking. Summing them
+    // would hide which of the two happened, which is the only thing that
+    // matters when the totals look wrong.
+    duplicateQuestions: 0, ridesOnTop: 0,
   };
   const touchedDonors = new Set();
 
@@ -2485,7 +2491,8 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       const runId = await recordSourceRun(orgId, source, summary, { actorId, actorName, day });
       await run(
         `UPDATE giving_sources
-            SET last_synced_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
+            SET last_synced_at=NOW(), last_tried_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
+                last_error_status=NULL, last_error_provider_code=NULL,
                 status='active', last_run_id=?, backfilled_at=COALESCE(backfilled_at, NOW()), updated_at=NOW()
           WHERE id=? AND org_id=?`, [cursor, runId, sourceId, orgId]);
       summary.ok = true; summary.runId = runId;
@@ -2495,12 +2502,101 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       // An error reads as a sentence with what to do, never a code - 89f shows
       // this string verbatim on the Settings row.
       const sentence = sourceErrorSentence(e, source);
-      await run(`UPDATE giving_sources SET status='error', last_error=?, last_error_at=NOW(), updated_at=NOW()
-                  WHERE id=? AND org_id=?`, [sentence, sourceId, orgId]).catch(() => {});
-      console.error(`[giving-source] ${source.provider} org=${orgId}:`, e.message);
+      // BUILD-92 A2 — the two facts that used to be thrown away land BESIDE
+      // the sentence (never replacing it): the HTTP status the provider
+      // answered with, and the provider's own error code. They are what an
+      // administrator needs when the sentence is not enough, and they are what
+      // proves which branch of the auth/permission split actually fired.
+      const { kind, status, providerCode } = classifySourceError(e);
+      await run(`UPDATE giving_sources
+                    SET status='error', last_error=?, last_error_at=NOW(), last_tried_at=NOW(),
+                        last_error_status=?, last_error_provider_code=?, updated_at=NOW()
+                  WHERE id=? AND org_id=?`,
+        [sentence, status, providerCode, sourceId, orgId]).catch(() => {});
+      console.error(`[giving-source] ${source.provider} org=${orgId}: ${kind}`,
+        { status, providerCode, message: e.message });
       return { ...summary, ok: false, error: e.code || "sync_failed", message: sentence };
     }
   });
+}
+
+// ── BUILD-92 A3 — THE SAME GIFT FROM TWO PLACES ────────────────────────────
+//
+// De-duplication is per source, by the provider's own id, and that is right:
+// forty $100 Sunday gifts are forty gifts, and only the provider can say which
+// two rows are one payment. But Donorbox runs on the ORGANISATION'S OWN Stripe
+// and PayPal. Connect all three and the same money arrives three times, under
+// three ids, and every figure in the product trebles.
+//
+// THE RULE: a row from source B that matches a gift already on file from a
+// DIFFERENT source on
+//   · the amount, to the cent,
+//   · the date, within two days (Cowork's window - a provider settles and
+//     reports on its own schedule, and the two rarely land the same day),
+//   · and the donor (the same donor record, or the same email address)
+// is NOT written. It becomes ONE LINE that asks, with two answers.
+//
+// It is never silently dropped and never silently doubled. The provider's
+// whole row is kept on the question, so "Keep both" can write it later
+// without going back to the provider.
+//
+// CROSS-SOURCE ONLY. Two genuine same-day $50 gifts from one donor inside ONE
+// source are two gifts and always were; this rule cannot see them.
+const CROSS_SOURCE_DAY_WINDOW = 2;
+
+// Does one of these two sources ride on the other? THE ONE SHORTCUT, per
+// source, set by a human who knows their own stack ("Donorbox sits on top of
+// Stripe"). Either direction counts: the relationship is about the money
+// being the same money, not about which row was typed first.
+function sourcesRideTogether(a, b) {
+  if (!a || !b) return false;
+  return a.sits_on_top_of === b.id || b.sits_on_top_of === a.id;
+}
+
+// The gift already on file that this provider row looks like, or null.
+// Ordered by how close the dates are, so the nearest candidate is the one a
+// human is asked about.
+async function findCrossSourceGift(orgId, source, row, donor) {
+  const rows = await query(
+    `SELECT g.id, g.amount, g.date, g.external_id, g.giving_source_id,
+            s.id AS src_id, s.display_name AS src_name, s.provider AS src_provider,
+            s.sits_on_top_of AS src_sits_on_top_of
+       FROM gifts g
+       JOIN giving_sources s ON s.id = g.giving_source_id AND s.org_id = g.org_id
+      WHERE g.org_id = ?
+        AND g.giving_source_id <> ?
+        AND ROUND(g.amount * 100) = ?
+        AND g.date::date BETWEEN ?::date - ?::int AND ?::date + ?::int
+        AND g.donor_id IN (
+              SELECT d.id FROM donors d
+               WHERE d.org_id = ? AND d.deleted_at IS NULL
+                 AND (d.id = ? OR (COALESCE(d.email,'') <> '' AND LOWER(d.email) = LOWER(?)))
+            )
+      ORDER BY ABS(g.date::date - ?::date), g.id
+      LIMIT 1`,
+    [orgId, source.id, row.amountCents,
+     row.occurredAt, CROSS_SOURCE_DAY_WINDOW, row.occurredAt, CROSS_SOURCE_DAY_WINDOW,
+     // resolveSourceDonor returns { id, name } - the address to match on is the
+     // one the PROVIDER reported, which is also the one it resolved the donor
+     // by. The sentinel makes the email arm dead rather than matching blanks
+     // when a provider row carries no address at all.
+     orgId, donor.id, (row.donorEmail || "").trim() || "\u0000no-email",
+     row.occurredAt]);
+  return rows[0] || null;
+}
+
+// The line a human reads. One sentence, the money and the place it already
+// came from, because that is what makes the answer obvious.
+function crossSourceSentence(amountCents, otherSourceName, otherDate) {
+  // money.js is the ONE renderer. A whole-dollar amount drops the ".00" by
+  // TRIMMING THE RENDERED STRING - never by rounding the number, which is the
+  // fingerprint tests/money-cents.test.js §5 exists to refuse and which caught
+  // the first draft of this line.
+  const dollars = money.formatCents(amountCents).replace(/\.00$/, "");
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(otherDate || ""));
+  const MONTHS = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
+  const when = m ? `${MONTHS[+m[2] - 1]} ${+m[3]}` : String(otherDate || "");
+  return `Looks like the same ${dollars} gift already here from ${otherSourceName} on ${when}.`;
 }
 
 // ONE contract row -> at most one gift, through recordGift.
@@ -2533,9 +2629,51 @@ async function writeSourceRow(orgId, source, row, ctx) {
     return;
   }
 
+  // BUILD-92 A3 — a row this org has ALREADY ANSWERED about, or already been
+  // asked about, says nothing new. Checked before the donor is resolved so a
+  // re-sync of an answered row cannot create a donor record either.
+  const [answered] = await query(
+    `SELECT id FROM gifts WHERE org_id=? AND also_external_ids @> ?::jsonb LIMIT 1`,
+    [orgId, JSON.stringify([key])]);
+  if (answered) { summary.duplicates++; return; }
+  const [standing] = await query(
+    `SELECT id, status FROM gift_duplicate_questions WHERE org_id=? AND external_key=?`, [orgId, key]);
+  if (standing && standing.status === "open") { summary.duplicateQuestions++; return; }
+  if (standing && standing.status === "same_gift") { summary.duplicates++; return; }
+
   const donor = await resolveSourceDonor(orgId, source, row, { actorId, actorName, summary });
   if (!donor) { summary.dropped.no_donor_identity = (summary.dropped.no_donor_identity || 0) + 1; return; }
   touchedDonors.add(donor.id);
+
+  // …and only now, with a donor, can the cross-source question be asked.
+  // `standing.status === "kept_both"` falls straight through: that gift was
+  // written with this external id and recordGift's own dedupe holds it.
+  if (!standing) {
+    const other = await findCrossSourceGift(orgId, source, row, donor);
+    if (other) {
+      const otherSource = { id: other.src_id, sits_on_top_of: other.src_sits_on_top_of };
+      if (sourcesRideTogether(source, otherSource)) {
+        // THE SHORTCUT. Somebody has already said these two are one stack, so
+        // the second id goes onto the gift and nobody is asked anything.
+        await run(
+          `UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+            WHERE id=? AND org_id=?`, [JSON.stringify([key]), other.id, orgId]);
+        summary.ridesOnTop++;
+        return;
+      }
+      const sentence = crossSourceSentence(row.amountCents, other.src_name || other.src_provider, other.date);
+      await run(
+        `INSERT INTO gift_duplicate_questions
+           (id,org_id,source_id,existing_gift_id,existing_source_id,external_key,donor_id,
+            amount_cents,occurred_at,sentence,candidate,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?)
+         ON CONFLICT (org_id, external_key) DO NOTHING`,
+        ["gdq_" + uuid().slice(0, 10), orgId, source.id, other.id, other.src_id, key, donor.id,
+         row.amountCents, row.occurredAt, sentence, JSON.stringify(row), actorId, actorName]);
+      summary.duplicateQuestions++;
+      return;
+    }
+  }
 
   const written = await recordGift({
     orgId, donorId: donor.id,
@@ -2636,20 +2774,85 @@ async function recordSourceRun(orgId, source, summary, { actorId, actorName, day
 // An error a human can act on. Never a code, never a stack, and never
 // "something went wrong" - she needs to know whether to wait, to re-paste a
 // key, or to call somebody.
-function sourceErrorSentence(e, source) {
+//
+// BUILD-92 A2 — AUTHENTICATION AND PERMISSION ARE DIFFERENT PROBLEMS.
+// Found 20 September: Jonathan connected his own PayPal, the token step
+// answered 401 `invalid_client`, and the screen said "Steward could not finish
+// reading this source. The next check will try again." — which is the sentence
+// for a blip. He was told to wait for something that was never going to happen.
+//
+// The cause was that this function tested `/401|403|unauthor|invalid_client|
+// permission/` against the MESSAGE ONLY, and the message was "PayPal refused
+// the credentials: Client Authentication failed", which contains none of those
+// tokens. `e.status` was 401 and sitting right there unused.
+//
+// So the STEP is now declared by the adapter at the moment it knows it
+// (sources/*.js attach `step: "auth" | "permission" | "read"`), because the
+// adapter is the only place that knows whether a call was the token step or
+// the reporting call. Prose matching survives as the FALLBACK for errors
+// Steward does not control — but it can no longer be the thing that decides.
+//
+// `classifySourceError` is exported to the suite so the split can be tested
+// without a provider.
+function classifySourceError(e) {
   const code = e?.code || "";
+  const status = Number(e?.status) || null;
   const msg = String(e?.message || "");
-  if (code === "CREDENTIAL_KEY_MISSING") return "Steward cannot open the stored credentials for this source. Nothing was read and nothing was changed, and this needs an administrator.";
-  if (code === "SEALED_OPEN_FAILED") return "The saved key for this source could not be read. Disconnect it and connect it again with a fresh key.";
-  if (code === "NO_ADAPTER") return `Steward does not read ${source.display_name} automatically yet.`;
-  if (code === "PROVIDER_WRITE_REFUSED") return "Steward stopped a request that was not a read. Nothing was sent. This is a bug in Steward, not a problem with your account.";
-  if (/401|403|unauthor|invalid_client|permission/i.test(msg)) {
-    return source.provider === "paypal"
-      ? "PayPal has not allowed this yet. A newly enabled Transaction Search permission can take up to a day. Steward will keep trying."
-      : "The key for this source was refused. Check it is still active in the provider's settings, then paste it again.";
+  const providerCode = e?.providerCode || e?.stripeCode || null;
+  if (code) return { kind: code, status, providerCode };
+  // 1. What the adapter declared. Always believed over prose.
+  if (e?.step === "auth") return { kind: "auth", status, providerCode };
+  if (e?.step === "permission") return { kind: "permission", status, providerCode };
+  // 2. Then the status, which is a fact even when the prose is not.
+  if (status === 401) return { kind: "auth", status, providerCode };
+  if (status === 403) return { kind: "permission", status, providerCode };
+  if (status === 429) return { kind: "rate", status, providerCode };
+  // 3. Prose last, for anything thrown by code Steward does not own.
+  if (/invalid_client|client authentication failed|refused the credentials|unauthoriz|invalid api key|invalid key/i.test(msg))
+    return { kind: "auth", status, providerCode };
+  if (/permission|forbidden|not allowed|insufficient/i.test(msg))
+    return { kind: "permission", status, providerCode };
+  if (/429|rate limit/i.test(msg)) return { kind: "rate", status, providerCode };
+  if (/timeout|abort|ENOTFOUND|ECONN/i.test(msg)) return { kind: "unreachable", status, providerCode };
+  return { kind: "unknown", status, providerCode };
+}
+
+// The sentence for a refused CREDENTIAL, per provider. It names the exact
+// fields the person pasted, because "the key was refused" leaves them looking
+// at four boxes wondering which one. Kept in the voice of PROVIDERS[].help.
+const SOURCE_AUTH_SENTENCE = {
+  paypal: "PayPal did not accept this Client ID and Secret. Copy them again from your PayPal app and make sure the app is on Live.",
+  zeffy: "Zeffy did not accept this API key. Copy it again from Settings, then Integrations, then API.",
+  stripe: "Stripe did not accept this restricted key. Copy it again from Developers, then API keys, and make sure it has not been rolled.",
+  givebutter: "Givebutter did not accept this API key. Copy it again from Account, then Integrations, then API.",
+};
+// The sentence for a key that IS the right key but has not been allowed yet.
+// PayPal's is the only one that can honestly promise a delay: Transaction
+// Search really is a switch that takes time to come into effect.
+const SOURCE_PERMISSION_SENTENCE = {
+  paypal: "PayPal has not allowed this yet. A newly enabled Transaction Search permission can take up to a day. Steward will keep trying.",
+  zeffy: "Zeffy accepted this key but has not allowed it to read payments. Ask a Zeffy administrator to give the key payment access.",
+  stripe: "Stripe accepted this key but it does not have permission to read charges. Edit the restricted key and give it read access to Charges, Subscriptions, Invoices and Customers.",
+  givebutter: "Givebutter accepted this key but has not allowed it to read transactions. Check the key's permissions in Account, then Integrations, then API.",
+};
+
+function sourceErrorSentence(e, source) {
+  const provider = source?.provider || "";
+  const { kind } = classifySourceError(e);
+  if (kind === "CREDENTIAL_KEY_MISSING") return "Steward cannot open the stored credentials for this source. Nothing was read and nothing was changed, and this needs an administrator.";
+  if (kind === "SEALED_OPEN_FAILED") return "The saved key for this source could not be read. Disconnect it and connect it again with a fresh key.";
+  if (kind === "NO_ADAPTER") return `Steward does not read ${source?.display_name || provider} automatically yet.`;
+  if (kind === "PROVIDER_WRITE_REFUSED") return "Steward stopped a request that was not a read. Nothing was sent. This is a bug in Steward, not a problem with your account.";
+  if (kind === "auth") {
+    return SOURCE_AUTH_SENTENCE[provider]
+      || "The key for this source was refused. Check it is still active in the provider's settings, then paste it again.";
   }
-  if (/429|rate/i.test(msg)) return "The provider asked Steward to slow down. The next check will pick up where this one stopped.";
-  if (/timeout|abort|ENOTFOUND|ECONN/i.test(msg)) return "Steward could not reach the provider. The next check will try again.";
+  if (kind === "permission") {
+    return SOURCE_PERMISSION_SENTENCE[provider]
+      || "The provider accepted this key but has not allowed it to read yet. Check the key's permissions in the provider's settings.";
+  }
+  if (kind === "rate") return "The provider asked Steward to slow down. The next check will pick up where this one stopped.";
+  if (kind === "unreachable") return "Steward could not reach the provider. The next check will try again.";
   return "Steward could not finish reading this source. The next check will try again.";
 }
 
@@ -8994,16 +9197,266 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
       id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
       displayName: r.display_name, status: r.status,
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
+      sitsOnTopOf: r.sits_on_top_of || null,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
+      // BUILD-92 A2 — ONE error per source (the sentence), with the provider's
+      // own facts beside it, and the moment Steward last TRIED. `last_tried_at`
+      // is stamped on every attempt, so a source that failed on its first
+      // check can no longer read "never checked" next to an error - which is
+      // the screen telling a person two contradictory things at once.
+      lastErrorStatus: r.last_error_status === null || r.last_error_status === undefined ? null : Number(r.last_error_status),
+      lastErrorProviderCode: r.last_error_provider_code || null,
+      lastTriedAt: r.last_tried_at || r.last_error_at || r.last_synced_at || null,
       lastRunId: r.last_run_id,
       giftsThisWeek: Number(r.gifts_this_week) || 0, giftsTotal: Number(r.gifts_total) || 0,
       // Never "live", never "real time": Steward checks every six hours and a
       // provider can publish hours late. The screen says when it last looked.
-      everChecked: !!r.last_synced_at,
+      everChecked: !!(r.last_tried_at || r.last_error_at || r.last_synced_at),
       // Deliberately never the credential, and never a prefix of it.
       hasCredentials: !!r.credentials_sealed,
     })),
   });
+}));
+
+// BUILD-92 A2 — ONE credential-cleaning rule, at the door, for every provider.
+// A key copied out of a browser or a password manager arrives with a trailing
+// newline or a leading space more often than not, and a secret with a newline
+// on the end is a secret the provider refuses - which then reads as a wrong
+// key and sends a person back to re-copy something that was already correct.
+// Trimmed BEFORE it is tested and BEFORE it is sealed, so what Steward stores
+// is exactly what it proved works. Only the outer whitespace goes; nothing
+// inside a credential is touched.
+function trimCredentials(raw) {
+  const out = {};
+  for (const [k, v] of Object.entries(raw || {})) {
+    out[k] = typeof v === "string" ? v.trim() : v;
+  }
+  return out;
+}
+
+// The ONE provider-test path. `/giving-sources/test` (the Test button) and
+// `POST /giving-sources` (connect) both run THIS - a second implementation is
+// a second set of rules about what "it works" means.
+// Returns { ok, count, totalCents, message } or { ok:false, kind, status,
+// providerCode, message } - never throws for a provider-side failure.
+async function runSourceCredentialTest(provider, credentials, orgId) {
+  const { PROVIDERS } = await import("./shared/givingSources.js");
+  const spec = PROVIDERS[provider];
+  const adapter = sourceAdapters.getAdapter(provider);
+  if (!adapter) return { ok: false, kind: "NO_ADAPTER", status: null, providerCode: null,
+                         message: `Steward does not read ${spec?.label || provider} automatically yet.` };
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  const http = sourceAdapters.readOnlyHttp(provider);
+  try {
+    const out = await adapter.testCredentials({ credentials, http, today });
+    return { ok: !!out?.ok, kind: "ok", status: null, providerCode: null,
+             count: out?.count || 0, totalCents: out?.totalCents || 0,
+             message: out?.message || null, requests: http.requests.length };
+  } catch (e) {
+    const { kind, status, providerCode } = classifySourceError(e);
+    return { ok: false, kind, status, providerCode,
+             message: sourceErrorSentence(e, { provider, display_name: spec?.label || provider }),
+             requests: http.requests.length };
+  }
+}
+
+// Whether connect should TALK to the provider before it saves.
+//
+// In production this is always true: refusing a credential the provider has
+// already rejected is the whole point of item 3. The one carve-out is a TEST
+// boot that has not been handed a local seam for this provider - there the
+// only thing on the other end of the wire is the real provider, and a suite
+// must never reach for one. A test boot that DOES set the provider's base
+// (tests/build92-source-errors.test.js boots a child server that way) verifies
+// exactly as production does, which is how the refusal is proven at all.
+const PROVIDER_BASE_ENV = {
+  paypal: ["PAYPAL_API_BASE"],
+  zeffy: ["ZEFFY_API_BASE"],
+  stripe: ["STRIPE_SOURCE_API_BASE", "STRIPE_API_BASE"],
+  givebutter: ["GIVEBUTTER_API_BASE"],
+};
+function verifyBeforeSaving(provider) {
+  if (!process.env.TEST_MODE) return true;
+  return (PROVIDER_BASE_ENV[provider] || []).some(k => !!process.env[k]);
+}
+
+
+
+// ── BUILD-92 A4 — ANY STATEMENT, REMEMBERED ────────────────────────────────
+//
+// "A bank or other statement" is ONE generic preset on the EXISTING mapper -
+// not a second importer, not a vendor list. The brief's rule is kept: no named
+// preset for Givelify, Tithe.ly or anyone else without a real exported file in
+// the repo to build it against, and there is none for any of them.
+//
+// What is stored here is the ANSWER she gave the mapper once: which columns
+// are the date, the amount and the name, what the source is called, and
+// whether negative rows are dropped. Next month the same columns arrive and
+// there is nothing to click.
+//
+// Nothing here has credentials, syncs, or reaches a provider.
+const STATEMENT_MAPPING_FIELDS = ["date", "amount", "donorName", "donorEmail", "notes", "externalId"];
+
+function statementMappingPayload(r) {
+  return {
+    id: r.id, name: r.name, presetKey: r.preset_key,
+    mapping: typeof r.mapping === "string" ? JSON.parse(r.mapping) : r.mapping,
+    dropNegative: r.drop_negative !== false,
+    paymentMethod: r.payment_method || null,
+    timesUsed: Number(r.times_used) || 0,
+    lastUsedAt: r.last_used_at, createdAt: r.created_at,
+  };
+}
+
+app.get("/statement-mappings", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT * FROM statement_mappings WHERE org_id=? ORDER BY COALESCE(last_used_at, created_at) DESC, name ASC`,
+    [req.user.orgId]);
+  res.json({ mappings: rows.map(statementMappingPayload) });
+}));
+
+// Save, or correct, a mapping under a NAME. Saving the same name twice
+// corrects it rather than minting a second one she then has to choose between.
+app.post("/statement-mappings", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: "name_required", message: "Give this source a name, like \"Zelle at Central Bank\"." });
+  const raw = req.body?.mapping || {};
+  const mapping = {};
+  for (const f of STATEMENT_MAPPING_FIELDS) {
+    const v = String(raw[f] ?? "").trim();
+    if (v) mapping[f] = v.slice(0, 120);
+  }
+  // The three she is asked for. Without a date and an amount there is no gift;
+  // without a name there is nobody to put it on, and guessing a donor is the
+  // one thing this product does not do.
+  const missing = ["date", "amount", "donorName"].filter(f => !mapping[f]);
+  if (missing.length) return res.status(400).json({ error: "missing_columns", missing });
+
+  const a = actor(req);
+  const id = "sm_" + uuid().slice(0, 10);
+  const rows = await query(
+    `INSERT INTO statement_mappings (id,org_id,name,preset_key,mapping,drop_negative,payment_method,created_by,created_by_name)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?)
+     ON CONFLICT (org_id, LOWER(name)) DO UPDATE
+       SET mapping = EXCLUDED.mapping, drop_negative = EXCLUDED.drop_negative,
+           payment_method = EXCLUDED.payment_method, preset_key = EXCLUDED.preset_key,
+           updated_at = NOW()
+     RETURNING *`,
+    [id, orgId, name, String(req.body?.presetKey || "generic_statement"), JSON.stringify(mapping),
+     req.body?.dropNegative !== false, String(req.body?.paymentMethod || "").trim().slice(0, 60) || null,
+     a.id, a.name]);
+  res.json({ ok: true, mapping: statementMappingPayload(rows[0]) });
+}));
+
+// ZERO CLICKS, THE SECOND TIME. The file's headers come in, and if one saved
+// mapping names only columns this file has, it IS the answer - the mapper
+// applies it and the review step opens already filled in.
+//
+// A read that records it was used (so ties break on recency), which is why it
+// is a POST: the headers are the file's, and a GET could not carry them.
+app.post("/statement-mappings/match", requireAuth, wrap(async (req, res) => {
+  const { matchSavedMapping } = await import("./shared/sourcePresets.js");
+  const headers = Array.isArray(req.body?.headers) ? req.body.headers.map(h => String(h || "")) : [];
+  const rows = await query(`SELECT * FROM statement_mappings WHERE org_id=?`, [req.user.orgId]);
+  const saved = rows.map(statementMappingPayload);
+  const hit = matchSavedMapping(headers, saved);
+  if (!hit) return res.json({ matched: false, mapping: null, savedCount: saved.length });
+  await run(`UPDATE statement_mappings SET times_used = times_used + 1, last_used_at = NOW() WHERE id=? AND org_id=?`,
+            [hit.id, req.user.orgId]);
+  res.json({ matched: true, mapping: { ...hit, timesUsed: hit.timesUsed + 1 }, savedCount: saved.length });
+}));
+
+app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
+  const r = await query(`DELETE FROM statement_mappings WHERE id=? AND org_id=? RETURNING id`,
+                        [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "mapping not found" });
+  res.json({ ok: true });
+}));
+
+// ── BUILD-92 A3 — THE QUESTIONS, AND THEIR TWO ANSWERS ─────────────────────
+// Declared above "/giving-sources/:id" so Express never resolves "duplicates"
+// as a source id - the same rule "providers" already lives by.
+//
+// A question is ONE LINE. It exists because Steward refused to guess, and it
+// stays until a human answers it. Nothing here writes money by itself.
+app.get("/giving-sources/duplicates", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT q.*, d.name AS donor_name, s.display_name AS source_name, s.provider AS source_provider,
+            e.display_name AS existing_source_name
+       FROM gift_duplicate_questions q
+       LEFT JOIN donors d ON d.id = q.donor_id AND d.org_id = q.org_id
+       LEFT JOIN giving_sources s ON s.id = q.source_id AND s.org_id = q.org_id
+       LEFT JOIN giving_sources e ON e.id = q.existing_source_id AND e.org_id = q.org_id
+      WHERE q.org_id = ? AND q.status = 'open'
+      ORDER BY q.created_at ASC, q.id ASC`, [req.user.orgId]);
+  res.json({
+    questions: rows.map(r => ({
+      id: r.id, sentence: r.sentence,
+      donorId: r.donor_id, donorName: r.donor_name || null,
+      amountCents: Number(r.amount_cents) || 0, occurredAt: r.occurred_at,
+      sourceId: r.source_id, sourceName: r.source_name || r.source_provider,
+      existingGiftId: r.existing_gift_id, existingSourceId: r.existing_source_id,
+      existingSourceName: r.existing_source_name || null,
+      createdAt: r.created_at,
+    })),
+  });
+}));
+
+// "Same gift." The second id goes ONTO the gift that is already on file, so
+// the question never returns - not on the next sync, not on any sync, and not
+// if the source is disconnected and reconnected.
+app.post("/giving-sources/duplicates/:id/same-gift", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [q0] = await query("SELECT * FROM gift_duplicate_questions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!q0) return res.status(404).json({ error: "question not found" });
+  if (q0.status !== "open") return res.status(409).json({ error: "already_answered", status: q0.status });
+  const a = actor(req);
+  await run(
+    `UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+      WHERE id=? AND org_id=?`, [JSON.stringify([q0.external_key]), q0.existing_gift_id, orgId]);
+  await run(
+    `UPDATE gift_duplicate_questions SET status='same_gift', resolved_at=NOW(), resolved_by=?, resolved_by_name=?
+      WHERE id=? AND org_id=?`, [a.id, a.name, q0.id, orgId]);
+  res.json({ ok: true, status: "same_gift", giftId: q0.existing_gift_id });
+}));
+
+// "Keep both." The provider's row was kept whole on the question, so the gift
+// is written now, through recordGift, exactly as the sync would have written
+// it. One gift, one write path - there is no second one here either.
+app.post("/giving-sources/duplicates/:id/keep-both", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [q0] = await query("SELECT * FROM gift_duplicate_questions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!q0) return res.status(404).json({ error: "question not found" });
+  if (q0.status !== "open") return res.status(409).json({ error: "already_answered", status: q0.status });
+  const [source] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=?", [q0.source_id, orgId]);
+  if (!source) return res.status(404).json({ error: "source not found" });
+  const row = typeof q0.candidate === "string" ? JSON.parse(q0.candidate) : q0.candidate;
+  const a = actor(req);
+  const written = await recordGift({
+    orgId, donorId: q0.donor_id,
+    amount: (Number(q0.amount_cents) || 0) / 100,
+    date: q0.occurred_at,
+    type: "cash",
+    notes: row?.memo || "",
+    fundId: source.default_fund_id || null,
+    defaultFund: false,
+    paymentMethod: source.display_name,
+    externalId: q0.external_key,
+    conflict: "external",
+    givingSourceId: source.id,
+    processorFeeAmount: (Number(row?.feeCents) || 0) / 100,
+    providerRecurringRef: row?.recurringRef || null,
+    post: true,
+    source: `giving-source:${source.provider}`,
+    actorId: a.id, actorName: a.name,
+    thankYou: true,
+  });
+  await run(
+    `UPDATE gift_duplicate_questions SET status='kept_both', resolved_at=NOW(), resolved_by=?, resolved_by_name=?
+      WHERE id=? AND org_id=?`, [a.id, a.name, q0.id, orgId]);
+  res.json({ ok: true, status: "kept_both", giftId: written?.gift?.id || null, duplicate: !!written?.duplicate });
 }));
 
 // Test a key WITHOUT storing it: the last seven days, a count and a total.
@@ -9016,19 +9469,16 @@ app.post("/giving-sources/test", requireAuth, requireAdmin, wrap(async (req, res
   if (!spec || spec.mode !== "api") return res.status(400).json({ error: "unknown_provider" });
   const adapter = sourceAdapters.getAdapter(provider);
   if (!adapter) return res.status(400).json({ error: "adapter_unavailable", message: `Steward does not read ${spec.label} automatically yet.` });
-  const credentials = req.body?.credentials || {};
+  const credentials = trimCredentials(req.body?.credentials || {});
   const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
   if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
-  const org = await orgTz(req.user.orgId);
-  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
-  const http = sourceAdapters.readOnlyHttp(provider);
-  try {
-    const out = await adapter.testCredentials({ credentials, http, today });
-    res.json({ ok: !!out?.ok, count: out?.count || 0, totalCents: out?.totalCents || 0,
-               message: out?.message || null, requests: http.requests.length });
-  } catch (e) {
-    res.json({ ok: false, message: sourceErrorSentence(e, { provider, display_name: spec.label }) });
-  }
+  const out = await runSourceCredentialTest(provider, credentials, req.user.orgId);
+  res.json({ ok: !!out.ok, count: out.count || 0, totalCents: out.totalCents || 0,
+             message: out.message || null, requests: out.requests || 0,
+             // The same two facts the source row carries, so the Test button
+             // and the saved row can never disagree about what happened.
+             errorStatus: out.ok ? null : (out.status ?? null),
+             errorProviderCode: out.ok ? null : (out.providerCode || null) });
 }));
 
 // Connect. THE ONE PLACE A PROVIDER CREDENTIAL ENTERS THE DATABASE.
@@ -9045,9 +9495,33 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   const spec = PROVIDERS[provider];
   if (!spec) return res.status(400).json({ error: "unknown_provider" });
 
-  const credentials = req.body?.credentials || {};
+  const credentials = trimCredentials(req.body?.credentials || {});
   const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
   if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
+
+  // BUILD-92 A2 item 3 — ASK THE PROVIDER BEFORE STORING THE KEY.
+  // A credential the provider has already refused must not be saved: it
+  // becomes a source that sits on the Settings screen failing every six hours
+  // while the person who pasted it believes they are connected.
+  //   The refusal is narrow ON PURPOSE. Only an AUTHENTICATION verdict stops
+  // the save, because only that one is certain and only that one is fixed by
+  // pasting a different key. A PERMISSIONS-PENDING result SAVES - PayPal's
+  // Transaction Search switch genuinely takes up to a day, and refusing there
+  // would make the product impossible to set up. Unreachable, rate-limited and
+  // unknown also save: a network blip is not a fact about the key.
+  //   It runs through runSourceCredentialTest, the same path the Test button
+  // uses. There is no second notion of "it works".
+  if (spec.credentialFields.length && verifyBeforeSaving(provider)) {
+    const check = await runSourceCredentialTest(provider, credentials, orgId);
+    if (!check.ok && (check.kind === "auth" || check.kind === "PROVIDER_WRITE_REFUSED")) {
+      return res.status(400).json({
+        error: "credentials_refused",
+        message: check.message,
+        errorStatus: check.status ?? null,
+        errorProviderCode: check.providerCode || null,
+      });
+    }
+  }
 
   // A fund is honoured only if it is this org's. A refused fund never
   // silently becomes a different fund (recordGift's rule, applied at the door).
@@ -9127,9 +9601,25 @@ app.patch("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   }
   const displayName = req.body?.displayName !== undefined
     ? String(req.body.displayName || "").trim().slice(0, 60) || s.display_name : s.display_name;
-  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
-            [displayName, fundId, req.params.id, orgId]);
-  res.json({ ok: true, displayName, defaultFundId: fundId });
+
+  // BUILD-92 A3 — THE ONE SHORTCUT. "Donorbox sits on top of Stripe" is a fact
+  // about the org's own stack that only a human can state; once stated, every
+  // cross-source match between the two resolves as one gift without asking.
+  // It must be THIS org's other source, and never itself - a source riding on
+  // itself would make every match self-resolving and silently swallow real
+  // gifts, which is the exact failure this whole part exists to prevent.
+  let sitsOnTopOf = s.sits_on_top_of;
+  if (req.body?.sitsOnTopOf !== undefined) {
+    sitsOnTopOf = req.body.sitsOnTopOf || null;
+    if (sitsOnTopOf) {
+      if (sitsOnTopOf === req.params.id) return res.status(400).json({ error: "self_reference", message: "A source cannot sit on top of itself." });
+      const [other] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [sitsOnTopOf, orgId]);
+      if (!other) return res.status(404).json({ error: "unknown_source" });
+    }
+  }
+  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, sits_on_top_of=?, updated_at=NOW() WHERE id=? AND org_id=?",
+            [displayName, fundId, sitsOnTopOf, req.params.id, orgId]);
+  res.json({ ok: true, displayName, defaultFundId: fundId, sitsOnTopOf });
 }));
 
 // "Check now". Same function the schedule calls - there is no second path.

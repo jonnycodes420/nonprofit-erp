@@ -2891,6 +2891,110 @@ async function initSchema() {
                     ON giving_sources (org_id, provider) WHERE status <> 'disconnected'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_sources_org ON giving_sources (org_id, status)`);
 
+  // ── BUILD-92 A2 — WHAT THE PROVIDER ACTUALLY SAID ─────────────────────────
+  // `last_error` is the SENTENCE a human reads and it does not change here.
+  // Beside it now sit the two facts that were thrown away: the HTTP status the
+  // provider answered with, and the provider's own machine-readable error code
+  // (PayPal's `invalid_client`, Stripe's `error.code`). Jonathan's PayPal
+  // failure was a plain 401 with `invalid_client` sitting on the error object
+  // unread while the sentence fell through to the generic last line.
+  //   `last_tried_at` is stamped on EVERY attempt, success or failure, which is
+  // what lets the API stop reporting "never checked" beside an error.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_error_status INTEGER`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_error_provider_code TEXT`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_tried_at TIMESTAMPTZ`);
+
+  // ── BUILD-92 A3 — THE SAME GIFT FROM TWO PLACES ───────────────────────────
+  // De-duplication has always been per source, by the provider's own id.
+  // Donorbox runs on the ORGANISATION'S OWN Stripe and PayPal, so connecting
+  // all three does not give three sets of gifts - it gives ONE set of gifts
+  // reported three times, and every figure in the product doubles or trebles.
+  //
+  // `sits_on_top_of` is the ONE SHORTCUT, per source: "this source rides on
+  // that one", set once by a human who knows their own stack. A cross-source
+  // match between two sources in that relationship resolves as the same gift
+  // WITHOUT asking, forever. Everything else asks, once, and never guesses.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS sits_on_top_of TEXT`);
+
+  // A gift can be reported under more than one provider's id. `external_id`
+  // stays the FIRST one (it is the dedupe key and the unique index is on it);
+  // the others ride here, so answering "same gift" once means the question is
+  // never asked again by any source, on any future sync.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS also_external_ids JSONB`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_also_external
+                      ON gifts USING GIN (also_external_ids)`).catch(() => {});
+  // The window the match runs over. A gift is looked for by donor and date, so
+  // this is the index that keeps the question cheap on a big org.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_org_donor_date ON gifts (org_id, donor_id, date)`);
+
+  // ONE LINE PER QUESTION, and it is a question, never a silent decision.
+  // A row here means: source B reported something that looks like a gift
+  // already on file from source A, and Steward did NOT write it. Nothing is
+  // lost - the provider's whole row is kept in `candidate` so "Keep both"
+  // can write it later without re-reading the provider.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gift_duplicate_questions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      source_id TEXT NOT NULL REFERENCES giving_sources(id) ON DELETE CASCADE,
+      existing_gift_id TEXT,
+      existing_source_id TEXT,
+      external_key TEXT NOT NULL,
+      donor_id TEXT,
+      amount_cents INTEGER NOT NULL,
+      occurred_at TEXT NOT NULL,
+      sentence TEXT NOT NULL,
+      candidate JSONB NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      resolved_at TIMESTAMPTZ,
+      resolved_by TEXT,
+      resolved_by_name TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT gift_dupq_status CHECK (status IN ('open','same_gift','kept_both'))
+    )
+  `);
+  // Asked ONCE. A re-sync that re-reads the same provider row finds the
+  // question already standing (open OR answered) and says nothing new.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS gift_dupq_one_per_row
+                      ON gift_duplicate_questions (org_id, external_key)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gift_dupq_open
+                      ON gift_duplicate_questions (org_id, created_at) WHERE status = 'open'`);
+
+  // ── BUILD-92 A4 — ANY STATEMENT, REMEMBERED ───────────────────────────────
+  // "A bank or other statement" is ONE generic preset on the existing mapper.
+  // She picks the date, amount and name columns once, NAMES the source
+  // ("Zelle at Central Bank"), says whether negative rows are dropped, and
+  // this is where that answer lives. Next month the same columns arrive, the
+  // mapping matches on the COLUMN SET, and there is nothing to click.
+  //
+  // It is a MAPPING, not a source: nothing here has credentials, nothing here
+  // syncs, and nothing here reaches a provider. That is why it is its own
+  // small table rather than a row in giving_sources.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS statement_mappings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      preset_key TEXT NOT NULL DEFAULT 'generic_statement',
+      mapping JSONB NOT NULL,
+      drop_negative BOOLEAN NOT NULL DEFAULT true,
+      payment_method TEXT,
+      times_used INTEGER NOT NULL DEFAULT 0,
+      last_used_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // The NAME is the thing a human holds onto, so it is the thing that has to
+  // be unique: saving "Zelle at Central Bank" twice must correct the mapping,
+  // never mint a second one she then has to choose between.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS statement_mappings_name
+                      ON statement_mappings (org_id, LOWER(name))`);
+
   // A gift that came in through a source remembers which one, what the
   // provider took, and the provider's own subscription id.
   //
@@ -3039,6 +3143,33 @@ async function seedData() {
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name`,
     [userId, orgId, "admin@creoarts.org", hash, "Mike Henderson", "admin"]
+  );
+
+  // ── BUILD-92 A1 — THE DEMO ORG'S OWN WORDS, ON A FRESH DATABASE ──────────
+  // BUILD-86 Part B gave the demo org Heart of Africa's vocabulary, but only
+  // through `scripts/seed-build86-vocabulary.js`, run by hand against one
+  // server. A fresh database therefore came up saying "donors" and "funds" —
+  // the generic words BUILD-86 exists to avoid — until somebody remembered to
+  // run the script. The words belong to the seed.
+  //   Keys are exactly shared/vocabulary.js's VOCAB_KEYS; the values are the
+  // ones in that script, kept in step with it.
+  //   `WHERE vocabulary_json IS NULL` is what makes this idempotent AND safe:
+  // an org that has answered the vocabulary questions (including this demo org
+  // once somebody edits it in Settings) is never overwritten on a later boot.
+  await pool.query(
+    `UPDATE orgs SET vocabulary_json = $2, vocabulary_set_at = NOW()
+      WHERE id = $1 AND vocabulary_json IS NULL`,
+    [orgId, JSON.stringify({
+      giver_singular: "sponsor",
+      giver_plural: "sponsors",
+      monthly_giver_singular: "sponsor",
+      monthly_giver_plural: "sponsors",
+      fund_singular: "designation",
+      fund_plural: "designations",
+      fiscal_year_start_month: 7,
+      season_name: "Spring Campaign",
+      season_date: "2027-06-30",
+    })]
   );
 
   const donors = [
@@ -3345,8 +3476,18 @@ async function seedData() {
   ];
   for (const b of budgets2025) {
     await pool.query(
+      // BUILD-92 A1 — the conflict target must name the index that SURVIVES.
+      // The CREATE TABLE above declares UNIQUE (org_id, account_id, year), but
+      // the BUILD-88a fund migration (this file, "A BUDGET HAS A FUND") DROPS
+      // that constraint and replaces it with budgets_account_year_fund on
+      // (org_id, account_id, year, COALESCE(fund_id, '')). Naming the dropped
+      // three-column target threw 42P10 on every boot, and because seedData is
+      // one un-chunked async function that aborted the WHOLE REST of the demo
+      // seed. These rows are the general, unfunded budget — one per
+      // org/account/year with no fund — so COALESCE(fund_id,'') is exactly
+      // right, and matches the upsert in server.js's budget route.
       `INSERT INTO budgets (id,org_id,account_id,year,amount)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year) DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, '')) DO NOTHING`,
       b
     );
   }
