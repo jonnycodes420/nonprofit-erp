@@ -120,13 +120,22 @@ export default function TermsPage() {
         <h2 style={S.h2}>13. Changes to Terms</h2>
         <p style={S.p}>We may update these Terms from time to time. We will notify you of material changes via email or a notice within the Service at least 14 days before they take effect. Continued use after the effective date constitutes acceptance.</p>
 
+        {/* BUILD-89S 89f — connected giving sources. An organisation hands
+            Steward a read credential to an account holding its own money, so
+            what Steward may do with it is a term, not a help article. INTERIM
+            alongside section 15, same attorney pass pending. */}
+        <h2 style={S.h2}>14. Connected Giving Sources</h2>
+        <p style={S.p}><strong>Steward never holds or moves your money.</strong> You keep whatever you take gifts through today. When you connect a giving source (PayPal, Zeffy, your own Stripe account, Givebutter), Steward reads completed gifts from it and records them on your donor records. It does not hold funds, initiate payments, issue refunds, cancel or alter a donor&apos;s recurring gift, or change anything in your account with that provider. Access is read-only, and you can disconnect at any time from Settings; the gifts already read stay on your records, because the money did arrive that way.</p>
+        <p style={S.p}><strong>The credentials you provide.</strong> You represent that you are authorized to grant access to the accounts you connect, and you agree to provide read-scoped credentials where the provider offers them. Credentials are encrypted before storage and are never displayed back to you or to us after they are saved. Disconnecting a source destroys the stored credential. We are not responsible for what a credential broader than read access permits at the provider, which is why we ask for the narrowest one each provider supports.</p>
+        <p style={S.p}><strong>What Steward does not guarantee.</strong> Steward reads on a schedule and depends on each provider&apos;s own API and publication delays; it is not a real-time feed and is not a system of record for your provider account. Your provider&apos;s own statements remain authoritative for what you received. Cash App and Venmo offer no way for software to read an account, so gifts taken through them are recorded only from statement files you upload.</p>
+
         {/* INTERIM — attorney replacement pending per BLOCKED-legal-network.md.
             Scoped to the donor-account + network-signup surfaces. */}
-        <h2 style={S.h2}>14. Donor Accounts &amp; the Nonprofit Network</h2>
+        <h2 style={S.h2}>15. Donor Accounts &amp; the Nonprofit Network</h2>
         <p style={S.p}><strong>Donor accounts</strong> are personal, free, and optional. You agree to register only email addresses you control. You may delete your account at any time; deletion removes your account and its links but does not alter any nonprofit's own records of its donors. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>
         <p style={S.p}><strong>Nonprofit network signup (Portal tier):</strong> by applying you represent that the information you provide — organization name, EIN, website, contact email — is truthful and that you are authorized to act for the organization. Listings are granted only after EIN verification against the IRS tax-exempt list, completed Stripe onboarding (donations settle only into your organization's own Stripe account — Steward never holds funds), and human review. We may decline, hold, or remove a listing at any time, and listings are automatically suspended if an EIN leaves the IRS list or a Stripe account is disconnected or restricted. Content you publish to donor-facing surfaces (impact updates, branding) must be truthful and yours to publish. The Portal tier covers the donor portal, gift recording, receipts, and impact updates; it does not include the Steward CRM.</p>
 
-        <h2 style={S.h2}>15. Contact</h2>
+        <h2 style={S.h2}>16. Contact</h2>
         <p style={S.p}>For questions about these Terms, contact us at <a href="mailto:legal@stewardapp.dev" style={S.a}>legal@stewardapp.dev</a>.</p>
       </div>
     </div>

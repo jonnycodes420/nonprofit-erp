@@ -180,6 +180,29 @@ function chunk(src, startMarker, endMarker) {
   ok("the landing's own data section carries the money line too",
     /data-testid="lp-data-money"/.test(landingSrc));
 
+  // THE TERMS ARE WHERE IT IS A COMMITMENT, not a help article: an
+  // organisation is handing Steward a read credential to an account holding
+  // its own money, so what Steward may do with it is a term.
+  const terms = read("client/src/pages/TermsPage.jsx").replace(/\s+/g, " ");
+  ok("the Terms carry a Connected Giving Sources section", /Connected Giving Sources/.test(terms));
+  ok("...saying Steward never holds or moves your money", /never holds or moves your money/i.test(terms));
+  ok("...and naming what it will not do, one by one",
+    ["hold funds", "initiate payments", "issue refunds", "cancel or alter"].every(p => terms.includes(p)),
+    ["hold funds", "initiate payments", "issue refunds", "cancel or alter"].filter(p => !terms.includes(p)));
+  ok("...that access is read-only and disconnectable, and the gifts stay",
+    /[Aa]ccess is read-only/.test(terms) && /disconnect at any time/i.test(terms)
+    && /gifts already read stay on your records/i.test(terms));
+  ok("...that credentials are encrypted and destroyed on disconnect",
+    /encrypted before storage/i.test(terms) && /[Dd]isconnecting a source destroys the stored credential/.test(terms));
+  ok("...and that it is NOT a real-time feed and not the system of record",
+    /not a real-time feed/i.test(terms) && /statements remain authoritative/i.test(terms));
+  // A numbered agreement with two section 15s is a document nobody can cite.
+  const nums = [...read("client/src/pages/TermsPage.jsx")
+    .matchAll(/<h2 style=\{S\.h2\}>(\d+)\./g)].map(m => Number(m[1]));
+  ok("the Terms' section numbers are unique and in order",
+    nums.length > 5 && new Set(nums).size === nums.length && nums.every((n, i) => i === 0 || n > nums[i - 1]),
+    nums);
+
   // ══ §6 · ONE SENTENCE, THREE SURFACES ════════════════════════════════════
   console.log("\n— §6 · the record, the dashboard and the Thread cannot disagree —");
   const provider = { confidence: lib.CONFIDENCE.PROVIDER, amountCents: 5000, interval: "month" };
