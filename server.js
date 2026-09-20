@@ -9280,6 +9280,99 @@ function verifyBeforeSaving(provider) {
 }
 
 
+
+// ── BUILD-92 A4 — ANY STATEMENT, REMEMBERED ────────────────────────────────
+//
+// "A bank or other statement" is ONE generic preset on the EXISTING mapper -
+// not a second importer, not a vendor list. The brief's rule is kept: no named
+// preset for Givelify, Tithe.ly or anyone else without a real exported file in
+// the repo to build it against, and there is none for any of them.
+//
+// What is stored here is the ANSWER she gave the mapper once: which columns
+// are the date, the amount and the name, what the source is called, and
+// whether negative rows are dropped. Next month the same columns arrive and
+// there is nothing to click.
+//
+// Nothing here has credentials, syncs, or reaches a provider.
+const STATEMENT_MAPPING_FIELDS = ["date", "amount", "donorName", "donorEmail", "notes", "externalId"];
+
+function statementMappingPayload(r) {
+  return {
+    id: r.id, name: r.name, presetKey: r.preset_key,
+    mapping: typeof r.mapping === "string" ? JSON.parse(r.mapping) : r.mapping,
+    dropNegative: r.drop_negative !== false,
+    paymentMethod: r.payment_method || null,
+    timesUsed: Number(r.times_used) || 0,
+    lastUsedAt: r.last_used_at, createdAt: r.created_at,
+  };
+}
+
+app.get("/statement-mappings", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT * FROM statement_mappings WHERE org_id=? ORDER BY COALESCE(last_used_at, created_at) DESC, name ASC`,
+    [req.user.orgId]);
+  res.json({ mappings: rows.map(statementMappingPayload) });
+}));
+
+// Save, or correct, a mapping under a NAME. Saving the same name twice
+// corrects it rather than minting a second one she then has to choose between.
+app.post("/statement-mappings", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: "name_required", message: "Give this source a name, like \"Zelle at Central Bank\"." });
+  const raw = req.body?.mapping || {};
+  const mapping = {};
+  for (const f of STATEMENT_MAPPING_FIELDS) {
+    const v = String(raw[f] ?? "").trim();
+    if (v) mapping[f] = v.slice(0, 120);
+  }
+  // The three she is asked for. Without a date and an amount there is no gift;
+  // without a name there is nobody to put it on, and guessing a donor is the
+  // one thing this product does not do.
+  const missing = ["date", "amount", "donorName"].filter(f => !mapping[f]);
+  if (missing.length) return res.status(400).json({ error: "missing_columns", missing });
+
+  const a = actor(req);
+  const id = "sm_" + uuid().slice(0, 10);
+  const rows = await query(
+    `INSERT INTO statement_mappings (id,org_id,name,preset_key,mapping,drop_negative,payment_method,created_by,created_by_name)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?)
+     ON CONFLICT (org_id, LOWER(name)) DO UPDATE
+       SET mapping = EXCLUDED.mapping, drop_negative = EXCLUDED.drop_negative,
+           payment_method = EXCLUDED.payment_method, preset_key = EXCLUDED.preset_key,
+           updated_at = NOW()
+     RETURNING *`,
+    [id, orgId, name, String(req.body?.presetKey || "generic_statement"), JSON.stringify(mapping),
+     req.body?.dropNegative !== false, String(req.body?.paymentMethod || "").trim().slice(0, 60) || null,
+     a.id, a.name]);
+  res.json({ ok: true, mapping: statementMappingPayload(rows[0]) });
+}));
+
+// ZERO CLICKS, THE SECOND TIME. The file's headers come in, and if one saved
+// mapping names only columns this file has, it IS the answer - the mapper
+// applies it and the review step opens already filled in.
+//
+// A read that records it was used (so ties break on recency), which is why it
+// is a POST: the headers are the file's, and a GET could not carry them.
+app.post("/statement-mappings/match", requireAuth, wrap(async (req, res) => {
+  const { matchSavedMapping } = await import("./shared/sourcePresets.js");
+  const headers = Array.isArray(req.body?.headers) ? req.body.headers.map(h => String(h || "")) : [];
+  const rows = await query(`SELECT * FROM statement_mappings WHERE org_id=?`, [req.user.orgId]);
+  const saved = rows.map(statementMappingPayload);
+  const hit = matchSavedMapping(headers, saved);
+  if (!hit) return res.json({ matched: false, mapping: null, savedCount: saved.length });
+  await run(`UPDATE statement_mappings SET times_used = times_used + 1, last_used_at = NOW() WHERE id=? AND org_id=?`,
+            [hit.id, req.user.orgId]);
+  res.json({ matched: true, mapping: { ...hit, timesUsed: hit.timesUsed + 1 }, savedCount: saved.length });
+}));
+
+app.delete("/statement-mappings/:id", requireAuth, wrap(async (req, res) => {
+  const r = await query(`DELETE FROM statement_mappings WHERE id=? AND org_id=? RETURNING id`,
+                        [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "mapping not found" });
+  res.json({ ok: true });
+}));
+
 // ── BUILD-92 A3 — THE QUESTIONS, AND THEIR TWO ANSWERS ─────────────────────
 // Declared above "/giving-sources/:id" so Express never resolves "duplicates"
 // as a source id - the same rule "providers" already lives by.

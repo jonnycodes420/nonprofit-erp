@@ -2962,6 +2962,39 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gift_dupq_open
                       ON gift_duplicate_questions (org_id, created_at) WHERE status = 'open'`);
 
+  // ── BUILD-92 A4 — ANY STATEMENT, REMEMBERED ───────────────────────────────
+  // "A bank or other statement" is ONE generic preset on the existing mapper.
+  // She picks the date, amount and name columns once, NAMES the source
+  // ("Zelle at Central Bank"), says whether negative rows are dropped, and
+  // this is where that answer lives. Next month the same columns arrive, the
+  // mapping matches on the COLUMN SET, and there is nothing to click.
+  //
+  // It is a MAPPING, not a source: nothing here has credentials, nothing here
+  // syncs, and nothing here reaches a provider. That is why it is its own
+  // small table rather than a row in giving_sources.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS statement_mappings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      preset_key TEXT NOT NULL DEFAULT 'generic_statement',
+      mapping JSONB NOT NULL,
+      drop_negative BOOLEAN NOT NULL DEFAULT true,
+      payment_method TEXT,
+      times_used INTEGER NOT NULL DEFAULT 0,
+      last_used_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // The NAME is the thing a human holds onto, so it is the thing that has to
+  // be unique: saving "Zelle at Central Bank" twice must correct the mapping,
+  // never mint a second one she then has to choose between.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS statement_mappings_name
+                      ON statement_mappings (org_id, LOWER(name))`);
+
   // A gift that came in through a source remembers which one, what the
   // provider took, and the provider's own subscription id.
   //

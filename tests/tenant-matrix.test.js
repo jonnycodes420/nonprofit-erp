@@ -72,7 +72,8 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
+    for (const t of ["statement_mappings", "gift_duplicate_questions",
+      "giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
@@ -201,6 +202,20 @@ async function seedOrg(o, tag) {
              (id,org_id,donor_id,source_id,provider,amount_cents,confidence,gift_count,first_gift_on,last_gift_on,expected_next)
            VALUES ($1,$2,$3,$4,'paypal',6377890,'inferred',3,'2026-05-14','2026-07-14','2026-08-14')`,
     [`grec_${o}`, o, `d_${o}`, `gsrc_${o}`]).catch(() => {});
+
+  // BUILD-92 A3 — a standing cross-source question, so DELETE/POST on
+  // /giving-sources/duplicates/:id has a real row of THIS org to be probed
+  // against rather than a source id that would 404 for the wrong reason.
+  await q(`INSERT INTO gift_duplicate_questions
+             (id,org_id,source_id,existing_gift_id,existing_source_id,external_key,donor_id,
+              amount_cents,occurred_at,sentence,candidate)
+           VALUES ($1,$2,$3,$4,$3,$5,$6,5000,'2026-06-10','Looks like the same $50 gift already here.','{}'::jsonb)`,
+    [`gdq_${o}`, o, `gsrc_${o}`, `g_${o}`, `statement:${o}:probe`, `d_${o}`]).catch(() => {});
+
+  // BUILD-92 A4 — a saved statement mapping.
+  await q(`INSERT INTO statement_mappings (id,org_id,name,preset_key,mapping,drop_negative)
+           VALUES ($1,$2,$3,'generic_statement','{"date":"Posting Date","amount":"Amount","donorName":"Description"}'::jsonb,true)`,
+    [`smap_${o}`, o, `Zelle ${o}`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -230,7 +245,12 @@ function bResolver(routePath, param) {
     "thank-yous": `ty_${B}`,       // BUILD-88b B.3 — the thank-you queue
     "giving-sources": `gsrc_${B}`,   // BUILD-89S 89a — a connected giving source
     "giving-recurring": `grec_${B}`, // BUILD-89S 89a — a recognised recurring commitment
+    "statement-mappings": `smap_${B}`, // BUILD-92 A4 — a saved statement mapping
   };
+  // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
+  // first segment would resolve them to a SOURCE id and the probe would 404
+  // for the wrong reason. Point them at org B's real question instead.
+  if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;
   if (routePath.startsWith("/finance/accounts")) return `acct_${B}`;

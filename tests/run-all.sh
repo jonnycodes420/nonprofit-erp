@@ -109,7 +109,7 @@ CORE=(
   build88b-deposit build88b-pledges build88b-thankyous build88c-domain build88c-composer
   build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets build89s-surfaces
   close-link trial-billing one-date
-  build92-seed build92-source-errors build92-dedupe
+  build92-seed build92-source-errors build92-dedupe build92-statement
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
