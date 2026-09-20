@@ -51,7 +51,7 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
-const sourceAdapters = require("./sources");
+const sourceAdapters = require("./sources/index.js");
 // BUILD-57 §2b — BULK-IMPORT ids carry FULL uuid entropy (32 hex). The 8-hex
 // ids minted elsewhere are fine one-at-a-time, but the import writes 500 rows
 // per statement, where a single global-pkey collision (8 hex = 32 bits —
@@ -2406,8 +2406,12 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       // adapter decides how, because only it knows the provider's limit); an
       // incremental sync re-reads the last few days because providers publish
       // late, and lets de-duplication absorb the overlap.
-      const since = isBackfill ? null
-        : addCivilDaysSafe(source.last_synced_at ? new Date(source.last_synced_at).toISOString().slice(0, 10) : day, -SOURCE_SYNC_RESYNC_DAYS);
+      // ORG_TZ_SEAM_OK — the window start is a CIVIL date in the org's own
+      // calendar, read through the one seam. A UTC slice of the last-sync
+      // instant would put the boundary on the wrong day for every org west of
+      // Greenwich, which is most of them.
+      const lastSyncedDay = source.last_synced_at ? orgToday(org, new Date(source.last_synced_at)) : day;
+      const since = isBackfill ? null : orgTime.addDays(lastSyncedDay, -SOURCE_SYNC_RESYNC_DAYS);
 
       let cursor = isBackfill ? null : source.sync_cursor || null;
       let page = 0, done = false;
@@ -2453,14 +2457,6 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       return { ...summary, ok: false, error: e.code || "sync_failed", message: sentence };
     }
   });
-}
-
-function addCivilDaysSafe(dateStr, n) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
-  if (!m) return null;
-  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
 }
 
 // ONE contract row -> at most one gift, through recordGift.
@@ -4332,6 +4328,21 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     values.failuresCaught = failures[0]?.caught || 0;
     values.failuresRecovered = failures[0]?.recovered || 0;
     values.avgMonthsOnFile = Math.round(parseFloat(months[0]?.m) || 0);
+
+    // BUILD-89S 89f — provider-neutral recurring, from the sources an
+    // organisation already takes gifts through. Counted apart from the
+    // subscriptions Steward processes itself, never folded into them: they are
+    // different money on different rails, and one number covering both would
+    // be a figure nobody could reconcile against either provider.
+    const [srcRec] = await query(
+      `SELECT COUNT(*)::int AS n,
+              COUNT(*) FILTER (WHERE r.confidence='inferred' AND r.confirmed_at IS NULL)::int AS unconfirmed
+         FROM giving_recurring r
+         JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
+         JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id AND d.deleted_at IS NULL
+        WHERE r.org_id=? AND r.status <> 'ended' AND s.status <> 'disconnected'`, [orgId]);
+    values.sourceRecurring = srcRec?.n || 0;
+    values.sourceRecurringUnconfirmed = srcRec?.unconfirmed || 0;
   }
 
   // EVERY number leaves here WITH its definition. One string, from the
@@ -5504,6 +5515,30 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // computation as the list and every badge.
   const { map: driftMap } = await computeDriftForDonors(req.user.orgId, { donorIds: [d.id] });
   d.drift = driftBadgeField(driftMap.get(d.id));
+  // BUILD-89S 89f — a donor who gives monthly through a connected source says
+  // so on the record, in the SAME sentence the recurring dashboard uses
+  // (shared/givingSources.js recurringPhrase), so the two cannot drift apart.
+  // "Gives $50 monthly through PayPal" when the provider named it; "Looks like
+  // $50 monthly through PayPal" while it is still Steward's own reading.
+  try {
+    const rec = await query(
+      `SELECT r.amount_cents, r.interval, r.confidence, r.provider, r.expected_next, r.confirmed_at, s.display_name
+         FROM giving_recurring r
+         JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
+        WHERE r.org_id=? AND r.donor_id=? AND r.status <> 'ended' AND s.status <> 'disconnected'
+        ORDER BY r.amount_cents DESC LIMIT 1`, [req.user.orgId, d.id]);
+    if (rec.length) {
+      const { recurringPhrase } = await givingSourcesMod();
+      const r = rec[0];
+      d.source_recurring = {
+        phrase: recurringPhrase({ amountCents: Number(r.amount_cents), interval: r.interval, confidence: r.confidence },
+                                { provider: r.provider }),
+        amountCents: Number(r.amount_cents), interval: r.interval,
+        confidence: r.confidence, confirmed: !!r.confirmed_at,
+        sourceName: r.display_name, expectedNext: r.expected_next,
+      };
+    }
+  } catch (e) { console.error("[donor] source recurring:", e.message); }
   res.json(d);
 }));
 

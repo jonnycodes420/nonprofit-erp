@@ -93,7 +93,7 @@ CORE=(
   imports-history import-sentence bookkeeper-export inbound-email
   build88a-mapper build88a-one-gift build88a-one-task build88a-giving build88a-profile build88a-week build88a-finance
   build88b-deposit build88b-pledges build88b-thankyous build88c-domain build88c-composer
-  build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets
+  build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets build89s-surfaces
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

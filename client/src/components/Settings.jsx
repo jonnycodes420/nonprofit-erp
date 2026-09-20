@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, quietPhrase, Modal } from "./shared";
+import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { YourWords } from "./YourWords";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
@@ -1181,11 +1181,239 @@ function InboundEmailCard({isReadOnly}){
   );
 }
 
+// ── BUILD-89S 89f — WHERE GIVING COMES IN ─────────────────────────────────
+// An organisation keeps what it takes gifts through today. This page is the
+// whole of what that looks like from the inside: one row per source, when
+// Steward last looked, how many gifts it found, a way to look now, and a way
+// to stop.
+//
+// NEVER "live", NEVER "real time". Steward checks every six hours and PayPal
+// itself can take up to three hours to publish a transaction. The screen says
+// when it last looked, with the time on it.
+function checkedPhrase(lastSyncedAt){
+  if(!lastSyncedAt) return "not checked yet";
+  const then=new Date(lastSyncedAt);
+  if(Number.isNaN(then.getTime())) return "not checked yet";
+  const mins=Math.round((Date.now()-then.getTime())/60000);
+  const clock=then.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+  if(mins<2) return "checked just now";
+  if(mins<60) return `checked ${mins} minutes ago, at ${clock}`;
+  const hrs=Math.round(mins/60);
+  if(hrs<24) return `checked ${hrs} hour${hrs===1?"":"s"} ago, at ${clock}`;
+  return `checked ${then.toLocaleDateString(undefined,{month:"short",day:"numeric"})} at ${clock}`;
+}
+
+function GivingSourcesManager({isReadOnly,isAdmin}){
+  const [sources,setSources]=useState(null);
+  const [providers,setProviders]=useState([]);
+  const [credState,setCredState]=useState({ready:true,problem:null});
+  const [funds,setFunds]=useState([]);
+  const [err,setErr]=useState("");
+  const [busy,setBusy]=useState("");
+  const [connect,setConnect]=useState(null); // {provider, values, testing, tested}
+
+  const load=()=>apiFetch("/giving-sources")
+    .then(r=>setSources(Array.isArray(r.sources)?r.sources:[]))
+    .catch(e=>{setSources([]);setErr(errorMessage(e,"Could not load your giving sources."));});
+
+  useEffect(()=>{
+    load();
+    apiFetch("/giving-sources/providers").then(r=>{
+      setProviders(Array.isArray(r.providers)?r.providers:[]);
+      setCredState({ready:r.credentialsReady!==false,problem:r.credentialsProblem||null});
+    }).catch(()=>{});
+    apiFetch("/finance/funds").then(r=>setFunds(Array.isArray(r.funds)?r.funds:[])).catch(()=>{});
+  },[]);
+
+  const checkNow=async(id)=>{
+    setBusy(id); setErr("");
+    try{
+      const r=await apiFetch(`/giving-sources/${id}/sync`,{method:"POST",body:JSON.stringify({})});
+      if(r&&r.ok===false&&r.message) setErr(r.message);
+      await load();
+    }catch(e){ setErr(errorMessage(e,"Steward could not check that source just now.")); }
+    finally{ setBusy(""); }
+  };
+
+  const disconnect=async(s)=>{
+    // Disconnect KEEPS every gift, and the confirm says so rather than asking
+    // a frightening question about deletion that is not what happens.
+    if(!window.confirm(`Stop checking ${s.displayName}? The ${s.giftsTotal} gift${s.giftsTotal===1?"":"s"} already read from it stay on your records.`)) return;
+    setBusy(s.id); setErr("");
+    try{ await apiFetch(`/giving-sources/${s.id}`,{method:"DELETE"}); await load(); }
+    catch(e){ setErr(errorMessage(e,"Could not disconnect that source.")); }
+    finally{ setBusy(""); }
+  };
+
+  const setFund=async(id,fundId)=>{
+    try{ await apiFetch(`/giving-sources/${id}`,{method:"PATCH",body:JSON.stringify({defaultFundId:fundId||null})}); await load(); }
+    catch(e){ setErr(errorMessage(e,"Could not set the fund for that source.")); }
+  };
+
+  const startConnect=(p)=>setConnect({provider:p,values:{},testing:false,tested:null,error:""});
+  const testConnect=async()=>{
+    setConnect(c=>({...c,testing:true,error:"",tested:null}));
+    try{
+      const r=await apiFetch("/giving-sources/test",{method:"POST",
+        body:JSON.stringify({provider:connect.provider.key,credentials:connect.values})});
+      setConnect(c=>({...c,testing:false,tested:r,error:r&&r.ok===false?(r.message||"That key was refused."):""}));
+    }catch(e){ setConnect(c=>({...c,testing:false,error:errorMessage(e,"Steward could not reach that provider.")})); }
+  };
+  const saveConnect=async()=>{
+    setConnect(c=>({...c,testing:true,error:""}));
+    try{
+      await apiFetch("/giving-sources",{method:"POST",
+        body:JSON.stringify({provider:connect.provider.key,credentials:connect.values})});
+      setConnect(null); await load();
+    }catch(e){ setConnect(c=>({...c,testing:false,error:errorMessage(e,"Could not connect that source.")})); }
+  };
+
+  const connected=new Set((sources||[]).filter(s=>s.status!=="disconnected").map(s=>s.provider));
+  const apiProviders=providers.filter(p=>p.mode==="api");
+  const fileProviders=providers.filter(p=>p.mode==="file");
+
+  return (
+    <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <SectionLabel>Where giving comes in</SectionLabel>
+      <div data-testid="gs-intro" style={{fontSize:13,color:T.ink3,marginBottom:18,lineHeight:1.6,maxWidth:600}}>
+        Keep whatever you take gifts through today. Steward reads those gifts onto your donor records and never holds or moves a dollar. You can switch any of this off at any time, and the gifts already read stay where they are.
+      </div>
+
+      {err&&<div data-testid="gs-error" style={{fontSize:12.5,color:T.terra700,marginBottom:14}}>{err}</div>}
+
+      {!credState.ready&&(
+        <div data-testid="gs-unavailable" style={{fontSize:12.5,color:T.terra700,marginBottom:14,lineHeight:1.6}}>
+          Steward cannot store a provider key safely on this server yet, so connecting is switched off until an administrator sets one up. Nothing you have is affected.
+        </div>
+      )}
+
+      {sources===null&&<div style={{fontSize:13,color:T.ink3}}>Loading…</div>}
+
+      {sources&&sources.filter(s=>s.status!=="disconnected").length===0&&credState.ready&&(
+        <div data-testid="gs-empty" style={{fontSize:13,color:T.ink3,marginBottom:18}}>
+          Nothing connected yet. Connect what you already use below and Steward will read yesterday&apos;s gifts onto your records.
+        </div>
+      )}
+
+      {(sources||[]).filter(s=>s.status!=="disconnected").map(s=>(
+        <div key={s.id} data-testid="gs-row"
+          style={{borderTop:"1px solid "+T.bg3,padding:"16px 0",display:"flex",gap:16,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{flex:"1 1 260px",minWidth:0}}>
+            <div data-testid="gs-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{s.displayName}</div>
+            <div data-testid="gs-checked" style={{fontSize:13,color:T.ink3,marginTop:3}}>
+              {checkedPhrase(s.lastSyncedAt)}
+              {s.everChecked?`, ${s.giftsThisWeek} new gift${s.giftsThisWeek===1?"":"s"} this week`:""}
+            </div>
+            {s.lastError&&(
+              // An error reads as a sentence with what to do, never a code.
+              <div data-testid="gs-row-error" style={{fontSize:12.5,color:T.terra700,marginTop:6,lineHeight:1.55,maxWidth:460}}>
+                {s.lastError}
+              </div>
+            )}
+            <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
+              Gifts go to{" "}
+              <select data-testid="gs-fund" value={s.defaultFundId||""} disabled={isReadOnly||!isAdmin}
+                onChange={e=>setFund(s.id,e.target.value)}
+                style={{font:"inherit",fontSize:12,padding:"2px 4px",border:"1px solid "+T.bg3,borderRadius:6,background:T.bgCard,color:T.ink}}>
+                <option value="">a question for you</option>
+                {funds.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button data-testid="gs-check-now" disabled={busy===s.id||isReadOnly||!isAdmin} onClick={()=>checkNow(s.id)}
+              style={{font:"inherit",fontSize:13,fontWeight:700,padding:"7px 14px",borderRadius:8,cursor:busy===s.id?"wait":"pointer",
+                background:T.green,color:"#fff",border:"none",opacity:(isReadOnly||!isAdmin)?0.5:1}}>
+              {busy===s.id?"Checking…":"Check now"}
+            </button>
+            <button data-testid="gs-disconnect" disabled={busy===s.id||isReadOnly||!isAdmin} onClick={()=>disconnect(s)}
+              style={{font:"inherit",fontSize:13,padding:"7px 12px",borderRadius:8,cursor:"pointer",
+                background:"none",color:T.terra700,border:"1px solid "+T.terra200,opacity:(isReadOnly||!isAdmin)?0.5:1}}>
+              Disconnect
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {/* ── CONNECT ────────────────────────────────────────────────────── */}
+      {credState.ready&&isAdmin&&(
+        <div style={{borderTop:"1px solid "+T.bg3,paddingTop:18,marginTop:6}}>
+          <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:8}}>Connect another</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {apiProviders.map(p=>(
+              <button key={p.key} data-testid="gs-connect-btn" disabled={connected.has(p.key)||!p.available||isReadOnly}
+                onClick={()=>startConnect(p)}
+                style={{font:"inherit",fontSize:13,padding:"7px 13px",borderRadius:8,border:"1px solid "+T.bg3,
+                  background:connected.has(p.key)?T.bg2:T.bgCard,color:connected.has(p.key)?T.ink3:T.ink,
+                  cursor:connected.has(p.key)||!p.available?"default":"pointer"}}>
+                {p.label}{connected.has(p.key)?" · connected":""}
+              </button>
+            ))}
+          </div>
+          <div data-testid="gs-file-note" style={{fontSize:12.5,color:T.ink3,marginTop:12,lineHeight:1.6,maxWidth:560}}>
+            {fileProviders.map(p=>p.label).join(" and ")} have no way for Steward to read an account, so there is nothing to connect. Once a month you drop the statement in on the import screen and Steward reads it.
+          </div>
+        </div>
+      )}
+
+      {connect&&(
+        <div data-testid="gs-connect-panel" style={{marginTop:18,padding:"18px 20px",background:T.bg2,borderRadius:12,border:"1px solid "+T.bg3}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:6}}>Connect {connect.provider.label}</div>
+          <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.6,marginBottom:12,maxWidth:520}}>{connect.provider.help}</div>
+          {connect.provider.delay&&(
+            <div data-testid="gs-delay" style={{fontSize:12.5,color:T.ink3,lineHeight:1.6,marginBottom:12,maxWidth:520}}>
+              {connect.provider.delay}
+            </div>
+          )}
+          {(connect.provider.credentialFields||[]).map(f=>(
+            <div key={f.name} style={{marginBottom:10}}>
+              <label style={{display:"block",fontSize:12,color:T.ink3,marginBottom:3}}>{f.label}</label>
+              <input data-testid="gs-cred" type={f.secret?"password":"text"} autoComplete="off"
+                value={connect.values[f.name]||""}
+                onChange={e=>{const v=e.target.value;setConnect(c=>({...c,values:{...c.values,[f.name]:v},tested:null}));}}
+                style={{width:"100%",maxWidth:420,font:"inherit",fontSize:13,padding:"7px 9px",
+                  border:"1px solid "+T.bg3,borderRadius:8,background:T.bgCard,color:T.ink}}/>
+            </div>
+          ))}
+          {connect.error&&<div data-testid="gs-connect-error" style={{fontSize:12.5,color:T.terra700,margin:"8px 0",lineHeight:1.55}}>{connect.error}</div>}
+          {connect.tested&&connect.tested.ok&&(
+            // HER OWN NUMBERS, BEFORE ANYTHING IS SAVED. This is the only way
+            // to know a key works, and nothing is written on this path.
+            <div data-testid="gs-test-result" style={{fontSize:13,color:T.ink,margin:"8px 0",lineHeight:1.55}}>
+              {connect.tested.count>0
+                ? `Steward read ${connect.tested.count} gift${connect.tested.count===1?"":"s"} in the last seven days, ${fmtFull(connect.tested.totalCents/100)} in total.`
+                : (connect.tested.message||"Steward reached the account and there were no gifts in the last seven days.")}
+            </div>
+          )}
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            <button data-testid="gs-test" disabled={connect.testing} onClick={testConnect}
+              style={{font:"inherit",fontSize:13,padding:"7px 13px",borderRadius:8,border:"1px solid "+T.bg3,background:T.bgCard,color:T.ink,cursor:"pointer"}}>
+              {connect.testing?"Checking…":"Test"}
+            </button>
+            <button data-testid="gs-save" disabled={connect.testing} onClick={saveConnect}
+              style={{font:"inherit",fontSize:13,fontWeight:700,padding:"7px 14px",borderRadius:8,border:"none",background:T.green,color:"#fff",cursor:"pointer"}}>
+              Connect
+            </button>
+            <button onClick={()=>setConnect(null)}
+              style={{font:"inherit",fontSize:13,padding:"7px 12px",borderRadius:8,border:"none",background:"none",color:T.ink3,cursor:"pointer"}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
   {id:"team",label:"Team"},
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
+  // BUILD-89S 89f — the organisation keeps what it takes gifts through, and
+  // this is where it says so. Next to Giving Pages because the two answer the
+  // same question from opposite ends: where money comes in.
+  {id:"sources",label:"Where giving comes in"},
   {id:"customization",label:"Customization"},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.
   {id:"words",label:"Your words"},
@@ -2013,6 +2241,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
+      {section==="sources"&&<GivingSourcesManager isReadOnly={isReadOnly} isAdmin={isAdmin}/>}
       {section==="imports"&&<ImportsHistory/>}
 
       {section==="data"&&<>

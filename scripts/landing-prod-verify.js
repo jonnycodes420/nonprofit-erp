@@ -46,6 +46,8 @@ const PW = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "stew
 // BUILD-81 must run MORE guards than that. If the count ever falls, a gate
 // was dropped without the deliberate paper trail this comment demands.
 const GUARDS_BEFORE = 29; // BUILD-74's count against prod at 261dc73
+// BUILD-89S 89f added 7: the Keep-how-people-give section, and the rule that
+// the page may never name a source the product cannot actually read.
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {
@@ -370,6 +372,49 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
     await p2.close();
   }
   await page.close();
+
+  // ── BUILD-89S 89f — KEEP HOW PEOPLE GIVE ────────────────────────────────
+  // The build's whole claim, on the page where a prospect reads it. The gate
+  // that matters is NOT that the section exists: it is that the page never
+  // names a source the product cannot actually read, and never softens the
+  // second half of the promise. Its own page, so it does not depend on which
+  // earlier section last closed a context.
+  console.log("\n— §7c · keep how people give —");
+  {
+    const kp = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
+    await kp.goto(BASE + "/", { waitUntil: "networkidle" });
+    await kp.waitForTimeout(500);
+    const keep = await kp.evaluate(() => {
+      const sec = document.querySelector("#keep-giving");
+      const data = document.querySelector("#your-data");
+      if (!sec) return null;
+      const t = sec.innerText;
+      const line = label => {
+        const el = [...sec.querySelectorAll("p")].find(p => p.innerText.startsWith(label));
+        return el ? el.innerText : "";
+      };
+      return {
+        text: t, connected: line("Connected:"), statement: line("Statement upload:"),
+        emDash: t.includes("\u2014"),
+        live: /\b(live|real[- ]time|realtime|instantly)\b/i.test(t),
+        dataText: data ? data.innerText : "",
+      };
+    });
+    ok("the Keep-how-people-give section is on the page", !!keep);
+    ok("it says plainly that Steward never holds or moves your money",
+       !!keep && /never holds or moves your money/i.test(keep.text), keep?.text?.slice(0, 160));
+    ok("PayPal, Zeffy, Stripe and Givebutter are named as CONNECTED",
+       !!keep && ["PayPal", "Zeffy", "Stripe", "Givebutter"].every(n => keep.connected.includes(n)), keep?.connected);
+    ok("Cash App and Venmo are named as STATEMENT UPLOAD, never as connected",
+       !!keep && ["Cash App", "Venmo"].every(n => keep.statement.includes(n) && !keep.connected.includes(n)),
+       { connected: keep?.connected, statement: keep?.statement });
+    ok('the section never says "live" or "real time" about a six-hourly read',
+       !!keep && keep.live === false, keep?.text?.slice(0, 160));
+    ok("no em dash in the section (the standing voice rule)", !!keep && keep.emDash === false);
+    ok("the Your-data section carries the same money line",
+       !!keep && /never holds or moves your money/i.test(keep.dataText), keep?.dataText?.slice(0, 200));
+    await kp.close();
+  }
 
   // ── §8 · reduced motion — field AND thread visual fully visible ────────
   // ── §7b · BUILD-82 Part 8 — the section heads STACK, left-aligned ───────

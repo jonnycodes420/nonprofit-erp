@@ -4490,6 +4490,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {/* BUILD-76 — the drift reason, inline on the record (hover-only
                 would hide the one sentence that explains the badge). */}
             {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
+            {/* BUILD-89S 89f — "Gives $50 monthly through PayPal" when the
+                provider named it; "Looks like $50 monthly through PayPal"
+                while it is still Steward's own reading of the pattern. One
+                sentence, built server-side, shared with the dashboard. */}
+            {donor.sourceRecurring&&(
+              <div data-testid="donor-source-recurring"
+                style={{fontSize:12,color:T.ink3,fontWeight:600,marginTop:3,lineHeight:1.4}}>
+                {donor.sourceRecurring.phrase}
+                {donor.sourceRecurring.confidence==="inferred"&&!donor.sourceRecurring.confirmed
+                  ?<span style={{fontWeight:400}}> · nobody has confirmed it</span>:null}
+              </div>
+            )}
           </div>
         </div>
         {/* BUILD-41: Request Gift is THE action; Impact Summary/Edit collapse

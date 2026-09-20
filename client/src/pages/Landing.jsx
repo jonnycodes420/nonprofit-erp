@@ -541,6 +541,34 @@ export default function Landing() {
           </div>
         </section>
 
+        {/* ── KEEP HOW PEOPLE GIVE (BUILD-89S 89f) ───────────────────────
+            The objection this section exists to end: "do we have to switch
+            how people give?" No. And the second half of that promise is the
+            one that has to be said plainly, because every competitor's
+            answer to the first half comes with a catch attached to it. */}
+        <section id="keep-giving" className="lp-sec" style={{ background: C.cream2 }}>
+          <div className="lp-sec-inner" style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 780 }}>
+            <div className="lp-eyebrow" style={{ color: C.greenDk }}>KEEP HOW PEOPLE GIVE</div>
+            <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
+              You do not have to move anybody.
+            </h2>
+            <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3 }}>
+              Whatever you take gifts through today, keep it. Steward reads the gifts onto your donor
+              records and tells you who gives monthly, through any of it.
+            </p>
+            <p data-testid="lp-never-holds" style={{ fontSize: 18, lineHeight: 1.65, color: C.ink, fontWeight: 600 }}>
+              Steward never holds or moves your money. It reads, with access you can switch off at any time.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
+              <p data-testid="lp-connected"><strong style={{ color: C.ink }}>Connected:</strong> PayPal, Zeffy, Stripe, Givebutter. Steward checks every few hours.</p>
+              <p data-testid="lp-statement"><strong style={{ color: C.ink }}>Statement upload:</strong> Cash App and Venmo have no way to let software read an account. Once a month you drop the statement in.</p>
+            </div>
+            <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
+              Nobody re-enters a card. No monthly donor has to be asked to sign up again.
+            </p>
+          </div>
+        </section>
+
         {/* ── DRIFT — untouched: the dot field as evidence ───────────────── */}
         <section id="drift" className="lp-sec" style={{ background: C.cream }}>
           <div className="lp-split">
@@ -598,7 +626,8 @@ export default function Landing() {
               </h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 17, lineHeight: 1.65, color: C.ink3 }}>
                 <p>Your donor records live in Steward&apos;s database, scoped to your organization; no other organization on Steward can read them.</p>
-                <p>Only your signed-in staff can see your donors, and payments settle in your own Stripe account.</p>
+                <p>Only your signed-in staff can see your donors.</p>
+                <p data-testid="lp-data-money">Steward never holds or moves your money. You keep whatever you take gifts through today, and Steward reads from it with read-only access you can switch off at any time.</p>
                 <p>You can export everything as CSV any time, with one click, even if your subscription has lapsed.</p>
                 <p>If you leave, you take the export with you and we delete the rest on request. That is the whole procedure.</p>
               </div>

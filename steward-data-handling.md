@@ -37,3 +37,37 @@ What Steward stores, and who else sees it.
   inspects that link sees `stewardapp.dev` even when the message is sent from
   your own domain; putting that link on your domain is tracked separately in
   `BLOCKED-custom-domains.md`.
+
+## Connected giving sources (BUILD-89S, 2026-09-20)
+
+**Steward never holds or moves your money.** You keep whatever you take gifts
+through today, and Steward reads from it with read-only access you can switch
+off at any time. There is no Steward account in the middle of a gift, and no
+balance anywhere that belongs to you.
+
+What that means concretely, per provider:
+
+| Provider | What Steward reads | What Steward sends it |
+|---|---|---|
+| **PayPal** | completed incoming payments on your own PayPal account: the amount, the fee PayPal took, the date, the payer's name and email, and PayPal's own subscription id when the payment is a subscription | one request to mint a read token, then nothing but reads |
+| **Zeffy** | the payments on your own Zeffy account, with the same fields | nothing but reads |
+| **Stripe** (your own account, not Steward's) | charges on your own Stripe account, their fees, and the subscription behind a charge | nothing but reads |
+| **Givebutter** | transactions and recurring plans on your own Givebutter account | nothing but reads |
+| **Cash App, Venmo** | nothing. Neither has a way for software to read an account. A statement file you upload is read the same way any spreadsheet is, and never leaves Steward | nothing at all |
+
+**Steward cannot write to any of them.** Not "does not" — cannot: every
+provider adapter is handed a connection that refuses any request that is not a
+read, and the one exception in the whole system is the single PayPal request
+that mints a read token. A refund, a payout, a cancelled subscription or a
+deleted payment is not a thing this software can express.
+
+**Your credentials.** A provider key you paste is encrypted before it reaches
+the database (AES-256-GCM, bound to your organisation, so the stored value is
+useless anywhere else), and the database itself refuses to hold one that is not
+encrypted. No screen, export or log ever shows the key back to you or to us.
+Disconnecting a source destroys the stored key and keeps every gift already
+read.
+
+**Off is off.** Disconnect a source and Steward stops checking it that moment.
+The gifts it already read stay on your donor records, because the money did
+arrive that way and deleting that history would be the lie.

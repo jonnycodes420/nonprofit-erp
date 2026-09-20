@@ -30,11 +30,30 @@ const iso = d => new Date(d).toISOString().slice(0, 10);
 // 8pm Eastern UTC has already rolled over, so a UTC-derived `daysAgo(23)` is
 // 22 days ago in the org's calendar and every day-count assertion in this file
 // shifts by one. (The documented gotcha; this suite was reproducing it nightly.)
-const daysAgo = n => {
+// FIX (BUILD-89S) — A NUDGE RUN MUST LAND ON A WEEKDAY, and this suite was
+// failing every Saturday and Sunday for the same reason BUILD-89's step-forward
+// bug failed every Friday: it was measuring the CALENDAR, not the code. The
+// morning brief's thread section deliberately sends nothing at the weekend
+// (the weekend rule), so a run pinned to "today" is correct to send nothing two
+// days in seven and the assertions below are correct to disagree with it.
+//
+// The anchor is therefore the next WEEKDAY on or after the org's today, and the
+// whole fixture is dated relative to THAT — so every day-count assertion stays
+// exact by construction, whichever day the battery happens to run. The two
+// pinned dates below (a real Wednesday and a real Saturday) are untouched:
+// those tests are ABOUT the weekend rule and must keep naming their own days.
+const ANCHOR = (() => {
   const [y, m, d] = civilToday().split("-").map(Number);
+  let t = Date.UTC(y, m - 1, d);
+  // 0 = Sunday, 6 = Saturday.
+  while ([0, 6].includes(new Date(t).getUTCDay())) t += 86400000;
+  return iso(t);
+})();
+const daysAgo = n => {
+  const [y, m, d] = ANCHOR.split("-").map(Number);
   return iso(Date.UTC(y, m - 1, d) - n * 86400000);
 };
-const daysAhead = n => iso(Date.now() + n * 86400000);
+const daysAhead = n => daysAgo(-n);
 
 let captured = [];
 const sink = http.createServer((req, res) => {
@@ -86,7 +105,7 @@ async function reset() {
   await reset();
   const tok = await login("b81ndg@test.local");
   const tok2 = await login("b81ndg2@test.local");
-  const TODAY = (await api("GET", "/threads", tok)).body.today;
+  const TODAY = ANCHOR;   // the weekday the nudge is run on; see ANCHOR above
 
   // ── §1 · the test-mode proof ─────────────────────────────────────────────
   console.log("\n— §1 · the proof email —");

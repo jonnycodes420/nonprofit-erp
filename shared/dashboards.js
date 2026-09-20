@@ -130,6 +130,14 @@ export const DASHBOARDS = [
         definition: "Of those, the ones that charged successfully again." },
       { key: "avgMonthsOnFile", label: "Average months on file", kind: "count",
         definition: "How long the currently-giving monthly commitments have been giving, averaged. Ended commitments are not counted." },
+      // BUILD-89S 89f — the recurring picture is PROVIDER-NEUTRAL now. The
+      // metrics above read the subscriptions Steward itself processes; these
+      // two read the ones an organisation takes through PayPal, Zeffy, its own
+      // Stripe or Givebutter, which for most organisations is all of them.
+      { key: "sourceRecurring", label: "Monthly through connected sources", kind: "count",
+        definition: "Donors giving on a schedule through any connected source, whether the provider named the subscription or Steward saw the pattern." },
+      { key: "sourceRecurringUnconfirmed", label: "Looks monthly, unconfirmed", kind: "count",
+        definition: "\"Looks monthly\" means Steward saw the pattern and nobody has confirmed it: three or more gifts of the same amount, each 27 to 34 days after the last. One tap on the donor confirms it." },
     ],
   },
 ];
