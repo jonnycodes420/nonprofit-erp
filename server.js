@@ -9170,6 +9170,11 @@ app.get("/giving-sources/providers", requireAuth, wrap(async (req, res) => {
     providers: Object.values(PROVIDERS).map(p => ({
       key: p.key, label: p.label, mode: p.mode, recurring: p.recurring,
       credentialFields: p.credentialFields, help: p.help, delay: p.delay || null,
+      // BUILD-92 B2 — the numbered steps and the "this can take a day" note
+      // come from the registry so the panel quotes ONE description of another
+      // company's screens. Both are optional; a provider without them falls
+      // back to `help`.
+      steps: p.steps || null, waitNote: p.waitNote || null,
       available: p.mode === "file" ? true : sourceAdapters.adapterAvailable(p.key),
     })),
     // The one honest reason a connect button can be unavailable for every
@@ -9182,6 +9187,7 @@ app.get("/giving-sources/providers", requireAuth, wrap(async (req, res) => {
 // "Where giving comes in." One row per source, with the sentence 89f renders.
 app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   const { providerLabel } = await import("./shared/givingSources.js");
+  const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
   const rows = await query(
     `SELECT s.*, f.name AS fund_name,
             (SELECT COUNT(*) FROM gifts g
@@ -9215,6 +9221,10 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
       // Deliberately never the credential, and never a prefix of it.
       hasCredentials: !!r.credentials_sealed,
     })),
+    // BUILD-92 B2 — what this organisation told us it also uses. No adapter,
+    // no credential, no claim: a name, so the page can say it back and the
+    // product knows what it keeps being asked for.
+    otherSources: readOtherSources(orgRow[0] && orgRow[0].other_giving_sources),
   });
 }));
 
@@ -9457,6 +9467,34 @@ app.post("/giving-sources/duplicates/:id/keep-both", requireAuth, requireAdmin, 
     `UPDATE gift_duplicate_questions SET status='kept_both', resolved_at=NOW(), resolved_by=?, resolved_by_name=?
       WHERE id=? AND org_id=?`, [a.id, a.name, q0.id, orgId]);
   res.json({ ok: true, status: "kept_both", giftId: written?.gift?.id || null, duplicate: !!written?.duplicate });
+}));
+
+// The JSONB column answers as an array, a JSON string, or null depending on
+// the driver and the row's age. One reader, so no caller has to know that.
+function readOtherSources(raw) {
+  if (Array.isArray(raw)) return raw.filter(v => typeof v === "string");
+  if (typeof raw === "string") {
+    try { const p = JSON.parse(raw); return Array.isArray(p) ? p.filter(v => typeof v === "string") : []; }
+    catch { return []; }
+  }
+  return [];
+}
+
+// POST /giving-sources/other — record a source Steward cannot connect to.
+// ADDITIVE AND DELIBERATELY SMALL: it stores a name and nothing else. The
+// gifts themselves arrive through the ordinary statement import, which is why
+// this route neither creates a giving_sources row nor promises a sync.
+app.post("/giving-sources/other", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const name = String((req.body || {}).name || "").trim().replace(/\s+/g, " ").slice(0, 60);
+  if (!name) return res.status(400).json({ error: "name_required", message: "Type the name of the place gifts come in." });
+  const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
+  const have = readOtherSources(orgRow[0] && orgRow[0].other_giving_sources);
+  // Case-folded dedupe: "Donorbox" and "donorbox" are one answer, and the
+  // list is capped so a stuck client cannot grow a column without bound.
+  const next = have.some(v => v.toLowerCase() === name.toLowerCase()) ? have : [...have, name].slice(-25);
+  await run(`UPDATE orgs SET other_giving_sources = ? WHERE id = ?`, [JSON.stringify(next), req.user.orgId]);
+  console.log(`[giving-sources] org ${req.user.orgId} named another source: ${name}`);
+  res.json({ ok: true, otherSources: next });
 }));
 
 // Test a key WITHOUT storing it: the last seven days, a count and a total.

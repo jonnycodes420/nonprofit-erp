@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { errorMessage } from "../lib/domainError";
+import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -732,6 +732,252 @@ function NetworkReview() {
   );
 }
 
+// ── BUILD-92 B1 · THE CLOSE LINK SCREEN ────────────────────────────────────
+// BUILD-90 shipped the two routes and no way to reach them. Jonathan closes in
+// a room, on a laptop, with the executive director watching: this screen has to
+// go from nothing to a link on her screen in under a minute, so it is one card
+// with three fields and a button, and everything else on the page is history.
+//
+// THE PART THAT MATTERS MOST IS THE REFUSAL. A close link will not mint
+// without a Stripe price that is BOTH configured and correct (BUILD-90 proved
+// "configured" is not "correct": production carried live ids at retired
+// amounts). GET /admin/close-links reports that per plan, so the screen says
+// exactly what is missing BEFORE the button is pressed, naming the env var and
+// both numbers. A blocked plan must never be a mystery in front of a customer.
+function closeFetch(path, opts = {}) {
+  const token = localStorage.getItem("npe_token");
+  return fetch(API + path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, ...(opts.headers || {}) },
+  }).then(async r => {
+    const d = await r.json().catch(() => ({}));
+    // The close-link routes answer with { error, message } and the MESSAGE is
+    // the whole point — it names the env var and the amount Stripe holds.
+    if (!r.ok) throw new Error(d.message || d.error || r.statusText);
+    return d;
+  });
+}
+
+const usdWhole = n => "$" + Number(n).toLocaleString("en-US");
+
+// What is missing, in a sentence, for a plan the server says is not ready.
+// Exported shape mirrors the `plans` rows of GET /admin/close-links.
+export function planBlocker(p) {
+  if (!p) return "That plan is not one this server knows about.";
+  if (p.ready) return null;
+  if (!p.configured) {
+    return `No Stripe price is set for ${p.name} yet. Set ${p.env} on the server, then reload this page.`;
+  }
+  if (p.error === "price_unreadable") {
+    return `Stripe could not read the price id in ${p.env}. Check that it exists in this Stripe account, then reload this page.`;
+  }
+  const amount = p.stripeAmountUsd != null ? "$" + Number(p.stripeAmountUsd).toFixed(2) : "an unreadable amount";
+  const cadence = p.stripeInterval ? `every ${p.stripeInterval}` : "not recurring";
+  return `${p.env} points at a Stripe price of ${amount}, ${cadence}, but ${p.name} is ${usdWhole(p.monthlyUsd)} a month. `
+       + `Create the price at the right amount and update ${p.env} before closing anyone.`;
+}
+
+function CloseDeal() {
+  const [data, setData] = useState(null);       // { plans, links }
+  const [orgName, setOrgName] = useState("");
+  const [email, setEmail] = useState("");
+  const [planId, setPlanId] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [created, setCreated] = useState(null);
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(async () => {
+    try { setData(await closeFetch("/admin/close-links")); }
+    catch (e) { setErr(errorMessage(e, String(e && e.message || e))); setData({ plans: [], links: [] }); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const plans = (data && data.plans) || [];
+  // Preselect the first plan that can actually be sold, so the common case is
+  // type, type, press.
+  useEffect(() => {
+    if (planId || !plans.length) return;
+    setPlanId((plans.find(p => p.ready) || plans[0]).id);
+  }, [plans, planId]);
+
+  const plan = plans.find(p => p.id === planId) || null;
+  const blocker = plans.length ? planBlocker(plan) : null;
+  const canCreate = !!(orgName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && plan && plan.ready && !creating);
+
+  async function create() {
+    setCreating(true); setErr(""); setCreated(null);
+    try {
+      const r = await closeFetch("/admin/close-links", {
+        method: "POST",
+        body: JSON.stringify({ orgName: orgName.trim(), contactEmail: email.trim(), plan: planId }),
+      });
+      setCreated(r);
+      await load();
+    } catch (e) {
+      // A catch that puts words on a screen routes the error FIRST: a
+      // ReferenceError here is a bug in this component, not something true to
+      // say to the person reading it (client/src/lib/domainError.js).
+      rethrowProgrammerError(e);
+      setErr(errorMessage(e, "Steward could not create that link just now."));
+    }
+    setCreating(false);
+  }
+
+  function copyLink() {
+    const url = created && created.url;
+    if (!url) return;
+    const mark = () => { setCopied(true); setTimeout(() => setCopied(false), 2500); };
+    // Select the field as well as writing the clipboard: in a room, on a
+    // strange laptop, a denied clipboard permission must still leave the link
+    // selected and ready for the keyboard.
+    const field = document.getElementById("cl-link-field");
+    if (field && field.select) { try { field.select(); } catch { /* not focusable */ } }
+    try {
+      const w = navigator.clipboard && navigator.clipboard.writeText(url);
+      if (w && w.then) w.then(mark, mark); else mark();
+    } catch { mark(); }
+  }
+
+  function reset() {
+    setCreated(null); setOrgName(""); setEmail(""); setErr("");
+  }
+
+  const field = { width: "100%", font: "inherit", fontSize: 14, padding: "9px 11px", border: `1px solid ${A.border}`, borderRadius: 8, background: "#fff", color: A.ink };
+  const label = { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: A.muted, marginBottom: 6 };
+
+  return (
+    <div>
+      <div style={{ ...SH }}>Close a deal</div>
+
+      <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "22px 24px", maxWidth: 720 }}>
+        <div style={{ fontSize: 13, color: A.secondary, lineHeight: 1.6, marginBottom: 18, maxWidth: 560 }}>
+          This creates the one link that opens an organization. She puts a card in, nothing is charged
+          today, and the first charge is thirty days from the moment she signs.
+        </div>
+
+        {!created && (
+          <>
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+              <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+                <label style={label} htmlFor="cl-orgname">Organization name</label>
+                <input id="cl-orgname" data-testid="cl-orgname" style={field} value={orgName} autoComplete="off"
+                  onChange={e => setOrgName(e.target.value)} placeholder="Sparrow House" />
+              </div>
+              <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+                <label style={label} htmlFor="cl-email">Contact email</label>
+                <input id="cl-email" data-testid="cl-email" style={field} value={email} type="email" autoComplete="off"
+                  onChange={e => setEmail(e.target.value)} placeholder="director@sparrowhouse.org" />
+              </div>
+            </div>
+
+            <div style={label}>Plan</div>
+            <div data-testid="cl-plans" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+              {plans.map(p => {
+                const on = p.id === planId;
+                return (
+                  <button key={p.id} data-testid={`cl-plan-${p.id}`} type="button" aria-pressed={on}
+                    onClick={() => { setPlanId(p.id); setErr(""); }}
+                    style={{
+                      font: "inherit", textAlign: "left", cursor: "pointer", borderRadius: 9, padding: "10px 16px",
+                      border: `1px solid ${on ? A.green : A.border}`, background: on ? A.greenPale : "#fff",
+                      color: on ? A.green : A.ink, minWidth: 128,
+                    }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>{p.name}</div>
+                    <div style={{ fontSize: 12, color: on ? A.green : A.secondary, marginTop: 2 }}>{usdWhole(p.monthlyUsd)} a month</div>
+                    <div style={{ fontSize: 11, marginTop: 4, color: p.ready ? A.secondary : A.red, fontWeight: 600 }}>
+                      {p.ready ? "Ready to sell" : "Not ready"}
+                    </div>
+                  </button>
+                );
+              })}
+              {data && plans.length === 0 && <div style={{ fontSize: 13, color: A.muted }}>Loading plans…</div>}
+            </div>
+
+            {blocker && (
+              // NOT READY, AND EXACTLY WHAT IS MISSING. Never a bare "cannot
+              // create": the person reading this is the one who can fix it.
+              <div data-testid="cl-blocker" style={{ fontSize: 13, color: A.red, lineHeight: 1.55, background: A.card, border: `1px solid ${A.border}`, borderLeft: `3px solid ${A.red}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14, maxWidth: 560 }}>
+                {blocker}
+              </div>
+            )}
+
+            {err && <div data-testid="cl-error" style={{ fontSize: 13, color: A.red, lineHeight: 1.55, marginBottom: 12, maxWidth: 560 }}>{err}</div>}
+
+            <button data-testid="cl-create" type="button" disabled={!canCreate} onClick={create}
+              style={{
+                font: "inherit", fontSize: 14, fontWeight: 700, padding: "10px 20px", borderRadius: 8, border: "none",
+                background: A.green, color: "#fff", cursor: canCreate ? "pointer" : "default", opacity: canCreate ? 1 : 0.45,
+              }}>
+              {creating ? "Creating…" : "Create close link"}
+            </button>
+          </>
+        )}
+
+        {created && (
+          <div data-testid="cl-created">
+            <div style={{ fontSize: 15, fontWeight: 700, color: A.ink, marginBottom: 4 }}>
+              {created.orgName} on {created.planName}
+            </div>
+            <div data-testid="cl-first-charge" style={{ fontSize: 13.5, color: A.ink, lineHeight: 1.6, marginBottom: 16 }}>
+              {created.notice}
+            </div>
+            <label style={label} htmlFor="cl-link-field">Her link</label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input id="cl-link-field" data-testid="cl-link" readOnly value={created.url}
+                onFocus={e => e.target.select()}
+                style={{ ...field, flex: "1 1 340px", minWidth: 260, fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5 }} />
+              <button data-testid="cl-copy" type="button" onClick={copyLink}
+                style={{ font: "inherit", fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 8, border: "none", background: A.green, color: "#fff", cursor: "pointer" }}>
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
+            <div style={{ fontSize: 12.5, color: A.secondary, marginTop: 10, lineHeight: 1.6, maxWidth: 520 }}>
+              Send it to {created.contactEmail}, or open it on her laptop. The organization is created when
+              she finishes, and not before, so an unopened link leaves nothing behind.
+            </div>
+            <button data-testid="cl-another" type="button" onClick={reset}
+              style={{ font: "inherit", fontSize: 13, marginTop: 16, padding: "8px 14px", borderRadius: 8, border: `1px solid ${A.border}`, background: "#fff", color: A.ink, cursor: "pointer" }}>
+              Create another
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ── What has been handed out ─────────────────────────────────────── */}
+      <div style={{ ...SH, marginTop: 32 }}>Links handed out</div>
+      {!data ? <div style={{ color: A.muted, fontSize: 13 }}>Loading…</div> :
+        (data.links || []).length === 0 ? <div style={{ color: A.muted, fontSize: 13 }}>No close link has been created yet.</div> : (
+          <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: A.surface }}>
+                  {["Organization", "Contact", "Plan", "Status", "Created", "Link"].map(h => (
+                    <th key={h} style={{ textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: A.muted, padding: "10px 14px", borderBottom: `1px solid ${A.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(data.links || []).map(l => (
+                  <tr key={l.id} data-testid="cl-row" style={{ borderBottom: `1px solid ${A.borderSub}` }}>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, color: A.ink }}>{l.orgName}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>{l.contactEmail}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary, textTransform: "capitalize" }}>{l.plan}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: l.status === "completed" ? A.green : A.secondary }}>{l.status === "completed" ? "Signed" : "Waiting"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>{fmtDate(l.createdAt)}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5 }}>
+                      <a href={l.url} target="_blank" rel="noreferrer" style={{ color: A.green }}>open</a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
@@ -774,6 +1020,9 @@ export default function AdminDashboard() {
 
   const NAV = [
     { id: "overview", label: "Overview",       icon: "◈" },
+    // BUILD-92 B1 — second in the list, because closing is the thing this
+    // console exists to do on a Monday morning.
+    { id: "close",    label: "Close a deal",   icon: "◇" },
     { id: "orgs",     label: "Organizations",  icon: "◉" },
     { id: "metrics",  label: "Metrics",        icon: "▤" },
     { id: "network",  label: "Network Review", icon: "◫" },
@@ -843,6 +1092,7 @@ export default function AdminDashboard() {
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
           {page === "overview"  && <Overview metrics={metrics} orgs={orgs} />}
+          {page === "close"     && <CloseDeal />}
           {page === "orgs"      && <Organizations orgs={orgs} loading={loadingOrgs} onRefresh={load} />}
           {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
           {page === "network"   && <NetworkReview />}

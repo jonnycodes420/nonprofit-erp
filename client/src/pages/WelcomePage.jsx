@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
+import { GivingSourcesManager } from "../components/Settings";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -18,6 +19,10 @@ const STEP_META = {
   basics: { label: "Org basics",               time: "~1 min" },
   invite: { label: "Invite your team",         time: "~1 min" }, // Team plan only
   import: { label: "Import your donors",       time: "~2 min" },
+  // BUILD-92 B2 — right after the donor file, because the answer to "where do
+  // gifts come in today?" is only interesting once there are donors for them
+  // to land on. It never blocks: "I'll do this later" is always there.
+  sources:{ label: "Where gifts come in",      time: "~1 min" },
   goal:   { label: "Set your first goal",      time: "~1 min" },
   metric: { label: "Your first impact metric", time: "~1 min" },
   launch: { label: "Launch",                   time: "~1 min" },
@@ -82,7 +87,7 @@ export default function WelcomePage() {
   // fresh trial reads as Team (full-feature trial), so a Team evaluator sees it.
   const [isTeam, setIsTeam] = useState(false);
   const flow = useMemo(
-    () => ["basics", ...(isTeam ? ["invite"] : []), "import", "goal", "metric", "launch"],
+    () => ["basics", ...(isTeam ? ["invite"] : []), "import", "sources", "goal", "metric", "launch"],
     [isTeam]
   );
   const stepIdx = Math.max(0, flow.indexOf(stepKey));
@@ -474,6 +479,31 @@ export default function WelcomePage() {
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Step — Where gifts come in (BUILD-92 B2). The SAME component as
+            Settings › Where giving comes in: one page, two places, so what she
+            is shown in the onboarding hour is exactly what she finds later. */}
+        {stepKey === "sources" && (
+          <div style={{ ...card, maxWidth: 860 }}>
+            <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>
+              Where do gifts come in today?
+            </h1>
+            <p style={{ fontSize: 14, color: ink3, margin: "0 0 18px", lineHeight: 1.6 }}>
+              Keep every one of them. Steward reads the gifts onto your donor records and never holds or moves
+              a dollar. Nothing here has to be done today.
+            </p>
+            <GivingSourcesManager compact isAdmin isReadOnly={false}/>
+            <div style={{ marginTop: 22 }}>
+              <button onClick={goNext} style={primaryBtn(false)}>Continue →</button>
+              <div style={{ textAlign: "center", marginTop: 12 }}>
+                <button data-testid="ob-sources-later" onClick={goNext}
+                  style={{ background: "none", border: "none", color: ink3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                  I&apos;ll do this later
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

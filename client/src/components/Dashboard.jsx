@@ -2097,10 +2097,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <span aria-hidden>{"\u2190"}</span>{label}
     </button>
   );
+  // BUILD-92 B3 — NO NUMBER WITHOUT A DEFINITION, and the rail was the last
+  // place on Home carrying three bare ones. A label is what a number is called;
+  // a definition is what it counted. Each is one line of warm grey under the
+  // label, saying exactly which rows the tile would show if you pressed it.
   const railTiles=[
-    {key:"open",n:threadStat?.open||0,label:"Open follow-ups"},
-    {key:"today",n:railDueToday,label:"Due today"},
-    {key:"failed",n:railFailedThisWeek,label:`${capitalize(t("monthly_giver",2))} whose card failed this week`},
+    {key:"open",n:threadStat?.open||0,label:"Open follow-ups",
+     definition:"Every donor with a next step planned and not yet done."},
+    {key:"today",n:railDueToday,label:"Due today",
+     definition:"Next steps whose date is today, in your organization's timezone."},
+    {key:"failed",n:railFailedThisWeek,label:`${capitalize(t("monthly_giver",2))} whose card failed this week`,
+     definition:"A recurring card declined in the last seven days and not yet recovered."},
   ];
   const railListFor=(key)=>{
     if(key==="failed") return {
@@ -2203,6 +2210,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               style={{padding:"14px 12px",borderRadius:10,margin:"0 -12px",display:"flex",flexDirection:"column",gap:2}}>
               <span className="home-rail-n" style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:40,lineHeight:1.05,letterSpacing:"-0.02em",color:tile.n>0?T.ink:T.ink3}}>{tile.n}</span>
               <span style={{fontSize:13,lineHeight:1.4,color:T.ink3}}>{tile.label}</span>
+              <span data-testid={"rail-def-"+tile.key} style={{fontSize:11.5,lineHeight:1.45,color:T.ink3,opacity:0.85}}>{tile.definition}</span>
             </div>
           ))}
         </div>

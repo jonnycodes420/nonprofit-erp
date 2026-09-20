@@ -18,7 +18,9 @@ const { ok, summary, BASE } = require("./helpers");
 const fs = require("fs");
 const path = require("path");
 
-const APP = process.env.APP_ORIGIN || "http://localhost:4173";
+// APP_URL is the name every other browser suite uses (BUILD-92 B2); APP_ORIGIN
+// is kept so an existing invocation does not break.
+const APP = process.env.APP_URL || process.env.APP_ORIGIN || "http://localhost:4173";
 const PW = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const uniq = () => Math.random().toString(36).slice(2, 7);

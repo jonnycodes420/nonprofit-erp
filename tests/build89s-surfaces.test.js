@@ -261,9 +261,14 @@ function chunk(src, startMarker, endMarker) {
     let chromium;
     try { module.paths.unshift(path.join(PW_DIR, "node_modules")); ({ chromium } = require("playwright")); }
     catch { return note("Playwright not found (set PLAYWRIGHT_DIR)"); }
-    const APP = "http://localhost:4173";
+    // APP_URL, never a literal port (the BUILD-72 S-2 rule, applied to the
+    // FRONT end): a machine running a second checkout of this repo already has
+    // something on :4173, and this suite then measured that other app's dist
+    // and reported it as a pass. The API's CORS allowlist must contain
+    // whatever origin is used here.
+    const APP = process.env.APP_URL || "http://localhost:4173";
     try { await fetch(APP + "/", { signal: AbortSignal.timeout(1500) }); }
-    catch { return note("nothing serving :4173 (the API's CORS allowlist covers that origin only)"); }
+    catch { return note(`nothing serving ${APP} (set APP_URL; the API's CORS allowlist must cover that origin)`); }
 
     let auth;
     try {

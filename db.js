@@ -2163,6 +2163,11 @@ async function initSchema() {
   // incomplete, 'collapsed' = the small "Finish setup" chip, 'hidden' =
   // explicitly never show again.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_card_state TEXT`);
+  // BUILD-92 B2 — the names an organisation typed into "Something else" on the
+  // "Where giving comes in" page. Steward has no adapter for these and does not
+  // pretend to: the name is recorded so the product knows what it is being
+  // asked for, and the gifts come in through the ordinary statement import.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS other_giving_sources JSONB DEFAULT '[]'::jsonb`);
   // BUILD-79 Part 6 — "Import your donors" ticks only when gifts came with
   // them, or a human explicitly confirmed the file had none.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS setup_no_gifts_confirmed BOOLEAN DEFAULT FALSE`);

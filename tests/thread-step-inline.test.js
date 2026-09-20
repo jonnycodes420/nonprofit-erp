@@ -24,8 +24,12 @@ const { ok, summary, api, q, closeDb, civilToday } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
-const PORT = 4173;
-const APP = `http://localhost:${PORT}`;
+// APP_URL, never a literal port (BUILD-92 B2): a machine running a second
+// checkout of this repo already has a preview on :4173, and this suite then
+// drove THAT app and reported its failures as this one's. The API's CORS
+// allowlist must cover whatever origin is used.
+const APP = process.env.APP_URL || "http://localhost:4173";
+const PORT = Number(APP.split(":").pop()) || 4173;
 const ORG = "org_stepinline";
 const iso = d => new Date(d).toISOString().slice(0, 10);
 const daysAgo = n => {

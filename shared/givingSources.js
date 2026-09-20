@@ -35,21 +35,55 @@ export const PROVIDERS = {
     // in READ_ONLY_EXCEPTIONS and the suite pins that list.
     help: "In PayPal, open Developer → Apps & Credentials, create a REST app on your live account, and switch on Transaction Search in its settings.",
     delay: "PayPal can take up to a day to allow this. Steward will keep trying.",
+    // BUILD-92 B2 — the numbered steps, in the order Jonathan actually hit
+    // them on a real PayPal account. They live HERE, in the registry, beside
+    // `help`, for the same reason `help` does: the copy that describes ANOTHER
+    // company's screens belongs with the provider, not scattered through a
+    // settings page, and a provider that changes its menus is then one edit.
+    steps: [
+      "Open PayPal and click Developer at the top right.",
+      "Switch Sandbox to Live.",
+      "Open Apps and Credentials.",
+      "Click Create App.",
+      "Tick Transaction search, and untick Payouts.",
+      "Click Save Changes.",
+      "Copy the Client ID and the Secret with the copy icons.",
+    ],
+    // Said BEFORE the steps, because the first check often fails and that is
+    // normal. A person who is not told this reads a permission error as
+    // something they did wrong and undoes correct work.
+    waitNote: "PayPal can take up to a day to switch this on. If the first check says not allowed yet, Steward keeps trying and nothing is wrong.",
   },
   zeffy: {
     key: "zeffy", label: "Zeffy", mode: "api", recurring: "inferred",
     credentialFields: [{ name: "apiKey", label: "API key", secret: true }],
     help: "In Zeffy, an admin opens Settings, then Integrations, chooses API, and copies the key.",
+    steps: [
+      "Open Zeffy as an administrator and go to Settings.",
+      "Open Integrations, then API.",
+      "Create a key and copy it.",
+    ],
   },
   stripe: {
     key: "stripe", label: "Stripe", mode: "api", recurring: "exact",
     credentialFields: [{ name: "apiKey", label: "Restricted key", secret: true }],
     help: "In Stripe, open Developers → API keys → Create restricted key, and give it read access to Charges, Subscriptions, Invoices and Customers.",
+    steps: [
+      "Open Stripe and go to Developers, then API keys.",
+      "Click Create restricted key.",
+      "Give it read access to Charges, Subscriptions, Invoices and Customers, and nothing else.",
+      "Copy the key.",
+    ],
   },
   givebutter: {
     key: "givebutter", label: "Givebutter", mode: "api", recurring: "exact",
     credentialFields: [{ name: "apiKey", label: "API key", secret: true }],
     help: "In Givebutter, open Account → Integrations → API, and create a key.",
+    steps: [
+      "Open Givebutter and go to Account, then Integrations.",
+      "Open API and create a key.",
+      "Copy the key.",
+    ],
   },
   cashapp: {
     key: "cashapp", label: "Cash App", mode: "file", recurring: "inferred",

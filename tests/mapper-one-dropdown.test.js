@@ -20,7 +20,11 @@ const fs = require("fs");
 const { ok, summary, api, q, closeDb, BASE } = require("./helpers");
 const bcrypt = require("bcryptjs");
 
-const APP = "http://localhost:4173";
+// APP_URL, never a literal port (BUILD-92 B2): a machine running a second
+// checkout of this repo already has a preview on :4173, and this suite then
+// drove THAT app and reported its failures as this one's. The API's CORS
+// allowlist must cover whatever origin is used.
+const APP = process.env.APP_URL || "http://localhost:4173";
 const ORG = "org_mapdrop";
 const FIXTURE = path.join(__dirname, "fixtures", "mapper", "prospect-research-30col.csv");
 

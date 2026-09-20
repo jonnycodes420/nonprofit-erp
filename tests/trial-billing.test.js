@@ -221,8 +221,15 @@ async function seedUser(id, org, email, { role = "admin", superAdmin = false } =
 
   console.log("\n— §3 · the one-click cancel in the email —");
   const cancelUrl = (mail.html.match(/href="([^"]*\/billing\/cancel\/[^"]+)"/) || [])[1];
+  // The local origin is whatever this stack serves the app on (publicUrl.js
+  // falls back to CORS_ORIGIN's first origin for exactly this reason), so the
+  // accepted local value comes from APP_URL rather than a literal :4173 — a
+  // machine running a second checkout of this repo uses another port and the
+  // literal turned that into a false failure.
+  const localOrigin = process.env.APP_URL || "http://localhost:4173";
   ok("the link points at the canonical domain, not a raw API host",
-     /^http:\/\/localhost:4173\/billing\/cancel\//.test(cancelUrl) || /stewardapp\.dev/.test(cancelUrl), cancelUrl);
+     cancelUrl.startsWith(localOrigin + "/billing/cancel/") || /stewardapp\.dev/.test(cancelUrl),
+     { cancelUrl, localOrigin });
   const token = cancelUrl.split("/billing/cancel/")[1];
 
   // A GET must NOT cancel. Inbox scanners prefetch links; a subscription that
