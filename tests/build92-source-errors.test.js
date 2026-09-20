@@ -139,6 +139,12 @@ async function startChild(mockPort) {
     env: {
       ...process.env,
       PORT: String(port),
+      // run-all.sh does NOT export DATABASE_URL — each suite defaults it
+      // internally via helpers.js, so a spawned CHILD inherits nothing and
+      // falls back to pg's localhost:5432, which is a different cluster and
+      // does not serve SSL ("The server does not support SSL connections").
+      // Same fix, same reason, as tests/donor-accounts.test.js.
+      DATABASE_URL: process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest",
       DISABLE_BACKGROUND_TICKS: "1", TEST_MODE: "1", SESSION_CACHE_TTL_MS: "0",
       JWT_SECRET: "local-test-secret",
       RESEND_API_KEY: "re_dummy_local", RESEND_BASE_URL: "http://localhost:1",
