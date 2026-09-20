@@ -36,6 +36,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },
     {
+      "source": "/billing/cancel/:token",
+      "destination": "https://nonprofit-erp-production.up.railway.app/billing/cancel/:token"
+    },
+    {
       "source": "/recurring/update-card",
       "destination": "https://nonprofit-erp-production.up.railway.app/recurring/update-card"
     },

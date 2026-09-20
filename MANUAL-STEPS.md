@@ -142,3 +142,29 @@ insecure.
 **Rotating this key orphans every stored credential** (there is no re-seal path
 yet — see BLOCKED-build89a.md §1). After a rotation every source must be
 disconnected and connected again.
+
+## §8 — THE THREE LIVE STRIPE PRICES (BUILD-90, 2026-09-20)
+
+The close link is the only door a customer comes through, and it refuses to
+mint a Checkout session for a plan with no Stripe price id configured. That is
+deliberate — a link that cannot charge beats one that quietly charges the wrong
+amount — but it means **nobody can be closed until these three exist**.
+
+Amounts: Founding **$199**, Core **$249**, Team **$499**.
+
+```bash
+STRIPE_BILLING_SECRET_KEY=sk_test_… node scripts/create-billing-products.js          # test first
+STRIPE_BILLING_SECRET_KEY=sk_live_… node scripts/create-billing-products.js --live   # then live
+```
+
+Paste the printed `STRIPE_PRICE_FOUNDING` / `STRIPE_PRICE_CORE` /
+`STRIPE_PRICE_TEAM` into Railway, and set `FOUNDER_EMAIL` to a **verified
+Resend sender** — it is the From on the welcome email and on the seven-day
+pre-charge reminder, both of which should read as coming from Jonathan.
+
+Then run one real close link on prod with your own card, confirm Stripe shows
+a trialing subscription with no charge, and cancel it. Full checklist and the
+reasoning: `BLOCKED-build90.md`.
+
+**Never set `STRIPE_BILLING_API_BASE` in production** — it is the local-test
+seam that points the billing client at a mock.

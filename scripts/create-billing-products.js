@@ -1,10 +1,14 @@
 #!/usr/bin/env node
 // BUILD-24 — provision Steward's PLATFORM billing products/prices in Stripe.
 //
-// Creates the Core ($149/mo) and Team ($299/mo) recurring products/prices, the
-// private founding-partner $99/mo price (Core tier, off-menu), and a founding
-// coupon (34% off Core → $99) so you have both levers in the dashboard. Then
-// prints the env lines to paste into Railway (or your .env).
+// Creates the Core ($249/mo) and Team ($499/mo) recurring products/prices, the
+// founding-partner $199/mo price (Core tier), and a founding coupon (20% off
+// Core → ~$199) so you have both levers in the dashboard. Then prints the env
+// lines to paste into Railway (or your .env).
+//
+// BUILD-90: these are the three prices a CLOSE LINK sells, and the amounts here
+// must match closeLink.js's CLOSE_PLANS — that module is what the Checkout page
+// and the seven-day reminder quote to the customer.
 //
 // This is the PLATFORM account only (Steward charging orgs). It does NOT touch
 // donation processing (each org's own connected account). It is the credentialed
@@ -36,9 +40,9 @@ const stripe = require("stripe")(key);
 
 // plan → { product name/desc, unit amount cents, tier }
 const PLANS = [
-  { plan: "core", name: "Steward — Core", desc: "Full donor CRM + 0%-fee giving for a small development team.", amount: 14900, tier: "core" },
-  { plan: "team", name: "Steward — Team", desc: "Everything in Core plus moves management, officer portfolios, and per-officer reporting.", amount: 29900, tier: "team" },
-  { plan: "founding", name: "Steward — Founding Partner", desc: "Private founding-partner price (Core tier). Off-menu.", amount: 9900, tier: "core" },
+  { plan: "core", name: "Steward — Core", desc: "Full donor CRM + 0%-fee giving for a small development team.", amount: 24900, tier: "core" },
+  { plan: "team", name: "Steward — Team", desc: "Everything in Core plus moves management, officer portfolios, and per-officer reporting.", amount: 49900, tier: "team" },
+  { plan: "founding", name: "Steward — Founding Partner", desc: "Founding-partner price (Core tier).", amount: 19900, tier: "core" },
 ];
 
 async function findProduct(plan) {
@@ -82,16 +86,18 @@ async function ensurePlan({ plan, name, desc, amount, tier }) {
 }
 
 async function ensureFoundingCoupon() {
-  // 34% off Core ($149 → ~$98.34) — an alternative lever to the dedicated $99
-  // price. Idempotent by a fixed id.
-  const id = "steward_founding_34off";
+  // 20% off Core ($249 → ~$199.20) — an alternative lever to the dedicated $199
+  // founding price. Idempotent by a fixed id; the id CARRIES the percentage, so
+  // changing the discount cannot silently reuse the previous coupon (the old
+  // 34%-off-$149 one is left alone and simply stops being provisioned).
+  const id = "steward_founding_20off";
   try {
     const existing = await stripe.coupons.retrieve(id);
     console.log(`  reused coupon   ${existing.id} (${existing.percent_off}% off)`);
     return existing.id;
   } catch {
-    const c = await stripe.coupons.create({ id, percent_off: 34, duration: "forever", name: "Founding Partner", metadata: { steward_plan: "founding" } });
-    console.log(`  created coupon  ${c.id} (34% off, forever)`);
+    const c = await stripe.coupons.create({ id, percent_off: 20, duration: "forever", name: "Founding Partner", metadata: { steward_plan: "founding" } });
+    console.log(`  created coupon  ${c.id} (20% off, forever)`);
     return c.id;
   }
 }

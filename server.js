@@ -132,6 +132,12 @@ async function orgTz(orgId) {
   return { timezone: tz, timezone_confirmed_at: confirmed };
 }
 function invalidateOrgTz(orgId) { _tzCache.delete(orgId); }
+// The zone NAME alone. `orgTz` returns {timezone, timezone_confirmed_at} — a
+// caller that wants an Intl option and passes the whole object gets a
+// RangeError, which is how the first close-link welcome email failed to send.
+async function orgTzName(orgId) {
+  try { return (await orgTz(orgId)).timezone; } catch { return orgTime.DEFAULT_TZ; }
+}
 
 // ── BUILD-75 C.1 — THE ACTOR ON EVERY WRITE ─────────────────────────────────
 // Every row that represents something someone DID records who did it — an
@@ -150,7 +156,9 @@ const SYS_STRIPE = { id: "system:stripe-webhook", name: "Stripe (online)" };
 const SYS_AUTO = { id: "system:auto", name: "Steward (automatic)" };
 const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward (workflow: ${recipe})` });
 const { imageSize } = require("image-size");
-const { computeTrialEnd } = require("./trialEnd");
+const { computeTrialEnd, computeReminderAt, isReminderDue, TRIAL_DAYS, REMINDER_LEAD_DAYS } = require("./trialEnd");
+const { CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams,
+        firstChargeSentence, formatChargeDate, usd: usdWhole } = require("./closeLink");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -168,7 +176,17 @@ const stripeTestBaseOpts = (() => {
   return { host: u.hostname, port: u.port || (u.protocol === "https:" ? "443" : "80"), protocol: u.protocol.replace(":", "") };
 })();
 const stripe = donationStripeKey() ? new Stripe(donationStripeKey(), stripeTestBaseOpts) : null;
-const billingStripe = billingStripeKey() ? new Stripe(billingStripeKey()) : null;
+// STRIPE_BILLING_API_BASE is the same LOCAL-TEST seam for the PLATFORM billing
+// client (BUILD-90). The close link is the one billing path that makes an
+// outbound Stripe call the battery has to drive end to end — create a session,
+// then complete it — so it needs a mock the way the donation client already
+// had one. Falls back to nothing: unset (production) means the real Stripe API.
+const billingTestBaseOpts = (() => {
+  if (!process.env.STRIPE_BILLING_API_BASE) return {};
+  const u = new URL(process.env.STRIPE_BILLING_API_BASE);
+  return { host: u.hostname, port: u.port || (u.protocol === "https:" ? "443" : "80"), protocol: u.protocol.replace(":", "") };
+})();
+const billingStripe = billingStripeKey() ? new Stripe(billingStripeKey(), billingTestBaseOpts) : null;
 
 function makeOAuth2Client() {
   return new google.auth.OAuth2(
@@ -1579,18 +1597,34 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
 
   try {
     if (event.type === "checkout.session.completed") {
-      if (orgId) {
+      // BUILD-90 90a — A CLOSE-LINK COMPLETION HAS NO ORG YET. This is the one
+      // Checkout that CREATES the customer rather than belonging to one: the
+      // org, its first admin and its subscription are all born here, which is
+      // why nothing exists until Stripe says the card went in.
+      if (!orgId && obj.metadata?.closeLinkId) {
+        await provisionOrgFromCloseLink(obj);
+      } else if (orgId) {
         const plan = BILLING_PLAN_VALUES.has(obj.metadata?.plan) ? obj.metadata.plan : "core";
         let periodEnd = null;
+        // BUILD-90: a checkout that starts in a TRIAL must leave the org
+        // `trialing`, not `active` — otherwise Settings stops showing the date
+        // she was promised on the very screen she was promised it.
+        let status = "active";
+        let trialEnd = null;
         if (obj.subscription) {
           try {
             const sub = await billingStripe.subscriptions.retrieve(obj.subscription);
             periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+            if (sub.status === "trialing") {
+              status = "trialing";
+              trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
+            }
           } catch {}
         }
         await run(
-          "UPDATE orgs SET plan=?, subscription_status='active', stripe_subscription_id=?, current_period_end=?, grace_until=NULL WHERE id=?",
-          [plan, obj.subscription || null, periodEnd, orgId]
+          `UPDATE orgs SET plan=?, subscription_status=?, stripe_subscription_id=?, current_period_end=?,
+                  trial_ends_at=COALESCE(?, trial_ends_at), grace_until=NULL WHERE id=?`,
+          [plan, status, obj.subscription || null, periodEnd, trialEnd, orgId]
         );
       }
     } else if (event.type === "invoice.payment_succeeded") {
@@ -1621,10 +1655,20 @@ app.post("/billing/webhook", express.raw({ type: "application/json" }), async (r
           // Derive from the live price so a Customer-Portal plan switch
           // (Core ↔ Team) flips the tier even though metadata.plan is stale.
           const plan = planFromSubscription(obj);
+          // BUILD-90: Stripe's `trialing` stays OUR `trialing`. It used to be
+          // flattened to `active`, which meant a card update during the trial
+          // silently erased the trial from Settings. The trial END is re-read
+          // from the same event: Stripe holds the date the contract names, and
+          // NOTHING inside Steward writes it — not an import, not a second
+          // import, not a rescheduled onboarding meeting.
+          const trialing = s === "trialing";
+          const status = trialing ? "trialing" : "active";
+          const trialEnd = trialing && obj.trial_end ? new Date(obj.trial_end * 1000).toISOString() : null;
+          if (obj.id) await refreshBillingCard(orgId, obj.id).catch(() => {});
           if (plan) {
-            await run("UPDATE orgs SET plan=?, subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?", [plan, periodEnd, orgId]);
+            await run("UPDATE orgs SET plan=?, subscription_status=?, current_period_end=?, trial_ends_at=COALESCE(?, trial_ends_at), grace_until=NULL WHERE id=?", [plan, status, periodEnd, trialEnd, orgId]);
           } else {
-            await run("UPDATE orgs SET subscription_status='active', current_period_end=?, grace_until=NULL WHERE id=?", [periodEnd, orgId]);
+            await run("UPDATE orgs SET subscription_status=?, current_period_end=?, trial_ends_at=COALESCE(?, trial_ends_at), grace_until=NULL WHERE id=?", [status, periodEnd, trialEnd, orgId]);
           }
         } else if (s === "past_due") {
           await run("UPDATE orgs SET subscription_status='past_due', grace_until=NOW() + INTERVAL '7 days' WHERE id=?", [orgId]);
@@ -3854,12 +3898,14 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   const orgId = "org_" + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
-  // BUILD-50 item 1: this legacy route previously set no trial_ends_at (→ NULL →
-  // never expires). Give it the same free-through-2026 trial as register-org so
-  // every self-serve path honors the public promise consistently.
-  const trialEndsAt = computeTrialEnd(Date.now()).toISOString();
-  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,?,?,0,?,'trial','trialing',?)",
-    [orgId, orgName, orgMission || "", ein || "", orgSlug, trialEndsAt]);
+  // BUILD-90: thirty days from signing, and for a self-serve path signing is
+  // the moment the org row is written. `signed_at` is stamped here with the
+  // same timestamp the trial end is derived from, so the date can always be
+  // re-derived and shown never to have moved.
+  const signedAt = new Date();
+  const trialEndsAt = computeTrialEnd(signedAt).toISOString();
+  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at) VALUES (?,?,?,?,0,?,'trial','trialing',?,?)",
+    [orgId, orgName, orgMission || "", ein || "", orgSlug, signedAt.toISOString(), trialEndsAt]);
   // BUILD-58 W-3: every org is born with a usable ledger (chart of accounts +
   // General Operating fund) — gift stamps must never no-op on a fresh org.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -4001,14 +4047,16 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const orgId  = "org_"  + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
-  // BUILD-50 item 1: honor the public "Free through December 31, 2026" promise.
-  // Orgs created in 2026 get a trial ending EOD 2026-12-31 (UTC fallback — no
-  // per-org timezone column yet); orgs created 2027+ get the standard 30 days.
-  const trialEndsAt = computeTrialEnd(Date.now()).toISOString();
+  // BUILD-90: thirty days from signing, full stop (trialEnd.js). This legacy
+  // self-serve route is no longer reachable from the UI — /signup redirects to
+  // the invitation request and the close link is the real door — but while it
+  // is mounted it must produce the SAME billing date as every other path.
+  const signedAt = new Date();
+  const trialEndsAt = computeTrialEnd(signedAt).toISOString();
 
   await run(
-    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?)",
-    [orgId, orgName, orgSlug, trialEndsAt]
+    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?,?)",
+    [orgId, orgName, orgSlug, signedAt.toISOString(), trialEndsAt]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -4939,7 +4987,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   // 1 email campaign
   await run(
     `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-    ["smpl_camp1",orgId,"Year-End Giving Appeal","Make a difference before December 31st",
+    ["smpl_camp1",orgId,"Year-End Giving Appeal","Make a difference before the year ends",
      "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today — doubled by a board matching challenge — will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
      "sent",
      "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match — expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
@@ -18723,7 +18771,7 @@ async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
       {
         delay_days: 28,
         subject: "A month in with Steward",
-        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: Steward is free for you through December 31, 2026. After that, plans start at $249/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
+        body: `Hi {{first_name}},\n\nYou've been using Steward for about a month now.\n\nHere's the deal on cost, plainly: nothing is charged for your first thirty days. Your first charge date is in Settings → Billing, and a week before it I'll email you the date, the amount and the card — with a one-click cancel. Cancel before then and you pay nothing.\n\nAfter that it's month to month, cancel any time. Plans start at $249/month — no platform fee on your donations, no donor tips, and your gifts always settle in your own Stripe account.\n\nhttps://stewardapp.dev/pricing\n\nIf Steward has saved you time, helped you stay on top of your donors, or made one thing easier — I'd love for you to keep using it. If the timing isn't right or you have questions, just reply to this email. I read every one.\n\nEither way — thank you for trying Steward. Building software for people doing meaningful work is the best job I've ever had.\n\n— Jonathan\nFounder, Steward\nstewardapp.dev`,
       },
     ];
     for (let i = 0; i < steps.length; i++) {
@@ -22963,6 +23011,42 @@ function billingCustomerColumn() {
   return billingStripeMode() === "test" ? "stripe_customer_id_test" : "stripe_customer_id";
 }
 
+// BUILD-90 90b — THE CARD, AS SHE WOULD RECOGNISE IT.
+// A warning seven days before a charge has to name the card it will hit, or it
+// is asking her to go and look. Stored on the org and refreshed whenever the
+// subscription changes, so /billing/status stays one query rather than a Stripe
+// round trip on every page load.
+function cardFromStripeObjects(sub, customer) {
+  const pm = (sub && typeof sub.default_payment_method === "object" && sub.default_payment_method)
+    || (customer && customer.invoice_settings && typeof customer.invoice_settings.default_payment_method === "object"
+        && customer.invoice_settings.default_payment_method)
+    || null;
+  if (!pm || !pm.card) return null;
+  return { brand: pm.card.brand || null, last4: pm.card.last4 || null };
+}
+
+async function refreshBillingCard(orgId, subscriptionId) {
+  if (!billingStripe || !subscriptionId) return null;
+  try {
+    const sub = await billingStripe.subscriptions.retrieve(subscriptionId, {
+      expand: ["default_payment_method", "customer.invoice_settings.default_payment_method"],
+    });
+    const card = cardFromStripeObjects(sub, typeof sub.customer === "object" ? sub.customer : null);
+    if (!card) return null;
+    await run("UPDATE orgs SET billing_card_brand=?, billing_card_last4=? WHERE id=?", [card.brand, card.last4, orgId]);
+    return card;
+  } catch (e) {
+    console.error("[billing] card refresh failed for", orgId, e.message);
+    return null;
+  }
+}
+
+// What /billing/status reports. Reads the stored value; never blocks the page
+// on Stripe. Null is an honest answer — the UI says "your card on file".
+function billingCardLast4(org) {
+  return org && org.billing_card_last4 ? String(org.billing_card_last4) : null;
+}
+
 // Returns the org's billing customer id for the current Stripe MODE, creating
 // and persisting one on the fly if missing (e.g. legacy /auth/register orgs, a
 // silently-failed signup creation, or the first checkout after switching the
@@ -23064,13 +23148,22 @@ app.get("/admin/billing-diagnostic", requireAuth, requireSuperAdmin, wrap(async 
 }));
 
 app.get("/billing/status", requireAuth, wrap(async (req, res) => {
-  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, stripe_customer_id, stripe_subscription_id, grace_until, current_period_end FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgs = await query("SELECT plan, subscription_status, trial_ends_at, signed_at, stripe_customer_id, stripe_customer_id_test, stripe_subscription_id, grace_until, current_period_end, billing_card_brand, billing_card_last4 FROM orgs WHERE id=?", [req.user.orgId]);
   if (!orgs.length) return res.status(404).json({ error: "Org not found" });
   const org = orgs[0];
   const plan = org.plan || "trial";
   const trialEndsAt = org.trial_ends_at ? new Date(org.trial_ends_at) : null;
   const trialDaysLeft = trialEndsAt ? Math.max(0, Math.ceil((trialEndsAt - Date.now()) / 86400000)) : null;
   const isTrial = (org.subscription_status || "trialing") === "trialing";
+  // BUILD-90 90b — Settings shows THE SAME DATE the reminder email shows and
+  // the same one Checkout showed, because all three build the sentence from
+  // this one field through closeLink.js. No phone call required to cancel:
+  // the button beside it posts to /billing/cancel.
+  const planPrice = closePlan(plan);
+  const tz = await orgTzName(req.user.orgId);
+  const firstChargeSentenceText = isTrial && trialEndsAt && planPrice
+    ? firstChargeSentence({ monthlyUsd: planPrice.monthlyUsd, firstChargeAt: trialEndsAt, tz })
+    : null;
 
   const [[seatRow], [recordRow]] = await Promise.all([
     query("SELECT COUNT(*) AS c FROM users WHERE org_id=?", [req.user.orgId]),
@@ -23095,6 +23188,17 @@ app.get("/billing/status", requireAuth, wrap(async (req, res) => {
     // the Customer Portal would open EMPTY. The UI uses this to explain that
     // in-app instead of sending the admin to a blank portal (BUILD-31 Part 1).
     hasSubscription: !!org.stripe_subscription_id,
+    // BUILD-90 90b — the date, the amount, and whether cancelling costs nothing.
+    signedAt: org.signed_at,
+    monthlyUsd: planPrice ? planPrice.monthlyUsd : null,
+    firstChargeAt: isTrial ? org.trial_ends_at : null,
+    firstChargeSentence: firstChargeSentenceText,
+    // Before the first charge, cancelling means paying nothing. After it, the
+    // subscription runs to the end of the month already paid for.
+    cancelIsFree: isTrial,
+    canCancel: !!org.stripe_subscription_id && !["canceled"].includes(org.subscription_status || ""),
+    cardLast4: billingCardLast4(org),
+    cardBrand: org.billing_card_brand || null,
   });
 }));
 
@@ -23232,8 +23336,470 @@ app.post("/billing/create-portal", requireAuth, requireAdmin, wrap(async (req, r
   }
 }));
 
+// ── BUILD-90 90a · THE CLOSE LINK ──────────────────────────────────────────
+// Public signup is closed. This is the ONE door that creates an organisation,
+// and only a super-admin may open it: Jonathan takes org name, contact email
+// and plan, and hands the executive director a Stripe Checkout URL on his
+// laptop or her phone. NOTHING is charged. The card is saved, a thirty-day
+// trial starts the instant she completes Checkout, and the Checkout page
+// itself states the first charge date and the promise that makes signing safe.
+//
+// Nothing exists in Steward until Stripe says the card went in — an unopened
+// link leaves no org, no user and no subscription behind. The org, the first
+// admin and the subscription are all created by the webhook (below).
+
+// The email that reaches her the moment the org exists. It is a SET-PASSWORD
+// link (the account is created with an unguessable random password she is
+// never told), reusing the password_reset_tokens family with a seven-day life
+// rather than the one-hour reset window — she may be signing on a Tuesday and
+// sitting down with the product on Friday.
+async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt, tz }) {
+  const token = crypto.randomBytes(32).toString("hex");
+  await run(
+    `INSERT INTO password_reset_tokens (id, user_id, token, expires_at) VALUES (?, ?, ?, NOW() + INTERVAL '7 days')`,
+    ["prt_" + uuid().slice(0, 8), userId, token]
+  );
+  const link = `${publicAppUrl()}/reset-password?token=${token}`;
+  const charge = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: trialEndsAt, tz });
+  const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("[close-link] RESEND_API_KEY not set — welcome email not sent to", email);
+    return { sent: false, link };
+  }
+  try {
+    const { error } = await resend.emails.send({
+      from, to: email, replyTo: from,
+      subject: `${displayNameCase(orgName)} is set up on Steward`,
+      html: `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
+    <tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+      <tr><td style="padding-bottom:24px;text-align:center;">
+        <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</span>
+      </td></tr>
+      <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
+        <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">${displayNameCase(orgName)} is set up</h1>
+        <p style="margin:0 0 24px;font-size:15px;color:#5A554F;line-height:1.6;">Set your password and you're in. This link works for seven days.</p>
+        <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;"><tr><td style="border-radius:10px;background:#c9a84c;">
+          <a href="${link}" style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:700;color:#0f1a12;text-decoration:none;letter-spacing:-0.01em;">Set your password &rarr;</a>
+        </td></tr></table>
+        <p style="margin:0 0 8px;font-size:14px;color:#0f1a12;line-height:1.6;"><strong>${charge}</strong> Cancel any time before then and you pay nothing. After that it is month to month, and you can cancel any time from Settings.</p>
+        <p style="margin:0;font-size:12px;color:#8a857f;">Or copy this link: <span style="color:#0f1a12;word-break:break-all;">${link}</span></p>
+      </td></tr>
+      <tr><td style="padding-top:20px;text-align:center;font-size:12px;color:#8a857f;">Steward &middot; stewardapp.dev</td></tr>
+    </table></td></tr>
+  </table>
+</body></html>`,
+    });
+    if (error) throw new Error(error.message);
+    return { sent: true, link };
+  } catch (e) {
+    console.error("[close-link] welcome email failed:", e.message);
+    return { sent: false, link };
+  }
+}
+
+// Turn a COMPLETED Checkout session into an organisation. Called only from the
+// billing webhook. Idempotent: a redelivered event, or a refreshed success
+// page, finds `close_links.org_id` already set and returns the same org rather
+// than minting a second one.
+async function provisionOrgFromCloseLink(session) {
+  const closeLinkId = session?.metadata?.closeLinkId;
+  if (!closeLinkId) return null;
+  const rows = await query("SELECT * FROM close_links WHERE id=?", [closeLinkId]);
+  if (!rows.length) {
+    console.error(`[close-link] CRITICAL: session ${session.id} names close link ${closeLinkId}, which does not exist`);
+    return null;
+  }
+  const link = rows[0];
+  if (link.org_id) {
+    console.log(`[close-link] ${closeLinkId} already provisioned org ${link.org_id} — no-op`);
+    return link.org_id;
+  }
+  const plan = closePlan(link.plan) || closePlan("core");
+  const email = String(link.contact_email).trim().toLowerCase();
+
+  // A pre-existing account with this address means the close link is pointed at
+  // somebody who already has one. Do NOT half-provision and do NOT move a user
+  // between organisations: leave the link OPEN and say so loudly, so it is
+  // resolved by a human rather than by a guess.
+  const clash = await query("SELECT id, org_id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
+  if (clash.length) {
+    console.error(`[close-link] CRITICAL: ${closeLinkId} completed but ${email} already belongs to org ${clash[0].org_id}. ` +
+      `No org created. Cancel the Stripe subscription or repoint the link by hand.`);
+    if (process.env.SENTRY_DSN) Sentry.captureMessage(`close-link ${closeLinkId}: contact email already has an account`, "error");
+    return null;
+  }
+
+  // The subscription carries the dates. We READ the trial end off Stripe rather
+  // than recomputing it, so Stripe and Steward cannot disagree about the one
+  // date the contract names; trialEnd.js defines the same arithmetic and
+  // tests/trial-end.test.js pins it.
+  let sub = null;
+  if (session.subscription && billingStripe) {
+    const subId = typeof session.subscription === "string" ? session.subscription : session.subscription.id;
+    try { sub = await billingStripe.subscriptions.retrieve(subId); }
+    catch (e) { console.error("[close-link] could not retrieve subscription:", e.message); }
+  }
+  const signedAt = sub?.trial_start ? new Date(sub.trial_start * 1000) : new Date();
+  const trialEndsAt = sub?.trial_end ? new Date(sub.trial_end * 1000) : computeTrialEnd(signedAt);
+
+  const orgId = "org_" + uuid().slice(0, 8);
+  const userId = "user_" + uuid().slice(0, 8);
+  const orgSlug = String(link.org_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
+  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
+  const subId = sub?.id || (typeof session.subscription === "string" ? session.subscription : null);
+
+  await run(
+    `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
+                       signed_at, trial_ends_at, stripe_subscription_id, close_link_id, ${billingCustomerColumn()})
+     VALUES (?,?,0,?,?,'trialing',?,?,?,?,?)`,
+    [orgId, link.org_name, orgSlug, plan.id, signedAt.toISOString(), trialEndsAt.toISOString(), subId, closeLinkId, customerId]
+  );
+  await ensureOrgLedger(orgId).catch(e => console.error("[close-link] ledger provisioning:", e.message));
+
+  // The first admin. The password is random and never disclosed — she sets her
+  // own through the link in the welcome email.
+  const hash = bcrypt.hashSync(crypto.randomBytes(24).toString("hex"), 12);
+  await run(
+    "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
+    [userId, orgId, email, hash, inviteeDisplayName(email), "admin"]
+  );
+  await provisionNewOrgWorkflows(orgId).catch(e => console.error("[close-link] provision workflows:", e.message));
+
+  await run(
+    `UPDATE close_links SET status='completed', org_id=?, stripe_customer_id=?, stripe_subscription_id=?, completed_at=NOW() WHERE id=?`,
+    [orgId, customerId, subId, closeLinkId]
+  );
+  // The card she just put in, so the seven-day reminder can name it.
+  await refreshBillingCard(orgId, subId).catch(() => {});
+
+  const tz = await orgTzName(orgId);
+  const mail = await sendCloseWelcomeEmail({ userId, email, orgName: link.org_name, plan, trialEndsAt, tz });
+  console.log(`[close-link] ${closeLinkId} → org ${orgId}, admin ${email}, trial ends ${trialEndsAt.toISOString()} (welcome email ${mail.sent ? "sent" : "NOT sent"})`);
+  return orgId;
+}
+
+// POST /admin/close-links — mint one. Super-admin only.
+app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const v = validateCloseLink(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.error, message: v.message });
+  const { orgName, contactEmail, plan } = v;
+
+  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
+  if (clash.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward account." });
+
+  const priceId = process.env[plan.env];
+  if (!priceId) {
+    return res.status(400).json({
+      error: "plan_not_configured",
+      message: `No Stripe price is configured for the ${plan.name} plan yet (${plan.env}).`,
+    });
+  }
+  if (!billingStripe) return res.status(503).json({ error: "Stripe not configured" });
+
+  const closeLinkId = "cl_" + uuid().slice(0, 8);
+  const params = checkoutSessionParams({
+    plan, orgName, contactEmail, closeLinkId, priceId,
+    successUrl: publicAppUrl() + "/login?welcome=1",
+    cancelUrl: publicAppUrl() + "/pricing",
+  });
+
+  try {
+    const session = await billingStripe.checkout.sessions.create(params);
+    await run(
+      `INSERT INTO close_links (id, org_name, contact_email, plan, stripe_session_id, checkout_url, created_by, created_by_name)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      [closeLinkId, orgName, contactEmail, plan.id, session.id, session.url, req.user.userId, req.user.email]
+    );
+    console.log(`[close-link] ${closeLinkId} created for ${orgName} (${contactEmail}) on ${plan.id} by ${req.user.email}`);
+    res.status(201).json({
+      id: closeLinkId,
+      url: session.url,
+      orgName, contactEmail,
+      plan: plan.id,
+      planName: plan.name,
+      monthlyUsd: plan.monthlyUsd,
+      firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
+      notice: params.custom_text.submit.message,
+    });
+  } catch (err) {
+    if (handleBillingConfigError(err, res, { plan: plan.id, surface: "close-link" })) return;
+    throw err;
+  }
+}));
+
+// GET /admin/close-links — what has been handed out, and what it became.
+app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT c.*, o.name AS created_org_name, o.trial_ends_at
+       FROM close_links c LEFT JOIN orgs o ON o.id = c.org_id
+      ORDER BY c.created_at DESC LIMIT 100`, []);
+  res.json({
+    plans: CLOSE_PLANS.map(p => ({ id: p.id, name: p.name, monthlyUsd: p.monthlyUsd, configured: !!process.env[p.env] })),
+    links: rows.map(r => ({
+      id: r.id, orgName: r.org_name, contactEmail: r.contact_email, plan: r.plan,
+      status: r.status, url: r.checkout_url, orgId: r.org_id,
+      trialEndsAt: r.trial_ends_at, createdAt: r.created_at, completedAt: r.completed_at,
+      createdByName: r.created_by_name,
+    })),
+  });
+}));
+
+// ── BUILD-90 90b · THE REMINDER AND THE CANCEL BUTTON ──────────────────────
+// NOTHING MOVES THE TRIAL END. Not an import, not a second import, not a
+// rescheduled onboarding meeting. `orgs.trial_ends_at` is written at signing
+// and thereafter only ever re-read from the Stripe subscription that holds the
+// same number — `tests/trial-billing.test.js` imports a donor file and proves
+// the date is byte-identical afterwards.
+//
+// Seven days before the charge, ONE email from Jonathan's address: the date,
+// the amount, the card's last four, and a one-click cancel. Settings → Billing
+// shows the same date and the same button. Nobody has to ring anybody.
+
+// The signed, no-login cancel token — the same HMAC shape as the unsubscribe
+// and card-update families, with its own payload so it cannot be swapped for
+// one of those. Carries the org, not the subscription, because the
+// subscription id may change (a plan switch) while the org never does.
+function signCancelToken(orgId) {
+  const payload = Buffer.from(JSON.stringify({ cancelOrgId: orgId })).toString("base64url");
+  const sig = crypto.createHmac("sha256", RECOVERY_SECRET).update("cancel:" + payload).digest("base64url");
+  return `${payload}.${sig}`;
+}
+function verifyCancelToken(token) {
+  if (!token || typeof token !== "string" || !token.includes(".")) return null;
+  const [payload, sig] = token.split(".");
+  if (!payload || !sig) return null;
+  const expected = crypto.createHmac("sha256", RECOVERY_SECRET).update("cancel:" + payload).digest("base64url");
+  const sigBuf = Buffer.from(sig), expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString());
+    return decoded.cancelOrgId ? decoded.cancelOrgId : null;
+  } catch { return null; }
+}
+
+// THE CANCEL, both halves of it:
+//   • BEFORE the first charge — cancel the subscription outright. Zero charges,
+//     ever. This is the promise the Checkout page made, kept.
+//   • AFTER a charge — cancel at period end. She keeps what she paid for until
+//     the month she paid for runs out, and is never charged again.
+// Returns { ok, when: "now" | "period_end", periodEnd, alreadyCanceled }.
+async function cancelOrgSubscription(orgId) {
+  const rows = await query(
+    "SELECT id, subscription_status, stripe_subscription_id, trial_ends_at, current_period_end FROM orgs WHERE id=?", [orgId]);
+  if (!rows.length) return { ok: false, error: "org_not_found" };
+  const org = rows[0];
+  if ((org.subscription_status || "") === "canceled") {
+    return { ok: true, when: "period_end", alreadyCanceled: true, periodEnd: org.current_period_end };
+  }
+  const isTrial = (org.subscription_status || "trialing") === "trialing";
+  if (!org.stripe_subscription_id) {
+    // No Stripe subscription behind the plan (a manual grant, or a trial that
+    // never went through Checkout). There is nothing to charge and nothing to
+    // call Stripe about — end it locally and say so plainly.
+    await run("UPDATE orgs SET subscription_status='canceled', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+    return { ok: true, when: "now", noSubscription: true };
+  }
+  if (!billingStripe) return { ok: false, error: "stripe_not_configured" };
+  try {
+    if (isTrial) {
+      await billingStripe.subscriptions.cancel(org.stripe_subscription_id);
+      await run("UPDATE orgs SET subscription_status='canceled', grace_until=NOW() + INTERVAL '3 days' WHERE id=?", [orgId]);
+      console.log(`[billing] ${orgId} cancelled during trial — no charge was ever made`);
+      return { ok: true, when: "now", freeOfCharge: true };
+    }
+    const sub = await billingStripe.subscriptions.update(org.stripe_subscription_id, { cancel_at_period_end: true });
+    const periodEnd = sub?.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : org.current_period_end;
+    await run("UPDATE orgs SET current_period_end=COALESCE(?, current_period_end) WHERE id=?", [periodEnd, orgId]);
+    console.log(`[billing] ${orgId} set to cancel at period end ${periodEnd}`);
+    return { ok: true, when: "period_end", periodEnd };
+  } catch (e) {
+    console.error("[billing] cancel failed for", orgId, e.message);
+    return { ok: false, error: "stripe_error", message: e.message };
+  }
+}
+
+// POST /billing/cancel — the button in Settings → Billing. No phone call.
+app.post("/billing/cancel", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const out = await cancelOrgSubscription(req.user.orgId);
+  if (!out.ok) {
+    const code = out.error === "org_not_found" ? 404 : out.error === "stripe_not_configured" ? 503 : 400;
+    return res.status(code).json({ error: out.error, message: out.message || "Could not cancel. Please try again." });
+  }
+  res.json(out);
+}));
+
+// The emailed cancel. A GET renders one button rather than cancelling on load —
+// an inbox scanner that prefetches links must not be able to end somebody's
+// subscription — and the POST behind it does the work. Same server-rendered,
+// no-login shape as /unsubscribe.
+function cancelPageHtml({ state, orgName, sentence, token, periodEnd }) {
+  const shell = inner => `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/><title>Steward</title></head>
+<body style="margin:0;background:#f0ede6;font-family:-apple-system,'Helvetica Neue',Helvetica,Arial,sans-serif;">
+<div style="max-width:520px;margin:0 auto;padding:56px 20px;">
+  <div style="text-align:center;margin-bottom:24px;font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</div>
+  <div style="background:#fff;border-radius:16px;padding:36px 32px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">${inner}</div>
+</div></body></html>`;
+  if (state === "invalid") {
+    return shell(`<h1 style="margin:0 0 10px;font-size:22px;color:#0f1a12;">This link is no longer valid</h1>
+      <p style="margin:0;font-size:15px;color:#5A554F;line-height:1.6;">Cancel from Settings &rarr; Billing inside Steward, or reply to the email and we will take care of it.</p>`);
+  }
+  if (state === "done_now") {
+    return shell(`<h1 style="margin:0 0 10px;font-size:22px;color:#0f1a12;">Cancelled. You were never charged.</h1>
+      <p style="margin:0;font-size:15px;color:#5A554F;line-height:1.6;">${orgName ? displayNameCase(orgName) + "&rsquo;s" : "Your"} subscription has ended before its first charge, so nothing was billed and nothing will be. Your data is still here if you change your mind.</p>`);
+  }
+  if (state === "done_period_end") {
+    return shell(`<h1 style="margin:0 0 10px;font-size:22px;color:#0f1a12;">Cancelled</h1>
+      <p style="margin:0;font-size:15px;color:#5A554F;line-height:1.6;">You will not be charged again. You keep full access until ${periodEnd ? formatChargeDate(periodEnd) : "the end of the month you have paid for"}.</p>`);
+  }
+  return shell(`<h1 style="margin:0 0 10px;font-size:22px;color:#0f1a12;">Cancel your Steward subscription?</h1>
+    <p style="margin:0 0 22px;font-size:15px;color:#5A554F;line-height:1.6;">${sentence || ""} Cancel now and you pay nothing.</p>
+    <form method="POST" action="/billing/cancel/${token}">
+      <button type="submit" style="background:#0D5C3A;border:none;border-radius:10px;padding:13px 26px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">Cancel my subscription</button>
+    </form>
+    <p style="margin:18px 0 0;font-size:13px;color:#8a857f;line-height:1.5;">Changed your mind? Close this page &mdash; nothing happens unless you press the button.</p>`);
+}
+
+app.get("/billing/cancel/:token", wrap(async (req, res) => {
+  res.set("Content-Type", "text/html");
+  const orgId = verifyCancelToken(req.params.token);
+  if (!orgId) return res.status(400).send(cancelPageHtml({ state: "invalid" }));
+  const rows = await query("SELECT id, name, plan, subscription_status, trial_ends_at FROM orgs WHERE id=?", [orgId]);
+  if (!rows.length) return res.status(400).send(cancelPageHtml({ state: "invalid" }));
+  const org = rows[0];
+  const plan = closePlan(org.plan);
+  const isTrial = (org.subscription_status || "trialing") === "trialing";
+  const tz = await orgTzName(orgId);
+  const sentence = isTrial && plan && org.trial_ends_at
+    ? firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: org.trial_ends_at, tz }) : "";
+  res.send(cancelPageHtml({ state: "confirm", orgName: org.name, sentence, token: req.params.token }));
+}));
+
+app.post("/billing/cancel/:token", wrap(async (req, res) => {
+  res.set("Content-Type", "text/html");
+  const orgId = verifyCancelToken(req.params.token);
+  if (!orgId) return res.status(400).send(cancelPageHtml({ state: "invalid" }));
+  const before = await query("SELECT name FROM orgs WHERE id=?", [orgId]);
+  const out = await cancelOrgSubscription(orgId);
+  if (!out.ok) return res.status(400).send(cancelPageHtml({ state: "invalid" }));
+  res.send(cancelPageHtml({
+    state: out.when === "now" ? "done_now" : "done_period_end",
+    orgName: before[0]?.name, periodEnd: out.periodEnd,
+  }));
+}));
+
+// ── The seven-day reminder ─────────────────────────────────────────────────
+// One email, once, from Jonathan's address. `trial_reminder_sent_at` is what
+// makes "once" true — a tick that runs every six hours across seven days must
+// not send fourteen warnings.
+function trialReminderEmailHtml({ orgName, sentence, cardBrand, cardLast4, cancelUrl }) {
+  const card = cardLast4
+    ? `${cardBrand ? displayNameCase(cardBrand) + " " : ""}ending ${cardLast4}`
+    : "the card on file";
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
+    <tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+      <tr><td style="padding-bottom:24px;text-align:center;">
+        <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</span>
+      </td></tr>
+      <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
+        <h1 style="margin:0 0 14px;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.25;">A week before your first charge</h1>
+        <p style="margin:0 0 18px;font-size:15px;color:#0f1a12;line-height:1.6;"><strong>${sentence}</strong> It goes to ${card}.</p>
+        <p style="margin:0 0 26px;font-size:15px;color:#5A554F;line-height:1.6;">Nothing has been charged yet. If ${orgName ? displayNameCase(orgName) : "your organization"} is not going to keep using Steward, cancel before then and you pay nothing &mdash; one click, no phone call.</p>
+        <table cellpadding="0" cellspacing="0" style="margin-bottom:26px;"><tr><td style="border-radius:10px;border:1px solid #E8E4DB;">
+          <a href="${cancelUrl}" style="display:inline-block;padding:12px 24px;font-size:14px;font-weight:700;color:#0f1a12;text-decoration:none;">Cancel my subscription</a>
+        </td></tr></table>
+        <p style="margin:0;font-size:14px;color:#5A554F;line-height:1.6;">If you are staying, there is nothing to do. Reply to this email with any question &mdash; it reaches me.</p>
+        <p style="margin:18px 0 0;font-size:14px;color:#5A554F;line-height:1.6;">&mdash; Jonathan</p>
+      </td></tr>
+      <tr><td style="padding-top:20px;text-align:center;font-size:12px;color:#8a857f;">Steward &middot; stewardapp.dev</td></tr>
+    </table></td></tr>
+  </table>
+</body></html>`;
+}
+
+// Find every org whose charge is seven days out and warn it once.
+// `now` is injectable so the suite can stand on day 23 without waiting.
+async function processTrialReminders({ now = Date.now(), send = true } = {}) {
+  const out = { considered: 0, sent: [], skipped: [] };
+  const orgs = await query(
+    `SELECT id, name, plan, trial_ends_at, billing_card_brand, billing_card_last4, stripe_subscription_id
+       FROM orgs
+      WHERE subscription_status = 'trialing'
+        AND trial_ends_at IS NOT NULL
+        AND trial_reminder_sent_at IS NULL
+        -- NO SUBSCRIPTION, NO CHARGE, NO WARNING. This email names an amount,
+        -- a date and a card's last four digits. An org with no Stripe
+        -- subscription behind it — a manual super-admin grant, a demo org, a
+        -- legacy trial that never went through Checkout — has nothing coming,
+        -- and telling it otherwise would be a lie about money.
+        AND stripe_subscription_id IS NOT NULL`, []);
+  for (const org of orgs) {
+    if (!isReminderDue(org.trial_ends_at, now)) continue;
+    out.considered++;
+    const plan = closePlan(org.plan);
+    if (!plan) { out.skipped.push({ id: org.id, reason: "no_priced_plan" }); continue; }
+    const admins = await query(
+      "SELECT email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC LIMIT 1", [org.id]);
+    const to = admins[0]?.email;
+    if (!to) { out.skipped.push({ id: org.id, reason: "no_admin" }); continue; }
+    const tz = await orgTzName(org.id);
+    const sentence = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: org.trial_ends_at, tz });
+    // Canonical domain via the vercel.json /billing/cancel proxy rewrite — a
+    // cancel link is exactly where an unfamiliar host would read as a phish.
+    const cancelUrl = `${publicAppUrl()}/billing/cancel/${signCancelToken(org.id)}`;
+    const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+    let delivered = false;
+    if (!send) {
+      delivered = true;
+    } else if (process.env.RESEND_API_KEY) {
+      try {
+        const { error } = await resend.emails.send({
+          from, to, replyTo: from,
+          subject: `Your first Steward charge is ${formatChargeDate(org.trial_ends_at, tz)}`,
+          html: trialReminderEmailHtml({
+            orgName: org.name, sentence,
+            cardBrand: org.billing_card_brand, cardLast4: org.billing_card_last4, cancelUrl,
+          }),
+        });
+        if (error) throw new Error(error.message);
+        delivered = true;
+      } catch (e) { console.error("[trial-reminder] send failed for", org.id, e.message); }
+    } else {
+      console.warn("[trial-reminder] RESEND_API_KEY not set — no email sent for", org.id);
+    }
+    if (!delivered) { out.skipped.push({ id: org.id, reason: "delivery_failed" }); continue; }
+    // Stamped only after a delivered send, so a Resend outage retries next tick
+    // instead of silently eating the one warning she gets.
+    if (send) await run("UPDATE orgs SET trial_reminder_sent_at=NOW() WHERE id=?", [org.id]);
+    out.sent.push({ id: org.id, to, trialEndsAt: org.trial_ends_at, amount: plan.monthlyUsd });
+  }
+  return out;
+}
+
+// Ops/test driver — the same path the tick takes. Super-admin only; `now` lets
+// the suite stand on day 23, `dryRun` composes without sending or stamping.
+app.post("/billing/trial-reminders/run", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const { now, dryRun } = req.body || {};
+  const at = now ? new Date(now).getTime() : Date.now();
+  res.json(await processTrialReminders({ now: Number.isNaN(at) ? Date.now() : at, send: !dryRun }));
+}));
+
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processTrialReminders().catch(console.error), 45000);
+  setInterval(() => processTrialReminders().catch(console.error), 6 * 60 * 60 * 1000);
+}
+
 // ── Admin (super admin only) ───────────────────────────────────────────────
-const PLAN_MRR = { core: 149, team: 299, founding: 99, seed: 99, growth: 249, impact: 499, trial: 0 };
+// BUILD-90: the live commercial model — Founding $199, Core $249, Team $499.
+// These superseded the lower three-price set BUILD-24 shipped; closeLink.js is the
+// source of truth for the three a close link may sell, and this table exists
+// only so the super-admin dashboard can add up MRR. seed/growth/impact are
+// legacy prices no org is on.
+const PLAN_MRR = { core: 249, team: 499, founding: 199, seed: 99, growth: 249, impact: 499, trial: 0 };
 
 // 999999999 used for "unlimited" — Infinity serializes to null in JSON
 // trial gets Team limits: limits only engage once trial converts to paid.
@@ -23262,7 +23828,7 @@ const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal"]);
 // ("your plan is $249/mo") next to Steward's recovered-dollars figure; not a
 // billing source of truth. trial → null (nothing charged yet).
 const PLAN_MONTHLY_COST = {
-  core: 149, team: 299, founding: 99, seed: 99, growth: 249, impact: 499,
+  core: 249, team: 499, founding: 199, seed: 99, growth: 249, impact: 499,
 };
 
 // Returns the limits actually in effect for an org, accounting for trial state

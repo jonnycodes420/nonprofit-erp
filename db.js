@@ -2952,6 +2952,58 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_recurring_due
                     ON giving_recurring (org_id, expected_next) WHERE status = 'active'`);
 
+  // ── BUILD-90 90a/90b — THE CLOSE LINK AND THE BILLING DATE ────────────────
+  // WHEN a customer is first charged is thirty days after SIGNING, and signing
+  // is one timestamp: the moment Checkout completed in the room. It is stamped
+  // once and never written again — not by an import, not by a second import,
+  // not by a rescheduled onboarding meeting. `trial_ends_at` (already here
+  // since BUILD-24) carries the date itself; this column carries the fact the
+  // date is derived from, so a wrong trial end can always be re-derived and a
+  // right one can be shown to have not moved.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS signed_at TIMESTAMPTZ`);
+  // Stamped when the seven-day reminder goes out. Its presence — not a time
+  // window — is what makes "one email, once" true: a tick that runs every six
+  // hours for seven days must not send fourteen warnings.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS trial_reminder_sent_at TIMESTAMPTZ`);
+  // Which close link created this org, for the audit trail back to the room.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS close_link_id TEXT`);
+  // The card on file, as SHE would recognise it: a brand and four digits. The
+  // seven-day reminder names it, and Settings shows the same one — a warning
+  // that says "your card" without saying WHICH card is not a warning. Stored
+  // rather than fetched per page load, and refreshed from Stripe whenever the
+  // subscription changes.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_card_brand TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS billing_card_last4 TEXT`);
+
+  // A close link is a Checkout session that has not been walked through yet.
+  // It holds ONLY what the room agreed — who, which email, which plan — and
+  // nothing exists in Steward until Stripe says the card went in. An unopened
+  // link therefore leaves no org, no user and no subscription behind; a link
+  // that is walked twice is stopped by `close_links_one_org`, so a refreshed
+  // success page cannot mint a second organisation.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS close_links (
+      id TEXT PRIMARY KEY,
+      org_name TEXT NOT NULL,
+      contact_email TEXT NOT NULL,
+      plan TEXT NOT NULL,
+      stripe_session_id TEXT,
+      checkout_url TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      org_id TEXT,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      CONSTRAINT close_links_status CHECK (status IN ('open','completed'))
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS close_links_one_org
+                    ON close_links (id) WHERE org_id IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_session
+                    ON close_links (stripe_session_id) WHERE stripe_session_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

@@ -1661,6 +1661,27 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"});
   }
 
+  // BUILD-90 90b — the cancel button's two outcomes, said plainly: before the
+  // first charge nothing was ever billed; after one, access runs out with the
+  // month already paid for. Asks once, because it ends a paid relationship.
+  const [cancelBusy,setCancelBusy]=useState(false);
+  const [cancelNote,setCancelNote]=useState("");
+  const [confirmCancel,setConfirmCancel]=useState(false);
+  async function cancelSubscription(){
+    if(!confirmCancel){ setConfirmCancel(true); setCancelNote(billing?.cancelIsFree
+      ? "Press again to cancel. You have not been charged and you will not be."
+      : "Press again to cancel. You keep access until the end of the month you have paid for."); return; }
+    setCancelBusy(true); setConfirmCancel(false);
+    try{
+      const r=await apiFetch("/billing/cancel",{method:"POST"});
+      setCancelNote(r?.when==="now"
+        ? "Cancelled. You were never charged."
+        : "Cancelled. You will not be charged again and you keep access until the end of this billing period.");
+      apiFetch("/billing/status").then(setBilling).catch(()=>{});
+    }catch(e){ setCancelNote(billingErrorMessage(e,"Couldn't cancel. Please try again, or reply to your Steward email and we'll do it for you.")); }
+    finally{ setCancelBusy(false); }
+  }
+
   async function openBillingPortal(){
     // Open the portal in a NEW TAB so Settings stays put, and ALWAYS reset the
     // loading state (the old same-tab redirect left the button stuck on
@@ -2306,16 +2327,32 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   );})()}
                 </div>
               </div>
+              {/* BUILD-90 90b — THE DATE, WHERE SHE LOOKS FOR IT. The same
+                  date Checkout showed her and the same one the seven-day
+                  reminder names, because all three are built from
+                  orgs.trial_ends_at through closeLink.js. A date approaching
+                  is not a danger, so it is BRASS, not red (THE DESIGN RULE). */}
               {billing.subscriptionStatus==="trialing"&&billing.trialEndsAt&&(
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Trial Ends</div>
-                  <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?"#b8593f":T.ink}}>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>First Charge</div>
+                  <div style={{fontSize:14,fontWeight:600,color:billing.trialDaysLeft<=7?T.gold600:T.ink}}>
                     {new Date(billing.trialEndsAt).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
                     {billing.trialDaysLeft!=null&&<span style={{fontSize:12,color:T.ink3,fontWeight:400,marginLeft:6}}>({billing.trialDaysLeft} days left)</span>}
                   </div>
                 </div>
               )}
+              {billing.cardLast4&&(
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Card On File</div>
+                  <div style={{fontSize:14,fontWeight:600,color:T.ink}}><span style={{textTransform:"capitalize"}}>{billing.cardBrand||"Card"}</span> ending {billing.cardLast4}</div>
+                </div>
+              )}
             </div>
+            {billing.firstChargeSentence&&(
+              <div style={{fontSize:13,color:T.ink,lineHeight:1.55,background:T.bg,border:`1px solid ${T.bg2}`,borderRadius:10,padding:"12px 14px"}}>
+                <strong>{billing.firstChargeSentence}</strong> Cancel any time before then and you pay nothing.
+              </div>
+            )}
             {/* ROI / impact line. BUILD-73 Part 3: it leads with what is AT RISK
                 in the org's own file, next to what the plan costs — the size of
                 the problem, never a claim about what Steward achieved. Click for
@@ -2396,7 +2433,19 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                       Choose a plan →
                     </a>
                   )}
+                  {/* BUILD-90 90b — cancelling takes a click, here, and does
+                      not require finding the Stripe portal or ringing anybody.
+                      Before the first charge it costs nothing; after one, it
+                      runs to the end of the month already paid for. */}
+                  {billing.canCancel&&(
+                    <button onClick={cancelSubscription} disabled={cancelBusy} style={{background:"none",border:`1px solid ${T.bg3}`,borderRadius:8,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:cancelBusy?"wait":"pointer",opacity:cancelBusy?0.7:1}}>
+                      {cancelBusy?"Cancelling…":"Cancel subscription"}
+                    </button>
+                  )}
                 </div>
+                {cancelNote&&(
+                  <div role="status" style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>{cancelNote}</div>
+                )}
                 {portalError&&(
                   <div role="alert" style={{fontSize:12.5,color:T.terracotta,lineHeight:1.5}}>
                     {portalError}{" "}

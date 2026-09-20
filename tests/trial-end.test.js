@@ -1,8 +1,19 @@
-// BUILD-50 item 1 — pin the "Free through December 31, 2026" trial rule.
-// Pure unit test of computeTrialEnd (no server, no DB), like money/greeting.
+// BUILD-90 — PIN THE ONE RULE: THIRTY DAYS FROM SIGNING, FULL STOP.
+// Pure unit test of trialEnd.js (no server, no DB), like money/greeting.
 //   node tests/trial-end.test.js
+//
+// This file used to pin the opposite rule — "Free through December 31, 2026",
+// a date every org created in 2026 inherited no matter when it signed. That
+// promise is gone from the product (nobody had signed under it, so nothing is
+// grandfathered) and the arithmetic that implemented it is deleted. What is
+// asserted below is that there is now NO special case at all: the same span in
+// January as in December, across a leap day, across a DST boundary, and for a
+// date that used to be treated as magic.
 
-const { computeTrialEnd, FREE_THROUGH_MS, FREE_THROUGH_ISO } = require("../trialEnd");
+const {
+  computeTrialEnd, computeReminderAt, isReminderDue,
+  TRIAL_DAYS, THIRTY_DAYS_MS, REMINDER_LEAD_DAYS,
+} = require("../trialEnd");
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {
@@ -10,44 +21,62 @@ const ok = (name, cond, extra) => {
   else { fail++; console.log("  FAIL  " + name + (extra !== undefined ? " — " + JSON.stringify(extra) : "")); }
 };
 
-const EOD_2026 = "2026-12-31T23:59:59.999Z";
-const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+const DAY = 24 * 60 * 60 * 1000;
 
-// The constant itself is end of day 2026-12-31 UTC.
-ok("FREE_THROUGH_ISO is EOD 2026-12-31 UTC", FREE_THROUGH_ISO === EOD_2026, FREE_THROUGH_ISO);
+console.log("— §1 · the constants —");
+ok("the trial is 30 days", TRIAL_DAYS === 30, TRIAL_DAYS);
+ok("…and THIRTY_DAYS_MS is exactly that in milliseconds", THIRTY_DAYS_MS === 30 * DAY, THIRTY_DAYS_MS);
+ok("the reminder leads by 7 days", REMINDER_LEAD_DAYS === 7, REMINDER_LEAD_DAYS);
+ok("the module exports no free-through date any more",
+   !("FREE_THROUGH_MS" in require("../trialEnd")) && !("FREE_THROUGH_ISO" in require("../trialEnd")),
+   Object.keys(require("../trialEnd")));
 
-// ── An org created with a 2026 timestamp has a trial ending 2026-12-31 ──
+console.log("\n— §2 · thirty days, from any signing moment, with no special cases —");
+// Each of these signing moments used to produce a DIFFERENT answer (2026 →
+// EOD Dec 31; 2027+ → +30d). Now they all produce the same span.
 for (const ts of [
-  "2026-08-10T04:04:00.000Z", // tonight's case
-  "2026-01-01T00:00:00.000Z", // start of 2026
-  "2026-12-31T09:00:00.000Z", // same day, morning
-  "2026-12-31T23:59:59.000Z", // last second before EOD
-  "2025-06-15T12:00:00.000Z", // an existing org from 2025
+  "2026-01-01T00:00:00.000Z", // start of the year the old rule made free
+  "2026-09-20T17:30:00.000Z", // a Sunday afternoon close
+  "2026-12-01T09:00:00.000Z", // a month the old rule capped
+  "2026-12-31T23:59:59.999Z", // the exact instant the old rule pivoted on
+  "2027-01-01T00:00:00.000Z",
+  "2028-02-01T12:00:00.000Z", // → leap day lands inside the span
+  "2026-03-01T12:00:00.000Z",
 ]) {
-  const end = computeTrialEnd(new Date(ts).getTime());
-  ok(`org created ${ts} → trial ends ${EOD_2026}`, end.toISOString() === EOD_2026, end.toISOString());
+  const signed = new Date(ts).getTime();
+  const end = computeTrialEnd(signed);
+  ok(`signed ${ts} → charged ${new Date(signed + 30 * DAY).toISOString()}`,
+     end.getTime() === signed + 30 * DAY, end.toISOString());
 }
 
-// ── An org created with a 2027 timestamp gets 30 days ──
-for (const ts of [
-  "2027-01-01T00:00:00.000Z", // first paid instant
-  "2027-03-15T10:30:00.000Z",
-  "2028-11-02T00:00:00.000Z",
-]) {
-  const created = new Date(ts).getTime();
-  const end = computeTrialEnd(created);
-  ok(`org created ${ts} → trial ends created+30d`, end.getTime() === created + THIRTY_DAYS, end.toISOString());
-}
+// The old rule's pivot instant is now utterly ordinary: one millisecond either
+// side of it produces answers one millisecond apart, not six months apart.
+const pivot = Date.UTC(2026, 11, 31, 23, 59, 59, 999);
+ok("one ms either side of the retired pivot differ by exactly one ms",
+   computeTrialEnd(pivot + 1).getTime() - computeTrialEnd(pivot).getTime() === 1);
 
-// ── Boundary: the exact FREE_THROUGH instant is still "through 2026" ──
-ok("created exactly at FREE_THROUGH_MS → ends at FREE_THROUGH (not +30d)",
-  computeTrialEnd(FREE_THROUGH_MS).toISOString() === EOD_2026);
-ok("created 1ms after FREE_THROUGH → +30d",
-  computeTrialEnd(FREE_THROUGH_MS + 1).getTime() === FREE_THROUGH_MS + 1 + THIRTY_DAYS);
+console.log("\n— §3 · input shapes —");
+ok("accepts a Date object", computeTrialEnd(new Date("2026-05-01T00:00:00Z")).toISOString() === "2026-05-31T00:00:00.000Z");
+ok("accepts an ISO string", computeTrialEnd("2026-05-01T00:00:00Z").toISOString() === "2026-05-31T00:00:00.000Z");
+ok("accepts milliseconds", computeTrialEnd(Date.parse("2026-05-01T00:00:00Z")).toISOString() === "2026-05-31T00:00:00.000Z");
+ok("a garbage input falls back to now rather than producing NaN",
+   !Number.isNaN(computeTrialEnd("not a date").getTime()));
 
-// ── Input shapes: ms, Date, ISO all accepted ──
-ok("accepts a Date object", computeTrialEnd(new Date("2026-05-01T00:00:00Z")).toISOString() === EOD_2026);
-ok("accepts an ISO string", computeTrialEnd("2026-05-01T00:00:00Z").toISOString() === EOD_2026);
+console.log("\n— §4 · the seven-day reminder window —");
+const signed = Date.parse("2026-09-20T12:00:00.000Z");
+const end = computeTrialEnd(signed);
+ok("the reminder is due on day 23", computeReminderAt(end).getTime() === signed + 23 * DAY, computeReminderAt(end).toISOString());
+ok("…which is seven days before the charge", end.getTime() - computeReminderAt(end).getTime() === 7 * DAY);
+
+ok("day 22 — not yet due", !isReminderDue(end, signed + 22 * DAY));
+ok("one minute before day 23 — still not due", !isReminderDue(end, signed + 23 * DAY - 60000));
+ok("day 23 exactly — due", isReminderDue(end, signed + 23 * DAY));
+// A tick that was down on day 23 must still send on day 24: the window stays
+// open right up to the charge, because one late warning beats none.
+ok("day 24 — still due (a missed tick must not eat the only warning)", isReminderDue(end, signed + 24 * DAY));
+ok("day 29, 23:59 — still due", isReminderDue(end, end.getTime() - 60000));
+ok("the charge instant — no longer due", !isReminderDue(end, end.getTime()));
+ok("after the charge — not due", !isReminderDue(end, end.getTime() + DAY));
 
 console.log(`\ntrial-end: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

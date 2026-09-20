@@ -149,15 +149,17 @@ function Root() {
           <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
           {/* BUILD-87 F.2 — THE ROUTER DECISION, AND IT IS A REDIRECT.
-              /signup was PUBLICLY reachable and still sold "Free through
-              December 31, 2026, then $149/month" — a price that has not
-              existed since August and a self-serve door BUILD-39 closed when
-              Steward went invitation-only. A public signup form contradicting
-              the product it signs you up for is worse than no form, so the
-              path resolves to the invitation request instead. The page
-              component is deleted, not hidden: nothing reached it but this
-              route. The token-gated half of the flow is /invite/:token, which
-              is where the founding-partner terms now read. */}
+              /signup was PUBLICLY reachable and still sold a free-through-2026
+              promise at a price that has not existed since August
+              and a self-serve door BUILD-39 closed when Steward went
+              invitation-only. A public signup form contradicting the product
+              it signs you up for is worse than no form, so the path resolves
+              to the invitation request instead. The page component is deleted,
+              not hidden: nothing reached it but this route. The token-gated
+              half of the flow is /invite/:token, which is where the
+              founding-partner terms read. BUILD-90 gave the other half a door
+              too: an organisation is created by a super-admin CLOSE LINK, in
+              the room, and nothing exists until the card goes in. */}
           <Route path="/signup"    element={<Navigate to="/invitation" replace />} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />

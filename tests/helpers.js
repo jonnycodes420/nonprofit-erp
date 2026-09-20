@@ -85,6 +85,11 @@ async function closeDb() { if (_pool) await _pool.end(); }
 // recipe, tests/README.md and ci.yml keep working unchanged.
 const SINK_PORT        = Number(process.env.SINK_PORT || 5602);
 const STRIPE_MOCK_PORT = Number(process.env.STRIPE_MOCK_PORT || 5603);
+// BUILD-90 — the PLATFORM-billing Stripe mock. Separate from STRIPE_MOCK_PORT
+// because the two Stripe clients are deliberately independent (stripeKeys.js)
+// and a suite may need both up at once. The server reaches it through
+// STRIPE_BILLING_API_BASE, the billing twin of STRIPE_API_BASE.
+const BILLING_MOCK_PORT = Number(process.env.BILLING_MOCK_PORT || 5604);
 
 // The server's "today" is the ORG's civil date (orgTime.js, default
 // America/New_York) — a test that stamps a gift with UTC-today submits a
@@ -132,4 +137,4 @@ async function leaks(payload, needles, { skipIds = true } = {}) {
   return found;
 }
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, civilToday, textMatch, leaks };
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, textMatch, leaks };

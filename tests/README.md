@@ -98,9 +98,23 @@ DATABASE_URL="postgresql://steward@localhost:5544/steward_loadtest" \
   RESEND_API_KEY=re_dummy_local RESEND_BASE_URL=http://localhost:5602 \
   DEMO_SMTP_FROM=noreply@stewardapp.dev STRIPE_SECRET_KEY=sk_test_dummy \
   STRIPE_WEBHOOK_SECRET=whsec_localtest STRIPE_API_BASE=http://localhost:5603 \
+  STRIPE_BILLING_SECRET_KEY=sk_test_dummy \
+  STRIPE_BILLING_API_BASE=http://localhost:5604 \
+  STRIPE_PRICE_FOUNDING=price_test_founding \
+  STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
+  FOUNDER_EMAIL=jonathan@stewardapp.dev \
   node server.js
 bash tests/run-all.sh
 ```
+
+`STRIPE_BILLING_API_BASE` (BUILD-90) is the PLATFORM-billing twin of
+`STRIPE_API_BASE`: the two Stripe clients are deliberately independent
+(`stripeKeys.js`), so they get independent local mocks — the donation one on
+:5603, the billing one on :5604 (`BILLING_MOCK_PORT`). `close-link` and
+`trial-billing` bind :5604 themselves. The three `STRIPE_PRICE_*` values are
+ids that mock answers for; **a close link refuses to mint a Checkout session
+without a configured price**, which is the right production behaviour and
+would otherwise show up here as a test failure rather than a missing env var.
 
 `DISABLE_BACKGROUND_TICKS=1` is **the flake fix** (SPEED workstream): it turns
 off every periodic background job (digest / dunning / workflow-sweep /

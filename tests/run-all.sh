@@ -21,6 +21,11 @@
 #        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
 #        DISABLE_BACKGROUND_TICKS=1 \
 #        STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
+#        FOUNDER_EMAIL=jonathan@stewardapp.dev \
+#        STRIPE_BILLING_SECRET_KEY=sk_test_dummy \
+#        STRIPE_BILLING_API_BASE=http://localhost:5604 \
+#        STRIPE_PRICE_FOUNDING=price_test_founding \
+#        STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
 #        node server.js
 #      (DISABLE_BACKGROUND_TICKS=1 is THE flake fix: it turns off every periodic
 #      background job (digest/dunning/sweep/sequence timers) so no tick fires
@@ -34,6 +39,14 @@
 #      portal suite starts on :5603 — BUILD-45's Stripe seam, same pattern as
 #      RESEND_BASE_URL. Other suites never call the Stripe API outbound, so an
 #      unbound :5603 is equivalent to the dummy key's auth failure.)
+#      (BUILD-90: STRIPE_BILLING_API_BASE is the same seam for the PLATFORM
+#      billing client, on :5604, which close-link and trial-billing bind. The
+#      two Stripe clients are deliberately independent (stripeKeys.js), so they
+#      get independent mocks. The three STRIPE_PRICE_* values are ids the mock
+#      answers for — a close link refuses to mint without a configured price,
+#      which is the correct production behaviour and would otherwise read as a
+#      test failure. FOUNDER_EMAIL is the From on the close-link welcome and
+#      the seven-day reminder.)
 #      (SESSION_CACHE_TTL_MS=0 disables the auth session cache so the suites —
 #       which reuse fixed user ids and delete/recreate rapidly — see fresh state
 #       every request; BUILD-38 Part 1. Prod leaves it unset → the 30s cache.)
@@ -95,6 +108,7 @@ CORE=(
   build88a-mapper build88a-one-gift build88a-one-task build88a-giving build88a-profile build88a-week build88a-finance
   build88b-deposit build88b-pledges build88b-thankyous build88c-domain build88c-composer
   build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets build89s-surfaces
+  close-link trial-billing one-date
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

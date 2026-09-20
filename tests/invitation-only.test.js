@@ -12,15 +12,21 @@
 // `$149` is asserted GONE from every rendered public surface: that price does
 // not exist any more, anywhere, in any plan.
 //
-// "December 31, 2026" is NOT asserted gone, and that is a deliberate call, not
-// an oversight. Three surfaces still say it — the pricing page's free-through
-// line, the Terms' Free Trial clause, and the trial-end email — and all three
-// are ACCURATE, because the billing code still grants free access through that
-// date (server.js, the BUILD-50 item-1 promise). Deleting the sentence without
-// changing the code would make the product's own Terms wrong about what it
-// does; changing the code is money math, and money math is not a copy fix.
-// So the survivors are pinned BY NAME below: they cannot grow, they cannot be
-// silently lost, and the decision is written down where the next build reads.
+// "December 31, 2026" WAS deliberately left alive here. Three surfaces said it
+// — the pricing page's free-through line, the Terms' Free Trial clause, and
+// the trial-end email — and all three were ACCURATE, because the billing code
+// really did grant free access through that date. Deleting the sentence
+// without changing the code would have made the product's own Terms wrong
+// about what it does; changing the code was money math, and money math is not
+// a copy fix. So the survivors were pinned BY NAME, with the note that the
+// list could shrink and could never grow.
+//
+// BUILD-90 did the money math. The rule is now thirty days from signing, the
+// free-through code path is deleted, and the list has shrunk to ZERO — which
+// is what §4 below now asserts. The string's own guard moved to
+// tests/one-date.test.js, which owns the whole surface sweep; what stays here
+// is the narrower promise this suite was always about: the door is closed and
+// the price on it is real.
 const fs = require("fs");
 const path = require("path");
 const root = path.join(__dirname, "..");
@@ -54,8 +60,16 @@ ok("…and neither does anything the server sends, nor any comment that would be
 const invite = fs.readFileSync(path.join(root, "client/src/pages/InvitePage.jsx"), "utf8");
 ok("the accepted-invitation flow states the founding partner rate",
    /Founding partner rate \$199 a month/.test(invite));
-ok("…and when billing starts", /Billing begins thirty days after[\s\S]{0,40}your donor file is in/.test(invite));
-ok("…and that no card is needed today", /No card required today/.test(invite));
+// BUILD-90: thirty days from SIGNING, not from the file being in. A date a
+// customer can move by doing ordinary work is not a date a contract can name.
+ok("…and when billing starts", /The first charge is thirty days[\s\S]{0,30}after you sign\./.test(invite));
+ok("…and that cancelling before then costs nothing",
+   /Cancel any time before then and you pay nothing\./.test(invite));
+// BUILD-90 replaced "No card required today". The card DOES go in, in the
+// room, at signing — what makes that safe is the promise beside it, which is
+// asserted above: cancel before the first charge and you pay nothing.
+ok("…and it does not promise that no card is needed, because one is",
+   !/No card required today/.test(invite));
 ok("…with no em dash in it", !/Founding partner rate \$199 a month[^<]*—/.test(invite));
 const invitation = fs.readFileSync(path.join(root, "client/src/pages/Invitation.jsx"), "utf8");
 ok("the invitation request page quotes the founding rate, not a retired one",
@@ -63,22 +77,20 @@ ok("the invitation request page quotes the founding rate, not a retired one",
 ok("sign-in's door is the invitation, not a self-serve signup",
    /to="\/invitation"[\s\S]{0,200}Request an invitation/.test(fs.readFileSync(path.join(root, "client/src/pages/LoginPage.jsx"), "utf8")));
 
-// ── §4 · the December-31 survivors, pinned by name ─────────────────────────
-// Each of these is TRUE while the billing code honours the date. The list may
-// SHRINK (when the code changes, the copy follows) and may never grow.
-const DEC31_ALLOWED = {
-  "client/src/pages/Pricing.jsx": "the free-through line beside the real $249/$499 plans — matches the billing code",
-  "client/src/pages/TermsPage.jsx": "the Free Trial clause — a legal document describing what the code actually does",
-  "server.js": "the BUILD-50 item-1 promise the billing path honours, plus the trial-end email that states it (its PRICE was corrected to $249; only the date survives)",
-};
+// ── §4 · the December-31 survivors: there are none ─────────────────────────
+// This list was three entries long and allowed to shrink only. BUILD-90 shrank
+// it to nothing by changing the code it described. The comment stripper is not
+// needed here: these are RENDERED pages, and a comment mentioning the retired
+// promise on one of them would still be wrong.
+const DEC31_ALLOWED = {};
 const dec31 = [];
 for (const rel of [...PUBLIC.map(p => "client/src/" + p), "server.js"]) {
   const src = fs.readFileSync(path.join(root, rel), "utf8");
   if (/December 31, 2026/.test(src)) dec31.push(rel);
 }
-ok("every surface still saying \"December 31, 2026\" is one the billing code makes true",
-   dec31.every(r => DEC31_ALLOWED[r]), dec31.filter(r => !DEC31_ALLOWED[r]));
-ok("…and the list has not grown", dec31.length <= Object.keys(DEC31_ALLOWED).length, dec31);
+ok("no surface says \"December 31, 2026\" any more — the survivors list is empty",
+   dec31.length === 0, dec31);
+ok("…and the allowlist that held them is empty too", Object.keys(DEC31_ALLOWED).length === 0);
 
 // ── §5 · the rendered pages, in a browser ──────────────────────────────────
 // F.2 is a UI fix, so the last word is what a visitor actually gets.

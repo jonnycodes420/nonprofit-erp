@@ -11,9 +11,38 @@
 // ignored, never reserved); create-checkout plan validation + founding-partner
 // super-admin gating.
 
+const http = require("http");
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BILLING_MOCK_PORT } = require("./helpers");
+
+// BUILD-90 — the documented boot recipe now SETS the three STRIPE_PRICE_* ids
+// (the close link refuses to mint a session without one), so `create-checkout`
+// no longer stops at the price-config check: it reaches Stripe. This suite
+// therefore stands up the platform-billing mock on :5604 — the same seam
+// close-link.test.js uses — and asserts what the route actually does, rather
+// than asserting the shape of a missing configuration. Both outcomes are
+// still accepted below, so the suite also passes on a bare local boot with no
+// prices configured at all.
+function startBillingMock(port = BILLING_MOCK_PORT) {
+  return new Promise(resolve => {
+    const srv = http.createServer((req, res) => {
+      let b = ""; req.on("data", c => b += c);
+      req.on("end", () => {
+        res.setHeader("Content-Type", "application/json");
+        if (req.method === "POST" && req.url.startsWith("/v1/checkout/sessions")) {
+          return res.end(JSON.stringify({ id: "cs_bill_mock", object: "checkout.session", url: "https://checkout.stripe.test/cs_bill_mock" }));
+        }
+        if (req.url.startsWith("/v1/customers")) return res.end(JSON.stringify({ id: "cus_bill_mock", object: "customer" }));
+        if (/^\/v1\/subscriptions\//.test(req.url)) {
+          return res.end(JSON.stringify({ id: "sub_bill_mock", object: "subscription", status: "active", current_period_end: Math.floor(Date.now() / 1000) + 86400 }));
+        }
+        res.statusCode = 404; res.end(JSON.stringify({ error: { message: "mock: " + req.method + " " + req.url } }));
+      });
+    });
+    srv.listen(port, () => resolve(srv)).on("error", () => resolve(null));
+  });
+}
 
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 const A = "org_bill_a", B = "org_bill_b", S = "org_bill_s";
@@ -51,6 +80,7 @@ async function fireBilling(id, type, object) {
 const future = ts => ts && new Date(ts).getTime() > Date.now();
 
 (async () => {
+  const mockSrv = await startBillingMock();
   await reset();
   await seedOrg(A, "seed", "active", "cus_bill_a");
   await seedUser(A, "u_bill_a", "a-admin@bill.local");
@@ -183,16 +213,21 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   r = await api("POST", "/billing/create-checkout", sAdmin, { plan: "founding" });
   ok("create-checkout founding as normal admin → 403 founding_forbidden", r.status === 403 && r.body.error === "founding_forbidden", r);
 
-  // Super admin passes the founding gate; with no STRIPE_PRICE_FOUNDING set it
-  // stops at the price-config check (proving it got PAST the gate, not blocked).
+  // Super admin passes the founding gate. What happens NEXT depends on whether
+  // a price is configured: with one (the documented recipe) it reaches Stripe
+  // and returns a Checkout URL; without one it stops at the price-config check.
+  // Either way it got PAST the gate, which is what this assertion is about.
+  const pastGate = res => res.status !== 403 && res.status !== 500;
+  const checkedOut = res => (res.status === 200 && !!res.body.url)
+    || (res.status === 400 && res.body.error === "plan_not_configured");
   r = await api("POST", "/billing/create-checkout", sSuper, { plan: "founding" });
-  ok("create-checkout founding as super admin → past gate (plan_not_configured, not 403)",
-    r.status === 400 && r.body.error === "plan_not_configured", r);
+  ok("create-checkout founding as super admin → past the gate", pastGate(r), r);
+  ok("…and lands on a real outcome, never a 500", checkedOut(r), r);
 
-  // Core with no price configured → clean plan_not_configured (never a 500).
+  // Core → a Checkout URL, or a clean plan_not_configured. NEVER a 500.
   r = await api("POST", "/billing/create-checkout", sAdmin, { plan: "core" });
-  ok("create-checkout core, no price env → plan_not_configured (not 500)",
-    r.status === 400 && r.body.error === "plan_not_configured", r);
+  ok("create-checkout core → a checkout URL or a clean plan_not_configured (never a 500)",
+    checkedOut(r), r);
 
   // ── Stripe key separation (FIX): platform billing gets its own key ─────────
   // Pure resolver used by server.js for `stripe` (donations) vs `billingStripe`
@@ -264,6 +299,7 @@ const future = ts => ts && new Date(ts).getTime() > Date.now();
   ok("planFromSubscription: unknown price falls back to metadata → team",
     planFromSubscription(noPriceSub, PENV) === "team");
 
+  if (mockSrv) mockSrv.close();
   await closeDb();
   summary();
 })().catch(e => { console.error(e); process.exit(1); });

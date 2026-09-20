@@ -1,28 +1,36 @@
-// BUILD-50 item 1 — the "Free through December 31, 2026" promise, honored in code.
+// BUILD-90 — THE ONE DEFINITION OF WHEN THE FIRST CHARGE HAPPENS.
 //
-// /pricing and /signup publicly promise every org is free through 2026-12-31,
-// then $149/month. The founding-partner agreement and the leave-behind print the
-// same date. This module is the ONE definition of when a newly-created org's
-// trial ends, so the backend can't contradict that public commitment.
+// THE RULE, and it has no clauses:
+//   The first charge is THIRTY DAYS AFTER SIGNING.
 //
-// RULE (from the BUILD-50 brief):
-//   • An org created ON OR BEFORE 2026-12-31 (end of day) gets a trial ending at
-//     end of day 2026-12-31.
-//   • An org created 2027-01-01 or later gets the standard 30-day trial.
-//   • "End of day 2026-12-31" is computed in the org's timezone, falling back to
-//     UTC when the org has no timezone set. Steward has NO per-org timezone
-//     column today, so every org uses the UTC fallback for now — documented here
-//     so it can be tightened when org timezones land (BUILD-50 items 2/3).
+// Signing is the moment the executive director completes Checkout in the room —
+// `orgs.signed_at`, stamped once, by the close link, and never written again.
+// Not the import. Not a second import. Not a rescheduled onboarding meeting.
+// An earlier draft of this build started the clock at import with a 44-day cap;
+// Jonathan's decision on 19 September 2026 replaced it: thirty days from
+// signing, full stop. A date a customer can move by doing ordinary work is not
+// a date the contract can name.
+//
+// WHAT THIS REPLACED. Until this build the module implemented a "Free through
+// December 31, 2026" promise: every org created in 2026 got a trial ending EOD
+// 2026-12-31 regardless of when it signed. That promise is gone from the
+// product — no customer had signed under it, so nothing is grandfathered, and
+// `tests/one-date.test.js` keeps the string from coming back.
+//
+// Matches claude/steward-customer-agreement.md §2.
 //
 // Pure + Node-testable (the money.js / greeting.js / taskDue.js pattern) so the
-// pinning test can freeze the clock by passing `now` — no injectable clock yet
-// (that's item 3), so callers pass Date.now() explicitly.
+// pinning test can freeze the clock by passing `now` — no injectable clock yet,
+// so callers pass Date.now() explicitly.
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+const TRIAL_DAYS = 30;
+const THIRTY_DAYS_MS = TRIAL_DAYS * 24 * 60 * 60 * 1000;
 
-// End of day 2026-12-31, UTC fallback: 23:59:59.999 so the whole calendar day is
-// free; the first paid instant is 2027-01-01T00:00:00.000Z.
-const FREE_THROUGH_MS = Date.UTC(2026, 11, 31, 23, 59, 59, 999);
+// The reminder lands SEVEN days before the charge — day 23 of a 30-day trial.
+// One email, once, so there is no possibility of a customer being charged by a
+// date they were never shown.
+const REMINDER_LEAD_DAYS = 7;
+const REMINDER_LEAD_MS = REMINDER_LEAD_DAYS * 24 * 60 * 60 * 1000;
 
 function toMs(now) {
   if (now == null) return Date.now();
@@ -31,15 +39,33 @@ function toMs(now) {
   return Number.isNaN(t) ? Date.now() : t;
 }
 
-// The trial-end Date for an org created at `now` (ms, Date, or ISO string).
-function computeTrialEnd(now) {
-  const t = toMs(now);
-  return t <= FREE_THROUGH_MS ? new Date(FREE_THROUGH_MS) : new Date(t + THIRTY_DAYS_MS);
+// The trial-end Date for an org that signed at `signedAt` (ms, Date, or ISO).
+// Thirty days later, to the millisecond. No calendar special cases, no cap, no
+// floor: the same arithmetic in January and in December.
+function computeTrialEnd(signedAt) {
+  return new Date(toMs(signedAt) + THIRTY_DAYS_MS);
+}
+
+// When the seven-day reminder is due for a trial ending at `trialEnd`.
+function computeReminderAt(trialEnd) {
+  return new Date(toMs(trialEnd) - REMINDER_LEAD_MS);
+}
+
+// Is the reminder due now? True from day 23 right up to the charge — so a tick
+// that was down on day 23 still sends on day 24 rather than silently skipping
+// the only warning a customer gets. Sending ONCE is enforced by the caller
+// (orgs.trial_reminder_sent_at), not by this window.
+function isReminderDue(trialEnd, now) {
+  const end = toMs(trialEnd), t = toMs(now);
+  return t >= end - REMINDER_LEAD_MS && t < end;
 }
 
 module.exports = {
   computeTrialEnd,
-  FREE_THROUGH_MS,
-  FREE_THROUGH_ISO: new Date(FREE_THROUGH_MS).toISOString(),
+  computeReminderAt,
+  isReminderDue,
+  TRIAL_DAYS,
   THIRTY_DAYS_MS,
+  REMINDER_LEAD_DAYS,
+  REMINDER_LEAD_MS,
 };

@@ -42,7 +42,7 @@ const GUARDED_WRITERS = [
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
   "build55-capture", "build57-capture", "build57-import-drill",
   "build48-capture", "build50-capture", "build54-capture",
-  "dedupe-finance-gift-stamps", "extend-trials-free-through-2026",
+  "dedupe-finance-gift-stamps",
   "finance-entity-routing-capture", "fix-build54-demo-photos",
   "fix-demo-finance-ledger", "invitation-capture", "load-irs-ein-registry",
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",

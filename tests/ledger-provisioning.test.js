@@ -167,7 +167,16 @@ async function ledgerReadiness(orgId) {
   {
     const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
     const sites = [...src.matchAll(/INSERT INTO orgs/g)].length;
-    ok("exactly 3 org-creation sites in server.js (new one → classify it here + provision)", sites === 3, { sites });
+    // THE FOUR DOORS AN ORGANISATION CAN COME THROUGH, as of BUILD-90:
+    //   1. POST /auth/register          — legacy self-serve
+    //   2. POST /auth/register-org      — legacy self-serve (no longer routed)
+    //   3. POST /network/signup         — the network directory
+    //   4. provisionOrgFromCloseLink    — BUILD-90, the close link, which is
+    //      now the ONLY door a real customer comes through. Its own end-to-end
+    //      coverage is tests/close-link.test.js §7; what is pinned HERE is the
+    //      totality: a FIFTH door fails this line until somebody classifies it
+    //      and gives it a ledger.
+    ok("exactly 4 org-creation sites in server.js (new one → classify it here + provision)", sites === 4, { sites });
     // Each creation site must be followed by ledger provisioning within its
     // handler (ensureOrgLedger — the ONE provisioning helper).
     const chunks = src.split(/INSERT INTO orgs/).slice(1);

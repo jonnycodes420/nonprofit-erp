@@ -10,13 +10,17 @@ import { apiFetch } from "../api";
 // Core/Team commercial model. Checkout goes live once those Stripe Prices exist
 // and the env vars are set (scripts/create-billing-products.js provisions them);
 // until then create-checkout returns a clean `plan_not_configured` message
-// instead of 500-ing. The founding-partner $99 price is deliberately NOT here —
-// it's off-menu, assigned privately by a super-admin.
+// instead of 500-ing. The founding-partner price is deliberately NOT here —
+// it's off-menu, assigned privately by a super-admin through a close link.
+//
+// BUILD-90: the prices are Core $249 / Team $499 / Founding $199. The server's
+// closeLink.js holds the same three numbers and is the source of truth for
+// anything that charges; these are what the page renders.
 export const CHECKOUT_PLANS = [
   {
     id: "core",
     name: "Core",
-    price: 149,
+    price: 249,
     tagline: "Everything a small shop needs.",
     highlight: false,
     features: [
@@ -29,7 +33,7 @@ export const CHECKOUT_PLANS = [
   {
     id: "team",
     name: "Team",
-    price: 299,
+    price: 499,
     tagline: "For staffed development offices.",
     highlight: true,
     features: [
@@ -96,7 +100,7 @@ const PUBLIC_PLANS = [
   {
     id: "core",
     name: "Core",
-    price: 149,
+    price: 249,
     forWho: "For a 1–3 person development team.",
     highlight: false,
     features: [
@@ -113,7 +117,7 @@ const PUBLIC_PLANS = [
   {
     id: "team",
     name: "Team",
-    price: 299,
+    price: 499,
     forWho: "For staffed offices with gift officers.",
     highlight: true,
     features: [
@@ -205,7 +209,7 @@ export default function Pricing() {
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <Link to="/login" style={{ fontSize: 13, color: sage, textDecoration: "none" }}>Sign in</Link>
-            <Link to="/signup" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start free</Link>
+            <Link to="/invitation" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Request an invitation</Link>
           </div>
         )}
       </div>
@@ -221,7 +225,7 @@ export default function Pricing() {
             Do you have gift officers to manage? If not, <span style={{ color: cream, fontWeight: 600 }}>Core</span> is the whole product. If you do, that's <span style={{ color: cream, fontWeight: 600 }}>Team</span>.
           </div>
           <div style={{ fontSize: 13.5, color: gold, maxWidth: 560, margin: "16px auto 0", lineHeight: 1.55, fontWeight: 600 }}>
-            Free through December 31, 2026. Prices below start January 1, 2027.
+            Nothing is charged for your first thirty days.
           </div>
         </div>
 
@@ -231,7 +235,7 @@ export default function Pricing() {
               Continue with your free trial →
             </Link>
             <div style={{ fontSize: 13, color: sage }}>
-              You're on your free trial — no card needed. Pick a plan whenever you're ready.
+              You're inside your first thirty days — nothing has been charged. Your first charge date is in Settings → Billing.
             </div>
           </div>
         )}
@@ -284,9 +288,10 @@ export default function Pricing() {
                   fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
                 };
                 if (!isAuthed) {
-                  // Public signup reopened (BUILD-49): a visitor starts free →
-                  // /signup. Existing orgs (authed) keep live Stripe checkout.
-                  return <button onClick={() => navigate("/signup")} style={base}>Start free →</button>;
+                  // Signup is CLOSED (BUILD-87 F.2) and this said "Start free"
+                  // at a door that redirects. A visitor asks for an invitation;
+                  // an organisation is created by a close link, in the room.
+                  return <button onClick={() => navigate("/invitation")} style={base}>Request an invitation →</button>;
                 }
                 if (isCurrentPlan(plan.id)) {
                   return (

@@ -61,6 +61,19 @@ jobs:
       # to store a credential without one (there is no plaintext path), and a
       # suite that connects a source is correctly refused otherwise.
       STEWARD_CREDENTIAL_KEY: ci-only-throwaway-credential-key-0123456789
+      # BUILD-90 90a — the PLATFORM-billing Stripe seam, the twin of
+      # STRIPE_API_BASE above. The close link is the one billing path that
+      # makes an outbound Stripe call, so the battery needs a mock for it
+      # (close-link and trial-billing bind :5604). The three price ids are
+      # values that mock answers for: a close link REFUSES to mint without a
+      # configured price, which is correct in production and would otherwise
+      # read here as a test failure.
+      STRIPE_BILLING_SECRET_KEY: sk_test_dummy
+      STRIPE_BILLING_API_BASE: http://localhost:5604
+      STRIPE_PRICE_FOUNDING: price_test_founding
+      STRIPE_PRICE_CORE: price_test_core
+      STRIPE_PRICE_TEAM: price_test_team
+      FOUNDER_EMAIL: jonathan@stewardapp.dev   # From on the close-link welcome + the 7-day reminder
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.
                                       # CI still runs the FULL battery — no suite selection here.

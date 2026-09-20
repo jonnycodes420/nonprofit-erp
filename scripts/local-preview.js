@@ -46,6 +46,7 @@ const PROXY = [
   [/^\/network-api\/(.*)$/,   m => `/network/${m[1]}`],
   [/^\/portal-assets\/(.*)$/, m => `/portal-assets/${m[1]}`],
   [/^\/unsubscribe$/,                 () => "/unsubscribe"],
+  [/^\/billing\/cancel\/([^/]+)$/,     m => `/billing/cancel/${m[1]}`],
   [/^\/recurring\/update-card$/,      () => "/recurring/update-card"],
   [/^\/recurring\/proposal$/,         () => "/recurring/proposal"],
   [/^\/recurring\/proposal\/confirm$/, () => "/recurring/proposal/confirm"],

@@ -11,7 +11,7 @@
 //     the estimate = that × the SHOWN assumption (feeAssumptionPct)
 //   - forward-looking empty state: a new org with nothing recovered → $0
 //     recovered + a real watching count (never a fake number)
-//   - planMonthlyCost reflects the org's plan
+//   - planMonthlyCost reflects the org's plan (the BUILD-90 price list)
 //   - org isolation both directions
 
 const bcrypt = require("bcryptjs");
@@ -122,7 +122,12 @@ async function seedLost(o, donor) {
 
   // Forward-looking + plan cost.
   ok("watchingRecurringCount = active/recovering/past_due subs (3)", imp.watchingRecurringCount === 3, imp.watchingRecurringCount);
-  ok("planMonthlyCost reflects the org plan (core → 149)", imp.planMonthlyCost === 149, imp.planMonthlyCost);
+  // BUILD-90 raised the live prices to Core $249 / Team $499 / Founding $199.
+  // The number is read from the ONE price list (closeLink.js) rather than
+  // typed again here, so a future price change moves one file, not three.
+  const { closePlan } = require("../closeLink");
+  ok("planMonthlyCost reflects the org plan (core → $249)",
+     imp.planMonthlyCost === closePlan("core").monthlyUsd, imp.planMonthlyCost);
   ok("plan echoed", imp.plan === "core", imp.plan);
 
   // ── Org B: brand-new, nothing recovered — honest empty state ──────────────
@@ -141,7 +146,7 @@ async function seedLost(o, donor) {
   ok("empty org → onlineGivingProcessed 0, estimate 0", impB.onlineGivingProcessed === 0 && impB.estimatedFeesElsewhere === 0);
   ok("empty org → forward-looking watching count is real (1)", impB.watchingRecurringCount === 1, impB.watchingRecurringCount);
   ok("empty org → platformFeesPaid still factually 0", impB.platformFeesPaid === 0);
-  ok("team plan → planMonthlyCost 299", impB.planMonthlyCost === 299, impB.planMonthlyCost);
+  ok("team plan → planMonthlyCost $499", impB.planMonthlyCost === closePlan("team").monthlyUsd, impB.planMonthlyCost);
 
   // ── Org isolation both directions ─────────────────────────────────────────
   ok("A does not see B's data (A recovered still 75)", imp.recoveredAmount === 75);
