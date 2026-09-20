@@ -50,6 +50,8 @@ const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
+// BUILD-89S - the provider adapter registry and the read-only HTTP guard.
+const sourceAdapters = require("./sources");
 // BUILD-57 §2b — BULK-IMPORT ids carry FULL uuid entropy (32 hex). The 8-hex
 // ids minted elsewhere are fine one-at-a-time, but the import writes 500 rows
 // per statement, where a single global-pkey collision (8 hex = 32 bits —
@@ -1955,12 +1957,19 @@ async function recordGift(o) {
   const cols = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "campaign_id",
                 "notes", "fund_id", "payment_method", "pledge_id", "external_id", "idempotency_key",
                 "stripe_payment_id", "giving_page_id", "peer_fundraiser_id", "cover_fee_amount",
-                "recurring_subscription_id", "created_by", "created_by_name"];
+                "recurring_subscription_id", "created_by", "created_by_name",
+                // BUILD-89S 89a — a gift that came in through a connected giving
+                // source remembers which one, what the provider took (NOT the
+                // donor-covers-fee amount above it), and the provider's own
+                // subscription id. They belong in THIS insert and nowhere else:
+                // a second UPDATE after the fact is a second write path.
+                "giving_source_id", "processor_fee_amount", "provider_recurring_ref"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
                 o.givingPageId || null, o.peerFundraiserId || null, o.coverFeeAmount || 0,
-                o.recurringSubscriptionId || null, actorId, actorName];
+                o.recurringSubscriptionId || null, actorId, actorName,
+                o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0), o.providerRecurringRef || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -2078,6 +2087,483 @@ async function recordGift(o) {
 
 
   return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment };
+}
+
+
+// ---- BUILD-89S 89a - GIVING SOURCES: THE RUNNER --------------------------
+//
+// "Keep PayPal. Keep Zeffy. Steward reads them. It never holds or moves a
+// dollar." Everything below is downstream of that sentence.
+//
+// syncSource() takes the rows an adapter returns and writes every one of them
+// through recordGift - the A.1 path, never a second INSERT. That is not
+// tidiness: the fund rule, the payment-method rule, the ledger rule, the
+// instalment match, the thank-you draft and the actor stamp all live in
+// recordGift, and a gift that arrived from PayPal is a gift.
+//
+// THE RULES, AND WHY EACH ONE IS THE WAY IT IS
+//
+// DE-DUPLICATION is on provider + the provider's own id, org-scoped, through
+// the `external_id` unique index recordGift already honours. Namespaced
+// ("paypal:8XN...") so the PayPal CSV a bookkeeper uploads (89d) and the
+// PayPal API reading the same transaction land on ONE gift, and so two
+// providers reusing a short numeric id can never collide. Running a sync
+// twice writes nothing the second time, and that is asserted, not assumed.
+//
+// DONOR MATCH is exact email, or a new donor. It is NEVER a name match: a
+// guessed merge is a lost donor. A name that matches somebody already on file
+// with a different or missing email lands on a NEW person and is REPORTED -
+// the pair surfaces in /donors/duplicates, which is the one-tap merge that
+// already exists, and the run summary says how many there were so nobody has
+// to go looking. One tap, never zero, and never none.
+//
+// FUND is the source's default if an admin set one, otherwise nothing -
+// `defaultFund: false`, which is recordGift's donor-initiated case. A memo
+// reading "building fund" is not a designation; a designation is an
+// accounting fact somebody at the organisation is accountable for.
+//
+// FEES: the gift is the GROSS. The donor gave the gross. The fee is stored
+// beside it and never shows as the gift amount.
+//
+// THE LEDGER follows BUILD-83: the FIRST read of a source is import history
+// and never posts. Everything after it is a live gift and posts if the org
+// keeps posting on. `backfilled_at` on the source row is the whole mechanism.
+//
+// ONLY MONEY IN. Transfers to the bank, payouts, fees billed as their own
+// line, purchases: dropped at the adapter and again at normalizeRow, which
+// refuses a non-positive amount. No part of this runner knows what a payout
+// is.
+//
+// REFUNDS ARE NOT REVERSED IN THIS BUILD, ON PURPOSE. 89a's brief says to use
+// whatever refund path exists today and, if there is none, to skip the row,
+// count it and say so rather than invent refund accounting. What exists today
+// is the Stripe webhook's inline full-refund branch, and it DELETES the gift -
+// which on this path would be actively wrong: the provider still returns the
+// original payment as a completed row, so the next sync would re-create the
+// gift it had just deleted, forever. So:
+//   - a row that arrives ALREADY refunded is not written at all (money that
+//     came in and went back out is not a gift), and is counted;
+//   - a row that reads refunded and whose gift IS already on file is counted
+//     and NAMED on the run summary, so a human is told exactly which gift to
+//     look at rather than a number being silently wrong.
+// Named for its own build in BLOCKED-build89a.md.
+const SOURCE_SYNC_MAX_PAGES = 400;
+const SOURCE_SYNC_RESYNC_DAYS = 3;   // providers publish late; re-read and let dedupe work
+const SYS_SOURCE = { id: "system:giving-source", name: "Connected giving source" };
+
+async function givingSourcesMod() { return import("./shared/givingSources.js"); }
+async function secretBoxMod() { return import("./shared/secretBox.js"); }
+
+// The credentials for one source, opened and bound to its org. A blob that
+// will not open is a hard stop, never an empty object: continuing with no
+// credentials would call a provider unauthenticated and report "no gifts
+// found", which reads like a quiet morning rather than a broken connection.
+async function openSourceCredentials(source) {
+  if (!source.credentials_sealed) return {};
+  const { openBag } = await secretBoxMod();
+  return openBag(source.credentials_sealed, { aad: source.org_id });
+}
+
+function firstNameOfDonor(name) {
+  return String(name || "").trim().split(/\s+/)[0] || "";
+}
+
+// A MISSED RECURRING PAYMENT BECOMES A PERSON'S JOB.
+// Same shape and the same reasoning as openSustainerLapseThread (the dunning
+// path): a donor, an open next step, a due date, owned by whoever owns the
+// donor, ranked by threadRank like everything else. The person-surface gate is
+// the same one - a sample, deceased, do-not-contact or non-person record never
+// gets one.
+async function openMissedRecurringThread(orgId, donorId, { amountCents, provider, expectedNext, interval = "month" }) {
+  try {
+    const [d] = await query(
+      `SELECT id, name, assigned_to, assigned_to_name FROM donors
+        WHERE id = ? AND org_id = ? AND deleted_at IS NULL
+          AND is_sample IS NOT TRUE AND deceased IS NOT TRUE AND do_not_contact IS NOT TRUE
+          AND (kind IS NULL OR kind = 'person')`, [donorId, orgId]);
+    if (!d) return null;
+    const org = await orgTz(orgId);
+    const today = orgToday(org);                       // ORG_TZ_SEAM_OK
+    const { sanitizeStepLabel } = await threadShapeMod();
+    const { missedPhrase } = await givingSourcesMod();
+    const label = sanitizeStepLabel(missedPhrase({
+      firstName: firstNameOfDonor(d.name), amountCents, provider, expectedNext, interval,
+    })) || "Check on their recurring gift";
+    // Due TODAY. By the time this fires the payment is already five days past
+    // the date it was expected; a +N-day default would be the product
+    // hesitating twice about the same fact.
+    return await withTransaction(client => openThreadTx(client, {
+      orgId, donorId, step: { type: "follow_up", label, due: today },
+      openedOn: today,
+      ownerId: d.assigned_to || null, ownerName: d.assigned_to_name || null,
+      actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+    }));
+  } catch (e) { console.error("[giving-source] missed thread:", e.message); return null; }
+}
+
+// RECOGNISING A COMMITMENT.
+// Runs over the donors a sync actually touched, never the whole org: the
+// pattern can only have changed for somebody who just received a gift.
+async function refreshRecurringForDonors(orgId, sourceId, provider, donorIds, today) {
+  if (!donorIds.length) return { created: 0, updated: 0 };
+  const { detectCommitments } = await givingSourcesMod();
+  let created = 0, updated = 0;
+  for (const donorId of donorIds) {
+    const gifts = await query(
+      `SELECT external_id, date, round(amount::numeric * 100)::bigint AS cents, provider_recurring_ref
+         FROM gifts
+        WHERE org_id=? AND donor_id=? AND giving_source_id=?
+        ORDER BY date ASC`, [orgId, donorId, sourceId]);
+    const rows = gifts.map(g => ({
+      externalId: g.external_id, occurredAt: String(g.date).slice(0, 10),
+      amountCents: Number(g.cents), recurringRef: g.provider_recurring_ref || null,
+      status: "completed",
+    }));
+    for (const c of detectCommitments(rows, { today })) {
+      // The two identities, matching the two partial unique indexes: a
+      // provider-named subscription is identified by its ref; an inferred
+      // pattern by the donor and the amount.
+      const existing = c.recurringRef
+        ? await query(`SELECT * FROM giving_recurring WHERE org_id=? AND source_id=? AND recurring_ref=?`,
+                      [orgId, sourceId, c.recurringRef])
+        : await query(`SELECT * FROM giving_recurring WHERE org_id=? AND source_id=? AND donor_id=? AND amount_cents=? AND recurring_ref IS NULL`,
+                      [orgId, sourceId, donorId, c.amountCents]);
+      if (existing.length) {
+        // A commitment that was 'missed' and has just been paid is active
+        // again, and `missed_for` clears so a LATER miss raises a new Thread.
+        await run(
+          `UPDATE giving_recurring
+              SET gift_count=?, first_gift_on=?, last_gift_on=?, expected_next=?,
+                  amount_cents=?, status='active',
+                  missed_for = CASE WHEN ? > COALESCE(missed_for,'') THEN NULL ELSE missed_for END,
+                  updated_at=NOW()
+            WHERE id=? AND org_id=?`,
+          [c.giftCount, c.firstGiftOn, c.lastGiftOn, c.expectedNext, c.amountCents,
+           c.lastGiftOn, existing[0].id, orgId]);
+        updated++;
+      } else {
+        await run(
+          `INSERT INTO giving_recurring
+             (id,org_id,donor_id,source_id,provider,amount_cents,interval,confidence,recurring_ref,
+              gift_count,first_gift_on,last_gift_on,expected_next,status)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'active')
+           ON CONFLICT DO NOTHING`,
+          ["gr_" + uuid().slice(0, 10), orgId, donorId, sourceId, provider, c.amountCents,
+           c.interval, c.confidence, c.recurringRef, c.giftCount, c.firstGiftOn, c.lastGiftOn, c.expectedNext]);
+        created++;
+      }
+    }
+  }
+  // ---- A LATE PAYMENT STILL SATISFIES THE COMMITMENT ----------------------
+  // THE WINDOW DECIDES WHAT BECOMES A COMMITMENT. IT DOES NOT DECIDE WHAT
+  // KEEPS ONE.
+  //
+  // detectCommitments only groups gifts 27 to 34 days apart, which is the
+  // right rule for RECOGNISING a monthly donor out of a pile of gifts. It is
+  // the wrong rule for maintaining one that is already recognised: a card that
+  // soft-declined and retried eight days later lands 39 days after the last
+  // gift, falls outside the window, and would leave the commitment frozen on
+  // an expected date that has already passed - raising a Thread about a
+  // payment that actually arrived, which is the exact failure this whole
+  // feature exists to prevent.
+  //
+  // So once a commitment exists, the next gift of the same amount through the
+  // same source satisfies it WHENEVER it lands, and the expectation moves on
+  // from there. `missed_for` clears, so a genuinely missed payment next month
+  // raises a new Thread.
+  for (const donorId of donorIds) {
+    const open = await query(
+      `SELECT id, amount_cents, recurring_ref, last_gift_on FROM giving_recurring
+        WHERE org_id=? AND source_id=? AND donor_id=? AND status <> 'ended'`,
+      [orgId, sourceId, donorId]);
+    for (const r of open) {
+      const [latest] = await query(
+        `SELECT MAX(date) AS on_date, COUNT(*)::int AS n FROM gifts
+          WHERE org_id=? AND donor_id=? AND giving_source_id=?
+            AND round(amount::numeric * 100)::bigint = ?
+            AND (?::text IS NULL OR provider_recurring_ref = ?)`,
+        [orgId, donorId, sourceId, r.amount_cents, r.recurring_ref, r.recurring_ref]);
+      const on = latest?.on_date ? String(latest.on_date).slice(0, 10) : null;
+      if (!on || !r.last_gift_on || on <= r.last_gift_on) continue;
+      const { addCivilMonths } = await givingSourcesMod();
+      await run(
+        `UPDATE giving_recurring
+            SET last_gift_on=?, expected_next=?, gift_count=?, status='active',
+                missed_for=NULL, updated_at=NOW()
+          WHERE id=? AND org_id=?`,
+        [on, addCivilMonths(on, 1), latest.n, r.id, orgId]);
+      updated++;
+    }
+  }
+
+  return { created, updated };
+}
+
+// THE MISSED SWEEP.
+// ONE Thread per missed payment, never one per day. `missed_for` stores the
+// expected date already raised, so the second pass over the same unpaid month
+// finds nothing to do - which is a property of the data, not of how often the
+// sweep happens to run.
+async function sweepMissedRecurring(orgId, { today = null, sourceId = null } = {}) {
+  const { isMissed } = await givingSourcesMod();
+  const org = await orgTz(orgId);
+  const day = today || orgToday(org);                  // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT r.*, s.display_name, s.status AS source_status
+       FROM giving_recurring r
+       JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
+      WHERE r.org_id=? AND r.status='active' AND r.expected_next IS NOT NULL
+        AND (?::text IS NULL OR r.source_id = ?)`,
+    [orgId, sourceId, sourceId]);
+  let opened = 0;
+  for (const r of rows) {
+    // A disconnected source stops producing work. She switched it off.
+    if (r.source_status === "disconnected") continue;
+    if (!isMissed(r.expected_next, day)) continue;
+    if (r.missed_for === r.expected_next) continue;    // already raised, exactly once
+    const thread = await openMissedRecurringThread(orgId, r.donor_id, {
+      amountCents: Number(r.amount_cents), provider: r.provider,
+      expectedNext: r.expected_next, interval: r.interval,
+    });
+    // `missed_for` is stamped whether or not a thread was actually opened: the
+    // donor may already have an open thread (the one-open-per-donor rule), and
+    // re-attempting every six hours forever would be the loop this column
+    // exists to prevent.
+    await run(`UPDATE giving_recurring SET status='missed', missed_for=?, missed_thread_id=?, updated_at=NOW()
+                WHERE id=? AND org_id=?`,
+              [r.expected_next, thread?.id || null, r.id, orgId]);
+    if (thread) opened++;
+  }
+  return { opened, considered: rows.length };
+}
+
+// syncSource(orgId, sourceId) - the one entry point. Returns a run summary;
+// never throws for a provider problem (that becomes `last_error` and a
+// sentence a human can act on).
+async function syncSource(orgId, sourceId, { today = null, adapter = null, actor = null, reason = "scheduled", fetchImpl = undefined } = {}) {
+  const { normalizeRow, externalKey } = await givingSourcesMod();
+  const [source] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=?", [sourceId, orgId]);
+  if (!source) return { ok: false, error: "source_not_found" };
+  if (source.status === "disconnected") return { ok: false, error: "source_disconnected" };
+
+  const org = await orgTz(orgId);
+  const day = today || orgToday(org);                  // ORG_TZ_SEAM_OK
+  const actorId = actor?.id || SYS_SOURCE.id, actorName = actor?.name || SYS_SOURCE.name;
+  const isBackfill = !source.backfilled_at;
+  const summary = {
+    sourceId, provider: source.provider, reason, isBackfill,
+    rowsRead: 0, giftsCreated: 0, duplicates: 0, donorsCreated: 0,
+    centsCreated: 0, feeCents: 0,
+    refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0,
+    dropped: {}, nameCollisions: [], notices: [],
+  };
+  const touchedDonors = new Set();
+
+  // Serialized per source: "Check now" pressed during a scheduled run must not
+  // double the work. Dedupe makes a double run harmless to the DATA; the lock
+  // keeps the counters and the cursor honest.
+  return await withAdvisoryLock(`givingsource:${sourceId}`, async () => {
+    try {
+      const use = adapter || sourceAdapters.getAdapter(source.provider);
+      if (!use) throw Object.assign(new Error(`no adapter for ${source.provider}`), { code: "NO_ADAPTER" });
+      const credentials = await openSourceCredentials(source);
+      const http = sourceAdapters.readOnlyHttp(source.provider, fetchImpl ? { fetchImpl } : {});
+
+      // The window. A backfill walks as far back as the provider allows (the
+      // adapter decides how, because only it knows the provider's limit); an
+      // incremental sync re-reads the last few days because providers publish
+      // late, and lets de-duplication absorb the overlap.
+      const since = isBackfill ? null
+        : addCivilDaysSafe(source.last_synced_at ? new Date(source.last_synced_at).toISOString().slice(0, 10) : day, -SOURCE_SYNC_RESYNC_DAYS);
+
+      let cursor = isBackfill ? null : source.sync_cursor || null;
+      let page = 0, done = false;
+      while (!done && page < SOURCE_SYNC_MAX_PAGES) {
+        const out = await use.fetchRows({ credentials, since, until: day, cursor, http, today: day, backfill: isBackfill });
+        page++;
+        for (const n of out?.notices || []) summary.notices.push(n);
+        for (const raw of out?.rows || []) {
+          summary.rowsRead++;
+          const norm = normalizeRow(raw, { provider: source.provider });
+          if (!norm.ok) { summary.dropped[norm.reason] = (summary.dropped[norm.reason] || 0) + 1; continue; }
+          await writeSourceRow(orgId, source, norm.row, {
+            day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey,
+          });
+        }
+        cursor = out?.cursor ?? null;
+        done = out?.done !== false || !cursor;
+      }
+      if (page >= SOURCE_SYNC_MAX_PAGES) summary.notices.push(`Stopped after ${SOURCE_SYNC_MAX_PAGES} pages; the next check will continue.`);
+
+      const rec = await refreshRecurringForDonors(orgId, sourceId, source.provider, [...touchedDonors], day);
+      summary.recurring = rec;
+      const swept = await sweepMissedRecurring(orgId, { today: day, sourceId });
+      summary.threadsOpened = swept.opened;
+
+      const runId = await recordSourceRun(orgId, source, summary, { actorId, actorName, day });
+      await run(
+        `UPDATE giving_sources
+            SET last_synced_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
+                status='active', last_run_id=?, backfilled_at=COALESCE(backfilled_at, NOW()), updated_at=NOW()
+          WHERE id=? AND org_id=?`, [cursor, runId, sourceId, orgId]);
+      summary.ok = true; summary.runId = runId;
+      console.log(`[giving-source] ${source.provider} org=${orgId} read=${summary.rowsRead} new=${summary.giftsCreated} dupes=${summary.duplicates}`);
+      return summary;
+    } catch (e) {
+      // An error reads as a sentence with what to do, never a code - 89f shows
+      // this string verbatim on the Settings row.
+      const sentence = sourceErrorSentence(e, source);
+      await run(`UPDATE giving_sources SET status='error', last_error=?, last_error_at=NOW(), updated_at=NOW()
+                  WHERE id=? AND org_id=?`, [sentence, sourceId, orgId]).catch(() => {});
+      console.error(`[giving-source] ${source.provider} org=${orgId}:`, e.message);
+      return { ...summary, ok: false, error: e.code || "sync_failed", message: sentence };
+    }
+  });
+}
+
+function addCivilDaysSafe(dateStr, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || ""));
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// ONE contract row -> at most one gift, through recordGift.
+async function writeSourceRow(orgId, source, row, ctx) {
+  const { day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey } = ctx;
+  const key = externalKey(source.provider, row.externalId);
+
+  if (row.status === "failed") { summary.failedSkipped++; return; }
+  if (row.status === "refunded") {
+    // See the refund note at the top of this section. A refund whose gift is
+    // already on file is NAMED, not silently miscounted.
+    const [onFile] = await query("SELECT id, amount, donor_id FROM gifts WHERE org_id=? AND external_id=?", [orgId, key]);
+    if (onFile) {
+      const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [onFile.donor_id, orgId]);
+      summary.refundsOnFile.push({ giftId: onFile.id, donor: d?.name || "", amount: Number(onFile.amount) || 0 });
+    } else summary.refundsSkipped++;
+    return;
+  }
+
+  const donor = await resolveSourceDonor(orgId, source, row, { actorId, actorName, summary });
+  if (!donor) { summary.dropped.no_donor_identity = (summary.dropped.no_donor_identity || 0) + 1; return; }
+  touchedDonors.add(donor.id);
+
+  const written = await recordGift({
+    orgId, donorId: donor.id,
+    amount: row.amountCents / 100,                 // the GROSS. Always the gross.
+    date: row.occurredAt,
+    type: "cash",
+    notes: row.memo || "",
+    // The source's default fund if an admin set one, otherwise nothing.
+    // `defaultFund: false` is recordGift's donor-initiated case: nobody at the
+    // organisation has said where this money goes, so it is not designated.
+    fundId: source.default_fund_id || null,
+    defaultFund: false,
+    // The bookkeeper's export shows "PayPal" on the row, which is the point.
+    paymentMethod: source.display_name,
+    externalId: key,
+    conflict: "external",
+    givingSourceId: source.id,
+    processorFeeAmount: row.feeCents / 100,
+    providerRecurringRef: row.recurringRef || null,
+    // BUILD-83 - the first read of a source is import history and never posts.
+    post: !isBackfill,
+    source: `giving-source:${source.provider}`,
+    actorId, actorName,
+    // A backfill of three years of history does not open three years of
+    // thank-you drafts. Live gifts arriving on a later sync do.
+    thankYou: !isBackfill,
+  });
+  if (written.duplicate) { summary.duplicates++; return; }
+  summary.giftsCreated++;
+  summary.centsCreated += row.amountCents;
+  summary.feeCents += row.feeCents;
+}
+
+// THE DONOR.
+// Exact email attaches. No email match creates. A NAME that matches somebody
+// already on file never merges - it lands on a new person and is reported.
+async function resolveSourceDonor(orgId, source, row, { actorId, actorName, summary }) {
+  const email = (row.donorEmail || "").trim().toLowerCase();
+  const name = (row.donorName || "").trim();
+  if (!email && !name) return null;
+
+  if (email) {
+    const [hit] = await query("SELECT id, name FROM donors WHERE org_id=? AND email ILIKE ? AND deleted_at IS NULL LIMIT 1", [orgId, email]);
+    if (hit) return hit;
+  }
+  // Serialized per (org, email) for the same reason the Stripe webhook is:
+  // two parallel syncs seeing the same new donor must not both insert.
+  return await withAdvisoryLock(`donor:${orgId}:${email || name.toLowerCase()}`, async () => {
+    if (email) {
+      const [again] = await query("SELECT id, name FROM donors WHERE org_id=? AND email ILIKE ? AND deleted_at IS NULL LIMIT 1", [orgId, email]);
+      if (again) return again;
+    }
+    // THE COLLISION. Somebody of this name is already on file under a
+    // different (or no) email. Steward does NOT merge them - a guessed merge
+    // is a lost donor, and two people do share a name. The gift lands on a new
+    // record and the pair is reported: it is already a one-tap merge in
+    // Donors -> duplicates (the "Same name" tier), and the run summary says
+    // how many so nobody has to go looking for it.
+    if (name) {
+      const [clash] = await query(
+        `SELECT id, name, email FROM donors
+          WHERE org_id=? AND deleted_at IS NULL AND lower(trim(name))=lower(trim(?))
+            AND (email IS NULL OR email='' OR NOT (email ILIKE ?)) LIMIT 1`,
+        [orgId, name, email || " never"]);
+      if (clash) summary.nameCollisions.push({ name, existingDonorId: clash.id, existingEmail: clash.email || null });
+    }
+    const id = "d_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO donors (id, org_id, name, email, status, stage, total_giving, gift_count, created_by, created_by_name)
+       VALUES (?,?,?,?,'active','steward',0,0,?,?)`,
+      [id, orgId, name || email, email || null, actorId, actorName]);
+    summary.donorsCreated++;
+    return { id, name: name || email };
+  });
+}
+
+// THE RUN LANDS ON THE IMPORTS PAGE, beside the file imports, because from
+// where she sits they are the same thing: money arriving with a receipt saying
+// where it came from and what it did. shape='source' so the page can tell them
+// apart without a second table.
+async function recordSourceRun(orgId, source, summary, { actorId, actorName, day }) {
+  const { providerLabel } = await givingSourcesMod();
+  const id = "imp_" + uuid().slice(0, 10);
+  const setAside = summary.failedSkipped + summary.refundsSkipped +
+    Object.values(summary.dropped || {}).reduce((a, b) => a + b, 0);
+  await run(
+    `INSERT INTO imports (id,org_id,name,source_filename,shape,started_at,committed_at,
+                          rows_in,gifts_created,donors_created,donors_merged,rows_set_aside,rows_errored,
+                          dollars_in,dollars_created,actor_user_id,actor_user_name,summary_json)
+     VALUES (?,?,?,?,'source',NOW(),NOW(),?,?,?,0,?,0,?,?,?,?,?)`,
+    [id, orgId, `${providerLabel(source.provider)} - checked ${day}`, null,
+     summary.rowsRead, summary.giftsCreated, summary.donorsCreated, setAside,
+     summary.centsCreated / 100, summary.centsCreated / 100,
+     actorId, actorName, JSON.stringify(summary)]);
+  return id;
+}
+
+// An error a human can act on. Never a code, never a stack, and never
+// "something went wrong" - she needs to know whether to wait, to re-paste a
+// key, or to call somebody.
+function sourceErrorSentence(e, source) {
+  const code = e?.code || "";
+  const msg = String(e?.message || "");
+  if (code === "CREDENTIAL_KEY_MISSING") return "Steward cannot open the stored credentials for this source. Nothing was read and nothing was changed, and this needs an administrator.";
+  if (code === "SEALED_OPEN_FAILED") return "The saved key for this source could not be read. Disconnect it and connect it again with a fresh key.";
+  if (code === "NO_ADAPTER") return `Steward does not read ${source.display_name} automatically yet.`;
+  if (code === "PROVIDER_WRITE_REFUSED") return "Steward stopped a request that was not a read. Nothing was sent. This is a bug in Steward, not a problem with your account.";
+  if (/401|403|unauthor|invalid_client|permission/i.test(msg)) {
+    return source.provider === "paypal"
+      ? "PayPal has not allowed this yet. A newly enabled Transaction Search permission can take up to a day. Steward will keep trying."
+      : "The key for this source was refused. Check it is still active in the provider's settings, then paste it again.";
+  }
+  if (/429|rate/i.test(msg)) return "The provider asked Steward to slow down. The next check will pick up where this one stopped.";
+  if (/timeout|abort|ENOTFOUND|ECONN/i.test(msg)) return "Steward could not reach the provider. The next check will try again.";
+  return "Steward could not finish reading this source. The next check will try again.";
 }
 
 // ── BUILD-88b B.3 — THE THANK-YOU QUEUE ───────────────────────────────────
@@ -8329,6 +8815,331 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 }));
 
 // The history. Newest first, read only.
+
+// ---- BUILD-89S 89a - GIVING SOURCE ROUTES --------------------------------
+//
+// Every one of these is a READ or a local write. Nothing here can send money,
+// and nothing here can write to a provider: the adapters only ever receive the
+// read-only http handle, and that handle refuses a non-GET.
+//
+// Route ORDER matters (CLAUDE.md): the literal paths are declared before any
+// "/giving-sources/:id" so Express never resolves "providers" as an id.
+
+// What an org CAN connect, and what Steward would need from them. Read-only,
+// no credentials involved, so plain requireAuth.
+app.get("/giving-sources/providers", requireAuth, wrap(async (req, res) => {
+  const { PROVIDERS } = await import("./shared/givingSources.js");
+  const { credentialsConfigured, credentialKeyProblem } = await import("./shared/secretBox.js");
+  res.json({
+    // A provider is offered only when an adapter for it actually exists and
+    // loads. An advertised connection that does not work is worse than an
+    // absent one - the whole build is an answer to "do we have to switch".
+    providers: Object.values(PROVIDERS).map(p => ({
+      key: p.key, label: p.label, mode: p.mode, recurring: p.recurring,
+      credentialFields: p.credentialFields, help: p.help, delay: p.delay || null,
+      available: p.mode === "file" ? true : sourceAdapters.adapterAvailable(p.key),
+    })),
+    // The one honest reason a connect button can be unavailable for every
+    // provider at once. 89f turns this into a sentence for an administrator.
+    credentialsReady: credentialsConfigured(),
+    credentialsProblem: credentialKeyProblem(),
+  });
+}));
+
+// "Where giving comes in." One row per source, with the sentence 89f renders.
+app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
+  const { providerLabel } = await import("./shared/givingSources.js");
+  const rows = await query(
+    `SELECT s.*, f.name AS fund_name,
+            (SELECT COUNT(*) FROM gifts g
+              WHERE g.org_id = s.org_id AND g.giving_source_id = s.id
+                AND g.date >= TO_CHAR(NOW() - INTERVAL '7 days', 'YYYY-MM-DD')) AS gifts_this_week,
+            (SELECT COUNT(*) FROM gifts g
+              WHERE g.org_id = s.org_id AND g.giving_source_id = s.id) AS gifts_total
+       FROM giving_sources s
+       LEFT JOIN fin_funds f ON f.id = s.default_fund_id AND f.org_id = s.org_id
+      WHERE s.org_id = ? ORDER BY s.created_at ASC`, [req.user.orgId]);
+  res.json({
+    sources: rows.map(r => ({
+      id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
+      displayName: r.display_name, status: r.status,
+      defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
+      lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
+      lastRunId: r.last_run_id,
+      giftsThisWeek: Number(r.gifts_this_week) || 0, giftsTotal: Number(r.gifts_total) || 0,
+      // Never "live", never "real time": Steward checks every six hours and a
+      // provider can publish hours late. The screen says when it last looked.
+      everChecked: !!r.last_synced_at,
+      // Deliberately never the credential, and never a prefix of it.
+      hasCredentials: !!r.credentials_sealed,
+    })),
+  });
+}));
+
+// Test a key WITHOUT storing it: the last seven days, a count and a total.
+// She sees her own numbers before anything is written, which is the only way
+// to know a key works. Nothing is persisted on this path at all.
+app.post("/giving-sources/test", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { PROVIDERS } = await import("./shared/givingSources.js");
+  const provider = String(req.body?.provider || "");
+  const spec = PROVIDERS[provider];
+  if (!spec || spec.mode !== "api") return res.status(400).json({ error: "unknown_provider" });
+  const adapter = sourceAdapters.getAdapter(provider);
+  if (!adapter) return res.status(400).json({ error: "adapter_unavailable", message: `Steward does not read ${spec.label} automatically yet.` });
+  const credentials = req.body?.credentials || {};
+  const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
+  if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
+  const org = await orgTz(req.user.orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  const http = sourceAdapters.readOnlyHttp(provider);
+  try {
+    const out = await adapter.testCredentials({ credentials, http, today });
+    res.json({ ok: !!out?.ok, count: out?.count || 0, totalCents: out?.totalCents || 0,
+               message: out?.message || null, requests: http.requests.length });
+  } catch (e) {
+    res.json({ ok: false, message: sourceErrorSentence(e, { provider, display_name: spec.label }) });
+  }
+}));
+
+// Connect. THE ONE PLACE A PROVIDER CREDENTIAL ENTERS THE DATABASE.
+//
+// There is no plaintext path: seal() throws when no credential key is
+// configured, and that throw becomes a 503 here with nothing written. A
+// missing key means the feature is unavailable, never that it is available
+// and insecure.
+app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { PROVIDERS, providerLabel } = await import("./shared/givingSources.js");
+  const { sealBag, CredentialKeyMissing, CREDENTIAL_KEY_ENV } = await import("./shared/secretBox.js");
+  const orgId = req.user.orgId;
+  const provider = String(req.body?.provider || "");
+  const spec = PROVIDERS[provider];
+  if (!spec) return res.status(400).json({ error: "unknown_provider" });
+
+  const credentials = req.body?.credentials || {};
+  const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
+  if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
+
+  // A fund is honoured only if it is this org's. A refused fund never
+  // silently becomes a different fund (recordGift's rule, applied at the door).
+  let fundId = req.body?.defaultFundId || null;
+  if (fundId) {
+    const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+    if (!f) return res.status(400).json({ error: "unknown_fund" });
+  }
+
+  let sealed = null;
+  if (spec.credentialFields.length) {
+    try {
+      sealed = sealBag(credentials, { aad: orgId });   // bound to this tenant
+    } catch (e) {
+      if (e instanceof CredentialKeyMissing || e.code === "CREDENTIAL_KEY_MISSING") {
+        return res.status(503).json({
+          error: "credentials_unavailable",
+          message: `Steward cannot store a provider key safely until ${CREDENTIAL_KEY_ENV} is set on the server. Nothing was saved.`,
+        });
+      }
+      throw e;
+    }
+  }
+
+  const displayName = String(req.body?.displayName || "").trim().slice(0, 60) || providerLabel(provider);
+  const id = "gs_" + uuid().slice(0, 10);
+  const inserted = await query(
+    `INSERT INTO giving_sources (id,org_id,provider,display_name,status,credentials_sealed,default_fund_id,created_by,created_by_name)
+     VALUES (?,?,?,?,'active',?,?,?,?)
+     ON CONFLICT (org_id, provider) WHERE status <> 'disconnected' DO NOTHING
+     RETURNING id`,
+    [id, orgId, provider, displayName, sealed, fundId, actor(req).id, actor(req).name]);
+  if (!inserted.length) return res.status(409).json({ error: "already_connected", message: `${providerLabel(provider)} is already connected.` });
+  res.json({ id, provider, displayName, status: "active" });
+}));
+
+// Rename, or set the default fund. Credentials are NOT editable here - a new
+// key is a disconnect and a connect, so there is never a half-updated bag.
+app.patch("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  let fundId = s.default_fund_id;
+  if (req.body?.defaultFundId !== undefined) {
+    fundId = req.body.defaultFundId || null;
+    if (fundId) {
+      const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+      if (!f) return res.status(400).json({ error: "unknown_fund" });
+    }
+  }
+  const displayName = req.body?.displayName !== undefined
+    ? String(req.body.displayName || "").trim().slice(0, 60) || s.display_name : s.display_name;
+  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
+            [displayName, fundId, req.params.id, orgId]);
+  res.json({ ok: true, displayName, defaultFundId: fundId });
+}));
+
+// "Check now". Same function the schedule calls - there is no second path.
+app.post("/giving-sources/:id/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const out = await syncSource(req.user.orgId, req.params.id, {
+    reason: "manual", actor: actor(req),
+    today: req.body?.today || null,
+  });
+  res.json(out);
+}));
+
+// TEST-ONLY. The suites drive the REAL runner with a fake adapter, because a
+// fixture that runs through a parallel implementation proves nothing about the
+// implementation that ships. Armed by TEST_MODE=1 and by nothing else; in
+// production this answers exactly as an unknown route does, which is what
+// makes its absence provable rather than promised.
+app.post("/giving-sources/:id/sync-fixture", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (!testMode()) return res.status(404).json({ error: "Not found" });
+  const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const pages = Array.isArray(req.body?.pages) ? req.body.pages : [req.body?.rows || []];
+  const out = await syncSource(req.user.orgId, req.params.id, {
+    reason: "fixture", today: req.body?.today || null,
+    adapter: sourceAdapters.fakeAdapter(pages),
+  });
+  res.json(out);
+}));
+
+// Disconnect. Stops syncing and KEEPS EVERY GIFT - the money did come in this
+// way, and a product that erases that on disconnect is lying about history.
+// The row survives as 'disconnected' so the gifts keep their source, and the
+// partial unique index lets the same provider be connected again tomorrow.
+app.delete("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "source not found" });
+  const [kept] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND giving_source_id=?", [orgId, req.params.id]);
+  await run(`UPDATE giving_sources SET status='disconnected', credentials_sealed=NULL,
+                                       last_error=NULL, last_error_at=NULL, updated_at=NOW()
+              WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  // A disconnected source raises no more work.
+  await run("UPDATE giving_recurring SET status='ended', updated_at=NOW() WHERE org_id=? AND source_id=? AND status<>'ended'",
+            [orgId, req.params.id]);
+  res.json({ ok: true, giftsKept: kept?.n || 0 });
+}));
+
+// The recurring dashboard, provider-neutral: every source, one list, with the
+// definition on the surface rather than in somebody's head.
+app.get("/giving-recurring", requireAuth, wrap(async (req, res) => {
+  const { providerLabel, recurringPhrase, RECURRING_MIN_RUN, MONTH_MIN_DAYS, MONTH_MAX_DAYS, MISSED_GRACE_DAYS } =
+    await import("./shared/givingSources.js");
+  const rows = await query(
+    `SELECT r.*, d.name AS donor_name, d.email AS donor_email, s.display_name
+       FROM giving_recurring r
+       JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id
+       JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
+      WHERE r.org_id=? AND r.status <> 'ended' AND d.deleted_at IS NULL
+      ORDER BY r.expected_next ASC NULLS LAST, r.amount_cents DESC`, [req.user.orgId]);
+  const out = rows.map(r => ({
+    id: r.id, donorId: r.donor_id, donorName: r.donor_name, donorEmail: r.donor_email,
+    sourceId: r.source_id, provider: r.provider, providerLabel: providerLabel(r.provider),
+    sourceName: r.display_name,
+    amountCents: Number(r.amount_cents), interval: r.interval,
+    confidence: r.confidence, confirmed: !!r.confirmed_at,
+    giftCount: Number(r.gift_count) || 0,
+    firstGiftOn: r.first_gift_on, lastGiftOn: r.last_gift_on,
+    expectedNext: r.expected_next, status: r.status,
+    // The sentence, built in the shared module so the dashboard, the donor
+    // header and the Thread label cannot drift apart.
+    phrase: recurringPhrase({ amountCents: Number(r.amount_cents), interval: r.interval,
+                              confidence: r.confidence }, { provider: r.provider }),
+  }));
+  res.json({
+    recurring: out,
+    totalMonthlyCents: out.filter(r => r.interval === "month" && r.status === "active")
+                          .reduce((s, r) => s + r.amountCents, 0),
+    // NO NUMBER WITHOUT A DEFINITION.
+    definition: {
+      what: "Donors giving on a schedule through any connected source.",
+      looksMonthly: `"Looks monthly" means Steward saw the pattern and nobody has confirmed it: ${RECURRING_MIN_RUN} or more gifts of the same amount, each ${MONTH_MIN_DAYS} to ${MONTH_MAX_DAYS} days after the last.`,
+      confirmed: "A confirmed one was either named by the provider or confirmed here by a person.",
+      missed: `Steward raises a follow-up when an expected payment is ${MISSED_GRACE_DAYS} days late, once per missed payment.`,
+    },
+  });
+}));
+
+// ONE TAP turns "looks monthly" into a fact. Only a human can do this, which
+// is the entire difference between the two words on the screen.
+app.post("/giving-recurring/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT * FROM giving_recurring WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "not found" });
+  await run(`UPDATE giving_recurring SET confirmed_at=NOW(), confirmed_by=?, confirmed_by_name=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+            [actor(req).id, actor(req).name, req.params.id, orgId]);
+  res.json({ ok: true, confirmed: true });
+}));
+
+// She can say it is not a recurring gift. 'ended' stops the expectation and
+// therefore the follow-up - a wrong guess has to be one tap to switch off, or
+// the next wrong guess is ignored along with the right ones.
+app.post("/giving-recurring/:id/dismiss", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT id FROM giving_recurring WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "not found" });
+  await run("UPDATE giving_recurring SET status='ended', updated_at=NOW() WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  res.json({ ok: true });
+}));
+
+// ---- THE SCHEDULE --------------------------------------------------------
+// Every six hours per connected source, plus the "Check now" button above.
+// Never the word "live": six hours is six hours, and PayPal itself can take
+// hours to publish a transaction.
+//
+// The sweep for missed payments runs on the SAME tick for every org with a
+// recurring commitment, not only for orgs whose sync just ran - a missed
+// payment is an ABSENCE, and an absence is not discovered by reading rows
+// that did not arrive.
+const GIVING_SOURCE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+
+async function processGivingSources({ orgId = null } = {}) {
+  try {
+    const sources = await query(
+      `SELECT id, org_id FROM giving_sources
+        WHERE status <> 'disconnected' AND credentials_sealed IS NOT NULL
+          AND (?::text IS NULL OR org_id = ?)
+        ORDER BY COALESCE(last_synced_at, '1970-01-01'::timestamptz) ASC`, [orgId, orgId]);
+    for (const s of sources) {
+      await syncSource(s.org_id, s.id, { reason: "scheduled" })
+        .catch(e => console.error("[giving-source] sync", s.id, e.message));
+    }
+    const orgs = await query(
+      `SELECT DISTINCT org_id FROM giving_recurring WHERE status='active' AND (?::text IS NULL OR org_id = ?)`,
+      [orgId, orgId]);
+    let opened = 0;
+    for (const o of orgs) {
+      const out = await sweepMissedRecurring(o.org_id, {}).catch(e => {
+        console.error("[giving-source] sweep", o.org_id, e.message); return { opened: 0 };
+      });
+      opened += out.opened;
+    }
+    if (opened) console.log(`[giving-source] ${opened} missed-payment thread(s) opened`);
+    return { sources: sources.length, threadsOpened: opened };
+  } catch (e) { console.error("[giving-source] processGivingSources:", e.message); return { sources: 0, threadsOpened: 0 }; }
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processGivingSources().catch(console.error), 90000);
+  setInterval(() => processGivingSources().catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
+}
+
+// Ops/test hook, same bar as /recurring/check-cards: drives the schedule for
+// THIS org only, so the sweep is testable without waiting six hours.
+app.post("/giving-sources/run-schedule", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const out = await processGivingSources({ orgId: req.user.orgId });
+  res.json(out);
+}));
+
+// The sweep alone, with a pinned date, so a missed payment is testable without
+// waiting for a calendar. Pinning is the BUILD-84 rule for clock-dependent
+// behaviour: pin the clock, never synchronise the assertion to it.
+app.post("/giving-recurring/sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const out = await sweepMissedRecurring(req.user.orgId, { today: req.body?.today || null });
+  res.json(out);
+}));
+
 app.get("/imports", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     `SELECT id, name, source_filename, shape,

@@ -119,3 +119,26 @@ deliverability, and a receipt in a donor's spam folder becomes a support ticket
 the donor opens **with the organisation**. It is fifteen minutes on a call and
 it is the difference between their mail arriving and their mail arriving
 sometimes.
+
+## §7 — STEWARD_CREDENTIAL_KEY (BUILD-89S 89a, 2026-09-20)
+
+**Required before any organisation can connect a giving source (PayPal, Zeffy,
+Stripe, Givebutter).** A provider credential is a key to the organisation's own
+money, so Steward refuses to store one unless it can seal it.
+
+1. Generate a key (at least 32 characters):
+   ```
+   openssl rand -base64 32
+   ```
+2. Railway → the `nonprofit-erp` service → Variables → add
+   `STEWARD_CREDENTIAL_KEY=<the value>`. Redeploy.
+3. Confirm: `GET /giving-sources/providers` as any signed-in user returns
+   `"credentialsReady": true`.
+
+Until it is set, every connect attempt answers 503 with a sentence naming the
+variable, and nothing is written — the feature is unavailable rather than
+insecure.
+
+**Rotating this key orphans every stored credential** (there is no re-seal path
+yet — see BLOCKED-build89a.md §1). After a rotation every source must be
+disconnected and connected again.

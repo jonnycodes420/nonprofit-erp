@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
+    for (const t of ["giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
@@ -190,6 +190,17 @@ async function seedOrg(o, tag) {
   // probed across the wall like everything else.
   await q(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body) VALUES ($1,$2,$3,$4,$5)`,
     [`ty_${o}`, o, `d_${o}`, `g_${o}`, `${mark} thank-you draft`]).catch(() => {});
+  // BUILD-89S 89a — a connected giving source and the recurring commitment it
+  // recognised, so /giving-sources/:id and /giving-recurring/:id are probed
+  // across the wall like every other parameterized route. The credential is a
+  // real sealed envelope shape because the column's CHECK refuses anything else.
+  await q(`INSERT INTO giving_sources (id,org_id,provider,display_name,credentials_sealed)
+           VALUES ($1,$2,'paypal',$3,'v1.AAAA.BBBB.CCCC.DDDD')`,
+    [`gsrc_${o}`, o, `${mark} PayPal`]).catch(() => {});
+  await q(`INSERT INTO giving_recurring
+             (id,org_id,donor_id,source_id,provider,amount_cents,confidence,gift_count,first_gift_on,last_gift_on,expected_next)
+           VALUES ($1,$2,$3,$4,'paypal',6377890,'inferred',3,'2026-05-14','2026-07-14','2026-08-14')`,
+    [`grec_${o}`, o, `d_${o}`, `gsrc_${o}`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -217,6 +228,8 @@ function bResolver(routePath, param) {
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
     imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt
     "thank-yous": `ty_${B}`,       // BUILD-88b B.3 — the thank-you queue
+    "giving-sources": `gsrc_${B}`,   // BUILD-89S 89a — a connected giving source
+    "giving-recurring": `grec_${B}`, // BUILD-89S 89a — a recognised recurring commitment
   };
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

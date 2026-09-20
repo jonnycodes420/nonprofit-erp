@@ -2843,6 +2843,115 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_inbound_drops_org ON inbound_email_drops (org_id, created_at DESC)`);
 
+  // ── BUILD-89S 89a — GIVING SOURCES: KEEP WHAT YOU TAKE GIFTS THROUGH ──────
+  // An organisation keeps PayPal, Zeffy, Cash App or whatever it takes gifts
+  // through today. Steward READS those gifts and never touches the money.
+  // Placed here, after orgs / donors / fin_funds / gifts / threads, because a
+  // table goes after the tables it references (CLAUDE.md).
+  //
+  // `credentials_sealed` holds a shared/secretBox.js v1 envelope and NOTHING
+  // ELSE — the CHECK is the point of the column. Routes can be bypassed; a
+  // database constraint cannot, so an API secret on the organisation's own
+  // PayPal account CANNOT be written to this table in plain text even by a
+  // future code path that forgets. NULL is legal only because a file provider
+  // (Cash App, Venmo) has no credential to hold.
+  //
+  // `backfilled_at` carries BUILD-83's rule: the FIRST read of a source is
+  // import history and never posts to the ledger; everything arriving on a
+  // later sync is a live gift and posts if the org keeps posting on.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS giving_sources (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      provider TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      credentials_sealed TEXT,
+      default_fund_id TEXT REFERENCES fin_funds(id),
+      sync_cursor TEXT,
+      last_synced_at TIMESTAMPTZ,
+      last_run_id TEXT,
+      last_error TEXT,
+      last_error_at TIMESTAMPTZ,
+      backfilled_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT giving_sources_sealed_only CHECK (
+        credentials_sealed IS NULL OR credentials_sealed LIKE 'v1.%'
+      ),
+      CONSTRAINT giving_sources_status CHECK (status IN ('active','error','disconnected'))
+    )`);
+  // One live connection per provider per org. Partial on status so a
+  // DISCONNECTED source keeps its row (and its history) without blocking a
+  // reconnect — disconnect stops syncing and keeps every gift, it does not
+  // erase that the money once came in this way.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS giving_sources_one_live
+                    ON giving_sources (org_id, provider) WHERE status <> 'disconnected'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_sources_org ON giving_sources (org_id, status)`);
+
+  // A gift that came in through a source remembers which one, what the
+  // provider took, and the provider's own subscription id.
+  //
+  // processor_fee_amount is NOT cover_fee_amount. cover_fee_amount is the
+  // donor CHOOSING to add the fee on top (BUILD-08 Phase B); this is what the
+  // provider took out. The gift amount stays the GROSS either way: the donor
+  // gave the gross, and a receipt that says otherwise is wrong.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS giving_source_id TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS processor_fee_amount NUMERIC DEFAULT 0`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS provider_recurring_ref TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_source ON gifts (org_id, giving_source_id) WHERE giving_source_id IS NOT NULL`);
+
+  // ── THE RECURRING COMMITMENT, PROVIDER-NEUTRAL ────────────────────────────
+  // The payoff of reading every source: Steward knows who gives monthly
+  // through ANY of them and says so the week a payment does not arrive.
+  //
+  // `confidence` is the honest half. 'provider' means PayPal/Stripe/Givebutter
+  // named the subscription. 'inferred' means nobody did and Steward saw the
+  // pattern — it reads "looks monthly" on every surface until `confirmed_at`
+  // is stamped by a human tapping once. A guess presented as a fact is the one
+  // thing this product does not do.
+  //
+  // `missed_for` is what makes "one Thread per missed payment, never one per
+  // day" true by construction: the date we have ALREADY raised is stored, so
+  // tomorrow's sweep over the same unpaid month finds nothing to do.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS giving_recurring (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      source_id TEXT NOT NULL REFERENCES giving_sources(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL,
+      amount_cents BIGINT NOT NULL,
+      interval TEXT NOT NULL DEFAULT 'month',
+      confidence TEXT NOT NULL,
+      recurring_ref TEXT,
+      gift_count INTEGER DEFAULT 0,
+      first_gift_on TEXT,
+      last_gift_on TEXT,
+      expected_next TEXT,
+      confirmed_at TIMESTAMPTZ,
+      confirmed_by TEXT,
+      confirmed_by_name TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      missed_for TEXT,
+      missed_thread_id TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT giving_recurring_confidence CHECK (confidence IN ('provider','inferred')),
+      CONSTRAINT giving_recurring_status CHECK (status IN ('active','missed','ended'))
+    )`);
+  // Two identities, because the two kinds are identified by different things:
+  // the provider's subscription id when there is one, otherwise the donor and
+  // the amount. Both partial, both org-scoped.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS giving_recurring_by_ref
+                    ON giving_recurring (org_id, source_id, recurring_ref) WHERE recurring_ref IS NOT NULL`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS giving_recurring_by_pattern
+                    ON giving_recurring (org_id, source_id, donor_id, amount_cents) WHERE recurring_ref IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_recurring_due
+                    ON giving_recurring (org_id, expected_next) WHERE status = 'active'`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
