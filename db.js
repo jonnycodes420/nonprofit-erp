@@ -3041,6 +3041,33 @@ async function seedData() {
     [userId, orgId, "admin@creoarts.org", hash, "Mike Henderson", "admin"]
   );
 
+  // ── BUILD-92 A1 — THE DEMO ORG'S OWN WORDS, ON A FRESH DATABASE ──────────
+  // BUILD-86 Part B gave the demo org Heart of Africa's vocabulary, but only
+  // through `scripts/seed-build86-vocabulary.js`, run by hand against one
+  // server. A fresh database therefore came up saying "donors" and "funds" —
+  // the generic words BUILD-86 exists to avoid — until somebody remembered to
+  // run the script. The words belong to the seed.
+  //   Keys are exactly shared/vocabulary.js's VOCAB_KEYS; the values are the
+  // ones in that script, kept in step with it.
+  //   `WHERE vocabulary_json IS NULL` is what makes this idempotent AND safe:
+  // an org that has answered the vocabulary questions (including this demo org
+  // once somebody edits it in Settings) is never overwritten on a later boot.
+  await pool.query(
+    `UPDATE orgs SET vocabulary_json = $2, vocabulary_set_at = NOW()
+      WHERE id = $1 AND vocabulary_json IS NULL`,
+    [orgId, JSON.stringify({
+      giver_singular: "sponsor",
+      giver_plural: "sponsors",
+      monthly_giver_singular: "sponsor",
+      monthly_giver_plural: "sponsors",
+      fund_singular: "designation",
+      fund_plural: "designations",
+      fiscal_year_start_month: 7,
+      season_name: "Spring Campaign",
+      season_date: "2027-06-30",
+    })]
+  );
+
   const donors = [
     ["d1", orgId, "Margaret Chen",         "m.chen@example.com",    "212-555-0101", "major",  "steward",   24500, 5000,  "2024-11-15", 8, '["board-adjacent","arts"]',  "Prefers phone calls. Interested in youth programming. Has mentioned potentially increasing giving this year."],
     ["d2", orgId, "Robert & Lisa Atkinson", "ratkinson@example.com", "917-555-0234", "mid",    "steward",   12000, 3000,  "2025-01-03", 5, '["education","recurring"]',  "Both educators. Very engaged with after-school programs. Anniversary donors."],
@@ -3345,8 +3372,18 @@ async function seedData() {
   ];
   for (const b of budgets2025) {
     await pool.query(
+      // BUILD-92 A1 — the conflict target must name the index that SURVIVES.
+      // The CREATE TABLE above declares UNIQUE (org_id, account_id, year), but
+      // the BUILD-88a fund migration (this file, "A BUDGET HAS A FUND") DROPS
+      // that constraint and replaces it with budgets_account_year_fund on
+      // (org_id, account_id, year, COALESCE(fund_id, '')). Naming the dropped
+      // three-column target threw 42P10 on every boot, and because seedData is
+      // one un-chunked async function that aborted the WHOLE REST of the demo
+      // seed. These rows are the general, unfunded budget — one per
+      // org/account/year with no fund — so COALESCE(fund_id,'') is exactly
+      // right, and matches the upsert in server.js's budget route.
       `INSERT INTO budgets (id,org_id,account_id,year,amount)
-       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year) DO NOTHING`,
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (org_id, account_id, year, COALESCE(fund_id, '')) DO NOTHING`,
       b
     );
   }

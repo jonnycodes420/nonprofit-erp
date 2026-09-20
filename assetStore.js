@@ -293,7 +293,14 @@ async function refreshAssetFallbackCount() {
   if (!s3Config()) { dbFallbackRows = null; return null; }
   // BUILD-56 — soft-deleted rows sit in Postgres BY DESIGN (the retention
   // window), not as failed S3 puts; they must not trip the fallback alarm.
-  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db' AND deleted_at IS NULL`);
+  // BUILD-92 A1 — same fresh-database rule as refreshRetentionCounts below.
+  let r;
+  try {
+    [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE storage = 'db' AND deleted_at IS NULL`);
+  } catch (e) {
+    if (e && e.code === "42P01") { dbFallbackRows = null; return null; }
+    throw e;
+  }
   dbFallbackRows = r ? r.n : 0;
   return dbFallbackRows;
 }
@@ -302,7 +309,19 @@ async function refreshAssetFallbackCount() {
 // Cached like dbFallbackRows; bumped inline by prune/restore/purge.
 let softDeletedRows = null;
 async function refreshRetentionCounts() {
-  const [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE deleted_at IS NOT NULL`);
+  // BUILD-92 A1 — on a GENUINELY FRESH database this runs at module load,
+  // before initSchema has created portal_assets, and printed a full 42P01
+  // stack on the first boot of every new database. The honest answer while
+  // the table does not exist yet is "not known" (null), which is exactly what
+  // this counter already means before its first successful read — not an
+  // error. Any OTHER failure still throws to the caller's own handler.
+  let r;
+  try {
+    [r] = await query(`SELECT COUNT(*)::int AS n FROM portal_assets WHERE deleted_at IS NOT NULL`);
+  } catch (e) {
+    if (e && e.code === "42P01") { softDeletedRows = null; return null; }
+    throw e;
+  }
   softDeletedRows = r ? r.n : 0;
   return softDeletedRows;
 }
