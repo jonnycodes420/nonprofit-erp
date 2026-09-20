@@ -2485,7 +2485,8 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       const runId = await recordSourceRun(orgId, source, summary, { actorId, actorName, day });
       await run(
         `UPDATE giving_sources
-            SET last_synced_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
+            SET last_synced_at=NOW(), last_tried_at=NOW(), sync_cursor=?, last_error=NULL, last_error_at=NULL,
+                last_error_status=NULL, last_error_provider_code=NULL,
                 status='active', last_run_id=?, backfilled_at=COALESCE(backfilled_at, NOW()), updated_at=NOW()
           WHERE id=? AND org_id=?`, [cursor, runId, sourceId, orgId]);
       summary.ok = true; summary.runId = runId;
@@ -2495,9 +2496,19 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       // An error reads as a sentence with what to do, never a code - 89f shows
       // this string verbatim on the Settings row.
       const sentence = sourceErrorSentence(e, source);
-      await run(`UPDATE giving_sources SET status='error', last_error=?, last_error_at=NOW(), updated_at=NOW()
-                  WHERE id=? AND org_id=?`, [sentence, sourceId, orgId]).catch(() => {});
-      console.error(`[giving-source] ${source.provider} org=${orgId}:`, e.message);
+      // BUILD-92 A2 — the two facts that used to be thrown away land BESIDE
+      // the sentence (never replacing it): the HTTP status the provider
+      // answered with, and the provider's own error code. They are what an
+      // administrator needs when the sentence is not enough, and they are what
+      // proves which branch of the auth/permission split actually fired.
+      const { kind, status, providerCode } = classifySourceError(e);
+      await run(`UPDATE giving_sources
+                    SET status='error', last_error=?, last_error_at=NOW(), last_tried_at=NOW(),
+                        last_error_status=?, last_error_provider_code=?, updated_at=NOW()
+                  WHERE id=? AND org_id=?`,
+        [sentence, status, providerCode, sourceId, orgId]).catch(() => {});
+      console.error(`[giving-source] ${source.provider} org=${orgId}: ${kind}`,
+        { status, providerCode, message: e.message });
       return { ...summary, ok: false, error: e.code || "sync_failed", message: sentence };
     }
   });
@@ -2636,20 +2647,85 @@ async function recordSourceRun(orgId, source, summary, { actorId, actorName, day
 // An error a human can act on. Never a code, never a stack, and never
 // "something went wrong" - she needs to know whether to wait, to re-paste a
 // key, or to call somebody.
-function sourceErrorSentence(e, source) {
+//
+// BUILD-92 A2 — AUTHENTICATION AND PERMISSION ARE DIFFERENT PROBLEMS.
+// Found 20 September: Jonathan connected his own PayPal, the token step
+// answered 401 `invalid_client`, and the screen said "Steward could not finish
+// reading this source. The next check will try again." — which is the sentence
+// for a blip. He was told to wait for something that was never going to happen.
+//
+// The cause was that this function tested `/401|403|unauthor|invalid_client|
+// permission/` against the MESSAGE ONLY, and the message was "PayPal refused
+// the credentials: Client Authentication failed", which contains none of those
+// tokens. `e.status` was 401 and sitting right there unused.
+//
+// So the STEP is now declared by the adapter at the moment it knows it
+// (sources/*.js attach `step: "auth" | "permission" | "read"`), because the
+// adapter is the only place that knows whether a call was the token step or
+// the reporting call. Prose matching survives as the FALLBACK for errors
+// Steward does not control — but it can no longer be the thing that decides.
+//
+// `classifySourceError` is exported to the suite so the split can be tested
+// without a provider.
+function classifySourceError(e) {
   const code = e?.code || "";
+  const status = Number(e?.status) || null;
   const msg = String(e?.message || "");
-  if (code === "CREDENTIAL_KEY_MISSING") return "Steward cannot open the stored credentials for this source. Nothing was read and nothing was changed, and this needs an administrator.";
-  if (code === "SEALED_OPEN_FAILED") return "The saved key for this source could not be read. Disconnect it and connect it again with a fresh key.";
-  if (code === "NO_ADAPTER") return `Steward does not read ${source.display_name} automatically yet.`;
-  if (code === "PROVIDER_WRITE_REFUSED") return "Steward stopped a request that was not a read. Nothing was sent. This is a bug in Steward, not a problem with your account.";
-  if (/401|403|unauthor|invalid_client|permission/i.test(msg)) {
-    return source.provider === "paypal"
-      ? "PayPal has not allowed this yet. A newly enabled Transaction Search permission can take up to a day. Steward will keep trying."
-      : "The key for this source was refused. Check it is still active in the provider's settings, then paste it again.";
+  const providerCode = e?.providerCode || e?.stripeCode || null;
+  if (code) return { kind: code, status, providerCode };
+  // 1. What the adapter declared. Always believed over prose.
+  if (e?.step === "auth") return { kind: "auth", status, providerCode };
+  if (e?.step === "permission") return { kind: "permission", status, providerCode };
+  // 2. Then the status, which is a fact even when the prose is not.
+  if (status === 401) return { kind: "auth", status, providerCode };
+  if (status === 403) return { kind: "permission", status, providerCode };
+  if (status === 429) return { kind: "rate", status, providerCode };
+  // 3. Prose last, for anything thrown by code Steward does not own.
+  if (/invalid_client|client authentication failed|refused the credentials|unauthoriz|invalid api key|invalid key/i.test(msg))
+    return { kind: "auth", status, providerCode };
+  if (/permission|forbidden|not allowed|insufficient/i.test(msg))
+    return { kind: "permission", status, providerCode };
+  if (/429|rate limit/i.test(msg)) return { kind: "rate", status, providerCode };
+  if (/timeout|abort|ENOTFOUND|ECONN/i.test(msg)) return { kind: "unreachable", status, providerCode };
+  return { kind: "unknown", status, providerCode };
+}
+
+// The sentence for a refused CREDENTIAL, per provider. It names the exact
+// fields the person pasted, because "the key was refused" leaves them looking
+// at four boxes wondering which one. Kept in the voice of PROVIDERS[].help.
+const SOURCE_AUTH_SENTENCE = {
+  paypal: "PayPal did not accept this Client ID and Secret. Copy them again from your PayPal app and make sure the app is on Live.",
+  zeffy: "Zeffy did not accept this API key. Copy it again from Settings, then Integrations, then API.",
+  stripe: "Stripe did not accept this restricted key. Copy it again from Developers, then API keys, and make sure it has not been rolled.",
+  givebutter: "Givebutter did not accept this API key. Copy it again from Account, then Integrations, then API.",
+};
+// The sentence for a key that IS the right key but has not been allowed yet.
+// PayPal's is the only one that can honestly promise a delay: Transaction
+// Search really is a switch that takes time to come into effect.
+const SOURCE_PERMISSION_SENTENCE = {
+  paypal: "PayPal has not allowed this yet. A newly enabled Transaction Search permission can take up to a day. Steward will keep trying.",
+  zeffy: "Zeffy accepted this key but has not allowed it to read payments. Ask a Zeffy administrator to give the key payment access.",
+  stripe: "Stripe accepted this key but it does not have permission to read charges. Edit the restricted key and give it read access to Charges, Subscriptions, Invoices and Customers.",
+  givebutter: "Givebutter accepted this key but has not allowed it to read transactions. Check the key's permissions in Account, then Integrations, then API.",
+};
+
+function sourceErrorSentence(e, source) {
+  const provider = source?.provider || "";
+  const { kind } = classifySourceError(e);
+  if (kind === "CREDENTIAL_KEY_MISSING") return "Steward cannot open the stored credentials for this source. Nothing was read and nothing was changed, and this needs an administrator.";
+  if (kind === "SEALED_OPEN_FAILED") return "The saved key for this source could not be read. Disconnect it and connect it again with a fresh key.";
+  if (kind === "NO_ADAPTER") return `Steward does not read ${source?.display_name || provider} automatically yet.`;
+  if (kind === "PROVIDER_WRITE_REFUSED") return "Steward stopped a request that was not a read. Nothing was sent. This is a bug in Steward, not a problem with your account.";
+  if (kind === "auth") {
+    return SOURCE_AUTH_SENTENCE[provider]
+      || "The key for this source was refused. Check it is still active in the provider's settings, then paste it again.";
   }
-  if (/429|rate/i.test(msg)) return "The provider asked Steward to slow down. The next check will pick up where this one stopped.";
-  if (/timeout|abort|ENOTFOUND|ECONN/i.test(msg)) return "Steward could not reach the provider. The next check will try again.";
+  if (kind === "permission") {
+    return SOURCE_PERMISSION_SENTENCE[provider]
+      || "The provider accepted this key but has not allowed it to read yet. Check the key's permissions in the provider's settings.";
+  }
+  if (kind === "rate") return "The provider asked Steward to slow down. The next check will pick up where this one stopped.";
+  if (kind === "unreachable") return "Steward could not reach the provider. The next check will try again.";
   return "Steward could not finish reading this source. The next check will try again.";
 }
 
@@ -8995,16 +9071,87 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
       displayName: r.display_name, status: r.status,
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
+      // BUILD-92 A2 — ONE error per source (the sentence), with the provider's
+      // own facts beside it, and the moment Steward last TRIED. `last_tried_at`
+      // is stamped on every attempt, so a source that failed on its first
+      // check can no longer read "never checked" next to an error - which is
+      // the screen telling a person two contradictory things at once.
+      lastErrorStatus: r.last_error_status === null || r.last_error_status === undefined ? null : Number(r.last_error_status),
+      lastErrorProviderCode: r.last_error_provider_code || null,
+      lastTriedAt: r.last_tried_at || r.last_error_at || r.last_synced_at || null,
       lastRunId: r.last_run_id,
       giftsThisWeek: Number(r.gifts_this_week) || 0, giftsTotal: Number(r.gifts_total) || 0,
       // Never "live", never "real time": Steward checks every six hours and a
       // provider can publish hours late. The screen says when it last looked.
-      everChecked: !!r.last_synced_at,
+      everChecked: !!(r.last_tried_at || r.last_error_at || r.last_synced_at),
       // Deliberately never the credential, and never a prefix of it.
       hasCredentials: !!r.credentials_sealed,
     })),
   });
 }));
+
+// BUILD-92 A2 — ONE credential-cleaning rule, at the door, for every provider.
+// A key copied out of a browser or a password manager arrives with a trailing
+// newline or a leading space more often than not, and a secret with a newline
+// on the end is a secret the provider refuses - which then reads as a wrong
+// key and sends a person back to re-copy something that was already correct.
+// Trimmed BEFORE it is tested and BEFORE it is sealed, so what Steward stores
+// is exactly what it proved works. Only the outer whitespace goes; nothing
+// inside a credential is touched.
+function trimCredentials(raw) {
+  const out = {};
+  for (const [k, v] of Object.entries(raw || {})) {
+    out[k] = typeof v === "string" ? v.trim() : v;
+  }
+  return out;
+}
+
+// The ONE provider-test path. `/giving-sources/test` (the Test button) and
+// `POST /giving-sources` (connect) both run THIS - a second implementation is
+// a second set of rules about what "it works" means.
+// Returns { ok, count, totalCents, message } or { ok:false, kind, status,
+// providerCode, message } - never throws for a provider-side failure.
+async function runSourceCredentialTest(provider, credentials, orgId) {
+  const { PROVIDERS } = await import("./shared/givingSources.js");
+  const spec = PROVIDERS[provider];
+  const adapter = sourceAdapters.getAdapter(provider);
+  if (!adapter) return { ok: false, kind: "NO_ADAPTER", status: null, providerCode: null,
+                         message: `Steward does not read ${spec?.label || provider} automatically yet.` };
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
+  const http = sourceAdapters.readOnlyHttp(provider);
+  try {
+    const out = await adapter.testCredentials({ credentials, http, today });
+    return { ok: !!out?.ok, kind: "ok", status: null, providerCode: null,
+             count: out?.count || 0, totalCents: out?.totalCents || 0,
+             message: out?.message || null, requests: http.requests.length };
+  } catch (e) {
+    const { kind, status, providerCode } = classifySourceError(e);
+    return { ok: false, kind, status, providerCode,
+             message: sourceErrorSentence(e, { provider, display_name: spec?.label || provider }),
+             requests: http.requests.length };
+  }
+}
+
+// Whether connect should TALK to the provider before it saves.
+//
+// In production this is always true: refusing a credential the provider has
+// already rejected is the whole point of item 3. The one carve-out is a TEST
+// boot that has not been handed a local seam for this provider - there the
+// only thing on the other end of the wire is the real provider, and a suite
+// must never reach for one. A test boot that DOES set the provider's base
+// (tests/build92-source-errors.test.js boots a child server that way) verifies
+// exactly as production does, which is how the refusal is proven at all.
+const PROVIDER_BASE_ENV = {
+  paypal: ["PAYPAL_API_BASE"],
+  zeffy: ["ZEFFY_API_BASE"],
+  stripe: ["STRIPE_SOURCE_API_BASE", "STRIPE_API_BASE"],
+  givebutter: ["GIVEBUTTER_API_BASE"],
+};
+function verifyBeforeSaving(provider) {
+  if (!process.env.TEST_MODE) return true;
+  return (PROVIDER_BASE_ENV[provider] || []).some(k => !!process.env[k]);
+}
 
 // Test a key WITHOUT storing it: the last seven days, a count and a total.
 // She sees her own numbers before anything is written, which is the only way
@@ -9016,19 +9163,16 @@ app.post("/giving-sources/test", requireAuth, requireAdmin, wrap(async (req, res
   if (!spec || spec.mode !== "api") return res.status(400).json({ error: "unknown_provider" });
   const adapter = sourceAdapters.getAdapter(provider);
   if (!adapter) return res.status(400).json({ error: "adapter_unavailable", message: `Steward does not read ${spec.label} automatically yet.` });
-  const credentials = req.body?.credentials || {};
+  const credentials = trimCredentials(req.body?.credentials || {});
   const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
   if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
-  const org = await orgTz(req.user.orgId);
-  const today = orgToday(org);                          // ORG_TZ_SEAM_OK
-  const http = sourceAdapters.readOnlyHttp(provider);
-  try {
-    const out = await adapter.testCredentials({ credentials, http, today });
-    res.json({ ok: !!out?.ok, count: out?.count || 0, totalCents: out?.totalCents || 0,
-               message: out?.message || null, requests: http.requests.length });
-  } catch (e) {
-    res.json({ ok: false, message: sourceErrorSentence(e, { provider, display_name: spec.label }) });
-  }
+  const out = await runSourceCredentialTest(provider, credentials, req.user.orgId);
+  res.json({ ok: !!out.ok, count: out.count || 0, totalCents: out.totalCents || 0,
+             message: out.message || null, requests: out.requests || 0,
+             // The same two facts the source row carries, so the Test button
+             // and the saved row can never disagree about what happened.
+             errorStatus: out.ok ? null : (out.status ?? null),
+             errorProviderCode: out.ok ? null : (out.providerCode || null) });
 }));
 
 // Connect. THE ONE PLACE A PROVIDER CREDENTIAL ENTERS THE DATABASE.
@@ -9045,9 +9189,33 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   const spec = PROVIDERS[provider];
   if (!spec) return res.status(400).json({ error: "unknown_provider" });
 
-  const credentials = req.body?.credentials || {};
+  const credentials = trimCredentials(req.body?.credentials || {});
   const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
   if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
+
+  // BUILD-92 A2 item 3 — ASK THE PROVIDER BEFORE STORING THE KEY.
+  // A credential the provider has already refused must not be saved: it
+  // becomes a source that sits on the Settings screen failing every six hours
+  // while the person who pasted it believes they are connected.
+  //   The refusal is narrow ON PURPOSE. Only an AUTHENTICATION verdict stops
+  // the save, because only that one is certain and only that one is fixed by
+  // pasting a different key. A PERMISSIONS-PENDING result SAVES - PayPal's
+  // Transaction Search switch genuinely takes up to a day, and refusing there
+  // would make the product impossible to set up. Unreachable, rate-limited and
+  // unknown also save: a network blip is not a fact about the key.
+  //   It runs through runSourceCredentialTest, the same path the Test button
+  // uses. There is no second notion of "it works".
+  if (spec.credentialFields.length && verifyBeforeSaving(provider)) {
+    const check = await runSourceCredentialTest(provider, credentials, orgId);
+    if (!check.ok && (check.kind === "auth" || check.kind === "PROVIDER_WRITE_REFUSED")) {
+      return res.status(400).json({
+        error: "credentials_refused",
+        message: check.message,
+        errorStatus: check.status ?? null,
+        errorProviderCode: check.providerCode || null,
+      });
+    }
+  }
 
   // A fund is honoured only if it is this org's. A refused fund never
   // silently becomes a different fund (recordGift's rule, applied at the door).

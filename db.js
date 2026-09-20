@@ -2891,6 +2891,19 @@ async function initSchema() {
                     ON giving_sources (org_id, provider) WHERE status <> 'disconnected'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_sources_org ON giving_sources (org_id, status)`);
 
+  // ── BUILD-92 A2 — WHAT THE PROVIDER ACTUALLY SAID ─────────────────────────
+  // `last_error` is the SENTENCE a human reads and it does not change here.
+  // Beside it now sit the two facts that were thrown away: the HTTP status the
+  // provider answered with, and the provider's own machine-readable error code
+  // (PayPal's `invalid_client`, Stripe's `error.code`). Jonathan's PayPal
+  // failure was a plain 401 with `invalid_client` sitting on the error object
+  // unread while the sentence fell through to the generic last line.
+  //   `last_tried_at` is stamped on EVERY attempt, success or failure, which is
+  // what lets the API stop reporting "never checked" beside an error.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_error_status INTEGER`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_error_provider_code TEXT`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS last_tried_at TIMESTAMPTZ`);
+
   // A gift that came in through a source remembers which one, what the
   // provider took, and the provider's own subscription id.
   //

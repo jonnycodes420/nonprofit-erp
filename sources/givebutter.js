@@ -145,7 +145,11 @@ async function get(http, url, key) {
   if (res.status === 429) throw Object.assign(new Error("Givebutter rate limited the request (429)"), { status: 429 });
   if (!res.ok) {
     const msg = res?.body?.message || res?.body?.error || `HTTP ${res.status}`;
-    throw Object.assign(new Error(`Givebutter: ${msg}`), { status: res.status });
+    // BUILD-92 A2 — same split as Stripe: 401 is a wrong key, 403 is a key
+    // that has not been allowed to read this yet.
+    throw Object.assign(new Error(`Givebutter: ${msg}`),
+      { status: res.status, step: res.status === 401 ? "auth" : res.status === 403 ? "permission" : "read",
+        providerCode: res?.body?.code || res?.body?.error || null });
   }
   return res.body;
 }

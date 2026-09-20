@@ -117,7 +117,13 @@ async function get(http, url, key) {
   if (res.status === 429) throw Object.assign(new Error("Stripe rate limited the request (429)"), { status: 429 });
   if (!res.ok) {
     const msg = res?.body?.error?.message || `HTTP ${res.status}`;
-    throw Object.assign(new Error(`Stripe: ${msg}`), { status: res.status, stripeCode: res?.body?.error?.code });
+    // BUILD-92 A2 — a restricted key that does not exist / was rolled answers
+    // 401; one that exists but was not given the read permission answers 403.
+    // They are different problems with different fixes and now read that way.
+    throw Object.assign(new Error(`Stripe: ${msg}`),
+      { status: res.status, stripeCode: res?.body?.error?.code,
+        step: res.status === 401 ? "auth" : res.status === 403 ? "permission" : "read",
+        providerCode: res?.body?.error?.code || null });
   }
   return res.body;
 }

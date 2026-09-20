@@ -156,7 +156,12 @@ async function pacedGet(http, url, { key, sleep = ms => new Promise(r => setTime
 function assertOk(res) {
   if (res.ok) return;
   const msg = res?.body?.message || res?.body?.error || `HTTP ${res.status}`;
-  throw Object.assign(new Error(`Zeffy: ${msg}`), { status: res.status });
+  // BUILD-92 A2 — Zeffy has ONE key that both authenticates and authorises, so
+  // the status is the only thing that can separate "this key is wrong" (401)
+  // from "this key is not allowed to read payments yet" (403).
+  throw Object.assign(new Error(`Zeffy: ${msg}`),
+    { status: res.status, step: res.status === 401 ? "auth" : res.status === 403 ? "permission" : "read",
+      providerCode: res?.body?.code || res?.body?.error || null });
 }
 
 // Both spellings, because the response field is documented as `has_more` /

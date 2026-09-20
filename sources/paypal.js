@@ -88,7 +88,13 @@ async function accessToken({ credentials, http, env }) {
   const token = res?.body?.access_token;
   if (!token) {
     const detail = res?.body?.error_description || res?.body?.error || `HTTP ${res?.status}`;
-    throw Object.assign(new Error(`PayPal refused the credentials: ${detail}`), { status: res?.status });
+    // BUILD-92 A2 — THE STEP IS THE FACT, NOT THE PROSE. A failure HERE is the
+    // token step: PayPal did not accept the Client ID and Secret. It is not a
+    // permissions delay, and the sentence a human reads must not say it is.
+    // `step` is declared by the adapter so server.js never has to guess it
+    // from a message; `providerCode` is PayPal's own `invalid_client`.
+    throw Object.assign(new Error(`PayPal refused the credentials: ${detail}`),
+      { status: res?.status, step: "auth", providerCode: res?.body?.error || null });
   }
   return token;
 }
@@ -192,7 +198,10 @@ async function readPage({ base, token, http, start, end, page, notices }) {
     if (/INVALID_REQUEST|DATA_RETRIEVAL/i.test(name) && /date|range|period/i.test(msg)) {
       return { rows: [], drops: {}, morePages: false, rangeRefused: true };
     }
-    throw Object.assign(new Error(`PayPal: ${msg}`), { status: res.status });
+    // The token already worked to get here, so this is the REPORTING call.
+    // A 403 is the Transaction Search permission, which really can take a day.
+    throw Object.assign(new Error(`PayPal: ${msg}`),
+      { status: res.status, step: res.status === 403 ? "permission" : "read", providerCode: name || null });
   }
   const details = Array.isArray(res.body?.transaction_details) ? res.body.transaction_details : [];
   const rows = [], drops = {};
