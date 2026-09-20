@@ -505,6 +505,38 @@ const FIXTURE_FEE_CENTS = fixtureRows().reduce((s, r) => s + (r.feeCents || 0), 
   const afterDisc = await api("POST", `/giving-sources/${SRC}/sync`, tok, {});
   ok("a disconnected source does not sync", afterDisc.body.error === "source_disconnected", afterDisc.body);
 
+  // RECONNECTING RESUMES. A second row would strand the gifts and the monthly
+  // patterns they taught Steward under the old id, and she would watch three
+  // more months go by before the product could say "monthly" again about a
+  // donor it already knew.
+  const again = await api("POST", "/giving-sources", tok, {
+    provider: "paypal", credentials: { clientId: "second_id", clientSecret: "second_secret" },
+  });
+  ok("reconnecting the same provider adopts the dormant source rather than minting a second",
+    again.status === 200 && again.body.id === SRC && again.body.reconnected === true, again.body);
+  ok("...and it still owns every gift it read the first time",
+    again.body.giftsKept === 42, again.body.giftsKept);
+  const oneRow = await q(`SELECT COUNT(*)::int n FROM giving_sources WHERE org_id=$1 AND provider='paypal'`, [A]);
+  ok("there is ONE PayPal source on the org, not two", oneRow[0].n === 1, oneRow[0]);
+  const [reArmed] = await q(`SELECT status, credentials_sealed FROM giving_sources WHERE id=$1`, [SRC]);
+  // The suite deliberately does NOT hold the server's master key, so the
+  // property is asserted without decrypting: the row is active, what it holds
+  // is a sealed envelope, and it is not the envelope that was there before.
+  ok("it is active again, holding a NEW sealed envelope rather than the old one",
+    reArmed.status === "active" && box.isSealed(reArmed.credentials_sealed)
+    && reArmed.credentials_sealed !== stored.credentials_sealed
+    && !reArmed.credentials_sealed.includes("second_secret"), reArmed.status);
+
+  // And the commitments come back through the ordinary path, because the gift
+  // history is visible under the source id again.
+  const backAgain = await api("POST", `/giving-sources/${SRC}/sync-fixture`, tok,
+    { rows: rows.slice(0, 4), today: "2026-09-22" });
+  const recBack = await api("GET", "/giving-recurring", tok);
+  ok("a re-sync writes no duplicate gifts", backAgain.body.giftsCreated === 0 && backAgain.body.duplicates === 4, backAgain.body);
+  ok("and Dana is recognised as monthly again without waiting three more months",
+    (recBack.body.recurring || []).some(r => r.donorName === "Dana Reyes"),
+    (recBack.body.recurring || []).map(r => r.donorName));
+
   await closeDb();
   summary();
 })();

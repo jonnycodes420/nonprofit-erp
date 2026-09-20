@@ -9025,6 +9025,33 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   }
 
   const displayName = String(req.body?.displayName || "").trim().slice(0, 60) || providerLabel(provider);
+
+  // RECONNECTING RESUMES; IT DOES NOT START OVER. A provider this org has
+  // disconnected before still owns the gifts Steward read through it, and the
+  // recurring commitments those gifts taught it. Minting a SECOND row would
+  // strand both under the old id: the gifts would stay on the donor records
+  // (they are keyed to the donor, not the source) but the new row would show
+  // zero, and Steward would have to watch three more months go by before it
+  // could say "monthly" again about a donor it already knew. So the existing
+  // row is ADOPTED - new credentials, active again, same id - and the next
+  // sync re-reads history it already has, dedupes it, and restores the
+  // commitments through the ordinary path.
+  const [dormant] = await query(
+    `SELECT id FROM giving_sources WHERE org_id=? AND provider=? AND status='disconnected'
+      ORDER BY updated_at DESC LIMIT 1`, [orgId, provider]);
+  if (dormant) {
+    const revived = await query(
+      `UPDATE giving_sources
+          SET status='active', credentials_sealed=?, display_name=?, default_fund_id=COALESCE(?, default_fund_id),
+              last_error=NULL, last_error_at=NULL, updated_at=NOW()
+        WHERE id=? AND org_id=? AND status='disconnected'
+        RETURNING id`, [sealed, displayName, fundId, dormant.id, orgId]);
+    if (revived.length) {
+      const [kept] = await query("SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND giving_source_id=?", [orgId, dormant.id]);
+      return res.json({ id: dormant.id, provider, displayName, status: "active", reconnected: true, giftsKept: kept?.n || 0 });
+    }
+  }
+
   const id = "gs_" + uuid().slice(0, 10);
   const inserted = await query(
     `INSERT INTO giving_sources (id,org_id,provider,display_name,status,credentials_sealed,default_fund_id,created_by,created_by_name)
@@ -9033,7 +9060,7 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
      RETURNING id`,
     [id, orgId, provider, displayName, sealed, fundId, actor(req).id, actor(req).name]);
   if (!inserted.length) return res.status(409).json({ error: "already_connected", message: `${providerLabel(provider)} is already connected.` });
-  res.json({ id, provider, displayName, status: "active" });
+  res.json({ id, provider, displayName, status: "active", reconnected: false });
 }));
 
 // Rename, or set the default fund. Credentials are NOT editable here - a new
