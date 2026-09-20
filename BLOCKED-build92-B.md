@@ -12,17 +12,30 @@ URL and date for each, register them in `SOURCE_LOGOS` in
 `client/src/components/Settings.jsx`, and flip `SOURCE_LOGOS_ENABLED` to true.
 
 ## 2. Vercel preview URL for this branch
-Not produced. `BLOCKED-vercel-gate.md` records that this repo's Vercel project
-has no CLI token available in this environment and that production deploys from
-main are OFF by Jonathan's instruction. A branch preview needs a `VERCEL_TOKEN`
-(or an interactive `vercel login`) that this session does not have, so no
-preview was deployed and nothing was pushed.
-Review locally instead:
+NOT DEPLOYED, and the blocker is a decision rather than a credential. Being
+honest about which:
+
+* A Vercel GIT preview is the normal path and needs the branch PUSHED.
+  Track B was told not to push, merge or deploy; the orchestrator owns that.
+* A file-tree preview through the Vercel plugin IS possible from here (the
+  plugin is authenticated for team `team_bmpIjp9a9Cji8y2NqHsEuewv`, which owns
+  the `client` project). It was deliberately not used: it would either upload
+  into the real `client` project or create a second project, and a preview
+  built without the project's own env would fall back to the PRODUCTION
+  Railway API. B1 is a super-admin screen that mints real Stripe Checkout
+  sessions, so a preview pointed at production is not a thing to do without
+  being asked.
+
+So: push `build-92b` and let the project's own git integration build the
+preview (production deploys from main stay off), or review locally:
+
 ```
 cd ~/steward-92b/client && VITE_API_URL=http://localhost:5621 npx vite build
 cd ~/steward-92b && API=http://localhost:5621 PORT=4183 node scripts/local-preview.js
-# then http://localhost:4183  (server recipe in the Track B brief / tests/README.md)
+# then http://localhost:4183
+# server recipe: the Track B brief, or tests/README.md
 ```
+Local preview URL used for every measurement in this build: http://localhost:4183
 
 ## 3. `lastTriedAt` and one-error-per-source (B2)
 Track A is adding both to the API. Track B codes against the CURRENT shape and
