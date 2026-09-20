@@ -2107,7 +2107,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
     {key:"failed",n:railFailedThisWeek,label:`${capitalize(t("monthly_giver",2))} whose card failed this week`,
-     definition:"A recurring card declined in the last seven days and not yet recovered."},
+     definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
     if(key==="failed") return {

@@ -30,8 +30,12 @@ const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 const ORG = "org_b88c2", ORG_PLAIN = "org_b88c2p";
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
-const PORT = 4173;
-const APP = `http://localhost:${PORT}`;
+// APP_URL, never a literal port (BUILD-92 B2): a machine running a second
+// checkout of this repo already has a preview on :4173, and this suite then
+// drove THAT app and reported its failures as this one's. The API's CORS
+// allowlist must cover whatever origin is used.
+const APP = process.env.APP_URL || "http://localhost:4173";
+const PORT = Number(new URL(APP).port || 80);
 
 let captured = [];
 const sink = http.createServer((req, res) => {
