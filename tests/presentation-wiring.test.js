@@ -23,7 +23,11 @@ const { ok, summary, login, api, q } = require("./helpers");
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
 const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
-const PORT = 4173;
+// APP_URL, never a literal port (BUILD-92 B2): a machine running a second
+// checkout of this repo already has a preview on :4173, and this suite then
+// measured THAT app's dist and reported the result as this one's. The API's
+// CORS allowlist must cover whatever origin is used.
+const PORT = Number((process.env.APP_URL || "").split(":").pop()) || 4173;
 const EMAIL = "b41mobile@example.org";
 
 const skip = why => { console.log("  SKIP  " + why + "\n\n0 passed, 0 failed (suite skipped)"); process.exit(0); };
