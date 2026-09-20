@@ -2433,6 +2433,12 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     centsCreated: 0, feeCents: 0,
     refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0, failedRecurring: [],
     dropped: {}, nameCollisions: [], notices: [],
+    // BUILD-92 A3 — two counters, deliberately separate. `duplicateQuestions`
+    // is money Steward did NOT write and a human still has to answer for;
+    // `ridesOnTop` is money the shortcut resolved without asking. Summing them
+    // would hide which of the two happened, which is the only thing that
+    // matters when the totals look wrong.
+    duplicateQuestions: 0, ridesOnTop: 0,
   };
   const touchedDonors = new Set();
 
@@ -2514,6 +2520,83 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
   });
 }
 
+// ── BUILD-92 A3 — THE SAME GIFT FROM TWO PLACES ────────────────────────────
+//
+// De-duplication is per source, by the provider's own id, and that is right:
+// forty $100 Sunday gifts are forty gifts, and only the provider can say which
+// two rows are one payment. But Donorbox runs on the ORGANISATION'S OWN Stripe
+// and PayPal. Connect all three and the same money arrives three times, under
+// three ids, and every figure in the product trebles.
+//
+// THE RULE: a row from source B that matches a gift already on file from a
+// DIFFERENT source on
+//   · the amount, to the cent,
+//   · the date, within two days (Cowork's window - a provider settles and
+//     reports on its own schedule, and the two rarely land the same day),
+//   · and the donor (the same donor record, or the same email address)
+// is NOT written. It becomes ONE LINE that asks, with two answers.
+//
+// It is never silently dropped and never silently doubled. The provider's
+// whole row is kept on the question, so "Keep both" can write it later
+// without going back to the provider.
+//
+// CROSS-SOURCE ONLY. Two genuine same-day $50 gifts from one donor inside ONE
+// source are two gifts and always were; this rule cannot see them.
+const CROSS_SOURCE_DAY_WINDOW = 2;
+
+// Does one of these two sources ride on the other? THE ONE SHORTCUT, per
+// source, set by a human who knows their own stack ("Donorbox sits on top of
+// Stripe"). Either direction counts: the relationship is about the money
+// being the same money, not about which row was typed first.
+function sourcesRideTogether(a, b) {
+  if (!a || !b) return false;
+  return a.sits_on_top_of === b.id || b.sits_on_top_of === a.id;
+}
+
+// The gift already on file that this provider row looks like, or null.
+// Ordered by how close the dates are, so the nearest candidate is the one a
+// human is asked about.
+async function findCrossSourceGift(orgId, source, row, donor) {
+  const rows = await query(
+    `SELECT g.id, g.amount, g.date, g.external_id, g.giving_source_id,
+            s.id AS src_id, s.display_name AS src_name, s.provider AS src_provider,
+            s.sits_on_top_of AS src_sits_on_top_of
+       FROM gifts g
+       JOIN giving_sources s ON s.id = g.giving_source_id AND s.org_id = g.org_id
+      WHERE g.org_id = ?
+        AND g.giving_source_id <> ?
+        AND ROUND(g.amount * 100) = ?
+        AND g.date::date BETWEEN ?::date - ?::int AND ?::date + ?::int
+        AND g.donor_id IN (
+              SELECT d.id FROM donors d
+               WHERE d.org_id = ? AND d.deleted_at IS NULL
+                 AND (d.id = ? OR (COALESCE(d.email,'') <> '' AND LOWER(d.email) = LOWER(?)))
+            )
+      ORDER BY ABS(g.date::date - ?::date), g.id
+      LIMIT 1`,
+    [orgId, source.id, row.amountCents,
+     row.occurredAt, CROSS_SOURCE_DAY_WINDOW, row.occurredAt, CROSS_SOURCE_DAY_WINDOW,
+     // resolveSourceDonor returns { id, name } - the address to match on is the
+     // one the PROVIDER reported, which is also the one it resolved the donor
+     // by. The sentinel makes the email arm dead rather than matching blanks
+     // when a provider row carries no address at all.
+     orgId, donor.id, (row.donorEmail || "").trim() || "\u0000no-email",
+     row.occurredAt]);
+  return rows[0] || null;
+}
+
+// The line a human reads. One sentence, the money and the place it already
+// came from, because that is what makes the answer obvious.
+function crossSourceSentence(amountCents, otherSourceName, otherDate) {
+  const dollars = (amountCents % 100 === 0)
+    ? `$${Math.round(amountCents / 100).toLocaleString("en-US")}`
+    : `$${(amountCents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(otherDate || ""));
+  const MONTHS = ["Jan", "Feb", "March", "April", "May", "June", "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
+  const when = m ? `${MONTHS[+m[2] - 1]} ${+m[3]}` : String(otherDate || "");
+  return `Looks like the same ${dollars} gift already here from ${otherSourceName} on ${when}.`;
+}
+
 // ONE contract row -> at most one gift, through recordGift.
 async function writeSourceRow(orgId, source, row, ctx) {
   const { day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey } = ctx;
@@ -2544,9 +2627,51 @@ async function writeSourceRow(orgId, source, row, ctx) {
     return;
   }
 
+  // BUILD-92 A3 — a row this org has ALREADY ANSWERED about, or already been
+  // asked about, says nothing new. Checked before the donor is resolved so a
+  // re-sync of an answered row cannot create a donor record either.
+  const [answered] = await query(
+    `SELECT id FROM gifts WHERE org_id=? AND also_external_ids @> ?::jsonb LIMIT 1`,
+    [orgId, JSON.stringify([key])]);
+  if (answered) { summary.duplicates++; return; }
+  const [standing] = await query(
+    `SELECT id, status FROM gift_duplicate_questions WHERE org_id=? AND external_key=?`, [orgId, key]);
+  if (standing && standing.status === "open") { summary.duplicateQuestions++; return; }
+  if (standing && standing.status === "same_gift") { summary.duplicates++; return; }
+
   const donor = await resolveSourceDonor(orgId, source, row, { actorId, actorName, summary });
   if (!donor) { summary.dropped.no_donor_identity = (summary.dropped.no_donor_identity || 0) + 1; return; }
   touchedDonors.add(donor.id);
+
+  // …and only now, with a donor, can the cross-source question be asked.
+  // `standing.status === "kept_both"` falls straight through: that gift was
+  // written with this external id and recordGift's own dedupe holds it.
+  if (!standing) {
+    const other = await findCrossSourceGift(orgId, source, row, donor);
+    if (other) {
+      const otherSource = { id: other.src_id, sits_on_top_of: other.src_sits_on_top_of };
+      if (sourcesRideTogether(source, otherSource)) {
+        // THE SHORTCUT. Somebody has already said these two are one stack, so
+        // the second id goes onto the gift and nobody is asked anything.
+        await run(
+          `UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+            WHERE id=? AND org_id=?`, [JSON.stringify([key]), other.id, orgId]);
+        summary.ridesOnTop++;
+        return;
+      }
+      const sentence = crossSourceSentence(row.amountCents, other.src_name || other.src_provider, other.date);
+      await run(
+        `INSERT INTO gift_duplicate_questions
+           (id,org_id,source_id,existing_gift_id,existing_source_id,external_key,donor_id,
+            amount_cents,occurred_at,sentence,candidate,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?::jsonb,?,?)
+         ON CONFLICT (org_id, external_key) DO NOTHING`,
+        ["gdq_" + uuid().slice(0, 10), orgId, source.id, other.id, other.src_id, key, donor.id,
+         row.amountCents, row.occurredAt, sentence, JSON.stringify(row), actorId, actorName]);
+      summary.duplicateQuestions++;
+      return;
+    }
+  }
 
   const written = await recordGift({
     orgId, donorId: donor.id,
@@ -9070,6 +9195,7 @@ app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
       id: r.id, provider: r.provider, providerLabel: providerLabel(r.provider),
       displayName: r.display_name, status: r.status,
       defaultFundId: r.default_fund_id, defaultFundName: r.fund_name || null,
+      sitsOnTopOf: r.sits_on_top_of || null,
       lastSyncedAt: r.last_synced_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
       // BUILD-92 A2 — ONE error per source (the sentence), with the provider's
       // own facts beside it, and the moment Steward last TRIED. `last_tried_at`
@@ -9152,6 +9278,91 @@ function verifyBeforeSaving(provider) {
   if (!process.env.TEST_MODE) return true;
   return (PROVIDER_BASE_ENV[provider] || []).some(k => !!process.env[k]);
 }
+
+
+// ── BUILD-92 A3 — THE QUESTIONS, AND THEIR TWO ANSWERS ─────────────────────
+// Declared above "/giving-sources/:id" so Express never resolves "duplicates"
+// as a source id - the same rule "providers" already lives by.
+//
+// A question is ONE LINE. It exists because Steward refused to guess, and it
+// stays until a human answers it. Nothing here writes money by itself.
+app.get("/giving-sources/duplicates", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT q.*, d.name AS donor_name, s.display_name AS source_name, s.provider AS source_provider,
+            e.display_name AS existing_source_name
+       FROM gift_duplicate_questions q
+       LEFT JOIN donors d ON d.id = q.donor_id AND d.org_id = q.org_id
+       LEFT JOIN giving_sources s ON s.id = q.source_id AND s.org_id = q.org_id
+       LEFT JOIN giving_sources e ON e.id = q.existing_source_id AND e.org_id = q.org_id
+      WHERE q.org_id = ? AND q.status = 'open'
+      ORDER BY q.created_at ASC, q.id ASC`, [req.user.orgId]);
+  res.json({
+    questions: rows.map(r => ({
+      id: r.id, sentence: r.sentence,
+      donorId: r.donor_id, donorName: r.donor_name || null,
+      amountCents: Number(r.amount_cents) || 0, occurredAt: r.occurred_at,
+      sourceId: r.source_id, sourceName: r.source_name || r.source_provider,
+      existingGiftId: r.existing_gift_id, existingSourceId: r.existing_source_id,
+      existingSourceName: r.existing_source_name || null,
+      createdAt: r.created_at,
+    })),
+  });
+}));
+
+// "Same gift." The second id goes ONTO the gift that is already on file, so
+// the question never returns - not on the next sync, not on any sync, and not
+// if the source is disconnected and reconnected.
+app.post("/giving-sources/duplicates/:id/same-gift", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [q0] = await query("SELECT * FROM gift_duplicate_questions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!q0) return res.status(404).json({ error: "question not found" });
+  if (q0.status !== "open") return res.status(409).json({ error: "already_answered", status: q0.status });
+  const a = actor(req);
+  await run(
+    `UPDATE gifts SET also_external_ids = COALESCE(also_external_ids, '[]'::jsonb) || ?::jsonb
+      WHERE id=? AND org_id=?`, [JSON.stringify([q0.external_key]), q0.existing_gift_id, orgId]);
+  await run(
+    `UPDATE gift_duplicate_questions SET status='same_gift', resolved_at=NOW(), resolved_by=?, resolved_by_name=?
+      WHERE id=? AND org_id=?`, [a.id, a.name, q0.id, orgId]);
+  res.json({ ok: true, status: "same_gift", giftId: q0.existing_gift_id });
+}));
+
+// "Keep both." The provider's row was kept whole on the question, so the gift
+// is written now, through recordGift, exactly as the sync would have written
+// it. One gift, one write path - there is no second one here either.
+app.post("/giving-sources/duplicates/:id/keep-both", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [q0] = await query("SELECT * FROM gift_duplicate_questions WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!q0) return res.status(404).json({ error: "question not found" });
+  if (q0.status !== "open") return res.status(409).json({ error: "already_answered", status: q0.status });
+  const [source] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=?", [q0.source_id, orgId]);
+  if (!source) return res.status(404).json({ error: "source not found" });
+  const row = typeof q0.candidate === "string" ? JSON.parse(q0.candidate) : q0.candidate;
+  const a = actor(req);
+  const written = await recordGift({
+    orgId, donorId: q0.donor_id,
+    amount: (Number(q0.amount_cents) || 0) / 100,
+    date: q0.occurred_at,
+    type: "cash",
+    notes: row?.memo || "",
+    fundId: source.default_fund_id || null,
+    defaultFund: false,
+    paymentMethod: source.display_name,
+    externalId: q0.external_key,
+    conflict: "external",
+    givingSourceId: source.id,
+    processorFeeAmount: (Number(row?.feeCents) || 0) / 100,
+    providerRecurringRef: row?.recurringRef || null,
+    post: true,
+    source: `giving-source:${source.provider}`,
+    actorId: a.id, actorName: a.name,
+    thankYou: true,
+  });
+  await run(
+    `UPDATE gift_duplicate_questions SET status='kept_both', resolved_at=NOW(), resolved_by=?, resolved_by_name=?
+      WHERE id=? AND org_id=?`, [a.id, a.name, q0.id, orgId]);
+  res.json({ ok: true, status: "kept_both", giftId: written?.gift?.id || null, duplicate: !!written?.duplicate });
+}));
 
 // Test a key WITHOUT storing it: the last seven days, a count and a total.
 // She sees her own numbers before anything is written, which is the only way
@@ -9295,9 +9506,25 @@ app.patch("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wr
   }
   const displayName = req.body?.displayName !== undefined
     ? String(req.body.displayName || "").trim().slice(0, 60) || s.display_name : s.display_name;
-  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, updated_at=NOW() WHERE id=? AND org_id=?",
-            [displayName, fundId, req.params.id, orgId]);
-  res.json({ ok: true, displayName, defaultFundId: fundId });
+
+  // BUILD-92 A3 — THE ONE SHORTCUT. "Donorbox sits on top of Stripe" is a fact
+  // about the org's own stack that only a human can state; once stated, every
+  // cross-source match between the two resolves as one gift without asking.
+  // It must be THIS org's other source, and never itself - a source riding on
+  // itself would make every match self-resolving and silently swallow real
+  // gifts, which is the exact failure this whole part exists to prevent.
+  let sitsOnTopOf = s.sits_on_top_of;
+  if (req.body?.sitsOnTopOf !== undefined) {
+    sitsOnTopOf = req.body.sitsOnTopOf || null;
+    if (sitsOnTopOf) {
+      if (sitsOnTopOf === req.params.id) return res.status(400).json({ error: "self_reference", message: "A source cannot sit on top of itself." });
+      const [other] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [sitsOnTopOf, orgId]);
+      if (!other) return res.status(404).json({ error: "unknown_source" });
+    }
+  }
+  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, sits_on_top_of=?, updated_at=NOW() WHERE id=? AND org_id=?",
+            [displayName, fundId, sitsOnTopOf, req.params.id, orgId]);
+  res.json({ ok: true, displayName, defaultFundId: fundId, sitsOnTopOf });
 }));
 
 // "Check now". Same function the schedule calls - there is no second path.
