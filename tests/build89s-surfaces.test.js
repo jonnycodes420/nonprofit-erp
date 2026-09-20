@@ -215,5 +215,113 @@ function chunk(src, startMarker, endMarker) {
     sourceMetrics.some(m => /27 to 34 days/.test(m.definition) && /nobody has confirmed it/.test(m.definition)),
     sourceMetrics.map(m => m.definition));
 
+  // ══ §7 · IT ACTUALLY RENDERS ═════════════════════════════════════════════
+  // Everything above reads SOURCE, and source cannot see a const read before
+  // its declaration, a hook called after an early return, or an error boundary
+  // swallowing the whole tab. This repo has paid for all three. So the last
+  // section opens the page in a real browser and looks at it.
+  //
+  // SKIPs cleanly (never fails) without Playwright or a dist built against the
+  // local API — the same convention every browser suite here uses, and the
+  // same skip that would have caught a dist rebuilt without VITE_API_URL.
+  console.log("\n— §7 · the page opens, in a browser —");
+  await (async () => {
+    const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
+    const DIST = path.join(root, "client", "dist");
+    const note = why => console.log("  SKIP  §7 " + why);
+    if (!fs.existsSync(path.join(DIST, "index.html"))) return note("client/dist not built");
+    const API = (process.env.BASE || "http://localhost:5601");
+    const origin = API.replace(/^https?:\/\//, "");
+    const js = fs.readdirSync(path.join(DIST, "assets")).filter(f => f.endsWith(".js"));
+    if (!js.some(f => fs.readFileSync(path.join(DIST, "assets", f), "utf8").includes(origin)))
+      return note(`client/dist not built against ${API} (VITE_API_URL)`);
+    let chromium;
+    try { module.paths.unshift(path.join(PW_DIR, "node_modules")); ({ chromium } = require("playwright")); }
+    catch { return note("Playwright not found (set PLAYWRIGHT_DIR)"); }
+    const APP = "http://localhost:4173";
+    try { await fetch(APP + "/", { signal: AbortSignal.timeout(1500) }); }
+    catch { return note("nothing serving :4173 (the API's CORS allowlist covers that origin only)"); }
+
+    let auth;
+    try {
+      const r = await fetch(API + "/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "b89sa@t.local", password: "loadtest1234" }) });
+      auth = await r.json();
+    } catch { return note("the local API is not answering"); }
+    if (!auth?.token) return note("no fixture org on this stack (run build89s-sources first)");
+
+    const browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+      const errs = [];
+      page.on("pageerror", e => errs.push("pageerror: " + e.message));
+      // /_vercel/insights is absent from a local preview by design and is the
+      // one 404 this page is allowed to produce.
+      page.on("response", r => { if (r.status() >= 400 && !/_vercel\//.test(r.url())) errs.push(`HTTP ${r.status()} ${r.url()}`); });
+
+      await page.goto(APP + "/", { waitUntil: "domcontentloaded" });
+      await page.evaluate(a => {
+        localStorage.setItem("npe_token", a.token);
+        localStorage.setItem("npe_user", JSON.stringify(a.user));
+        localStorage.setItem("npe_org", JSON.stringify(a.org));
+      }, auth);
+      await page.goto(APP + "/dashboard", { waitUntil: "networkidle" });
+      await page.waitForTimeout(1000);
+      await page.click('button:has-text("Settings")').catch(() => {});
+      await page.waitForTimeout(800);
+
+      const tab = page.locator('button:has-text("Where giving comes in")').first();
+      ok("the Settings tab is there to click", await tab.count() > 0);
+      await tab.click();
+      await page.waitForTimeout(1100);
+
+      const seen = await page.evaluate(() => {
+        const q = s => document.querySelector(s);
+        const rows = [...document.querySelectorAll('[data-testid="gs-row"]')];
+        return {
+          intro: q('[data-testid="gs-intro"]')?.innerText || "",
+          rows: rows.map(r => ({
+            name: r.querySelector('[data-testid="gs-name"]')?.innerText || "",
+            checked: r.querySelector('[data-testid="gs-checked"]')?.innerText || "",
+            check: !!r.querySelector('[data-testid="gs-check-now"]'),
+            disc: !!r.querySelector('[data-testid="gs-disconnect"]'),
+          })),
+          connect: [...document.querySelectorAll('[data-testid="gs-connect-btn"]')].map(b => b.innerText),
+          file: q('[data-testid="gs-file-note"]')?.innerText || "",
+          // The BUILD-21 boundary catching a render throw is how this page
+          // would fail WITHOUT looking broken to a source guard.
+          boundary: /Something went wrong|Try reloading/i.test(document.body.innerText),
+        };
+      });
+
+      ok("the page renders rather than landing in an error boundary", seen.boundary === false, seen.boundary);
+      ok("no page error and no unexpected request failure", errs.length === 0, errs.slice(0, 4));
+      ok("the promise is on her screen, not only on the landing",
+        /never holds or moves a dollar/i.test(seen.intro), seen.intro.slice(0, 90));
+      ok("a connected source renders as a row with both actions",
+        seen.rows.length >= 1 && seen.rows[0].check && seen.rows[0].disc, seen.rows);
+      // THE HONEST FRESHNESS LINE, rendered from a real timestamp rather than
+      // asserted as a source string.
+      // ALL THREE HONEST FORMS, because this assertion asks the server a
+      // question about NOW and the answer depends on when the battery ran: a
+      // sync seconds old is "checked just now" (there is no clock time worth
+      // printing), an older one carries "N minutes/hours ago, at 2:14 AM", and
+      // an old one carries a date. What must hold in every case is that the row
+      // names WHEN Steward last looked, and never claims to be current.
+      ok("the row says when Steward last LOOKED, in one of its honest forms",
+        /^checked (just now|\d+ (minutes?|hours?) ago, at \d|[A-Z][a-z]{2} \d+ at \d)/.test(seen.rows[0]?.checked || ""),
+        seen.rows[0]?.checked);
+      ok("...and never reads as 'not checked yet' for a source that has been",
+        !/not checked yet/i.test(seen.rows[0]?.checked || ""), seen.rows[0]?.checked);
+      ok('...and never says "live" or "real time"',
+        !/\b(live|real[- ]time|instantly)\b/i.test(seen.rows[0]?.checked || ""), seen.rows[0]?.checked);
+      ok("the other providers are offered and the connected one is marked",
+        seen.connect.some(b => /connected/i.test(b)) && seen.connect.length >= 4, seen.connect);
+      ok("Cash App and Venmo are explained rather than quietly absent",
+        /Cash App/.test(seen.file) && /Venmo/.test(seen.file) && /statement/i.test(seen.file),
+        seen.file.slice(0, 90));
+    } finally { await browser.close(); }
+  })();
+
   summary();
 })();
