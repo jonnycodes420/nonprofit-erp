@@ -2337,6 +2337,39 @@ async function sweepMissedRecurring(orgId, { today = null, sourceId = null } = {
   return { opened, considered: rows.length };
 }
 
+// THE PROVIDER TOLD US. Stripe reports a failed invoice on a subscription;
+// Givebutter reports a plan that failed, was canceled or was paused. Both
+// arrive as a `failed` contract row carrying the provider's own recurring
+// reference, and both mean the same thing: this is not a payment running late,
+// it is a payment that did not happen.
+//
+// `missed_for` is stamped with the commitment's OWN expected date - the same
+// value the ordinary sweep would use - so the two paths can never raise two
+// Threads about one missed month.
+async function raiseToldFailures(orgId, source, failures, day) {
+  let opened = 0;
+  for (const f of failures || []) {
+    const [r] = await query(
+      `SELECT * FROM giving_recurring WHERE org_id=? AND source_id=? AND recurring_ref=?`,
+      [orgId, source.id, f.ref]);
+    // Nothing recognised under that reference yet, so there is no commitment
+    // to say anything about. A first-ever payment that fails is not a donor
+    // who stopped giving.
+    if (!r) continue;
+    if (r.status === 'ended') continue;
+    const key = r.expected_next || f.on || day;
+    if (r.missed_for === key) continue;
+    const thread = await openMissedRecurringThread(orgId, r.donor_id, {
+      amountCents: Number(r.amount_cents) || f.amountCents,
+      provider: source.provider, expectedNext: key, interval: r.interval,
+    });
+    await run(`UPDATE giving_recurring SET status='missed', missed_for=?, missed_thread_id=?, updated_at=NOW()
+                WHERE id=? AND org_id=?`, [key, thread?.id || null, r.id, orgId]);
+    if (thread) opened++;
+  }
+  return opened;
+}
+
 // syncSource(orgId, sourceId) - the one entry point. Returns a run summary;
 // never throws for a provider problem (that becomes `last_error` and a
 // sentence a human can act on).
@@ -2354,7 +2387,7 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
     sourceId, provider: source.provider, reason, isBackfill,
     rowsRead: 0, giftsCreated: 0, duplicates: 0, donorsCreated: 0,
     centsCreated: 0, feeCents: 0,
-    refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0,
+    refundsSkipped: 0, refundsOnFile: [], failedSkipped: 0, failedRecurring: [],
     dropped: {}, nameCollisions: [], notices: [],
   };
   const touchedDonors = new Set();
@@ -2398,7 +2431,8 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       const rec = await refreshRecurringForDonors(orgId, sourceId, source.provider, [...touchedDonors], day);
       summary.recurring = rec;
       const swept = await sweepMissedRecurring(orgId, { today: day, sourceId });
-      summary.threadsOpened = swept.opened;
+      const told = await raiseToldFailures(orgId, source, summary.failedRecurring, day);
+      summary.threadsOpened = swept.opened + told;
 
       const runId = await recordSourceRun(orgId, source, summary, { actorId, actorName, day });
       await run(
@@ -2434,7 +2468,20 @@ async function writeSourceRow(orgId, source, row, ctx) {
   const { day, actorId, actorName, isBackfill, summary, touchedDonors, externalKey } = ctx;
   const key = externalKey(source.provider, row.externalId);
 
-  if (row.status === "failed") { summary.failedSkipped++; return; }
+  if (row.status === "failed") {
+    summary.failedSkipped++;
+    // A PROVIDER SAYING A RECURRING PAYMENT DID NOT HAPPEN IS BETTER EVIDENCE
+    // THAN THE ABSENCE OF ONE. The five-day grace exists because an absence is
+    // ambiguous - the money may simply be late, or published late. A named
+    // failure on a named subscription is not ambiguous, so it raises the
+    // Thread the same day rather than waiting the grace out. This is also the
+    // one channel a stopped Givebutter plan travels down: the contract already
+    // had a place for it, so there is no second path to keep in step.
+    if (row.recurringRef) {
+      summary.failedRecurring.push({ ref: row.recurringRef, on: row.occurredAt, amountCents: row.amountCents });
+    }
+    return;
+  }
   if (row.status === "refunded") {
     // See the refund note at the top of this section. A refund whose gift is
     // already on file is NAMED, not silently miscounted.
