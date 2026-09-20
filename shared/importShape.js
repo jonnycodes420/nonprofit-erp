@@ -336,9 +336,18 @@ export function normalizeMoney(val, opts = {}) {
   const paren = s.match(/^\((.*)\)$/);                               // accounting negative
   if (paren) { s = paren[1].trim(); sign = -1; negMarks++; }
   if (/^CR\s+/i.test(s)) { s = s.replace(/^CR\s+/i, ""); sign = -1; negMarks++; }  // credit
+  // BUILD-89S 89d — A LEADING PLUS IS A SIGN, NOT A TYPO. Venmo's statement
+  // writes an incoming amount as "+ $50.00" and an outgoing one as "- $20.00":
+  // the minus was read and the plus was REFUSED as unparseable, so every
+  // incoming line of a Venmo statement had no amount at all. Counted as a sign
+  // mark like the others, so "+-5" still refuses rather than quietly resolving
+  // to one of its two readings. Handled in BOTH places the minus is, because
+  // the sign can ride inside the currency symbol ("$+50.00").
+  if (s.startsWith("+")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); }
   if (s.startsWith("-")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); sign = -1; }
   s = s.replace(/^\$\s*/, "");
   // BUILD-82 — "$-500.37": the sign can ride INSIDE the currency symbol.
+  if (s.startsWith("+")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); }
   if (s.startsWith("-")) { s = s.slice(1).trim(); if (negMarks++) return refuse(); sign = -1; }
   // Currency-code prefixes: "USD 750.00" is how QuickBooks and half the
   // legacy CRMs export money. 54 such rows ($154,849.63) vanished from a
