@@ -128,7 +128,15 @@ const countUsers = async () => Number((await q(`SELECT COUNT(*)::int c FROM user
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role,is_super_admin) VALUES ('u_ce_staff',$1,$2,$3,'Staffer','staff',false)`, [HQ, STAFF, hash]);
 
   // The customer: a real organisation, already using Steward, on no plan.
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan) VALUES ($1,'Harbor Light','ce-harbor',1,'trialing','trial')`, [CUST]);
+  // This org ALREADY has a platform Stripe customer, which is the whole point:
+  // a close against it must not mint a second one. BOTH mode columns are set
+  // because the platform customer is stored PER STRIPE MODE (a live customer
+  // does not exist under a test key), and this suite boots against a test
+  // billing key - so the route reads stripe_customer_id_test. Setting both
+  // keeps the fixture honest whichever mode the boot recipe uses.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,
+                             stripe_customer_id, stripe_customer_id_test)
+           VALUES ($1,'Harbor Light','ce-harbor',1,'trialing','trial','cus_existing_walk','cus_existing_walk')`, [CUST]);
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_ce_dir',$1,$2,$3,'Director','admin')`, [CUST, CUST_ADMIN, hash]);
   // …and a removed admin who registered FIRST, so "the first admin" is not a
   // good enough rule on its own.
@@ -203,6 +211,21 @@ const countUsers = async () => Number((await q(`SELECT COUNT(*)::int c FROM user
      twice.body.existingLinkId === mint.body.id, twice.body.existingLinkId);
   ok("...and no second link row was written",
      Number((await q(`SELECT COUNT(*)::int c FROM close_links WHERE target_org_id=$1`, [CUST]))[0].c) === 1);
+
+  // ── ONE ORGANISATION, ONE STRIPE CUSTOMER ───────────────────────────────
+  // Found on production within hours of shipping this path: the session was
+  // built with customer_email, which makes Checkout MINT A NEW CUSTOMER, so
+  // closing an org that already had a platform customer left it with two - the
+  // subscription on the new one, the old one inert and carrying no org id, and
+  // the billing history split across both. Whichever one orgs.stripe_customer_id
+  // does not point at is invisible in the Customer Portal.
+  const cusSession = sessions[sessions.length - 1];
+  ok("a targeted close REUSES the org's existing Stripe customer",
+     cusSession.form.get("customer") === "cus_existing_walk", cusSession.form.get("customer"));
+  ok("...and does NOT send customer_email, which is what minted the second one",
+     !cusSession.form.get("customer_email"), cusSession.form.get("customer_email"));
+  ok("...and stamps the org id on the session, so Stripe can name the org",
+     cusSession.form.get("metadata[orgId]") === CUST, cusSession.form.get("metadata[orgId]"));
 
   const listed = await api("GET", "/admin/close-links", supr);
   const mine = (listed.body.links || []).find(l => l.id === mint.body.id);

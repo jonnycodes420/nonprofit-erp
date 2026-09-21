@@ -112,13 +112,31 @@ function validateOrgClose(body = {}) {
 function checkoutSessionParams({
   plan, orgName, contactEmail, closeLinkId,
   priceId, successUrl, cancelUrl, now = Date.now(), tz = DEFAULT_TZ,
+  customerId = null, targetOrgId = null,
 }) {
   const firstChargeAt = computeTrialEnd(now);
-  const metadata = { closeLinkId, plan: plan.id, orgName, contactEmail };
+  // `orgId` rides the metadata whenever the link targets an org that already
+  // exists, so a customer minted by Checkout can be traced back to it in the
+  // Stripe dashboard. A NEW-org link has no org id to give yet - the org does
+  // not exist until this session completes.
+  const metadata = { closeLinkId, plan: plan.id, orgName, contactEmail,
+                     ...(targetOrgId ? { orgId: targetOrgId } : {}) };
   return {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    customer_email: contactEmail,
+    // ONE ORGANISATION, ONE STRIPE CUSTOMER.
+    //
+    // `customer_email` makes Checkout MINT A NEW CUSTOMER every time. For a new
+    // org that is right - there is nothing to reuse. For an org that already
+    // exists it is wrong, and it showed up within hours of shipping: closing
+    // an existing org left it with two platform customers, the subscription on
+    // the new one, the old one inert and unlabelled, and the billing history
+    // split across both. The Customer Portal follows orgs.stripe_customer_id,
+    // so whichever record it does not point at becomes invisible there.
+    //
+    // Stripe refuses `customer` and `customer_email` together, so this is an
+    // either/or, not both.
+    ...(customerId ? { customer: customerId } : { customer_email: contactEmail }),
     payment_method_collection: "always",
     subscription_data: {
       trial_period_days: TRIAL_DAYS,

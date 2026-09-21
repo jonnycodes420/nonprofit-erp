@@ -24189,7 +24189,10 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
     if (!v.ok) return res.status(400).json({ error: v.error, message: v.message });
     plan = v.plan;
 
-    const orgRows = await query("SELECT id, name, plan, subscription_status, stripe_subscription_id FROM orgs WHERE id=?", [v.orgId]);
+    const orgRows = await query(
+      `SELECT id, name, plan, subscription_status, stripe_subscription_id,
+              ${billingCustomerColumn()} AS billing_customer_id
+         FROM orgs WHERE id=?`, [v.orgId]);
     if (!orgRows.length) return res.status(404).json({ error: "org_not_found", message: "That organization does not exist." });
     targetOrg = orgRows[0];
     orgName = targetOrg.name;
@@ -24307,6 +24310,11 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   const closeLinkId = "cl_" + uuid().slice(0, 8);
   const params = checkoutSessionParams({
     plan, orgName, contactEmail, closeLinkId, priceId,
+    // An org that already exists keeps the Stripe customer it already has, so
+    // one organisation has one customer and one billing history. A new-org
+    // link has neither yet and Checkout mints them.
+    customerId: targetOrg ? (targetOrg.billing_customer_id || null) : null,
+    targetOrgId: targetOrg ? targetOrg.id : null,
     successUrl: publicAppUrl() + "/login?welcome=1",
     cancelUrl: publicAppUrl() + "/pricing",
   });
