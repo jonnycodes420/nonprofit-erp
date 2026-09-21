@@ -16,7 +16,11 @@
 //   T1107 / T1100        payment refund / general reversal
 //   T0400 / T0401 / T0403  withdrawal to the account holder's bank
 //   Windows              31 days maximum per request
-//   Paging               page_size default 100, MAXIMUM 500, pages 0-indexed
+//   Paging               page_size default 100, MAXIMUM 500, page MINIMUM 1
+//                        (re-checked 20 September 2026 against PayPal's own
+//                        reference: `page` minimum 1, default 1. The line
+//                        here used to say 0-indexed, which is what sent
+//                        page=0 and earned a 400 on every single sync.)
 //   Latency              "a maximum of three hours for executed transactions
 //                        to appear in the list transactions call"
 //
@@ -50,9 +54,13 @@ const WITHDRAWAL_PREFIX = "T04";          // T0400 bank · T0401 auto-sweep · T
 
 const PAGE_SIZE = 500;                    // PayPal's documented maximum
 const WINDOW_DAYS = 31;                   // PayPal's documented maximum
+const FIRST_PAGE = 1;                     // PayPal: page minimum 1, default 1
 // Transaction Search reaches about three years back. Walking further is a
 // guaranteed refusal, so the walk stops itself rather than collecting errors.
-const MAX_BACKFILL_WINDOWS = 38;
+// PayPal: "This call lists transaction for the previous three years." 38
+// windows of 31 days is 1,178 days - beyond that limit, so the last windows
+// could only ever be refused. 35 windows is 1,085 days, inside it.
+const MAX_BACKFILL_WINDOWS = 35;
 // Three consecutive empty months is where a backfill stops. A single quiet
 // month is a quiet month; three in a row is the beginning of the account.
 const BACKFILL_EMPTY_WINDOWS = 3;
@@ -99,7 +107,11 @@ async function accessToken({ credentials, http, env }) {
   return token;
 }
 
-// One page of one window. `page` is 0-indexed, as PayPal documents.
+// One page of one window. `page` is ONE-INDEXED: PayPal documents a minimum
+// of 1 and a default of 1, and a page=0 is not an empty first page - it is a
+// SCHEMA VIOLATION, answered 400 INVALID_REQUEST with the generic "Request
+// is not well-formed, syntactically incorrect, or violates schema". That is
+// the error the demo org's PayPal source returned on every sync.
 async function listTransactions({ base, token, http, start, end, page }) {
   const qs = new URLSearchParams({
     start_date: `${start}T00:00:00Z`,
@@ -192,16 +204,42 @@ async function readPage({ base, token, http, start, end, page, notices }) {
   if (!res.ok) {
     const name = res?.body?.name || "";
     const msg = res?.body?.message || `HTTP ${res.status}`;
+    // PAYPAL NAMES THE OFFENDING FIELD, AND NOBODY WAS READING IT. The top
+    // level `message` on an INVALID_REQUEST is always the same sentence about
+    // schema; `details[]` is where PayPal says WHICH field and WHY. Reading
+    // only the message is how a page=0 looked for weeks like a mystery 400.
+    const details = Array.isArray(res?.body?.details) ? res.body.details : [];
+    const fieldNotes = details
+      .map(d => [d.field, d.issue, d.description].filter(Boolean).join(" "))
+      .filter(Boolean);
+    const debugId = res?.body?.debug_id || null;
+    if (fieldNotes.length || debugId) {
+      console.error(`[paypal] ${res.status} ${name || "error"}: ${msg}` +
+        (fieldNotes.length ? ` | details: ${fieldNotes.join(" ; ")}` : "") +
+        (debugId ? ` | debug_id=${debugId}` : ""));
+    }
+
     // A refused RANGE is how a backfill discovers the edge of what this
     // account can be asked about. It ends the walk cleanly; it is not an error
     // to report, and it must never look like a credential problem.
-    if (/INVALID_REQUEST|DATA_RETRIEVAL/i.test(name) && /date|range|period/i.test(msg)) {
+    //
+    // DECIDED FROM THE STRUCTURED FIELD, NOT THE PROSE. The old test matched
+    // /date|range|period/ against `message` - which on a real INVALID_REQUEST
+    // reads "Request is not well-formed, syntactically incorrect, or violates
+    // schema" and contains none of those words. So a genuine out-of-range
+    // window was never recognised as one, and every OTHER schema violation was
+    // equally unrecognised. `details[].field` is the answer PayPal actually
+    // gives: /start_date, /end_date.
+    const rangeField = details.some(d => /start_date|end_date/i.test(String(d.field || "")));
+    if (rangeField || (/INVALID_REQUEST|DATA_RETRIEVAL/i.test(name) && /date|range|period/i.test(msg))) {
       return { rows: [], drops: {}, morePages: false, rangeRefused: true };
     }
     // The token already worked to get here, so this is the REPORTING call.
     // A 403 is the Transaction Search permission, which really can take a day.
-    throw Object.assign(new Error(`PayPal: ${msg}`),
-      { status: res.status, step: res.status === 403 ? "permission" : "read", providerCode: name || null });
+    const detailSuffix = fieldNotes.length ? ` (${fieldNotes.join("; ")})` : "";
+    throw Object.assign(new Error(`PayPal: ${msg}${detailSuffix}`),
+      { status: res.status, step: res.status === 403 ? "permission" : "read",
+        providerCode: name || null, providerDetails: fieldNotes, debugId });
   }
   const details = Array.isArray(res.body?.transaction_details) ? res.body.transaction_details : [];
   const rows = [], drops = {};
@@ -211,7 +249,7 @@ async function readPage({ base, token, http, start, end, page, notices }) {
     rows.push(out.row);
   }
   const totalPages = Number(res.body?.total_pages) || 0;
-  return { rows, drops, morePages: page + 1 < totalPages, rangeRefused: false };
+  return { rows, drops, morePages: page < totalPages, rangeRefused: false };
 }
 
 function dropNotice(drops) {
@@ -241,7 +279,7 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
     const end = state?.end || until || today;
     let start = state?.start || since || addDays(end, -WINDOW_DAYS + 1);
     if (start < addDays(end, -WINDOW_DAYS + 1)) start = addDays(end, -WINDOW_DAYS + 1);
-    const page = state?.page || 0;
+    const page = state?.page || FIRST_PAGE;
     const out = await readPage({ base, token, http, start, end, page, notices });
     const n = dropNotice(out.drops); if (n) notices.push(n);
     return {
@@ -256,7 +294,7 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   // three windows running, refuses the range, or we reach the documented edge
   // of Transaction Search. Every one of those three is a CLEAN stop.
   const end = state?.end || until || today;
-  const page = state?.page || 0;
+  const page = state?.page || FIRST_PAGE;
   const empties = state?.empties || 0;
   const walked = state?.walked || 0;
   const start = addDays(end, -WINDOW_DAYS + 1);
@@ -272,7 +310,7 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
     return { rows: out.rows, cursor: JSON.stringify({ end, page: page + 1, empties, walked }), done: false, notices };
   }
 
-  const foundThisWindow = out.rows.length > 0 || page > 0;
+  const foundThisWindow = out.rows.length > 0 || page > FIRST_PAGE;
   const nextEmpties = foundThisWindow ? 0 : empties + 1;
   const nextWalked = walked + 1;
   if (nextEmpties >= BACKFILL_EMPTY_WINDOWS || nextWalked >= MAX_BACKFILL_WINDOWS) {
@@ -280,7 +318,7 @@ async function fetchRows({ credentials, since, until, cursor, http, today, backf
   }
   return {
     rows: out.rows,
-    cursor: JSON.stringify({ end: addDays(start, -1), page: 0, empties: nextEmpties, walked: nextWalked }),
+    cursor: JSON.stringify({ end: addDays(start, -1), page: FIRST_PAGE, empties: nextEmpties, walked: nextWalked }),
     done: false,
     notices,
   };
@@ -292,7 +330,7 @@ async function testCredentials({ credentials, http, today, env = process.env }) 
   const base = apiBase(credentials, env);
   const token = await accessToken({ credentials, http, env });
   const start = addDays(today, -7), end = today;
-  const out = await readPage({ base, token, http, start, end, page: 0, notices: [] });
+  const out = await readPage({ base, token, http, start, end, page: FIRST_PAGE, notices: [] });
   const money = out.rows.filter(r => r.status === "completed");
   return {
     ok: true,

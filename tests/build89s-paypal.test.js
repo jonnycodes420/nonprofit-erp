@@ -136,7 +136,13 @@ function fakePayPal({ windows = {}, earliest = "2026-01-01", failToken = false }
       }), { status: 400 });
     }
     const pages = windows[start] || [[]];
-    const details = pages[page] || [];
+    // REVIEWED CONTRACT CHANGE (BUILD-93 Part 3). `page` is ONE-INDEXED:
+    // PayPal documents a minimum of 1 and a default of 1, and the adapter's
+    // header comment claiming "pages 0-indexed" is what sent page=0 and earned
+    // a 400 INVALID_REQUEST on every production sync. This table stays
+    // zero-based (it is a JS array); the REQUEST is what moved, so the index
+    // is translated here rather than the fixture being renumbered.
+    const details = pages[page - 1] || [];
     return new Response(JSON.stringify({
       transaction_details: details,
       page: page, total_items: details.length, total_pages: pages.length,
