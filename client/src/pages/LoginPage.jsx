@@ -48,7 +48,13 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Login failed"); }
+      // Prefer the server's SENTENCE over its code. A deactivated account now
+      // answers {error:"account_deactivated", message:"This account has been
+      // deactivated. Contact your workspace admin."} and rendering `error`
+      // would put the machine word on the screen. The older paths send only
+      // `error` (already a sentence: "Invalid credentials"), so it stays the
+      // fallback.
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || d.error || "Login failed"); }
       const data = await res.json();
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));

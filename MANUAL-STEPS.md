@@ -200,3 +200,52 @@ close link on prod, walked with his own card, confirmed `trialing` with no
 charge, then cancelled and the throwaway org deleted. Nobody else can do that
 step.
 
+## §9 — ROTATE THE DEMO ADMIN PASSWORD (BUILD-93 Part 2, 2026-09-20)
+
+**The seed does NOT reset it on every boot** — the brief suspected it did, and
+it does not. `db.js` inserts `admin@creoarts.org` with `ON CONFLICT (id) DO
+UPDATE SET name = EXCLUDED.name`: the name is the one column the upsert may
+correct, and the password, email and role are left alone (BUILD-87 F.3.7 says
+so in the comment). So production's password is whatever it is today, and
+rotating it STICKS.
+
+**Why rotate.** `demo1234` is written in `CLAUDE.md`, `PROGRESS.md` and the git
+history, and it was rendered on the production sign-in page until 2026-07-30.
+That account is an **admin of `org_creo`**, which is the org both of Jonathan's
+accounts live in. BUILD-93 Part 2 now stops it removing a super-admin, but it
+can still read and write every donor record in the demo org.
+
+### The rotation (Jonathan's, two minutes)
+
+1. Sign in to https://www.stewardapp.dev as `admin@creoarts.org`.
+2. Settings → Account → change password. Pick something not in this repo.
+3. Store it in your password manager, NOT in a file here.
+
+Nothing in the product needs a code change: the password lives only in that
+row.
+
+### What depends on it, and whether rotation breaks it
+
+**Safe — every one of these already honours an environment override:**
+
+| Script | Override |
+|---|---|
+| `scripts/consistency-audit.js` | `ADMIN_PASSWORD` |
+| `scripts/build12-ui-capture.js` | `PASSWORD` |
+| `scripts/finance-overview-capture.js` | `PASSWORD` |
+| `scripts/topbar-verify.js` | `PASSWORD` |
+| `scripts/build59-install-demo-images.js` | `CREO_PASSWORD` |
+| `scripts/seed-fundraising-demo.js` | `DEMO_PASSWORD` |
+| `scripts/build88a-walk.js` | `DEMO_PASSWORD` **(added in BUILD-93 — it hardcoded the password until tonight)** |
+
+**Documentation to correct after rotating** (they state the pair as fact):
+`CLAUDE.md` line 25, `PROGRESS.md` line 25, `QA_REPORT.md`,
+`BLOCKED-superadmin-removal.md`.
+
+**Not affected:** the test suites. They mint their own fixture users and are
+refused against any non-loopback `BASE`/`DATABASE_URL` (`tests/helpers.js`),
+so none of them can reach the production demo org at all.
+
+**The deeper fix is still open** and is not a password: Jonathan's super-admin
+account should not live in the same organisation as a shared demo login. See
+`BLOCKED-superadmin-removal.md`.

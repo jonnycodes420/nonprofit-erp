@@ -3118,6 +3118,33 @@ async function initSchema() {
   // at completion time: set = attach the subscription to that org and create
   // NOTHING; null = the original behaviour, mint an org and its first admin.
   // Additive and nullable, so every link written before this reads as new-org.
+  // BUILD-93 Part 2 — WHO REMOVED WHOM, AND WHEN.
+  //
+  // `DELETE /users/:id` was the only privileged mutation in the product that
+  // left no actor behind: it stamped `deactivated_at` on the row it changed
+  // and nothing else. When both Jonathan rows in the demo org were deactivated
+  // 2.4 seconds apart on 2026-09-09, the timestamp was the ONLY evidence that
+  // survived, and who did it is not recoverable. This is that gap closed.
+  // Append-only; never written by a migration, only by the route.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_admin_audit (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_user_id TEXT NOT NULL,
+      target_email TEXT,
+      target_role TEXT,
+      actor_user_id TEXT,
+      actor_email TEXT,
+      detail JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT user_admin_audit_action CHECK (action IN ('removed','reactivated','refused'))
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_admin_audit_org
+                    ON user_admin_audit (org_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_admin_audit_target
+                    ON user_admin_audit (target_user_id, created_at DESC)`);
+
   await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS target_org_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
                     ON close_links (target_org_id) WHERE target_org_id IS NOT NULL`);

@@ -63,7 +63,19 @@ const ORG = "org_userrm", ORG2 = "org_userrm2";
   const dead = await api("GET", "/tasks", officerTok);
   ok("their live session is revoked (401)", dead.status === 401, dead.status);
   const relog = await api("POST", "/auth/login", null, { email: "officer@rm.local", password: "loadtest1234" });
-  ok("login is blocked with the GENERIC message (no account enumeration)", relog.status === 401 && relog.body.error === "Invalid credentials", relog);
+  // REVIEWED CONTRACT CHANGE (BUILD-93 Part 2). This asserted the GENERIC
+  // "Invalid credentials" on BUILD-75 C.3's reasoning: the login form is not
+  // the place to enumerate accounts. That reasoning is sound for a WRONG
+  // PASSWORD and does not hold here - the password was CORRECT, so the caller
+  // has already proven they hold the credential, and naming the state
+  // discloses nothing they could not infer. What the generic message did do
+  // was send somebody who still works there to reset a password that was
+  // never the problem. Enumeration is still refused on the path that could
+  // leak: a wrong password returns 401 "Invalid credentials" (asserted in
+  // tests/build93-superadmin.test.js §5).
+  ok("login is blocked, and the removed user is TOLD so rather than sent to reset a password",
+     relog.status === 403 && relog.body.error === "account_deactivated"
+     && relog.body.message === "This account has been deactivated. Contact your workspace admin.", relog);
 
   // authorship preserved, attachments released
   const [g] = await q(`SELECT created_by, created_by_name FROM gifts WHERE id='g_rm1'`);

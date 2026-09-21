@@ -108,7 +108,7 @@ CORE=(
   build88a-mapper build88a-one-gift build88a-one-task build88a-giving build88a-profile build88a-week build88a-finance
   build88b-deposit build88b-pledges build88b-thankyous build88c-domain build88c-composer
   build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets build89s-surfaces
-  close-link trial-billing one-date build92-close-existing build93-civil-date
+  close-link trial-billing one-date build92-close-existing build93-civil-date build93-superadmin
   build92-seed build92-source-errors build92-dedupe build92-statement
   build92-close-screen build92-sources-page build92-home-proportions
 )

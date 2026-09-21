@@ -37,7 +37,13 @@ const api = async (method, p, tok, body) => {
 (async () => {
   console.log("BUILD-88a walk — the demo org, a conversation, a gift and a next step\n");
   const ORG = "org_creo";
-  const login = await api("POST", "/auth/login", null, { email: "admin@creoarts.org", password: "demo1234" });
+  // Env-overridable so rotating the demo password cannot silently break this
+  // walk (BUILD-93 Part 2 — every other script already honoured an override;
+  // this one hardcoded it).
+  const login = await api("POST", "/auth/login", null, {
+    email: process.env.DEMO_EMAIL || "admin@creoarts.org",
+    password: process.env.DEMO_PASSWORD || "demo1234",
+  });
   if (login.status !== 200) { console.error("could not sign in to the demo org:", login.status); process.exit(1); }
   const tok = login.body.token;
 

@@ -4076,7 +4076,18 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   }
   // BUILD-75 C.3 — a removed user cannot log in. Same generic message as a
   // wrong password: the login form is not the place to enumerate accounts.
-  if (user.deactivated_at) return res.status(401).json({ error: "Invalid credentials" });
+  // BUILD-93 Part 2 — a deactivated account is told so, by name. The generic
+  // message was deliberate (the login form is not the place to enumerate
+  // accounts), but it only holds for a WRONG PASSWORD: here the password was
+  // correct, so nothing is being disclosed that the person did not already
+  // prove - and "Invalid credentials" sent somebody who still works there to
+  // reset a password that was never the problem.
+  if (user.deactivated_at) {
+    return res.status(403).json({
+      error: "account_deactivated",
+      message: "This account has been deactivated. Contact your workspace admin.",
+    });
+  }
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [user.org_id]);
   const org = orgs[0];
@@ -5314,21 +5325,71 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
 // machinery, login is blocked, and their operational attachments (portfolio,
 // open task assignments) are released. DELETE-shaped, so per the standing
 // convention it is deliberately NOT checkWriteAccess-gated.
+// BUILD-93 Part 2 — every user removal, and every REFUSED removal, leaves an
+// actor behind. Append-only; a write failure is logged and never fails the
+// action it records (an audit row is evidence, not a permission).
+async function auditUserAdmin(orgId, action, target, actor, detail) {
+  await run(
+    `INSERT INTO user_admin_audit (id, org_id, action, target_user_id, target_email, target_role,
+                                   actor_user_id, actor_email, detail)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    ["uaa_" + uuid().slice(0, 8), orgId, action, target.id, target.email || null,
+     target.is_super_admin ? "super_admin" : (target.role || null),
+     actor?.userId || null, actor?.email || null, detail ? JSON.stringify(detail) : null]);
+}
+
 app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { orgId } = req.user;
-  const [target] = await query("SELECT id, role, deactivated_at FROM users WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const [target] = await query(
+    "SELECT id, role, email, deactivated_at, is_super_admin FROM users WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!target || target.deactivated_at) return res.status(404).json({ error: "Not found" });
+
+  // Everything that refuses below is RECORDED, not just returned. A refusal is
+  // an attempt, and an attempt on a super-admin is the thing you most want to
+  // find afterwards.
+  const refuse = async (status, error, message) => {
+    await auditUserAdmin(orgId, "refused", target, req.user, { error }).catch(() => {});
+    return res.status(status).json({ error, message });
+  };
+
   if (target.id === req.user.userId) {
-    return res.status(400).json({ error: "cannot_remove_self", message: "You can't remove your own account. Ask another admin." });
+    return refuse(400, "cannot_remove_self", "You can't remove your own account. Ask another admin.");
   }
+
+  // ── BUILD-93 Part 2 — A SUPER-ADMIN IS NOT AN ORG ADMIN'S TO REMOVE ──────
+  // The last-admin guard below counts `role='admin'` and has never looked at
+  // is_super_admin, so the seeded demo admin - whose password is in this repo
+  // - could remove the only super-admin on production and the count would be
+  // satisfied, because it is itself an admin. Deactivation then locks the door
+  // behind it: requireAuth refuses a deactivated user, so every super-admin
+  // surface becomes unreachable by anybody, with no in-product way back.
+  //
+  // Two rules, in this order, because they answer different questions:
+  //   1. Only a super-admin may remove a super-admin at all.
+  //   2. Not even a super-admin may remove the LAST active one.
+  if (target.is_super_admin === true) {
+    if (req.user.isSuperAdmin !== true) {
+      return refuse(403, "super_admin_protected",
+        "That account is a Steward super-admin and cannot be removed from an organization's team settings.");
+    }
+    const [{ c }] = await query(
+      "SELECT COUNT(*)::int AS c FROM users WHERE is_super_admin=true AND deactivated_at IS NULL AND id<>?", [target.id]);
+    if (!c) {
+      return refuse(400, "last_super_admin",
+        "That is the last active super-admin. Removing it would lock everyone out of the super-admin console, including you. Promote another super-admin first.");
+    }
+  }
+
   if (target.role === "admin") {
     const [{ c }] = await query("SELECT COUNT(*)::int AS c FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL AND id<>?", [orgId, target.id]);
-    if (!c) return res.status(400).json({ error: "last_admin", message: "You can't remove the last admin of an organization." });
+    if (!c) return refuse(400, "last_admin", "You can't remove the last admin of an organization.");
   }
   // Soft-detach + revoke every session (sessions_valid_after is the BUILD-38
   // revocation clock requireAuth checks; worst-case lag is the session-cache
   // TTL, same as a password reset).
   await run("UPDATE users SET deactivated_at=NOW(), sessions_valid_after=NOW() WHERE id=? AND org_id=?", [target.id, orgId]);
+  await auditUserAdmin(orgId, "removed", target, req.user, null).catch(e =>
+    console.error("[user-removal] audit write failed (removal stands):", e.message));
   // Release operational attachments — assignment is portfolio/board membership
   // (BUILD-30), and a removed officer's donors go back to the Directory
   // unassigned rather than orbiting a ghost. Authorship (created_by) is
