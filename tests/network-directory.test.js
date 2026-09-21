@@ -20,7 +20,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks, waitFor } = require("./helpers");
 
 const THIS_YEAR = String(new Date().getFullYear());
 const EMAIL = "nd.donor@nd47.test";
@@ -127,8 +127,8 @@ async function fixture() {
   // ── account: signup + verify (lantern links automatically at verify) ─────
   mail = [];
   await raw("POST", "/account/signup", { body: { email: EMAIL, password: "ndpass99999", consent: true } });
-  await settle();
-  const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo(EMAIL)[0], "verify") } });
+  const vTok = await waitFor(() => tokenFrom(mailTo(EMAIL)[0], "verify"));
+  const v = await raw("POST", "/account/verify", { body: { token: vTok } });
   ok("verify links the exact-match org (lantern)", v.status === 200 && v.body.linkedOrgs === 1, v.body);
   const cookie = cookieOf(v);
 
@@ -218,8 +218,8 @@ async function fixture() {
   // ── 3. follow → link conversion on alias verify (outcome 3) ──────────────
   mail = [];
   await raw("POST", "/account/aliases", { cookie, body: { email: ALIAS } });
-  await settle();
-  const av = await raw("POST", "/account/aliases/verify", { body: { token: tokenFrom(mailTo(ALIAS)[0], "confirm-alias") } });
+  const aTok = await waitFor(() => tokenFrom(mailTo(ALIAS)[0], "confirm-alias"));
+  const av = await raw("POST", "/account/aliases/verify", { body: { token: aTok } });
   ok("alias verify links the followed org's record", av.status === 200 && av.body.linkedOrgs === 1, av.body);
   dash = (await raw("GET", "/account/dashboard", { cookie })).body;
   const meadowCard = dash.orgs.find(o => o.orgSlug === ORGS.meadow.slug);

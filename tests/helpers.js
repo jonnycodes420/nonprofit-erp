@@ -137,4 +137,33 @@ async function leaks(payload, needles, { skipIds = true } = {}) {
   return found;
 }
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, textMatch, leaks };
+// ── WAITING FOR MAIL, NOT FOR A NUMBER OF MILLISECONDS ─────────────────────
+// A donor-account lifecycle email is sent OUT OF BAND: the route answers
+// {received:true} and the send lands afterwards. Measured on a developer Mac
+// under load it arrives ~1.8s after the response; on CI's runner it is inside
+// 500ms. A suite that sleeps a fixed 500ms and then reads the mailbox is
+// therefore green on one machine and red on the other while the product is
+// identical - which is exactly what happened (three suites red locally, the
+// same three green in CI).
+//
+// `waitFor` polls for the thing the assertion actually needs. It returns the
+// first truthy value, or null on timeout, so the caller's own assertion still
+// reports the failure in its own words.
+async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const v = await fn();
+    if (v) return v;
+    if (Date.now() >= deadline) return null;
+    await new Promise(r => setTimeout(r, interval));
+  }
+}
+
+// The twin, for asserting something did NOT arrive. A negative needs a wait
+// LONGER than a real delivery takes, or it proves nothing: at 500ms against a
+// 1.8s delivery, "no email was sent" passes even when one was. Waiting is the
+// only honest option - there is no event for "nothing is going to happen".
+const NEGATIVE_MAIL_WAIT_MS = Number(process.env.NEGATIVE_MAIL_WAIT_MS || 4000);
+const settleNegative = () => new Promise(r => setTimeout(r, NEGATIVE_MAIL_WAIT_MS));
+
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, textMatch, leaks, waitFor, settleNegative, NEGATIVE_MAIL_WAIT_MS };

@@ -16,7 +16,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, leaks, waitFor } = require("./helpers");
 
 const ORG_A = "org_ob_a", SLUG_A = "blind-a";
 const ORG_B = "org_ob_b", SLUG_B = "blind-b";
@@ -135,8 +135,8 @@ async function captureBattery(tokenA) {
   // ── the account: create, verify, alias, link BOTH orgs, USE the dashboard ─
   mail = [];
   await raw("POST", "/account/signup", { body: { email: "wren@ob46.test", password: "wrenpass999", consent: true } });
-  await settle();
-  const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo("wren@ob46.test")[0], "verify") } });
+  const vTok = await waitFor(() => tokenFrom(mailTo("wren@ob46.test")[0], "verify"));
+  const v = await raw("POST", "/account/verify", { body: { token: vTok } });
   const cookie = cookieOf(v);
   // BUILD-47 follow scenario (§2.4 battery extension): before any alias
   // exists, the donor SEARCHES the directory — including for org B by name —
@@ -157,8 +157,8 @@ async function captureBattery(tokenA) {
   ok("the follow does NOT put org B in the history list", !followDash.orgs.some(o => o.orgSlug === SLUG_B));
   mail = [];
   await raw("POST", "/account/aliases", { cookie, body: { email: "wren-alias@ob46.test" } });
-  await settle();
-  await raw("POST", "/account/aliases/verify", { body: { token: tokenFrom(mailTo("wren-alias@ob46.test")[0], "confirm-alias") } });
+  const aTok = await waitFor(() => tokenFrom(mailTo("wren-alias@ob46.test")[0], "confirm-alias"));
+  await raw("POST", "/account/aliases/verify", { body: { token: aTok } });
   const me = JSON.parse((await raw("GET", "/account/me", { cookie })).text);
   ok("precondition: the donor is linked to BOTH orgs", me.links.length === 2, me.links);
   ok("the org-B follow converted to a link on alias verify",

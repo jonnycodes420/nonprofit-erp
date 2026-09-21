@@ -7,7 +7,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, q, closeDb, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, q, closeDb, SINK_PORT, waitFor, settleNegative } = require("./helpers");
 
 const ORG_X = "org_dl_x", SLUG_X = "donlink-x";
 const ORG_Y = "org_dl_y", SLUG_Y = "donlink-y";
@@ -44,8 +44,9 @@ async function raw(method, path, { cookie, body, headers } = {}) {
 async function makeVerifiedAccount(email, password) {
   mail = [];
   await raw("POST", "/account/signup", { body: { email, password, consent: true } });
-  await settle();
-  const tok = tokenFrom(mailTo(email)[0], "verify");
+  // Poll for the verification mail rather than sleeping a guessed interval:
+  // the send is out of band and lands well after the route answers.
+  const tok = await waitFor(() => tokenFrom(mailTo(email)[0], "verify"));
   const v = await raw("POST", "/account/verify", { body: { token: tok } });
   return { cookie: cookieOf(v), verify: v };
 }
@@ -94,7 +95,7 @@ async function fixture() {
   // ── aliases: unverified links nothing; verify links; S-12 ────────────────
   mail = [];
   await raw("POST", "/account/aliases", { cookie: riley.cookie, body: { email: "riley-work@dl46.test" } });
-  await settle();
+  await waitFor(() => mailTo("riley-work@dl46.test").length === 1);
   ok("alias request emails the ALIAS address for proof of control", mailTo("riley-work@dl46.test").length === 1);
   const links2 = (await raw("GET", "/account/me", { cookie: riley.cookie })).body.links;
   ok("an UNVERIFIED alias links nothing", links2.length === 1, links2.length);
@@ -117,7 +118,7 @@ async function fixture() {
   ok("S-12: …but no confirmation token is ever sent", mailTo("riley-work@dl46.test").length === 0, mail.map(m => m.to));
   mail = [];
   await raw("POST", "/account/aliases", { cookie: mallory.cookie, body: { email: "riley@dl46.test" } });
-  await settle();
+  await settleNegative();
   ok("S-12: an account's PRIMARY email is equally unclaimable", mailTo("riley@dl46.test").length === 0);
   const malloryLinks = (await raw("GET", "/account/me", { cookie: mallory.cookie })).body.links;
   ok("S-12: the claiming account gained nothing", malloryLinks.length === 0, malloryLinks);
