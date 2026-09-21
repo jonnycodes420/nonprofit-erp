@@ -11898,7 +11898,12 @@ app.get("/dashboard/my-stats", requireAuth, wrap(async (req, res) => {
 app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
   const { orgId, userId } = req.user;
   const scope = req.query.scope === "all" ? "all" : "mine";
-  const today = new Date().toISOString().split("T")[0];
+  // THE ORG'S CIVIL DATE, NOT THE UTC DAY. These four counts are Home's Today
+  // rail. A UTC slice is already tomorrow from ~20:00 Eastern, so every task
+  // due today moved into `overdue` and "due today" read 0 - every evening, on
+  // the calmest screen in the product, with nothing having changed but the
+  // clock. Same seam the gift paths have used since BUILD-75.
+  const today = orgToday(await orgTz(orgId));           // ORG_TZ_SEAM_OK
 
   const orgRows = await query("SELECT plan, subscription_status FROM orgs WHERE id=?", [orgId]);
   const tier = orgRows.length ? orgPlanTier(orgRows[0]) : "core";
@@ -13420,7 +13425,11 @@ app.get("/threads/health", requireAuth, wrap(async (req, res) => {
 
 // ── Fundraising goals (home screen goal banner) ─────────────────────────────
 app.get("/goals/active", requireAuth, wrap(async (req, res) => {
-  const today = new Date().toISOString().split("T")[0];
+  // Civil date: a goal's period is a range of DAYS ON A CALENDAR, so whether
+  // today falls inside it is a question about the org's calendar, not UTC's.
+  // On the last evening of a goal's period a UTC slice drops the goal off the
+  // Home banner hours early.
+  const today = orgToday(await orgTz(req.user.orgId));  // ORG_TZ_SEAM_OK
   const rows = await query(
     "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
     [req.user.orgId, today, today]

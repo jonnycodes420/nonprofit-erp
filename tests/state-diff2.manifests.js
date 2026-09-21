@@ -1,3 +1,4 @@
+const { civilToday } = require("./helpers");
 // BUILD-44 Part 1 — B-series state-diff MANIFESTS (extends the BUILD-43 spec;
 // same review discipline — see tests/state-diff.manifests.js header).
 // Where a delta below encodes behavior that surprised us, it carries a
@@ -8,7 +9,8 @@ const FIX2 = {
   N_GIFTS: 5738,
   CAMPAIGN: "Annual Fund",
   HOUSEHOLD: "The Wap Household",
-  TODAY: new Date().toISOString().slice(0, 10),
+  // The org's civil date, never the UTC day - see state-diff.manifests.js.
+  TODAY: civilToday(),
   B1: { amount: 15000 },
   B2: { welcomeDonor: 300, majorDonor: 20, lapseDonor: 400, failDonor: 401 },
   B5: { member: 2 },

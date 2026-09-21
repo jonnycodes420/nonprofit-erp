@@ -13,12 +13,22 @@
 //   - org isolation: the endpoint only reflects the caller's org
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
 
 const TEAM = "org_home_team", CORE = "org_home_core";
+// A DATE WRITTEN FOR AN ORG IS THE ORG'S CIVIL DATE. `toISOString()` is UTC,
+// so after ~20:00 Eastern it is already tomorrow and a gift dated with it
+// falls outside the org's current week - the suite then reports the product
+// broken for doing exactly the right thing. `iso` stays for OFFSET dates
+// (relative arithmetic, where the UTC/civil skew cancels); today comes from
+// civilToday().
 const iso = d => d.toISOString().slice(0, 10);
-const dayOffset = n => { const d = new Date(); d.setDate(d.getDate() + n); return iso(d); };
-const TODAY = iso(new Date());
+// Offsets hang off the ORG'S civil today, not the process's UTC now. Deriving
+// "yesterday" from `new Date()` after ~20:00 Eastern gives the org's TODAY,
+// so the suite's overdue fixture is not overdue and the assertion fails on
+// arithmetic rather than behaviour.
+const dayOffset = n => { const d = new Date(civilToday() + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return iso(d); };
+const TODAY = civilToday();
 
 async function reset() {
   for (const org of [TEAM, CORE]) {

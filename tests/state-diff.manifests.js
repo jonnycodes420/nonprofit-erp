@@ -1,3 +1,4 @@
+const { civilToday } = require("./helpers");
 // BUILD-43 — the state-diff MANIFESTS. These are the spec.
 //
 // Each canonical action declares EXACTLY which numbers across the whole org
@@ -39,7 +40,14 @@ const FIX = {
   N_GIFTS: 5738,
   CAMPAIGN: "Annual Fund",
   HOUSEHOLD: "The Wap Household",
-  TODAY: new Date().toISOString().slice(0, 10),
+  // THE ORG'S CIVIL DATE, NOT THE UTC DAY. Between about 20:00 and midnight
+  // Eastern, `new Date().toISOString().slice(0,10)` is ALREADY TOMORROW while
+  // the org - and therefore every week/month/year window the product computes -
+  // is still on today. A gift written with that date lands outside "this week"
+  // by construction, and the suite reports a product failure that is its own
+  // clock arithmetic. Same fix BUILD-83/84 applied to the import suites; these
+  // three never received it.
+  TODAY: civilToday(),
   A1: { donor: 5, amount: 500 },        // steward band, unassigned, low total
   A2: {
     donors: [
