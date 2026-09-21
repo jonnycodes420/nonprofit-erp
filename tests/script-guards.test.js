@@ -30,6 +30,10 @@ const read = f => fs.readFileSync(path.join(root, "scripts", f + ".js"), "utf8")
 
 // Writes data (API or DB) — must resolve its target through prodGuard.
 const GUARDED_WRITERS = [
+  // BUILD-92 — the close-an-existing-org walk. Seeds its own org + admin
+  // straight into the scratch DB (an org that ALREADY exists is the premise,
+  // and no route creates one), then drives the console in Playwright.
+  "build92-close-org-walk",
   // BUILD-72 Part 5 — the demo seed. Loopback default via writerBase; any
   // database name outside the scratch allowlist fails closed EXCEPT the one
   // deliberate production path (prod db + prod BASE + --i-know-this-is-prod,

@@ -157,7 +157,7 @@ const SYS_AUTO = { id: "system:auto", name: "Steward (automatic)" };
 const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward (workflow: ${recipe})` });
 const { imageSize } = require("image-size");
 const { computeTrialEnd, computeReminderAt, isReminderDue, TRIAL_DAYS, REMINDER_LEAD_DAYS } = require("./trialEnd");
-const { CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams,
+const { CLOSE_PLANS, closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
         firstChargeSentence, formatChargeDate, usd: usdWhole } = require("./closeLink");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
@@ -23927,6 +23927,49 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
   }
 }
 
+// The same moment, for an org that ALREADY HAS ACCOUNTS. Deliberately NOT the
+// welcome email: there is no password to set, no seven-day link, and telling a
+// customer who has been using Steward for months to "set your password and
+// you're in" reads as though nobody knew who they were. This says the one thing
+// that actually changed - what they are on, and when the first charge lands.
+async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz }) {
+  const charge = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: trialEndsAt, tz });
+  const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const settings = `${publicAppUrl()}/settings`;
+  if (!process.env.RESEND_API_KEY) {
+    console.warn("[close-link] RESEND_API_KEY not set - confirmation not sent to", email);
+    return { sent: false };
+  }
+  try {
+    const { error } = await resend.emails.send({
+      from, to: email, replyTo: from,
+      subject: `${displayNameCase(orgName)} is on Steward ${plan.name}`,
+      html: `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
+<body style="margin:0;padding:0;background:#f0ede6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
+    <tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
+      <tr><td style="padding-bottom:24px;text-align:center;">
+        <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</span>
+      </td></tr>
+      <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
+        <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">${displayNameCase(orgName)} is on ${plan.name}</h1>
+        <p style="margin:0 0 24px;font-size:15px;color:#5A554F;line-height:1.6;">Your card is on file. Nothing has been charged, and you sign in exactly as you always have.</p>
+        <p style="margin:0 0 8px;font-size:14px;color:#0f1a12;line-height:1.6;"><strong>${charge}</strong> Cancel any time before then and you pay nothing. After that it is month to month, and you can cancel any time from Settings.</p>
+        <p style="margin:0;font-size:12px;color:#8a857f;">Billing lives in <span style="color:#0f1a12;word-break:break-all;">${settings}</span></p>
+      </td></tr>
+      <tr><td style="padding-top:20px;text-align:center;font-size:12px;color:#8a857f;">Steward &middot; stewardapp.dev</td></tr>
+    </table></td></tr>
+  </table>
+</body></html>`,
+    });
+    if (error) throw new Error(error.message);
+    return { sent: true };
+  } catch (e) {
+    console.error("[close-link] confirmation email failed:", e.message);
+    return { sent: false };
+  }
+}
+
 // Turn a COMPLETED Checkout session into an organisation. Called only from the
 // billing webhook. Idempotent: a redelivered event, or a refreshed success
 // page, finds `close_links.org_id` already set and returns the same org rather
@@ -23947,16 +23990,24 @@ async function provisionOrgFromCloseLink(session) {
   const plan = closePlan(link.plan) || closePlan("core");
   const email = String(link.contact_email).trim().toLowerCase();
 
-  // A pre-existing account with this address means the close link is pointed at
-  // somebody who already has one. Do NOT half-provision and do NOT move a user
-  // between organisations: leave the link OPEN and say so loudly, so it is
-  // resolved by a human rather than by a guess.
-  const clash = await query("SELECT id, org_id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
-  if (clash.length) {
-    console.error(`[close-link] CRITICAL: ${closeLinkId} completed but ${email} already belongs to org ${clash[0].org_id}. ` +
-      `No org created. Cancel the Stripe subscription or repoint the link by hand.`);
-    if (process.env.SENTRY_DSN) Sentry.captureMessage(`close-link ${closeLinkId}: contact email already has an account`, "error");
-    return null;
+  // A link minted against an org that ALREADY EXISTS attaches a subscription
+  // and creates nothing. The clash check below is skipped for it on purpose:
+  // the contact email is that org's own admin, so of course it has an account,
+  // and that is the whole reason this path exists.
+  const attachToOrgId = link.target_org_id || null;
+
+  // A pre-existing account with this address means a NEW-org close link is
+  // pointed at somebody who already has one. Do NOT half-provision and do NOT
+  // move a user between organisations: leave the link OPEN and say so loudly,
+  // so it is resolved by a human rather than by a guess.
+  if (!attachToOrgId) {
+    const clash = await query("SELECT id, org_id FROM users WHERE lower(email) = lower(btrim(?))", [email]);
+    if (clash.length) {
+      console.error(`[close-link] CRITICAL: ${closeLinkId} completed but ${email} already belongs to org ${clash[0].org_id}. ` +
+        `No org created. Cancel the Stripe subscription or repoint the link by hand.`);
+      if (process.env.SENTRY_DSN) Sentry.captureMessage(`close-link ${closeLinkId}: contact email already has an account`, "error");
+      return null;
+    }
   }
 
   // The subscription carries the dates. We READ the trial end off Stripe rather
@@ -23972,11 +24023,46 @@ async function provisionOrgFromCloseLink(session) {
   const signedAt = sub?.trial_start ? new Date(sub.trial_start * 1000) : new Date();
   const trialEndsAt = sub?.trial_end ? new Date(sub.trial_end * 1000) : computeTrialEnd(signedAt);
 
+  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
+  const subId = sub?.id || (typeof session.subscription === "string" ? session.subscription : null);
+
+  // ── THE ORG ALREADY EXISTS: ATTACH, DO NOT CREATE ────────────────────────
+  // No org row, no user row, no workflow provisioning, no ledger - all of that
+  // is already theirs and re-running it would either fail on a constraint or
+  // quietly duplicate somebody's setup. The only thing a close changes about
+  // an existing organisation is what it is paying and when it starts.
+  if (attachToOrgId) {
+    const existing = await query("SELECT id, name FROM orgs WHERE id=?", [attachToOrgId]);
+    if (!existing.length) {
+      console.error(`[close-link] CRITICAL: ${closeLinkId} targets org ${attachToOrgId}, which no longer exists. ` +
+        `Nothing was changed. Cancel the Stripe subscription by hand.`);
+      if (process.env.SENTRY_DSN) Sentry.captureMessage(`close-link ${closeLinkId}: target org vanished`, "error");
+      return null;
+    }
+    await run(
+      `UPDATE orgs SET plan=?, subscription_status='trialing', signed_at=?, trial_ends_at=?,
+                       stripe_subscription_id=?, close_link_id=?, ${billingCustomerColumn()}=?
+        WHERE id=?`,
+      [plan.id, signedAt.toISOString(), trialEndsAt.toISOString(), subId, closeLinkId, customerId, attachToOrgId]
+    );
+    await run(
+      `UPDATE close_links SET status='completed', org_id=?, stripe_customer_id=?, stripe_subscription_id=?, completed_at=NOW() WHERE id=?`,
+      [attachToOrgId, customerId, subId, closeLinkId]
+    );
+    await refreshBillingCard(attachToOrgId, subId).catch(() => {});
+
+    const tzExisting = await orgTzName(attachToOrgId);
+    const mailExisting = await sendExistingOrgCloseEmail({
+      email, orgName: existing[0].name, plan, trialEndsAt, tz: tzExisting,
+    });
+    console.log(`[close-link] ${closeLinkId} -> EXISTING org ${attachToOrgId} on ${plan.id}, trial ends ` +
+      `${trialEndsAt.toISOString()} (confirmation ${mailExisting.sent ? "sent" : "NOT sent"})`);
+    return attachToOrgId;
+  }
+
   const orgId = "org_" + uuid().slice(0, 8);
   const userId = "user_" + uuid().slice(0, 8);
   const orgSlug = String(link.org_name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" + orgId.slice(4, 10);
-  const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id || null;
-  const subId = sub?.id || (typeof session.subscription === "string" ? session.subscription : null);
 
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
@@ -24010,12 +24096,98 @@ async function provisionOrgFromCloseLink(session) {
 
 // POST /admin/close-links — mint one. Super-admin only.
 app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const v = validateCloseLink(req.body || {});
-  if (!v.ok) return res.status(400).json({ error: v.error, message: v.message });
-  const { orgName, contactEmail, plan } = v;
+  // TWO WAYS IN, ONE PATH THROUGH.
+  //
+  // `orgId` in the body means the customer is ALREADY an organisation in
+  // Steward and this link only has to attach a subscription to it. Everything
+  // after this block - the price check, the Checkout session, the row, the
+  // thirty-day sentence - is identical for both, because a second close path
+  // is a second set of rules about what a close is.
+  //
+  // The email-in-use refusal below is the reason this exists. It is correct for
+  // a NEW org (a close link mints the first admin, and users.email is globally
+  // unique), and it was the only thing standing between the console and an org
+  // that already has an account. Here no user is created, so there is nothing
+  // to collide with, and the check is deliberately NOT applied.
+  const targetOrgId = String((req.body || {}).orgId || "").trim();
+  let orgName, contactEmail, plan, targetOrg = null;
 
-  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
-  if (clash.length) return res.status(409).json({ error: "email_in_use", message: "That email already has a Steward account." });
+  if (targetOrgId) {
+    const v = validateOrgClose(req.body || {});
+    if (!v.ok) return res.status(400).json({ error: v.error, message: v.message });
+    plan = v.plan;
+
+    const orgRows = await query("SELECT id, name, plan, subscription_status, stripe_subscription_id FROM orgs WHERE id=?", [v.orgId]);
+    if (!orgRows.length) return res.status(404).json({ error: "org_not_found", message: "That organization does not exist." });
+    targetOrg = orgRows[0];
+    orgName = targetOrg.name;
+
+    // Already paying is not a thing to do twice. A second live subscription on
+    // the same org bills the customer twice and neither side notices until an
+    // invoice lands, so this refuses and names the plan they are already on.
+    if (targetOrg.stripe_subscription_id) {
+      return res.status(409).json({
+        error: "already_subscribed",
+        message: `${targetOrg.name} already has a Stripe subscription (${targetOrg.plan || "unknown plan"}). `
+               + `Cancel it from Settings, Billing before closing them again.`,
+      });
+    }
+
+    // AND NOT TWICE. Two open links against one org both complete into two
+    // Stripe subscriptions; the second overwrites the first on the org row and
+    // the first goes on billing the customer with nothing in Steward pointing
+    // at it. The already_subscribed check above cannot see this one, because
+    // neither link has been walked yet.
+    const openAlready = await query(
+      `SELECT id, plan, created_at FROM close_links
+        WHERE target_org_id=? AND status='open' ORDER BY created_at DESC LIMIT 1`, [v.orgId]);
+    if (openAlready.length) {
+      return res.status(409).json({
+        error: "close_link_open",
+        message: `${targetOrg.name} already has an open close link on ${openAlready[0].plan}. `
+               + `Use that link, or let it be walked, before raising another.`,
+        existingLinkId: openAlready[0].id,
+      });
+    }
+
+    // The link goes to a person, and for an existing org that person is its
+    // admin. Read it rather than let it be typed: an address typed here that
+    // does not match the org is how somebody ends up owning an organisation
+    // they have never seen.
+    const admins = await query(
+      `SELECT email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL
+        ORDER BY created_at ASC LIMIT 1`, [v.orgId]);
+    if (!admins.length) {
+      return res.status(409).json({
+        error: "no_active_admin",
+        message: `${targetOrg.name} has no active admin to send the link to. Invite one first.`,
+      });
+    }
+    contactEmail = String(admins[0].email).trim().toLowerCase();
+  } else {
+    const v = validateCloseLink(req.body || {});
+    if (!v.ok) return res.status(400).json({ error: v.error, message: v.message });
+    ({ orgName, contactEmail, plan } = v);
+
+    const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
+    if (clash.length) {
+      // Name WHICH org holds it, and whether that account is still usable. The
+      // bare refusal sent somebody to the database to find out.
+      const holder = await query(
+        `SELECT u.deactivated_at, o.id AS org_id, o.name AS org_name
+           FROM users u LEFT JOIN orgs o ON o.id = u.org_id
+          WHERE lower(u.email) = lower(btrim(?)) LIMIT 1`, [contactEmail]);
+      const h = holder[0] || {};
+      const where = h.org_name ? `"${h.org_name}"` : "an organization";
+      const message = h.deactivated_at
+        ? `That email belongs to a removed user of ${where}. Removing a user does not free the address - delete that organization to reuse it, or use a different email.`
+        : `That email is already the ${where} account. To put an existing organization on a plan, close it from Organizations instead of minting a new link.`;
+      return res.status(409).json({
+        error: "email_in_use", message,
+        orgId: h.org_id || null, orgName: h.org_name || null, removedUser: !!h.deactivated_at,
+      });
+    }
+  }
 
   const priceId = process.env[plan.env];
   if (!priceId) {
@@ -24070,15 +24242,18 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   try {
     const session = await billingStripe.checkout.sessions.create(params);
     await run(
-      `INSERT INTO close_links (id, org_name, contact_email, plan, stripe_session_id, checkout_url, created_by, created_by_name)
-       VALUES (?,?,?,?,?,?,?,?)`,
-      [closeLinkId, orgName, contactEmail, plan.id, session.id, session.url, req.user.userId, req.user.email]
+      `INSERT INTO close_links (id, org_name, contact_email, plan, stripe_session_id, checkout_url, created_by, created_by_name, target_org_id)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [closeLinkId, orgName, contactEmail, plan.id, session.id, session.url, req.user.userId, req.user.email, targetOrg ? targetOrg.id : null]
     );
-    console.log(`[close-link] ${closeLinkId} created for ${orgName} (${contactEmail}) on ${plan.id} by ${req.user.email}`);
+    console.log(`[close-link] ${closeLinkId} created for ${orgName} (${contactEmail}) on ${plan.id} by ${req.user.email}`
+      + (targetOrg ? ` - EXISTING org ${targetOrg.id}` : ""));
     res.status(201).json({
       id: closeLinkId,
       url: session.url,
       orgName, contactEmail,
+      targetOrgId: targetOrg ? targetOrg.id : null,
+      existingOrg: !!targetOrg,
       plan: plan.id,
       planName: plan.name,
       monthlyUsd: plan.monthlyUsd,
@@ -24094,8 +24269,11 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
 // GET /admin/close-links — what has been handed out, and what it became.
 app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const rows = await query(
-    `SELECT c.*, o.name AS created_org_name, o.trial_ends_at
-       FROM close_links c LEFT JOIN orgs o ON o.id = c.org_id
+    `SELECT c.*, o.name AS created_org_name, o.trial_ends_at,
+            t.name AS target_org_name
+       FROM close_links c
+       LEFT JOIN orgs o ON o.id = c.org_id
+       LEFT JOIN orgs t ON t.id = c.target_org_id
       ORDER BY c.created_at DESC LIMIT 100`, []);
   // "Configured" is not "correct" — production proved that: every price id was
   // set and every AMOUNT was the retired one. So this reports what Stripe
@@ -24120,6 +24298,11 @@ app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, r
       status: r.status, url: r.checkout_url, orgId: r.org_id,
       trialEndsAt: r.trial_ends_at, createdAt: r.created_at, completedAt: r.completed_at,
       createdByName: r.created_by_name,
+      // Which EXISTING org this link attaches to, if any. A link with a target
+      // reads differently in the list - it did not create the organisation it
+      // names, it put one that was already here onto a plan.
+      targetOrgId: r.target_org_id || null,
+      targetOrgName: r.target_org_name || null,
     })),
   });
 }));
@@ -24535,7 +24718,10 @@ app.get("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res)
   const org = await orgWithMetrics(orgs[0]);
 
   const [users, recentActivity, sequences, enrollments] = await Promise.all([
-    query("SELECT id, name, email, role, created_at FROM users WHERE org_id=? ORDER BY created_at ASC", [req.params.id]),
+    // deactivated_at rides along so the console can tell a live admin from a
+    // removed one - the close screen has to name the person a link will
+    // actually reach, and a removed user reaches nobody.
+    query("SELECT id, name, email, role, created_at, deactivated_at FROM users WHERE org_id=? ORDER BY created_at ASC", [req.params.id]),
     query(`SELECT i.type, i.note, i.date, i.created_at, d.name AS donor_name
            FROM interactions i JOIN donors d ON i.donor_id = d.id
            WHERE i.org_id=? ORDER BY i.created_at DESC LIMIT 10`, [req.params.id]),

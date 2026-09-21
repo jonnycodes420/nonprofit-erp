@@ -402,7 +402,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
 }
 
 // ── Organizations page ──────────────────────────────────────────────────────
-function Organizations({ orgs, loading, onRefresh }) {
+function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("created_at");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -502,6 +502,18 @@ function Organizations({ orgs, loading, onRefresh }) {
                       onMouseLeave={e => { e.currentTarget.style.borderColor = A.greenChip; e.currentTarget.style.background = "transparent"; }}>
                       View →
                     </button>
+                    {/* A close starts HERE, where she is already looking at the
+                        org, instead of being retyped into a blank form that
+                        then refuses the address because it already exists. */}
+                    {onCloseOrg && !o.stripe_subscription_id && (
+                      <button data-testid={`org-close-${o.id}`} onClick={() => onCloseOrg(o)}
+                        title={`Put ${o.name} on a plan`}
+                        style={{ ...ABTN, fontSize: 11, color: A.green, borderColor: A.greenChip }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = A.green; e.currentTarget.style.background = A.greenPale; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = A.greenChip; e.currentTarget.style.background = "transparent"; }}>
+                        Close
+                      </button>
+                    )}
                     {extendOrgId === o.id ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <input type="number" value={extDays} onChange={e => setExtDays(e.target.value)} style={{ ...INP, width: 52, padding: "4px 8px", fontSize: 12 }} />
@@ -777,10 +789,15 @@ export function planBlocker(p) {
        + `Create the price at the right amount and update ${p.env} before closing anyone.`;
 }
 
-function CloseDeal() {
+function CloseDeal({ target = null, onClearTarget = () => {} }) {
   const [data, setData] = useState(null);       // { plans, links }
   const [orgName, setOrgName] = useState("");
   const [email, setEmail] = useState("");
+  // When a close was started from an org, the name and the address are FACTS,
+  // not fields: the org is the one that was clicked, and the link goes to its
+  // own admin. Typing either again is how somebody closes the wrong customer.
+  const [targetAdmin, setTargetAdmin] = useState(null);   // { email } | null
+  const [targetErr, setTargetErr] = useState("");
   const [planId, setPlanId] = useState("");
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState(null);
@@ -793,6 +810,24 @@ function CloseDeal() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Who the link will actually reach. Read from the org rather than typed, and
+  // a removed user is not an answer - requireAuth refuses them, so a link sent
+  // there reaches nobody.
+  useEffect(() => {
+    let alive = true;
+    if (!target) { setTargetAdmin(null); setTargetErr(""); return undefined; }
+    setTargetAdmin(null); setTargetErr("");
+    adminFetch("/admin/orgs/" + target.id)
+      .then(d => {
+        if (!alive) return;
+        const admin = ((d && d.users) || []).find(u => u.role === "admin" && !u.deactivated_at);
+        if (admin) setTargetAdmin(admin);
+        else setTargetErr(`${target.name} has no active admin to send the link to. Invite one first.`);
+      })
+      .catch(e => { if (alive) setTargetErr(errorMessage(e, "Steward could not read that organization just now.")); });
+    return () => { alive = false; };
+  }, [target]);
+
   const plans = (data && data.plans) || [];
   // Preselect the first plan that can actually be sold, so the common case is
   // type, type, press.
@@ -803,14 +838,22 @@ function CloseDeal() {
 
   const plan = plans.find(p => p.id === planId) || null;
   const blocker = plans.length ? planBlocker(plan) : null;
-  const canCreate = !!(orgName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && plan && plan.ready && !creating);
+  const canCreate = target
+    ? !!(targetAdmin && plan && plan.ready && !creating)
+    : !!(orgName.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) && plan && plan.ready && !creating);
 
   async function create() {
     setCreating(true); setErr(""); setCreated(null);
     try {
+      // ONE ROUTE, TWO BODIES. `orgId` means attach to an org that already
+      // exists; the other shape means mint a new one. The server decides which
+      // it is - the screen does not carry a second close.
+      const body = target
+        ? { orgId: target.id, plan: planId }
+        : { orgName: orgName.trim(), contactEmail: email.trim(), plan: planId };
       const r = await closeFetch("/admin/close-links", {
         method: "POST",
-        body: JSON.stringify({ orgName: orgName.trim(), contactEmail: email.trim(), plan: planId }),
+        body: JSON.stringify(body),
       });
       setCreated(r);
       await load();
@@ -852,13 +895,33 @@ function CloseDeal() {
 
       <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: "22px 24px", maxWidth: 720 }}>
         <div style={{ fontSize: 13, color: A.secondary, lineHeight: 1.6, marginBottom: 18, maxWidth: 560 }}>
-          This creates the one link that opens an organization. She puts a card in, nothing is charged
-          today, and the first charge is thirty days from the moment she signs.
+          {target
+            ? "This puts an organization that is already in Steward onto a plan. They put a card in, nothing is charged today, and the first charge is thirty days from the moment they sign."
+            : "This creates the one link that opens an organization. She puts a card in, nothing is charged today, and the first charge is thirty days from the moment she signs."}
         </div>
+
+        {target && (
+          <div data-testid="cl-target" style={{ border: `1px solid ${A.border}`, borderRadius: 8, padding: "12px 14px", marginBottom: 16, background: A.surface }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: A.ink }}>{target.name}</div>
+                <div style={{ fontSize: 12, color: A.secondary, marginTop: 3 }}>
+                  {targetAdmin
+                    ? <>The link goes to <span data-testid="cl-target-email" style={{ color: A.ink }}>{targetAdmin.email}</span></>
+                    : targetErr ? <span style={{ color: A.red }}>{targetErr}</span> : "Reading this organization…"}
+                </div>
+              </div>
+              <button type="button" data-testid="cl-target-clear" onClick={onClearTarget}
+                style={{ fontSize: 12, color: A.secondary, background: "none", border: `1px solid ${A.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                Close a different one
+              </button>
+            </div>
+          </div>
+        )}
 
         {!created && (
           <>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+            <div style={{ display: target ? "none" : "flex", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
               <div style={{ flex: "1 1 260px", minWidth: 220 }}>
                 <label style={label} htmlFor="cl-orgname">Organization name</label>
                 <input id="cl-orgname" data-testid="cl-orgname" style={field} value={orgName} autoComplete="off"
@@ -981,6 +1044,10 @@ function CloseDeal() {
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
+  // The org a close was started FROM. Organizations hands it here and switches
+  // page, so there is one close screen rather than a second one embedded in a
+  // table row. Cleared whenever the close screen is left or reached from the rail.
+  const [closeTarget, setCloseTarget] = useState(null);
   const [orgs, setOrgs] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [loadingOrgs, setLoadingOrgs] = useState(true);
@@ -1052,7 +1119,7 @@ export default function AdminDashboard() {
         <div style={{ flex: 1, paddingTop: 4 }}>
           <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: A.muted, padding: "16px 16px 6px" }}>Navigation</div>
           {NAV.map(n => (
-            <button key={n.id} onClick={() => setPage(n.id)} style={{
+            <button key={n.id} onClick={() => { setCloseTarget(null); setPage(n.id); }} style={{
               width: "calc(100% - 16px)", margin: "1px 8px", display: "flex", alignItems: "center", gap: 8,
               padding: "8px 12px", border: "none", borderRadius: 6, cursor: "pointer", textAlign: "left",
               background: page === n.id ? A.greenPale : "transparent",
@@ -1092,8 +1159,9 @@ export default function AdminDashboard() {
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px" }}>
           {page === "overview"  && <Overview metrics={metrics} orgs={orgs} />}
-          {page === "close"     && <CloseDeal />}
-          {page === "orgs"      && <Organizations orgs={orgs} loading={loadingOrgs} onRefresh={load} />}
+          {page === "close"     && <CloseDeal target={closeTarget} onClearTarget={() => setCloseTarget(null)} />}
+          {page === "orgs"      && <Organizations orgs={orgs} loading={loadingOrgs} onRefresh={load}
+                                     onCloseOrg={o => { setCloseTarget(o); setPage("close"); }} />}
           {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
           {page === "network"   && <NetworkReview />}
         </div>

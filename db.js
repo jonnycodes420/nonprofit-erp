@@ -3113,6 +3113,15 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_session
                     ON close_links (stripe_session_id) WHERE stripe_session_id IS NOT NULL`);
 
+  // BUILD-92: a close link can now point at an org that ALREADY EXISTS, rather
+  // than only conjuring a new one. `target_org_id` is what tells the two apart
+  // at completion time: set = attach the subscription to that org and create
+  // NOTHING; null = the original behaviour, mint an org and its first admin.
+  // Additive and nullable, so every link written before this reads as new-org.
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS target_org_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
+                    ON close_links (target_org_id) WHERE target_org_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

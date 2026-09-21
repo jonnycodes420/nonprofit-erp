@@ -78,6 +78,22 @@ function validateCloseLink(body = {}) {
   return { ok: true, orgName, contactEmail, plan };
 }
 
+// Validate a close request aimed at an org that ALREADY EXISTS. The contact
+// email is NOT taken from the caller here: it is read off the org's own admin
+// by the route, because the whole point of this path is that nobody retypes an
+// address that already belongs to somebody. So this validates the two things a
+// caller actually chooses - which org, and which plan.
+function validateOrgClose(body = {}) {
+  const orgId = String(body.orgId || "").trim();
+  const planId = String(body.plan || "").trim();
+  if (!orgId) return { ok: false, error: "org_id_required", message: "Pick an organization to close." };
+  const plan = closePlan(planId);
+  if (!plan) {
+    return { ok: false, error: "invalid_plan", message: `Plan must be one of: ${CLOSE_PLANS.map(p => p.id).join(", ")}.` };
+  }
+  return { ok: true, orgId, plan };
+}
+
 // The Stripe Checkout Session parameters for a close link.
 //
 // THE THREE THINGS THAT MATTER HERE:
@@ -118,6 +134,6 @@ function checkoutSessionParams({
 }
 
 module.exports = {
-  CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams,
+  CLOSE_PLANS, closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
   checkoutNotice, firstChargeSentence, formatChargeDate, usd,
 };
