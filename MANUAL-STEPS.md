@@ -168,3 +168,35 @@ reasoning: `BLOCKED-build90.md`.
 
 **Never set `STRIPE_BILLING_API_BASE` in production** — it is the local-test
 seam that points the billing client at a mock.
+
+### DONE 2026-09-20 — and the script was NOT the answer
+
+**No Stripe object was created.** All three correct prices ALREADY EXISTED in
+live mode; the three Railway variables were simply pointed at older ones:
+
+| Plan | Railway pointed at | Should quote | Now points at |
+|---|---|---|---|
+| Founding | $99/month | $199 | the existing $199/month price |
+| Core | $149/month | $249 | the existing $249/month price |
+| Team | $299/month | $499 | the existing $499/month price |
+
+So the fix was three variable values, nothing else. `FOUNDER_EMAIL` was already
+`jonathan@stewardapp.dev` and was left untouched.
+
+**DO NOT run `scripts/create-billing-products.js --live` on this account.** It
+finds a product by `metadata['steward_plan']`, and the three live products
+(`Founding Partner`, `Core`, `Team`) carry **no metadata at all**. The script
+would not recognise them, would create three NEW products named `Steward — Core`
+/ `Steward — Team` / `Steward — Founding Partner`, and would mint a SECOND
+$199/$249/$499 price under them — duplicating prices that already exist and
+splitting the catalogue across six products. The script is idempotent only
+against products it created itself.
+
+Verified after the redeploy: `GET /admin/close-links` reports `ready: true` for
+all three, with Stripe's own amount and interval matching what the page quotes.
+
+**Still Jonathan's, and still not done:** §3 of `BLOCKED-build90.md` — one real
+close link on prod, walked with his own card, confirmed `trialing` with no
+charge, then cancelled and the throwaway org deleted. Nobody else can do that
+step.
+
