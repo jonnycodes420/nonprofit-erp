@@ -36,10 +36,16 @@ const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, textMatch } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, textMatch, civilToday } = require("./helpers");
 
 const iso = d => new Date(d).toISOString().slice(0, 10);
-const daysAgo = n => iso(Date.now() - n * 86400000);
+// Anchored to the ORG'S civil today, not UTC's. `daysAgo(0)` used to be
+// tomorrow's date from ~20:00 Eastern, so a gift written "today" fell outside
+// every window the server computes on the org's calendar - invisible while
+// the server ALSO bucketed in UTC, and exposed the moment BUILD-93 Part 1
+// moved the readers onto the org's civil date. Offsets hang off the same
+// anchor so the relative arithmetic stays true.
+const daysAgo = n => iso(Date.parse(civilToday() + "T12:00:00Z") - n * 86400000);
 const A = "org_rr_a";
 
 // THE FAMILY. Asserted on the shape of the claim, not on one spelling.

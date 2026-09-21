@@ -13535,9 +13535,11 @@ app.get("/goals/active", requireAuth, wrap(async (req, res) => {
   // instead of an invented/decorative line. Bounded to stay inside the
   // goal's own period so it never reaches back before period_start.
   let recentAmount = 0, recentDonorCount = 0;
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split("T")[0];
+  // Seven days back from the ORG'S civil today, not from UTC's. `today` above
+  // is already the org's civil date; deriving the other end of the same window
+  // from a UTC slice made the window start on the wrong day for four hours a
+  // night and, worse, could put its END before its start.
+  const sevenDaysAgoStr = orgTime.addDays(today, -6);
   const recentStart = sevenDaysAgoStr > goal.period_start ? sevenDaysAgoStr : goal.period_start;
   if (recentStart <= today) {
     if (goal.goal_type === "lapsed_recovery") {
