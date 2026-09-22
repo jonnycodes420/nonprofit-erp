@@ -305,15 +305,34 @@ const advanceDays = (n, seqId) =>
     /she wrote every word, she turned it on, and each send is hers/i
       .test(fs.readFileSync(path.join(root, "CLAUDE.md"), "utf8")));
 
-  // ── every link survives GET and HEAD with zero state change ─────────────
-  console.log("— a link in a sequence email changes nothing on GET or HEAD —");
-  const unsubUrl = `/unsubscribe?email=${encodeURIComponent("stu@b94s.test")}&org=${ORG}`;
-  const supBefore = (await q(`SELECT COUNT(*)::int AS n FROM email_suppressions WHERE org_id=$1`, [ORG]))[0].n;
-  const g1 = await fetch(BASE + unsubUrl);
-  const h1 = await fetch(BASE + unsubUrl, { method: "HEAD" });
-  const supAfter = (await q(`SELECT COUNT(*)::int AS n FROM email_suppressions WHERE org_id=$1`, [ORG]))[0].n;
-  ok("GET and HEAD both answer", g1.status < 500 && h1.status < 500, [g1.status, h1.status]);
-  ok("and neither changed a thing", supAfter === supBefore, [supBefore, supAfter]);
+  // ── EVERY link in a sequence email survives GET and HEAD, zero state change
+  // Enumerated off the bytes that actually went out, not a URL the suite
+  // happens to know about — a link added to the footer tomorrow is covered by
+  // this the day it appears, which is the point of asserting it this way.
+  console.log("— every link in a sequence email changes nothing on GET or HEAD —");
+  const sentHtml = captured.map(c => (c && c.html) || "").join("\n");
+  const hrefs = [...new Set([...sentHtml.matchAll(/href="([^"]+)"/g)].map(m => m[1]))]
+    .filter(u => /^https?:\/\//.test(u) || u.startsWith("/"))
+    // Fonts and other third-party assets are not ours to probe.
+    .filter(u => !/fonts\.googleapis|fonts\.gstatic/.test(u));
+  ok("a sequence email carries at least one link to check", hrefs.length >= 1, hrefs);
+  const snapshot = async () => JSON.stringify({
+    sup: (await q(`SELECT COUNT(*)::int AS n FROM email_suppressions WHERE org_id=$1`, [ORG]))[0].n,
+    enr: (await q(`SELECT status, current_step, stop_reason FROM sequence_enrollments WHERE sequence_id=$1 ORDER BY donor_id`, [SEQ_ID])),
+    sends: (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1`, [SEQ_ID]))[0].n,
+    dne: (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1 AND do_not_email = true`, [ORG]))[0].n,
+  });
+  const before0 = await snapshot();
+  const statuses = [];
+  for (const href of hrefs) {
+    const url = href.replace(/^https?:\/\/[^/]+/, "");
+    if (!url.startsWith("/")) continue;
+    statuses.push([url.slice(0, 40), (await fetch(BASE + url)).status, (await fetch(BASE + url, { method: "HEAD" })).status]);
+  }
+  ok("every link answers GET and HEAD without a 5xx",
+    statuses.every(([, g, h]) => g < 500 && h < 500), statuses);
+  ok("…and NOT ONE of them changed anything", (await snapshot()) === before0,
+    [before0.slice(0, 200), (await snapshot()).slice(0, 200)]);
 
   // BUILD-94 Part 4 — and the gate itself: take the address away and the
   // queue HOLDS rather than failing. Nothing is consumed, so the day she
