@@ -1472,6 +1472,59 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
 
 // Resend delivery-event webhook (bounce/complaint) — Svix-signed, must receive
 // raw body like the Stripe webhook above, so it's also registered BEFORE express.json().
+// ── BUILD-94 Part 4 — resolving the org from what WE verified ──────────────
+// Never from the payload. The From address on a Resend event is compared to
+// the sending identities this product actually configured: an org's verified
+// sending domain, or (on the shared domain) nothing — a shared-domain From
+// identifies Steward, not a tenant, and guessing would mark the wrong person.
+async function orgIdForVerifiedFrom(rawFrom) {
+  const m = /<([^>]+)>\s*$/.exec(String(rawFrom || "").trim());
+  const addr = String(m ? m[1] : rawFrom || "").trim().toLowerCase();
+  if (!addr || !addr.includes("@")) return null;
+  const domain = addr.split("@")[1];
+  if (!domain) return null;
+  const rows = await query(
+    `SELECT id FROM orgs
+      WHERE sending_domain_status = 'verified'
+        AND LOWER(sending_domain) = ?
+        AND LOWER(sending_from_email) = ?
+      LIMIT 2`, [domain, addr]).catch(() => []);
+  // Exactly one, or nobody. Two orgs claiming one verified address is a
+  // configuration fault, and marking a person on a coin flip is worse than
+  // marking nobody.
+  return rows.length === 1 ? rows[0].id : null;
+}
+
+// A hard bounce makes the ADDRESS unreachable, with the date and reason on the
+// profile. A complaint makes the PERSON unsubscribed — somebody pressed "this
+// is spam", which is the strongest opt-out signal there is. Both write a
+// timeline line, because "why did we stop emailing them" has to be answerable.
+async function markEmailEvent(orgId, email, reason, event) {
+  const rows = await query(
+    `SELECT id, name FROM donors WHERE org_id = ? AND LOWER(email) = ? AND deleted_at IS NULL`,
+    [orgId, email]);
+  if (!rows.length) return 0;
+  const detail = String(event?.data?.bounce?.message || event?.data?.reason || "").slice(0, 200) || null;
+  for (const d of rows) {
+    if (reason === "bounced") {
+      await run(
+        `UPDATE donors SET email_unreachable = true, email_unreachable_at = NOW(),
+                           email_unreachable_reason = ? WHERE id = ?`, [detail, d.id]);
+    } else {
+      await run(`UPDATE donors SET do_not_email = true WHERE id = ?`, [d.id]);
+    }
+    await run(
+      `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
+       VALUES (?,?,?,'email',?,?,?)`,
+      ["i_" + uuid().slice(0, 8), orgId, d.id,
+       reason === "bounced"
+         ? `Email to ${email} hard-bounced and will not be tried again${detail ? ` — ${detail}` : ""}`
+         : `${email} marked this as spam — removed from every list`,
+       new Date().toISOString().slice(0, 10), "system:resend-webhook"]);
+  }
+  return rows.length;
+}
+
 app.post("/resend/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   if (!process.env.RESEND_WEBHOOK_SECRET) return res.status(503).json({ error: "Resend webhook not configured" });
 
@@ -1511,7 +1564,21 @@ app.post("/resend/webhook", express.raw({ type: "application/json" }), async (re
            )`,
           [email]
         );
-        console.log(`[resend-webhook] ${type} for ${email} — suppressed globally`);
+        // ── BUILD-94 Part 4 — MARK THE PERSON, IN THE RIGHT ORG ────────────
+        // THE ORG COMES FROM THE VERIFIED ACCOUNT MAPPING, NEVER THE PAYLOAD
+        // (BUILD-37 B9). A webhook body is attacker-shaped input; the only
+        // trustworthy org signal in it is the FROM address, and even that is
+        // only trustworthy because we look it up against the sending domains
+        // WE verified. An unrecognised From marks nobody — a bounce that
+        // cannot be attributed is still suppressed globally above, which is
+        // the reputation half and is what actually matters.
+        const orgIdForEvent = await orgIdForVerifiedFrom(event?.data?.from);
+        if (orgIdForEvent) {
+          await markEmailEvent(orgIdForEvent, email, reason, event);
+        } else {
+          console.log(`[resend-webhook] ${type} for ${email} — no verified sender mapping, suppressed globally only`);
+        }
+        console.log(`[resend-webhook] ${type} for ${email} — suppressed globally${orgIdForEvent ? ` + marked in ${orgIdForEvent}` : ""}`);
       }
     }
     // Other event types (delivered, opened, clicked, etc.) are no-ops for now.
@@ -13294,6 +13361,87 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   };
 }
 
+
+// ══ BUILD-94 Part 5 — PUT IT ON MY CALENDAR ════════════════════════════════
+// Three outputs, ONE builder. Outlook and Google are deep links to their
+// compose screens; the .ics is a file. Nothing is written to any calendar by
+// Steward and nothing comes back — NOT_SYNC_NOTE is the sentence that says so,
+// and it ships beside the button.
+//
+// The three MUST agree: same subject, same start time in the org's timezone,
+// and a UID that is stable across two generations so re-downloading UPDATES
+// the appointment rather than duplicating it.
+let CAL = null;
+const CAL_READY = import("./shared/calendarLinks.js").then(m => { CAL = m; return m; });
+
+// One thread's next step, as a calendar event. The ONE place a task becomes an
+// appointment — every output below reads this, so they cannot disagree.
+async function calendarEventForThread(orgId, threadId) {
+  await CAL_READY;
+  const [t] = await query(
+    `SELECT t.id, t.next_step_label, t.next_step_type, t.due_date, t.due_time,
+            d.id AS donor_id, d.name AS donor_name
+       FROM threads t JOIN donors d ON d.id = t.donor_id
+      WHERE t.id = ? AND t.org_id = ?`, [threadId, orgId]);
+  if (!t) return null;
+  const [org] = await query(`SELECT name FROM orgs WHERE id = ?`, [orgId]);
+  const tzName = await orgTzName(orgId);
+  // The time is HH:MM in the ORG's zone (BUILD-84). No time = an ALL-DAY
+  // event; inventing 9am would put a fictional appointment in her morning.
+  const startInstant = t.due_time
+    ? orgTime.localToInstant(`${t.due_date}T${t.due_time}`, tzName)   // ORG_TZ_SEAM_OK
+    : null;
+  // The last logged line on this person — what she will actually need to
+  // remember when the reminder fires three days from now.
+  const [last] = await query(
+    `SELECT note FROM interactions WHERE org_id = ? AND donor_id = ?
+      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, t.donor_id]).catch(() => []);
+  const recordUrl = `${publicAppUrl()}/donors/${t.donor_id}`;
+  return {
+    uid: CAL.taskUid(orgId, t.id),
+    // "Call Bill Harmon" — the step and the person, which is the whole
+    // subject somebody needs in a calendar three days from now.
+    subject: `${t.next_step_label} ${t.donor_name}`.replace(/\s+/g, " ").trim(),
+    description: CAL.eventDescription({
+      lastLine: last?.note || null, personName: t.donor_name,
+      recordUrl, orgName: org?.name || null,
+    }),
+    startInstant, dueCivil: t.due_date, minutes: CAL.DEFAULT_MINUTES,
+    timezone: tzName, donorId: t.donor_id, donorName: t.donor_name,
+  };
+}
+
+// The three links for one next step. A GET, and it changes nothing.
+app.get("/threads/:id/calendar", requireAuth, wrap(async (req, res) => {
+  await CAL_READY;
+  const ev = await calendarEventForThread(req.user.orgId, req.params.id);
+  if (!ev) return res.status(404).json({ error: "Not found" });
+  res.json({
+    subject: ev.subject,
+    startsAt: ev.startInstant ? new Date(ev.startInstant).toISOString() : null,
+    allDay: !ev.startInstant, dueDate: ev.dueCivil, timezone: ev.timezone,
+    outlook: CAL.outlookUrl(ev),
+    google: CAL.googleUrl(ev),
+    ics: `/threads/${req.params.id}/calendar.ics`,
+    uid: ev.uid,
+    note: CAL.NOT_SYNC_NOTE,
+  });
+}));
+
+// The .ics itself, generated SERVER-SIDE so the UID rule lives in one place.
+app.get("/threads/:id/calendar.ics", requireAuth, wrap(async (req, res) => {
+  await CAL_READY;
+  const ev = await calendarEventForThread(req.user.orgId, req.params.id);
+  if (!ev) return res.status(404).json({ error: "Not found" });
+  const filename = (ev.subject || "task").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "task";
+  res.set("Content-Type", "text/calendar; charset=utf-8");
+  res.set("Content-Disposition", `attachment; filename="${filename}.ics"`);
+  // No caching: the step's time can change, and a cached .ics is a stale
+  // appointment that looks current.
+  res.set("Cache-Control", "no-store");
+  res.send(CAL.buildIcs(ev));
+}));
+
 app.get("/threads", requireAuth, wrap(async (req, res) => {
   const donorId = req.query.donorId ? String(req.query.donorId) : null;
   const cap = /^\d+$/.test(String(req.query.cap || "")) ? Math.min(200, parseInt(req.query.cap, 10)) : null;
@@ -14017,6 +14165,28 @@ function buildUnsubscribeUrl(email, orgId, source) {
 // An org that hasn't filled in receipt_address yet degrades to the old
 // unsubscribe-only footer (Communications shows admins a Settings prompt
 // until they add it).
+// ── BUILD-94 Part 4 — NO ADDRESS, NO SEND ──────────────────────────────────
+// Commercial email must carry the sender's physical postal address (CAN-SPAM
+// §7704(a)(5)); Gmail and Yahoo's bulk-sender rules assume it too. BUILD-81
+// already made the digest refuse to go without one. This extends that refusal
+// to CAMPAIGNS and SEQUENCES — the two things that actually go out in bulk.
+//
+// It is a REFUSAL, not a warning, and deliberately so: a warning on a screen
+// somebody dismissed is how an organisation ends up sending 4,000 unlawful
+// emails, and the fix is ninety seconds of typing in Settings.
+async function bulkSendAddressGate(orgId) {
+  const [org] = await query("SELECT name, receipt_address FROM orgs WHERE id = ?", [orgId]).catch(() => []);
+  const addr = String(org?.receipt_address || "").trim();
+  if (addr) return { ok: true, address: addr };
+  return {
+    ok: false,
+    reason: "no_mailing_address",
+    message: "Every bulk email has to carry your organisation's mailing address — it is the law for " +
+             "commercial email, and Gmail and Yahoo both require it. Add it in Settings → Tax Receipts " +
+             "and it appears in every footer from then on.",
+  };
+}
+
 async function unsubscribeEmailFooterHtml(email, orgId, source) {
   const url = buildUnsubscribeUrl(email, orgId, source);
   let addressLine = "";
@@ -14282,15 +14452,26 @@ async function donorMailDecision(kind, email, orgId) {
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
   if (!email) return { send: false, reason: "no_email" };
+  // BUILD-94 Part 4 — UNSUBSCRIBED IS ONE FLAG ON THE PERSON, and it is read
+  // HERE, in the one place that decides whether anything may be sent.
+  // `do_not_email` existed as a column since BUILD-77 and nothing consulted
+  // it: an import that carried a DNE column wrote a flag that changed nothing,
+  // which is worse than not having it. `email_unreachable` is the other half
+  // — a hard bounce is a fact about the address, not a preference.
   const [flags] = await query(
-    `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc
+    `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
+            bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable
        FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
     [orgId, email]
   ).catch(() => [null]);
   if (flags?.deceased) return { send: false, reason: "deceased" };
+  // An address that hard-bounced cannot receive anything, transactional
+  // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
+  if (flags?.unreachable) return { send: false, reason: "bounced" };
   const suppressReason = await getSuppressionReason(email, orgId);
   if (cls === "marketing") {
     if (flags?.dnc) return { send: false, reason: "do_not_contact" };
+    if (flags?.dne) return { send: false, reason: "unsubscribed" };
     if (suppressReason) return { send: false, reason: suppressReason };
   } else {
     // Transactional ignores the donor's marketing OPT-OUT ("unsubscribed") —
@@ -14328,10 +14509,30 @@ async function recordUnsubscribe(email, orgId, source) {
   }
 }
 
-function unsubscribeHtml({ ok, email }) {
-  const message = ok
-    ? `<h1>You're unsubscribed</h1><p>${email ? `<strong>${email}</strong> ` : ""}won't receive any more emails from this list. It can take a few minutes to fully take effect.</p>`
-    : `<h1>Link expired</h1><p>This unsubscribe link is invalid or has expired. If you're still receiving unwanted emails, reply to any message and ask to be removed.</p>`;
+// ── BUILD-94 Part 4 — A GET NEVER CHANGES STATE ────────────────────────────
+// This page used to unsubscribe ON GET. That is the standing rule broken in
+// the one place it costs a real person something: every corporate link
+// scanner, every mail-client prefetcher and every "check this link is safe"
+// proxy follows links in mail, and each one of them was silently unsubscribing
+// somebody who had not clicked anything. Gmail's own RFC 8058 one-click POSTs,
+// which is why the POST half was already correct — the GET was the leak.
+//
+// So: GET RENDERS. It says which organisation it is about (a person on four
+// nonprofits' lists cannot answer "unsubscribe from what?"), and it carries
+// ONE button that POSTs. Three states, one page.
+function unsubscribeHtml({ ok, email, orgName, token, done }) {
+  const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const who = orgName ? `<strong>${esc(orgName)}</strong>` : "this organisation";
+  const message = !ok
+    ? `<h1>Link expired</h1><p>This unsubscribe link is invalid or has expired. If you're still receiving unwanted emails, reply to any message and ask to be removed.</p>`
+    : done
+      ? `<h1>You're unsubscribed</h1><p>${email ? `<strong>${esc(email)}</strong> ` : ""}won't receive any more emails from ${who}. It can take a few minutes to fully take effect.</p>`
+      : `<h1>Unsubscribe from ${esc(orgName || "these emails")}?</h1>
+         <p>${email ? `<strong>${esc(email)}</strong> ` : "You "}will stop receiving emails from ${who}.
+            Receipts for gifts you make will still be sent — those are records, not mail.</p>
+         <form method="POST" action="/unsubscribe?token=${encodeURIComponent(token || "")}">
+           <button type="submit" class="go">Unsubscribe me</button>
+         </form>`;
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -14349,6 +14550,9 @@ function unsubscribeHtml({ ok, email }) {
   p { font-size:15px; color:#6b7c72; line-height:1.6; margin:0; }
   .badge { width:48px; height:48px; background:#0f1a12; border-radius:12px; margin:0 auto 20px; display:flex; align-items:center; justify-content:center; }
   .badge span { font-family:'DM Serif Display',Georgia,'Times New Roman',serif; font-size:28px; font-weight:400; color:#f0ede6; line-height:1; }
+  form { margin:22px 0 0; }
+  .go { font-family:'DM Sans',Helvetica,Arial,sans-serif; font-size:15px; font-weight:700; color:#ffffff;
+        background:#0d5c3a; border:none; border-radius:10px; padding:12px 26px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -14363,21 +14567,39 @@ function unsubscribeHtml({ ok, email }) {
 }
 
 // GET — a human clicking the footer link in the email; renders a confirmation page.
+// The name to put on the unsubscribe page. The portal display name when the
+// org set one (the W-2 white-label rule — a donor sees "CREO Arts", never the
+// staff-side "CREO Arts (Demo)"), and the org's own name otherwise. It must
+// never come back empty: "unsubscribe from what?" is unanswerable for someone
+// on four nonprofits' lists, which is the whole reason the name is here.
+async function unsubscribeOrgName(orgId) {
+  const [o] = await query("SELECT name FROM orgs WHERE id = ?", [orgId]).catch(() => []);
+  return await donorFacingOrgName(orgId, o?.name || "").catch(() => o?.name || "") || o?.name || "";
+}
+
+// GET RENDERS AND CHANGES NOTHING (BUILD-94 Part 4). One click, on the page,
+// POSTs. No login: a person who wants out must not have to make an account.
 app.get("/unsubscribe", wrap(async (req, res) => {
   const decoded = verifyUnsubscribeToken(req.query.token);
   res.set("Content-Type", "text/html");
   if (!decoded) return res.status(400).send(unsubscribeHtml({ ok: false }));
-  await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
-  res.send(unsubscribeHtml({ ok: true, email: decoded.email }));
+  const orgName = await unsubscribeOrgName(decoded.orgId);
+  res.send(unsubscribeHtml({ ok: true, email: decoded.email, orgName, token: req.query.token, done: false }));
 }));
 
-// POST — RFC 8058 one-click unsubscribe: Gmail/Outlook POST here silently
-// (no page render) when the recipient taps the native unsubscribe button.
+// POST — the one click, and RFC 8058's one-click too: Gmail/Outlook POST here
+// silently when the recipient taps the native unsubscribe button. Both land on
+// the same line, which is why there is only one of them.
 app.post("/unsubscribe", wrap(async (req, res) => {
   const decoded = verifyUnsubscribeToken(req.query.token);
   if (!decoded) return res.status(400).end();
   await recordUnsubscribe(decoded.email, decoded.orgId, decoded.source);
-  res.status(200).end();
+  // A mail client's one-click POST wants a bare 200; a person who pressed the
+  // button on the page wants to be told it worked.
+  if (!/text\/html/.test(String(req.headers.accept || ""))) return res.status(200).end();
+  const orgName = await unsubscribeOrgName(decoded.orgId);
+  res.set("Content-Type", "text/html");
+  res.send(unsubscribeHtml({ ok: true, email: decoded.email, orgName, done: true }));
 }));
 
 // ── Recurring gift recovery (failed-payment dunning) — shared helpers ──────
@@ -14694,6 +14916,21 @@ async function computeRecoveryRate(orgId) {
 }
 
 // ── Campaigns ──────────────────────────────────────────────────────────────
+// BUILD-94 Part 4 — "send it at 9:00 on Thursday" is a wall-clock time IN THE
+// ORGANISATION's zone. A datetime-local input carries no zone, and handing the
+// raw string to a timestamptz column makes Postgres read it in the SERVER's
+// zone: 9:00 typed in Chicago was stored as 9:00 UTC and went out at 4 in the
+// morning. The conversion happens HERE, server-side, so every write path gets
+// it — a client that forgets is a client that schedules at the wrong hour.
+async function scheduledInstant(orgId, raw) {
+  if (!raw) return null;
+  // An explicit instant (a Z or an offset) is already unambiguous — honoured
+  // as sent, so an API caller can still be exact.
+  if (/[Zz]$|[+-]\d{2}:?\d{2}$/.test(String(raw).trim())) return new Date(raw);
+  const tz = await orgTzName(orgId);
+  return orgTime.localToInstant(raw, tz) || null;      // ORG_TZ_SEAM_OK
+}
+
 app.get("/campaigns", requireAuth, wrap(async (req, res) => {
   const campaigns = await query(
     "SELECT * FROM campaigns WHERE org_id = ? ORDER BY created_at DESC",
@@ -14710,6 +14947,47 @@ app.get("/campaigns", requireAuth, wrap(async (req, res) => {
     return { ...c, recipients };
   }));
   res.json(result);
+}));
+
+// ── BUILD-94 Part 4 — THE SENT-CAMPAIGNS LIST ──────────────────────────────
+// The two things she will look for on day one: what went, and what came back.
+// COUNTS ONLY. Steward stores an open per recipient (it has since BUILD-06, to
+// compute the rate), and NOTHING per-person reaches a profile — no "Margaret
+// opened this at 6:41am" anywhere in the product. That is a decision, not an
+// omission, and it is written down in steward-data-handling.md; changing it is
+// a data-handling change and a line in the customer agreement.
+app.get("/campaigns/sent", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT c.id, c.name, c.subject, c.status, c.sent_at, c.scheduled_at, c.created_at,
+            COUNT(cr.id)::int                                          AS recipients,
+            COUNT(cr.sent_at)::int                                     AS delivered,
+            COUNT(cr.opened_at)::int                                   AS opened,
+            COUNT(cr.failure_reason)::int                              AS failed
+       FROM campaigns c
+       LEFT JOIN campaign_recipients cr ON cr.campaign_id = c.id
+      WHERE c.org_id = ? AND c.status IN ('sent','sending','scheduled')
+      GROUP BY c.id ORDER BY COALESCE(c.sent_at, c.scheduled_at, c.created_at) DESC
+      LIMIT 100`, [orgId]);
+  // Unsubscribes attributable to a campaign: a suppression for one of ITS
+  // recipients, written AFTER it went. Attribution by time and audience rather
+  // than a foreign key, because a person unsubscribes from an organisation,
+  // not from a campaign — the campaign is only what made them reach for it.
+  const out = [];
+  for (const c of rows) {
+    let unsubscribed = 0;
+    if (c.sent_at) {
+      const [u] = await query(
+        `SELECT COUNT(DISTINCT s.email)::int AS n FROM email_suppressions s
+          WHERE s.org_id = ? AND s.reason = 'unsubscribed' AND s.created_at >= ?
+            AND LOWER(s.email) IN (SELECT LOWER(email) FROM campaign_recipients WHERE campaign_id = ?)`,
+        [orgId, c.sent_at, c.id]);
+      unsubscribed = u ? u.n : 0;
+    }
+    out.push({ ...c, unsubscribed,
+      openRate: c.delivered ? Math.round((c.opened / c.delivered) * 100) : null });
+  }
+  res.json({ campaigns: out });
 }));
 
 app.get("/campaigns/:id", requireAuth, wrap(async (req, res) => {
@@ -14737,7 +15015,8 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
     `INSERT INTO campaigns (id,org_id,name,type,subject,body,status,segment,scheduled_at,recipient_count,open_count,created_by,created_by_name)
      VALUES (?,?,?,?,?,?,?,?,?,0,0,?,?)`,
     [id, req.user.orgId, name, type || "appeal", subject || "", body || "",
-     scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}), scheduledAt || null, actor(req).id, actor(req).name]
+     scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}),
+     await scheduledInstant(req.user.orgId, scheduledAt), actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -14760,7 +15039,7 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
      WHERE id=? AND org_id=?`,
     [name, type || "appeal", subject || "", body || "",
      JSON.stringify(segment || {}), status || "draft",
-     scheduledAt || null,
+     await scheduledInstant(req.user.orgId, scheduledAt),
      req.params.id, req.user.orgId]
   );
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [req.params.id]);
@@ -15366,6 +15645,10 @@ app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wra
   if (!campaigns.length) return res.status(404).json({ error: "Campaign not found" });
   const campaign = campaigns[0];
   if (campaign.status === "sent") return res.status(400).json({ error: "Campaign already sent" });
+  // BUILD-94 Part 4 — NO ADDRESS, NO SEND. Before the recipients are resolved,
+  // before anything is marked sending: nothing in bulk leaves without one.
+  const addrGate = await bulkSendAddressGate(req.user.orgId);
+  if (!addrGate.ok) return res.status(400).json({ error: addrGate.reason, message: addrGate.message });
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
   const org = orgs[0];
@@ -15523,6 +15806,15 @@ async function processScheduledCampaigns() {
         if (getOrgAccessState(org) === "read_only") {
           await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
           console.log(`[campaign-scheduler] org ${org.id} is read_only — campaign ${campaign.id} moved back to draft`);
+          continue;
+        }
+        // BUILD-94 Part 4 — NO ADDRESS, NO SEND, on the scheduled path too.
+        // Back to DRAFT rather than failed: the campaign is fine, the settings
+        // are not, and she should find it where she left it.
+        const schedAddr = await bulkSendAddressGate(campaign.org_id);
+        if (!schedAddr.ok) {
+          await run("UPDATE campaigns SET status='draft', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
+          console.error(`[campaign-scheduler] org ${org.id} has no mailing address — campaign ${campaign.id} back to draft`);
           continue;
         }
         const claimed = await run("UPDATE campaigns SET status='sending', updated_at=NOW() WHERE id=? AND status='scheduled'", [campaign.id]);
@@ -20743,6 +21035,15 @@ async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, 
   for (const [oid, list] of byOrg) {
     const gate = await sequenceTimezoneGate(oid);
     if (!gate.ok) { out.skipped += list.length; continue; }
+    // BUILD-94 Part 4 — NO ADDRESS, NO SEND, for sequences too. Nothing is
+    // consumed and nothing is failed: next_send_at is untouched, so the day
+    // she types the address the whole queue goes.
+    const addr = await bulkSendAddressGate(oid);
+    if (!addr.ok) {
+      console.error(`[seq] ${oid}: no mailing address on file — ${list.length} sends held`);
+      out.skipped += list.length; out.noAddress = (out.noAddress || 0) + list.length;
+      continue;
+    }
     const clock = await orgSendClock(oid, now);
     // WEEKDAY MORNINGS WHERE SHE IS. Outside the window nothing sends and
     // nothing is consumed — next_send_at moves to the next window's morning.
@@ -21159,7 +21460,18 @@ app.get("/sequences/home", requireAuth, wrap(async (req, res) => {
 
 // The ops/test hook — drives the tracked engine for the caller's org NOW.
 app.post("/sequences/tracked/run", requireAuth, requireAdmin, wrap(async (req, res) => {
-  res.json(await processTrackedSequences({ orgId: req.user.orgId }));
+  // THE CLOCK IS A PARAMETER, and only under TEST_MODE. The send window is
+  // weekday mornings, so a suite that drives this route at 3pm on a Saturday
+  // correctly sends nothing — and would then fail for a reason that has
+  // nothing to do with the code. Pinning the clock is how a clock-dependent
+  // golden stays honest (the alternative, synchronising the assertion to
+  // "whatever the window says right now", tests nothing).
+  // Production never sends `now`; the tick calls the function with none.
+  const pinned = (process.env.TEST_MODE === "1" && req.body && req.body.now) ? new Date(req.body.now) : undefined;
+  res.json(await processTrackedSequences({
+    orgId: req.user.orgId,
+    ...(pinned && !isNaN(pinned) ? { now: pinned } : {}),
+  }));
 }));
 
 app.post("/sequences/process", requireAuth, requireAdmin, wrap(async (req, res) => {

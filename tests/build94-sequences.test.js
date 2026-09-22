@@ -48,6 +48,10 @@ const PEOPLE = [
 // A Tuesday morning in the org's zone — inside the weekday-morning window.
 // Pinned rather than "now" so the suite does not pass or fail by the hour it
 // is run at (the BUILD-84 rule for clock-dependent goldens).
+// Pinned, not "now": the send window is weekday mornings in the org's zone,
+// so a suite run at 3pm — or on a Saturday — would correctly send nothing and
+// then fail for a reason that has nothing to do with the code. The route takes
+// this only under TEST_MODE; production's tick passes no clock at all.
 const TUESDAY_MORNING = "2026-09-22T14:30:00Z"; // 09:30 America/Chicago
 
 async function fixture() {
@@ -59,10 +63,12 @@ async function fixture() {
     await q(`DELETE FROM sequences WHERE org_id=$1`, [org]).catch(() => {});
   }
   const hash = bcrypt.hashSync("loadtest1234", 10);
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
-           VALUES ($1,'Justin Place Seq','b94s',1,'active','team','America/Chicago',NOW())
+  // BUILD-94 Part 4 — NO ADDRESS, NO SEND applies to sequences as well as
+  // campaigns, so the org has to have one before anything here can send.
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at,receipt_address)
+           VALUES ($1,'Justin Place Seq','b94s',1,'active','team','America/Chicago',NOW(),'1200 Justin Way, Fort Worth, TX 76107')
            ON CONFLICT (id) DO UPDATE SET timezone='America/Chicago', timezone_confirmed_at=NOW(),
-             subscription_status='active', plan='team'`, [ORG]);
+             subscription_status='active', plan='team', receipt_address='1200 Justin Way, Fort Worth, TX 76107'`, [ORG]);
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,timezone_confirmed_at)
            VALUES ($1,'No Zone Arts','b94s-ntz',1,'active','team','America/New_York',NULL)
            ON CONFLICT (id) DO UPDATE SET timezone_confirmed_at=NULL,
@@ -198,7 +204,7 @@ const advanceDays = (n, seqId) =>
   // ── the clock, day by day ───────────────────────────────────────────────
   console.log("— the clock advanced day by day —");
   // Day 0: every step-1 is due (dayOffset 0).
-  let run1 = await api("POST", "/sequences/tracked/run", tok);
+  let run1 = await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
   ok("day 0 ran", run1.status === 200, run1.body);
   const sent1 = await q(`SELECT donor_id, step_order, status, subject FROM sequence_sends WHERE sequence_id=$1 ORDER BY donor_id`, [SEQ_ID]);
   // With no RESEND_API_KEY on the scratch stack the provider call is skipped
@@ -230,8 +236,8 @@ const advanceDays = (n, seqId) =>
   // ── A RETRIED JOB SENDS NOTHING TWICE ───────────────────────────────────
   console.log("— a retried job sends nothing twice —");
   const before = (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1`, [SEQ_ID]))[0].n;
-  await api("POST", "/sequences/tracked/run", tok);
-  await api("POST", "/sequences/tracked/run", tok);
+  await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
+  await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
   const after = (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1`, [SEQ_ID]))[0].n;
   ok("two more runs on the same day send nothing new", after === before, [before, after]);
   ok("and no second timeline line appeared",
@@ -245,7 +251,7 @@ const advanceDays = (n, seqId) =>
     ["sup_b94s", ORG, "sara@b94s.test"]);
 
   await advanceDays(3, SEQ_ID);
-  const run2 = await api("POST", "/sequences/tracked/run", tok);
+  const run2 = await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
   ok("day 3 ran", run2.status === 200, run2.body);
 
   const states = await q(
@@ -276,7 +282,7 @@ const advanceDays = (n, seqId) =>
   ok("the enrolled stay where they are", afterOff[0].n === stillActive, [stillActive, afterOff[0].n]);
   const sendsBeforeOff = (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1`, [SEQ_ID]))[0].n;
   await advanceDays(5, SEQ_ID);
-  await api("POST", "/sequences/tracked/run", tok);
+  await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
   ok("and nothing further sends", (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1`, [SEQ_ID]))[0].n === sendsBeforeOff);
 
   // ── Home ────────────────────────────────────────────────────────────────
@@ -308,6 +314,21 @@ const advanceDays = (n, seqId) =>
   const supAfter = (await q(`SELECT COUNT(*)::int AS n FROM email_suppressions WHERE org_id=$1`, [ORG]))[0].n;
   ok("GET and HEAD both answer", g1.status < 500 && h1.status < 500, [g1.status, h1.status]);
   ok("and neither changed a thing", supAfter === supBefore, [supBefore, supAfter]);
+
+  // BUILD-94 Part 4 — and the gate itself: take the address away and the
+  // queue HOLDS rather than failing. Nothing is consumed, so the day she
+  // types it in the whole queue goes.
+  console.log("— no address, no send, for sequences too —");
+  await q(`UPDATE sequences SET status='active' WHERE id=$1`, [SEQ_ID]);
+  await q(`UPDATE sequence_enrollments SET status='active', completed_at=NULL, next_send_at=NOW()
+            WHERE sequence_id=$1 AND donor_id='d_b94s_1'`, [SEQ_ID]);
+  await q(`UPDATE orgs SET receipt_address=NULL WHERE id=$1`, [ORG]);
+  const held = await api("POST", "/sequences/tracked/run", tok, { now: TUESDAY_MORNING });
+  ok("with no mailing address the sends are HELD, not failed",
+    held.body.noAddress >= 1 && held.body.failed === 0, held.body);
+  ok("…and the enrollment is still active, waiting",
+    (await q(`SELECT status FROM sequence_enrollments WHERE sequence_id=$1 AND donor_id='d_b94s_1'`, [SEQ_ID]))[0].status === "active");
+  await q(`UPDATE orgs SET receipt_address='1200 Justin Way, Fort Worth, TX 76107' WHERE id=$1`, [ORG]);
 
   ok("every email that went out went through the provider, once each",
     captured.length === (await q(`SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=$1 AND status='sent'`, [SEQ_ID]))[0].n,

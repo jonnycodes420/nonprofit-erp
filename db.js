@@ -3241,6 +3241,14 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sequence_sends_org_failed
                     ON sequence_sends (org_id, sequence_id) WHERE status = 'failed'`);
 
+  // ── BUILD-94 Part 4 — WHAT THE PROVIDER SAID ABOUT AN ADDRESS ────────────
+  // A hard bounce is a fact about the ADDRESS, not a preference: it is kept
+  // ON THE PERSON with its date and reason, so the profile can say why nothing
+  // is reaching them instead of the mail silently going nowhere.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email_unreachable BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email_unreachable_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email_unreachable_reason TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

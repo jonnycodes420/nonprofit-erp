@@ -1060,6 +1060,11 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [testState, setTestState]   = useState(null);  // send-me-a-test result
   const [liveHtml, setLiveHtml]     = useState("");    // what the editor holds, now
   const [showSchedule, setShowSchedule] = useState(false);
+  // BUILD-94 Part 4 — the org's own zone, named beside the picker so a typed
+  // time is never ambiguous. From the sequence builder payload, which already
+  // resolves it through the one timezone seam.
+  const [orgTimezone, setOrgTimezone] = useState(null);
+  useEffect(() => { apiFetch("/sequences/builder").then(r => setOrgTimezone(r && r.timezone)).catch(() => {}); }, []);
   const t = useMemo(() => makeT(data?.org?.vocabulary), [data?.org?.vocabulary]);
   // The server's six carry the org's real name and vocabulary. If that call
   // fails the same six are built here from the shared module — the gallery is
@@ -1089,13 +1094,17 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     try { setAllDonors(await apiFetch("/donors/summaries")); } catch (e) { console.error(e); }
   };
 
-  useEffect(() => { loadCampaigns(); loadDonors(); }, []);
+  // BUILD-94 Part 4 — the sent list's counts, server-computed so the screen
+  // and the numbers cannot disagree.
+  const [sentRows, setSentRows] = useState([]);
+  const loadSent = () => apiFetch("/campaigns/sent").then(r => setSentRows((r && r.campaigns) || [])).catch(() => setSentRows([]));
+  useEffect(() => { loadCampaigns(); loadDonors(); loadSent(); }, []);
 
   // Poll while any campaign is sending
   const anySending = campaigns.some(c => c.status === "sending");
   useEffect(() => {
     if (!anySending) return;
-    const tid = setInterval(() => loadCampaigns(), 5000);
+    const tid = setInterval(() => { loadCampaigns(); loadSent(); }, 5000);
     return () => clearInterval(tid);
   }, [anySending]);
 
@@ -1378,11 +1387,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               scheduled is still a campaign that was sent on purpose. */}
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
             <button onClick={saveDraft} style={S.btn("ghost")}>Save draft</button>
-            <button onClick={() => { setShowSchedule(v => !v); }}
-              style={{ background: "transparent", border: "none", padding: 0, color: T.greenDk, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
-              {showSchedule ? "Send it myself instead" : "Schedule it instead"}
-            </button>
-            {isAdmin && (showSchedule
+            {isAdmin && ((showSchedule || form.scheduledAt)
               ? <button onClick={scheduleIt} style={S.btn("send")}>Schedule</button>
               : <button onClick={() => sendNow(null)} disabled={sending} data-testid="campaign-send"
                   style={{ ...S.btn("send"), opacity: sending ? 0.6 : 1, cursor: sending ? "not-allowed" : "pointer" }}>
@@ -1435,14 +1440,22 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               )}
             </div>
 
-            {showSchedule && (
-              <div>
-                <label style={S.label}>Send it at</label>
-                <input type="datetime-local" value={form.scheduledAt}
-                  onChange={e => setForm(f => ({ ...f, scheduledAt: e.target.value }))}
-                  style={{ ...S.input, width: "auto" }} />
+            {/* BUILD-94 Part 4 — SCHEDULING IS A REAL CONTROL, not a link you
+                have to know is there. It is the thing Mailchimp does that she
+                will look for first, and the time she types is a wall-clock
+                time IN HER OWN ZONE — the server converts it, so 9:00 means
+                9:00 where she is and not 4 in the morning. */}
+            <div>
+              <label style={S.label}>Send it later</label>
+              <input type="datetime-local" value={form.scheduledAt} data-testid="campaign-schedule-at"
+                onChange={e => { setForm(f => ({ ...f, scheduledAt: e.target.value })); if (e.target.value) setShowSchedule(true); }}
+                style={{ ...S.input, width: "100%" }} />
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
+                {form.scheduledAt
+                  ? <>Goes out at that time in {orgTimezone || "your organisation's timezone"}.</>
+                  : <>Leave it empty to send it yourself.</>}
               </div>
-            )}
+            </div>
 
             {aiDraft && (
               <div style={{ background: T.gold50, border: "1px solid " + T.gold300, borderRadius: 10, padding: 14 }}>
@@ -1606,6 +1619,48 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 </div>
               ))}
             </div>
+
+            {/* ── BUILD-94 Part 4 — WHAT WENT, AND WHAT CAME BACK ───────
+                The two things she will look for on day one. COUNTS ONLY:
+                nothing per person, anywhere (steward-data-handling.md). */}
+            {sentRows.length > 0 && (
+              <div data-testid="sent-campaigns" style={{ border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden", background: T.white }}>
+                <div style={{ padding: "10px 16px", borderBottom: "1px solid " + T.bg2, fontSize: 11, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>
+                  Sent
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
+                        <th style={{ padding: "8px 16px", fontWeight: 600 }}>Campaign</th>
+                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Delivered</th>
+                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Opened</th>
+                        <th style={{ padding: "8px 12px", fontWeight: 600 }}>Unsubscribed</th>
+                        <th style={{ padding: "8px 16px", fontWeight: 600 }}>When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sentRows.map(r => (
+                        <tr key={r.id} style={{ borderTop: "1px solid " + T.bg2 }}>
+                          <td style={{ padding: "10px 16px", color: T.ink, fontWeight: 600 }}>{r.name}</td>
+                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.delivered}{r.failed ? <span style={{ color: T.gold700 }}> · {r.failed} failed</span> : null}</td>
+                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.opened}{r.openRate != null ? ` (${r.openRate}%)` : ""}</td>
+                          <td style={{ padding: "10px 12px", color: T.ink2 }}>{r.unsubscribed}</td>
+                          <td style={{ padding: "10px 16px", color: T.ink3 }}>
+                            {r.status === "scheduled"
+                              ? `scheduled${r.scheduled_at ? " · " + new Date(r.scheduled_at).toLocaleString() : ""}`
+                              : (r.sent_at ? new Date(r.sent_at).toLocaleDateString() : r.status)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ padding: "8px 16px", borderTop: "1px solid " + T.bg2, fontSize: 11.5, color: T.ink3, lineHeight: 1.5 }}>
+                  Opens are counted per campaign. Steward never shows who opened what.
+                </div>
+              </div>
+            )}
 
             {/* Send result toast */}
             {sendResult && (

@@ -16,6 +16,7 @@
 #        PORT=5601 TEST_MODE=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
+#        RESEND_WEBHOOK_SECRET=whsec_YnVpbGQ5NC1sb2NhbC13ZWJob29rLXNlY3JldCE= \
 #        STRIPE_API_BASE=http://localhost:5603 \
 #        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
 #        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
@@ -112,7 +113,7 @@ CORE=(
   build92-seed build92-source-errors build92-dedupe build92-statement
   build92-close-screen build92-sources-page build92-home-proportions
   build91-public-sources
-  build94-photo build94-people build94-sequences
+  build94-photo build94-people build94-sequences build94-bulk build94-calendar
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

@@ -71,3 +71,30 @@ read.
 **Off is off.** Disconnect a source and Steward stops checking it that moment.
 The gifts it already read stay on your donor records, because the money did
 arrive that way and deleting that history would be the lie.
+
+## Email opens (BUILD-94 Part 4, decided 2026-09-22)
+
+**Steward counts opens per campaign and shows nothing per person.**
+
+A campaign's own summary says how many of its emails were delivered, how many
+were opened, and how many people unsubscribed after it. Those are **counts**.
+No donor's profile anywhere in the product says "opened your appeal at 6:41am",
+no list can be filtered by who opened what, and no export carries it.
+
+The mechanism, stated plainly: a tracking pixel in a campaign email records an
+open against that recipient's row so the rate can be computed. That row is what
+the counts are summed from. It is never rendered per person, and the Resend
+`email.opened` webhook is deliberately **not** subscribed (see MANUAL-STEPS
+§10), so no second per-event stream exists.
+
+**Why the line is drawn here.** An open rate tells a fundraiser whether a
+subject line worked, which is a fact about the email. "Margaret opened this
+four times" is a fact about Margaret, and it is the kind of fact that changes
+how somebody is treated without them ever agreeing to it being collected —
+open tracking is invisible to the recipient and defeated by any modern mail
+client's image proxy anyway, so it is simultaneously intrusive and unreliable.
+
+**Turning per-person opens on is a data-handling change, not a feature.** It
+would need: this section rewritten, a line in the customer agreement, and a
+decision about what an organisation may see about a donor who never consented
+to being measured. It is not a switch somebody flips in an afternoon.

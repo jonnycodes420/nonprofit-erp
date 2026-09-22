@@ -249,3 +249,54 @@ so none of them can reach the production demo org at all.
 **The deeper fix is still open** and is not a password: Jonathan's super-admin
 account should not live in the same organisation as a shared demo login. See
 `BLOCKED-superadmin-removal.md`.
+
+## §10 — THE RESEND BOUNCE/COMPLAINT WEBHOOK (BUILD-94 Part 4, 2026-09-22)
+
+**Fifteen minutes, and Steward cannot do it for you.** Until this endpoint is
+live, a hard bounce and a spam complaint reach nothing: the address keeps being
+mailed, the shared sending domain keeps taking the damage, and nobody at the
+organisation ever learns why a donor stopped hearing from them.
+
+The code is already deployed and already signature-verified
+(`POST /resend/webhook`, svix). It refuses every delivery with
+`503 Resend webhook not configured` until `RESEND_WEBHOOK_SECRET` is set, which
+is the correct failure — an unverified webhook endpoint is worse than none.
+
+**The exact clicks:**
+
+1. <https://resend.com> → sign in → **Webhooks** (left nav) → **Add Webhook**.
+2. **Endpoint URL:**
+   `https://nonprofit-erp-production.up.railway.app/resend/webhook`
+3. **Events** — tick exactly these two, and nothing else:
+   - `email.bounced`
+   - `email.complained`
+   (Do NOT tick `email.opened` or `email.clicked`. Steward counts opens per
+   campaign from its own recipient rows; subscribing to per-event opens here
+   would start a per-person open stream we have decided not to hold — see
+   `steward-data-handling.md`.)
+4. **Add** → the webhook's detail page now shows a **Signing Secret** beginning
+   `whsec_`. Click **Reveal** → copy it.
+5. Railway → project **nonprofit-erp** → service **nonprofit-erp** →
+   **Variables** → **New Variable**:
+   - name `RESEND_WEBHOOK_SECRET`
+   - value the `whsec_…` you just copied
+   → **Add**, then let the service redeploy.
+   (Or: `railway variables --set RESEND_WEBHOOK_SECRET=whsec_… --service nonprofit-erp`.)
+6. **Verify it, don't assume it.** Back on the Resend webhook page → **Send
+   test event** → pick `email.bounced` → **Send**. Resend's own delivery log
+   must show **200**. A **400** means the secret does not match what Railway
+   has; a **503** means the variable has not reached the running process yet
+   (wait for the redeploy to finish).
+7. Confirm the real path once, with a real address: send a campaign to
+   `bounce@simulator.amazonses.com` … actually, use Resend's own test address
+   for a hard bounce (`bounced@resend.dev`). Within a minute the person's
+   record carries **"Email to … hard-bounced and will not be tried again"** on
+   the timeline and the profile shows the address as unreachable.
+
+**What a delivery does, so you can recognise it working:** the address is
+suppressed GLOBALLY (a bounce or complaint is a shared-domain reputation fact,
+not one org's preference), the person is marked in the org whose **verified
+sending address** the event came from — never from anything in the payload —
+and a line lands on that person's timeline. An event from the shared
+`stewardapp.dev` sender marks nobody, on purpose: a shared-domain From
+identifies Steward, not a tenant, and guessing would mark the wrong person.

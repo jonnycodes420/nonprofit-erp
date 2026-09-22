@@ -313,9 +313,20 @@ const emailInteractions = org =>
     ok("ONE emerald action on the screen", emerald.length === 1, emerald);
     ok("…and it is the send, and it says who it is going to",
       emerald[0] && /Send to 3/.test(emerald[0].text), emerald[0]);
-    ok("…with scheduling as a secondary link, not a second button",
-      buttons.some(b => /Schedule it instead/.test(b.text) && b.bg === "rgba(0, 0, 0, 0)"),
-      buttons.filter(b => /Schedule/.test(b.text)));
+    // BUILD-94 Part 4 — REVIEWED CHANGE. C.2 made scheduling a secondary LINK
+    // so that exactly one thing on the screen said "this is the button". That
+    // rule is intact and still asserted above (ONE emerald action). What
+    // changed is that scheduling is no longer hidden behind a link you have to
+    // know is there: it is a real date-and-time field in the settings panel,
+    // in the org's own timezone, because it is the Mailchimp behaviour Allie
+    // will look for first and a link labelled "Schedule it instead" is not
+    // findable by somebody who does not already know the feature exists.
+    // The field is not an action — the Schedule button only appears once a
+    // time is in it — so the one-emerald rule is untouched.
+    ok("scheduling is a real field, not a link you have to know is there",
+      await page.$('[data-testid="campaign-schedule-at"]') !== null);
+    ok("…and it still is not a second emerald action",
+      emerald.length === 1 && !/Schedule/.test(emerald[0].text), emerald);
     ok("\"Send me a test\" is on the screen, beside the email it would send",
       await page.$('[data-testid="send-me-a-test"]') !== null);
 

@@ -11,7 +11,7 @@ import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
-import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
+import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_LABEL_MAX } from "../../../shared/threadShape";
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
@@ -1769,6 +1769,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
           title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
           style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
+        {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
+            keep, and hers lives in Outlook. Three links and a file; nothing
+            syncs, and the menu says so. */}
+        <PutItOnMyCalendar threadId={t.id}/>
         <ThreadDismissMenu thread={t} onDone={()=>loadThreads()}/>
       </div>
     </li>);

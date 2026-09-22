@@ -151,6 +151,12 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
 
   // ── §5 marketing mail stays suppressed (both lists) ──────────────────────
   console.log("\n§5 campaigns still honor the suppression list AND the flags");
+  // BUILD-94 Part 4 — NO ADDRESS, NO SEND. A campaign now refuses to go out
+  // without the org's mailing address on file, so this fixture has to have one
+  // before it can test anything about WHO a campaign reaches. (§6 sets the
+  // same field further down for receipts; this pulls it earlier rather than
+  // duplicating it.)
+  await q(`UPDATE orgs SET receipt_address='1 Test Way, Testville, TS 00000' WHERE id=$1`, [orgId]);
   {
     // A clean donor + a DNC donor + the suppressed donor, one campaign to all.
     const cleanEmail = `clean-w4-${uniq()}@test.local`;

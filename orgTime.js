@@ -59,6 +59,41 @@ function partsIn(tz, instant) {
   return { y: +p.year, m: +p.month, d: +p.day, hh: +p.hour % 24, mm: +p.minute };
 }
 
+// ── BUILD-94 Part 4 — A LOCAL WALL-CLOCK TIME → THE INSTANT IT NAMES ───────
+// "Send it at 9:00 on Thursday" is a wall-clock time IN THE ORGANISATION's
+// zone. A `datetime-local` input carries no zone at all, and storing its
+// string straight into a `timestamptz` makes Postgres read it in the SERVER's
+// zone — 9:00 typed in Chicago became 9:00 UTC, which is 4:00 in the morning
+// for the person who typed it.
+//
+// There is no Intl API that converts the other way, so this does the standard
+// two-pass fix: guess the instant as if the wall time were UTC, measure how
+// that instant actually reads in the target zone, correct by the difference,
+// then measure once more (the second pass is what makes it right across a DST
+// boundary, where the first correction can land on the other side of the jump).
+// Returns a Date, or null for an unparseable input.
+function localToInstant(localStr, tz) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(localStr || "").trim());
+  if (!m) return null;
+  const zone = normalizeTimezone(tz);
+  const want = { y: +m[1], m: +m[2], d: +m[3], hh: +m[4], mm: +m[5] };
+  const asUtc = Date.UTC(want.y, want.m - 1, want.d, want.hh, want.mm);
+  // The zone's offset at a given instant: local-as-if-UTC minus the instant.
+  const offsetAt = (guess) => {
+    const p = partsIn(zone, new Date(guess));
+    return Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm) - guess;
+  };
+  let t = asUtc - offsetAt(asUtc);
+  // Second pass is a RESIDUAL against the target, not a second correction —
+  // applying offsetAt again would double the shift (five hours became ten).
+  const residual = (guess) => {
+    const p = partsIn(zone, new Date(guess));
+    return Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm) - asUtc;
+  };
+  t = t - residual(t);
+  return new Date(t);
+}
+
 function isValidTimezone(tz) {
   if (!tz || typeof tz !== "string") return false;
   try { new Intl.DateTimeFormat("en-CA", { timeZone: tz }); return true; } catch { return false; }
@@ -231,5 +266,5 @@ module.exports = {
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,
   orgPeriodBounds, orgFiscalYearStart, orgReportYear, formatCivil, orgFiscalStartMonth,
-  addDays, dayOfWeek, compareCivil, daysBetween, parseCivil,
+  addDays, dayOfWeek, compareCivil, daysBetween, parseCivil, localToInstant,
 };

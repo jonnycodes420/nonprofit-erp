@@ -29,7 +29,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
-import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
+import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -4837,6 +4837,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                         <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
                           style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
+                        {/* BUILD-94 Part 5 — the same three outputs as the
+                            Home row, from the same builder. */}
+                        {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
                         <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
                       </div>
                     )}

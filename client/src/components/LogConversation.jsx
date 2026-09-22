@@ -4,7 +4,7 @@
 // Skip that is recorded as skipped, never as nothing. Nothing here asks the
 // user to create a task; logging the conversation IS creating the follow-up.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
 import { T, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import {
@@ -307,5 +307,98 @@ export function ThreadDismissMenu({ thread, onDone }) {
         </div>
       )}
     </span>
+  );
+}
+
+// ── BUILD-94 Part 5 — PUT IT ON MY CALENDAR ────────────────────────────────
+// Three outputs for one next step: Outlook, Google, or a .ics file. Nothing is
+// written to anybody's calendar by Steward and nothing comes back — the
+// sentence saying so ships inside the menu, because a button reading "put it
+// on my calendar" is otherwise read as sync and the disappointment arrives
+// three weeks later when a moved meeting did not move here.
+export function PutItOnMyCalendar({ threadId, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open || data) return;
+    apiFetch(`/threads/${threadId}/calendar`)
+      .then(setData)
+      .catch(e => setErr(errorMessage(e, "Could not build a calendar entry for this")));
+  }, [open, threadId, data]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // The .ics is fetched with the auth header and handed over as a blob — a
+  // bare <a href> would hit the API without a token and download a 401.
+  const downloadIcs = async () => {
+    try {
+      const r = await fetch(`${API}/threads/${threadId}/calendar.ics`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) throw new Error("Could not build the file");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = ((data && data.subject) || "task").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase() + ".ics";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setOpen(false);
+    } catch (e) { setErr(errorMessage(e, "Could not build the file")); }
+  };
+
+  const item = {
+    display: "block", width: "100%", textAlign: "left", background: "none", border: "none",
+    padding: "9px 14px", fontSize: 13, color: T.ink, cursor: "pointer", textDecoration: "none", whiteSpace: "nowrap",
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <button type="button" onClick={() => setOpen(v => !v)} data-testid="put-on-calendar"
+        title="Open your calendar with this filled in"
+        style={compact
+          ? { background: "none", border: "none", padding: "4px 6px", fontSize: 12, color: T.ink3, cursor: "pointer" }
+          : { background: T.bg, border: `1px solid ${T.bg3}`, borderRadius: 8, padding: "8px 12px",
+              fontSize: 12, fontWeight: 600, color: T.ink2, cursor: "pointer", whiteSpace: "nowrap" }}>
+        {compact ? "◫" : "◫ Calendar"}
+      </button>
+      {open && (
+        <div data-testid="calendar-menu" style={{
+          position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 60, minWidth: 250,
+          background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 12, boxShadow: T.shadowMd,
+          padding: "6px 0", overflow: "hidden",
+        }}>
+          {err && <div role="alert" style={{ padding: "9px 14px", fontSize: 12, color: T.gold700 }}>{err}</div>}
+          {!data && !err && <div style={{ padding: "9px 14px", fontSize: 12.5, color: T.ink3 }}>Building it…</div>}
+          {data && (
+            <>
+              <div style={{ padding: "6px 14px 8px", fontSize: 12, color: T.ink3, lineHeight: 1.5, whiteSpace: "normal", maxWidth: 260 }}>
+                <strong style={{ color: T.ink }}>{data.subject}</strong>
+                <div style={{ marginTop: 2 }}>
+                  {data.allDay
+                    ? `${data.dueDate} · all day`
+                    : new Date(data.startsAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                </div>
+              </div>
+              <a href={data.outlook} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} style={item}>Outlook</a>
+              <a href={data.google} target="_blank" rel="noopener noreferrer" onClick={() => setOpen(false)} style={item}>Google Calendar</a>
+              <button type="button" onClick={downloadIcs} style={item} data-testid="calendar-ics">Download a .ics file</button>
+              {/* THE SENTENCE. It is not fine print — it is the difference
+                  between a useful shortcut and a broken promise of sync. */}
+              <div style={{ padding: "8px 14px 6px", marginTop: 4, borderTop: `1px solid ${T.bg2}`,
+                            fontSize: 11, color: T.ink3, lineHeight: 1.5, whiteSpace: "normal", maxWidth: 260 }}>
+                {data.note}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
