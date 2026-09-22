@@ -332,15 +332,42 @@ const settle = (ms = 400) => new Promise(r => setTimeout(r, ms));
 // would break a manifest that counts the send). Start this at suite top,
 // close it at the end.
 const http = require("http");
-function startMailSink(port = SINK_PORT) {
-  return new Promise(resolve => {
+// SILENCE IS NOT SUCCESS. This used to resolve(null) the instant the port was
+// busy and carry on without a sink — so every notification the server tried to
+// send failed against an unbound port, released its reservation (correct
+// product behaviour), and the manifest then failed with
+// "counts.notificationSends: expected to change (Δ1), did not". A defect in
+// the ENVIRONMENT wearing a defect in the MONEY CONTRACT's clothes, and it
+// costs an hour every time because the message names the wrong thing.
+//
+// Two changes: RETRY the bind for a moment (the usual cause is the previous
+// suite's sink a few milliseconds from being released), and when it genuinely
+// cannot bind, SAY SO LOUDLY so the next person reads the real reason on the
+// first line instead of deriving it from a manifest diff.
+function startMailSink(port = SINK_PORT, { attempts = 12, waitMs = 150 } = {}) {
+  const tryOnce = () => new Promise(resolve => {
     const srv = http.createServer((req, res) => {
       let b = ""; req.on("data", c => b += c);
       req.on("end", () => { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ id: "sunk" })); });
     });
-    srv.on("error", () => resolve(null)); // a sink already running (e.g. vite/another suite) — fine
+    srv.once("error", () => resolve(null));
     srv.listen(port, () => resolve(srv));
   });
+  return (async () => {
+    for (let i = 0; i < attempts; i++) {
+      const srv = await tryOnce();
+      if (srv) return srv;
+      await new Promise(r => setTimeout(r, waitMs));
+    }
+    console.error(
+      `\n  !! MAIL SINK COULD NOT BIND :${port} after ${attempts} tries.\n` +
+      `     Every notification this suite expects will fail against an unbound port,\n` +
+      `     and the manifest will report it as "notificationSends did not change".\n` +
+      `     THAT IS NOT A PRODUCT FAILURE. Find what is holding the port:\n` +
+      `       lsof -ti:${port}\n` +
+      `     (another product's dev stack, or a suite that exited without closing.)\n`);
+    return null;
+  })();
 }
 
 module.exports = { N, FY, DISCOVER, makeSnapshotter, flatten, diffState, makeAsserters, makeFixture, buildFixtureOrg, makeWebhookFirer, settle, startMailSink };

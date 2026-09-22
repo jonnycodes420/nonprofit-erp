@@ -4407,7 +4407,13 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
   const hash = bcrypt.hashSync(password, 12);
   await run(
-    "INSERT INTO users (id, org_id, email, password_hash, name, role) VALUES (?,?,?,?,?,?)",
+    // BUILD-94 FIRST RUN — welcomed_at NULL, explicitly. The column DEFAULTS to
+    // NOW() ("already welcomed" is the safe default, because the greeting is a
+    // full-screen takeover and a NULL-means-greet column would throw one in
+    // front of every existing user and every test fixture). THIS is the one
+    // path where somebody is genuinely arriving for the first time, so it opts
+    // into the greeting by name.
+    "INSERT INTO users (id, org_id, email, password_hash, name, role, welcomed_at) VALUES (?,?,?,?,?,?,NULL)",
     [userId, orgId, normalizedEmail, hash, userName, "admin"]
   );
 
@@ -4863,6 +4869,34 @@ async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE
 // GET returns the normalised vocabulary plus the org's OWN EVIDENCE for the
 // questions its file already answered — the fund names the import created —
 // so the first run never asks what she has already told us.
+// ── BUILD-94 FIRST RUN — the greeting an organisation gets once ────────────
+// Everything on the greeting comes from here, so the screen cannot invent a
+// mission or a name the org never typed. `show` is the whole decision: the
+// user has not been welcomed yet, and the org has something to say.
+app.get("/org/welcome", requireAuth, wrap(async (req, res) => {
+  const [org] = await query(
+    `SELECT name, mission, welcome_motif, welcome_words FROM orgs WHERE id = ?`, [req.user.orgId]);
+  const [me] = await query(
+    `SELECT name, welcomed_at FROM users WHERE id = ?`, [req.user.userId]);
+  const first = String(me?.name || "").trim().split(/\s+/)[0] || null;
+  res.json({
+    show: !!me && me.welcomed_at == null,
+    firstName: first,
+    orgName: displayNameCase(org?.name || "") || null,
+    mission: org?.mission || null,
+    motif: org?.welcome_motif || null,
+    words: Array.isArray(org?.welcome_words) ? org.welcome_words.slice(0, 4).map(String) : [],
+  });
+}));
+
+// Stamped when it has been SEEN, not when it was rendered — a greeting that
+// marks itself shown on a page that then failed to paint is a greeting nobody
+// ever got. Idempotent: a second call leaves the first timestamp alone.
+app.post("/org/welcome/seen", requireAuth, wrap(async (req, res) => {
+  await run(`UPDATE users SET welcomed_at = NOW() WHERE id = ? AND welcomed_at IS NULL`, [req.user.userId]);
+  res.json({ ok: true });
+}));
+
 app.get("/org/vocabulary", requireAuth, wrap(async (req, res) => {
   const V = await import("./shared/vocabulary.js");
   const [org] = await query("SELECT vocabulary_json, vocabulary_set_at FROM orgs WHERE id=?", [req.user.orgId]);
@@ -5034,6 +5068,24 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
     // the difference between a choice and Steward's guess.
     await run(`UPDATE orgs SET timezone=?, timezone_confirmed_at=NOW() WHERE id=?`, [tz, req.params.id]);
     invalidateOrgTz(req.params.id);   // the 30s read cache must not serve the old zone
+  }
+
+  // BUILD-94 FIRST RUN — the org's own motif and its own words, on the same
+  // route as its mission and website, because that is what they are: the
+  // organisation saying what it is. Both opt-in (only touched when sent), and
+  // a motif the product does not draw simply does not draw — an unknown value
+  // is stored and ignored rather than rejected, so naming a motif before it
+  // exists is harmless.
+  if (req.body.welcomeMotif !== undefined) {
+    const m = String(req.body.welcomeMotif || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    await run(`UPDATE orgs SET welcome_motif=? WHERE id=?`, [m || null, req.params.id]);
+  }
+  if (req.body.welcomeWords !== undefined) {
+    // At most four, each short — this is an eyebrow, not a paragraph.
+    const w = Array.isArray(req.body.welcomeWords)
+      ? req.body.welcomeWords.map(x => String(x).trim()).filter(Boolean).slice(0, 4).map(x => x.slice(0, 24))
+      : [];
+    await run(`UPDATE orgs SET welcome_words=?::jsonb WHERE id=?`, [JSON.stringify(w), req.params.id]);
   }
 
   // Donor-covers-fees switch — only touched when the request includes it
@@ -6823,9 +6875,15 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // …and a donor the file says nothing about is still a PROSPECT — the
         // default the insert always used. A suggestion of "we don't know yet"
         // is a suggestion; leaving it null would drop them off every board.
-        d._stageExplicit ? null : (d.stage || "prospect")
+        d._stageExplicit ? null : (d.stage || "prospect"),
+        // BUILD-94 Part 2 — the combined/workbook path could not type a
+        // person, so a file carrying volunteers imported all of them as
+        // donors and quietly moved every giving total. Same rule as the
+        // donor-only path: nothing stated ⇒ a donor, which is what every
+        // pre-BUILD-94 file meant.
+        JSON.stringify(PT.normalizeTypes(d.personTypes === undefined ? ["donor"] : d.personTypes))
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -6838,7 +6896,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           do_not_solicit,do_not_mail,do_not_email,deceased_date,address,zip,
           imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,contact_name,
           middle_name,suffix,salutation,spouse_name,email2,mobile,address2,country,
-          donor_type,board_member,external_household_id,external_donor_ids,first_gift_date,suggested_stage)
+          donor_type,board_member,external_household_id,external_donor_ids,first_gift_date,suggested_stage,
+          person_types)
        VALUES ${tuples.join(",")}`,
       params
     ));

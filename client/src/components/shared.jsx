@@ -333,6 +333,50 @@ export function GlobalStyles() {
     .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) backwards;}
     .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e7cf91 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
     @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
+
+    /* BUILD-94 FIRST RUN — the gold moment at full-screen scale. The SAME
+       gesture (a rise and one sheen), nothing new: no confetti, no second
+       palette, and every movement off under prefers-reduced-motion while the
+       greeting itself still reads. */
+    @keyframes frIn{from{opacity:0}to{opacity:1}}
+    @keyframes frOut{from{opacity:1}to{opacity:0}}
+    @keyframes frRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes frSheen{0%{transform:translateX(-60%) skewX(-18deg);opacity:0}
+                       35%{opacity:0.5}
+                       100%{transform:translateX(160%) skewX(-18deg);opacity:0}}
+    /* The motif crosses ONCE, left to right, and is gone. A loop would make it
+       a screensaver; one pass makes it a greeting. */
+    @keyframes frCross{from{transform:translateX(0)}to{transform:translateX(calc(100vw + 300px))}}
+    .fr-welcome{animation:frIn 0.45s ease-out backwards;}
+    .fr-welcome.fr-leaving{animation:frOut 0.4s ease-in forwards;}
+    .fr-welcome .fr-eyebrow{animation:frRise 0.6s cubic-bezier(0.2,0.8,0.3,1) 0.15s backwards;}
+    .fr-welcome .fr-title{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.25s backwards;}
+    .fr-welcome .fr-rule{animation:frRise 0.6s cubic-bezier(0.2,0.8,0.3,1) 0.45s backwards;}
+    .fr-welcome .fr-line{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.55s backwards;}
+    .fr-welcome .fr-words{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.7s backwards;}
+    .fr-welcome .fr-sub{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.85s backwards;}
+    .fr-welcome .fr-card button{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 1s backwards;}
+    .fr-welcome .fr-horse{animation:frCross 4.6s cubic-bezier(0.35,0,0.35,1) 0.5s 1 backwards;}
+    /* Narrow and quick. At 45% width and 0.22 alpha this read as a dull olive
+       wash across half the screen with a visible edge down the middle — a
+       smear, not a sheen. A sheen is a highlight passing THROUGH. */
+    .fr-welcome .fr-sheen::after{content:"";position:absolute;top:-10%;bottom:-10%;left:0;width:22%;
+      background:linear-gradient(100deg,transparent,rgba(201,168,76,0.14),transparent);
+      animation:frSheen 2.2s ease-out 0.5s 1 backwards;}
+    /* Brass focus ring, never the browser's blue — the house rule, and this
+       button is autofocused so the ring is the first thing drawn. */
+
+    @media (max-width:640px){
+      .fr-welcome .fr-title{font-size:38px!important;}
+      .fr-welcome .fr-line{font-size:17px!important;}
+    }
+    @media (prefers-reduced-motion: reduce){
+      .fr-welcome,.fr-welcome.fr-leaving,.fr-welcome .fr-eyebrow,.fr-welcome .fr-title,
+      .fr-welcome .fr-rule,.fr-welcome .fr-line,.fr-welcome .fr-words,.fr-welcome .fr-sub,
+      .fr-welcome .fr-card button,.fr-welcome .fr-horse,.fr-welcome .fr-sheen::after{animation:none;}
+      /* Still on the screen, just not moving — the horse sits where it lands. */
+      .fr-welcome .fr-horse{transform:translateX(38vw);}
+    }
     /* BUILD-87 F.1 — animation-fill-mode is "backwards", NOT "both". Every one
        of these animations ends on the identity transform, so "both" retained a
        transform of translateY(0) forever, and an element with any transform
@@ -385,7 +429,8 @@ export function GlobalStyles() {
     .attn-row:hover{background:#f7f5f0;}
     .attn-row[data-railsel="1"]{background:#f7f5f0;}
     a.attn-row-main:hover .attn-donor-name{text-decoration:underline;}
-    a.attn-row-main:focus-visible{outline:2px solid #c9a84c;outline-offset:-2px;border-radius:2px;}
+    a.attn-row-main:focus-visible,
+    .fr-welcome .fr-card button:focus-visible{outline:2px solid #c9a84c;outline-offset:-2px;border-radius:2px;}
     /* Touch: each of the row's two targets clears the 44px minimum, and a tap
        on one never fires the other (they're siblings, not nested). */
     .attn-row-main{min-height:44px;}
@@ -1365,6 +1410,112 @@ export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }
         fontWeight: 800, letterSpacing: "0.02em",
       }}>
       {personInitials(name, kind)}
+    </div>
+  );
+}
+
+// ── BUILD-94 FIRST RUN — THE GREETING AN ORG GETS ONCE ─────────────────────
+// A new organisation's first sign-in is the one moment where the product gets
+// to say "this is yours" before it says anything else. It fires ONCE per user
+// (the server stamps `welcomed_at`; localStorage is only a same-session
+// guard), and everything on it is the organisation's own: their name, their
+// mission in their words, and — where they have one — a motif that draws the
+// thing they are actually about.
+//
+// IT STAYS INSIDE THE FOUR COLOURS. No confetti: the product's one celebration
+// pattern is a gold moment (GoldMoment above, BUILD-33), and this is its
+// larger sibling, not a different aesthetic. Brass, ink, cream, and the org's
+// own accent — nothing else reaches the screen, and `prefers-reduced-motion`
+// turns every movement off while still greeting.
+const WELCOME_MOTIFS = {
+  // Justin's Place is equine-assisted services; a horse is not decoration
+  // there, it is the programme. Drawn as a silhouette in brass, crossing once.
+  horse: (
+    <g fill="currentColor" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M138 82 C 154 98, 172 114, 192 124" strokeWidth="6.5" fill="none"/>
+      <path d="M126 86 C 130 104, 131 122, 134 144" strokeWidth="6" fill="none"/>
+      <path d="M66 80 C 50 96, 32 112, 14 122" strokeWidth="6.5" fill="none"/>
+      <path d="M80 84 C 78 102, 75 122, 72 144" strokeWidth="6" fill="none"/>
+      <path d="M56 58 C 42 52, 26 44, 10 30 C 20 46, 32 58, 50 68 Z"/>
+      <ellipse cx="100" cy="70" rx="36" ry="14"/>
+      <ellipse cx="72" cy="66" rx="20" ry="17"/>
+      <ellipse cx="128" cy="68" rx="16" ry="15"/>
+      <path d="M122 55 C 131 38, 148 25, 166 19 L 177 33 C 159 39, 145 49, 137 64 Z"/>
+      <path d="M164 17 C 175 14, 187 21, 194 31 C 198 36, 196 43, 190 43 C 185 43, 180 41, 176 38 C 168 33, 162 25, 162 18 Z"/>
+      <path d="M163 17 L 159 5 L 169 14 Z"/>
+      <path d="M171 14 L 172 4 L 179 15 Z"/>
+      <path d="M162 22 C 153 30, 145 39, 137 50" strokeWidth="4.5" fill="none"/>
+    </g>
+  ),
+};
+
+export function FirstRunWelcome({ firstName, orgName, mission, motif, words = [], onDone }) {
+  const [leaving, setLeaving] = useState(false);
+  const close = () => { setLeaving(true); setTimeout(() => onDone && onDone(), 420); };
+  // Escape closes it, like every other takeover in the product.
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  const art = WELCOME_MOTIFS[motif] || null;
+
+  return (
+    <div className={`fr-welcome${leaving ? " fr-leaving" : ""}`} role="dialog" aria-modal="true"
+      aria-label={`Welcome to Steward, ${firstName || ""}`} data-testid="first-run-welcome"
+      style={{
+        position: "fixed", inset: 0, zIndex: 900, background: T.ink,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden",
+      }}>
+      {/* The motif crosses ONCE, behind the words, in brass. */}
+      {art && (
+        <svg className="fr-horse" viewBox="0 0 220 170" aria-hidden="true"
+          style={{ position: "absolute", width: 240, opacity: 0.32, color: T.gold500, bottom: "14%", left: "-260px" }}>
+          {art}
+        </svg>
+      )}
+      {/* One sheen across the whole ground — GoldMoment's gesture, at scale. */}
+      <div className="fr-sheen" aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}/>
+
+      <div className="fr-card" style={{ position: "relative", maxWidth: 620, textAlign: "center", zIndex: 2 }}>
+        {orgName && (
+          <div className="fr-eyebrow" style={{
+            fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase",
+            color: T.gold500, marginBottom: 18,
+          }}>{orgName}</div>
+        )}
+        <div className="fr-title" style={{
+          fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 54, lineHeight: 1.08,
+          color: T.bg, letterSpacing: "-0.02em", marginBottom: 6,
+        }}>
+          Welcome, {firstName || "and hello"}.
+        </div>
+        <div className="fr-rule" aria-hidden="true" style={{
+          height: 3, width: 76, background: T.gold500, margin: "20px auto 22px", borderRadius: 2,
+        }}/>
+        {mission && (
+          <div className="fr-line" style={{
+            fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.5,
+            color: T.sage400, marginBottom: 18, fontStyle: "italic",
+          }}>&ldquo;{mission}&rdquo;</div>
+        )}
+        {words.length > 0 && (
+          <div className="fr-words" style={{
+            display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginBottom: 26,
+            fontSize: 12, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold300,
+          }}>
+            {words.map((w, i) => <span key={w}>{i > 0 && <span style={{ opacity: 0.5, marginRight: 14 }}>·</span>}{w}</span>)}
+          </div>
+        )}
+        <div className="fr-sub" style={{ fontSize: 15, lineHeight: 1.65, color: T.sage400, marginBottom: 30, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
+          This is yours. Your people, your giving, and the next conversation waiting to be picked back up —
+          all in one place, in your words.
+        </div>
+        <button onClick={close} data-testid="first-run-go" autoFocus style={{
+          background: T.greenDk, border: "none", borderRadius: 12, padding: "14px 34px",
+          color: T.white, fontSize: 15, fontWeight: 800, cursor: "pointer", letterSpacing: "0.01em",
+        }}>Show me</button>
+      </div>
     </div>
   );
 }

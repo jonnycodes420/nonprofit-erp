@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext } from "./components/shared";
+import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -180,6 +180,23 @@ function AppShell() {
     .catch(()=>setPhotoMap({}));
   useEffect(()=>{ if(getToken()) loadPhotos(); },[]);
   const photoCtx={photos:photoMap,refresh:loadPhotos};
+
+  // BUILD-94 FIRST RUN — the greeting an organisation gets ONCE. The server
+  // decides whether to show it (it holds `welcomed_at`); localStorage is only
+  // a same-session guard so a re-render cannot greet twice before the stamp
+  // lands. A failure here is silent: nobody's first day is blocked by a
+  // greeting that could not load.
+  const [welcome,setWelcome]=useState(null);
+  useEffect(()=>{
+    if(!getToken())return;
+    apiFetch("/org/welcome")
+      .then(w=>{ if(w&&w.show) setWelcome(w); })
+      .catch(()=>{});
+  },[]);
+  const dismissWelcome=()=>{
+    setWelcome(null);
+    apiFetch("/org/welcome/seen",{method:"POST",body:"{}"}).catch(()=>{});
+  };
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
@@ -441,7 +458,11 @@ function AppShell() {
   // that never sets branding is visually identical to before.
   const orgAccent=data.org?.brandAccent||"#c9a84c";
   const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
-  return <PhotoContext.Provider value={photoCtx}><div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+  return <PhotoContext.Provider value={photoCtx}>
+    {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
+      mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
+      onDone={dismissWelcome}/>}
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 

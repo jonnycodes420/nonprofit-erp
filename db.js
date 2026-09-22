@@ -3249,6 +3249,38 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email_unreachable_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS email_unreachable_reason TEXT`);
 
+  // ── BUILD-94 FIRST RUN — THE GREETING AN ORG GETS ONCE ───────────────────
+  // A new organisation's first sign-in is the one moment where a product gets
+  // to say "this is yours" before it says anything else. `welcome_motif` is
+  // the single piece of white-label that greeting carries: NULL is the plain
+  // brass moment every org gets, and a named motif draws the thing that
+  // organisation is actually about. One column, one switch, and a motif an org
+  // does not have simply does not draw.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS welcome_motif TEXT`);
+  // The two or three words an organisation actually says about itself
+  // ("Recreation · Restoration · Education"). Their words, stored, never
+  // computed — the BUILD-86 rule, applied to the one screen that greets them.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS welcome_words JSONB`);
+  // Per USER, not per org: a second staff member joining months later gets
+  // their own greeting, and the founder's is not re-shown to them.
+  //
+  // DEFAULT NOW(), and every existing row backfilled — "already welcomed" is
+  // the SAFE default and being greeted is the deliberate exception. A greeting
+  // is a full-screen takeover, so a NULL-means-greet column would have thrown
+  // one in front of every user who already uses the product, and in front of
+  // every test fixture that inserts a user without thinking about it (which is
+  // all of them). The signup path sets it back to NULL on purpose.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS welcomed_at TIMESTAMPTZ DEFAULT NOW()`);
+  // SET DEFAULT separately, and not as belt-and-braces: `ADD COLUMN IF NOT
+  // EXISTS … DEFAULT x` does NOTHING AT ALL when the column already exists, so
+  // a database that got this column from an earlier deploy (one without the
+  // default) would keep inserting NULLs — and NULL here means "greet them",
+  // which is a full-screen takeover in front of every user created from then
+  // on. A fresh database would have been fine and an upgraded one would not:
+  // exactly the divergence that only shows up in production.
+  await pool.query(`ALTER TABLE users ALTER COLUMN welcomed_at SET DEFAULT NOW()`);
+  await pool.query(`UPDATE users SET welcomed_at = NOW() WHERE welcomed_at IS NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
