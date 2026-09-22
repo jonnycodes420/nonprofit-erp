@@ -341,12 +341,10 @@ export function GlobalStyles() {
     @keyframes frIn{from{opacity:0}to{opacity:1}}
     @keyframes frOut{from{opacity:1}to{opacity:0}}
     @keyframes frRise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes frSheen{0%{transform:translateX(-60%) skewX(-18deg);opacity:0}
-                       35%{opacity:0.5}
-                       100%{transform:translateX(160%) skewX(-18deg);opacity:0}}
-    /* The motif crosses ONCE, left to right, and is gone. A loop would make it
-       a screensaver; one pass makes it a greeting. */
-    @keyframes frCross{from{transform:translateX(0)}to{transform:translateX(calc(100vw + 300px))}}
+    /* The herd runs left to right, because the horse faces right. Each one is
+       off-screen at both ends of its own travel, so nobody appears or vanishes
+       mid-screen. */
+    @keyframes frCross{from{transform:translateX(-340px)}to{transform:translateX(calc(100vw + 340px))}}
     .fr-welcome{animation:frIn 0.45s ease-out backwards;}
     .fr-welcome.fr-leaving{animation:frOut 0.4s ease-in forwards;}
     .fr-welcome .fr-eyebrow{animation:frRise 0.6s cubic-bezier(0.2,0.8,0.3,1) 0.15s backwards;}
@@ -356,16 +354,10 @@ export function GlobalStyles() {
     .fr-welcome .fr-words{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.7s backwards;}
     .fr-welcome .fr-sub{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 0.85s backwards;}
     .fr-welcome .fr-card button{animation:frRise 0.7s cubic-bezier(0.2,0.8,0.3,1) 1s backwards;}
-    .fr-welcome .fr-horse{animation:frCross 4.6s cubic-bezier(0.35,0,0.35,1) 0.5s 1 backwards;}
-    /* Narrow and quick. At 45% width and 0.22 alpha this read as a dull olive
-       wash across half the screen with a visible edge down the middle — a
-       smear, not a sheen. A sheen is a highlight passing THROUGH. */
-    .fr-welcome .fr-sheen::after{content:"";position:absolute;top:-10%;bottom:-10%;left:0;width:22%;
-      background:linear-gradient(100deg,transparent,rgba(201,168,76,0.14),transparent);
-      animation:frSheen 2.2s ease-out 0.5s 1 backwards;}
-    /* Brass focus ring, never the browser's blue — the house rule, and this
-       button is autofocused so the ring is the first thing drawn. */
-
+    /* LINEAR, and looping. Anything eased reads as a horse slowing down in the
+       middle of the screen, which no horse does. */
+    .fr-welcome .fr-horse{animation-name:frCross;animation-timing-function:linear;
+      animation-iteration-count:infinite;will-change:transform;}
     @media (max-width:640px){
       .fr-welcome .fr-title{font-size:38px!important;}
       .fr-welcome .fr-line{font-size:17px!important;}
@@ -373,9 +365,16 @@ export function GlobalStyles() {
     @media (prefers-reduced-motion: reduce){
       .fr-welcome,.fr-welcome.fr-leaving,.fr-welcome .fr-eyebrow,.fr-welcome .fr-title,
       .fr-welcome .fr-rule,.fr-welcome .fr-line,.fr-welcome .fr-words,.fr-welcome .fr-sub,
-      .fr-welcome .fr-card button,.fr-welcome .fr-horse,.fr-welcome .fr-sheen::after{animation:none;}
-      /* Still on the screen, just not moving — the horse sits where it lands. */
-      .fr-welcome .fr-horse{transform:translateX(38vw);}
+      .fr-welcome .fr-card button,.fr-welcome .fr-horse{animation:none;}
+      /* The herd still stands there; it simply does not run. */
+      .fr-welcome .fr-horse:nth-child(2){transform:translateX(12vw);}
+      .fr-welcome .fr-horse:nth-child(3){transform:translateX(34vw);}
+      .fr-welcome .fr-horse:nth-child(4){transform:translateX(58vw);}
+      .fr-welcome .fr-horse:nth-child(5){transform:translateX(78vw);}
+      .fr-welcome .fr-horse:nth-child(6){transform:translateX(22vw);}
+      .fr-welcome .fr-horse:nth-child(7){transform:translateX(66vw);}
+      .fr-welcome .fr-horse:nth-child(8){transform:translateX(44vw);}
+    }
     }
     /* BUILD-87 F.1 — animation-fill-mode is "backwards", NOT "both". Every one
        of these animations ends on the identity transform, so "both" retained a
@@ -1427,27 +1426,42 @@ export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }
 // larger sibling, not a different aesthetic. Brass, ink, cream, and the org's
 // own accent — nothing else reaches the screen, and `prefers-reduced-motion`
 // turns every movement off while still greeting.
+// A motif is ONE path, drawn at whatever size and opacity the herd asks for.
+// `box` is its intrinsic viewBox so a caller can scale it without distorting.
+//
+// PROVENANCE: the horse outline is traced from the reference silhouette
+// Jonathan supplied (scratchpad/horse/ref.webp, traced by a contour follower
+// in scratchpad/horse/trace.js). Five hand-drawn attempts produced a sheep, a
+// deer and three ponies — the browser was the only thing that could tell me,
+// and tracing the shape he actually wanted was the honest answer. If that
+// reference came from a stock library, check its licence before this ships to
+// anyone but a demo org.
 const WELCOME_MOTIFS = {
-  // Justin's Place is equine-assisted services; a horse is not decoration
-  // there, it is the programme. Drawn as a silhouette in brass, crossing once.
-  horse: (
-    <g fill="currentColor" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M138 82 C 154 98, 172 114, 192 124" strokeWidth="6.5" fill="none"/>
-      <path d="M126 86 C 130 104, 131 122, 134 144" strokeWidth="6" fill="none"/>
-      <path d="M66 80 C 50 96, 32 112, 14 122" strokeWidth="6.5" fill="none"/>
-      <path d="M80 84 C 78 102, 75 122, 72 144" strokeWidth="6" fill="none"/>
-      <path d="M56 58 C 42 52, 26 44, 10 30 C 20 46, 32 58, 50 68 Z"/>
-      <ellipse cx="100" cy="70" rx="36" ry="14"/>
-      <ellipse cx="72" cy="66" rx="20" ry="17"/>
-      <ellipse cx="128" cy="68" rx="16" ry="15"/>
-      <path d="M122 55 C 131 38, 148 25, 166 19 L 177 33 C 159 39, 145 49, 137 64 Z"/>
-      <path d="M164 17 C 175 14, 187 21, 194 31 C 198 36, 196 43, 190 43 C 185 43, 180 41, 176 38 C 168 33, 162 25, 162 18 Z"/>
-      <path d="M163 17 L 159 5 L 169 14 Z"/>
-      <path d="M171 14 L 172 4 L 179 15 Z"/>
-      <path d="M162 22 C 153 30, 145 39, 137 50" strokeWidth="4.5" fill="none"/>
-    </g>
-  ),
+  horse: {
+    box: "0 0 298 193",
+    d: "M271.0 0.0L269.0 10.0L270.0 14.0L276.0 20.0L281.0 30.0L293.0 40.0L298.0 47.0L295.0 54.0L290.0 57.0L286.0 57.0L282.0 52.0L271.0 51.0L260.0 47.0L253.0 47.0L249.0 51.0L241.0 80.0L242.0 90.0L240.0 106.0L236.0 114.0L253.0 135.0L266.0 147.0L267.0 153.0L271.0 160.0L288.0 184.0L290.0 193.0L279.0 190.0L279.0 181.0L273.0 177.0L271.0 171.0L262.0 157.0L252.0 147.0L225.0 128.0L218.0 125.0L215.0 126.0L210.0 135.0L201.0 163.0L178.0 185.0L163.0 190.0L154.0 189.0L148.0 182.0L149.0 175.0L110.0 145.0L109.0 140.0L116.0 126.0L115.0 121.0L107.0 129.0L100.0 131.0L84.0 141.0L73.0 144.0L65.0 149.0L56.0 160.0L47.0 181.0L31.0 187.0L26.0 187.0L27.0 181.0L30.0 176.0L34.0 175.0L37.0 177.0L45.0 169.0L57.0 135.0L68.0 132.0L79.0 123.0L79.0 90.0L81.0 80.0L85.0 73.0L83.0 71.0L80.0 71.0L77.0 76.0L74.0 72.0L69.0 85.0L68.0 82.0L64.0 80.0L61.0 83.0L54.0 85.0L47.0 92.0L41.0 107.0L40.0 105.0L34.0 114.0L24.0 123.0L11.0 128.0L23.0 112.0L23.0 99.0L12.0 117.0L5.0 124.0L1.0 126.0L6.0 121.0L6.0 115.0L0.0 120.0L15.0 99.0L19.0 90.0L21.0 79.0L35.0 67.0L33.0 65.0L29.0 68.0L31.0 65.0L30.0 64.0L25.0 64.0L22.0 66.0L29.0 60.0L44.0 57.0L53.0 57.0L89.0 63.0L112.0 56.0L153.0 60.0L173.0 59.0L192.0 46.0L182.0 40.0L186.0 42.0L190.0 41.0L184.0 37.0L189.0 39.0L197.0 38.0L200.0 34.0L196.0 30.0L206.0 27.0L211.0 23.0L207.0 22.0L213.0 21.0L215.0 19.0L209.0 17.0L204.0 18.0L209.0 16.0L235.0 17.0L241.0 13.0L248.0 11.0L248.0 9.0L251.0 8.0L260.0 9.0L268.0 1.0L269.0 3.0L270.0 1.0ZM143.0 116.0L142.0 115.0L140.0 117.0L136.0 126.0L130.0 133.0L128.0 138.0L128.0 146.0L132.0 151.0L148.0 163.0L160.0 178.0L164.0 178.0L167.0 182.0L173.0 177.0L180.0 174.0L192.0 162.0L194.0 154.0L194.0 141.0L198.0 130.0L198.0 123.0L163.0 122.0L144.0 116.0Z",
+  },
 };
+
+// THE HERD. One horse crossing an empty screen was a lone pony; a herd
+// streaming past is what an equine programme actually looks like. Depth is
+// done the way depth is always done — the far ones are smaller, fainter and
+// slower — and they LOOP, because a greeting whose screen empties out while
+// she is still reading looks broken rather than finished.
+// NEGATIVE delays, so every horse starts PART-WAY ACROSS and the herd is
+// already running the instant the screen appears. Positive delays leave an
+// empty screen for the first several seconds and then a bunch arriving
+// together — which is exactly the wrong first impression, and the only three
+// seconds most people will ever see.
+const HERD = [
+  { scale: 0.34, bottom: "31%", opacity: 0.10, dur: "17s",   delay: "-12.2s" },
+  { scale: 0.46, bottom: "22%", opacity: 0.13, dur: "14s",   delay: "-2.1s"  },
+  { scale: 0.58, bottom: "13%", opacity: 0.16, dur: "11.5s", delay: "-5.2s"  },
+  { scale: 0.72, bottom: "6%",  opacity: 0.20, dur: "9.5s",  delay: "-8.4s"  },
+  { scale: 0.52, bottom: "26%", opacity: 0.13, dur: "12.5s", delay: "-3.8s"  },
+  { scale: 0.92, bottom: "1%",  opacity: 0.24, dur: "8s",    delay: "-4.8s"  },
+  { scale: 0.64, bottom: "17%", opacity: 0.17, dur: "10.5s", delay: "-0.5s"  },
+];
 
 export function FirstRunWelcome({ firstName, orgName, mission, motif, words = [], onDone }) {
   const [leaving, setLeaving] = useState(false);
@@ -1467,15 +1481,22 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
         position: "fixed", inset: 0, zIndex: 900, background: T.ink,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "hidden",
       }}>
-      {/* The motif crosses ONCE, behind the words, in brass. */}
-      {art && (
-        <svg className="fr-horse" viewBox="0 0 220 170" aria-hidden="true"
-          style={{ position: "absolute", width: 240, opacity: 0.32, color: T.gold500, bottom: "14%", left: "-260px" }}>
-          {art}
-        </svg>
-      )}
-      {/* One sheen across the whole ground — GoldMoment's gesture, at scale. */}
-      <div className="fr-sheen" aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none" }}/>
+      {/* A soft warm centre, so the ink is a lit room rather than a flat wall.
+          This replaced a sweeping band that read as a green smear with a hard
+          edge down the middle of the screen — a vignette has no edge to see. */}
+      <div aria-hidden="true" style={{
+        position: "absolute", inset: "-20%", pointerEvents: "none",
+        background: "radial-gradient(ellipse 55% 45% at 50% 42%, rgba(201,168,76,0.10), rgba(201,168,76,0.03) 45%, transparent 70%)",
+      }}/>
+      {art && HERD.map((hh, i) => (
+        <div key={i} className="fr-horse" aria-hidden="true"
+          style={{ position: "absolute", bottom: hh.bottom, left: 0, opacity: hh.opacity,
+                   animationDuration: hh.dur, animationDelay: hh.delay }}>
+          <svg viewBox={art.box} style={{ width: Math.round(300 * hh.scale), display: "block", color: T.gold500 }}>
+            <path d={art.d} fill="currentColor" fillRule="evenodd"/>
+          </svg>
+        </div>
+      ))}
 
       <div className="fr-card" style={{ position: "relative", maxWidth: 620, textAlign: "center", zIndex: 2 }}>
         {orgName && (

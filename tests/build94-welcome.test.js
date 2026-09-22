@@ -71,17 +71,26 @@ async function fixture() {
   const block = src.slice(src.indexOf("BUILD-94 FIRST RUN"));
   // No confetti and no second palette: the product's one celebration pattern
   // is a gold moment, and this is its larger sibling.
-  const anims = [...new Set([...src.matchAll(/animation:(fr[A-Za-z]+)/g)].map(m => m[1]))].sort();
+  const anims = [...new Set([...src.matchAll(/animation(?:-name)?:(fr[A-Za-z]+)/g)].map(m => m[1]))].sort();
   ok("the greeting's animations are exactly the enumerated set — a confetti burst cannot arrive without changing this line",
-    anims.join(",") === "frCross,frIn,frOut,frRise,frSheen", anims);
+    anims.join(",") === "frCross,frIn,frOut,frRise", anims);
   ok("it uses tokens, not raw hex", !/#[0-9a-fA-F]{6}/.test(block.split("export function FirstRunWelcome")[1] || ""));
   ok("the motif is an SVG, never an emoji",
     /<path d=/.test(block) && !/[\u{1F300}-\u{1FAFF}]/u.test(block));
   const css = src.slice(src.indexOf("BUILD-94 FIRST RUN — the gold moment"));
   ok("every movement is off under prefers-reduced-motion",
     /prefers-reduced-motion: reduce\)\{[\s\S]{0,700}?\.fr-welcome[\s\S]{0,700}?animation:none/.test(css));
-  ok("the motif crosses ONCE — a loop would make it a screensaver",
-    /animation:frCross [^;]*1 backwards/.test(css) && !/frCross[^;]*infinite/.test(css));
+  // REVIEWED CHANGE. A single horse crossed once, because one pass then
+  // stillness reads as a gesture. A HERD loops: seven horses that all run off
+  // the right edge leave an empty screen while she is still reading, which
+  // reads as broken rather than finished. Linear, because a horse does not
+  // ease to a halt in the middle of a field.
+  ok("the herd loops, and moves at a constant speed",
+    /animation-iteration-count:infinite/.test(css) && /animation-timing-function:linear/.test(css));
+  ok("…and every horse starts part-way across, so the screen is never empty at first paint",
+    (block.match(/delay: "-/g) || []).length >= 6, (block.match(/delay: "[^"]+"/g) || []).slice(0, 3));
+  ok("the motif is one traced path with its own viewBox, not a pile of primitives",
+    /box: "0 0 \d+ \d+"/.test(block) && (block.match(/d: "M/g) || []).length === 1);
 
   console.log("— and the signup path is the one thing that opts IN —");
   const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
