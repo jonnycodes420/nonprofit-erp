@@ -182,6 +182,7 @@ const EXEMPT = {
   "build73-landing-capture": "read-only Playwright capture of the PUBLIC landing page; refuses any non-loopback APP_ORIGIN, logs in to nothing and writes only PNGs under docs/landing/",
   "build28-prepare-images": "local image generation, no network writes",
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
+  "build95-cheque-drill": "BUILD-95 — the cheque-reading boundary drill: reads local image files, calls the Anthropic API directly and prints what came back. No BASE, no DATABASE_URL, no Steward server, no app write of any kind; it refuses to run under NODE_ENV=production",
   "audit-gate": "BUILD-75 B.6 — runs `npm audit --json` on the local package and compares against audit/npm-audit-allowlist.json; no BASE, no DB, no app writes",
 };
 

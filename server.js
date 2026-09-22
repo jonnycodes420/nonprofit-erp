@@ -10324,6 +10324,99 @@ async function planDeposit(orgId, body) {
 }
 
 // POST /deposits/plan — read only. Called again after every answer she gives.
+// ── BUILD-95 — READING THE CHEQUES ─────────────────────────────────────────
+// It PROPOSES, and it cannot post. This route writes NOTHING: no gift, no
+// donor, no image, no row of any kind. It hands back what it read, the deposit
+// sheet places it under its own four-state rule, and a person commits it.
+//
+// The model TRANSCRIBES; `shared/chequeRead.js` does the arithmetic. A cheque
+// carries its amount twice and Steward checks the two against each other — a
+// real verification, unlike a model's own account of how sure it feels.
+//
+// checkWriteAccess, and the reason is not the convention's usual one: reads are
+// never gated here, but this read is an outbound SPEND on somebody else's
+// behalf, and a lapsed org cannot commit the deposit it would feed anyway.
+app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const cr = await import("./shared/chequeRead.js");
+  const { normalizeMoney } = await import("./shared/importShape.js");
+  const items = Array.isArray(req.body?.cheques) ? req.body.cheques : [];
+  if (!items.length) return res.status(400).json({ error: "no_cheques" });
+  if (items.length > cr.CHEQUE_READ_MAX_IMAGES)
+    return res.status(400).json({ error: "too_many", message: `Read at most ${cr.CHEQUE_READ_MAX_IMAGES} cheques at a time.` });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: "reading_unavailable" });
+
+  const TOOL = {
+    name: "record_cheque",
+    description: "Record exactly what is written on this cheque.",
+    strict: true,
+    input_schema: cr.CHEQUE_READ_SCHEMA,
+  };
+  const client = new Anthropic();
+  const money = c => "$" + (c / 100).toFixed(2);
+
+  async function readOne(item) {
+    const line = Number(item?.line) || 0;
+    const m = /^data:(image\/[a-z+]+);base64,(.+)$/i.exec(String(item?.image || ""));
+    if (!m) return { line, error: "not_an_image" };
+    const bytes = Buffer.from(m[2], "base64");
+    // Checked by CONTENT, not by what the caller called it (the BUILD-86 rule).
+    if (!imageBytesMatchMime(bytes, m[1])) return { line, error: "not_an_image" };
+    if (bytes.length > CHEQUE_MAX_BYTES) return { line, error: "too_large" };
+
+    let out = null;
+    try {
+      const msg = await client.messages.create({
+        model: cr.CHEQUE_READ_MODEL,
+        max_tokens: 2048,
+        system: cr.CHEQUE_READ_PROMPT,
+        tools: [TOOL],
+        tool_choice: { type: "tool", name: "record_cheque" },
+        messages: [{ role: "user", content: [
+          { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
+          { type: "text", text: "Transcribe this cheque." },
+        ] }],
+      });
+      // Tool inputs are parsed, never string-matched (the 4.6+ escaping rule).
+      const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "record_cheque");
+      out = block ? block.input : null;
+    } catch (e) {
+      console.error("[cheque-read]", e?.message || e);
+      return { line, error: "read_failed" };
+    }
+    if (!out) return { line, error: "read_failed" };
+
+    const dm = normalizeMoney(out.amountDigits || "");
+    const digitsCents = dm.value == null ? null : Math.round(dm.value * 100);
+    const wordsCents = cr.writtenAmountToCents(out.amountWords);
+    const rec = cr.reconcileAmount(digitsCents, wordsCents);
+
+    return {
+      line,
+      payer: out.payer || "",
+      memo: out.memo || "",
+      chequeNumber: out.chequeNumber || "",
+      date: out.date || "",
+      amountDigits: out.amountDigits || "",
+      amountWords: out.amountWords || "",
+      // The ONLY case an amount comes back filled: two independent readings
+      // that agree to the cent.
+      amountCents: rec.agreed ? rec.cents : null,
+      settled: rec.agreed,
+      // …and when they do not, the line says what it saw rather than picking.
+      sentence: rec.agreed ? null : cr.unsettledSentence(rec, money),
+      unreadable: Array.isArray(out.unreadable) ? out.unreadable : [],
+    };
+  }
+
+  const reads = [];
+  for (const item of items) reads.push(await readOne(item));
+  res.json({
+    reads,
+    settled: reads.filter(r => r.settled).length,
+    note: cr.CHEQUE_READ_NOTE,
+  });
+}));
+
 app.post("/deposits/plan", requireAuth, wrap(async (req, res) => {
   const org = await orgTz(req.user.orgId);
   const today = orgToday(org);                                     // ORG_TZ_SEAM_OK
@@ -28221,6 +28314,9 @@ async function storeDonorPhoto({ orgId, donorId, dataUri, actorUser }) {
 // is a cheque you cannot read, so it keeps its shape and is capped on the long
 // edge instead.
 const CHEQUE_LONG_EDGE = 1600;
+// The same ceiling a headshot gets: a 10 MB master is not a cheque photograph,
+// and it is what the cap exists to refuse.
+const CHEQUE_MAX_BYTES = 10 * 1024 * 1024;
 async function storeChequeImage({ orgId, dataUri }) {
   const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
   if (!m) return { error: "That file isn't an image we can use. Please use a PNG or JPEG photo." };

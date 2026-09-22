@@ -76,6 +76,62 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
   // until the deposit commits: a picture of a cheque that was never recorded
   // is an image of somebody's bank details with nothing to attach it to.
   const [cheques, setCheques] = useState({});
+
+  // BUILD-95 — PHOTOGRAPH THE STACK, AND IT READS THEM.
+  //
+  // ONE gesture, both outcomes: the same photographs become the evidence
+  // attached to each line AND the reading that fills the line in. Two separate
+  // actions ("photograph" then "also read") would mean somebody does the first
+  // and skips the second, and the pile of cheques is in front of her once.
+  //
+  // IT PROPOSES AND CANNOT POST. A read fills in the paste box, which then goes
+  // through the SAME plan the typed path does — nothing is placed by the read,
+  // and an amount Steward could not settle lands with the amount BLANK, which
+  // the deposit sheet already routes to "needs you" rather than to a guess.
+  const [reading, setReading] = useState(false);
+  const [readNote, setReadNote] = useState(null);
+
+  const readCheques = async (files) => {
+    const list = Array.from(files || []).slice(0, 20);
+    if (!list.length) return;
+    setReading(true); setErr(""); setReadNote(null);
+    try {
+      const imgs = await Promise.all(list.map((f, i) => new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res({ line: i + 1, image: fr.result });
+        fr.onerror = rej;
+        fr.readAsDataURL(f);
+      })));
+      const r = await apiFetch("/deposits/read-cheques", { method: "POST", body: JSON.stringify({ cheques: imgs }) });
+      const reads = Array.isArray(r.reads) ? r.reads : [];
+
+      // The photographs attach whatever the reading did — the evidence does not
+      // depend on the handwriting having been legible.
+      const next = {};
+      for (const im of imgs) next[im.line] = im.image;
+      setCheques(next);
+
+      // One line per cheque, in the paste vocabulary the sheet already parses.
+      // A blank amount is DELIBERATE: it is how an unsettled read asks.
+      setPaste(reads.map(rd => [
+        rd.payer || "",
+        rd.amountCents != null ? (rd.amountCents / 100).toFixed(2) : "",
+        rd.memo || "",
+      ].join("\t")).join("\n"));
+
+      const unsettled = reads.filter(rd => !rd.settled);
+      setReadNote({
+        total: reads.length,
+        settled: reads.filter(rd => rd.settled).length,
+        lines: unsettled.map(rd => ({ line: rd.line, why: rd.sentence || rd.error || "Could not be read." })),
+      });
+    } catch (e) {
+      rethrowProgrammerError(e);
+      setErr(errorMessage(e, "Steward could not read those photographs."));
+    }
+    setReading(false);
+  };
+
   const readCheque = (line, file) => {
     if (!file) return;
     const fr = new FileReader();
@@ -167,6 +223,34 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
         {!plan && (<>
           <div style={{ marginBottom: 12 }}>
             <span style={lbl}>The lines</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+              <label data-testid="deposit-read-cheques"
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: reading ? "default" : "pointer",
+                         border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 12px",
+                         fontSize: 12.5, fontWeight: 700, color: reading ? T.ink3 : T.ink, background: T.white }}>
+                <input type="file" accept="image/*" capture="environment" multiple disabled={reading}
+                  style={{ display: "none" }}
+                  onChange={e => { readCheques(e.target.files); e.target.value = ""; }} />
+                {reading ? "Reading…" : "◫ Photograph the cheques"}
+              </label>
+              <span style={{ fontSize: 11.5, color: T.ink3 }}>
+                Steward reads them and fills in the lines. Nothing is recorded until you commit.
+              </span>
+            </div>
+            {readNote && (
+              <div data-testid="deposit-read-note" style={{ marginBottom: 10, fontSize: 12.5, lineHeight: 1.55, color: T.ink2 }}>
+                Read {readNote.total} cheque{readNote.total === 1 ? "" : "s"};{" "}
+                {readNote.settled} amount{readNote.settled === 1 ? "" : "s"} agreed on both the figures and the words.
+                {/* A cheque carries its amount twice and Steward checks the two
+                    against each other. Where they did not settle it says what
+                    it saw and leaves the line — it never picks one. */}
+                {readNote.lines.length > 0 && (
+                  <ul style={{ margin: "6px 0 0", paddingLeft: 18, color: T.gold700 }}>
+                    {readNote.lines.map(l => <li key={l.line} style={{ marginBottom: 2 }}>Line {l.line}: {l.why}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
             <textarea value={paste} onChange={e => setPaste(e.target.value)} data-testid="deposit-paste"
               aria-label="Deposit lines"
               placeholder={"One line per cheque. Name, amount, memo.\n\nMargaret Chen\t250.00\tXenia trip\nWilliam Park\t1,000.00\tck 4417  General Operating"}
