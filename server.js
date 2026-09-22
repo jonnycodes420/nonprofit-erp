@@ -2218,7 +2218,7 @@ function firstNameOfDonor(name) {
 // donor, ranked by threadRank like everything else. The person-surface gate is
 // the same one - a sample, deceased, do-not-contact or non-person record never
 // gets one.
-async function openMissedRecurringThread(orgId, donorId, { amountCents, provider, expectedNext, interval = "month" }) {
+async function openMissedRecurringThread(orgId, donorId, { amountCents, provider, expectedNext, interval = "month", day = null }) {
   try {
     const [d] = await query(
       `SELECT id, name, assigned_to, assigned_to_name FROM donors
@@ -2227,7 +2227,7 @@ async function openMissedRecurringThread(orgId, donorId, { amountCents, provider
           AND (kind IS NULL OR kind = 'person')`, [donorId, orgId]);
     if (!d) return null;
     const org = await orgTz(orgId);
-    const today = orgToday(org);                       // ORG_TZ_SEAM_OK
+    const today = day || orgToday(org);                       // ORG_TZ_SEAM_OK
     const { sanitizeStepLabel } = await threadShapeMod();
     const { missedPhrase } = await givingSourcesMod();
     const label = sanitizeStepLabel(missedPhrase({
@@ -2367,7 +2367,7 @@ async function sweepMissedRecurring(orgId, { today = null, sourceId = null } = {
     if (r.missed_for === r.expected_next) continue;    // already raised, exactly once
     const thread = await openMissedRecurringThread(orgId, r.donor_id, {
       amountCents: Number(r.amount_cents), provider: r.provider,
-      expectedNext: r.expected_next, interval: r.interval,
+      expectedNext: r.expected_next, interval: r.interval, day,
     });
     // `missed_for` is stamped whether or not a thread was actually opened: the
     // donor may already have an open thread (the one-open-per-donor rule), and

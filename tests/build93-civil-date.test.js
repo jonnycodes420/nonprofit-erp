@@ -85,10 +85,19 @@ async function reset() {
   ok("the week window is stated by the server", !!wkStart && !!wkEnd, before.body?.thisWeek);
   ok("...and the org's civil today falls INSIDE it",
      wkStart <= CIVIL && CIVIL <= wkEnd, { wkStart, CIVIL, wkEnd });
-  // The defect, stated as the property that failed: with a UTC slice this is
-  // false for four hours a night, which is precisely how the gift went missing.
-  if (skewed) ok("...while the UTC day falls OUTSIDE it — the defect, named",
-                 !(wkStart <= UTC && UTC <= wkEnd), { wkStart, UTC, wkEnd });
+  // The defect, stated as the property that failed: with a UTC slice the gift
+  // lands on the wrong DAY for four hours a night, which is how it went
+  // missing. Stated at WEEK granularity it is only visible on the last civil
+  // day of the week window, because that is the only night UTC's extra day
+  // crosses wkEnd — on the other six the wrong day is still inside the right
+  // week. Guarding on `skewed` alone asserted it on all seven and went red
+  // whenever the calendar was not cooperating, which made a clock the judge of
+  // the code. So the leg runs when the skew actually crosses the boundary, and
+  // says so when it does not, in the same voice §1 uses about `skewed`.
+  const crossesWeek = skewed && UTC > wkEnd;
+  if (crossesWeek) ok("...while the UTC day falls OUTSIDE it — the defect, named",
+                      !(wkStart <= UTC && UTC <= wkEnd), { wkStart, UTC, wkEnd });
+  else console.log(`  NOTE  the UTC day (${UTC}) is inside this week window (${wkStart}..${wkEnd}), so this run cannot name the defect at week granularity; §3 names it at day granularity, which is where it bites`);
 
   const g = await api("POST", `/donors/${donorId}/gifts`, token, { amount: 250, date: CIVIL, type: "one-time", notes: "civil-date probe" });
   ok("the gift is written", g.status === 201 || g.status === 200, g.body);
