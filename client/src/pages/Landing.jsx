@@ -4,6 +4,7 @@ import {
 } from "../lib/donorField";
 import { ProductMark } from "../components/ProductMark";
 import { copyrightLine } from "../../../shared/legalEntity";
+import { publicSourceRow, DIRECT_HEADING, UPLOAD_HEADING } from "../../../shared/publicSources";
 
 // ── Landing — BUILD-81 + the photograph pass ────────────────────────────────
 //
@@ -42,6 +43,67 @@ import { copyrightLine } from "../../../shared/legalEntity";
 // The hero panel's donor is INVENTED ("Robert Harmon" — the spec's own
 // R. Harmon) and must not match any donor in any fixture or in production
 // (tests/threads.test.js renamed its own Harmon for exactly this).
+
+// ── BUILD-91 91i · THE PUBLIC SOURCE ROW ────────────────────────────────────
+// The same two honest groups as the in-app page (Settings -> Where giving
+// comes in), in front of somebody who has NOT signed up and therefore cannot
+// check whether any of it is true. That difference is the whole reason this
+// row reads its members from shared/publicSources.js rather than from the
+// provider registry the in-app page uses: the registry says what Steward has
+// an adapter for, and the allowlist says what Steward has actually run a real
+// person's money through. Today those are not the same list, and the public
+// page gets the smaller one.
+//
+// So the direct group is EMPTY as this ships, and it renders as nothing at
+// all rather than as an empty heading. A heading with no tiles under it reads
+// as a page that failed to load; a heading that is simply absent reads as a
+// page that is not claiming anything. The prose above it still names the four
+// providers whose adapters are merged and green, which is a true sentence
+// about what the software can read. The TILES are a stronger claim than the
+// sentence, which is why they wait for the stronger evidence.
+//
+// Every tile is the company's name in type. No mark is drawn, traced or
+// recoloured here; when official files land in client/src/assets/sources/ with
+// their SOURCES.md rows cleared, they are passed in as `logos` and the tile
+// swaps type for the file. Nothing else about the row changes.
+function SourceTile({ label, logo }) {
+  return (
+    <li data-testid="lp-source-tile" data-source={label}
+      style={{ border: "1px solid rgba(15,26,18,0.14)", borderRadius: 12, background: C.cream,
+        padding: "14px 16px", display: "flex", alignItems: "center", minHeight: 52, listStyle: "none" }}>
+      {logo
+        ? <img src={logo} alt={label} style={{ maxHeight: 24, maxWidth: 116 }} />
+        : <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>{label}</span>}
+    </li>
+  );
+}
+
+function SourceGroup({ heading, tiles }) {
+  if (!tiles.length) return null;
+  return (
+    <div data-testid="lp-source-group" data-heading={heading}
+      style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div data-testid="lp-source-heading"
+        style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.ink3 }}>
+        {heading}
+      </div>
+      <ul style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: 0, padding: 0 }}>
+        {tiles.map(t => <SourceTile key={t.key} label={t.label} logo={t.logo} />)}
+      </ul>
+    </div>
+  );
+}
+
+function SourceRow() {
+  const { direct, upload, promise } = publicSourceRow();
+  return (
+    <div data-testid="lp-source-row" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <SourceGroup heading={DIRECT_HEADING} tiles={direct} />
+      <SourceGroup heading={UPLOAD_HEADING} tiles={upload} />
+      <p data-testid="lp-row-promise" style={{ fontSize: 15, lineHeight: 1.6, color: C.ink3 }}>{promise}</p>
+    </div>
+  );
+}
 
 const C = {
   ink:     "#0F1A12",
@@ -563,6 +625,7 @@ export default function Landing() {
               <p data-testid="lp-connected"><strong style={{ color: C.ink }}>Connected:</strong> PayPal, Zeffy, Stripe, Givebutter. Steward checks every few hours.</p>
               <p data-testid="lp-statement"><strong style={{ color: C.ink }}>Statement upload:</strong> Cash App and Venmo have no way to let software read an account. Once a month you drop the statement in.</p>
             </div>
+            <SourceRow />
             <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
               Nobody re-enters a card. No monthly donor has to be asked to sign up again.
             </p>

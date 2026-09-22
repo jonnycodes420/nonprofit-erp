@@ -48,6 +48,10 @@ const PW = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "stew
 const GUARDS_BEFORE = 29; // BUILD-74's count against prod at 261dc73
 // BUILD-89S 89f added 7: the Keep-how-people-give section, and the rule that
 // the page may never name a source the product cannot actually read.
+// BUILD-91 91i adds the PUBLIC SOURCE ROW: one gate per source the row
+// actually shows, driven by shared/publicSources.js rather than by a list
+// typed twice, plus the standing negative — Cash App and Venmo may never
+// appear under "Connects directly", on any page, ever.
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra) => {
@@ -414,6 +418,85 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
     ok("the Your-data section carries the same money line",
        !!keep && /never holds or moves your money/i.test(keep.dataText), keep?.dataText?.slice(0, 200));
     await kp.close();
+  }
+
+  // ── BUILD-91 91i — THE PUBLIC SOURCE ROW ────────────────────────────────
+  // A tile on this page is a claim made to somebody who has not signed up and
+  // cannot check it. So the gate does not ask "does the row look right"; it
+  // asks whether the page shows EXACTLY what the allowlist permits and not one
+  // name more. The expected set is read from shared/publicSources.js — the
+  // same module the page renders from — because a gate that keeps its own copy
+  // of the answer stops being a gate the first time the two are edited apart.
+  //
+  // With an empty allowlist the correct page has NO direct group at all. That
+  // is asserted as the positive result it is, not skipped: "we claim no direct
+  // connection yet" is the thing 91i exists to make true.
+  console.log("\n— §7d · the public source row —");
+  {
+    const pub = await import("../shared/publicSources.js");
+    const expected = pub.publicSourceRow();
+    const directNames = expected.direct.map(t => t.label);
+    const uploadNames = expected.upload.map(t => t.label);
+
+    const sp = await browser.newPage({ viewport: { width: 1440, height: 1200 } });
+    await sp.goto(BASE + "/", { waitUntil: "networkidle" });
+    await sp.waitForTimeout(500);
+    const seen = await sp.evaluate(() => {
+      const row = document.querySelector('[data-testid="lp-source-row"]');
+      if (!row) return null;
+      const groups = [...row.querySelectorAll('[data-testid="lp-source-group"]')].map(g => ({
+        heading: g.getAttribute("data-heading"),
+        tiles: [...g.querySelectorAll('[data-testid="lp-source-tile"]')].map(t => t.getAttribute("data-source")),
+      }));
+      const promise = row.querySelector('[data-testid="lp-row-promise"]');
+      return {
+        groups,
+        promise: promise ? promise.innerText.trim() : "",
+        inKeepSection: !!document.querySelector("#keep-giving [data-testid=\"lp-source-row\"]"),
+      };
+    });
+
+    ok("the source row renders, inside the Keep-how-people-give section",
+       !!seen && seen.inKeepSection, seen);
+
+    const group = h => (seen?.groups || []).find(g => g.heading === h);
+    const direct = group(pub.DIRECT_HEADING);
+    const upload = group(pub.UPLOAD_HEADING);
+
+    // ONE GATE PER SOURCE SHOWN. The loop is over what the config permits, so
+    // the gate count grows by itself the day a source is cleared, and nobody
+    // has to remember to add an assertion for it.
+    for (const name of directNames) {
+      ok(`${name} is shown under "${pub.DIRECT_HEADING}", and its row in SOURCES.md is cleared`,
+         !!direct && direct.tiles.includes(name), direct?.tiles);
+    }
+    for (const name of uploadNames) {
+      ok(`${name} is shown under "${pub.UPLOAD_HEADING}"`,
+         !!upload && upload.tiles.includes(name), upload?.tiles);
+    }
+
+    ok(`the direct group shows exactly the ${directNames.length} source(s) the allowlist permits, and no other`,
+       directNames.length === 0 ? !direct : !!direct && direct.tiles.length === directNames.length,
+       { shown: direct ? direct.tiles : null, allowed: directNames });
+
+    if (directNames.length === 0) {
+      ok("with nothing cleared, the page claims no direct connection and renders no empty heading",
+         !direct, direct);
+    }
+
+    // THE STANDING NEGATIVE. Neither has an API that reads an account, so
+    // neither may ever sit under the direct heading, whatever the allowlist
+    // says and whoever edited it.
+    const directTiles = direct ? direct.tiles : [];
+    ok("Cash App never appears under the direct heading", !directTiles.includes("Cash App"), directTiles);
+    ok("Venmo never appears under the direct heading", !directTiles.includes("Venmo"), directTiles);
+
+    ok("the row carries the promise, both halves of it",
+       !!seen && seen.promise === expected.promise, { on_page: seen?.promise, expected: expected.promise });
+    ok("the row adds no em dash to the section (the standing voice rule)",
+       !!seen && !seen.promise.includes("\u2014"), seen?.promise);
+
+    await sp.close();
   }
 
   // ── §8 · reduced motion — field AND thread visual fully visible ────────
