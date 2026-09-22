@@ -189,6 +189,11 @@ export function adaptDonor(d) {
     // null for the initials mark. (The BUILD-89 adaptDonor trap again: a field
     // the server sets and this adapter drops reaches the profile as undefined.)
     photoUrl:      d.photo_url ?? null,
+    // BUILD-94 Part 2 — Donor / Volunteer / Staff and board / Other, and a
+    // person can be more than one. A row with nothing stored is a legacy row,
+    // and every legacy row is a donor — the same rule the server's predicate
+    // and the segment count both hold, so the three cannot disagree.
+    personTypes:   (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"],
   };
 }
 

@@ -1726,6 +1726,17 @@ app.use(express.json({ limit: "5mb" }));
 // prefix-matches the whole family (list, summaries, export, :id).
 app.use("/donors", compression());
 
+// ── BUILD-94 Part 2 — the person-type module, eagerly ──────────────────────
+// shared/personType.js is ESM (the shared/ convention) but its predicate is
+// needed SYNCHRONOUSLY inside WHERE-clause builders that are not async. It is
+// pure, dependency-free and tiny, so it is loaded once at module evaluation
+// and awaited by the readiness guard below — never imported per request.
+let PT = null;
+const PT_READY = import("./shared/personType.js").then(m => { PT = m; return m; });
+// Every money surface that must exclude a volunteer splices THIS, and there is
+// exactly one of it. See shared/personType.js for why it is NULL-tolerant.
+const donorOnly = (alias = "") => `(${alias ? alias + "." : ""}person_types IS NULL OR ${alias ? alias + "." : ""}person_types @> '["donor"]'::jsonb)`;
+
 // ── DB readiness guard ─────────────────────────────────────────────────────
 let dbReady = false;
 let DB_NAME = null;  // the actual connected database, surfaced on /health for the identity guard
@@ -1733,6 +1744,7 @@ getDb()
   .then(async () => {
     dbReady = true;
     try { const r = await query("SELECT current_database() AS d"); DB_NAME = r[0] && r[0].d; } catch { /* non-fatal: /health reports database:null */ }
+    await PT_READY;            // BUILD-94 Part 2 — PT is bound before any request
     console.log("Database ready");
     // BUILD-78 — one-shot legacy custom-field migration (EAV → defs + JSONB).
     // Flag-guarded so it runs once; a failure does NOT mark the flag (next
@@ -2043,6 +2055,12 @@ async function recordGift(o) {
   // NULLIF guards the empty string: `''::date` throws, and a donor whose
   // last_gift_date was never set carries '' on some legacy rows.
   const LAST_GIFT_IS_NEWER = "COALESCE(NULLIF(last_gift_date,''),'0001-01-01')::date <= ?::date";
+  // BUILD-94 Part 2 — A VOLUNTEER WHO GIVES BECOMES A DONOR TOO, on the SAME
+  // record. Never a second row: the same person twice is the thing a CRM
+  // exists to prevent. The `person_types` CASE below lives here, in the ONE
+  // place every money path already rolls up through (BUILD-88a), so no giving
+  // route can forget it. "other" means "we do not know what they are" — a gift
+  // answers that, so it is REPLACED rather than accumulated beside "donor".
   await run(
     `UPDATE donors
         SET total_giving = total_giving + ?,
@@ -2052,6 +2070,11 @@ async function recordGift(o) {
             status = CASE WHEN total_giving + ? > 20000 THEN 'major'
                           WHEN total_giving + ? > 5000  THEN 'mid'
                           ELSE status END,
+            person_types = CASE
+              WHEN person_types IS NULL THEN '["donor"]'::jsonb
+              WHEN person_types @> '["donor"]'::jsonb THEN person_types
+              ELSE (person_types - 'other') || '["donor"]'::jsonb
+            END,
             updated_at = NOW()
       WHERE id = ? AND org_id = ?`,
     [amount, date, amount, date, date, amount, amount, o.donorId, orgId]);
@@ -3032,7 +3055,13 @@ app.post("/campaigns/segment-preview", requireAuth, wrap(async (req, res) => {
   const t = V.makeT(vocab);
   // The vocabulary key for a giver is `giver`, not `donor` — asking for
   // "donor" returns null and the sentence reads "3 null, including Margaret".
-  const noun = seg.mode === "recurring" ? t("monthly_giver", 2) : t("giver", 2);
+  // BUILD-94 Part 2 — a segment that crosses types reads as PEOPLE. "6 donors"
+  // under a Volunteers segment is exactly the contradiction this part removes,
+  // and the org's own word for a giver is still wrong for a volunteer.
+  const PERSON_SEGMENTS = new Set(["everyone", "volunteers", "staff_board"]);
+  const noun = seg.mode === "recurring" ? t("monthly_giver", 2)
+    : PERSON_SEGMENTS.has(seg.mode) ? "people"
+    : t("giver", 2);
   const names = donors.slice(0, 2).map(d => displayNameCase(d.name || ""));
   res.json({
     count: donors.length,
@@ -5604,6 +5633,9 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     // or null. Minted here rather than stored so a payload can never carry a
     // link that outlives its signature.
     photo_url: donorPhotoUrl(req.user.orgId, d.photo_asset_id),
+    // BUILD-94 Part 2 — normalised here so a NULL legacy column and an
+    // explicit ["donor"] reach the client as the same thing.
+    person_types: PT.typesOf(d),
   });
 
   if (req.query.limit === undefined) {
@@ -5869,12 +5901,16 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // rather than reading the /people/photos map, so a profile is never the
   // record whose face went missing because a list was capped.
   d.photo_url = donorPhotoUrl(req.user.orgId, d.photo_asset_id);
+  d.person_types = PT.typesOf(d);   // BUILD-94 Part 2
   res.json(d);
 }));
 
 app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName } = req.body;
+  const { name, email, phone, status, stage, tags, notes, lastAmount, assignedTo, assignedToName, personTypes } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
+  // BUILD-94 Part 2 — a person added by hand can be a volunteer from the
+  // start. Unknown keys are dropped by normalizeTypes, never stored.
+  const types = personTypes === undefined ? ["donor"] : PT.normalizeTypes(personTypes);
 
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
   if (orgForLimit.length) {
@@ -5893,13 +5929,14 @@ app.post("/donors", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const finalAssignedTo = assignedTo || req.user.userId;
   const finalAssignedToName = assignedTo ? (assignedToName || "") : selfName;
   await run(
-    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO donors (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,last_gift_date,gift_count,tags,notes,assigned_to,assigned_to_name,created_by,created_by_name,person_types)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     // BUILD-80 Part 10 — the quick form's typed amount carries NO date: a
     // last_gift_date of "today" was a fiction that un-drifted the donor.
     [id, req.user.orgId, name, email || "", phone || "", status || "new", stage || "prospect",
      lastAmount || 0, lastAmount || 0, null, lastAmount ? 1 : 0,
-     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name]
+     JSON.stringify(tags || []), notes || "", finalAssignedTo, finalAssignedToName, actor(req).id, actor(req).name,
+     JSON.stringify(types)]
   );
   const rows = await query("SELECT * FROM donors WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
@@ -6280,9 +6317,18 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         // an inline one: 25,000 outbound requests inside the import
         // transaction is how an import times out.
         photoImportUrl(d),
-        photoImportUrl(d) ? "pending" : null
+        photoImportUrl(d) ? "pending" : null,
+        // BUILD-94 Part 2 — the person's type, and whether they are reachable.
+        // A Mailchimp row carries both; every other file carries neither and
+        // gets the defaults it always had (a donor, reachable).
+        JSON.stringify(PT.normalizeTypes(d.personTypes === undefined ? ["donor"] : d.personTypes)),
+        // AN UNSUBSCRIBED MAILCHIMP CONTACT IMPORTS AS UNSUBSCRIBED. Never as
+        // reachable. Importing only the subscribed file and losing every
+        // unsubscribe Mailchimp was honouring is how the first campaign out of
+        // Steward goes to people who asked her to stop.
+        d.unsubscribed === true || d.unsubscribed === "true"
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -6293,7 +6339,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
               last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
               pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
               kind,contact_name,address,zip,country,suggested_stage,
-              photo_source_url,photo_fetch_status)
+              photo_source_url,photo_fetch_status,person_types,do_not_email)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -6327,6 +6373,26 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   try { geocodeQueued = await markDonorsForGeocoding(req.user.orgId); }
   catch (e) { console.error("[geocode] mark after import failed:", e.message); }
 
+  // BUILD-94 Part 2 — an unsubscribed contact has to be unsubscribed in the
+  // place the SEND path actually reads. do_not_email on the row is what a
+  // human sees on the profile; email_suppressions is what donorMailDecision
+  // consults before every marketing send, and it is the one that matters.
+  // Both, or the flag is decoration.
+  let unsubscribedImported = 0;
+  try {
+    const unsubs = (req.body.donors || []).filter(d => (d.unsubscribed === true || d.unsubscribed === "true") && d.email);
+    for (const d of unsubs) {
+      const email = String(d.email).toLowerCase();
+      const [already] = await query(
+        `SELECT 1 AS x FROM email_suppressions WHERE LOWER(email)=? AND org_id=? AND reason='unsubscribed' LIMIT 1`,
+        [email, req.user.orgId]);
+      if (already) continue;
+      await run(`INSERT INTO email_suppressions (id, org_id, email, reason, source) VALUES (?,?,?,?,?)`,
+        ["sup_" + uuid().slice(0, 8), req.user.orgId, email, "unsubscribed", "import"]);
+      unsubscribedImported++;
+    }
+  } catch (e) { console.error("[import] unsubscribe suppressions:", e.message); }
+
   // BUILD-94 Part 1 — how many rows carried a photo URL to fetch. Reported so
   // the import screen can say it, rather than photos appearing minutes later
   // with nothing having said they would.
@@ -6337,7 +6403,7 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
       [req.user.orgId]);
     photosQueued = pq ? pq.n : 0;
   } catch (e) { console.error("[person-photo] queued count:", e.message); }
-  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, reconciliation: ledger.report() });
+  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, unsubscribedImported, reconciliation: ledger.report() });
 }));
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
@@ -7208,6 +7274,15 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
+
+  // BUILD-94 Part 2 — the person's type(s). Only touched when the request
+  // carries the field, so every existing caller leaves it alone; a caller that
+  // does send it cannot clear it to nothing (normalizeTypes floors at
+  // ["other"]) and cannot invent a fifth type.
+  if (req.body.personTypes !== undefined) {
+    await run(`UPDATE donors SET person_types = ?::jsonb WHERE id=? AND org_id=?`,
+      [JSON.stringify(PT.normalizeTypes(req.body.personTypes)), req.params.id, req.user.orgId]);
+  }
 
   // BUILD-58 Part 2 — the deceased / do-not-contact flags (only touched when
   // the request carries them, so older callers never clobber a stored flag).
@@ -12325,7 +12400,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     FROM donors d
     LEFT JOIN interactions i ON i.donor_id = d.id AND i.type != 'email_open'
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage NOT IN ('prospect','lapsed')
-      AND ${solicitableSql("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
+      AND ${solicitableSql("d")} AND ${donorOnly("d")} AND ${namedOrGivingSql("d")} ${scopeClause}
     GROUP BY d.id, d.name, d.total_giving, d.last_gift_date, d.last_gift_amount, d.stage
     HAVING MAX(i.date) < ? OR MAX(i.date) IS NULL
     ORDER BY COALESCE(d.total_giving, 0) DESC
@@ -12336,7 +12411,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT id, name, total_giving, last_gift_date
     FROM donors d
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.stage = 'lapsed'
-      AND ${solicitableSql("d")}
+      AND ${solicitableSql("d")} AND ${donorOnly("d")}
       AND d.imported_sustainer IS NOT TRUE ${scopeClause}
     ORDER BY total_giving DESC
     LIMIT 5
@@ -12443,7 +12518,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT d.id, d.name, d.employer, d.total_giving, d.last_gift_amount, d.last_gift_date
     FROM donors d
     WHERE d.org_id = ? AND d.deleted_at IS NULL AND d.employer IS NOT NULL AND d.employer <> ''
-      AND ${solicitableSql("d")} AND d.last_gift_date >= ? ${scopeClause}
+      AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.last_gift_date >= ? ${scopeClause}
     ORDER BY d.last_gift_date DESC
     LIMIT 30
   `, [orgId, ninetyDaysAgo, ...scopeParams]),
@@ -15222,8 +15297,26 @@ async function resolveCampaignRecipients(campaign, orgId) {
     donors = (segment.tiers || []).length ? donors.filter(d => segment.tiers.includes(d.capacity_tier)) : [];
   } else if (mode === "manual") {
     donors = (segment.donorIds || []).length ? donors.filter(d => segment.donorIds.includes(d.id)) : [];
+  // ── BUILD-94 Part 2 — the four segments that let Mailchimp go ────────────
+  // Allie's volunteers, staff and board are on this table now, so the
+  // audience picker has to be able to name them. "Everyone with an email" is
+  // the one segment in the product that deliberately crosses every type —
+  // it is the Mailchimp audience, and it is why she is paying them.
+  } else if (mode === "everyone") {
+    /* already every person with an email — no type filter at all */
+  } else if (mode === "volunteers") {
+    donors = donors.filter(d => PT.hasType(d, "volunteer"));
+  } else if (mode === "staff_board") {
+    donors = donors.filter(d => PT.hasType(d, "staff_board"));
+  } else if (mode === "donors") {
+    donors = donors.filter(d => PT.isDonor(d));
   } else {
-    // "all" or legacy format
+    // "all" or legacy format.
+    // BUILD-94 Part 2 — and "all" MEANS ALL DONORS, which is what the picker
+    // has always called it. Before this build every person was a donor so the
+    // two were the same set; now they are not, and leaving it unfiltered would
+    // quietly send an appeal to the volunteer coordinator's whole roster.
+    donors = donors.filter(d => PT.isDonor(d));
     if (segment.stages && segment.stages.length) donors = donors.filter(d => segment.stages.includes(d.stage));
     if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }
@@ -19842,7 +19935,7 @@ async function computeAtRiskCandidates(orgId) {
      WHERE org_id = ? AND deleted_at IS NULL
        AND stage NOT IN ('prospect', 'lapsed')
        AND email IS NOT NULL AND email != ''
-       AND ${solicitableSql("d")}
+       AND ${solicitableSql("d")} AND ${donorOnly("d")}
        AND d.imported_sustainer IS NOT TRUE
        AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '300 days'
        AND total_giving >= 5000`,
@@ -19875,7 +19968,8 @@ async function computeDriftForDonors(orgId, { donorIds = null } = {}) {
                   d.imported_sustainer, d.tags, d.kind,
                   d.assigned_to, d.assigned_to_name, d.stripe_subscription_status,
                   d.created_at::date::text AS created_date
-             FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL${idFilter}`, [orgId, ...idParams]),
+             FROM donors d WHERE d.org_id = ? AND d.deleted_at IS NULL
+                                AND ${donorOnly("d")}${idFilter}`, [orgId, ...idParams]),
     // One compact row per donor — dates+amounts as parallel arrays, so the
     // whole org's cadence math is a single round trip, not an N+1. The
     // pledge marker (BUILD-77 Part 1d): a gift whose note marks it a
@@ -20344,12 +20438,12 @@ async function autoEnroll() {
       let donors = [];
       if (seq.trigger === "lapsed_90") {
         donors = await query(
-          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
+          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '90 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "lapsed_180") {
         donors = await query(
-          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
+          `SELECT id FROM donors d WHERE org_id = ? AND stage = 'lapsed' AND deleted_at IS NULL AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE AND last_gift_date IS NOT NULL AND last_gift_date::date < NOW() - INTERVAL '180 days'`,
           [seq.org_id]
         );
       } else if (seq.trigger === "new_donor") {
@@ -22152,7 +22246,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
       const lapsing = await query(
         `SELECT id, last_gift_date FROM donors d
           WHERE org_id=? AND deleted_at IS NULL AND gift_count > 0
-            AND ${solicitableSql("d")} AND d.imported_sustainer IS NOT TRUE
+            AND ${solicitableSql("d")} AND ${donorOnly("d")} AND d.imported_sustainer IS NOT TRUE
             AND last_gift_date IS NOT NULL AND last_gift_date <> '' AND last_gift_date < ?
             AND created_at::date <= (last_gift_date::date + INTERVAL '${parseInt(lapseDays, 10)} days')
           LIMIT 200`,

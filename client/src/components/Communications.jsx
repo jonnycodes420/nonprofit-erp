@@ -142,19 +142,32 @@ function StatusBadge({ status }) {
 // ── Segment helpers ───────────────────────────────────────────────────────────
 const STAGE_OPTS = ["prospect", "qualify", "cultivate", "solicit", "steward", "lapsed"];
 const TIER_OPTS  = ["transformational", "major", "mid", "small", "micro"];
+// BUILD-94 Part 2 — the four that let Mailchimp go, alongside the stage, tier
+// and manual segments that were already here. "Everyone with an email" is the
+// one segment that deliberately crosses every type: it IS the Mailchimp
+// audience, and it is what she is paying them $100 a month for.
 const SEG_MODES  = [
-  { id: "all",     label: "All Donors" },
-  { id: "major",   label: "Major >$10k" },
-  { id: "lapsed",  label: "Lapsed" },
-  { id: "byStage", label: "By Stage" },
-  { id: "byTier",  label: "By Tier" },
-  { id: "manual",  label: "Manual" },
+  { id: "all",         label: "All Donors" },
+  { id: "everyone",    label: "Everyone with an email" },
+  { id: "volunteers",  label: "Volunteers" },
+  { id: "staff_board", label: "Staff and board" },
+  { id: "donors",      label: "Donors" },
+  { id: "major",       label: "Major >$10k" },
+  { id: "lapsed",      label: "Lapsed" },
+  { id: "byStage",     label: "By Stage" },
+  { id: "byTier",      label: "By Tier" },
+  { id: "manual",      label: "Manual" },
 ];
+
 
 function segLabel(raw) {
   const mode = raw?.mode || "all";
   return {
-    all:     "All donors with email",
+    all:         "All donors with email",
+    everyone:    "Everyone with an email address",
+    volunteers:  "Volunteers with an email",
+    staff_board: "Staff and board with an email",
+    donors:      "Donors with an email",
     major:   "Major donors (>$10k)",
     lapsed:  "Lapsed donors",
     byStage: `Stages: ${(raw?.stages || []).join(", ") || "none"}`,
@@ -166,7 +179,15 @@ function segLabel(raw) {
 function countSegment(donors, seg) {
   const mode = seg?.mode || "all";
   const withEmail = donors.filter(d => d.email);
-  if (mode === "all") return withEmail.length;
+  // BUILD-94 Part 2 — a NULL/absent person_types is a legacy row, and every
+  // legacy row is a donor. Same rule as the server's predicate; the two must
+  // agree or the count on the screen argues with the send.
+  const typesOf = d => (Array.isArray(d.person_types) && d.person_types.length) ? d.person_types : ["donor"];
+  const isA = (d, t) => typesOf(d).includes(t);
+  if (mode === "everyone") return withEmail.length;
+  if (mode === "volunteers") return withEmail.filter(d => isA(d, "volunteer")).length;
+  if (mode === "staff_board") return withEmail.filter(d => isA(d, "staff_board")).length;
+  if (mode === "donors" || mode === "all") return withEmail.filter(d => isA(d, "donor")).length;
   if (mode === "major") return withEmail.filter(d => (d.total_giving || 0) >= 10000).length;
   if (mode === "lapsed") return withEmail.filter(d => d.status === "lapsed").length;
   // d.stage is the DB column (pipeline stage) — this previously read a

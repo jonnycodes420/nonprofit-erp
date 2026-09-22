@@ -3172,6 +3172,22 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_photo_pending
                     ON donors (org_id, updated_at) WHERE photo_fetch_status = 'pending'`);
 
+  // ── BUILD-94 Part 2 — PEOPLE WHO ARE NOT DONORS ──────────────────────────
+  // Until this build every person in Steward was a donor. Volunteers, staff
+  // and board now live on the same table, with a TYPE — and a person can hold
+  // more than one (a volunteer who gives is both, on ONE record).
+  //
+  // JSONB array rather than a join table on purpose: four fixed values, always
+  // read with the row, never independently queried, and every money surface
+  // needs the predicate INLINE in a WHERE clause it already has (see
+  // shared/personType.js donorOnlySql). A join table would put an EXISTS in
+  // forty hot queries to express a four-bit fact.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS person_types JSONB DEFAULT '["donor"]'::jsonb`);
+  // EVERY EXISTING PERSON IS A DONOR. That is what they were when they were
+  // written, and it is what every giving total already assumes.
+  await pool.query(`UPDATE donors SET person_types = '["donor"]'::jsonb WHERE person_types IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_person_types ON donors USING GIN (person_types)`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

@@ -7,6 +7,8 @@ import UpgradeModal from "./UpgradeModal";
 import Uploader from "./Uploader";
 import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
+import { PERSON_TYPES } from "../../../shared/personType.js";
+import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
@@ -346,7 +348,11 @@ function buildAutoMapping(headers, rows = []) {
 
 // ── Module-level donor row normalization ──────────────────────────────────
 // Extracted from DonorImport's built useMemo so CombinedImport can share it.
-function buildDonorRows(parsed, mapping, rowLines, basis) {
+// BUILD-94 Part 2 — `people` carries the Mailchimp preset's answers:
+//   { fileStatus, statusHeader, tagsHeader, applyTagTypes, defaultType }
+// Absent (every other file) ⇒ every row is a Donor and reachable, which is
+// byte-identical to what this function did before the argument existed.
+function buildDonorRows(parsed, mapping, rowLines, basis, people) {
   if (!parsed) return { ready:[], warned:[], skipped:[] };
   // BUILD-84 P0-3 — a stage may only be inferred from an input this import
   // actually has. With no amount and no date mapped there is nothing to infer
@@ -414,6 +420,16 @@ function buildDonorRows(parsed, mapping, rowLines, basis) {
     if (d.state) d.state = String(d.state).trim()  || null;
     if (d.deceased !== undefined) d.deceased = parseBoolFlag(d.deceased);
     if (d.doNotContact !== undefined) d.doNotContact = parseBoolFlag(d.doNotContact);
+    // BUILD-94 Part 2 — what this person is, and whether they are reachable.
+    if (people) {
+      const sug = people.applyTagTypes && people.tagsHeader
+        ? typeSuggestionForTags(row[people.tagsHeader]) : null;
+      d.personTypes = [sug || people.defaultType || "other"];
+      // AN UNSUBSCRIBED CONTACT IMPORTS AS UNSUBSCRIBED. Never as reachable.
+      if (rowIsUnsubscribed(row, { fileStatus: people.fileStatus, statusHeader: people.statusHeader })) {
+        d.unsubscribed = true;
+      }
+    }
     if (warnings.length) warned.push({ ...d, _warnings:warnings, _rowIndex:idx+2 });
     else ready.push(d);
   });
@@ -510,8 +526,8 @@ function orgCivilToday(timezone) {
 // imported total + last-gift date so a brand-new org gets queryable gifts rows
 // (not just aggregate donor fields) — same rationale as DonorImport's old
 // `withHistory` flag, now the default for the magical one-file path.
-function buildAggregatePayload(parsed, mapping, seedHistory, rowLines, stageBasis) {
-  const { ready, warned, skipped } = buildDonorRows(parsed, mapping, rowLines, stageBasis);
+function buildAggregatePayload(parsed, mapping, seedHistory, rowLines, stageBasis, people) {
+  const { ready, warned, skipped } = buildDonorRows(parsed, mapping, rowLines, stageBasis, people);
   const donors = [...ready, ...warned].map(({ _warnings, _rowIndex, ...d }) => d);
   const gifts = [];
   if (seedHistory) {
@@ -992,6 +1008,40 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         lastGift: Object.values(mapping).includes("lastGift") }
   ), [effectiveShape, mapping, txMap.amount, txMap.date, yearCols]);
 
+  // ── BUILD-94 Part 2 — the Mailchimp audience preset ──────────────────────
+  // NOT a second importer (the BUILD-89S 89d rule): a preset is a pre-filled
+  // answer to the questions this mapper already asks. Two questions are left
+  // for the person, because neither can be read off the file with certainty:
+  //   • IS THIS THE UNSUBSCRIBED FILE? Mailchimp exports one CSV per status,
+  //     so the unsubscribed half arrives as a SECOND file with identical
+  //     headers. Import only the first and every unsubscribe Mailchimp was
+  //     honouring is silently lost. The file NAME preselects the answer.
+  //   • DO THE TAGS SAY WHAT SOMEONE IS? "Board Game Night 2024" contains the
+  //     word board and is not a board member, so tag→type is OFFERED, never
+  //     applied silently (the BUILD-78 ask gate).
+  const mcDetect = useMemo(
+    () => (parsed?.headers ? detectMailchimpAudience(parsed.headers) : { isMailchimp:false, hasTags:false }),
+    [parsed]);
+  const mcTagsHeader = useMemo(
+    () => (parsed?.headers || []).find(h => String(h).trim().toLowerCase() === "tags") || null,
+    [parsed]);
+  const mcStatusHeader = useMemo(
+    () => (parsed?.headers || []).find(h => /^(member )?status$/i.test(String(h).trim())) || null,
+    [parsed]);
+  const [mcFileStatus, setMcFileStatus] = useState(null);
+  const [mcApplyTagTypes, setMcApplyTagTypes] = useState(false);
+  useEffect(() => {
+    if (!mcDetect.isMailchimp) { setMcFileStatus(null); setMcApplyTagTypes(false); return; }
+    setMcFileStatus(fileStatusFromName(srcFile?.name) || "subscribed");
+  }, [mcDetect.isMailchimp, srcFile]);
+  const mcPeople = useMemo(() => mcDetect.isMailchimp ? {
+    fileStatus: mcFileStatus, statusHeader: mcStatusHeader, tagsHeader: mcTagsHeader,
+    applyTagTypes: mcApplyTagTypes,
+    // A Mailchimp contact is NOT a donor. Calling one a donor is how a giving
+    // total goes wrong; "Other" is the honest answer until a gift says otherwise.
+    defaultType: "other",
+  } : null, [mcDetect.isMailchimp, mcFileStatus, mcStatusHeader, mcTagsHeader, mcApplyTagTypes]);
+
   // ── Shape-aware payload build (memoized) ──
   // aggregate → donors (+ one seeded gift/donor from total+lastGift when
   // withHistory, so onboarding gets real gifts rows); transaction → group the
@@ -1001,7 +1051,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     try {
       if (effectiveShape === "transaction") return buildTransactionPayload(parsed, txMap, cfBuildInputs, parseReport?.rowLines, dateConventionChoice, orgToday);
       if (effectiveShape === "wide")        return buildWidePayload(parsed, mapping, yearCols, parseReport?.rowLines);
-      return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines, stageBasis);
+      return buildAggregatePayload(parsed, mapping, withHistory, parseReport?.rowLines, stageBasis, mcPeople);
     } catch (e) {
       // FIX (2026-09-10) — a bug is RE-THROWN, never rendered as a sentence
       // about the user's file. Returning an empty payload here is how a
@@ -1011,7 +1061,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
       console.error("[import] payload build failed:", e);
       return { donors:[], gifts:[], warnedCount:0, skippedCount:0, error:e.message };
     }
-  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice, orgToday]);
+  }, [parsed, effectiveShape, mapping, txMap, yearCols, withHistory, cfBuildInputs, parseReport, dateConventionChoice, orgToday, mcPeople]);
 
   // Stage-count preview from the built payload (aggregate donors carry a client
   // stage; transaction/wide donors are re-staged server-side from their gifts,
@@ -2398,6 +2448,37 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {headersUnrecognized && (
                 <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                </div>
+              )}
+              {/* BUILD-94 Part 2 — this file looks like a Mailchimp audience. */}
+              {mcDetect.isMailchimp && (
+                <div data-testid="mailchimp-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
+                  <div style={{fontWeight:800,marginBottom:5}}>This looks like a Mailchimp audience export.</div>
+                  <div style={{marginBottom:8,color:T.ink2}}>
+                    The columns are mapped. Everyone on it comes in as <strong>Other</strong> — a Mailchimp
+                    contact is not a donor, and nothing they do here touches a giving total until they give.
+                  </div>
+                  <label style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:6,cursor:"pointer"}}>
+                    <input type="checkbox" data-testid="mc-unsub-file"
+                      checked={mcFileStatus==="unsubscribed"}
+                      onChange={e=>setMcFileStatus(e.target.checked?"unsubscribed":"subscribed")}
+                      style={{accentColor:T.greenDk,marginTop:2}}/>
+                    <span>
+                      <strong>This is the unsubscribed file.</strong> Mailchimp exports one file per status —
+                      everyone in this one comes in unreachable, and no campaign or sequence will ever mail them.
+                    </span>
+                  </label>
+                  {mcDetect.hasTags && (
+                    <label style={{display:"flex",alignItems:"flex-start",gap:8,cursor:"pointer"}}>
+                      <input type="checkbox" data-testid="mc-tag-types" checked={mcApplyTagTypes}
+                        onChange={e=>setMcApplyTagTypes(e.target.checked)}
+                        style={{accentColor:T.greenDk,marginTop:2}}/>
+                      <span>
+                        <strong>Use the Tags column to set volunteers and board.</strong> A tag that is exactly
+                        “Volunteer” or “Board” types that person; every other tag is left as a tag.
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
               {mapRefusal && (
@@ -3897,6 +3978,69 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
   );
 }
 
+// ── BUILD-94 Part 2 — what this person IS, on the header ───────────────────
+// A record that is only a Donor shows nothing: that is every record in the
+// product until this build, and a badge that is always on is not a badge.
+// Anything else says so, and clicking opens the picker — one person can be
+// more than one (a volunteer who gives is both, on ONE record).
+function PersonTypeChips({donor,isReadOnly}){
+  const [types,setTypes]=useState(donor.personTypes||["donor"]);
+  const [open,setOpen]=useState(false);
+  const [busy,setBusy]=useState(false);
+  useEffect(()=>{setTypes(donor.personTypes||["donor"]);},[donor.id,JSON.stringify(donor.personTypes||[])]);
+  const save=async(next)=>{
+    setBusy(true);
+    const prev=types;
+    setTypes(next);
+    try{
+      await apiFetch(`/donors/${donor.id}`,{method:"PUT",
+        body:JSON.stringify({name:donor.name,email:donor.email,phone:donor.phone,status:donor.status,
+          stage:donor.stage,tags:donor.tags,notes:donor.notes,personTypes:next})});
+    }catch(e){setTypes(prev);alert(errorMessage(e,"Could not change this person's type"));}
+    setBusy(false);
+  };
+  const toggle=(k)=>{
+    const has=types.includes(k);
+    const next=has?types.filter(t=>t!==k):[...types,k];
+    // normalizeTypes floors an empty list at ["other"] server-side; say so here
+    // rather than letting the screen and the row disagree for a moment.
+    save(next.length?next:["other"]);
+  };
+  const shown=PERSON_TYPES.filter(t=>types.includes(t.key));
+  const onlyDonor=types.length===1&&types[0]==="donor";
+  return (
+    <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:5}}>
+      {!onlyDonor&&shown.map(t=>(
+        <span key={t.key} data-testid="person-type-chip"
+          style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,
+            background:T.bg2,color:T.ink2,border:`1px solid ${T.bg3}`}}>{t.label}</span>
+      ))}
+      {!isReadOnly&&(
+        <button type="button" onClick={()=>setOpen(v=>!v)} data-testid="person-type-edit"
+          aria-label="Change what this person is" title="Donor, volunteer, staff and board, other"
+          style={{background:"none",border:"none",padding:"2px 4px",fontSize:11,color:T.ink3,cursor:"pointer",opacity:busy?0.5:1}}>
+          {onlyDonor?"+ type":"⌄"}
+        </button>
+      )}
+      {open&&(
+        <span style={{position:"absolute",top:22,left:0,zIndex:20,background:T.white,border:`1px solid ${T.bg3}`,
+          borderRadius:10,boxShadow:T.shadowMd,padding:"6px 4px",minWidth:170}}>
+          {PERSON_TYPES.map(t=>(
+            <label key={t.key} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",fontSize:12.5,color:T.ink,cursor:"pointer",whiteSpace:"nowrap"}}>
+              <input type="checkbox" checked={types.includes(t.key)} disabled={busy}
+                onChange={()=>toggle(t.key)} style={{accentColor:T.greenDk}}/>
+              {t.label}
+            </label>
+          ))}
+          <div style={{fontSize:10.5,color:T.ink3,padding:"4px 10px 2px",lineHeight:1.45,whiteSpace:"normal"}}>
+            Someone who is not a donor stays out of giving totals, Drift, receipts and every count that reads donors.
+          </div>
+        </span>
+      )}
+    </span>
+  );
+}
+
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
@@ -4559,6 +4703,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+              {/* BUILD-94 Part 2 — what this person IS. A donor-only record
+                  says nothing (that is every record, and a badge that is
+                  always on is not a badge); a volunteer, a board member or an
+                  untyped Mailchimp contact says so. */}
+              <PersonTypeChips donor={donor} isReadOnly={isReadOnly}/>
               <DriftBadge drift={donor.drift}/>
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
@@ -6050,6 +6199,12 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
   // Stage/owner already applied server-side; the rows arrive filtered.
   const filtered=donors;
   const totalPages=Math.max(1,Math.ceil(serverTotal/pageSize));
+  // BUILD-94 Part 2 — is every row on this page a donor? A legacy row with
+  // nothing stored is one (the same rule the server predicate holds).
+  const donorsOnlyPage=donors.every(d=>{
+    const t=d.personTypes||d.person_types;
+    return !Array.isArray(t)||!t.length||t.includes("donor");
+  });
 
   // Exports EVERY row matching the server query (search/stage/owner), not
   // just this page — client-only advanced/custom-field filters are NOT
@@ -6186,7 +6341,17 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           <option value="">All designations</option>
           {DESIGNATION_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
         </select>
-        <span style={{fontSize:12,color:T.ink3}}>{serverTotal} donor{serverTotal!==1?"s":""}</span>
+        {/* BUILD-94 Part 2 — this list holds volunteers, staff and board now.
+            It reads "donors" ONLY while every row on it is one: an org that
+            has never imported a non-donor sees exactly what it saw before
+            (the BUILD-86 rule — the no-op path is byte-identical), and the
+            moment there is a volunteer on the page the word is "people",
+            because a count of 40 that says "donors" is a lie about 28 of them. */}
+        <span style={{fontSize:12,color:T.ink3}}>
+          {donorsOnlyPage
+            ? `${serverTotal} donor${serverTotal!==1?"s":""}`
+            : `${serverTotal} ${serverTotal!==1?"people":"person"}`}
+        </span>
         {clientFilterCount>0&&<span title="Advanced and custom-field filters apply within the loaded page only — server-side filtering for these is not available yet."
           style={{fontSize:11,color:T.terracotta,fontWeight:700,background:"#b8593f14",border:"1px solid #b8593f40",borderRadius:99,padding:"3px 10px"}}>
           filtering current page
