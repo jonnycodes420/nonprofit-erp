@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, Component } from "react";
+import { useState, useEffect, useRef, useMemo, useContext, Component } from "react";
 import Papa from "papaparse";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
@@ -26,7 +26,7 @@ class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
-import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf } from "./shared";
+import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { LogConversationModal, ThreadDismissMenu } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
@@ -67,6 +67,12 @@ const CSV_FIELDS = [
   // BUILD-58 Part 2 — safety flags, never silently discarded again. Values
   // parse through parseBoolFlag; deceased blocks ALL outbound mail,
   // doNotContact blocks marketing (donorMailDecision, server-side).
+  // BUILD-94 Part 1 — a column holding an image URL. Equal Force, Bloomerang
+  // and Little Green Light all export one, each under a different name. The
+  // URL is FETCHED at import time under the BUILD-37 G5 rules (https only, no
+  // private ranges, no metadata endpoints, 10s timeout) and a failure costs
+  // that row its photo and nothing else.
+  { key:"photo",     labels:["photo","photo url","photo_url","photourl","image","image url","image_url","picture","picture url","headshot","avatar","profile photo","profile image","constituent photo","photo link"] },
   { key:"deceased",     labels:["deceased","is deceased"] },
   { key:"doNotContact", labels:["do not contact","do not solicit","do not mail","do not email","dnc","dns","no contact"] },
 ];
@@ -79,7 +85,7 @@ const CSV_FIELD_LABELS = {
   lastAmount: "Last gift amount", lastGift: "Last gift date", gifts: "Gift count",
   status: "Status", organization: "Organization", city: "City", state: "State",
   address: "Address", zip: "ZIP", notes: "Notes", owner: "Owner",
-  deceased: "Deceased", doNotContact: "Do not contact",
+  deceased: "Deceased", doNotContact: "Do not contact", photo: "Photo",
 };
 const CSV_STANDARD_FIELDS = [
   { key: "_firstName", label: "First name" },
@@ -3822,6 +3828,75 @@ function GiftLinkModal({donor,orgName,onClose}){
 }
 
 // ── Donor Profile ──────────────────────────────────────────────────────────
+// ── BUILD-94 Part 1 — the photo control on the profile header ──────────────
+// Drop an image on the mark or click it to pick one. 10 MB, any common raster
+// format; the server checks the bytes are what the file says they are, crops
+// to a 512 square WebP and throws the original away. "Remove" appears on hover
+// (and on focus, so it is reachable without a mouse) once there is a photo.
+function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
+  const fileRef=useRef(null);
+  const photoCtx=useContext(PhotoContext);
+  const [busy,setBusy]=useState(false);
+  const [dragOver,setDragOver]=useState(false);
+  const [err,setErr]=useState("");
+  const [hover,setHover]=useState(false);
+
+  const send=async(file)=>{
+    if(!file)return;
+    setErr("");
+    // Read locally only to hand the server a data URI — no resizing happens
+    // here. The browser is not where a size or type rule may be enforced.
+    const dataUri=await new Promise((res,rej)=>{
+      const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error("read failed"));
+      fr.readAsDataURL(file);
+    }).catch(()=>null);
+    if(!dataUri){setErr("That file couldn't be read.");return;}
+    setBusy(true);
+    try{
+      const r=await apiFetch(`/donors/${donor.id}/photo`,{method:"POST",body:JSON.stringify({image:dataUri})});
+      onChanged(r&&r.photoUrl||null);
+      photoCtx.refresh&&photoCtx.refresh();
+    }catch(e){setErr(errorMessage(e,"Could not save that photo"));}
+    setBusy(false);
+  };
+  const remove=async()=>{
+    setBusy(true);setErr("");
+    try{
+      await apiFetch(`/donors/${donor.id}/photo`,{method:"DELETE"});
+      onChanged(null);
+      photoCtx.refresh&&photoCtx.refresh();
+    }catch(e){setErr(errorMessage(e,"Could not remove that photo"));}
+    setBusy(false);
+  };
+
+  const label=photoUrl?`Change ${donor.name}'s photo`:`Add a photo for ${donor.name}`;
+  return (
+    <div style={{position:"relative",flexShrink:0}}
+      onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)}>
+      <button type="button" data-testid="donor-photo-drop" aria-label={label} title={isReadOnly?donor.name:label}
+        disabled={isReadOnly||busy}
+        onClick={()=>!isReadOnly&&fileRef.current&&fileRef.current.click()}
+        onDragOver={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(false);send(e.dataTransfer.files&&e.dataTransfer.files[0]);}}
+        style={{padding:0,border:dragOver?`2px dashed ${T.gold500}`:"2px solid transparent",borderRadius:"50%",
+          background:"none",cursor:isReadOnly?"default":"pointer",lineHeight:0,opacity:busy?0.6:1,display:"block"}}>
+        <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={34}/>
+      </button>
+      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{display:"none"}}
+        onChange={e=>{send(e.target.files&&e.target.files[0]);e.target.value="";}}/>
+      {photoUrl&&!isReadOnly&&(hover||busy)&&(
+        <button type="button" onClick={remove} disabled={busy} data-testid="donor-photo-remove"
+          aria-label={`Remove ${donor.name}'s photo`} title="Remove photo"
+          style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",border:`1px solid ${T.bg3}`,
+            background:T.white,color:T.ink3,fontSize:10,lineHeight:"14px",padding:0,cursor:"pointer"}}>&times;</button>
+      )}
+      {err&&<div role="alert" style={{position:"absolute",top:40,left:0,whiteSpace:"nowrap",zIndex:5,fontSize:11,
+        color:T.gold700,background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:6,padding:"3px 7px"}}>{err}</div>}
+    </div>
+  );
+}
+
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
@@ -4022,6 +4097,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
   // Campaigns for gift attribution
   const [campaigns,setCampaigns]=useState([]);
+
+  // BUILD-94 Part 1 — the signed URL for this record's photograph. The profile
+  // signs its own rather than reading the org-wide map, so a record is never
+  // the one whose face went missing because a list hit its cap.
+  const [photoUrl,setPhotoUrl]=useState(donor.photoUrl||null);
+  useEffect(()=>{setPhotoUrl(donor.photoUrl||null);},[donor.id,donor.photoUrl]);
 
   // Recurring gift recovery — health record (past_due/recovering/etc.), if any
   const [recurringSub,setRecurringSub]=useState(null);
@@ -4469,7 +4550,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       <div className="donor-profile-header" style={{background:T.white,borderBottom:"1px solid "+T.bg3,padding:"10px 24px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <button onClick={onClose} className="dph-back" aria-label="Back to donors" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"}}>←<span className="dph-back-word"> Back</span></button>
         <div className="dph-identity" style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
-          <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:stage.color,flexShrink:0}}>{donor.name[0]}</div>
+          {/* BUILD-94 Part 1 — the face. Drop an image on it or click to pick
+              one; the old mark was a stage-tinted first letter, which told you
+              the stage twice (the pill beside it already says it) and told you
+              nothing about the person. */}
+          <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl}/>
           <div style={{minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
@@ -4681,6 +4766,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
                       <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?"#0d5c3a10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                        {/* BUILD-94 Part 1 — a household is the one place a
+                            row names several people at once; faces are what
+                            tell them apart at a glance. */}
+                        <PersonMark id={m.id} name={m.name} size={22}/>
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
                         {m.is_primary&&<span style={{background:"#c9a84c",color:"#0f1a12",borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
                         <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>

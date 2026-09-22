@@ -299,9 +299,11 @@ async function fixture() {
   const CLASSIFIED = {
     // file → { fnName: expectedCallCount }  (function-declaration defs excluded)
     "server.js": {
-      putThemeAsset: 5,            // theme upload · impact photo · campaign hero · widget image · legacy rescue
+      // BUILD-94 Part 1 added two: the donor-photo upload route and the
+      // import photo queue's own store. Both go through the same seam.
+      putThemeAsset: 7,            // theme upload · impact photo · campaign hero · widget image · legacy rescue · donor photo upload · import photo queue
       pruneThemeAssets: 1,         // PUT /portal-settings (replace/clear)
-      pruneUnreferencedAssets: 3,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies
+      pruneUnreferencedAssets: 5,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies · donor photo set · donor photo clear
       pruneImpactAssets: 2,        // impact PUT, impact DELETE
       pruneCampaignAssets: 2,      // campaign hero PUT, campaign DELETE
       pruneWidgetAssets: 2,        // page draft PUT, revert
@@ -309,7 +311,7 @@ async function fixture() {
       purgeExpiredAssets: 3,       // 6h tick (timeout+interval) + POST /assets/run-purge
       // Part 1 coverage: every pointer-mutation site records history. A new
       // mutation site must add BOTH the record call and this classification.
-      recordAssetPointerHistory: 11, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter
+      recordAssetPointerHistory: 13, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter · donor photo set/clear (BUILD-94)
     },
     "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 1 /* the pruneThemeAssets alias body */, pruneThemeAssets: 0 },
   };
@@ -347,7 +349,9 @@ async function fixture() {
   // Property 5: the purge's live-reference collector must know every pointer
   // table that putThemeAsset kinds are stored into (drift here = purge could
   // destroy a referenced object).
-  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages"]) {
+  // BUILD-94 Part 1 added `donors` (photo_asset_id) — the first pointer that
+  // stores a BARE asset id rather than a /portal-assets/ path.
+  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages", "donors"]) {
     ok(`collectLiveAssetRefs reads ${t}`, new RegExp(`collectLiveAssetRefs[\\s\\S]*?FROM ${t}`).test(store));
   }
   // dbFallback interaction (BUILD-51b alarm): soft-deleted rows are retained

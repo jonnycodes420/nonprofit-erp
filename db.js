@@ -3149,6 +3149,29 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
                     ON close_links (target_org_id) WHERE target_org_id IS NOT NULL`);
 
+  // ── BUILD-94 Part 1 — A FACE ON EVERY PROFILE ─────────────────────────────
+  // The bytes live behind the BUILD-51 asset seam (content-addressed, org
+  // scoped, S3-or-DB); the row keeps only the asset id. Deliberately NOT a
+  // /portal-assets/ path like every other pointer in this product: a donor
+  // photo is served through the signed, expiring /person-photos front door
+  // (personPhoto.js), so storing a public path here would be a standing
+  // invitation to render it.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS photo_asset_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_org_photo
+                    ON donors (org_id) WHERE photo_asset_id IS NOT NULL`);
+  // The import half. A mapped photo COLUMN holds a URL somebody else's system
+  // wrote, so fetching it is an outbound request an uploaded spreadsheet chose
+  // — it gets the same shape the BUILD-84 geocoder got: the row lands with a
+  // `pending` status and a drainable queue does the network, so a dead URL on
+  // row 4,000 of 25,000 costs that row its photo and nothing else. Every row
+  // leaves with a TERMINAL status; the reason is kept ON THE ROW, because "it
+  // silently has no photo" is the outcome nobody can debug.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS photo_source_url TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS photo_fetch_status TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS photo_fetch_error TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_photo_pending
+                    ON donors (org_id, updated_at) WHERE photo_fetch_status = 'pending'`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

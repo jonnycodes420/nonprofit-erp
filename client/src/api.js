@@ -185,6 +185,10 @@ export function adaptDonor(d) {
     latitude:      d.latitude  != null ? Number(d.latitude)  : null,
     longitude:     d.longitude != null ? Number(d.longitude) : null,
     geocodeStatus: d.geocode_status ?? null,
+    // BUILD-94 Part 1 — the signed, expiring URL for this person's photo, or
+    // null for the initials mark. (The BUILD-89 adaptDonor trap again: a field
+    // the server sets and this adapter drops reaches the profile as undefined.)
+    photoUrl:      d.photo_url ?? null,
   };
 }
 

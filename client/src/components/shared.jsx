@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, Component } from "react";
+import { useState, useRef, useEffect, Component, createContext, useContext } from "react";
 import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
@@ -1303,5 +1303,68 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
         )}
       </div>
     </Modal>
+  );
+}
+
+// ── BUILD-94 Part 1 — PersonMark: the ONE mark for a person ─────────────────
+// Wherever a person's name appears as a row, the same mark appears beside it:
+// their photograph if the org has one, otherwise their initials on the org's
+// colour. Never a grey silhouette — a stranger-shaped icon tells you nothing
+// and reads as a placeholder the product forgot to fill; initials at least say
+// whose record you are looking at.
+//
+// ONE component, deliberately. Before this there were two ad-hoc circles (the
+// profile header's stage-tinted letter, the pipeline card's assignee dot) and
+// five surfaces with no mark at all, which is how a product ends up looking
+// like six products.
+//
+// `photos` is the org-wide { donorId: signedUrl } map from GET /people/photos
+// (see PhotoContext below). A row only needs to pass the person's id and name;
+// the profile header passes `url` directly because it signs its own.
+export function personInitials(name, kind) {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  const letter = w => (Array.from(w).find(c => /\p{L}|\p{N}/u.test(c)) || "").toUpperCase();
+  if (kind === "organization" || words.length === 1) return letter(words[0]) || "?";
+  return (letter(words[0]) + letter(words[words.length - 1])) || "?";
+}
+
+// The org's colour, set on the app root as --org-accent by App.jsx (BUILD-13's
+// one white-label accent, already contrast-normalised server-side). The
+// fallbacks are the product's own emerald + ink, so a page rendered outside the
+// app shell still gets a legible mark rather than a transparent hole.
+export const PhotoContext = createContext({ photos: {}, refresh: () => {} });
+
+export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }) {
+  const ctx = useContext(PhotoContext);
+  const src = url !== undefined ? url : (id ? (ctx.photos || {})[id] : null);
+  const [broken, setBroken] = useState(false);
+  // A signed URL that has expired (a tab left open past its twelve hours) 404s
+  // or 403s. The mark falls back to initials rather than to a broken-image
+  // glyph, and the next page load mints a fresh URL.
+  useEffect(() => { setBroken(false); }, [src]);
+  const base = {
+    width: size, height: size, borderRadius: "50%", flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center",
+    overflow: "hidden", ...style,
+  };
+  if (src && !broken) {
+    return (
+      <img src={src} alt="" title={title || name || ""} data-testid="person-mark"
+        onError={() => setBroken(true)}
+        style={{ ...base, objectFit: "cover", background: T.bg2 }} />
+    );
+  }
+  return (
+    <div data-testid="person-mark" title={title || name || ""} aria-hidden="true"
+      style={{
+        ...base,
+        background: "var(--org-accent, " + T.greenDk + ")",
+        color: "var(--org-accent-fg, " + T.white + ")",
+        fontSize: Math.max(9, Math.round(size * 0.4)),
+        fontWeight: 800, letterSpacing: "0.02em",
+      }}>
+      {personInitials(name, kind)}
+    </div>
   );
 }

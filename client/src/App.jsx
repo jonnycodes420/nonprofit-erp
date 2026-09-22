@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing } from "./components/shared";
+import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -168,6 +168,18 @@ function AppShell() {
   const [donorsIntent,setDonorsIntent]=useState(null);
   const [grantsIntent,setGrantsIntent]=useState(null);
   const [settingsIntent,setSettingsIntent]=useState(null);
+  // BUILD-94 Part 1 — the org's { donorId: signedPhotoUrl } map, fetched once
+  // per session. Every row surface in the product reads it through
+  // PhotoContext, so a face appears beside a name without seven separate
+  // payloads each having to remember to carry one. Only donors who HAVE a
+  // photo are in it (an org with four faces ships four entries), and a failure
+  // is silent by design: no photo map means initials, never a broken screen.
+  const [photoMap,setPhotoMap]=useState({});
+  const loadPhotos=()=>apiFetch("/people/photos")
+    .then(r=>setPhotoMap((r&&r.photos)||{}))
+    .catch(()=>setPhotoMap({}));
+  useEffect(()=>{ if(getToken()) loadPhotos(); },[]);
+  const photoCtx={photos:photoMap,refresh:loadPhotos};
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
@@ -429,7 +441,7 @@ function AppShell() {
   // that never sets branding is visually identical to before.
   const orgAccent=data.org?.brandAccent||"#c9a84c";
   const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
-  return <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+  return <PhotoContext.Provider value={photoCtx}><div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -679,7 +691,7 @@ function AppShell() {
         More
       </button>
     </div>
-  </div>;
+  </div></PhotoContext.Provider>;
 }
 
 // ── Root ───────────────────────────────────────────────────────────────────

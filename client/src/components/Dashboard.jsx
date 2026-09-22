@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal } from "./shared";
+import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
@@ -1528,9 +1528,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <a className="attn-row-main" href={`/donors/${r.donorId}`}
                     style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"13px 20px",textDecoration:"none",color:"inherit"}}
                     onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donorId});}}>
-                    <div style={{width:38,height:38,borderRadius:"50%",background:T.gold100,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.gold600,flexShrink:0}}>
-                      {(r.donorName||"?")[0]}
-                    </div>
+                    <PersonMark id={r.donorId} name={r.donorName} size={38}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div className="attn-donor-name" style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donorName}</div>
                       <div style={{fontSize:12,color:T.ink2,marginTop:2,lineHeight:1.45}}>{r.reason}</div>
@@ -1714,14 +1712,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
         onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
           if(surface==="home")openRailDonor(t.donorId,t.id);else onNavigate("donors",{selectDonorId:t.donorId});}}>
-        {/* The face. Brass when it is late, emerald when it is not — the same
-            two colours the row's own edge already uses. */}
-        <div aria-hidden style={{width:38,height:38,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-                                 fontSize:14,fontWeight:800,
-                                 background:t.overdue?T.gold100:T.green100,
-                                 color:t.overdue?T.gold600:T.greenDk}}>
-          {(t.donorName||"?")[0]}
-        </div>
+        {/* BUILD-94 Part 1 — the face, and now literally so when the org has
+            one. The mark used to be a first letter tinted brass-when-late; the
+            row's own left edge already carries that signal, and a mark that
+            changes colour by status is not the same mark everywhere. */}
+        <PersonMark id={t.donorId} name={t.donorName} size={38}/>
         <div style={{flex:1,minWidth:0}}>
           <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{t.donorName}</div>
           {/* ONE SENTENCE, AND IT WRAPS. The clause and the step were two

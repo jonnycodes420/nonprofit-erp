@@ -203,7 +203,7 @@ async function restoreAsset(id) {
 // Every id currently referenced by a LIVE pointer, across every pointer
 // table an asset kind is stored into (portal_settings logo/header ·
 // impact_updates photos · campaigns hero · portal_pages draft+published
-// widget images). The purge guard reads this — an asset on this list is
+// widget images · donors photo_asset_id). The purge guard reads this — an asset on this list is
 // never destroyed no matter how old its deleted_at is. Kept in ONE place on
 // purpose; the asset-retention battery pins that all four tables are here.
 async function collectLiveAssetRefs(orgId) {
@@ -212,6 +212,14 @@ async function collectLiveAssetRefs(orgId) {
   const w = orgId ? ` WHERE org_id = ?` : ``;
   const p = orgId ? [orgId] : [];
   for (const r of await query(`SELECT logo_url, header_image_url FROM portal_settings${w}`, p)) { add(r.logo_url); add(r.header_image_url); }
+  // BUILD-94 Part 1 — donor photos are the first pointer in the product that
+  // stores a BARE asset id rather than a /portal-assets/ path (they are served
+  // through the signed /person-photos front door instead). If they were not
+  // on this list the 90-day purge would destroy the face on a live profile,
+  // which is exactly the class of loss this guard exists to make impossible.
+  for (const r of await query(`SELECT photo_asset_id FROM donors${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.photo_asset_id || ""))) refs.add(r.photo_asset_id);
+  }
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }

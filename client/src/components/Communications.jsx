@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark } from "./shared";
 import { errorMessage } from "../lib/domainError";
 // BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
 // live preview and the send all read ONE copy of the words. The server route
@@ -1151,6 +1151,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               {segSentence && (
                 <div data-testid="segment-sentence" style={{ marginTop: 10, fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
                   {segSentence}
+                </div>
+              )}
+              {/* BUILD-94 Part 1 — and now the first few of them have faces.
+                  The sentence already named two; a row of marks is the fastest
+                  read there is of "who is actually on this list". */}
+              {Array.isArray(segPreview?.names) && segPreview.names.length > 0 && (
+                <div data-testid="segment-faces" style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {segPreview.names.map(n => (
+                    <PersonMark key={n.id} id={n.id} name={n.name} size={24} title={n.name} />
+                  ))}
                 </div>
               )}
             </div>

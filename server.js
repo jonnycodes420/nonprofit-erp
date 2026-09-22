@@ -79,6 +79,9 @@ const { donationStripeKey, billingStripeKey, billingStripeMode, billingConfigErr
 const { CANONICAL_APP_URL, resolvePublicAppUrl, publicAppUrl } = require("./publicUrl");
 const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = require("./stripeEvents");
 const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets, refreshAssetFallbackCount, refreshRetentionCounts, purgeExpiredAssets, assetHealth, ASSET_ID_RE } = require("./assetStore");
+// BUILD-94 Part 1 — the signed, expiring front door for a donor photograph
+// (a person's face is not theme imagery; see personPhoto.js's header).
+const personPhoto = require("./personPhoto");
 const { computeGuardsOk } = require("./guards");
 const { PRODUCT_ID } = require("./product");
 // BUILD-72 Part 4 — THE date seam. Every civil-date boundary in the product
@@ -1708,6 +1711,13 @@ app.use(["/donors/import-combined", "/donors/import", "/gifts/import-history"], 
 // other route. Without this a phone photo is rejected by the body parser
 // BEFORE any of the friendly validation/resize logic runs.
 app.use(["/portal-settings", "/portal-page", "/impact-updates", "/fundraising/campaigns"], express.json({ limit: "22mb" }));
+// BUILD-94 Part 1 — a donor photo is capped at 10MB of DECODED image, which is
+// ~13.7MB of base64 plus the JSON around it. Matched by path rather than
+// mounted on "/donors" so the rest of the donor family keeps the 5mb cap.
+app.use((req, res, next) =>
+  /^\/donors\/[^/]+\/photo$/.test(req.path)
+    ? express.json({ limit: "16mb" })(req, res, next)
+    : next());
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
@@ -5590,6 +5600,10 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
     last_touchpoint: tpMap[d.id] || null,
     matching_gift: lookupMatchingGift(d.employer),
     drift: driftBadgeField(driftMap.get(d.id)),
+    // BUILD-94 Part 1 — the signed, expiring URL for this donor's photograph,
+    // or null. Minted here rather than stored so a payload can never carry a
+    // link that outlives its signature.
+    photo_url: donorPhotoUrl(req.user.orgId, d.photo_asset_id),
   });
 
   if (req.query.limit === undefined) {
@@ -5851,6 +5865,10 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
       };
     }
   } catch (e) { console.error("[donor] source recurring:", e.message); }
+  // BUILD-94 Part 1 — the record's own photo URL. The header signs its own
+  // rather than reading the /people/photos map, so a profile is never the
+  // record whose face went missing because a list was capped.
+  d.photo_url = donorPhotoUrl(req.user.orgId, d.photo_asset_id);
   res.json(d);
 }));
 
@@ -6257,9 +6275,14 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
         d.address || null,
         d.zip || null,
         d.country || null,
-        d._stageExplicit ? null : (d.stage || "prospect")
+        d._stageExplicit ? null : (d.stage || "prospect"),
+        // BUILD-94 Part 1 — a mapped photo URL lands as a QUEUED fetch, never
+        // an inline one: 25,000 outbound requests inside the import
+        // transaction is how an import times out.
+        photoImportUrl(d),
+        photoImportUrl(d) ? "pending" : null
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
 
     try {
@@ -6269,7 +6292,8 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
              (id,org_id,name,email,phone,status,stage,total_giving,last_gift_amount,
               last_gift_date,gift_count,tags,notes,city,state,assigned_to,assigned_to_name,
               pending_assignee_invite_id,pending_assignee_name,deceased,do_not_contact,
-              kind,contact_name,address,zip,country,suggested_stage)
+              kind,contact_name,address,zip,country,suggested_stage,
+              photo_source_url,photo_fetch_status)
            VALUES ${tuples.join(",")}`,
           params
         );
@@ -6303,7 +6327,17 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
   try { geocodeQueued = await markDonorsForGeocoding(req.user.orgId); }
   catch (e) { console.error("[geocode] mark after import failed:", e.message); }
 
-  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, reconciliation: ledger.report() });
+  // BUILD-94 Part 1 — how many rows carried a photo URL to fetch. Reported so
+  // the import screen can say it, rather than photos appearing minutes later
+  // with nothing having said they would.
+  let photosQueued = 0;
+  try {
+    const [pq] = await query(
+      `SELECT COUNT(*)::int AS n FROM donors WHERE org_id = ? AND photo_fetch_status = 'pending'`,
+      [req.user.orgId]);
+    photosQueued = pq ? pq.n : 0;
+  } catch (e) { console.error("[person-photo] queued count:", e.message); }
+  res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, reconciliation: ledger.report() });
 }));
 
 // ── Combined import: new donors + their year-column gift history in one pass ─
@@ -18801,6 +18835,120 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => processGeocodeQueue().catch(e => console.error("[geocode]", e.message)), 5 * 60 * 1000);
 }
 
+// BUILD-94 Part 1 — the import photo queue rides the same cadence as the
+// geocoder, offset so the two network jobs do not start in the same second.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 70000);
+  setInterval(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 5 * 60 * 1000);
+}
+
+
+// ── BUILD-94 Part 1 — THE IMPORT PHOTO QUEUE ───────────────────────────────
+// Same shape as the BUILD-84 geocode queue, for the same reason: the network
+// does not belong inside an import transaction. A mapped photo column lands as
+// photo_source_url + photo_fetch_status='pending'; this drains it.
+//
+// EVERY row leaves with a terminal status and, on failure, a reason ON THE ROW
+// — "it just has no photo" is the outcome nobody can debug, and BUILD-84's
+// rule stands: a catch may not blame the data for a bug.
+
+// The one place a spreadsheet's URL becomes an outbound request.
+const PHOTO_FETCH_BUDGET = 200;   // rows per tick
+const PHOTO_FETCH_CONCURRENCY = 4;
+
+// Only the mapped column, and only a string. Anything else is not a URL and
+// the row is left alone rather than queued to fail.
+function photoImportUrl(d) {
+  const v = d && d.photo;
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+
+// Fetch ONE remote image under the BUILD-37 G5 rules. Returns
+// { buffer, contentType } or { error }. Never throws.
+async function fetchRemoteImage(rawUrl) {
+  const check = personPhoto.checkRemoteImageUrl(rawUrl);
+  if (!check.ok) return { error: check.reason };
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), personPhoto.PHOTO_FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(check.url, { redirect: "follow", signal: ac.signal, headers: { accept: "image/*" } });
+    if (!r.ok) return { error: `http ${r.status}` };
+    // A redirect can land somewhere the string check could not see. `r.url` is
+    // the FINAL URL after following, so re-running the guard on it closes the
+    // "https://example.org/x → http://169.254.169.254/" hop.
+    const after = personPhoto.checkRemoteImageUrl(r.url || check.url);
+    if (!after.ok) return { error: `redirected to ${after.reason}` };
+    const len = Number(r.headers.get("content-length") || 0);
+    if (len > personPhoto.PHOTO_MAX_BYTES) return { error: "larger than 10 MB" };
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (!buf.length) return { error: "empty response" };
+    if (buf.length > personPhoto.PHOTO_MAX_BYTES) return { error: "larger than 10 MB" };
+    // Type by CONTENT, never by the header or the extension — the same rule
+    // the upload route follows.
+    const ct = ["image/png", "image/jpeg", "image/gif", "image/webp"]
+      .find(m => imageBytesMatchMime(m, buf));
+    if (!ct) return { error: "not an image" };
+    return { buffer: buf, contentType: ct };
+  } catch (e) {
+    return { error: e && e.name === "AbortError" ? "timed out after 10s" : (e.message || "fetch failed") };
+  } finally { clearTimeout(timer); }
+}
+
+async function processPhotoQueue({ limit = PHOTO_FETCH_BUDGET, orgId = null } = {}) {
+  const scope = orgId ? " AND org_id = ?" : "";
+  const params = orgId ? [orgId, limit] : [limit];
+  const rows = await query(
+    `SELECT id, org_id, photo_source_url FROM donors
+      WHERE photo_fetch_status = 'pending' AND deleted_at IS NULL${scope}
+      ORDER BY updated_at ASC, id ASC LIMIT ?`, params);
+  if (!rows.length) return { fetched: 0, failed: 0, scanned: 0 };
+
+  let fetched = 0, failed = 0;
+  const queue = [...rows];
+  const worker = async () => {
+    for (let row = queue.shift(); row; row = queue.shift()) {
+      const got = await fetchRemoteImage(row.photo_source_url);
+      if (got.error) {
+        failed++;
+        // Logged per row, and kept on the row. Never fatal.
+        console.error(`[person-photo] import row ${row.id}: ${got.error}`);
+        await run(`UPDATE donors SET photo_fetch_status='failed', photo_fetch_error=? WHERE id=?`,
+          [String(got.error).slice(0, 200), row.id]).catch(() => {});
+        continue;
+      }
+      try {
+        let out;
+        const sharp = require("sharp");
+        const r = await sharp(got.buffer, { failOn: "none" }).rotate()
+          .resize(personPhoto.PHOTO_SIZE, personPhoto.PHOTO_SIZE, { fit: "cover", position: "attention" })
+          .webp({ quality: 82 }).toBuffer({ resolveWithObject: true });
+        out = { buffer: r.data, width: r.info.width, height: r.info.height };
+        const asset = await putThemeAsset({
+          orgId: row.org_id, kind: personPhoto.PHOTO_ASSET_KIND,
+          buffer: out.buffer, contentType: "image/webp", width: out.width, height: out.height,
+        });
+        await run(`UPDATE donors SET photo_asset_id=?, photo_fetch_status='ok', photo_fetch_error=NULL WHERE id=?`,
+          [asset.id, row.id]);
+        fetched++;
+      } catch (e) {
+        failed++;
+        console.error(`[person-photo] import row ${row.id}: store failed:`, e.message);
+        await run(`UPDATE donors SET photo_fetch_status='failed', photo_fetch_error=? WHERE id=?`,
+          [("could not store: " + e.message).slice(0, 200), row.id]).catch(() => {});
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PHOTO_FETCH_CONCURRENCY, rows.length) }, worker));
+  return { fetched, failed, scanned: rows.length };
+}
+
+// POST /photos/run — drive the queue for the caller's org NOW. The ops/test
+// hook, same bar as /geocode/run: admin, org-scoped, and the only way a suite
+// gets a deterministic drain without waiting on a tick.
+app.post("/photos/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await processPhotoQueue({ orgId: req.user.orgId, limit: Math.min(parseInt(req.body?.limit, 10) || PHOTO_FETCH_BUDGET, 1000) }));
+}));
+
 // POST /geocode/run — drive the queue for the caller's org NOW. The ops/test
 // hook, same bar as POST /nudges/run. {mark:true} re-derives every donor's
 // key first (what an import does); {limit} caps the spend.
@@ -26755,6 +26903,139 @@ app.get("/portal-assets/:id", wrap(async (req, res) => {
   res.set("ETag", `"${asset.id}${variantTag}"`);
   res.set("Vary", "Accept");
   res.send(buffer);
+}));
+
+
+// ══ BUILD-94 Part 1 — A FACE ON EVERY PROFILE ══════════════════════════════
+// The bytes ride the BUILD-51 asset seam; the URL does NOT ride the public
+// /portal-assets door. See personPhoto.js for why, and for the tenant
+// guarantee: the signature covers the org id ON THE STORED ROW, so a URL
+// minted in org A recomputes to a different digest against org B's row.
+
+// The URL a payload carries for one donor. Null when there is no photo —
+// which is the signal the shared mark uses to draw initials instead.
+function donorPhotoUrl(orgId, photoAssetId) {
+  if (!photoAssetId || !ASSET_ID_RE.test(String(photoAssetId))) return null;
+  return personPhoto.signPhotoUrl({ orgId, assetId: photoAssetId });
+}
+
+app.get("/person-photos/:id", wrap(async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
+  // The org comes from the STORED ROW, never from the request. This is the
+  // whole isolation argument (BUILD-37 B9 applied to a GET).
+  const [row] = await query(
+    `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`,
+    [id, personPhoto.PHOTO_ASSET_KIND]);
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const v = personPhoto.verifyPhotoUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
+  // One answer for expired and for wrong-org alike: a probe must not be able
+  // to tell "this photo exists in another tenant" from "this link is old".
+  if (!v.ok) return res.status(403).json({ error: "link_expired" });
+  const asset = await getThemeAsset(id);
+  if (!asset) return res.status(404).json({ error: "not_found" });
+  res.set("Content-Type", asset.contentType);
+  // PRIVATE, and never longer than the signature it rode in on. Content
+  // addressing still makes the bytes immutable, so a shared cache is the only
+  // thing being refused here — correctly, for a photograph of a person.
+  res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
+  res.set("ETag", `"${asset.id}"`);
+  res.send(asset.buffer);
+}));
+
+// Every donor in the org that HAS a photo, as { donorId: signedUrl }. One
+// request feeds every row surface in the product (Thread rows, Drift, the
+// recipient preview, search results, household members) — the alternative was
+// threading a signed URL through seven separate payload builders, each of
+// which would then be a place for the photo to silently go missing.
+// Donors WITHOUT a photo are absent from the map, so an org that has uploaded
+// four faces ships four entries, not 25,000.
+const PHOTO_MAP_CAP = 5000;
+app.get("/people/photos", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, photo_asset_id FROM donors
+      WHERE org_id = ? AND photo_asset_id IS NOT NULL AND deleted_at IS NULL
+      ORDER BY updated_at DESC LIMIT ${PHOTO_MAP_CAP + 1}`, [req.user.orgId]);
+  const photos = {};
+  for (const r of rows.slice(0, PHOTO_MAP_CAP)) {
+    const u = donorPhotoUrl(req.user.orgId, r.photo_asset_id);
+    if (u) photos[r.id] = u;
+  }
+  // Past the cap the ROW surfaces fall back to initials; the profile header
+  // always signs its own URL, so no record is ever without its face.
+  res.json({ photos, capped: rows.length > PHOTO_MAP_CAP, cap: PHOTO_MAP_CAP });
+}));
+
+// Store a photograph on a donor record. Type is checked by CONTENT (the magic
+// number must agree with the declared mime — BUILD-86's rule), capped at 10MB
+// of decoded image, and resized to a 512 square WebP with the original
+// discarded: nothing keeps the full-resolution upload, here or in S3.
+async function storeDonorPhoto({ orgId, donorId, dataUri, actorUser }) {
+  const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
+  if (!m) return { error: "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, or WebP photo." };
+  if (dataUri.length > personPhoto.PHOTO_MAX_STR) {
+    return { error: "That photo is larger than 10 MB. A normal photo from a phone is well within that." };
+  }
+  const declared = m[1];
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); } catch { buffer = null; }
+  if (!buffer || !buffer.length) return { error: "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, or WebP photo." };
+  if (buffer.length > personPhoto.PHOTO_MAX_BYTES) {
+    return { error: "That photo is larger than 10 MB. A normal photo from a phone is well within that." };
+  }
+  // SVG is excluded on purpose: it is a script-bearing document, and nobody's
+  // headshot is a vector.
+  if (!["image/png", "image/jpeg", "image/gif", "image/webp"].includes(declared) || !imageBytesMatchMime(declared, buffer)) {
+    return { error: "That file isn't an image we can use. Please upload a PNG, JPEG, GIF, or WebP photo." };
+  }
+  let out;
+  try {
+    const sharp = require("sharp");
+    const r = await sharp(buffer, { failOn: "none" })
+      .rotate()                                     // honour EXIF orientation
+      .resize(personPhoto.PHOTO_SIZE, personPhoto.PHOTO_SIZE, { fit: "cover", position: "attention", withoutEnlargement: false })
+      .webp({ quality: 82 })
+      .toBuffer({ resolveWithObject: true });
+    out = { buffer: r.data, width: r.info.width, height: r.info.height };
+  } catch (e) {
+    // Unlike the theme path, this does NOT fall back to storing the original:
+    // a 10MB master masquerading as a 512 thumbnail is the thing the cap and
+    // the resize exist to prevent, and a real photograph always decodes.
+    console.error("[person-photo] resize failed:", e.message);
+    return { error: "We couldn't process that photo. Try re-exporting it as a JPEG or PNG." };
+  }
+  const [existing] = await query(`SELECT photo_asset_id FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]);
+  if (!existing) return { error: "Donor not found", status: 404 };
+  const asset = await putThemeAsset({
+    orgId, kind: personPhoto.PHOTO_ASSET_KIND,
+    buffer: out.buffer, contentType: "image/webp", width: out.width, height: out.height,
+  });
+  await run(`UPDATE donors SET photo_asset_id = ?, updated_at = NOW() WHERE id = ? AND org_id = ?`, [asset.id, donorId, orgId]);
+  await recordAssetPointerHistory(orgId, "donor.photo", donorId, existing.photo_asset_id || null, asset.id, actorUser);
+  // Soft-delete any photo this org has that no donor points at any more — the
+  // replaced face falls into the 90-day retention window, not out of history.
+  await pruneUnreferencedAssets(orgId, personPhoto.PHOTO_ASSET_KIND, []).catch(e =>
+    console.error("[person-photo] prune:", e.message));
+  return { assetId: asset.id, url: donorPhotoUrl(orgId, asset.id) };
+}
+
+app.post("/donors/:id/photo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await storeDonorPhoto({
+    orgId: req.user.orgId, donorId: req.params.id,
+    dataUri: req.body && req.body.image, actorUser: req.user,
+  });
+  if (r.error) return res.status(r.status || 400).json({ error: "invalid_photo", message: r.error });
+  res.json({ ok: true, photoUrl: r.url });
+}));
+
+app.delete("/donors/:id/photo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [d] = await query(`SELECT photo_asset_id FROM donors WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  await run(`UPDATE donors SET photo_asset_id = NULL, updated_at = NOW() WHERE id = ? AND org_id = ?`, [req.params.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "donor.photo", req.params.id, d.photo_asset_id || null, null, req.user);
+  await pruneUnreferencedAssets(req.user.orgId, personPhoto.PHOTO_ASSET_KIND, []).catch(e =>
+    console.error("[person-photo] prune:", e.message));
+  res.json({ ok: true, photoUrl: null });
 }));
 
 // BUILD-56 Part 4 — ops/test hook for the retention purge (drives the exact
