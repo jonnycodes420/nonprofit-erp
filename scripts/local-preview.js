@@ -39,18 +39,47 @@ if (!fs.existsSync(path.join(DIST, "index.html"))) {
   process.exit(1);
 }
 
-// The vercel.json rewrite table, in the same order, pointed at the local API.
-const PROXY = [
-  [/^\/portal-api\/(.*)$/,    m => `/portal/${m[1]}`],
-  [/^\/account-api\/(.*)$/,   m => `/account/${m[1]}`],
-  [/^\/network-api\/(.*)$/,   m => `/network/${m[1]}`],
-  [/^\/portal-assets\/(.*)$/, m => `/portal-assets/${m[1]}`],
-  [/^\/unsubscribe$/,                 () => "/unsubscribe"],
-  [/^\/billing\/cancel\/([^/]+)$/,     m => `/billing/cancel/${m[1]}`],
-  [/^\/recurring\/update-card$/,      () => "/recurring/update-card"],
-  [/^\/recurring\/proposal$/,         () => "/recurring/proposal"],
-  [/^\/recurring\/proposal\/confirm$/, () => "/recurring/proposal/confirm"],
-];
+// ── THE REWRITE TABLE IS DERIVED FROM vercel.json, NEVER COPIED ────────────
+// This used to be a hand-kept transcription of vercel.json's rewrites, which
+// is a copy of a list that changes — and it diverged exactly the way copies
+// do. BUILD-94 added /person-photos to production and not to this file, so a
+// donor photo rendered as initials in every local browser check while the
+// suites (which call the API directly) stayed green. The environment gap this
+// script's own header exists to close had quietly reopened.
+//
+// So it reads the real table. One list, one order, no transcription.
+function loadRewrites() {
+  const vjPath = path.join(__dirname, "..", "vercel.json");
+  let rules = [];
+  try { rules = (JSON.parse(fs.readFileSync(vjPath, "utf8")).rewrites) || []; }
+  catch (e) { console.error("[local-preview] could not read vercel.json:", e.message); return []; }
+  const out = [];
+  for (const r of rules) {
+    const src = String(r.source || ""), dest = String(r.destination || "");
+    // The SPA catch-all and the static ones are this server's own job, not the
+    // backend's — they are handled below, after the proxy table.
+    if (!/^https?:\/\//.test(dest)) continue;
+    const destPath = dest.replace(/^https?:\/\/[^/]+/, "");
+    // :path* → a greedy capture; :name → one segment.
+    const toRe = p => "^" + p
+      .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+      .replace(/:[A-Za-z_]+\*/g, "(.*)")
+      .replace(/:[A-Za-z_]+/g, "([^/]+)") + "$";
+    const groups = [];
+    destPath.replace(/:[A-Za-z_]+\*?/g, m => { groups.push(m); return m; });
+    out.push([
+      new RegExp(toRe(src)),
+      m => {
+        let i = 1, p = destPath;
+        for (const g of groups) p = p.replace(g, m[i++] ?? "");
+        return p;
+      },
+    ]);
+  }
+  return out;
+}
+const PROXY = loadRewrites();
+if (!PROXY.length) console.error("[local-preview] WARNING: no backend rewrites loaded — same-origin API paths will 404.");
 
 const MIME = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",

@@ -197,7 +197,10 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   const dash = read("client/src/components/Dashboard.jsx");
   ok("Dashboard has the SETUP_ITEM_META deep-link map", dash.includes("SETUP_ITEM_META"));
   ok("donors item deep-links with the openImport intent (exact spot, not tab root)", /donors:.*openImport:\s*true/.test(dash));
-  ok("stripe + giving page land on Settings › Giving", (dash.match(/section:\s*"giving"/g) || []).length >= 2);
+  ok("\"set up online giving\" lands on Integrations — the screen that holds BOTH jobs it names",
+     /onlineGiving:[\s\S]{0,400}?section:\s*"integrations"/.test(dash));
+  ok("…and publishing a giving page lands on the page builder, which is a different job",
+     /givingPage:[\s\S]{0,400}?section:\s*"giving"/.test(dash));
   ok("address lands on Settings › Tax Receipts", /address:.*section:\s*"receipts"/.test(dash));
   ok("team lands on Settings › Team", /team:.*section:\s*"team"/.test(dash));
   ok("completion renders the GoldMoment once (setup_complete key)", dash.includes('moment="setup_complete"'));

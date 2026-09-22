@@ -1598,12 +1598,16 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
 const SETTINGS_TABS=[
   {id:"org",label:"Organization"},
   {id:"team",label:"Team"},
+  // BUILD-95 §4 — ONE TAB FOR EVERY OUTSIDE CONNECTION. Setting up online
+  // giving is two jobs — a card processor for Steward's own pages, and the
+  // places you already take gifts so Steward can see them — and they lived on
+  // two different tabs, with the Home checklist deep-linking to a THIRD (the
+  // page builder). The copy promised both and the link delivered neither.
+  //
+  // `sources` survives as a deep-link alias below rather than a tab, so every
+  // saved link and every nav intent still lands somewhere real.
   {id:"integrations",label:"Integrations"},
   {id:"giving",label:"Giving Pages"},
-  // BUILD-89S 89f — the organisation keeps what it takes gifts through, and
-  // this is where it says so. Next to Giving Pages because the two answer the
-  // same question from opposite ends: where money comes in.
-  {id:"sources",label:"Where giving comes in"},
   {id:"customization",label:"Customization"},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.
   {id:"words",label:"Your words"},
@@ -2094,7 +2098,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           onboarding hour, and a banner about platform fees above it argues
           with it (and renders an em dash while it does). Every other section
           keeps it. */}
-      {impact&&section!=="sources"&&(()=>{
+      {impact&&section!=="integrations"&&(()=>{
         // BUILD-73 Part 3 — this banner leads with MONEY AT RISK, not with
         // anything Steward claims to have done. The value math describes the
         // size of the problem; it never describes Steward's results. Same
@@ -2187,7 +2191,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       </div>}
 
       {/* ── Integrations ──────────────────────────────────────────────────── */}
-      {section==="integrations"&&<>
+      {(section==="integrations"||section==="sources")&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
@@ -2303,6 +2307,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             ✓ {gmailToast}
           </div>
         )}
+      </div>
+
+      {/* BUILD-95 §4 — the OTHER half of setting up online giving, on the same
+          screen as the processor rather than a tab away. The two answer the
+          same question from opposite ends: money reaching you THROUGH Steward,
+          and money reaching you somewhere else that Steward should see. */}
+      <div style={{marginTop:20}}>
+        <GivingSourcesManager isReadOnly={isReadOnly} isAdmin={isAdmin}/>
       </div>
       </>}
 
@@ -2457,7 +2469,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="receipts"&&<TaxReceiptsManager orgId={auth?.org?.id} isAdmin={isAdmin} isReadOnly={isReadOnly}/>}
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
-      {section==="sources"&&<GivingSourcesManager isReadOnly={isReadOnly} isAdmin={isAdmin}/>}
+
       {section==="imports"&&<ImportsHistory/>}
 
       {section==="data"&&<>

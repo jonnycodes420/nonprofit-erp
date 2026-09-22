@@ -183,7 +183,7 @@ const SETUP_ITEM_META = {
   // BOTH halves, because genericising the label while Stripe is the only
   // thing that works would be worse than the vendor's name: somebody picks
   // Square, presses it, and hits a wall.
-  onlineGiving: { label: "Set up online giving",         why: "connect a card processor for your Steward giving pages, and connect the places you already take gifts so Steward sees them", cta: "Set up",  nav: ["settings", { section: "giving" }] },
+  onlineGiving: { label: "Set up online giving",         why: "connect a card processor for your Steward giving pages, and connect the places you already take gifts so Steward sees them", cta: "Set up",  nav: ["settings", { section: "integrations" }] },
   address:    { label: "Add your mailing address",       why: "goes in every email footer (CAN-SPAM) and clears the reminder banner",         cta: "Add",     nav: ["settings", { section: "receipts" }] },
   givingPage: { label: "Publish a giving page",          why: "a shareable page your donors can give through today",                          cta: "Publish", nav: ["settings", { section: "giving" }] },
   // BUILD-81 — the automation item is gone (it ticked on a fresh org that had

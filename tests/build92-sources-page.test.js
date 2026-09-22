@@ -147,8 +147,8 @@ async function reset() {
   ok('the page still never says "live" or "real time"', fresh.length === 0, fresh.slice(0, 3));
 
   // THE BANNER IS GONE FROM THIS PAGE (and nowhere else).
-  ok("the platform-fee banner is suppressed on this section",
-     /\{impact&&section!=="sources"&&/.test(settings));
+  ok("the platform-fee banner is suppressed on the screen that carries the sources",
+     /\{impact&&section!=="integrations"&&/.test(settings));
   ok("...and still shown on the others", /No platform fee/.test(settings));
 
   // ══ the fixture ══════════════════════════════════════════════════════════
@@ -211,7 +211,7 @@ async function reset() {
       // text selector is two nodes and Playwright refuses to guess.
       await page.locator('button:has-text("Settings")').first().click();
       await page.waitForTimeout(700);
-      await page.locator('button:has-text("Where giving comes in")').first().click();
+      await page.locator('button:has-text("Integrations")').first().click();
       await page.waitForSelector('[data-testid="gs-page"]', { timeout: 8000 });
       await page.waitForTimeout(900);
 
