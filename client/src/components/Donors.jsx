@@ -3962,15 +3962,15 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
         onDrop={e=>{if(isReadOnly)return;e.preventDefault();setDragOver(false);send(e.dataTransfer.files&&e.dataTransfer.files[0]);}}
         style={{padding:0,border:dragOver?`2px dashed ${T.gold500}`:"2px solid transparent",borderRadius:"50%",
           background:"none",cursor:isReadOnly?"default":"pointer",lineHeight:0,opacity:busy?0.6:1,display:"block"}}>
-        <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={34}/>
+        <PersonMark id={donor.id} name={donor.name} kind={donor.kind} url={photoUrl} size={46}/>
       </button>
       <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" style={{display:"none"}}
         onChange={e=>{send(e.target.files&&e.target.files[0]);e.target.value="";}}/>
       {photoUrl&&!isReadOnly&&(hover||busy)&&(
         <button type="button" onClick={remove} disabled={busy} data-testid="donor-photo-remove"
           aria-label={`Remove ${donor.name}'s photo`} title="Remove photo"
-          style={{position:"absolute",top:-4,right:-4,width:16,height:16,borderRadius:"50%",border:`1px solid ${T.bg3}`,
-            background:T.white,color:T.ink3,fontSize:10,lineHeight:"14px",padding:0,cursor:"pointer"}}>&times;</button>
+          style={{position:"absolute",top:-3,right:-3,width:18,height:18,borderRadius:"50%",border:`1px solid ${T.bg3}`,
+            background:T.white,color:T.ink3,fontSize:11,lineHeight:"16px",padding:0,cursor:"pointer"}}>&times;</button>
       )}
       {err&&<div role="alert" style={{position:"absolute",top:40,left:0,whiteSpace:"nowrap",zIndex:5,fontSize:11,
         color:T.gold700,background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:6,padding:"3px 7px"}}>{err}</div>}

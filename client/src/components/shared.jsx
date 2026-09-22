@@ -1386,6 +1386,13 @@ export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }
   // A signed URL that has expired (a tab left open past its twelve hours) 404s
   // or 403s. The mark falls back to initials rather than to a broken-image
   // glyph, and the next page load mints a fresh URL.
+  //
+  // BUILD-95 — but SAY SO. This fallback is correct and it is also what hid a
+  // real defect for a day: /person-photos was not proxied through Vercel, so
+  // every <img> received index.html, failed to decode, and fell back here.
+  // The screen said "no photo" when the truth was "this route is unreachable
+  // in production". Silence is not success; a line in the console is the
+  // difference between a five-minute fix and a day.
   useEffect(() => { setBroken(false); }, [src]);
   const base = {
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
@@ -1395,7 +1402,7 @@ export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }
   if (src && !broken) {
     return (
       <img src={src} alt="" title={title || name || ""} data-testid="person-mark"
-        onError={() => setBroken(true)}
+        onError={() => { setBroken(true); console.warn("[PersonMark] photo failed to load, falling back to initials:", src); }}
         style={{ ...base, objectFit: "cover", background: T.bg2 }} />
     );
   }

@@ -4962,6 +4962,13 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
   // In value order. `key` is stable (the client owns labels/why-lines/deep
   // links); `done` is the live computation. The invite item exists only on
   // Team tier — plan-graceful means HIDDEN on Core, not shown-and-locked.
+  // BUILD-95 §4 — a connected giving source counts as activation too.
+  let connectedSourceCount = 0;
+  try {
+    const [cs] = await query(
+      `SELECT COUNT(*)::int AS n FROM giving_sources WHERE org_id = ? AND status <> 'disconnected'`, [orgId]);
+    connectedSourceCount = cs ? cs.n : 0;
+  } catch { /* pre-89S database — no sources table yet, and none connected */ }
   const sustainerFacts = await sustainerFileFacts(orgId);   // BUILD-83 Part 5.1 — the ONE definition
   const sustainerSent = await query(
     `SELECT COUNT(*)::int AS n FROM donors d
@@ -4976,7 +4983,18 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
       done: donorCount > SETUP_DONOR_THRESHOLD && (giftCount > 0 || !!org.setup_no_gifts_confirmed),
       count: donorCount, giftCount,
       needsGiftConfirm: donorCount > SETUP_DONOR_THRESHOLD && giftCount === 0 && !org.setup_no_gifts_confirmed },
-    { key: "stripe", done: !!org.stripe_account_id },
+    // BUILD-95 §4 — ONE ITEM, TWO JOBS, AND NEITHER OF THEM IS A VENDOR'S NAME.
+    // This read "Connect Stripe" — our card processor's name, in her setup
+    // list, as if it were the task. It is not: the task is "money either
+    // reaches you through Steward, or Steward can see the money reaching you
+    // somewhere else", and an organisation that connected the Square account
+    // it already takes gifts on has genuinely activated even though it has
+    // never heard of Stripe.
+    //
+    // OR, not AND, deliberately. Requiring both would refuse to tick for the
+    // org that only ever wants Steward to watch — which is BUILD-89S's whole
+    // premise ("keep what you take gifts through").
+    { key: "onlineGiving", done: !!org.stripe_account_id || connectedSourceCount > 0 },
     { key: "address", done: !!(org.receipt_address && String(org.receipt_address).trim()) },
     { key: "givingPage", done: pageRow[0].n > 0 },
     // BUILD-81 — "Turn on your first automation" became "Log your first

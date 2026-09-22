@@ -125,6 +125,29 @@ ok(cardRw >= 0 && /nonprofit-erp-production\.up\.railway\.app\/recurring\/update
   "vercel.json proxies /recurring/update-card to the backend");
 ok(spaRw > unsubRw && spaRw > cardRw, "backend proxies come BEFORE the SPA catch-all rewrite");
 
+// ── 4b. EVERY BARE BACKEND PATH THE CLIENT RENDERS AS A URL ────────────────
+// BUILD-95 — found live. A donor photo is an <img src="/person-photos/…">:
+// the browser fetches it with no Authorization header, so it has to be
+// reachable on the SAME ORIGIN as the app. It was not proxied, so on
+// production the request fell through to the SPA catch-all, the <img>
+// received index.html, failed to decode, and the profile fell back to
+// initials — which looks EXACTLY like "nobody uploaded a photo". It worked
+// in dev because dev has one origin, which is what made it invisible.
+//
+// The list is enumerated here rather than derived, because the failure mode
+// is silent: nothing errors, a feature just quietly does nothing. A new bare
+// backend path added to the client has to be added HERE, and this line is
+// where somebody finds out.
+for (const [path, why] of [
+  ["/portal-assets", "theme images on the portal and give pages"],
+  ["/person-photos", "donor photographs, rendered as a bare <img src>"],
+]) {
+  const i = rw.findIndex(r => (r.source || "").startsWith(path));
+  ok(i >= 0 && new RegExp(`nonprofit-erp-production\\.up\\.railway\\.app${path.replace(/\//g, "\\/")}`).test(rw[i]?.destination || ""),
+    `vercel.json proxies ${path}/* to the backend (${why})`);
+  ok(i >= 0 && spaRw > i, `…and ${path}/* comes BEFORE the SPA catch-all`);
+}
+
 // ── 5. Deploy gate: Vercel git auto-build stays OFF for main ──
 // Go-live cutover (887bf2e, 2026-08-12): the frontend deploys ONLY via the
 // deploy-vercel Actions job (green tests → vercel deploy → SHA-verified poll).

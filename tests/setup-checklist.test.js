@@ -94,11 +94,29 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
   r = await api("GET", "/org/setup-status", tokC);
   ok("one real gift → donors item done (count 6 > 5, gifts > 0)", item(r.body, "donors").done === true && item(r.body, "donors").count === 6, item(r.body, "donors"));
 
-  // ── Stripe / address / giving page / workflow flip from the real change ──
-  ok("stripe not done before connect", item(r.body, "stripe").done === false);
+  // ── Online giving / address / giving page / workflow flip from the change ──
+  // BUILD-95 §4 — the item is "onlineGiving" now, and it has TWO ways to tick:
+  // a card processor for Steward's own pages, OR a connected source so Steward
+  // can see money arriving somewhere else. An org that only ever wants Steward
+  // to watch has genuinely activated (BUILD-89S's premise).
+  ok("online giving not done before anything is connected", item(r.body, "onlineGiving").done === false);
   await q(`UPDATE orgs SET stripe_account_id='acct_su_test' WHERE id=$1`, [ORG_C]);
   r = await api("GET", "/org/setup-status", tokC);
-  ok("stripe_account_id set → stripe item done (regardless of entry path)", item(r.body, "stripe").done === true);
+  ok("a card processor ticks it (regardless of entry path)", item(r.body, "onlineGiving").done === true);
+
+  // …and so does a connected source, on its own.
+  await q(`UPDATE orgs SET stripe_account_id=NULL WHERE id=$1`, [ORG_C]);
+  r = await api("GET", "/org/setup-status", tokC);
+  ok("…and un-connecting it un-ticks it", item(r.body, "onlineGiving").done === false);
+  await q(`INSERT INTO giving_sources (id,org_id,provider,display_name,status)
+           VALUES ('gs_su_1',$1,'paypal','PayPal','active')
+           ON CONFLICT (id) DO UPDATE SET status='active'`, [ORG_C]);
+  r = await api("GET", "/org/setup-status", tokC);
+  ok("a connected giving source ticks it with NO card processor at all",
+     item(r.body, "onlineGiving").done === true, item(r.body, "onlineGiving"));
+  await q(`DELETE FROM giving_sources WHERE id='gs_su_1'`).catch(() => {});
+  await q(`UPDATE orgs SET stripe_account_id='acct_su_test' WHERE id=$1`, [ORG_C]);
+  r = await api("GET", "/org/setup-status", tokC);
 
   await q(`UPDATE orgs SET receipt_address='12 Main St, Fairhope, AL' WHERE id=$1`, [ORG_C]);
   r = await api("GET", "/org/setup-status", tokC);
