@@ -128,9 +128,9 @@ Production impact is narrow, because the scheduled sweep passes no `today` and
 the two values then coincide. It bites the ops route and any backfill driven
 with an explicit date.
 
-**The fix is one line** — thread `day` through as the thread's `due`/`openedOn`
-— and it belongs in BUILD-93 Part 1, beside the rest of that family, not buried
-in a landing-page commit. Deliberately not applied here.
+**FIXED**, at Jonathan's go, in its own commit labelled BUILD-93 rather than
+BUILD-91 so the separation holds in the log: `day` is threaded through as the
+thread's `due`/`openedOn`. build89s-sources is 90 passed, 0 failed.
 
 ### build93-civil-date §2 — an assertion that names the defect by arithmetic
 
@@ -143,8 +143,44 @@ the 22nd, which is inside it. The assertion can only hold when the org's civil
 today is the LAST day of its own week window and UTC has already rolled past
 it — one evening in seven.
 
-So this suite is green on some days and red on others, whatever the code does,
-which makes it a worse guard than the thing it is guarding. The subject is
-worth keeping; the assertion needs pinning to a constructed clock rather than
-synchronised to the real one, which is the standing rule for clock-dependent
-goldens in this repo. Also BUILD-93's, not 91i's.
+So this suite was green on some days and red on others whatever the code did,
+which made it a worse guard than the thing it guards. **FIXED** in the same
+BUILD-93 commit: the leg now runs when the skew actually crosses the week
+boundary (`skewed && UTC > wkEnd`) and prints a NOTE naming the window when it
+cannot, in the same voice §1 already uses about `skewed`. Nothing is weakened —
+the leg carried no information on the other six days, and §3 names the same
+defect at day granularity, which is where it bites.
+
+### Why this mattered more than two red lines
+
+CI runs the full battery and **skips both deploy jobs when it fails**. main was
+already red on `9493f77` before BUILD-91 started, so the last thing actually on
+prod was `3d89e8f`, and "FIX: one organisation, one Stripe customer" had been
+sitting unshipped behind a red test since the 21st. Reading CI after a push is
+the rule for exactly this reason: a green local battery and a pushed commit are
+not a deploy.
+
+## 8. THE DEPLOY, VERIFIED ON PROD
+
+CI run 35676591267 on `22eb691`: test green, deploy-railway green, deploy-vercel
+green. 177 of 177 suites in CI.
+
+* **Railway** `/health` reports `buildSha` `22eb691ef0c429f88444323cb7b5ea6ca1d3fde0`,
+  character-for-character the local HEAD.
+* **Vercel** carries the change, proven by content rather than by a header: the
+  prod `main` chunk contains `lp-source-row`, the promise sentence in full, the
+  `Connects directly` heading and the guard's own refusal string, so
+  `shared/publicSources.js` is genuinely bundled and not tree-shaken away.
+* **scripts/landing-prod-verify.js against prod: 80 guards, 0 failed**, up from
+  71. §7d's nine include the two standing negatives.
+* The `App` and `Settings` chunks serve 200 and parse, and the login shell
+  mounts with zero console errors and zero failed requests.
+
+**NOT verified, and it needs Jonathan:** the brief asks that Home,
+Settings → Where giving comes in and super-admin → Close a deal be walked after
+every push. That needs an authenticated prod session and there is no prod-safe
+authenticated smoke script in `scripts/` — the three existing prod verifiers are
+all public-page, read-only. Guessing at prod credentials is not a thing to do,
+so what was proven instead is the layer a shared-module change could actually
+break: the chunks that carry those three surfaces are served and parse, and the
+shell boots clean. The walk itself is still a person's job.
