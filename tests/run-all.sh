@@ -114,7 +114,7 @@ CORE=(
   build92-close-screen build92-sources-page build92-home-proportions
   build91-public-sources
   build94-photo build94-people build94-sequences build94-bulk build94-calendar build94-welcome
-  build95-square build95-cheque build95-cheque-read page-widgets
+  build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

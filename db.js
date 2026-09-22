@@ -2322,6 +2322,20 @@ async function initSchema() {
   // tolerated-dangling pattern as gifts.giving_page_id; org-scoped validation
   // lives in the POST/PUT routes.
   await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  // BUILD-95 §5B — a giving page becomes a BUILT page. Same draft/published
+  // split the portal has had since BUILD-54, and for the same reason: a page
+  // half-rearranged at four in the afternoon must not be what a donor opens.
+  //
+  // These columns live on `giving_pages` rather than in a second table because
+  // `portal_pages` is ONE row per org (org_id is its primary key) and giving
+  // pages are many — so the portal's shape does not carry over, only its rule.
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS draft JSONB`).catch(() => {});
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS published JSONB`).catch(() => {});
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS draft_updated_at TIMESTAMPTZ`).catch(() => {});
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`).catch(() => {});
+  // Where the donation form sits. NOT a widget: a giving page that can lose its
+  // form is a page that silently stopped doing its one job.
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS form_position TEXT`).catch(() => {});
   // pledges.campaign_id — a pledge attributes at pledge time; payments against
   // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
   // pledged (committed-but-unpaid) is a separate figure, never summed in.

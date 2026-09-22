@@ -16581,6 +16581,80 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 // pattern as other dangling-reference cases in this codebase (see "Admin
 // data integrity" in CLAUDE.md). DELETE routes are intentionally never
 // checkWriteAccess-gated, consistent with every other DELETE in this app.
+// ── BUILD-95 §5B — THE GIVING-PAGE BUILDER ─────────────────────────────────
+// The SAME widgets, the SAME renderer, the SAME draft/published rule the
+// portal has had since BUILD-54 — and the surface is a filter, not a fork.
+//
+// The form is NOT among the widgets. A giving page whose one job is taking a
+// gift must not be able to lose it, so it is always rendered and she chooses
+// only which side of the page it leads from.
+const givingPageOr404 = async (id, orgId) => {
+  const [p] = await query(`SELECT * FROM giving_pages WHERE id = ? AND org_id = ?`, [id, orgId]);
+  return p || null;
+};
+
+app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const { DEFAULT_FORM_POSITION, normalizeFormPosition, typesForSurface } = await widgetMod();
+  res.json({
+    draft: Array.isArray(pg.draft) ? pg.draft : null,
+    published: Array.isArray(pg.published) ? pg.published : null,
+    draftUpdatedAt: pg.draft_updated_at, publishedAt: pg.published_at,
+    formPosition: normalizeFormPosition(pg.form_position) || DEFAULT_FORM_POSITION,
+    // The palette the editor may offer for THIS surface, from the one registry.
+    widgetTypes: typesForSurface("give"),
+  });
+}));
+
+app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const { typesForSurface, normalizeFormPosition } = await widgetMod();
+
+  const v = await validateWidgets(req.body?.widgets, req.user.orgId);
+  if (v.error) return res.status(400).json({ error: "bad_widget", message: v.error });
+  // THE SURFACE IS A FILTER AT BOTH ENDS. The palette offers what belongs here
+  // and the server REFUSES the rest — a hand-rolled request cannot put My
+  // Giving on a page a stranger opens from a flyer.
+  const allowed = new Set(typesForSurface("give"));
+  const stray = v.widgets.find(w => !allowed.has(w.type));
+  if (stray) return res.status(400).json({ error: "wrong_surface",
+    message: `A "${stray.type}" widget does not belong on a giving page.` });
+
+  const pos = normalizeFormPosition(req.body?.formPosition ?? pg.form_position);
+  await run(`UPDATE giving_pages SET draft = ?, draft_updated_at = NOW(), form_position = ?, updated_at = NOW()
+             WHERE id = ? AND org_id = ?`,
+    [JSON.stringify(v.widgets), pos, pg.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "giving_page.draft", pg.id,
+    widgetPathsOrNull(pg.draft), widgetPathsOrNull(v.widgets), req.user.id, req.user.name);
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ ok: true, widgets: v.widgets, formPosition: pos });
+}));
+
+app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  if (!Array.isArray(pg.draft) || !pg.draft.length) return res.status(400).json({ error: "nothing_to_publish" });
+  await run(`UPDATE giving_pages SET published = draft, published_at = NOW(), updated_at = NOW()
+             WHERE id = ? AND org_id = ?`, [pg.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "giving_page.published", pg.id,
+    widgetPathsOrNull(pg.published), widgetPathsOrNull(pg.draft), req.user.id, req.user.name);
+  res.json({ ok: true });
+}));
+
+app.post("/giving-pages/:id/page/revert", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  await run(`UPDATE giving_pages SET draft = published, draft_updated_at = NOW(), updated_at = NOW()
+             WHERE id = ? AND org_id = ?`, [pg.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "giving_page.draft", pg.id,
+    widgetPathsOrNull(pg.draft), widgetPathsOrNull(pg.published), req.user.id, req.user.name);
+  // The reverted-away draft's photos are no longer referenced by anything.
+  await pruneWidgetAssets(req.user.orgId);
+  res.json({ ok: true });
+}));
+
 app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { changes } = await run("DELETE FROM giving_pages WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
@@ -16615,6 +16689,13 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const page = pageRows[0];
   const funds = await query("SELECT id, name, restricted FROM fin_funds WHERE org_id = ? ORDER BY name ASC", [org.id]);
 
+  // BUILD-95 §5B — the built page, if she has published one.
+  const { normalizeFormPosition } = await widgetMod();
+  const formPos = normalizeFormPosition(page.form_position);
+  const builtWidgets = Array.isArray(page.published) && page.published.length
+    ? await resolveWidgetsPublic(org, page.published)
+    : null;
+
   // Rollup + leaderboard — cheap once peer gifts always carry the parent's
   // giving_page_id (see gifts.peer_fundraiser_id comment in db.js): the
   // page's own raised_amount above already includes every peer gift with no
@@ -16642,6 +16723,16 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       campaignName: page.campaign_name || null,
       campaignGoal: page.campaign_goal != null ? parseFloat(page.campaign_goal) : null,
       campaignRaised: page.campaign_raised != null ? parseFloat(page.campaign_raised) : null,
+      // BUILD-95 §5B — the BUILT page, resolved through the ONE pipeline the
+      // portal uses. PUBLISHED only: a draft is what she is still arranging,
+      // and a donor arriving from a QR code must never land in the middle of
+      // an afternoon's rearranging.
+      //
+      // null means "never built", and the page falls back to its title, story
+      // and image exactly as before — an org that has not opened the builder
+      // sees no change at all, which is what makes this safe to ship.
+      page: builtWidgets,
+      formPosition: formPos,
     },
     funds,
     peerFundraisers: {
@@ -28825,10 +28916,18 @@ const widgetPathsOrNull = (list) => { const p = extractWidgetAssetPaths(list); r
 // Widget images are reference-counted across BOTH draft and published (one
 // photo can back several widgets and both generations).
 async function pruneWidgetAssets(orgId) {
-  const [row] = await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [orgId]);
-  const keep = row
-    ? [...extractWidgetAssetPaths(row.draft), ...extractWidgetAssetPaths(row.published)].map(p => p.replace("/portal-assets/", ""))
-    : [];
+  // BUILD-95 §5B — EVERY page of the org, not just the portal's one row.
+  // `portal_pages` is org_id-keyed (one page); giving pages are many, and a
+  // sweep that only read the portal would destroy a photo a live giving page
+  // was still showing. The 90-day soft delete would have hidden it for a
+  // quarter and then made it permanent.
+  const rows = [
+    ...await query(`SELECT draft, published FROM portal_pages WHERE org_id = ?`, [orgId]),
+    ...await query(`SELECT draft, published FROM giving_pages WHERE org_id = ?`, [orgId]),
+  ];
+  const keep = rows
+    .flatMap(r => [...extractWidgetAssetPaths(r.draft), ...extractWidgetAssetPaths(r.published)])
+    .map(p => p.replace("/portal-assets/", ""));
   await pruneUnreferencedAssets(orgId, "widget", keep);
 }
 
@@ -28872,6 +28971,13 @@ async function resolvePortalPagePublic(org) {
   const [row] = await query(`SELECT published FROM portal_pages WHERE org_id = ?`, [org.id]);
   const widgets = row && Array.isArray(row.published) ? row.published : null;
   if (!widgets || !widgets.length) return null;
+  return { widgets: await resolveWidgetsPublic(org, widgets), giveSlug: org.org_slug };
+}
+
+// BUILD-95 §5B — the per-widget resolution, shared by the portal page and
+// every giving page. ONE pipeline: a widget that resolves differently on two
+// surfaces is a widget that eventually shows different numbers on them.
+async function resolveWidgetsPublic(org, widgets) {
   // BUILD-54 §1 discipline: the per-widget resolution queries are independent
   // reads — resolve them in PARALLEL (this is the donor's first paint; a
   // sequential loop re-created the exact round-trip stacking §1 removed).
@@ -28923,7 +29029,7 @@ async function resolvePortalPagePublic(org) {
     }
     return r;
   }));
-  return { widgets: out, giveSlug: org.org_slug };
+  return out;
 }
 
 // ── §4 CRM editor routes — admin-only, org-scoped BY the staff session (the

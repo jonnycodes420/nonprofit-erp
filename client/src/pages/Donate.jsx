@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { API } from "../api";
 import { T, fmtMoney } from "./publicTheme";
 import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
+// BUILD-95 §5B — the ONE widget renderer, shared with the portal.
+import { PageRenderer } from "../components/PortalWidgets";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -187,6 +189,21 @@ export default function Donate() {
   const [returning, setReturning] = useState(false); // signed-in donor prefill applied
 
   const th = resolveTheme(org?.theme);
+
+  // BUILD-95 §5B — the built giving page. ONE renderer, shared with the portal:
+  // a widget that drew differently on the two surfaces would eventually show
+  // two different numbers for the same fund.
+  const formPosition = givingPage?.formPosition === "bottom" ? "bottom" : "top";
+  const builtPage = useMemo(() => {
+    const w = givingPage?.page;
+    if (!Array.isArray(w) || !w.length) return null;
+    return (
+      <div className="pt-page" style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
+        <PageRenderer page={{ widgets: w }} ctx={{ me: null, theme: th, orgSlug: org?.org_slug || org?.slug }} />
+      </div>
+    );
+  }, [givingPage, th, org]);
+
   const activeLadder = frequency === "monthly" ? th.monthlyAmounts : th.onetimeAmounts;
 
   const basePath = fundraiserSlug ? `/give/${orgSlug}/${pageSlug}/${fundraiserSlug}`
@@ -477,22 +494,25 @@ export default function Donate() {
             </div>
           </div>
         ) : givingPage ? (
-          <div style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
-            {givingPage.imageUrl && (
+          <div style={{ width: "100%", maxWidth: 480, marginBottom: 28, order: 2 }}>
+            {builtPage}
+            {!builtPage && givingPage.imageUrl && (
               <img src={givingPage.imageUrl} alt={givingPage.title}
                 style={{ width: "100%", maxHeight: 240, objectFit: "cover", borderRadius: 16, marginBottom: 20, display: "block" }}
                 onError={e => { e.target.style.display = "none"; }}
               />
             )}
-            <div style={{ textAlign: "center", marginBottom: 18 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
-              <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
-                {givingPage.title}
-              </h1>
-              {givingPage.story && (
-                <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{givingPage.story}</p>
-              )}
-            </div>
+            {!builtPage && (
+              <div style={{ textAlign: "center", marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{org.name}</div>
+                <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: th.serif, letterSpacing: "-0.02em" }}>
+                  {givingPage.title}
+                </h1>
+                {givingPage.story && (
+                  <p style={{ margin: "10px 0 0", fontSize: 14, color: T.ink2, lineHeight: 1.65, textAlign: "left" }}>{givingPage.story}</p>
+                )}
+              </div>
+            )}
             {(() => {
               const linked = !!givingPage.campaignId;
               const shownRaised = linked && givingPage.campaignRaised != null ? givingPage.campaignRaised : givingPage.raisedAmount;
@@ -599,8 +619,14 @@ export default function Donate() {
         )
       )}
 
-      {/* Form */}
-      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* BUILD-95 §5B — THE BUILT PAGE, drawn by the SAME renderer as the
+          portal. `builtPage` is null until she publishes one, and then this
+          block is simply absent and the page reads exactly as it always did. */}
+      {/* Form. FIXED — it is not a widget and cannot be removed, because a
+          giving page that stopped taking gifts says nothing on screen. She
+          chooses only whether it leads the page or follows the story. */}
+      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 20,
+                                            order: formPosition === "top" ? 1 : 3 }}>
 
         {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}
         <div style={card}>
