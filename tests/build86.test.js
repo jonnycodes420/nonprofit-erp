@@ -126,8 +126,22 @@ const root = path.join(__dirname, "..");
   // over — she can do something about it before her first coffee, and every row
   // names a person — and the list stays enumerated HERE so a sixth cannot
   // arrive without somebody arguing for it.
-  ok("Home renders EXACTLY the note, the Thread, Drift, the failing gifts and the thank-yous",
-     home.slice().sort().join(",") === "drift,recurring,setup,thankYous,thread", home);
+  // BUILD-94 Part 3 added a SIXTH: one line per sequence. Arguing for it, as
+  // this gate requires — and being honest that it is the first section here
+  // whose rows do NOT name a person, which is C.4's usual test.
+  //
+  // It earns its place on a different argument. Every other list on Home is
+  // work waiting for her. A sequence is the opposite: it is the one thing in
+  // the product that reaches a donor WITHOUT her, every weekday morning, in
+  // her words. She is owed continuous proof that it is running and who is in
+  // it, and — the part that actually decides it — an IMMEDIATE say when an
+  // email could not be sent (BUILD-37 H2: a failure is never swallowed, and
+  // the only place she reliably looks is here). A failure discovered a week
+  // later is a donor who was welcomed by nobody.
+  //
+  // It is ONE LINE per sequence, hideable, and below the five lists of people.
+  ok("Home renders the five lists of people, plus the one line per sequence",
+     home.slice().sort().join(",") === "drift,recurring,sequences,setup,thankYous,thread", home);
   // COMMENTS ARE NOT A SCREEN. The note explaining what was removed names the
   // thing it removed; a guard that cannot tell a comment from a render forces
   // you to stop writing down why.

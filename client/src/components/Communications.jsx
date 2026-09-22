@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark } from "./shared";
+import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 // BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
 // live preview and the send all read ONE copy of the words. The server route
@@ -409,6 +409,255 @@ function SeqStep({ step, index, total, onChange, onRemove, onAI, aiLoading }) {
 }
 
 // ── Sequences panel ───────────────────────────────────────────────────────────
+// ── BUILD-94 Part 3 — the tracked-sequence editor ──────────────────────────
+// She writes every word here. Steward offers her the merge fields her own data
+// already holds and refuses to save a sentence it cannot render — and that is
+// the whole of Steward's contribution to what a donor reads.
+function TrackedSequences() {
+  const [builder, setBuilder] = useState(null);
+  const [list, setList] = useState([]);
+  const [view, setView] = useState("list");       // list | edit
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState(null);
+  const [problems, setProblems] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [turnOn, setTurnOn] = useState(null);     // the confirm screen's payload
+
+  const reload = () => apiFetch("/sequences/home").then(r => { setList(r.sequences || []); }).catch(() => setList([]));
+  useEffect(() => { apiFetch("/sequences/builder").then(setBuilder).catch(() => setBuilder(null)); reload(); }, []);
+
+  const blank = () => ({
+    name: "", trigger: "first_gift",
+    tracks: [{ key: "everyone", label: "Everyone else", rule: "everyone_else", value: "" }],
+    steps: [{ trackKey: "everyone", dayOffset: 0, subject: "", body: "", sendEvenAfterGift: true }],
+  });
+
+  const open = async (id) => {
+    setProblems([]); setPreview(null);
+    if (!id) { setForm(blank()); setEditingId(null); setView("edit"); return; }
+    const s = await apiFetch(`/sequences/tracked/${id}`).catch(() => null);
+    if (!s) return;
+    setEditingId(id);
+    setForm({
+      name: s.name, trigger: s.trigger,
+      tracks: Array.isArray(s.tracks) ? s.tracks : [],
+      steps: (s.steps || []).map(st => ({ trackKey: st.track_key, dayOffset: st.delay_days,
+        subject: st.subject, body: st.body, sendEvenAfterGift: st.send_even_after_gift === true })),
+    });
+    setView("edit");
+  };
+
+  const save = async () => {
+    setBusy(true); setProblems([]);
+    try {
+      const path = editingId ? `/sequences/tracked/${editingId}` : "/sequences/tracked";
+      const r = await apiFetch(path, { method: editingId ? "PUT" : "POST", body: JSON.stringify(form) });
+      setEditingId(r.id); await reload(); setView("list");
+    } catch (e) {
+      // A sequence that cannot be turned on says so BEFORE she tries — the
+      // server's own refusals, in her words, not a stack trace.
+      const p = e && e.body && e.body.problems;
+      setProblems(Array.isArray(p) ? p : [errorMessage(e, "Could not save this sequence")]);
+    }
+    setBusy(false);
+  };
+
+  const askTurnOn = async (id) => {
+    const p = await apiFetch(`/sequences/tracked/${id}/turn-on-preview`).catch(() => null);
+    if (p) setTurnOn({ id, ...p });
+  };
+  const doTurnOn = async () => {
+    try { await apiFetch(`/sequences/tracked/${turnOn.id}/turn-on`, { method: "POST" }); setTurnOn(null); reload(); }
+    catch (e) { alert(errorMessage(e, "Could not turn this on")); }
+  };
+  const turnOff = async (id) => {
+    try { await apiFetch(`/sequences/tracked/${id}/turn-off`, { method: "POST" }); reload(); }
+    catch (e) { alert(errorMessage(e, "Could not turn this off")); }
+  };
+  const showPreview = async (id) => {
+    const p = await apiFetch(`/sequences/tracked/${id}/preview`).catch(() => null);
+    setPreview(p);
+  };
+
+  // NO TIMEZONE ON FILE, NO SEQUENCES — AND THE SCREEN SAYS WHY.
+  if (builder && !builder.canRun) {
+    return (
+      <div data-testid="seq-blocked" style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 12, padding: "16px 18px", fontSize: 13.5, color: T.ink, lineHeight: 1.6, maxWidth: 620 }}>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>Sequences are off until Steward knows where you are.</div>
+        {builder.blockedReason}
+      </div>
+    );
+  }
+
+  const upd = (p) => setForm(f => ({ ...f, ...p }));
+  const updTrack = (i, p) => setForm(f => ({ ...f, tracks: f.tracks.map((t, j) => j === i ? { ...t, ...p } : t) }));
+  const updStep = (i, p) => setForm(f => ({ ...f, steps: f.steps.map((s, j) => j === i ? { ...s, ...p } : s) }));
+
+  if (view === "edit" && form) {
+    return (
+      <div data-testid="seq-editor" style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 820 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={() => setView("list")} style={{ ...S.btn("ghost"), padding: "6px 12px", fontSize: 12 }}>← Back</button>
+          <span style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{editingId ? "Edit sequence" : "New sequence"}</span>
+        </div>
+
+        {problems.length > 0 && (
+          <div data-testid="seq-problems" style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 10, padding: "10px 14px", fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>
+            {problems.map((p, i) => <div key={i}>{p}</div>)}
+          </div>
+        )}
+
+        <div>
+          <label style={S.label}>What is it called</label>
+          <input value={form.name} onChange={e => upd({ name: e.target.value })} placeholder="Welcome" style={S.input} data-testid="seq-name" />
+        </div>
+        <div>
+          <label style={S.label}>What starts it</label>
+          <select value={form.trigger} onChange={e => upd({ trigger: e.target.value })} style={S.input} data-testid="seq-trigger">
+            {(builder?.triggers || []).map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+          </select>
+          <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 5, lineHeight: 1.5 }}>
+            It starts from the day you turn it on. Nobody who already qualified is added.
+          </div>
+        </div>
+
+        {/* TRACKS. Tried in order, first match wins — so the order on this
+            screen IS the rule, and the last one has to be Everyone else. */}
+        <div>
+          <label style={S.label}>Tracks — tried in order, first match wins</label>
+          {form.tracks.map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+              <input value={t.label || ""} onChange={e => updTrack(i, { label: e.target.value, key: t.key || e.target.value.toLowerCase().replace(/\W+/g, "_") })}
+                placeholder="Name this track" style={{ ...S.input, flex: "0 0 180px", marginBottom: 0 }} />
+              <select value={t.rule} onChange={e => updTrack(i, { rule: e.target.value })} style={{ ...S.input, flex: 1, marginBottom: 0 }}>
+                {(builder?.trackRules || []).map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+              </select>
+              {(t.rule === "fund" || t.rule === "source") && (
+                <input value={t.value || ""} onChange={e => updTrack(i, { value: e.target.value })}
+                  placeholder={t.rule === "fund" ? "Which fund" : "Which source"} style={{ ...S.input, flex: "0 0 150px", marginBottom: 0 }} />
+              )}
+              {form.tracks.length > 1 && (
+                <button onClick={() => setForm(f => ({ ...f, tracks: f.tracks.filter((_, j) => j !== i) }))}
+                  style={{ ...S.btn("ghost"), padding: "6px 10px", fontSize: 12 }}>✕</button>
+              )}
+            </div>
+          ))}
+          <button onClick={() => setForm(f => ({ ...f, tracks: [...f.tracks.slice(0, -1),
+              { key: "track_" + (f.tracks.length), label: "", rule: "gift_major", value: "" }, f.tracks[f.tracks.length - 1]] }))}
+            style={{ ...S.btn("ghost"), fontSize: 12 }}>+ Add a track</button>
+        </div>
+
+        {/* STEPS. Her words. Steward will not write them. */}
+        <div>
+          <label style={S.label}>Steps</label>
+          {form.steps.map((s, i) => (
+            <div key={i} style={{ border: `1px solid ${T.bg3}`, borderRadius: 10, padding: 12, marginBottom: 8, background: T.white }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <select value={s.trackKey} onChange={e => updStep(i, { trackKey: e.target.value })} style={{ ...S.input, flex: "0 0 180px", marginBottom: 0 }}>
+                  {form.tracks.map(t => <option key={t.key} value={t.key}>{t.label || t.key}</option>)}
+                </select>
+                <span style={{ fontSize: 12, color: T.ink3 }}>day</span>
+                <input type="number" min="0" value={s.dayOffset} onChange={e => updStep(i, { dayOffset: parseInt(e.target.value, 10) || 0 })}
+                  style={{ ...S.input, flex: "0 0 72px", marginBottom: 0 }} />
+                <span style={{ fontSize: 12, color: T.ink3 }}>after they join</span>
+                <button onClick={() => setForm(f => ({ ...f, steps: f.steps.filter((_, j) => j !== i) }))}
+                  style={{ ...S.btn("ghost"), padding: "6px 10px", fontSize: 12, marginLeft: "auto" }}>✕</button>
+              </div>
+              <input value={s.subject} onChange={e => updStep(i, { subject: e.target.value })} placeholder="Subject" style={S.input} />
+              <textarea value={s.body} onChange={e => updStep(i, { body: e.target.value })} rows={5}
+                placeholder="Your words. Steward will not write them." style={{ ...S.input, resize: "vertical", fontFamily: "inherit" }} />
+              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: T.ink2, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!s.sendEvenAfterGift} onChange={e => updStep(i, { sendEvenAfterGift: e.target.checked })}
+                  style={{ accentColor: T.greenDk }} />
+                Send this one even if they give again
+              </label>
+            </div>
+          ))}
+          <button onClick={() => setForm(f => ({ ...f, steps: [...f.steps, { trackKey: f.tracks[0].key, dayOffset: 3, subject: "", body: "", sendEvenAfterGift: false }] }))}
+            style={{ ...S.btn("ghost"), fontSize: 12 }}>+ Add a step</button>
+        </div>
+
+        <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.6, background: T.bg2, borderRadius: 8, padding: "9px 12px" }}>
+          <strong>Fields you can use:</strong> {(builder?.mergeFields || []).map(f => "{{" + f.key + "}}").join("  ")}
+          <div style={{ marginTop: 6 }}>{builder?.stopNote}</div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={save} disabled={busy} data-testid="seq-save" style={{ ...S.btn("send"), opacity: busy ? 0.6 : 1 }}>
+            {busy ? <><Spin /> Saving…</> : "Save, and leave it off"}
+          </button>
+          <button onClick={() => setView("list")} style={S.btn("ghost")}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.6, maxWidth: 560 }}>
+          A sequence runs for each new person on its own, in your words, on weekday
+          mornings where you are. You write it, you turn it on, and every send is yours.
+        </div>
+        <button onClick={() => open(null)} data-testid="seq-new" style={S.btn("send")}>New sequence</button>
+      </div>
+
+      {list.length === 0
+        ? <div style={{ fontSize: 13, color: T.ink3 }}>No sequences yet.</div>
+        : list.map(s => (
+          <div key={s.id} data-testid="seq-row" style={{ border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "13px 16px", background: T.white, display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{s.line}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3 }}>
+                {s.status === "active" ? "On" : "Off"}
+              </div>
+            </div>
+            <button onClick={() => showPreview(s.id)} style={{ ...S.btn("ghost"), fontSize: 12 }}>Preview</button>
+            <button onClick={() => open(s.id)} style={{ ...S.btn("ghost"), fontSize: 12 }}>Edit</button>
+            {s.status === "active"
+              ? <button onClick={() => turnOff(s.id)} data-testid="seq-off" style={{ ...S.btn("ghost"), fontSize: 12 }}>Turn off</button>
+              : <button onClick={() => askTurnOn(s.id)} data-testid="seq-on" style={{ ...S.btn("send"), fontSize: 12 }}>Turn on</button>}
+          </div>
+        ))}
+
+      {/* THE MOMENT OF TURNING IT ON is the moment to say that enrollment is
+          not retroactive, with the number attached. */}
+      {turnOn && (
+        <Modal onClose={() => setTurnOn(null)} title="Turn this on">
+          <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.65, marginBottom: 14 }} data-testid="turn-on-sentence">
+            {turnOn.retroactiveSentence}
+          </div>
+          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, marginBottom: 16 }}>{turnOn.stopNote}</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={doTurnOn} disabled={!turnOn.canTurnOn} data-testid="turn-on-confirm" style={S.btn("send")}>Turn it on</button>
+            <button onClick={() => setTurnOn(null)} style={S.btn("ghost")}>Not yet</button>
+          </div>
+        </Modal>
+      )}
+
+      {preview && (
+        <Modal onClose={() => setPreview(null)} title={preview.person ? `What ${preview.person.name} would read` : "Preview"}>
+          {!preview.person
+            ? <div style={{ fontSize: 13, color: T.ink3 }}>{preview.note}</div>
+            : preview.steps.map(st => (
+              <div key={st.trackKey + "-" + st.stepOrder} style={{ borderBottom: `1px solid ${T.bg2}`, paddingBottom: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>{st.trackKey} · day {st.dayOffset}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{st.subject}</div>
+                <div style={{ fontSize: 13, color: T.ink2, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{st.body}</div>
+                {st.missing.length > 0 && (
+                  <div style={{ fontSize: 11.5, color: T.gold700, marginTop: 6 }}>
+                    Blank for {preview.person.name}: {st.missing.map(m => "{{" + m + "}}").join(", ")}
+                  </div>
+                )}
+              </div>
+            ))}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function SequencesPanel({ data }) {
   const [seqList, setSeqList] = useState([]);
   const [seqLoading, setSeqLoading] = useState(true);
@@ -1653,7 +1902,14 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
         )}
 
         {/* ── SEQUENCES ─────────────────────────────────────────────────────── */}
-        {nav === "sequences" && <SequencesPanel data={data} />}
+        {nav === "sequences" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
+            <TrackedSequences />
+            {/* The BUILD-13 recipe engine (milestones, at-risk, lapsed) is a
+                different thing wearing the same word and stays where it is. */}
+            <SequencesPanel data={data} />
+          </div>
+        )}
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}

@@ -112,7 +112,7 @@ CORE=(
   build92-seed build92-source-errors build92-dedupe build92-statement
   build92-close-screen build92-sources-page build92-home-proportions
   build91-public-sources
-  build94-photo build94-people
+  build94-photo build94-people build94-sequences
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

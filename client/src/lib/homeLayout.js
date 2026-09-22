@@ -54,6 +54,11 @@ export const HOME_SECTIONS = [
   // because a thank-you is what you owe somebody who already gave, and above
   // Drift because it is the one list with a deadline made of goodwill.
   { id: "thankYous", label: "Thank-yous ready", hideable: true, surface: "home" },
+  // BUILD-94 Part 3 — ONE LINE PER SEQUENCE. A sequence runs without her, so
+  // the only thing Home owes her is proof it is running and an immediate say
+  // if it is not: "Welcome: 4 people in it, next send Thursday", and a failure
+  // at the end of the same sentence (BUILD-37 H2 — never swallowed).
+  { id: "sequences", label: "Sequences", hideable: true, surface: "home" },
 
   // ── the board's ──────────────────────────────────────────────────────────
   { id: "hero",             label: "Fundraising goal",      hideable: false, surface: "board" },

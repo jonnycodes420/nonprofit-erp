@@ -2162,6 +2162,31 @@ async function recordGift(o) {
       .catch(e => console.error("[thank-you] draft:", e.message));
   }
 
+  // ── BUILD-94 Part 3 — THE TRIGGERS FIRE HERE, AND NOWHERE ELSE ───────────
+  // FIRST GIFT EVER is a fact about the rollup that just happened: gift_count
+  // reached 1. Reading it here, from the row the rollup wrote, is the only
+  // place it is unambiguous — a route that checks "is this their first gift"
+  // before the rollup races itself. ENROLLMENT IS NEVER RETROACTIVE, and this
+  // is what that means mechanically: the only way in is the event itself.
+  try {
+    const [after] = await query(
+      `SELECT gift_count, stripe_subscription_status FROM donors WHERE id = ? AND org_id = ?`, [o.donorId, orgId]);
+    if (after && Number(after.gift_count) === 1) {
+      const ctx = { amount, recurring: !!o.recurring || !!after.stripe_subscription_status,
+                    fund: o.fundName || null, source: o.source || null };
+      await enrollInSequences(orgId, o.donorId, "first_gift", ctx);
+    }
+    if (o.recurring === true && after) {
+      const [priorRec] = await query(
+        `SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=? AND id <> ?
+           AND (notes ILIKE '%recurring%' OR type = 'recurring')`, [orgId, o.donorId, giftId]);
+      if (!priorRec || priorRec.n === 0) {
+        await enrollInSequences(orgId, o.donorId, "first_recurring",
+          { amount, recurring: true, fund: o.fundName || null, source: o.source || null });
+      }
+    }
+  } catch (e) { console.error("[seq] gift trigger:", e.message); }
+
 
   return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment };
 }
@@ -7280,8 +7305,18 @@ app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   // does send it cannot clear it to nothing (normalizeTypes floors at
   // ["other"]) and cannot invent a fifth type.
   if (req.body.personTypes !== undefined) {
+    const [wasRow] = await query(`SELECT person_types FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+    const next = PT.normalizeTypes(req.body.personTypes);
     await run(`UPDATE donors SET person_types = ?::jsonb WHERE id=? AND org_id=?`,
-      [JSON.stringify(PT.normalizeTypes(req.body.personTypes)), req.params.id, req.user.orgId]);
+      [JSON.stringify(next), req.params.id, req.user.orgId]);
+    // BUILD-94 Part 3 — ADDED AS VOLUNTEER is a trigger, and it fires on the
+    // transition, never on a save that leaves them a volunteer they already
+    // were. (Enrollment is idempotent anyway, but firing on every save would
+    // put a wrong line in the log.)
+    if (!PT.hasType(wasRow || {}, "volunteer") && next.includes("volunteer")) {
+      enrollInSequences(req.user.orgId, req.params.id, "added_volunteer", {}, actor(req))
+        .catch(e => console.error("[seq] volunteer trigger:", e.message));
+    }
   }
 
   // BUILD-58 Part 2 — the deceased / do-not-contact flags (only touched when
@@ -18935,6 +18970,15 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 5 * 60 * 1000);
 }
 
+// BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is
+// plenty: the send WINDOW is three hours wide on a weekday morning, so a tick
+// that lands anywhere inside it is on time, and a tighter cadence would only
+// spend queries discovering there is nothing to do.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => processTrackedSequences().catch(e => console.error("[seq]", e.message)), 90000);
+  setInterval(() => processTrackedSequences().catch(e => console.error("[seq]", e.message)), 15 * 60 * 1000);
+}
+
 
 // ── BUILD-94 Part 1 — THE IMPORT PHOTO QUEUE ───────────────────────────────
 // Same shape as the BUILD-84 geocode queue, for the same reason: the network
@@ -20518,7 +20562,606 @@ async function autoEnroll() {
   } catch (e) { console.error("[seq] autoEnroll:", e.message); }
 }
 
+
+// ══ BUILD-94 Part 3 — SEQUENCES ════════════════════════════════════════════
+//
+// THE RULE THIS BUILD CHANGES, AND HOW FAR. Since BUILD-88c: nothing goes to a
+// donor she did not press send on. Sequences change it to this, and no
+// further: SHE WROTE EVERY WORD, SHE TURNED IT ON, AND EACH SEND IS HERS.
+// Steward still writes nothing to a donor — every sentence that reaches an
+// inbox came out of a step SHE typed, personalised only by merge fields
+// reading her own data. There is no model on this path.
+//
+// The rules themselves live in shared/sequenceShape.js (pure, unit-tested);
+// this is the half that touches the database, the clock and Resend.
+
+let SEQ = null;
+const SEQ_READY = import("./shared/sequenceShape.js").then(m => { SEQ = m; return m; });
+
+// The values a step's merge fields render from: the person's OWN data, the
+// org's OWN words (BUILD-86 vocabulary), and every custom field on the record.
+// NOTHING here is generated — every value is a column somebody typed or a gift
+// somebody gave.
+async function sequenceMergeValues(donor, orgId) {
+  const [org] = await query("SELECT name, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("./shared/vocabulary.js");
+  let vocab = null;
+  try { vocab = org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { /* default words */ }
+  const t = V.makeT(vocab);
+  const words = String(donor.name || "").trim().split(/\s+/).filter(Boolean);
+  const values = {
+    first: words[0] || "",
+    last: words.length > 1 ? words[words.length - 1] : "",
+    name: donor.name || "",
+    last_gift_amount: Number(donor.last_gift_amount) > 0 ? fmtMoneyPlain(donor.last_gift_amount) : "",
+    last_gift_date: donor.last_gift_date || "",
+    fund: donor.__fund || "",
+    // BUILD-86 Part B — a shop that says "sponsors" gets "sponsor" here. The
+    // brief's {{sponsor_name}} is THAT word, not a second person's name.
+    sponsor_name: t("giver", 1),
+    gift: t("gift", 1),
+    org_name: displayNameCase(org?.name || ""),
+  };
+  // Every custom field on the person, by key. A field she made is a field she
+  // can write with.
+  const cf = donor.custom_fields && typeof donor.custom_fields === "object" ? donor.custom_fields : {};
+  for (const [k, v] of Object.entries(cf)) {
+    if (values[k] === undefined) values[k] = Array.isArray(v) ? v.join(", ") : (v == null ? "" : String(v));
+  }
+  return values;
+}
+const fmtMoneyPlain = (n) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+
+// The closed STOP set, evaluated for one enrollment at send time. Returns a
+// stop key or null. A LOGGED CONVERSATION IS NOT HERE, deliberately — see
+// SEQ.STOP_NOT_A_STOP, which is the sentence the settings screen shows so
+// nobody assumes otherwise.
+async function sequenceStopFor(enr, donor, step) {
+  if (!donor) return "removed";
+  if (donor.deceased === true) return "deceased";
+  if (donor.do_not_email === true) return "do_not_email";
+  const decision = await donorMailDecision("sequence", donor.email, enr.org_id);
+  if (!decision.send) return decision.reason === "bounced" ? "bounced" : "unsubscribed";
+  // A SECOND GIFT DURING A FIRST-GIFT SEQUENCE skips what is left — a welcome
+  // series must not ask for a gift the week after one arrived. A step marked
+  // "send even after another gift" (the thank-you) still goes.
+  if (enr.gift_count_at_enroll != null && Number(donor.gift_count || 0) > Number(enr.gift_count_at_enroll)
+      && !step.send_even_after_gift) {
+    return "another_gift";
+  }
+  return null;
+}
+
+// Is this org allowed to run sequences at all? BUILD-84's timezone rule: the
+// column has a default, so what this needs is a zone A HUMAN CHOSE.
+async function sequenceTimezoneGate(orgId) {
+  await SEQ_READY;
+  const tz = await orgTz(orgId);
+  return { ...SEQ.timezoneGate(tz), timezone: tz.timezone };
+}
+
+// The org's local clock as { weekday, hour, date } — the send window's input.
+async function orgSendClock(orgId, at = new Date()) {
+  const tz = await orgTz(orgId);
+  const c = orgTime.orgClock(tz, at);                       // ORG_TZ_SEAM_OK
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(c.date);
+  const weekday = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay() : new Date(at).getUTCDay();
+  return { ...c, weekday, timezone: tz.timezone };
+}
+
+// ── ENROLLMENT ─────────────────────────────────────────────────────────────
+// ENROLLMENT IS NEVER RETROACTIVE. Every call site passes the event that just
+// happened; nothing here looks backwards.
+async function enrollInSequences(orgId, donorId, triggerKey, context = {}, actor = null) {
+  await SEQ_READY;
+  const gate = await sequenceTimezoneGate(orgId);
+  if (!gate.ok) return { enrolled: 0, reason: gate.reason };
+  const seqs = await query(
+    `SELECT * FROM sequences WHERE org_id = ? AND status = 'active' AND trigger = ? AND tracks IS NOT NULL`,
+    [orgId, triggerKey]);
+  let enrolled = 0;
+  for (const seq of seqs) {
+    try {
+      const tracks = Array.isArray(seq.tracks) ? seq.tracks : JSON.parse(seq.tracks || "[]");
+      const track = SEQ.chooseTrack(tracks, context);
+      // validateSequence refuses to save a sequence whose last track is not
+      // "everyone else", so this can only be null for a row written before
+      // that rule — it is a refusal to enroll, logged, never a silent pass.
+      if (!track) { console.error(`[seq] ${seq.id}: nobody's track matched — not enrolling ${donorId}`); continue; }
+      const steps = await query(
+        `SELECT * FROM sequence_steps WHERE sequence_id = ? AND track_key = ? ORDER BY step_order ASC`,
+        [seq.id, track.key]);
+      if (!steps.length) { console.error(`[seq] ${seq.id}: track ${track.key} has no steps`); continue; }
+      const [d] = await query(`SELECT gift_count FROM donors WHERE id = ? AND org_id = ?`, [donorId, orgId]);
+      const firstDelay = parseInt(steps[0].delay_days, 10) || 0;
+      const r = await run(
+        `INSERT INTO sequence_enrollments
+           (id, sequence_id, org_id, donor_id, current_step, status, next_send_at, track_key,
+            enrolled_by, enrolled_by_name, gift_count_at_enroll)
+         VALUES (?,?,?,?,0,'active', NOW() + INTERVAL '${firstDelay} days', ?,?,?,?)
+         ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
+        ["se_" + uuid().slice(0, 8), seq.id, orgId, donorId, track.key,
+         actor?.id || "system:sequence", actor?.name || null, d ? Number(d.gift_count || 0) : null]);
+      if (r.changes) enrolled++;
+    } catch (e) { console.error(`[seq] enroll ${seq.id}/${donorId}:`, e.message); }
+  }
+  return { enrolled };
+}
+
+// How many people WOULD have been enrolled had this been on all year. Shown at
+// the moment of turning it on, so she can decide to enroll them by hand rather
+// than discovering the gap months later.
+async function retroactiveCount(orgId, triggerKey) {
+  const since = "NOW() - INTERVAL '365 days'";
+  if (triggerKey === "first_gift") {
+    const [r] = await query(
+      `SELECT COUNT(*)::int AS n FROM donors d
+        WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${donorOnly("d")}
+          AND d.first_gift_date IS NOT NULL AND d.first_gift_date::date >= (${since})::date`, [orgId]);
+    return r ? r.n : 0;
+  }
+  if (triggerKey === "first_recurring") {
+    const [r] = await query(
+      `SELECT COUNT(DISTINCT donor_id)::int AS n FROM recurring_subscriptions
+        WHERE org_id = ? AND created_at >= ${since}`, [orgId]);
+    return r ? r.n : 0;
+  }
+  if (triggerKey === "added_volunteer") {
+    const [r] = await query(
+      `SELECT COUNT(*)::int AS n FROM donors
+        WHERE org_id = ? AND deleted_at IS NULL AND person_types @> '["volunteer"]'::jsonb
+          AND created_at >= ${since}`, [orgId]);
+    return r ? r.n : 0;
+  }
+  return 0;
+}
+
+// ── THE SEND ───────────────────────────────────────────────────────────────
+// Batched under Resend's rate limit, idempotent on (person, sequence, step)
+// because the claim row IS the unique index — not a flag somebody remembered
+// to check. A retried job finds the row taken and sends nothing.
+const SEQ_RATE_PER_SECOND = 8;     // Resend's documented floor, with headroom
+const SEQ_TICK_BUDGET = 200;
+
+async function processTrackedSequences({ orgId = null, limit = SEQ_TICK_BUDGET, now = new Date() } = {}) {
+  await SEQ_READY;
+  const scope = orgId ? " AND se.org_id = ?" : "";
+  const params = orgId ? [orgId, limit] : [limit];
+  const due = await query(
+    `SELECT se.*, s.name AS seq_name, s.turned_on_by_name, s.turned_on_at, s.trigger AS seq_trigger
+       FROM sequence_enrollments se
+       JOIN sequences s ON s.id = se.sequence_id
+      WHERE se.status = 'active' AND se.track_key IS NOT NULL
+        AND s.status = 'active' AND se.next_send_at <= NOW()${scope}
+      ORDER BY se.next_send_at ASC LIMIT ?`, params);
+  const out = { sent: 0, skipped: 0, stopped: 0, failed: 0, waited: 0, due: due.length };
+  // Group by org so the window and the clock are read once per org, not once
+  // per enrollment.
+  const byOrg = new Map();
+  for (const e of due) { if (!byOrg.has(e.org_id)) byOrg.set(e.org_id, []); byOrg.get(e.org_id).push(e); }
+
+  for (const [oid, list] of byOrg) {
+    const gate = await sequenceTimezoneGate(oid);
+    if (!gate.ok) { out.skipped += list.length; continue; }
+    const clock = await orgSendClock(oid, now);
+    // WEEKDAY MORNINGS WHERE SHE IS. Outside the window nothing sends and
+    // nothing is consumed — next_send_at moves to the next window's morning.
+    if (!SEQ.inSendWindow(clock)) {
+      const days = SEQ.daysUntilNextWindow(clock.weekday, clock.hour);
+      await run(
+        `UPDATE sequence_enrollments SET next_send_at = NOW() + INTERVAL '${Math.max(days, 0)} days' + INTERVAL '1 hour'
+          WHERE id = ANY(?) AND status='active'`, [list.map(e => e.id)]);
+      out.waited += list.length;
+      continue;
+    }
+    let inSecond = 0, secondStart = Date.now();
+    for (const enr of list) {
+      try {
+        const steps = await query(
+          `SELECT * FROM sequence_steps WHERE sequence_id = ? AND track_key = ? ORDER BY step_order ASC`,
+          [enr.sequence_id, enr.track_key]);
+        const step = steps[enr.current_step];
+        if (!step) { await closeEnrollment(enr.id, "completed", null); continue; }
+
+        const [donor] = await query(
+          `SELECT id, name, email, deceased, do_not_email, gift_count, last_gift_amount, last_gift_date, custom_fields
+             FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [enr.donor_id, oid]);
+        const stop = await sequenceStopFor(enr, donor, step);
+        if (stop === "another_gift") {
+          // The REMAINING steps are skipped, not the enrollment failed: she
+          // asked for a welcome series, and it ends when the welcome is over.
+          await closeEnrollment(enr.id, "completed", "another_gift");
+          out.stopped++; continue;
+        }
+        if (stop) { await closeEnrollment(enr.id, "stopped", stop); out.stopped++; continue; }
+
+        // ── THE CLAIM. Before the provider call, never after. ─────────────
+        const claimId = "ss_" + uuid().slice(0, 12);
+        const claim = await run(
+          `INSERT INTO sequence_sends (id, org_id, sequence_id, donor_id, step_order, status, subject, attempts)
+           VALUES (?,?,?,?,?, 'claimed', ?, 1)
+           ON CONFLICT (sequence_id, donor_id, step_order) DO NOTHING`,
+          [claimId, oid, enr.sequence_id, enr.donor_id, step.step_order, step.subject]);
+        if (!claim.changes) {
+          // Somebody already has this step — a retried job, or a concurrent
+          // tick. Advance past it rather than sending a second copy.
+          await advanceEnrollment(enr, steps);
+          out.skipped++; continue;
+        }
+
+        const values = await sequenceMergeValues(donor, oid);
+        const subj = SEQ.renderMerge(step.subject, values);
+        const body = SEQ.renderMerge(step.body, values);
+        const html = (body.text.includes("<") ? body.text
+          : `<p>${body.text.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`)
+          + await unsubscribeEmailFooterHtml(donor.email, oid, "sequence");
+
+        // Rate limit: a simple per-second gate, because a burst is how a
+        // provider starts refusing an org's mail.
+        if (++inSecond >= SEQ_RATE_PER_SECOND) {
+          const elapsed = Date.now() - secondStart;
+          if (elapsed < 1000) await new Promise(r => setTimeout(r, 1000 - elapsed));
+          inSecond = 0; secondStart = Date.now();
+        }
+
+        let delivered = true, errText = null;
+        if (process.env.RESEND_API_KEY) {
+          delivered = false;
+          try {
+            const opts = { ...(await donorSendOpts(oid, donor.email, "sequence")),
+                           to: donor.email, subject: subj.text, html };
+            const { error: sendErr } = await resend.emails.send(opts);
+            if (sendErr) errText = sendErr.message || String(sendErr);
+            else delivered = true;
+          } catch (e) { errText = e.message; }
+        }
+
+        if (!delivered) {
+          // NEVER SWALLOWED (BUILD-37 H2). The row keeps the reason and the
+          // sequence line on Home says how many could not be sent.
+          out.failed++;
+          console.error(`[seq] send failed for ${enr.donor_id} step ${step.step_order}: ${errText}`);
+          await run(`UPDATE sequence_sends SET status='failed', error=? WHERE id=?`,
+            [String(errText || "unknown").slice(0, 300), claimId]);
+          // next_send_at untouched: the next tick retries, and the claim row
+          // is reused (attempts bumped) rather than duplicating.
+          continue;
+        }
+
+        await run(`UPDATE sequence_sends SET status='sent', sent_at=NOW(), error=NULL WHERE id=?`, [claimId]);
+        // ONE email conversation on the person's timeline, per send, saying
+        // who turned this on and when. "Why did this donor get this" has an
+        // answer that is a person and a date.
+        const civilOn = enr.turned_on_at ? new Date(enr.turned_on_at).toISOString().slice(0, 10) : null;
+        await run(
+          `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
+           VALUES (?,?,?,'email',?,?,?)`,
+          ["i_" + uuid().slice(0, 8), oid, enr.donor_id,
+           `${SEQ.sendActorLine({ sequenceName: enr.seq_name, stepNumber: enr.current_step + 1,
+                                  turnedOnByName: enr.turned_on_by_name, turnedOnAt: civilOn })} — ${subj.text}`,
+           clock.date, "system:sequence"]);
+        await advanceEnrollment(enr, steps);
+        out.sent++;
+      } catch (e) { console.error("[seq] enrollment", enr.id, e.message); out.failed++; }
+    }
+  }
+  return out;
+}
+
+async function advanceEnrollment(enr, steps) {
+  const next = steps[enr.current_step + 1];
+  if (!next) {
+    await run(`UPDATE sequence_enrollments SET status='completed', completed_at=NOW(), current_step=current_step+1 WHERE id=?`, [enr.id]);
+    return;
+  }
+  // The offset is from ENROLLMENT, not from the previous send — that is what a
+  // "day offset" means, and it keeps a slow tick from pushing a whole series
+  // later and later.
+  const offset = parseInt(next.delay_days, 10) || 0;
+  await run(
+    `UPDATE sequence_enrollments SET current_step = current_step + 1,
+            next_send_at = enrolled_at + INTERVAL '${offset} days' WHERE id = ?`, [enr.id]);
+}
+async function closeEnrollment(id, status, reason) {
+  await run(`UPDATE sequence_enrollments SET status=?, stop_reason=?, completed_at=NOW() WHERE id=?`,
+    [status, reason || null, id]);
+}
+
 // ── Sequence routes ─────────────────────────────────────────────────────────
+
+// ══ BUILD-94 Part 3 — the tracked-sequence routes ══════════════════════════
+// SETUP FOR JUSTIN'S PLACE IS BY HAND AND IS JONATHAN'S. A super-admin can
+// build a sequence inside her org and leave it OFF for her to read and turn
+// on. NOTHING TURNS ON WITHOUT A USER IN HER ORG PRESSING IT — the turn-on
+// route refuses a super-admin acting across orgs, by design, and says why.
+
+// Everything a screen needs to build one: the closed trigger set, the track
+// rules in the order they are tried, the merge fields (including this org's
+// OWN custom fields), and whether this org may run sequences at all.
+app.get("/sequences/builder", requireAuth, wrap(async (req, res) => {
+  await SEQ_READY;
+  const gate = await sequenceTimezoneGate(req.user.orgId);
+  const defs = await query(
+    `SELECT key, label FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL ORDER BY label`,
+    [req.user.orgId]).catch(() => []);
+  const funds = await query(`SELECT DISTINCT name FROM fin_funds WHERE org_id=? ORDER BY name`, [req.user.orgId]).catch(() => []);
+  res.json({
+    triggers: SEQ.TRIGGERS,
+    trackRules: SEQ.TRACK_RULE_KINDS.map(r => ({ key: r.key, label: r.label })),
+    mergeFields: [...SEQ.MERGE_FIELDS, ...defs.map(d => ({ key: d.key, label: d.label, custom: true }))],
+    stops: SEQ.STOPS,
+    stopNote: SEQ.STOP_NOT_A_STOP,
+    sendWindow: SEQ.SEND_WINDOW,
+    funds: funds.map(f => f.name),
+    timezone: gate.timezone,
+    canRun: gate.ok,
+    // NO TIMEZONE ON FILE, NO SEQUENCES — AND THE SCREEN SAYS WHY.
+    blockedReason: gate.ok ? null : gate.message,
+  });
+}));
+
+// Create or replace a whole sequence — tracks and steps together, because a
+// track without its steps is a sequence that enrolls people and sends nothing.
+async function writeTrackedSequence(req, res, existingId) {
+  await SEQ_READY;
+  const orgId = req.user.orgId;
+  const body = req.body || {};
+  const defs = await query(
+    `SELECT key FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL`, [orgId]).catch(() => []);
+  const seq = {
+    name: String(body.name || "").trim(),
+    trigger: body.trigger,
+    tracks: Array.isArray(body.tracks) ? body.tracks : [],
+    steps: Array.isArray(body.steps) ? body.steps : [],
+    customFieldKeys: defs.map(d => d.key),
+  };
+  const v = SEQ.validateSequence(seq);
+  // A sequence that cannot be turned on says so BEFORE she tries.
+  if (!v.ok) return res.status(400).json({ error: "invalid_sequence", problems: v.problems });
+
+  const id = existingId || ("seq_" + uuid().slice(0, 8));
+  const a = actor(req);
+  if (existingId) {
+    const r = await run(
+      `UPDATE sequences SET name=?, trigger=?, tracks=?::jsonb WHERE id=? AND org_id=?`,
+      [seq.name, seq.trigger, JSON.stringify(seq.tracks), id, orgId]);
+    if (!r.changes) return res.status(404).json({ error: "Sequence not found" });
+    await run(`DELETE FROM sequence_steps WHERE sequence_id=?`, [id]);
+  } else {
+    await run(
+      // A NEW SEQUENCE IS OFF. Always. Turning it on is a separate, audited act
+      // by a user in her org.
+      `INSERT INTO sequences (id, org_id, name, trigger, status, tracks, created_by, created_by_name)
+       VALUES (?,?,?,?, 'draft', ?::jsonb, ?, ?)`,
+      [id, orgId, seq.name, seq.trigger, JSON.stringify(seq.tracks), a.id, a.name]);
+  }
+  // step_order is PER TRACK, not global. The engine reads a track's steps and
+  // indexes into them, and sequence_sends keys idempotency on (sequence,
+  // person, step_order) — a global counter would make "step 2" mean a
+  // different thing on each track and read wrong on the timeline.
+  const perTrack = {};
+  for (const s2 of seq.steps) {
+    const k = s2.trackKey;
+    const order = (perTrack[k] = (perTrack[k] === undefined ? 0 : perTrack[k] + 1));
+    await run(
+      `INSERT INTO sequence_steps (id, sequence_id, step_order, delay_days, subject, body, track_key, send_even_after_gift)
+       VALUES (?,?,?,?,?,?,?,?)`,
+      ["sstep_" + uuid().slice(0, 8), id, order, parseInt(s2.dayOffset, 10) || 0,
+       String(s2.subject), String(s2.body), k, s2.sendEvenAfterGift === true]);
+  }
+  const [row] = await query(`SELECT * FROM sequences WHERE id=?`, [id]);
+  res.status(existingId ? 200 : 201).json({ ...row, steps: seq.steps, tracks: seq.tracks });
+}
+
+app.post("/sequences/tracked", requireAuth, requireAdmin, checkWriteAccess, wrap((req, res) => writeTrackedSequence(req, res, null)));
+app.put("/sequences/tracked/:id", requireAuth, requireAdmin, checkWriteAccess, wrap((req, res) => writeTrackedSequence(req, res, req.params.id)));
+
+app.get("/sequences/tracked/:id", requireAuth, wrap(async (req, res) => {
+  const [seq] = await query(`SELECT * FROM sequences WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!seq) return res.status(404).json({ error: "Sequence not found" });
+  const steps = await query(`SELECT * FROM sequence_steps WHERE sequence_id=? ORDER BY step_order ASC`, [seq.id]);
+  const enr = await query(
+    `SELECT status, COUNT(*)::int AS n FROM sequence_enrollments WHERE sequence_id=? GROUP BY status`, [seq.id]);
+  res.json({ ...seq, steps, enrollments: Object.fromEntries(enr.map(e => [e.status, e.n])) });
+}));
+
+// WHAT SHE SEES BEFORE SHE TURNS IT ON. The retroactive count is the whole
+// point of this route: enrollment is never retroactive, and the moment to say
+// so is the moment of turning it on, with the number attached.
+app.get("/sequences/tracked/:id/turn-on-preview", requireAuth, wrap(async (req, res) => {
+  await SEQ_READY;
+  const [seq] = await query(`SELECT * FROM sequences WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!seq) return res.status(404).json({ error: "Sequence not found" });
+  const gate = await sequenceTimezoneGate(req.user.orgId);
+  const n = await retroactiveCount(req.user.orgId, seq.trigger);
+  res.json({
+    canTurnOn: gate.ok,
+    blockedReason: gate.ok ? null : gate.message,
+    timezone: gate.timezone,
+    retroactiveCount: n,
+    retroactiveSentence: SEQ.retroactiveSentence(n, seq.trigger),
+    stopNote: SEQ.STOP_NOT_A_STOP,
+  });
+}));
+
+app.post("/sequences/tracked/:id/turn-on", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await SEQ_READY;
+  const [seq] = await query(`SELECT * FROM sequences WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!seq) return res.status(404).json({ error: "Sequence not found" });
+  const gate = await sequenceTimezoneGate(req.user.orgId);
+  if (!gate.ok) return res.status(400).json({ error: "no_timezone", message: gate.message });
+  // NOTHING TURNS ON WITHOUT A USER IN HER ORG PRESSING IT. Allie asked
+  // Jonathan to set it up, and he can — build it, write nothing, leave it off.
+  // But a SUPER-ADMIN account may not be the one that flips it, because "she
+  // turned it on" is the sentence the whole relaxed rule rests on, and it has
+  // to be true. Enforced, not remembered.
+  const [me] = await query("SELECT is_super_admin FROM users WHERE id = ?", [req.user.userId]);
+  if (me && me.is_super_admin === true) {
+    return res.status(403).json({
+      error: "not_yours_to_turn_on",
+      message: "A sequence is turned on by someone at the organisation, not by Steward. " +
+               "Build it, leave it off, and let them read it and press it.",
+    });
+  }
+  const a = actor(req);
+  // The ACTOR stamp is the email (BUILD-75's convention, and it stays that).
+  // `turned_on_by_name` is a DISPLAY string that ends up on a person's
+  // timeline — "turned on by allie@justinsplace.org on 3 Oct" is a database
+  // row talking, and "turned on by Allie Barnett" is a person.
+  const [meRow] = await query("SELECT name, email FROM users WHERE id = ?", [req.user.userId]);
+  const display = (meRow && String(meRow.name || "").trim()) || a.name;
+  await run(
+    `UPDATE sequences SET status='active', turned_on_by=?, turned_on_by_name=?, turned_on_at=NOW(), turned_off_at=NULL
+      WHERE id=? AND org_id=?`, [a.id, display, seq.id, req.user.orgId]);
+  res.json({ ok: true, status: "active", turnedOnBy: display });
+}));
+
+// TURNING IT OFF LEAVES THE ENROLLED WHERE THEY ARE AND SENDS NOTHING FURTHER.
+// Not "cancels them" — she may turn it back on, and losing where five people
+// were is not recoverable.
+app.post("/sequences/tracked/:id/turn-off", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run(`UPDATE sequences SET status='paused', turned_off_at=NOW() WHERE id=? AND org_id=?`,
+    [req.params.id, req.user.orgId]);
+  if (!r.changes) return res.status(404).json({ error: "Sequence not found" });
+  res.json({ ok: true, status: "paused" });
+}));
+
+// THE PREVIEW RENDERS THE REAL EMAIL FOR A NAMED REAL PERSON, not a sample.
+// A sample proves the template parses; a real person proves the sentence reads
+// right with THEIR gift in it, which is the only thing worth checking.
+app.get("/sequences/tracked/:id/preview", requireAuth, wrap(async (req, res) => {
+  await SEQ_READY;
+  const orgId = req.user.orgId;
+  const [seq] = await query(`SELECT * FROM sequences WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  if (!seq) return res.status(404).json({ error: "Sequence not found" });
+  const steps = await query(`SELECT * FROM sequence_steps WHERE sequence_id=? ORDER BY step_order ASC`, [seq.id]);
+  let donor = null;
+  if (req.query.donorId) {
+    [donor] = await query(`SELECT * FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.query.donorId, orgId]);
+  }
+  if (!donor) {
+    // The most recent real giver, so the preview is never a fiction.
+    [donor] = await query(
+      `SELECT * FROM donors d WHERE d.org_id=? AND d.deleted_at IS NULL AND ${donorOnly("d")}
+         AND d.email IS NOT NULL AND d.email <> '' ORDER BY d.last_gift_date DESC NULLS LAST LIMIT 1`, [orgId]);
+  }
+  if (!donor) return res.json({ person: null, steps: [], note: "There is nobody with an email address to preview against yet." });
+  const values = await sequenceMergeValues(donor, orgId);
+  const trackKey = req.query.trackKey || null;
+  const shown = trackKey ? steps.filter(s => s.track_key === trackKey) : steps;
+  res.json({
+    person: { id: donor.id, name: donor.name, email: donor.email },
+    steps: shown.map(s => {
+      const subj = SEQ.renderMerge(s.subject, values);
+      const body = SEQ.renderMerge(s.body, values);
+      return {
+        stepOrder: s.step_order, trackKey: s.track_key, dayOffset: s.delay_days,
+        subject: subj.text, body: body.text,
+        sendEvenAfterGift: s.send_even_after_gift === true,
+        // A field that renders blank is named, not hidden — a blank in a
+        // preview is the one thing she can still fix.
+        missing: [...new Set([...subj.missing, ...body.missing])],
+      };
+    }),
+  });
+}));
+
+// Enroll one person by hand, from their profile. The fourth trigger, and the
+// only one a human fires.
+app.post("/sequences/tracked/:id/enroll/:donorId", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await SEQ_READY;
+  const orgId = req.user.orgId;
+  const [seq] = await query(`SELECT * FROM sequences WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  if (!seq) return res.status(404).json({ error: "Sequence not found" });
+  if (seq.status !== "active") return res.status(400).json({ error: "not_on", message: "Turn the sequence on first." });
+  const [d] = await query(
+    `SELECT id, last_gift_amount, stripe_subscription_status FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    [req.params.donorId, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const r = await enrollInSequences(orgId, d.id, seq.trigger, {
+    amount: Number(d.last_gift_amount) || null,
+    recurring: !!d.stripe_subscription_status,
+  }, actor(req));
+  // A manual enrollment on a sequence whose trigger is not "manual" still
+  // works — that IS the manual trigger, and refusing it would make the button
+  // on the profile a lie.
+  if (!r.enrolled && seq.trigger !== "manual") {
+    await enrollOneManually(orgId, seq, d, actor(req));
+  }
+  res.json({ ok: true });
+}));
+
+async function enrollOneManually(orgId, seq, donor, a) {
+  await SEQ_READY;
+  const tracks = Array.isArray(seq.tracks) ? seq.tracks : JSON.parse(seq.tracks || "[]");
+  const track = SEQ.chooseTrack(tracks, {
+    amount: Number(donor.last_gift_amount) || null,
+    recurring: !!donor.stripe_subscription_status,
+  });
+  if (!track) return;
+  const steps = await query(
+    `SELECT delay_days FROM sequence_steps WHERE sequence_id=? AND track_key=? ORDER BY step_order ASC LIMIT 1`,
+    [seq.id, track.key]);
+  if (!steps.length) return;
+  const [dc] = await query(`SELECT gift_count FROM donors WHERE id=?`, [donor.id]);
+  await run(
+    `INSERT INTO sequence_enrollments (id, sequence_id, org_id, donor_id, current_step, status, next_send_at,
+       track_key, enrolled_by, enrolled_by_name, gift_count_at_enroll)
+     VALUES (?,?,?,?,0,'active', NOW() + INTERVAL '${parseInt(steps[0].delay_days, 10) || 0} days', ?,?,?,?)
+     ON CONFLICT (sequence_id, donor_id) DO NOTHING`,
+    ["se_" + uuid().slice(0, 8), seq.id, orgId, donor.id, track.key, a?.id || "system:sequence", a?.name || null,
+     dc ? Number(dc.gift_count || 0) : null]);
+}
+
+// Remove someone from a sequence — the fourth STOP, and the one a human fires.
+app.delete("/sequences/tracked/:id/enroll/:donorId", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // 404 IS THE ONE ANSWER for anything not in this org (BUILD-75 §3). The
+  // first version answered 200 with removed:0 whatever it was handed, which
+  // is a 200 on another tenant's resource — it tells a prober the id exists
+  // somewhere, and the tenant matrix caught it before it shipped.
+  const [enr] = await query(
+    `SELECT id FROM sequence_enrollments WHERE sequence_id=? AND donor_id=? AND org_id=?`,
+    [req.params.id, req.params.donorId, req.user.orgId]);
+  if (!enr) return res.status(404).json({ error: "Not found" });
+  const r = await run(
+    `UPDATE sequence_enrollments SET status='stopped', stop_reason='removed', completed_at=NOW()
+      WHERE id=? AND status='active'`, [enr.id]);
+  res.json({ ok: true, removed: r.changes || 0 });
+}));
+
+// ONE LINE PER SEQUENCE, for Home. A failure is the end of the sentence, where
+// she is already looking (BUILD-37 H2 — never swallowed).
+app.get("/sequences/home", requireAuth, wrap(async (req, res) => {
+  await SEQ_READY;
+  const orgId = req.user.orgId;
+  const gate = await sequenceTimezoneGate(orgId);
+  const seqs = await query(
+    `SELECT id, name, status, turned_on_by_name FROM sequences
+      WHERE org_id=? AND tracks IS NOT NULL ORDER BY name`, [orgId]);
+  const lines = [];
+  for (const s of seqs) {
+    const [counts] = await query(
+      `SELECT COUNT(*) FILTER (WHERE status='active')::int AS active,
+              MIN(next_send_at) FILTER (WHERE status='active') AS next_at
+         FROM sequence_enrollments WHERE sequence_id=?`, [s.id]);
+    const [f] = await query(
+      `SELECT COUNT(*)::int AS n FROM sequence_sends WHERE sequence_id=? AND status='failed'`, [s.id]);
+    const nextCivil = counts?.next_at ? new Date(counts.next_at).toISOString().slice(0, 10) : null;
+    lines.push({
+      id: s.id, name: s.name, status: s.status,
+      activeCount: counts?.active || 0, nextSend: nextCivil, failedCount: f?.n || 0,
+      line: SEQ.homeSequenceLine({ name: s.name, activeCount: counts?.active || 0,
+                                   nextSendCivil: nextCivil, failedCount: f?.n || 0 }),
+    });
+  }
+  res.json({ sequences: lines, canRun: gate.ok, blockedReason: gate.ok ? null : gate.message });
+}));
+
+// The ops/test hook — drives the tracked engine for the caller's org NOW.
+app.post("/sequences/tracked/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  res.json(await processTrackedSequences({ orgId: req.user.orgId }));
+}));
+
 app.post("/sequences/process", requireAuth, requireAdmin, wrap(async (req, res) => {
   await processSequences();
   await autoEnroll();

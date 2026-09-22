@@ -3188,6 +3188,59 @@ async function initSchema() {
   await pool.query(`UPDATE donors SET person_types = '["donor"]'::jsonb WHERE person_types IS NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_person_types ON donors USING GIN (person_types)`);
 
+  // ── BUILD-94 Part 3 — SEQUENCES WITH TRACKS ──────────────────────────────
+  // Extends the BUILD-13 sequence tables rather than forking a second engine:
+  // one place a scheduled email can come from is the whole point.
+  //
+  // `tracks` is the ordered rule list (shared/sequenceShape.js) — ORDER IS
+  // MEANING: tracks are tried in order and the first match wins, which is what
+  // makes "a person is on exactly one track" true by construction.
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS tracks JSONB`);
+  // Turning a sequence on is an event with an actor and a time (BUILD-75).
+  // It is also what the timeline line on every send quotes back.
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS turned_on_by TEXT`);
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS turned_on_by_name TEXT`);
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS turned_on_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS turned_off_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS created_by TEXT`);
+  await pool.query(`ALTER TABLE sequences ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
+  await pool.query(`ALTER TABLE sequence_steps ADD COLUMN IF NOT EXISTS track_key TEXT`);
+  // "Send even after another gift" — a welcome series must not ask for a gift
+  // the week after one arrived, but a thank-you step still should.
+  await pool.query(`ALTER TABLE sequence_steps ADD COLUMN IF NOT EXISTS send_even_after_gift BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS track_key TEXT`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS enrolled_by TEXT`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS enrolled_by_name TEXT`);
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS stop_reason TEXT`);
+  // The gift count at enrollment. A SECOND gift during a first-gift sequence
+  // skips the remaining steps — this is what "second" is measured against.
+  await pool.query(`ALTER TABLE sequence_enrollments ADD COLUMN IF NOT EXISTS gift_count_at_enroll INTEGER`);
+
+  // ── THE IDEMPOTENCY ROW ──────────────────────────────────────────────────
+  // One row per (sequence, person, step), claimed BEFORE the provider call.
+  // A retried job cannot send twice because the claim is the unique index, not
+  // a flag somebody remembered to check. A failure is kept with its reason so
+  // it can surface on Home rather than being swallowed (BUILD-37 H2).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sequence_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      sequence_id TEXT NOT NULL,
+      donor_id TEXT NOT NULL,
+      step_order INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'claimed',
+      subject TEXT,
+      error TEXT,
+      attempts INTEGER DEFAULT 0,
+      claimed_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      CONSTRAINT sequence_sends_status CHECK (status IN ('claimed','sent','failed'))
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS sequence_sends_uk
+                    ON sequence_sends (sequence_id, donor_id, step_order)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sequence_sends_org_failed
+                    ON sequence_sends (org_id, sequence_id) WHERE status = 'failed'`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

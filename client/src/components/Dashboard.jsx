@@ -416,6 +416,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // non-admin, so this param is a convenience, never the gate.
   const [threadScope,setThreadScope]=useState("mine");
   const [threadHealth,setThreadHealth]=useState(null);
+  // BUILD-94 Part 3 — the sequence lines, server-built so Home and the
+  // Communications list cannot say different things about the same sequence.
+  const [seqLines,setSeqLines]=useState([]);
+  useEffect(()=>{apiFetch("/sequences/home").then(r=>setSeqLines((r&&r.sequences)||[])).catch(()=>setSeqLines([]));},[]);
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
   const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>{});
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
@@ -1955,6 +1959,27 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-83 Part 3.1 — Drift is its own section, third, after the monthly donors.
   const driftHomeSection=driftSection;
 
+  // BUILD-94 Part 3 — one line per sequence, and nothing more. A sequence is
+  // supposed to run without her; Home's whole job here is to prove it is
+  // running, and to say so immediately when an email could not be sent.
+  const sequencesSection=(seqLines&&seqLines.length)?(
+    <div style={{...cardWrap}}>
+      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
+        <span style={sTitle}>Sequences</span>
+        <button onClick={()=>onNavigate("communications",{section:"sequences"})} style={sLink}>Open →</button>
+      </div>
+      <div style={{padding:"10px 20px 14px",display:"flex",flexDirection:"column",gap:8}}>
+        {seqLines.map(s=>(
+          <div key={s.id} data-testid="home-sequence-line"
+            style={{fontSize:13.5,lineHeight:1.55,color:s.failedCount>0?T.gold700:T.ink}}>
+            {s.line}
+            {s.status!=="active"&&<span style={{color:T.ink3}}> · off</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  ):null;
+
   // BUILD-83 Part 3.1/3.4 — retention and the pipeline funnel, ONE demoted card
   // at the bottom of Home. The funnel labels itself a SUGGESTION until a human
   // has placed anybody (Part 3.5).
@@ -2405,7 +2430,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);
