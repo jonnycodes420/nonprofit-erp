@@ -16,6 +16,7 @@
 //   • Device toggle: phone and desktop, PHONE DEFAULT (donors arrive from
 //     email on a phone).
 import { useState, useEffect, useRef, useCallback } from "react";
+import { WIDGETS, typesForSurface, defaultWidget } from "../../../shared/pageWidgets";
 import { apiFetch, API } from "../api";
 import { PageRenderer } from "../components/PortalWidgets";
 import { resolvePairing, resolveCardStyle, TYPE_PAIRINGS, CARD_STYLES } from "../lib/portalTheme";
@@ -40,39 +41,11 @@ const SAMPLE_IMPACT = [{
   photos: [], date: new Date().toISOString(),
 }];
 
-const WIDGET_META = {
-  hero:     { label: "Hero",             hint: "Big photo + headline" },
-  richtext: { label: "Rich text",        hint: "Paragraphs, headings, lists" },
-  image:    { label: "Image + caption",  hint: "One photo" },
-  gallery:  { label: "Gallery",          hint: "Up to 8 photos" },
-  stats:    { label: "Stats",            hint: "Your own numbers" },
-  funds:    { label: "Programs & funds", hint: "Cards from your real funds" },
-  campaign: { label: "Campaign",         hint: "A campaign's story + goal" },
-  impact:   { label: "Impact feed",      hint: "Your impact updates" },
-  quote:    { label: "Quote",            hint: "A voice from your community" },
-  staff:    { label: "People & contact", hint: "Faces + a way to reach you" },
-  faq:      { label: "FAQ",              hint: "Questions donors ask" },
-  video:    { label: "Video",            hint: "YouTube or Vimeo link" },
-  give:     { label: "Give button",      hint: "A clear way to give" },
-  mygiving: { label: "My Giving",        hint: "The donor's own history" },
-};
-
-const DEFAULT_WIDGET = {
-  hero: { type: "hero", heading: "", sub: "", image: null, size: "standard" },
-  richtext: { type: "richtext", blocks: [{ type: "p", text: "Write something in your own words." }] },
-  image: { type: "image", image: null, caption: "" },
-  gallery: { type: "gallery", images: [] },
-  stats: { type: "stats", items: [{ value: "", label: "" }] },
-  funds: { type: "funds", heading: "Where you can give", fundIds: [] },
-  campaign: { type: "campaign", campaignId: "" },
-  impact: { type: "impact", heading: "What your giving made possible" },
-  quote: { type: "quote", text: "", attribution: "" },
-  staff: { type: "staff", members: [{ name: "", role: "", photo: null }], contactEmail: "" },
-  faq: { type: "faq", items: [{ q: "", a: "" }] },
-  video: { type: "video", url: "", caption: "" },
-  give: { type: "give", heading: "Make a new gift", buttonLabel: "Give" },
-  mygiving: { type: "mygiving" },
-};
+// BUILD-95 §5B — labels, hints and defaults come FROM the ONE registry
+// (`shared/pageWidgets.js`). They used to be two more literals here, which is
+// how the editor could offer a widget the server would refuse.
+const WIDGET_META = Object.fromEntries(WIDGETS.map(w => [w.key, { label: w.label, hint: w.hint }]));
+const widgetTypesHere = surface => typesForSurface(surface);
 
 const E = {
   ink: "#0f1a12", cream: "#f0ede6", gold: "#c9a84c", bg3: "#dcd8cc", terra: "#8a3a24", green: "#0d5c3a",
@@ -130,6 +103,9 @@ export default function PortalEditor() {
   const [impactUpdates, setImpactUpdates] = useState([]); // the org's REAL published updates (BUILD-55)
   const [device, setDevice] = useState("phone");     // §4: phone DEFAULT
   const [mode, setMode] = useState("page");           // "page" (widgets) | "design" (theme)
+  // BUILD-95 §5B — which surface this editor is arranging. ONE editor; the
+  // surface decides which widgets the palette offers and nothing else.
+  const surface = "portal";
   const [libOpen, setLibOpen] = useState(false);      // widget library — collapsed by default (BUILD-55)
   const [selected, setSelected] = useState(null);
   const [saveState, setSaveState] = useState("idle"); // idle|dirty|saving|saved|error
@@ -237,7 +213,7 @@ export default function PortalEditor() {
     update(next);
   };
   const addWidget = (type) => {
-    const w = { ...DEFAULT_WIDGET[type], id: "new_" + Math.random().toString(36).slice(2, 10) };
+    const w = { ...defaultWidget(type), id: "new_" + Math.random().toString(36).slice(2, 10) };
     update([...widgets, w]);
     setSelected(w.id);
   };
@@ -446,7 +422,7 @@ export default function PortalEditor() {
               <div style={{ fontSize: 13, fontWeight: 700 }}>Add a widget</div>
               <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#6b6b64" }}>✕</button>
             </div>
-            {Object.entries(WIDGET_META).map(([type, m]) => (
+            {widgetTypesHere(surface).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
               <button key={type} onClick={() => { addWidget(type); setLibOpen(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e0dcd0", borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>

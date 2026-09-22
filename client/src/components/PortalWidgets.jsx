@@ -5,6 +5,7 @@
 // the only iframe sources are BUILT here from a stored {provider, videoId}
 // (allowlisted, parsed server-side — never a caller-supplied URL).
 import { fmtFull } from "../lib/money";
+import { WIDGETS } from "../../../shared/pageWidgets.js";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
 
@@ -238,7 +239,10 @@ export function WidgetView({ w, ctx }) {
 // does NOT load PortalStyles, so its previews stay a single column — below
 // 1280px (and everywhere without the CSS) the wrappers are inert divs and the
 // page renders exactly as before.
-const FULL_WIDTH_WIDGETS = new Set(["hero", "mygiving", "give", "video", "richtext"]);
+// BUILD-95 §5B — from the ONE registry (`shared/pageWidgets.js`), not a second
+// literal. A widget whose layout is declared in two places eventually has two
+// different layouts.
+const FULL_WIDTH_WIDGETS = new Set(WIDGETS.filter(w => w.full).map(w => w.key));
 
 // `decorate(w, node)` (optional) lets a host wrap each widget's rendered node
 // with chrome INSIDE its grid cell — the editor's selection/reorder controls

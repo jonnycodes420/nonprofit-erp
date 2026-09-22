@@ -28660,7 +28660,10 @@ async function pruneCampaignAssets(orgId) {
 // BUILD-51 asset seam (kind 'widget'); video is stored as {provider, videoId}
 // parsed server-side from an allowlist — a stored page can never contain a
 // caller-supplied URL, tag, or script.
-const WIDGET_TYPES = ["hero", "richtext", "image", "gallery", "stats", "funds", "campaign", "impact", "quote", "staff", "faq", "video", "give", "mygiving"];
+// BUILD-95 §5B — READ FROM THE ONE REGISTRY, never re-declared here. The list
+// used to live in three files nothing kept in step; `tests/page-widgets.test.js`
+// now walks all three back to `shared/pageWidgets.js`.
+const widgetMod = () => import("./shared/pageWidgets.js");
 
 // Allowlisted video providers, server-side ID parsing ONLY (§4).
 function parseVideoRef(url) {
@@ -28694,6 +28697,7 @@ const wStr = (v, cap) => (v == null ? "" : String(v)).trim().slice(0, cap);
 
 // Validates ONE widget's typed fields → { widget } or { error }.
 async function validateWidget(raw, orgId) {
+  const { WIDGET_TYPES } = await widgetMod();
   if (!raw || typeof raw !== "object" || !WIDGET_TYPES.includes(raw.type)) return { error: "Unknown widget type." };
   const w = { id: /^wid_[a-f0-9]{8}$/.test(raw.id || "") ? raw.id : "wid_" + uuid().slice(0, 8), type: raw.type };
   const img = async (v) => { const r = await storeWidgetImage(orgId, v); if (r.error) throw new Error(r.error); return r.url; };
