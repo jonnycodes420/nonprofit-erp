@@ -101,8 +101,9 @@ function chunk(src, startMarker, endMarker) {
   // ══ §3 · THE SETTINGS PAGE ═══════════════════════════════════════════════
   console.log("\n— §3 · what the page has to say —");
   ok("it is called Where giving comes in", /Where giving comes in/.test(settingsSrc));
-  ok("...and it is a section of Settings, reachable forever after",
-    /\{id:"sources",label:"Where giving comes in"\}/.test(settingsSrc));
+  ok("...and it is reachable forever after, on the Integrations screen beside the processor",
+    /\{\(section==="integrations"\|\|section==="sources"\)&&/.test(settingsSrc)
+    && /<GivingSourcesManager /.test(settingsSrc));
   ok("the page states the promise in her own screen, not only on the landing",
     gsText.some(t => /never holds or moves a dollar/i.test(t)), gsText.slice(0, 4));
   ok("every row can be checked now", /data-testid="gs-check-now"/.test(gsSection) && /Check now/.test(gsSection));
@@ -285,7 +286,15 @@ function chunk(src, startMarker, endMarker) {
       page.on("pageerror", e => errs.push("pageerror: " + e.message));
       // /_vercel/insights is absent from a local preview by design and is the
       // one 404 this page is allowed to produce.
-      page.on("response", r => { if (r.status() >= 400 && !/_vercel\//.test(r.url())) errs.push(`HTTP ${r.status()} ${r.url()}`); });
+      const EXPECTED_4XX = [
+        /_vercel\//,                    // Vercel's own probes
+        /\/give-default$/,              // 401 for an anonymous visitor, by design
+      ];
+      page.on("response", r => {
+        if (r.status() < 400) return;
+        if (EXPECTED_4XX.some(re => re.test(r.url()))) return;
+        errs.push(`HTTP ${r.status()} ${r.url()}`);
+      });
 
       await page.goto(APP + "/", { waitUntil: "domcontentloaded" });
       await page.evaluate(a => {
@@ -298,7 +307,9 @@ function chunk(src, startMarker, endMarker) {
       await page.click('button:has-text("Settings")').catch(() => {});
       await page.waitForTimeout(800);
 
-      const tab = page.locator('button:has-text("Where giving comes in")').first();
+      // BUILD-95 §4 — the panel lives on Integrations now; the way in changed,
+      // the panel and every data-testid below did not.
+      const tab = page.locator('button:has-text("Integrations")').first();
       ok("the Settings tab is there to click", await tab.count() > 0);
       await tab.click();
       await page.waitForTimeout(1100);
