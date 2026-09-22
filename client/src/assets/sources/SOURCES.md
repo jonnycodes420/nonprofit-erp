@@ -29,6 +29,7 @@ nothing else. Every tile currently renders in type.
 | Zeffy | merged, green | no | Zeffy's press/brand page, reached from zeffy.com footer | none | no |
 | Stripe | merged, green | no | stripe.com newsroom → brand assets | none | no |
 | Givebutter | merged, green | no | givebutter.com press/brand kit | none | no |
+| Square | merged, green | no | squareup.com press/brand assets | none | no |
 | Cash App | n/a — statement upload | n/a | cash.app press page | none | no |
 | Venmo | n/a — statement upload | n/a | venmo.com brand guidelines | none | no |
 | QuickBooks (Intuit) | **not built — see BLOCKED-build91.md** | no | Intuit trademark and brand guidelines, via intuit.com legal | none | no |

@@ -89,6 +89,7 @@ const ADAPTER_FILES = {
   zeffy: "./zeffy.js",
   stripe: "./stripeSource.js",
   givebutter: "./givebutter.js",
+  square: "./square.js",
 };
 
 const loaded = new Map();

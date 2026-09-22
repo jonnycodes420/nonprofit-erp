@@ -85,6 +85,23 @@ export const PROVIDERS = {
       "Copy the key.",
     ],
   },
+  square: {
+    key: "square", label: "Square", mode: "api", recurring: "inferred",
+    credentialFields: [{ name: "accessToken", label: "Access token", secret: true }],
+    // Square is a POINT OF SALE, and that is the whole difficulty: a lesson
+    // fee and a donation are the same shape to it. The org has to say which
+    // locations are giving — see sources/square.js.
+    help: "In Square, open Developer Dashboard → your application → Credentials, and copy the production access token. Then tell Steward which of your Square locations take donations.",
+    steps: [
+      "Open developer.squareup.com and sign in with your Square account.",
+      "Click + to create an application, or open an existing one.",
+      "Switch the toggle from Sandbox to Production.",
+      "Open Credentials and copy the Production Access Token.",
+      "Back in Steward, choose which Square locations take donations.",
+    ],
+    // Said BEFORE the steps: this is the thing that surprises people.
+    waitNote: "Square cannot tell a donation from a lesson fee — they are the same kind of payment to it. Steward imports NOTHING from Square until you say which locations (or which item wording) are giving, so nobody's lesson fees land on a donor record.",
+  },
   cashapp: {
     key: "cashapp", label: "Cash App", mode: "file", recurring: "inferred",
     credentialFields: [],

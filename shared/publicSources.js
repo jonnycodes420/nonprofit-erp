@@ -53,6 +53,11 @@ export const PUBLIC_SOURCES = {
   zeffy:      { label: "Zeffy",      mode: "api"  },
   stripe:     { label: "Stripe",     mode: "api"  },
   givebutter: { label: "Givebutter", mode: "api"  },
+  // BUILD-95 §5A. In the MIRROR because the registry has it; deliberately NOT
+  // in the allowlist below, and it must not go there until a real dollar has
+  // come out of a real Square account. This file's whole header is about that
+  // distinction, and Square is the example it uses.
+  square:     { label: "Square",     mode: "api"  },
   cashapp:    { label: "Cash App",   mode: "file" },
   venmo:      { label: "Venmo",      mode: "file" },
 };

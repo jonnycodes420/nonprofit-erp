@@ -2321,6 +2321,32 @@ const SOURCE_SYNC_RESYNC_DAYS = 3;   // providers publish late; re-read and let 
 const SYS_SOURCE = { id: "system:giving-source", name: "Connected giving source" };
 
 async function givingSourcesMod() { return import("./shared/givingSources.js"); }
+
+// BUILD-95 §5A — the answers an organisation gave a source, as a plain object.
+// Never null: an adapter reads `config.locationIds` without guarding, and a
+// null here would be the difference between "import nothing" and a crash.
+// What a client may put in a source's config, and nothing else. An unknown
+// key is DROPPED rather than stored: this object is read by an adapter that
+// decides whether somebody's money becomes a gift, and it is not a place for
+// a request body to put whatever it likes.
+function normalizeSourceConfig(raw) {
+  const c = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  if (Array.isArray(c.locationIds)) {
+    out.locationIds = c.locationIds.map(x => String(x).trim()).filter(Boolean).slice(0, 50);
+  }
+  if (c.onlyNoteContains !== undefined) {
+    out.onlyNoteContains = String(c.onlyNoteContains || "").trim().slice(0, 120);
+  }
+  return out;
+}
+
+function sourceConfig(source) {
+  const v = source && source.config;
+  if (!v) return {};
+  if (typeof v === "string") { try { return JSON.parse(v) || {}; } catch { return {}; } }
+  return typeof v === "object" ? v : {};
+}
 async function secretBoxMod() { return import("./shared/secretBox.js"); }
 
 // The credentials for one source, opened and bound to its org. A blob that
@@ -2591,7 +2617,11 @@ async function syncSource(orgId, sourceId, { today = null, adapter = null, actor
       let cursor = isBackfill ? null : source.sync_cursor || null;
       let page = 0, done = false;
       while (!done && page < SOURCE_SYNC_MAX_PAGES) {
-        const out = await use.fetchRows({ credentials, since, until: day, cursor, http, today: day, backfill: isBackfill });
+        // BUILD-95 §5A — `config` is what the ORGANISATION told this source
+        // (which Square locations are giving). An adapter that does not need
+        // to be told anything ignores it.
+        const out = await use.fetchRows({ credentials, since, until: day, cursor, http, today: day,
+                                          backfill: isBackfill, config: sourceConfig(source) });
         page++;
         for (const n of out?.notices || []) summary.notices.push(n);
         for (const raw of out?.rows || []) {
@@ -9598,7 +9628,7 @@ function trimCredentials(raw) {
 // a second set of rules about what "it works" means.
 // Returns { ok, count, totalCents, message } or { ok:false, kind, status,
 // providerCode, message } - never throws for a provider-side failure.
-async function runSourceCredentialTest(provider, credentials, orgId) {
+async function runSourceCredentialTest(provider, credentials, orgId, config) {
   const { PROVIDERS } = await import("./shared/givingSources.js");
   const spec = PROVIDERS[provider];
   const adapter = sourceAdapters.getAdapter(provider);
@@ -9608,7 +9638,10 @@ async function runSourceCredentialTest(provider, credentials, orgId) {
   const today = orgToday(org);                          // ORG_TZ_SEAM_OK
   const http = sourceAdapters.readOnlyHttp(provider);
   try {
-    const out = await adapter.testCredentials({ credentials, http, today });
+    // BUILD-95 §5A — the Test button has to tell Square's truth in BOTH
+    // directions: the token works, AND nothing is being imported yet because
+    // nobody has said which locations are giving.
+    const out = await adapter.testCredentials({ credentials, http, today, config: config || {} });
     return { ok: !!out?.ok, kind: "ok", status: null, providerCode: null,
              count: out?.count || 0, totalCents: out?.totalCents || 0,
              message: out?.message || null, requests: http.requests.length };
@@ -9859,7 +9892,7 @@ app.post("/giving-sources/test", requireAuth, requireAdmin, wrap(async (req, res
   const credentials = trimCredentials(req.body?.credentials || {});
   const missing = spec.credentialFields.filter(f => !String(credentials[f.name] || "").trim()).map(f => f.label);
   if (missing.length) return res.status(400).json({ error: "missing_credentials", message: `Still needed: ${missing.join(", ")}.` });
-  const out = await runSourceCredentialTest(provider, credentials, req.user.orgId);
+  const out = await runSourceCredentialTest(provider, credentials, req.user.orgId, normalizeSourceConfig(req.body?.config));
   res.json({ ok: !!out.ok, count: out.count || 0, totalCents: out.totalCents || 0,
              message: out.message || null, requests: out.requests || 0,
              // The same two facts the source row carries, so the Test button
@@ -9899,7 +9932,7 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
   //   It runs through runSourceCredentialTest, the same path the Test button
   // uses. There is no second notion of "it works".
   if (spec.credentialFields.length && verifyBeforeSaving(provider)) {
-    const check = await runSourceCredentialTest(provider, credentials, orgId);
+    const check = await runSourceCredentialTest(provider, credentials, orgId, normalizeSourceConfig(req.body?.config));
     if (!check.ok && (check.kind === "auth" || check.kind === "PROVIDER_WRITE_REFUSED")) {
       return res.status(400).json({
         error: "credentials_refused",
@@ -9963,11 +9996,12 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
 
   const id = "gs_" + uuid().slice(0, 10);
   const inserted = await query(
-    `INSERT INTO giving_sources (id,org_id,provider,display_name,status,credentials_sealed,default_fund_id,created_by,created_by_name)
-     VALUES (?,?,?,?,'active',?,?,?,?)
+    `INSERT INTO giving_sources (id,org_id,provider,display_name,status,credentials_sealed,default_fund_id,created_by,created_by_name,config)
+     VALUES (?,?,?,?,'active',?,?,?,?,?::jsonb)
      ON CONFLICT (org_id, provider) WHERE status <> 'disconnected' DO NOTHING
      RETURNING id`,
-    [id, orgId, provider, displayName, sealed, fundId, actor(req).id, actor(req).name]);
+    [id, orgId, provider, displayName, sealed, fundId, actor(req).id, actor(req).name,
+     JSON.stringify(normalizeSourceConfig(req.body?.config))]);
   if (!inserted.length) return res.status(409).json({ error: "already_connected", message: `${providerLabel(provider)} is already connected.` });
   res.json({ id, provider, displayName, status: "active", reconnected: false });
 }));
@@ -10004,8 +10038,14 @@ app.patch("/giving-sources/:id", requireAuth, requireAdmin, checkWriteAccess, wr
       if (!other) return res.status(404).json({ error: "unknown_source" });
     }
   }
-  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, sits_on_top_of=?, updated_at=NOW() WHERE id=? AND org_id=?",
-            [displayName, fundId, sitsOnTopOf, req.params.id, orgId]);
+  // BUILD-95 §5A — the config is MERGED, not replaced: a PATCH that only
+  // renames the source must not silently wipe the answer about which Square
+  // locations are giving, which would stop every import with no error.
+  const nextConfig = req.body?.config !== undefined
+    ? { ...sourceConfig(s), ...normalizeSourceConfig(req.body.config) }
+    : sourceConfig(s);
+  await run("UPDATE giving_sources SET display_name=?, default_fund_id=?, sits_on_top_of=?, config=?::jsonb, updated_at=NOW() WHERE id=? AND org_id=?",
+            [displayName, fundId, sitsOnTopOf, JSON.stringify(nextConfig), req.params.id, orgId]);
   res.json({ ok: true, displayName, defaultFundId: fundId, sitsOnTopOf });
 }));
 

@@ -97,7 +97,7 @@ const ROOT = path.join(__dirname, "..");
   }
 
   let unknown = null;
-  try { pub.publicSourceRow({ allowlist: ["square"] }); } catch (e) { unknown = e; }
+  try { pub.publicSourceRow({ allowlist: ["not-a-real-provider"] }); } catch (e) { unknown = e; }
   ok("a provider that does not exist refuses too, rather than rendering an empty tile",
     !!unknown && unknown.code === "DIRECT_CLAIM_REFUSED", unknown && unknown.message);
 

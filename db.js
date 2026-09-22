@@ -3281,6 +3281,16 @@ async function initSchema() {
   await pool.query(`ALTER TABLE users ALTER COLUMN welcomed_at SET DEFAULT NOW()`);
   await pool.query(`UPDATE users SET welcomed_at = NOW() WHERE welcomed_at IS NULL`);
 
+  // ── BUILD-95 §5A — WHAT A SOURCE NEEDS TO BE TOLD ────────────────────────
+  // Square is a point-of-sale: a lesson fee and a donation are the same shape
+  // to it, and no field distinguishes them. So the ORGANISATION says which
+  // locations (or which item wording) are giving, and Steward imports nothing
+  // from Square until they have. This column holds that answer.
+  //
+  // Generic JSONB rather than square_location_ids, because the next provider
+  // that needs to be told something will need to be told something else.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS config JSONB`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
