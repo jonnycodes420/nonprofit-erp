@@ -176,11 +176,29 @@ green. 177 of 177 suites in CI.
 * The `App` and `Settings` chunks serve 200 and parse, and the login shell
   mounts with zero console errors and zero failed requests.
 
-**NOT verified, and it needs Jonathan:** the brief asks that Home,
-Settings → Where giving comes in and super-admin → Close a deal be walked after
-every push. That needs an authenticated prod session and there is no prod-safe
-authenticated smoke script in `scripts/` — the three existing prod verifiers are
-all public-page, read-only. Guessing at prod credentials is not a thing to do,
-so what was proven instead is the layer a shared-module change could actually
-break: the chunks that carry those three surfaces are served and parse, and the
-shell boots clean. The walk itself is still a person's job.
+**WALKED BY JONATHAN on 21 September, after this deploy.** The brief asks that
+Home, Settings → Where giving comes in and super-admin → Close a deal work after
+every push. He closed a deal on super-admin and it worked, and sent screenshots
+of Dashboards → Board rendering in full and of Settings → Where giving comes in
+with all eight tiles in their two correct groups.
+
+That walk is still a person's job, and the reason is worth keeping: it needs an
+authenticated prod session and there is **no prod-safe authenticated smoke
+script** in `scripts/` — all three prod verifiers are public-page and read-only.
+Guessing at prod credentials is not a thing to do. What this build could prove
+on its own was the layer a shared-module change would actually break: the chunks
+carrying those three surfaces serve and parse, and the shell boots with no
+console errors. Worth building the authenticated smoke script one day; until
+then, the walk is the gate.
+
+**And the walk corroborated the thing this whole part turns on.** The PayPal
+tile reads *"CONNECTED — checked just now, 0 new gifts this week."* That is the
+connection authenticating and reading nothing, on prod, in front of a person.
+It is exactly why `PUBLIC_SOURCE_ALLOWLIST` is empty, and the $1 walk in §4 is
+still the first thing that would change it.
+
+Note the in-app page correctly shows all four direct tiles while the public page
+shows none. That asymmetry is the design, not a bug: the in-app page shows what
+Steward has an adapter for, to somebody who holds their own key and finds out in
+a minute whether it works. The public page shows what Steward has run a real
+person's money through.
