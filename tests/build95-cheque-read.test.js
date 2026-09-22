@@ -70,7 +70,7 @@ const money = c => "$" + (c / 100).toFixed(2);
     ok(`it is never asked for "${forbidden}"`, !props.includes(forbidden));
   ok("every field is nullable, so a blank cheque line comes back blank",
     props.filter(k => k !== "unreadable")
-      .every(k => JSON.stringify(cr.CHEQUE_READ_SCHEMA.properties[k].type).includes("null")));
+      .every(k => [].concat(cr.CHEQUE_READ_SCHEMA.properties[k].type).includes("null")));
   ok("strict tool use is possible: additionalProperties false + required",
     cr.CHEQUE_READ_SCHEMA.additionalProperties === false
     && cr.CHEQUE_READ_SCHEMA.required.length === props.length);
