@@ -72,11 +72,26 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
     } catch (e) { rethrowProgrammerError(e); setErr("That file could not be read as text. Paste the rows instead."); }
   };
 
+  // BUILD-95 — a photograph per line, taken as she enters it. Held in memory
+  // until the deposit commits: a picture of a cheque that was never recorded
+  // is an image of somebody's bank details with nothing to attach it to.
+  const [cheques, setCheques] = useState({});
+  const readCheque = (line, file) => {
+    if (!file) return;
+    const fr = new FileReader();
+    fr.onload = () => setCheques(c => ({ ...c, [line]: fr.result }));
+    fr.readAsDataURL(file);
+  };
+
   const commit = async () => {
     setBusy(true); setErr("");
     try {
+      // BUILD-95 — the cheque photographs ride the commit, keyed by line. The
+      // server re-plans from `paste` and will not trust a client's line object,
+      // so the line NUMBER is the only thing both sides agree on.
+      const lines = Object.entries(cheques).map(([line, chequeImage]) => ({ line: Number(line), chequeImage }));
       const r = await apiFetch("/deposits/commit", { method: "POST", body: JSON.stringify({
-        paste, depositDate, slipTotal, resolutions }) });
+        paste, depositDate, slipTotal, resolutions, lines }) });
       setDone(r);
       if (onRecorded) onRecorded(r);
     } catch (e) {
@@ -103,6 +118,21 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             {done.installmentsApplied > 0 && <>{done.installmentsApplied} pledge instalment{done.installmentsApplied === 1 ? "" : "s"} applied. </>}
             The slip said {cents(done.slipCents)} and the lines come to {cents(done.giftCents + done.notGiftCents)}.
             {done.footed ? " It foots." : " The database and the plan disagree — open the deposit on the Imports page."}
+            {/* BUILD-95 — the photographs, said out loud. A cheque whose image
+                would not store is a recorded gift with no evidence, and she is
+                holding the cheque RIGHT NOW, which is the only moment taking it
+                again costs nothing. Reported, never swallowed. */}
+            {done.chequePhotos > 0 && (
+              <> {done.chequePhotos} cheque{done.chequePhotos === 1 ? "" : "s"} photographed.</>
+            )}
+            {Array.isArray(done.chequeFailures) && done.chequeFailures.length > 0 && (
+              <div data-testid="deposit-cheque-failures" style={{ marginTop: 8, color: T.gold700, fontWeight: 600 }}>
+                {done.chequeFailures.length} photo{done.chequeFailures.length === 1 ? "" : "s"} could not be saved
+                (line{done.chequeFailures.length === 1 ? "" : "s"} {done.chequeFailures.map(f => f.line).join(", ")}).
+                The money is recorded. Photograph {done.chequeFailures.length === 1 ? "it" : "them"} again from the gift
+                while you still have the cheque{done.chequeFailures.length === 1 ? "" : "s"}.
+              </div>
+            )}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 18 }}>
             Nothing was sent. The thank-yous this earns are waiting on Home.
@@ -179,6 +209,18 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                           {l.fundName ? <> · <span style={{ color: T.ink2 }}>{l.fundName}</span></> : null}
                           {l.installmentId ? " · pledge payment" : ""}
                         </div>
+                        {/* BUILD-95 — the camera. `capture` makes a phone open
+                            the rear camera straight at the cheque rather than
+                            the photo library, which is the difference between
+                            a one-tap habit and a chore. */}
+                        <label data-testid={`deposit-cheque-${l.line}`}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5,
+                                   fontSize: 11.5, fontWeight: 700, cursor: "pointer",
+                                   color: cheques[l.line] ? T.greenDk : T.ink3 }}>
+                          <input type="file" accept="image/*" capture="environment" style={{ display: "none" }}
+                            onChange={e => { readCheque(l.line, e.target.files && e.target.files[0]); e.target.value = ""; }} />
+                          {cheques[l.line] ? "◫ photographed" : "◫ photograph the cheque"}
+                        </label>
                         {l.state === "needs_you" && (
                           <div style={{ marginTop: 6 }}>
                             <div style={{ color: STATE_META.needs_you.colour, fontWeight: 600, marginBottom: 6 }}>{l.needs}</div>

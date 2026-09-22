@@ -3291,6 +3291,18 @@ async function initSchema() {
   // that needs to be told something will need to be told something else.
   await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS config JSONB`);
 
+  // ── BUILD-95 — A PICTURE OF THE CHEQUE ───────────────────────────────────
+  // A treasurer photographing each cheque as she enters it is the whole
+  // feature: three months later, "did Margaret really write $250?" has an
+  // answer that is the cheque rather than somebody's memory. The bytes ride
+  // the BUILD-94 asset seam under the kind `cheque`, and the gift keeps only
+  // the asset id — served through the same signed, expiring /person-photos
+  // door, because a cheque image carries a name, an amount, a bank and a
+  // signature and is the most sensitive image this product will ever hold.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS cheque_asset_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_cheque
+                    ON gifts (org_id) WHERE cheque_asset_id IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

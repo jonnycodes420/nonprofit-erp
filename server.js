@@ -2096,13 +2096,18 @@ async function recordGift(o) {
                 // donor-covers-fee amount above it), and the provider's own
                 // subscription id. They belong in THIS insert and nowhere else:
                 // a second UPDATE after the fact is a second write path.
-                "giving_source_id", "processor_fee_amount", "provider_recurring_ref"];
+                "giving_source_id", "processor_fee_amount", "provider_recurring_ref",
+                // BUILD-95 — the photograph of the cheque this gift came on.
+                // In THIS insert for the same reason as the source columns
+                // above: a second UPDATE after the fact is a second write path.
+                "cheque_asset_id"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
                 o.givingPageId || null, o.peerFundraiserId || null, o.coverFeeAmount || 0,
                 o.recurringSubscriptionId || null, actorId, actorName,
-                o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0), o.providerRecurringRef || null];
+                o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0), o.providerRecurringRef || null,
+                o.chequeAssetId || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -10341,6 +10346,20 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
   if (!depositDate) return res.status(400).json({ error: "A deposit needs the date it was deposited." });
   if (depositDate > today) return res.status(400).json({ error: "A deposit is a thing that happened — its date cannot be in the future." });
 
+  // BUILD-95 — the cheque photographs, stored BEFORE any gift is written, so
+  // a gift is never written pointing at bytes that failed to save. A photo
+  // that will not store does NOT stop the deposit: the money is the point and
+  // the picture is the evidence, so the line commits and the failure is
+  // reported rather than losing eleven cheques to one bad JPEG.
+  const chequeFailures = [];
+  const chequeByLine = new Map();
+  for (const l of (Array.isArray(body.lines) ? body.lines : [])) {
+    if (!l || !l.chequeImage) continue;
+    const r = await storeChequeImage({ orgId, dataUri: l.chequeImage });
+    if (r.error) { chequeFailures.push({ line: Number(l.line), message: r.error }); continue; }
+    chequeByLine.set(Number(l.line), r.assetId);
+  }
+
   // THE GATE, RE-EVALUATED HERE. The screen disables the button; the server
   // refuses the write. A client that has drifted from the plan (a stale tab, a
   // replayed request) cannot commit a slip that does not foot.
@@ -10414,6 +10433,10 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
       // tells recordGift this decision is already made.
       installmentId: l.installmentId || null,
       idempotencyKey: `deposit:${importId2}:${l.line}`, conflict: "idempotency",
+      // BUILD-95 — the photograph of THIS cheque, taken as she entered the
+      // line. Stored before the gift so the gift is never written referring
+      // to bytes that failed to save.
+      chequeAssetId: chequeByLine.get(Number(l.line)) || null,
       actorId: actorInfo.id, actorName: actorInfo.name,
       timelineNote: l.memo || `Deposited ${depositDate}`,
       source: "deposit",
@@ -10471,6 +10494,11 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
     giftCents: created.giftCents, slipCents: plan.totals.slipCents,
     notGiftCents: plan.totals.notGiftCents,
     written, footed,
+    // BUILD-95 — never swallowed. A cheque whose photo would not store is a
+    // committed gift with no evidence, and she has the cheque in her hand
+    // right now — which is the only moment re-taking it is free.
+    chequePhotos: chequeByLine.size,
+    chequeFailures,
     reversibleUntil: new Date(Date.now() + DEPOSIT_REVERSE_HOURS * 3600e3).toISOString(),
   });
 }));
@@ -28184,6 +28212,54 @@ async function storeDonorPhoto({ orgId, donorId, dataUri, actorUser }) {
     console.error("[person-photo] prune:", e.message));
   return { assetId: asset.id, url: donorPhotoUrl(orgId, asset.id) };
 }
+
+// ── BUILD-95 — A PICTURE OF THE CHEQUE ─────────────────────────────────────
+// Stored through the SAME seam as a donor photo, and served through the same
+// signed, expiring, private door — a cheque image carries a name, an amount, a
+// bank, an account number and a signature, and is the most sensitive picture
+// this product will ever hold. It is NOT a 512 square: a cheque cropped square
+// is a cheque you cannot read, so it keeps its shape and is capped on the long
+// edge instead.
+const CHEQUE_LONG_EDGE = 1600;
+async function storeChequeImage({ orgId, dataUri }) {
+  const m = typeof dataUri === "string" ? dataUri.match(/^data:([^;]+);base64,(.*)$/s) : null;
+  if (!m) return { error: "That file isn't an image we can use. Please use a PNG or JPEG photo." };
+  if (dataUri.length > personPhoto.PHOTO_MAX_STR) return { error: "That photo is larger than 10 MB." };
+  const declared = m[1];
+  let buffer; try { buffer = Buffer.from(m[2], "base64"); } catch { buffer = null; }
+  if (!buffer || !buffer.length) return { error: "That file isn't an image we can use." };
+  if (buffer.length > personPhoto.PHOTO_MAX_BYTES) return { error: "That photo is larger than 10 MB." };
+  if (!["image/png", "image/jpeg", "image/webp"].includes(declared) || !imageBytesMatchMime(declared, buffer)) {
+    return { error: "That file isn't an image we can use. Please use a PNG or JPEG photo." };
+  }
+  try {
+    const sharp = require("sharp");
+    const out = await sharp(buffer, { failOn: "none" }).rotate()
+      .resize({ width: CHEQUE_LONG_EDGE, height: CHEQUE_LONG_EDGE, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 86 })                       // higher than a headshot: this has to stay READABLE
+      .toBuffer({ resolveWithObject: true });
+    const asset = await putThemeAsset({
+      orgId, kind: personPhoto.PHOTO_ASSET_KIND, buffer: out.data,
+      contentType: "image/webp", width: out.info.width, height: out.info.height,
+    });
+    return { assetId: asset.id };
+  } catch (e) {
+    console.error("[cheque] resize failed:", e.message);
+    return { error: "We couldn't process that photo. Try taking it again in better light." };
+  }
+}
+
+// One cheque image, attached to a gift that already exists.
+app.post("/gifts/:id/cheque", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [g] = await query(`SELECT id, cheque_asset_id FROM gifts WHERE id = ? AND org_id = ?`,
+    [req.params.id, req.user.orgId]);
+  if (!g) return res.status(404).json({ error: "Not found" });
+  const r = await storeChequeImage({ orgId: req.user.orgId, dataUri: req.body && req.body.image });
+  if (r.error) return res.status(400).json({ error: "invalid_photo", message: r.error });
+  await run(`UPDATE gifts SET cheque_asset_id = ? WHERE id = ? AND org_id = ?`, [r.assetId, g.id, req.user.orgId]);
+  await recordAssetPointerHistory(req.user.orgId, "gift.cheque", g.id, g.cheque_asset_id || null, r.assetId, req.user);
+  res.json({ ok: true, chequeUrl: donorPhotoUrl(req.user.orgId, r.assetId) });
+}));
 
 app.post("/donors/:id/photo", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const r = await storeDonorPhoto({

@@ -301,7 +301,8 @@ async function fixture() {
     "server.js": {
       // BUILD-94 Part 1 added two: the donor-photo upload route and the
       // import photo queue's own store. Both go through the same seam.
-      putThemeAsset: 7,            // theme upload · impact photo · campaign hero · widget image · legacy rescue · donor photo upload · import photo queue
+      // BUILD-95 added the cheque photograph — same seam, same store.
+      putThemeAsset: 8,            // theme upload · impact photo · campaign hero · widget image · legacy rescue · donor photo upload · import photo queue · cheque image
       pruneThemeAssets: 1,         // PUT /portal-settings (replace/clear)
       pruneUnreferencedAssets: 5,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies · donor photo set · donor photo clear
       pruneImpactAssets: 2,        // impact PUT, impact DELETE
@@ -311,7 +312,7 @@ async function fixture() {
       purgeExpiredAssets: 3,       // 6h tick (timeout+interval) + POST /assets/run-purge
       // Part 1 coverage: every pointer-mutation site records history. A new
       // mutation site must add BOTH the record call and this classification.
-      recordAssetPointerHistory: 13, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter · donor photo set/clear (BUILD-94)
+      recordAssetPointerHistory: 14, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter · donor photo set/clear (BUILD-94) · cheque attach (BUILD-95)
     },
     "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 1 /* the pruneThemeAssets alias body */, pruneThemeAssets: 0 },
   };
@@ -351,7 +352,10 @@ async function fixture() {
   // destroy a referenced object).
   // BUILD-94 Part 1 added `donors` (photo_asset_id) — the first pointer that
   // stores a BARE asset id rather than a /portal-assets/ path.
-  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages", "donors"]) {
+  // BUILD-95 added `gifts` (cheque_asset_id) — a photographed cheque is
+  // evidence, and a sweep that destroyed it would remove the only record of
+  // what a donor actually wrote.
+  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages", "donors", "gifts"]) {
     ok(`collectLiveAssetRefs reads ${t}`, new RegExp(`collectLiveAssetRefs[\\s\\S]*?FROM ${t}`).test(store));
   }
   // dbFallback interaction (BUILD-51b alarm): soft-deleted rows are retained
