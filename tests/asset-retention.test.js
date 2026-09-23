@@ -307,12 +307,12 @@ async function fixture() {
       pruneUnreferencedAssets: 5,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies · donor photo set · donor photo clear
       pruneImpactAssets: 2,        // impact PUT, impact DELETE
       pruneCampaignAssets: 2,      // campaign hero PUT, campaign DELETE
-      pruneWidgetAssets: 2,        // page draft PUT, revert
+      pruneWidgetAssets: 4,        // portal page draft PUT, revert · giving page draft PUT, revert (BUILD-95 §5B)
       rescueLegacyImageValue: 2,   // portal-settings legacy *_data, impactPhotosHistoryValue
       purgeExpiredAssets: 3,       // 6h tick (timeout+interval) + POST /assets/run-purge
       // Part 1 coverage: every pointer-mutation site records history. A new
       // mutation site must add BOTH the record call and this classification.
-      recordAssetPointerHistory: 14, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · page draft/publish/revert/starter · donor photo set/clear (BUILD-94) · cheque attach (BUILD-95)
+      recordAssetPointerHistory: 17, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · portal page draft/publish/revert/starter · donor photo set/clear (BUILD-94) · cheque attach (BUILD-95) · giving page draft/publish/revert (BUILD-95 §5B)
     },
     "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 1 /* the pruneThemeAssets alias body */, pruneThemeAssets: 0 },
   };

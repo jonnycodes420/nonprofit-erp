@@ -49,11 +49,13 @@ const widgetTypesHere = surface => typesForSurface(surface);
 
 const E = {
   ink: "#0f1a12", cream: "#f0ede6", gold: "#c9a84c", bg3: "#dcd8cc", terra: "#8a3a24", green: "#0d5c3a",
+  // The editor chrome's own four, named rather than repeated thirty-four times.
+  line: "#3a4a3e", muted: "#6b6b64", panel: "#1b2a20", preview: "#1a6b4a",
 };
 const btn = { background: E.gold, color: E.ink, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
-const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid #3a4a3e", borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid " + E.line, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
 const inp = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: "1px solid " + E.bg3, borderRadius: 8, fontFamily: "inherit" };
-const lbl = { fontSize: 11, fontWeight: 700, color: "#6b6b64", textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
+const lbl = { fontSize: 11, fontWeight: 700, color: E.muted, textTransform: "uppercase", letterSpacing: "0.06em", margin: "10px 0 4px" };
 
 function varsForPs(ps) {
   const pairing = resolvePairing(ps.type_pairing);
@@ -80,7 +82,7 @@ function SampleMyGiving() {
         <div><div style={lbl}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>$450</div></div>
         <div><div style={lbl}>Lifetime</div><div style={{ fontSize: 26, fontWeight: 700 }}>$2,900</div></div>
       </div>
-      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 10 }}>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 10 }}>
         Signed-in donors see their own history, recurring gifts, and receipts here — this is Sam Sample, a fictional donor.
       </div>
     </div>
@@ -105,7 +107,14 @@ export default function PortalEditor() {
   const [mode, setMode] = useState("page");           // "page" (widgets) | "design" (theme)
   // BUILD-95 §5B — which surface this editor is arranging. ONE editor; the
   // surface decides which widgets the palette offers and nothing else.
-  const surface = "portal";
+  // BUILD-95 §5B — ONE editor, two surfaces. `?page=gp_…` arranges a giving
+  // page; no parameter arranges the org's portal page. The route SHAPES are
+  // identical (GET base · PUT base/draft · POST base/publish · base/revert),
+  // so the surface is a base path and a filter, not a second editor.
+  const givingPageId = new URLSearchParams(window.location.search).get("page") || "";
+  const surface = givingPageId ? "give" : "portal";
+  const apiBase = givingPageId ? `/giving-pages/${givingPageId}/page` : "/portal-page";
+  const [formPosition, setFormPosition] = useState("top");
   const [libOpen, setLibOpen] = useState(false);      // widget library — collapsed by default (BUILD-55)
   const [selected, setSelected] = useState(null);
   const [saveState, setSaveState] = useState("idle"); // idle|dirty|saving|saved|error
@@ -122,7 +131,7 @@ export default function PortalEditor() {
   const applyPs = useCallback((next) => { psRef.current = next; setPs(next); }, []);
 
   useEffect(() => {
-    apiFetch("/portal-page").then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); }).catch(e => setErr(errorMessage(e)));
+    apiFetch(apiBase).then(d => { setMeta(d); setWidgets(Array.isArray(d.draft) ? d.draft : []); if (d.formPosition) setFormPosition(d.formPosition); }).catch(e => setErr(errorMessage(e)));
     apiFetch("/portal-settings").then(d => { psRef.current = d; setPs(d); }).catch(() => {});
     apiFetch("/finance/funds").then(f => setFunds(Array.isArray(f) ? f : [])).catch(() => {});
     apiFetch("/fundraising/campaigns").then(c => setCamps(Array.isArray(c) ? c : [])).catch(() => {});
@@ -186,20 +195,22 @@ export default function PortalEditor() {
     scheduleDesignSave(next);
   };
 
-  const scheduleSave = useCallback((next) => {
+  // `pos` rides the same debounce as the widgets: the form's side of the page
+  // is part of the layout, not a second thing to save.
+  const scheduleSave = useCallback((next, pos) => {
     setSaveState("dirty");
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const seq = ++editSeq.current;
     saveTimer.current = setTimeout(async () => {
       setSaveState("saving"); setErr("");
       try {
-        const r = await apiFetch("/portal-page/draft", { method: "PUT", body: JSON.stringify({ widgets: next }) });
+        const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets: next, formPosition: pos ?? formPosition }) });
         // Adopt the server's canonical draft (data-URI images became asset
         // paths) ONLY if nothing changed while the request was in flight.
         if (seq === editSeq.current) { setWidgets(r.draft); setSaveState("saved"); }
       } catch (e) { setErr(errorMessage(e, "Could not save the draft.")); setSaveState("error"); }
     }, 1200);
-  }, []);
+  }, [apiBase, formPosition]);
 
   const update = (next) => { setWidgets(next); scheduleSave(next); };
   const updateWidget = (id, patch) => update(widgets.map(w => w.id === id ? { ...w, ...patch } : w));
@@ -241,10 +252,10 @@ export default function PortalEditor() {
     try {
       if (saveTimer.current) { clearTimeout(saveTimer.current); }
       const seq = ++editSeq.current;
-      const r = await apiFetch("/portal-page/draft", { method: "PUT", body: JSON.stringify({ widgets }) });
+      const r = await apiFetch(apiBase + "/draft", { method: "PUT", body: JSON.stringify({ widgets, formPosition }) });
       if (seq === editSeq.current) setWidgets(r.draft);
-      await apiFetch("/portal-page/publish", { method: "POST", body: "{}" });
-      const d = await apiFetch("/portal-page");
+      await apiFetch(apiBase + "/publish", { method: "POST", body: "{}" });
+      const d = await apiFetch(apiBase);
       setMeta(d); setSaveState("saved");
     } catch (e) { setErr(errorMessage(e, "Publish failed.")); }
     setPublishing(false);
@@ -252,14 +263,14 @@ export default function PortalEditor() {
   const revert = async () => {
     if (!window.confirm("Discard the draft and go back to the last published page?")) return;
     try {
-      const r = await apiFetch("/portal-page/revert", { method: "POST", body: "{}" });
+      const r = await apiFetch(apiBase + "/revert", { method: "POST", body: "{}" });
       setWidgets(Array.isArray(r.draft) ? r.draft : []);
       setSelected(null); setSaveState("saved");
     } catch (e) { setErr(errorMessage(e, "Revert failed.")); }
   };
   const applyStarter = async (key) => {
     try {
-      const r = await apiFetch("/portal-page/starter", { method: "POST", body: JSON.stringify({ key }) });
+      const r = await apiFetch(apiBase + "/starter", { method: "POST", body: JSON.stringify({ key }) });
       setWidgets(r.draft); setSaveState("saved");
     } catch (e) { setErr(errorMessage(e, "Could not apply the starter.")); }
   };
@@ -270,7 +281,7 @@ export default function PortalEditor() {
       <a href="/dashboard" style={{ color: E.green }}>← Back to Steward</a>
     </div>;
   }
-  if (widgets === null || !ps) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#6b6b64" }}>Loading the editor…</div>;
+  if (widgets === null || !ps) return <div style={{ padding: 40, fontFamily: "system-ui", color: E.muted }}>Loading the editor…</div>;
 
   const themeVars = varsForPs(ps);
   const selectedWidget = widgets.find(w => w.id === selected) || null;
@@ -337,13 +348,40 @@ export default function PortalEditor() {
       {(ps.logo_data || ps.logo_url) && (
         <img src={ps.logo_data || resolveAssetUrl(ps.logo_url)} alt="" style={{ height: 28, maxWidth: 90, objectFit: "contain" }} />
       )}
-      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{ps.display_name || "Your portal"}</div>
+      <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22 }}>{surface === "give" ? (meta?.pageTitle || "Your giving page") : (ps.display_name || "Your portal")}</div>
     </div>
   );
+  // BUILD-95 §5B — the ONE control a giving page adds. The form is not a
+  // widget and cannot be removed; only the side of the page it leads from is
+  // hers, so this is a choice between two layouts that both always work.
+  const formPositionControl = surface !== "give" ? null : (
+    <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: E.cream, marginLeft: 8 }}>
+      <span style={{ opacity: 0.75 }}>Form</span>
+      <select value={formPosition} aria-label="Where the donation form sits"
+        onChange={e => { setFormPosition(e.target.value); scheduleSave(widgets, e.target.value); }}
+        style={{ background: E.panel, color: E.cream, border: "1px solid " + E.line, borderRadius: 8, padding: "5px 8px", fontSize: 12 }}>
+        <option value="top">leads the page</option>
+        <option value="bottom">follows the story</option>
+      </select>
+    </label>
+  );
+
+  const formBlock = surface !== "give" ? null : (
+    <div style={{ border: "2px dashed var(--pt-primary,#1a6b4a)", borderRadius: 12, padding: "18px 16px",
+                  textAlign: "center", margin: "14px 0", background: "rgba(0,0,0,0.02)" }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--pt-primary," + E.preview + ")" }}>
+        The donation form
+      </div>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 4 }}>
+        Always here. Amounts, frequency and card details.
+      </div>
+    </div>
+  );
+
   const pageBody = widgets.length === 0 ? (
     <div style={{ padding: "10px 0 30px" }}>
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Start with a layout</div>
-      <div style={{ fontSize: 13, color: "#6b6b64", marginBottom: 14 }}>Pick a starting point — everything stays editable, and nothing is visible to donors until you publish.</div>
+      <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point — everything stays editable, and nothing is visible to donors until you publish.</div>
       {(meta?.starters || []).map(s => (
         <button key={s.key} onClick={() => applyStarter(s.key)}
           style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e7e4dc", borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
@@ -352,8 +390,12 @@ export default function PortalEditor() {
       ))}
     </div>
   ) : (
-    <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx}
-      decorate={mode === "page" ? decorateWidget : undefined} />
+    <>
+      {formPosition === "top" && formBlock}
+      <PageRenderer page={{ widgets: resolvedWidgets, giveSlug: ps.org_slug }} ctx={publicPreviewCtx}
+        decorate={mode === "page" ? decorateWidget : undefined} />
+      {formPosition === "bottom" && formBlock}
+    </>
   );
 
   return (
@@ -372,15 +414,17 @@ export default function PortalEditor() {
       {/* ── Top chrome ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", background: E.ink, color: E.cream, flexWrap: "wrap" }}>
         <a href="/dashboard" style={{ color: E.cream, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>← Steward</a>
-        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>Portal editor</span>
-        <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>
+        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 16 }}>{surface === "give" ? "Giving page" : "Portal editor"}</span>
+        {surface === "give"
+          ? <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>{meta?.pageTitle || "Page"}</span>
+          : <span style={{ fontSize: 11, fontWeight: 700, background: E.gold, color: E.ink, borderRadius: 20, padding: "3px 10px" }}>SAMPLE DONOR DATA</span>}
         {/* Mode toggle — "Page" edits the widgets; "Design" edits the theme +
             page details (the old Settings portal form, moved here so you edit
             what you see, where you see it). */}
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
           {["page", "design"].map(m => (
             <button key={m} onClick={() => { setMode(m); if (m === "design") { setSelected(null); setLibOpen(false); } }}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? "#2a3a2e" : "transparent", borderColor: mode === m ? E.gold : "#3a4a3e" }}>
+              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? "#2a3a2e" : "transparent", borderColor: mode === m ? E.gold : E.line }}>
               {m === "page" ? "Page" : "Design"}
             </button>
           ))}
@@ -388,15 +432,18 @@ export default function PortalEditor() {
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
           {["phone", "desktop"].map(d => (
             <button key={d} onClick={() => setDevice(d)}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? "#2a3a2e" : "transparent", borderColor: device === d ? E.gold : "#3a4a3e" }}>
+              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? "#2a3a2e" : "transparent", borderColor: device === d ? E.gold : E.line }}>
               {d === "phone" ? "Phone" : "Desktop"}
             </button>
           ))}
         </div>
         {mode === "page" && (
-          <button onClick={() => setLibOpen(o => !o)} style={{ ...btnQuiet, borderColor: libOpen ? E.gold : "#3a4a3e", background: libOpen ? "#2a3a2e" : "transparent", marginLeft: 8 }}>
+          <>
+          {formPositionControl}
+          <button onClick={() => setLibOpen(o => !o)} style={{ ...btnQuiet, borderColor: libOpen ? E.gold : E.line, background: libOpen ? "#2a3a2e" : "transparent", marginLeft: 8 }}>
             + Add widget
           </button>
+          </>
         )}
         <span style={{ marginLeft: "auto", fontSize: 12, color: "#8fa896" }}>
           {saveState === "saving" ? "Saving draft…" : saveState === "dirty" ? "Unsaved edits…" : saveState === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves"}
@@ -420,16 +467,16 @@ export default function PortalEditor() {
           <div style={{ width: 280, flexShrink: 0, background: "#f7f5ef", borderRight: "1px solid #2a3a2e", overflowY: "auto", padding: "16px 16px 40px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>Add a widget</div>
-              <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#6b6b64" }}>✕</button>
+              <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>✕</button>
             </div>
             {widgetTypesHere(surface).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
               <button key={type} onClick={() => { addWidget(type); setLibOpen(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e0dcd0", borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>
-                <div style={{ fontSize: 11.5, color: "#6b6b64" }}>{m.hint}</div>
+                <div style={{ fontSize: 11.5, color: E.muted }}>{m.hint}</div>
               </button>
             ))}
-            <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 12, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: E.muted, marginTop: 12, lineHeight: 1.5 }}>
               The new widget lands at the end of the page, already selected — its options open beside the preview.
             </div>
           </div>
@@ -494,10 +541,10 @@ function DesignRail({ ps, onSet, note }) {
         <input style={{ ...inp, width: 104, fontFamily: "monospace" }} value={ps[key] || ""} placeholder={placeholder || fallback}
           onChange={e => onSet(key, e.target.value)} />
         {clearable && ps[key] && (
-          <button onClick={() => onSet(key, "")} style={{ background: "none", border: "none", color: "#6b6b64", fontSize: 12, cursor: "pointer" }}>Clear</button>
+          <button onClick={() => onSet(key, "")} style={{ background: "none", border: "none", color: E.muted, fontSize: 12, cursor: "pointer" }}>Clear</button>
         )}
       </div>
-      {hint && <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>{hint}</div>}
     </>
   );
   const logoSrc = ps.logo_data || resolveAssetUrl(ps.logo_url);
@@ -505,7 +552,7 @@ function DesignRail({ ps, onSet, note }) {
   return (
     <>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Design</div>
-      <div style={{ fontSize: 12, color: "#6b6b64", lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5 }}>
         Your portal's look and page details. Changes autosave and show in the preview immediately —
         colors may be adjusted slightly on save so text stays readable.
       </div>
@@ -568,7 +615,7 @@ function DesignRail({ ps, onSet, note }) {
       <select style={inp} value={ps.type_pairing || "dm"} onChange={e => onSet("type_pairing", e.target.value)}>
         {Object.entries(TYPE_PAIRINGS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
       </select>
-      <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>A curated set — every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
+      <div style={{ fontSize: 11, color: E.muted, marginTop: 4, lineHeight: 1.4 }}>A curated set — every pairing is pre-licensed and self-hosted, so your page stays fast.</div>
       <div style={lbl}>Card style</div>
       <select style={inp} value={ps.card_style || "rounded"} onChange={e => onSet("card_style", e.target.value)}>
         {Object.entries(CARD_STYLES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -598,7 +645,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
   const head = (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
       <div style={{ fontSize: 13, fontWeight: 700 }}>{WIDGET_META[w.type]?.label}</div>
-      <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: "#6b6b64" }}>Done ✕</button>
+      <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>Done ✕</button>
     </div>
   );
   const imgUploader = (value, set, label = "Photo") => (
@@ -658,7 +705,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
         )}
       </Uploader></>;
     case "stats": return <>{head}
-      <div style={{ fontSize: 12, color: "#6b6b64", lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words — nothing is computed or invented for you.</div>
+      <div style={{ fontSize: 12, color: E.muted, lineHeight: 1.5, marginBottom: 4 }}>Your own numbers, in your own words — nothing is computed or invented for you.</div>
       {(w.items || []).map((it, i) => (
         <div key={i} style={{ display: "flex", gap: 6, marginTop: 6 }}>
           <input style={{ ...inp, width: 90 }} placeholder="1,200" value={it.value} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, value: e.target.value } : x) })} />
@@ -691,8 +738,8 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
             <button aria-label={`Remove ${f.name}`} onClick={() => onChange({ fundIds: (w.fundIds || []).filter(x => x !== f.id) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer" }}>✕</button>
           </div>
         ))}
-        {!chosen.length && <div style={{ fontSize: 12, color: "#6b6b64", marginBottom: 4 }}>Nothing selected yet — the first fund you add leads the section.</div>}
-        {chosen.length >= 6 && <div style={{ fontSize: 11.5, color: "#6b6b64", marginBottom: 4 }}>Up to 6 funds show here.</div>}
+        {!chosen.length && <div style={{ fontSize: 12, color: E.muted, marginBottom: 4 }}>Nothing selected yet — the first fund you add leads the section.</div>}
+        {chosen.length >= 6 && <div style={{ fontSize: 11.5, color: E.muted, marginBottom: 4 }}>Up to 6 funds show here.</div>}
         {unchosen.length > 0 && chosen.length < 6 && <>
           <div style={lbl}>Add a fund</div>
           {unchosen.map(f => (
@@ -702,8 +749,8 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
             </button>
           ))}
         </>}
-        {!funds.length && <div style={{ fontSize: 12, color: "#6b6b64" }}>No funds yet — create them in Finance.</div>}
-        <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 10, lineHeight: 1.5 }}>
+        {!funds.length && <div style={{ fontSize: 12, color: E.muted }}>No funds yet — create them in Finance.</div>}
+        <div style={{ fontSize: 12, color: E.muted, marginTop: 10, lineHeight: 1.5 }}>
           Each card's Give button carries that fund as the gift's designation.
         </div>
       </>;
@@ -714,7 +761,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
         <option value="">— pick a campaign —</option>
         {camps.map(c => <option key={c.id} value={c.id}>{c.donorFacingName || c.name}</option>)}
       </select>
-      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 8, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 8, lineHeight: 1.5 }}>
         The story, photo, and goal come from the campaign itself — edit them in Fundraising. A campaign with no donor-facing content shows nothing here.
       </div></>;
     case "impact": return <>{head}
@@ -746,13 +793,13 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <div style={lbl}>YouTube or Vimeo link</div>
       <input style={inp} placeholder="https://youtu.be/…" value={w.url || (w.videoId ? `(saved ${w.provider} video)` : "")}
         onChange={e => onChange({ url: e.target.value, provider: undefined, videoId: undefined })} />
-      <div style={{ fontSize: 12, color: "#6b6b64", marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work — the video ID is stored, never pasted embed code.</div>
+      <div style={{ fontSize: 12, color: E.muted, marginTop: 6, lineHeight: 1.5 }}>Only YouTube and Vimeo links work — the video ID is stored, never pasted embed code.</div>
       <div style={lbl}>Caption</div><input style={inp} value={w.caption || ""} onChange={e => onChange({ caption: e.target.value })} /></>;
     case "give": return <>{head}
       <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
       <div style={lbl}>Button label</div><input style={inp} value={w.buttonLabel || ""} onChange={e => onChange({ buttonLabel: e.target.value })} /></>;
     case "mygiving": return <>{head}
-      <div style={{ fontSize: 12.5, color: "#6b6b64", lineHeight: 1.6 }}>
+      <div style={{ fontSize: 12.5, color: E.muted, lineHeight: 1.6 }}>
         Signed-in donors see their own giving history, recurring gifts, and receipts here.
         On the public page it shows a sign-in prompt instead. Nothing to configure.
       </div></>;

@@ -69,7 +69,9 @@ async function fixture() {
   ];
   const d1 = await api("PUT", `/giving-pages/${PAGE}/page/draft`, tok, { widgets, formPosition: "bottom" });
   ok("it saves", d1.status === 200, d1.body);
-  ok("…and mints stable widget ids", d1.body.widgets.every(w => /^wid_[a-f0-9]{8}$/.test(w.id)), d1.body.widgets.map(w => w.id));
+  ok("…and answers in the SAME shape the portal's route does (`draft`), because it is one editor",
+    Array.isArray(d1.body.draft) && !("widgets" in d1.body), Object.keys(d1.body));
+  ok("…and mints stable widget ids", d1.body.draft.every(w => /^wid_[a-f0-9]{8}$/.test(w.id)), d1.body.draft.map(w => w.id));
   ok("…and keeps the side of the page she chose", d1.body.formPosition === "bottom", d1.body.formPosition);
 
   for (const wrong of ["mygiving", "give"]) {
@@ -196,6 +198,52 @@ async function fixture() {
     ok("the form leads and the story follows it", fb2.y < wb2.y, [fb2.y, wb2.y]);
     ok("…and the widgets are still all there", (await v.pg.locator(".pt-widgets > div").count()) === 3);
     await v.pg.close();
+
+    console.log("— ONE EDITOR, and it says which page it is arranging —");
+    // Four things the editor got wrong until somebody LOOKED at it: it called
+    // itself the Portal editor, it badged SAMPLE DONOR DATA on a page with no
+    // donor data at all, the form control vanished the moment she had widgets,
+    // and the form itself — the one thing that cannot be removed — was absent
+    // from the preview she was arranging around.
+    const ed = await b.newPage({ viewport: { width: 1440, height: 1000 } });
+    const edErrs = []; ed.on("pageerror", e => edErrs.push(String(e).slice(0, 200)));
+    await ed.goto(PREVIEW + "/login");
+    await ed.evaluate(d => {
+      localStorage.setItem("npe_token", d.token);
+      localStorage.setItem("npe_user", JSON.stringify(d.user));
+      localStorage.setItem("npe_org", JSON.stringify(d.org));
+    }, await (await fetch(process.env.BASE + "/auth/login", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: ORG + "@test.local", password: "loadtest1234" }) })).json());
+    await ed.goto(`${PREVIEW}/portal-editor?page=${PAGE}`, { waitUntil: "networkidle" });
+    await ed.waitForTimeout(1200);
+    const et = await ed.innerText("body");
+
+    ok("the editor opens on the giving page", edErrs.length === 0 && !et.includes("Something went wrong"), edErrs);
+    ok("it calls itself a Giving page, not the Portal editor",
+      et.includes("Giving page") && !et.includes("Portal editor"), et.slice(0, 80));
+    ok("…and names WHICH page", et.includes("Sponsor a horse"));
+    ok("…and does not badge SAMPLE DONOR DATA on a page that has no donor data",
+      !et.toUpperCase().includes("SAMPLE DONOR DATA"));
+    ok("her widgets are there with their chrome", (await ed.locator(".pt-widgets > div").count()) === 3);
+    ok("THE FORM IS IN THE PREVIEW — she is arranging around something she can see",
+      et.toUpperCase().includes("THE DONATION FORM"));
+    ok("…and the control that moves it is in the CHROME, not inside the phone",
+      (await ed.locator('select[aria-label="Where the donation form sits"]').count()) === 1);
+
+    await ed.locator("button", { hasText: "+ Add widget" }).first().click();
+    await ed.waitForTimeout(400);
+    const palette = ed.locator("text=Add a widget").locator("xpath=../..");
+    const lib = await palette.innerText();
+    for (const gone of ["My Giving", "Give button"])
+      ok(`the palette does not offer "${gone}" here`, !lib.includes(gone), lib.slice(0, 160));
+    for (const there of ["Hero", "Programs & funds", "FAQ", "Video"])
+      ok(`…and does offer "${there}"`, lib.includes(there), lib.slice(0, 160));
+    ok("…and offers EXACTLY the give surface, no more and no fewer",
+      (await palette.locator("button").count()) === reg.typesForSurface("give").length + 1,
+      await palette.locator("button").count());
+
+    await ed.close();
     await b.close();
   }
 

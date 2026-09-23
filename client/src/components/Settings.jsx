@@ -217,6 +217,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 </button>
                 {isAdmin&&<>
                   <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
+                  <a href={`/portal-editor?page=${p.id}`} style={{background:T.gold500,border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink,cursor:"pointer",textDecoration:"none"}}>Build the page</a>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
                     style={{background:p.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(p.status==="active"?"#eac6b8":"#0d5c3a"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#8a3a24":"#0d5c3a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {p.status==="active"?"Archive":"Reactivate"}

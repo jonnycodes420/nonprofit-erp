@@ -16588,6 +16588,27 @@ app.put("/giving-pages/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(a
 // The form is NOT among the widgets. A giving page whose one job is taking a
 // gift must not be able to lose it, so it is always rendered and she chooses
 // only which side of the page it leads from.
+// Two starting points, and NEITHER INVENTS CONTENT — the portal starters'
+// rule (tests/portal-page.test.js pins it there): a starter lays out empty
+// widgets and prompts, never a fabricated number, quote or testimonial.
+const GIVE_STARTERS = {
+  story_first: {
+    label: "Story first",
+    widgets: [
+      { type: "hero", heading: "", sub: "", image: null, size: "tall" },
+      { type: "richtext", blocks: [{ type: "p", text: "Say what this page is for, in your own words." }] },
+      { type: "funds", heading: "Where you can give", fundIds: [] },
+    ],
+  },
+  short_and_clear: {
+    label: "Short and clear",
+    widgets: [
+      { type: "hero", heading: "", sub: "", image: null, size: "standard" },
+      { type: "stats", items: [{ value: "", label: "" }] },
+    ],
+  },
+};
+
 const givingPageOr404 = async (id, orgId) => {
   const [p] = await query(`SELECT * FROM giving_pages WHERE id = ? AND org_id = ?`, [id, orgId]);
   return p || null;
@@ -16602,8 +16623,11 @@ app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, re
     published: Array.isArray(pg.published) ? pg.published : null,
     draftUpdatedAt: pg.draft_updated_at, publishedAt: pg.published_at,
     formPosition: normalizeFormPosition(pg.form_position) || DEFAULT_FORM_POSITION,
+    // So the editor can name what she is arranging rather than saying "portal".
+    pageTitle: pg.title, pageSlug: pg.slug,
     // The palette the editor may offer for THIS surface, from the one registry.
     widgetTypes: typesForSurface("give"),
+    starters: Object.entries(GIVE_STARTERS).map(([key, st]) => ({ key, label: st.label })),
   });
 }));
 
@@ -16629,7 +16653,21 @@ app.put("/giving-pages/:id/page/draft", requireAuth, requireAdmin, checkWriteAcc
   await recordAssetPointerHistory(req.user.orgId, "giving_page.draft", pg.id,
     widgetPathsOrNull(pg.draft), widgetPathsOrNull(v.widgets), req.user.id, req.user.name);
   await pruneWidgetAssets(req.user.orgId);
-  res.json({ ok: true, widgets: v.widgets, formPosition: pos });
+  res.json({ ok: true, draft: v.widgets, formPosition: pos });
+}));
+
+app.post("/giving-pages/:id/page/starter", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const st = GIVE_STARTERS[req.body?.key];
+  if (!st) return res.status(400).json({ error: "unknown_starter" });
+  // Through the SAME validator every other draft goes through — a starter is
+  // not a privileged path into the page.
+  const v = await validateWidgets(st.widgets, req.user.orgId);
+  if (v.error) return res.status(400).json({ error: "bad_widget", message: v.error });
+  await run(`UPDATE giving_pages SET draft = ?, draft_updated_at = NOW(), updated_at = NOW()
+             WHERE id = ? AND org_id = ?`, [JSON.stringify(v.widgets), pg.id, req.user.orgId]);
+  res.json({ ok: true, draft: v.widgets });
 }));
 
 app.post("/giving-pages/:id/page/publish", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
