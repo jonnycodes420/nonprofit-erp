@@ -281,5 +281,22 @@ ok(!!fRemote && fs.existsSync(fRemote), "logOverwrite saves a pre-write snapshot
 if (fRemote) ok(JSON.parse(fs.readFileSync(fRemote, "utf8")).current.theme === "banner", "snapshot contains the pre-write state");
 fs.rmSync(tmp, { recursive: true, force: true });
 
+// ── INCIDENT 2026-09-22 — A SEEDED ORG MUST NOT BE ABLE TO SEND ────────────
+// A demo org sent real pledge reminders to real mailboxes that evening. Every
+// PERSISTENT seed (a `seed-*.js` — the ones whose orgs are meant to outlive a
+// test run) must therefore create its orgs with mail off and marked as
+// fiction, so the org-level gate in server.js refuses them.
+//
+// Scoped to seed-*.js deliberately. The capture/walk/drill scripts are already
+// hard-refused from any non-loopback target by the assertions above, so their
+// orgs only ever exist in a scratch database with no real Resend key — a
+// different guarantee, and a stronger one.
+for (const f of fs.readdirSync(path.join(root, "scripts")).filter(n => /^seed-.*\.js$/.test(n))) {
+  const src = fs.readFileSync(path.join(root, "scripts", f), "utf8");
+  if (!/INSERT INTO orgs/.test(src)) continue;
+  ok(/is_demo_org/.test(src), `${f} must create its orgs with is_demo_org (a seeded org is fiction)`);
+  ok(/emails_enabled/.test(src), `${f} must create its orgs with emails_enabled=false (a seeded org mails nobody)`);
+}
+
 console.log(`script-guards: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

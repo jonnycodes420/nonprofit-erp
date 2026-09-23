@@ -23,8 +23,8 @@ async function main() {
   }
   await getDb();
   for (const o of [A, B]) {
-    await run(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,stripe_connected)
-               VALUES ($1,$2,$3,1,'active','core',$4,true) ON CONFLICT (id) DO NOTHING`, [o.org, o.name, o.slug, "acct_" + o.org]);
+    await run(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,stripe_account_id,stripe_connected,emails_enabled,is_demo_org)
+               VALUES ($1,$2,$3,1,'active','core',$4,true,false,true) ON CONFLICT (id) DO NOTHING`, [o.org, o.name, o.slug, "acct_" + o.org]);
     await run(`INSERT INTO portal_settings (org_id,enabled,network_listed,display_name,accent_color,contact_email,footer_text)
                VALUES ($1,true,true,$2,$3,$4,$5)
                ON CONFLICT (org_id) DO UPDATE SET enabled=true, network_listed=true, display_name=EXCLUDED.display_name, accent_color=EXCLUDED.accent_color`,

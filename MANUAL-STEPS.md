@@ -143,6 +143,16 @@ insecure.
 yet — see BLOCKED-build89a.md §1). After a rotation every source must be
 disconnected and connected again.
 
+### DONE 2026-09-22 — the key is set on prod
+
+`STEWARD_CREDENTIAL_KEY` is present on Railway project **nonprofit-erp** →
+service **nonprofit-erp** → environment `production`. Verified by listing the
+service's variables; the value itself was not read back. Giving-source connects
+no longer answer 503 for want of a sealing key, so **PayPal, Zeffy, Stripe and
+Givebutter can now be connected.**
+
+The rotation warning above still stands and does not expire.
+
 ## §8 — THE THREE LIVE STRIPE PRICES (BUILD-90, 2026-09-20)
 
 The close link is the only door a customer comes through, and it refuses to
@@ -300,3 +310,75 @@ sending address** the event came from — never from anything in the payload —
 and a line lands on that person's timeline. An event from the shared
 `stewardapp.dev` sender marks nobody, on purpose: a shared-domain From
 identifies Steward, not a tenant, and guessing would mark the wrong person.
+
+## §11 — GEOCODIO_API_KEY (BUILD-84, still open)
+
+**Until this is set, the Map has no pins in production.** It is the one
+outstanding step from BUILD-84, and it is a variable, not a code change.
+
+The provider seam in `geocode.js` has three states and prod is in the third:
+`GEOCODIO_API_KEY` → Geocodio, `GEOCODE_NOMINATIM_BASE` → a **self-hosted**
+Nominatim, neither → **unconfigured**, in which case the background job does not
+run, **no donor address leaves the server**, and the map says so in a sentence
+instead of showing an empty box. The public Nominatim instance is refused by
+hostname in code and is not an option.
+
+**Decided: Geocodio** (Jonathan, 2026-09-10) — US/Canada matches the customer
+base, nothing to operate, 2,500 lookups free per day then $1.00 per 1,000.
+
+1. <https://dash.geocod.io> → sign in → **API Keys** → create a key with
+   geocoding permission.
+2. Railway → project **nonprofit-erp** → service **nonprofit-erp** →
+   **Variables** → **New Variable**:
+   - name `GEOCODIO_API_KEY`
+   - value the key you just created
+   → **Add**, then let the service redeploy.
+   (Or: `railway variables --set GEOCODIO_API_KEY=… --service nonprofit-erp`.)
+3. **Verify:** `GET /geocode/status` as any signed-in user stops reporting
+   `unconfigured`. The map then fills in on the next five-minute tick — **no
+   re-import is needed**: geocoding is triggered at write time and the standing
+   backlog is drained by the same job.
+
+**What it will spend:** the billable unit is a distinct ADDRESS, new or changed
+— never a donor, never a render. The queue de-duplicates by address before it
+spends anything and never re-resolves one it already holds, so a steady-state
+org spends nothing. Measured on the 444-row file: 408 distinct addresses = one
+batched request = **$0.00**. A 25,000-address first import is **$22.50** in a
+single day, or **$0.00** spread over ten.
+
+**Never set `GEOCODIO_API_BASE` in production** — like `STRIPE_BILLING_API_BASE`
+it is the local-test seam that points the client at a mock.
+
+Reasoning and the provider comparison: `BLOCKED-build84.md` §1.
+
+
+## §12 — OUTBOUND EMAIL IS CURRENTLY BLOCKED ON PRODUCTION (incident 2026-09-22)
+
+Set the night of 22 September after production delivered three real emails
+built from invented data. Full account: `INCIDENT-2026-09-22-outbound-email.md`.
+
+On Railway → project **nonprofit-erp** → service **nonprofit-erp** →
+environment `production`:
+
+| Variable | Value | Why |
+|---|---|---|
+| `RESEND_API_KEY` | `re_DISABLED_incident_20260923_…` | every send 401s; code logs and continues |
+| `RESEND_API_KEY_INCIDENT_BACKUP` | the real key | so restoring is a copy, not a console trip |
+| `DISABLE_BACKGROUND_TICKS` | `1` | no periodic job fires at all |
+
+**Do not simply DELETE `RESEND_API_KEY` to turn mail off.** `new Resend(undefined)`
+throws at module load and the API crash-loops. Set it to an invalid string.
+
+**Neither variable stops request-triggered mail.** `register-org` sends its
+welcome inline. **Do not provision an org until the gates are deployed** — and
+once they are, provision with `provisioned: true`, which creates the org with
+mail off and no onboarding drip.
+
+### Restoring, once the fix is live and verified
+
+1. Read the backup value (never paste it into a terminal that logs):
+   `railway variables --service nonprofit-erp --json | python3 -c "import sys,json;print(json.load(sys.stdin)['RESEND_API_KEY_INCIDENT_BACKUP'])"`
+2. Set `RESEND_API_KEY` back to it.
+3. `railway variables --service nonprofit-erp --set "DISABLE_BACKGROUND_TICKS=0"`
+4. Confirm `/health` is ok and the boot log no longer says "background ticks DISABLED".
+5. Then, and only then, add the seeded addresses to Resend suppressions.

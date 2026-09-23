@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// BUILD-50 Part C — demo data for the PRIMARY account (xjca2006@gmail.com),
+// BUILD-50 Part C — demo data for the PRIMARY account (xjca2006@gmail.example.com),
 // so both consumer-dashboard states are viewable signed in as Jonathan:
 //
 //   • org_creo (CREO Arts, the standing demo org): a realistic mid-level
-//     donor record for xjca2006@gmail.com — five gifts across five years
+//     donor record for xjca2006@gmail.example.com — five gifts across five years
 //     through the NORMAL gift-create path with idempotency keys (never
 //     direct DB writes), one designated to a fund carrying an impact
 //     update, receipts issued on the two most recent gifts. Also seeds the
@@ -27,7 +27,7 @@
 // judged). The consumer-account signup+verify step is deliberately NOT here —
 // it needs the email token from the inbox; run it once by hand (or via the
 // operator) after this seed: sign up at https://www.stewardapp.dev/giving
-// with xjca2006@gmail.com, click the verify link, and both orgs link
+// with xjca2006@gmail.example.com, click the verify link, and both orgs link
 // automatically.
 //
 //   node scripts/seed-build50-demo.js                      # scratch stack
@@ -43,9 +43,9 @@ const guard = require("./lib/prodGuard");
 const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const CREO_EMAIL = process.env.CREO_EMAIL || "admin@creoarts.org";
 const CREO_PASSWORD = process.env.CREO_PASSWORD || "demo1234";
-const DEMO2_EMAIL = process.env.DEMO2_EMAIL || "xjca2006+b50demo@gmail.com";
+const DEMO2_EMAIL = process.env.DEMO2_EMAIL || "xjca2006+b50demo@gmail.example.com";
 const DEMO2_PASSWORD = process.env.DEMO2_PASSWORD || "harbor-demo-2026";
-const DONOR_EMAIL = "xjca2006@gmail.com";
+const DONOR_EMAIL = "xjca2006@gmail.example.com";
 const DONOR_NAME = "Jonathan Atkinson";
 
 let pass = 0, fail = 0;
@@ -214,7 +214,7 @@ Next (one-time, needs the inbox):
      automatically (verified-email match).
   3. Two linked orgs → the MULTI-ORG neutral shell. To see the single-org
      TAKEOVER on this account: Account tab → Hide one org (Show again to
-     return). Renee (xjca2006+demo@gmail.com) remains the standing
+     return). Renee (xjca2006+demo@gmail.example.com) remains the standing
      single-org linked takeover.`);
   process.exit(fail ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

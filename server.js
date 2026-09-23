@@ -4409,7 +4409,24 @@ app.post("/auth/reset-password", passwordResetLimiter, wrap(async (req, res) => 
 
 // ── Self-serve org registration (SaaS signup) ──────────────────────────────
 app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
-  const { orgName, userName, email, password } = req.body;
+  // INCIDENT 2026-09-22 — `provisioned: true` is how an org gets created FOR
+  // somebody rather than BY them. It is the difference between a signup and a
+  // handover, and until tonight the route could not tell them apart: Allie's
+  // organisation was provisioned through here and got the self-serve founder
+  // drip in her inbox eight hours before anyone intended to contact her.
+  //
+  // A provisioned org is born with mail OFF and marked as fiction, because at
+  // the moment of creation its data is invented and its owner has not agreed
+  // to hear from us. Turning it on is a deliberate, separate act (PATCH
+  // /orgs/:id) performed once the real data is in and she has signed in.
+  //
+  // The flag is deliberately NOT permission-gated. Its only effect is to make
+  // the resulting org quieter and more clearly marked, so the worst a caller
+  // can do by passing it is create an org that sends nothing — which is not a
+  // capability worth a guard, and a guard here would be one more thing to get
+  // wrong on the night somebody needs to provision in a hurry.
+  const { orgName, userName, email, password, provisioned } = req.body;
+  const isProvisioned = provisioned === true;
   if (!orgName || !userName || !email || !password) {
     return res.status(400).json({ error: "All fields are required" });
   }
@@ -4435,8 +4452,11 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const trialEndsAt = computeTrialEnd(signedAt).toISOString();
 
   await run(
-    "INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at) VALUES (?,?,0,?,'trial','trialing',?,?)",
-    [orgId, orgName, orgSlug, signedAt.toISOString(), trialEndsAt]
+    `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
+                       signed_at, trial_ends_at, emails_enabled, is_demo_org)
+     VALUES (?,?,0,?,'trial','trialing',?,?,?,?)`,
+    [orgId, orgName, orgSlug, signedAt.toISOString(), trialEndsAt,
+     !isProvisioned, isProvisioned]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -4480,9 +4500,17 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     org: { id: orgId, name: orgName, onboarding_complete: 0, plan: "trial", subscription_status: "trialing", trial_ends_at: trialEndsAt },
     stripeCustomerId,
   });
-  sendOnboardingSequence(orgId, userId, userName, normalizedEmail).catch(e =>
-    console.error("[onboarding] failed to start sequence:", e.message)
-  );
+  // Belt AND braces. sendOnboardingSequence refuses for a gated org on its
+  // own (that is the gate that protects every other caller), but a
+  // provisioning run should not even ask — the intent is legible here, at the
+  // call site, where the next person to read this route will look.
+  if (!isProvisioned) {
+    sendOnboardingSequence(orgId, userId, userName, normalizedEmail).catch(e =>
+      console.error("[onboarding] failed to start sequence:", e.message)
+    );
+  } else {
+    console.log(`[provision] org ${orgId} created with mail OFF and no onboarding drip`);
+  }
 }));
 
 // ── Me ─────────────────────────────────────────────────────────────────────
@@ -14686,10 +14714,45 @@ const DONOR_MAIL_POLICY = {
   recurring_change:   "transactional",  // staff/donor changes to a recurring gift + proposals
   card_expiring:      "transactional",  // "your card expires soon" — the pre-failure half of dunning
 };
+// ── INCIDENT 2026-09-22 — ONE ORG-LEVEL GATE, READ BY EVERY SEAM ──────────
+// Three different kinds of mail escaped that night — a donor reminder, a
+// founder drip and a staff digest — and they escaped through three different
+// functions. Any fix that lived in one of them would have left the other two
+// open, which is exactly how the night happened in the first place.
+//
+// So the org-level answer is asked HERE, once, and every seam calls it:
+// donorMailDecision (all donor mail), runDigestsForOrg (Week in Review and
+// the monthly officer report) and sendOnboardingSequence (the founder drip).
+//
+// Fails CLOSED. If the org row cannot be read, nothing is sent — the opposite
+// of the convention elsewhere in this file, and deliberate: every other
+// fail-open default in the mail path is about not losing a real message to a
+// real person, and this gate exists precisely because the recipients may not
+// be real people at all.
+async function orgMaySendEmail(orgId) {
+  if (!orgId) return { send: false, reason: "no_org" };
+  try {
+    const [org] = await query(
+      "SELECT emails_enabled, is_demo_org FROM orgs WHERE id = ?", [orgId]);
+    if (!org) return { send: false, reason: "org_not_found" };
+    if (org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
+    if (org.is_demo_org === true) return { send: false, reason: "demo_org" };
+    return { send: true, reason: null };
+  } catch (err) {
+    console.error("[mail-gate] could not read org", orgId, err.message, "— refusing to send");
+    return { send: false, reason: "org_gate_unreadable" };
+  }
+}
+
 async function donorMailDecision(kind, email, orgId) {
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
   if (!email) return { send: false, reason: "no_email" };
+  // The org-level switch outranks every per-person consideration below it:
+  // if this organisation is not sending mail, who the person is does not
+  // arise. Checked FIRST so a disabled org costs one query, not five.
+  const orgGate = await orgMaySendEmail(orgId);
+  if (!orgGate.send) return { send: false, reason: orgGate.reason };
   // BUILD-94 Part 4 — UNSUBSCRIBED IS ONE FLAG ON THE PERSON, and it is read
   // HERE, in the one place that decides whether anything may be sent.
   // `do_not_email` existed as a column since BUILD-77 and nothing consulted
@@ -14698,10 +14761,31 @@ async function donorMailDecision(kind, email, orgId) {
   // — a hard bounce is a fact about the address, not a preference.
   const [flags] = await query(
     `SELECT bool_or(deceased) AS deceased, bool_or(do_not_contact) AS dnc,
-            bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable
+            bool_or(do_not_email) AS dne, bool_or(email_unreachable) AS unreachable,
+            bool_or(is_sample) AS sample
        FROM donors WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL`,
     [orgId, email]
   ).catch(() => [null]);
+
+  // ── INCIDENT 2026-09-22 — A MADE-UP PERSON HAS NO MAILBOX ────────────────
+  // On 22 September a seeded donor received a real pledge reminder at a real
+  // yahoo.com address, because the loop that sends them JOINs donors with no
+  // is_sample filter. Patching that loop would have been the wrong fix: there
+  // are a dozen send paths and only one of them had been audited.
+  //
+  // This function is the ONE gate every donor-facing send passes through, and
+  // it already knows how to say no on behalf of the person (deceased,
+  // bounced, unsubscribed, do-not-contact). It simply had no concept of a
+  // person who does not exist. It does now, and it refuses for EVERY kind —
+  // transactional included, because a receipt to an invented donor is not a
+  // legal acknowledgment, it is mail to a stranger who happens to own the
+  // address somebody invented.
+  //
+  // The rule this encodes is one the product already believed: `getDraftFor`
+  // has carried "demo fiction never generates work" since BUILD-83. Fiction
+  // must not generate MAIL either.
+  if (flags?.sample) return { send: false, reason: "sample_donor" };
+
   if (flags?.deceased) return { send: false, reason: "deceased" };
   // An address that hard-bounced cannot receive anything, transactional
   // included — a receipt to a dead mailbox is not a receipt, it is a bounce.
@@ -19301,6 +19385,16 @@ async function reserveDigest(orgId, digestType, periodKey, recipientUserId, reci
 
 async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
   if (!toEmail) return false;
+  // INCIDENT 2026-09-22 — a Week in Review composed entirely from invented
+  // gifts was delivered to a real prospect's inbox four minutes after her org
+  // was provisioned. The gate is checked HERE as well as in runDigestsForOrg
+  // because this function is reachable on its own and a digest is the one
+  // piece of mail whose whole content is a claim about the org's real week.
+  const digestGate = await orgMaySendEmail(org && org.id);
+  if (!digestGate.send) {
+    console.log(`[digest] not sending to ${toEmail} (${digestGate.reason})`);
+    return false;
+  }
   const html = await brandEmailHeaderHtml(org.id) + bodyHtml; // internal staff mail — no donor unsubscribe footer
   const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (process.env.RESEND_API_KEY) {
@@ -19317,6 +19411,19 @@ async function sendDigestEmail(org, toEmail, subject, bodyHtml) {
 async function runDigestsForOrg(org, { wk, mo, types = ["weekly", "monthly"], send = true }) {
   const tier = orgPlanTier(org);
   const out = { weekly: { sent: [], skipped: [] }, monthly: { sent: [], skipped: [] } };
+  // Checked before anything is RESERVED, not just before it is sent: a
+  // reserved period is a promise never to retry it, so reserving for an org
+  // that may not send would silently burn the week it would have reported on
+  // once mail is turned back on. send=false (dry-run/preview) is composition
+  // only and stays allowed — looking at what a digest WOULD say is how you
+  // check an org is safe to re-enable.
+  if (send) {
+    const gate = await orgMaySendEmail(org && org.id);
+    if (!gate.send) {
+      out.gated = gate.reason;
+      return out;
+    }
+  }
   const users = await query("SELECT id, name, email, role FROM users WHERE org_id=? AND email IS NOT NULL", [org.id]);
 
   // ── Weekly Week-in-Review — every user. On Team, an admin/ED sees org-wide;
@@ -20274,6 +20381,20 @@ app.post("/digests/run", requireAuth, requireAdmin, wrap(async (req, res) => {
 
 // ── Sequence Engine ─────────────────────────────────────────────────────────
 async function sendOnboardingSequence(orgId, userId, userName, userEmail) {
+  // INCIDENT 2026-09-22 — "You just made a great decision for your mission"
+  // was delivered to a real prospect eight hours before anyone meant to tell
+  // her the product existed, because provisioning her organisation went down
+  // the same road as a self-serve signup and step 0 has delay_days: 0.
+  //
+  // The sequence is not merely un-sent for a gated org, it is not CREATED.
+  // A dormant enrolment is a loaded gun: the hourly engine would have picked
+  // it up the moment mail came back on, and delivered a "welcome!" drip to an
+  // organisation that had been using Steward for a month.
+  const gate = await orgMaySendEmail(orgId);
+  if (!gate.send) {
+    console.log(`[onboarding] NOT creating drip for ${orgId} (${gate.reason})`);
+    return;
+  }
   console.log("[onboarding] creating sequence for", orgId, userId, userEmail);
   try {
     const seqId = "seq_" + uuid().slice(0, 8);
@@ -26412,6 +26533,57 @@ app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(asy
   await run("UPDATE orgs SET plan=?, subscription_status=? WHERE id=?", [plan, status, req.params.id]);
   const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
   res.json(orgs[0]);
+}));
+
+// ── INCIDENT 2026-09-22 — THE ORG-LEVEL MAIL SWITCH ───────────────────────
+// The lever that did not exist on the night. Super-admin rather than org-admin
+// on purpose: the orgs this is for are demo and provisioned ones, whose own
+// "admin" is either nobody or a prospect who has not signed in yet, and
+// turning mail back on for an org full of invented people is an operator
+// decision that should be made by someone who can see what is in it.
+//
+// Every flip is logged with an actor. Silently changing whether an
+// organisation can contact its donors is not something to do without a trace.
+app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgId = req.params.id;
+  const [org] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  if (!org) return res.status(404).json({ error: "Org not found" });
+
+  const { emailsEnabled, isDemoOrg } = req.body || {};
+  if (emailsEnabled === undefined && isDemoOrg === undefined) {
+    return res.status(400).json({ error: "emailsEnabled and/or isDemoOrg (boolean) required" });
+  }
+  if (emailsEnabled !== undefined && typeof emailsEnabled !== "boolean") {
+    return res.status(400).json({ error: "emailsEnabled must be a boolean" });
+  }
+  if (isDemoOrg !== undefined && typeof isDemoOrg !== "boolean") {
+    return res.status(400).json({ error: "isDemoOrg must be a boolean" });
+  }
+
+  // Turning mail ON for an org still marked as fiction is refused rather than
+  // silently obeyed. The two flags disagreeing is how the incident would
+  // repeat: somebody flips the switch to unblock a real customer and does not
+  // notice the org is still full of invented donors. Clear the mark first,
+  // which forces a look at what is actually in there.
+  const willBeDemo  = isDemoOrg  !== undefined ? isDemoOrg  : org.is_demo_org === true;
+  const willBeOn    = emailsEnabled !== undefined ? emailsEnabled : org.emails_enabled !== false;
+  if (willBeOn && willBeDemo) {
+    return res.status(409).json({
+      error: "This org is still marked as a demo org. Clear isDemoOrg in the same call (or first) if its data is real now.",
+    });
+  }
+
+  const sets = [], params = [];
+  if (emailsEnabled !== undefined) { sets.push("emails_enabled=?"); params.push(emailsEnabled); }
+  if (isDemoOrg     !== undefined) { sets.push("is_demo_org=?");    params.push(isDemoOrg); }
+  params.push(orgId);
+  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
+
+  console.log(`[mail-switch] ${orgId} (${org.name}) emails_enabled=${willBeOn} is_demo_org=${willBeDemo} ` +
+              `by ${req.user.email || req.user.userId}`);
+
+  const [after] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
+  res.json({ ok: true, org: after });
 }));
 
 app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {

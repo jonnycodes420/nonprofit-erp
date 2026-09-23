@@ -75,8 +75,8 @@ async function seedOrg({ orgId, orgName, slug, donorCount, giftTarget, interacti
   const hash = bcrypt.hashSync("loadtest1234", 10);
 
   await pool.query(
-    `INSERT INTO orgs (id, name, mission, onboarding_complete, org_slug, plan, subscription_status, receipts_enabled, legal_name, ein, receipt_address, recurring_dunning_enabled)
-     VALUES ($1,$2,$3,1,$4,'impact','active',true,$2,'47-1234567','100 Main St, Portland, OR 97201',true)
+    `INSERT INTO orgs (id, name, mission, onboarding_complete, org_slug, plan, subscription_status, receipts_enabled, legal_name, ein, receipt_address, recurring_dunning_enabled, emails_enabled, is_demo_org)
+     VALUES ($1,$2,$3,1,$4,'impact','active',true,$2,'47-1234567','100 Main St, Portland, OR 97201',true,false,true)
      ON CONFLICT (id) DO NOTHING`,
     [orgId, orgName, "Synthetic load-test org — safe to delete", slug]
   );
@@ -293,8 +293,8 @@ async function seedOrg({ orgId, orgName, slug, donorCount, giftTarget, interacti
   // Empty org for the import-combined timing run
   const hash = bcrypt.hashSync("loadtest1234", 10);
   await pool.query(
-    `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status)
-     VALUES ('org_importtest','Import Timing Org',1,'importtest','impact','active')`);
+    `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status, emails_enabled, is_demo_org)
+     VALUES ('org_importtest','Import Timing Org',1,'importtest','impact','active',false,true)`);
   await pool.query(
     `INSERT INTO users (id, org_id, email, password_hash, name, role)
      VALUES ('u_importtest_admin','org_importtest','admin@importtest.test',$1,'Import Admin','admin')`, [hash]);

@@ -1999,6 +1999,30 @@ async function initSchema() {
   // ein, and receipt_address are all already present (enforced in
   // PATCH /orgs/:id, not just a DB default).
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS receipts_enabled BOOLEAN DEFAULT false`);
+
+  // ── INCIDENT 2026-09-22 — AN ORG-LEVEL OFF SWITCH FOR OUTBOUND MAIL ──────
+  // On 22 September a demo org sent real pledge reminders to real mailboxes,
+  // and a freshly provisioned org sent a founder drip and a Week in Review —
+  // built entirely from invented data — to a real prospect. There was no way
+  // to stop one organisation's mail without stopping everyone's, so the only
+  // lever available on the night was the Resend key itself.
+  //
+  // `emails_enabled` is that lever, per org. It defaults TRUE so no existing
+  // customer goes quiet on deploy; it is set FALSE for any org born of a seed
+  // or a provisioning run (see is_demo_org below).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS emails_enabled BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN emails_enabled SET DEFAULT true`);
+  await pool.query(`UPDATE orgs SET emails_enabled = true WHERE emails_enabled IS NULL`);
+
+  // What an org IS, rather than what it may do. A demo org is one whose data
+  // is invented: a seed script's org, or one provisioned for a prospect who
+  // has not signed in yet. Kept separate from emails_enabled deliberately —
+  // "this org is fiction" is a fact that outlives any switch, and a human
+  // turning mail back on for a demo org should have to say so explicitly
+  // rather than have the distinction quietly erased.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS is_demo_org BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN is_demo_org SET DEFAULT false`);
+  await pool.query(`UPDATE orgs SET is_demo_org = false WHERE is_demo_org IS NULL`);
   // Per-org sequence for receipt numbers, always incremented via
   // UPDATE ... RETURNING (never SELECT MAX+1 — see allocateReceiptNumber()
   // in server.js) so two concurrent issues can never collide on a number.

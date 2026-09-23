@@ -38,7 +38,7 @@ async function login(email, password) {
 
 const TARGETS = [
   { name: "CREO Arts (Demo)", email: process.env.CREO_EMAIL || "admin@creoarts.org", password: process.env.CREO_PASSWORD || "demo1234", image: "installation-banner-3x1.jpg", focal: { x: 0.62, y: 0.68 } },
-  { name: "Harbor Music School (Demo)", email: process.env.HARBOR_EMAIL || "xjca2006+b50demo@gmail.com", password: process.env.HARBOR_PASSWORD || "harbor-demo-2026", image: "gallery-banner-3x1.jpg", focal: { x: 0.78, y: 0.45 } },
+  { name: "Harbor Music School (Demo)", email: process.env.HARBOR_EMAIL || "xjca2006+b50demo@gmail.example.com", password: process.env.HARBOR_PASSWORD || "harbor-demo-2026", image: "gallery-banner-3x1.jpg", focal: { x: 0.78, y: 0.45 } },
 ];
 
 (async () => {

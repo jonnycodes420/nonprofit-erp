@@ -20,7 +20,7 @@
 #        STRIPE_API_BASE=http://localhost:5603 \
 #        DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
 #        MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
-#        DISABLE_BACKGROUND_TICKS=1 \
+#        DISABLE_BACKGROUND_TICKS=1 CORS_ORIGIN=http://localhost:4173 \
 #        STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
 #        FOUNDER_EMAIL=jonathan@stewardapp.dev \
 #        STRIPE_BILLING_SECRET_KEY=sk_test_dummy \
@@ -28,6 +28,17 @@
 #        STRIPE_PRICE_FOUNDING=price_test_founding \
 #        STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
 #        node server.js
+#      (CORS_ORIGIN=http://localhost:4173 is REQUIRED for every browser leg.
+#      The SPA on :4173 calls the API on :5601 cross-origin, and :4173 is not
+#      in DEFAULT_CORS_ORIGINS — so without this the browser suites do not
+#      fail on their assertions, they fail with "Failed to connect / Failed to
+#      fetch" or "nav button not found", which reads exactly like a broken app
+#      and is really a missing env var. It cost a clean battery run 11 red
+#      suites on 2026-09-23. The suites that need it: empty-states,
+#      presentation-wiring, portal-visual, mapper-one-dropdown,
+#      thread-step-inline, build88a-profile, build88c-composer,
+#      build89s-surfaces, build92-close-screen, build92-sources-page,
+#      build92-home-proportions.)
 #      (DISABLE_BACKGROUND_TICKS=1 is THE flake fix: it turns off every periodic
 #      background job (digest/dunning/sweep/sequence timers) so no tick fires
 #      mid-suite — the old "fresh boot + wait 90s before running" ritual is
@@ -127,6 +138,7 @@ CORE=(
   build91-public-sources
   build94-photo build94-people build94-sequences build94-bulk build94-calendar build94-welcome
   build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
+  incident-mail-gate
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

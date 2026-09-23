@@ -14,7 +14,7 @@ const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --
 const EMAIL = process.env.DEMO_EMAIL || "admin@creoarts.org";
 const PASSWORD = process.env.DEMO_PASSWORD || "demo1234";
 const CAMPAIGN_NAME = process.env.CAMPAIGN_NAME || "Studio Expansion Capital Campaign";
-const DONOR_EMAIL = process.env.DONOR_EMAIL || "xjca2006+demo@gmail.com";
+const DONOR_EMAIL = process.env.DONOR_EMAIL || "xjca2006+demo@gmail.example.com";
 const GIFT_AMOUNT = Number(process.env.GIFT_AMOUNT || 25000);
 
 async function api(method, path, token, body) {

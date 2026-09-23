@@ -252,12 +252,12 @@ async function reset() {
   ok("the Kanes are TWO people behind their family email, not one merged person",
     kane.length === 2 && kane.map(k => k.name).sort().join("|") === "Gerald Kane|Marilyn Kane"
     && new Set(kane.map(k => k.email)).size === 1, kane);
-  const kirk = await q(`SELECT name FROM donors WHERE org_id=$1 AND email='robertkirkpatrick@gmail.com' ORDER BY name`, [ORG]);
+  const kirk = await q(`SELECT name FROM donors WHERE org_id=$1 AND email='robertkirkpatrick@gmail.example.com' ORDER BY name`, [ORG]);
   ok("the Kirkpatricks behind one email are two records — the couple's record does not swallow the person's",
     kirk.length === 2, kirk.map(k => k.name));
   ok("the household is OFFERED, not decided: both names come back as candidates behind that one email",
-    (built.identity.householdCandidates || []).some(h => h.email === "robertkirkpatrick@gmail.com" && h.names.length === 2)
-    && (built.identity.householdCandidates || []).some(h => h.email === "kanefamily59@gmail.com" && h.names.length === 2),
+    (built.identity.householdCandidates || []).some(h => h.email === "robertkirkpatrick@gmail.example.com" && h.names.length === 2)
+    && (built.identity.householdCandidates || []).some(h => h.email === "kanefamily59@gmail.example.com" && h.names.length === 2),
     (built.identity.householdCandidates || []).filter(h => /kane|kirkpatrick/i.test(h.email)));
   // The rule it replaced, still true for a household form that names NOBODY.
   ok("a surname-only household form (\"Mr. and Mrs. Kane\") still matches the person it can only mean",

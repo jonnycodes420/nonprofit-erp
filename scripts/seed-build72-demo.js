@@ -203,9 +203,10 @@ async function main() {
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
 
   // ── The organization ────────────────────────────────────────────────────
-  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,mission)
+  await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,mission,emails_enabled,is_demo_org)
            VALUES ($1,'Harborlight Youth Collective','harborlight',1,'active','team',$2,
-                   'After-school arts and mentoring for young people on the north shore.')`, [ORG, TZ]);
+                   'After-school arts and mentoring for young people on the north shore.',
+                   false,true)`, [ORG, TZ]);   // INCIDENT 2026-09-22: a seeded org sends nothing
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role)
            VALUES ('u_b72demo',$1,$2,$3,'Dana Reyes','admin')`,
           [ORG, ADMIN_EMAIL, bcrypt.hashSync(ADMIN_PASSWORD, 10)]);

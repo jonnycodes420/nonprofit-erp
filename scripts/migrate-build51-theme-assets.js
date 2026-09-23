@@ -12,7 +12,7 @@
 const guard = require("./lib/prodGuard");
 const BASE = guard.writerBase("http://localhost:5601"); // loopback default + --i-know-this-is-prod for remote (BUILD-55)
 const ORGS = (process.env.ORGS
-  || "admin@creoarts.org:demo1234,xjca2006+b50demo@gmail.com:harbor-demo-2026")
+  || "admin@creoarts.org:demo1234,xjca2006+b50demo@gmail.example.com:harbor-demo-2026")
   .split(",").map(s => { const i = s.indexOf(":"); return { email: s.slice(0, i), password: s.slice(i + 1) }; });
 
 const j = async (method, path, body, token) => {
