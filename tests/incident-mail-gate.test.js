@@ -120,10 +120,12 @@ const mkDonor = async (id, org, email, isSample) =>
   ok("orgMaySendEmail exists", /async function orgMaySendEmail\(orgId\)/.test(src), null);
   ok("it fails CLOSED when the org row cannot be read",
     /org_gate_unreadable/.test(src), null);
-  ok("it refuses an org with emails_enabled=false",
-    /org\.emails_enabled === false\)\s*return\s*\{\s*send:\s*false,\s*reason:\s*"org_emails_disabled"/.test(src), null);
-  ok("it refuses a demo org outright",
-    /org\.is_demo_org === true\)\s*return\s*\{\s*send:\s*false,\s*reason:\s*"demo_org"/.test(src), null);
+  ok("it names the two refusals it exists for",
+    /"org_emails_disabled"/.test(src) && /"demo_org"/.test(src), null);
+  // A gate read through a database blip must not be REMEMBERED — neither as a
+  // refusal (which would silence a real org for the cache window) nor, far
+  // worse, as an allow.
+  ok("an unreadable org is never cached", /NOT cached/.test(src), null);
 
   for (const [seam, re] of [
     ["donorMailDecision", /const orgGate = await orgMaySendEmail\(orgId\)/],
@@ -202,6 +204,21 @@ const mkDonor = async (id, org, email, isSample) =>
   const adminTok = await login(ADMIN, PW);
   const notSuper = await api("POST", `/admin/orgs/${OFF}/email-switch`, adminTok, { emailsEnabled: true });
   ok("an ordinary org admin cannot touch the switch", notSuper.status === 403, { s: notSuper.status });
+
+  // ── §5b · THE GATE, PROVEN THROUGH A REAL SEND PATH ──────────────────────
+  // Everything above reads the source. This runs it: ORG's mail was switched
+  // off two assertions ago, so the digest — the exact thing that delivered a
+  // Week in Review built from fiction — must now refuse, by name, and reserve
+  // no period. A source regex cannot tell you the wiring is live; this can.
+  console.log("\n— §5b · and the digest actually refuses —");
+  const digestRun = await api("POST", "/digests/run", adminTok, { type: "weekly" });
+  ok("the digest route answers", digestRun.status === 200, { s: digestRun.status, b: digestRun.body });
+  ok("…and it is GATED, naming the reason",
+    digestRun.body?.weekly?.gated === "org_emails_disabled" || digestRun.body?.gated === "org_emails_disabled",
+    digestRun.body);
+  const reserved = await q(`SELECT COUNT(*)::int c FROM digest_sends WHERE org_id=$1`, [ORG]);
+  ok("…and reserved no period, so the week is still there when mail comes back",
+    reserved[0].c === 0, reserved[0]);
 
   // ── §6 · NO SEEDED ADDRESS IS A REAL MAILBOX ─────────────────────────────
   // The other half of the night: the addresses themselves. Every gate above

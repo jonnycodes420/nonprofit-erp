@@ -14729,16 +14729,40 @@ const DONOR_MAIL_POLICY = {
 // fail-open default in the mail path is about not losing a real message to a
 // real person, and this gate exists precisely because the recipients may not
 // be real people at all.
+// A campaign send asks this ONCE PER RECIPIENT, so on a 5,000-donor appeal an
+// uncached gate is 5,000 extra round trips bolted onto the send loop. That is
+// not theoretical: adding this check slowed the bulk path enough to expose a
+// latent race in build94-bulk on the first CI run after it landed.
+//
+// Five seconds, because the thing being cached is a KILL SWITCH. Long enough
+// that a bulk send pays for one query instead of thousands; short enough that
+// "I turned this org off" is true almost immediately — and the switch route
+// drops the entry outright, so an operator flip is instant rather than
+// eventually-consistent.
+const ORG_MAIL_GATE_TTL_MS = 5000;
+const orgMailGateCache = new Map();
+function clearOrgMailGate(orgId) {
+  if (orgId) orgMailGateCache.delete(orgId); else orgMailGateCache.clear();
+}
+
 async function orgMaySendEmail(orgId) {
   if (!orgId) return { send: false, reason: "no_org" };
+  const hit = orgMailGateCache.get(orgId);
+  if (hit && Date.now() - hit.at < ORG_MAIL_GATE_TTL_MS) return hit.result;
   try {
     const [org] = await query(
       "SELECT emails_enabled, is_demo_org FROM orgs WHERE id = ?", [orgId]);
-    if (!org) return { send: false, reason: "org_not_found" };
-    if (org.emails_enabled === false) return { send: false, reason: "org_emails_disabled" };
-    if (org.is_demo_org === true) return { send: false, reason: "demo_org" };
-    return { send: true, reason: null };
+    let result;
+    if (!org) result = { send: false, reason: "org_not_found" };
+    else if (org.emails_enabled === false) result = { send: false, reason: "org_emails_disabled" };
+    else if (org.is_demo_org === true) result = { send: false, reason: "demo_org" };
+    else result = { send: true, reason: null };
+    orgMailGateCache.set(orgId, { at: Date.now(), result });
+    return result;
   } catch (err) {
+    // NOT cached. A refusal caused by a database blip must not be remembered
+    // for five seconds, and — more importantly — must not be remembered as an
+    // ALLOW either. Every retry re-asks.
     console.error("[mail-gate] could not read org", orgId, err.message, "— refusing to send");
     return { send: false, reason: "org_gate_unreadable" };
   }
@@ -26579,6 +26603,7 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
   params.push(orgId);
   await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
 
+  clearOrgMailGate(orgId);   // an operator flip takes effect now, not in five seconds
   console.log(`[mail-switch] ${orgId} (${org.name}) emails_enabled=${willBeOn} is_demo_org=${willBeDemo} ` +
               `by ${req.user.email || req.user.userId}`);
 

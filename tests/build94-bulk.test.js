@@ -95,8 +95,15 @@ const waitFor = async (fn, ms = 8000) => {
 
   const sent = await api("POST", `/campaigns/${CID}/send`, tok);
   ok("the send was accepted", sent.status === 200, sent.body);
+  // Wait for the SENDS, not for the rows. A recipient row is written before
+  // sent_at is stamped on it, so counting rows returns the moment all 20 are
+  // queued and the assertion below then races the last few sends. It passed
+  // locally for a year and went red on CI the first time anything added
+  // latency to the send loop — the flake was always there, the org-level mail
+  // gate just made it visible.
   await waitFor(async () =>
-    (await q(`SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE campaign_id=$1`, [CID]))[0].n >= 17);
+    (await q(`SELECT COUNT(*)::int AS n FROM campaign_recipients WHERE campaign_id=$1 AND sent_at IS NOT NULL`, [CID]))[0].n >= 17,
+    15000);
 
   const recips = await q(`SELECT email, sent_at, failure_reason FROM campaign_recipients WHERE campaign_id=$1`, [CID]);
   const delivered = recips.filter(r => r.sent_at).length;
