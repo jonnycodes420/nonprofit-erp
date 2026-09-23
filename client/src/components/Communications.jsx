@@ -1026,7 +1026,16 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   }, []);
 
   // Sidebar nav
-  const [nav, setNav] = useState(initialNav || "campaigns");
+  const [nav, setNav] = useState(initialNav || "hub");
+  // BUILD-97 — the hub's single read. One request, so the landing screen does
+  // not assemble itself in a different order on every visit.
+  const [hub, setHub] = useState(null);
+  const [hubErr, setHubErr] = useState("");
+  const loadHub = useCallback(() => {
+    apiFetch("/communications/hub").then(h => { setHub(h); setHubErr(""); })
+      .catch(e => setHubErr(e?.message || "Could not load"));
+  }, []);
+  useEffect(() => { loadHub(); }, [loadHub]);
   useEffect(() => { if (initialNav && onInitialNavConsumed) onInitialNavConsumed(); }, []);
 
   // Campaigns
@@ -1537,6 +1546,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
 
   // ── Section nav items (horizontal top tabs) ─────────────────────────────────
   const NAV = [
+    { id: "hub",        label: "Overview",   icon: "◉" },
     { id: "campaigns",  label: "Campaigns",  icon: "✉" },
     { id: "templates",  label: "Templates",  icon: "⊞" },
     { id: "audience",   label: "Audience",   icon: "◈" },
@@ -1587,6 +1597,194 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 Open Settings →
               </button>
             )}
+          </div>
+        )}
+
+        {/* ── HUB ──────────────────────────────────────────────────────────
+            BUILD-97. The screen that makes Communications its own place
+            rather than a folder of four lists.
+
+            The right rail is the point. Allie's volunteers, staff and board
+            live on the SAME table as her donors, which is correct and is also
+            completely invisible — so every audience says, in words, which
+            screen its people are on and links straight to them. "Where are my
+            volunteers kept?" should never be a question this product makes
+            somebody ask. */}
+        {nav === "hub" && (
+          <div className="comm-hub" style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+
+            {/* ── main column ── */}
+            <div style={{ flex: "1 1 520px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 26, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+                  Communications
+                </h2>
+                <div style={{ fontSize: 14, color: T.ink2, marginTop: 6, lineHeight: 1.5, maxWidth: "52ch" }}>
+                  {hub === null && !hubErr ? "Counting who you can reach…"
+                    : hubErr ? "Could not load who you can reach — " + hubErr
+                    : hub.reach === 0
+                      ? "Nobody on file has an email address yet. Add one to a person and they become reachable here."
+                      : <>You can reach <strong style={{ color: T.ink }}>{hub.reach.toLocaleString()}</strong>{" "}
+                         {hub.reach === 1 ? "person" : "people"} across{" "}
+                         <strong style={{ color: T.ink }}>{hub.audiences.length}</strong>{" "}
+                         {hub.audiences.length === 1 ? "audience" : "audiences"}.</>}
+                </div>
+              </div>
+
+              {/* WHERE EVERYONE IS KEPT, said once, in words.
+                  Volunteers, staff and donors share one table — which is the
+                  right design and is completely invisible on a screen that
+                  only shows counts. This is the paragraph that stops somebody
+                  hunting through tabs for a "Volunteers" page that does not
+                  exist because it should not exist. */}
+              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenMid,
+                            borderRadius: 12, padding: "13px 16px" }}>
+                <div style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.55, maxWidth: "62ch" }}>
+                  <strong style={{ color: T.ink }}>Everyone is on one list.</strong>{" "}
+                  Donors, volunteers, staff and board all live under{" "}
+                  <button onClick={() => onNavigate && onNavigate("donors", {})}
+                    style={{ background: "transparent", border: "none", padding: 0, font: "inherit",
+                             color: T.greenMid, fontWeight: 700, cursor: "pointer" }}>Donors</button>{" "}
+                  — one person, one record, even when they are two of those things.
+                  An audience below is a way of looking at that list, not a separate place.
+                  Only the people marked as donors count toward money.
+                </div>
+              </div>
+
+              {/* the three numbers that describe sending, not people */}
+              {hub && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {[
+                    { label: "Emails sent", value: (hub.stats.totalSent || 0).toLocaleString() },
+                    { label: "Open rate", value: hub.stats.openRate === null ? "—" : hub.stats.openRate + "%" },
+                    { label: "Sequences running", value: hub.stats.activeSequences },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132 }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* what she actually sent */}
+              <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid " + T.bg3, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>Recent sends</span>
+                  <button onClick={() => { setNav("campaigns"); openBuilder(); }} disabled={isReadOnly}
+                    title={isReadOnly ? "Reactivate your subscription to make changes." : undefined}
+                    style={{ ...S.btn("primary"), background: T.gold500, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.45 : 1 }}>
+                    + New campaign
+                  </button>
+                </div>
+                {!hub ? (
+                  <div style={{ padding: 22 }}><Spin /></div>
+                ) : hub.campaigns.length === 0 ? (
+                  <div style={{ padding: "20px 18px", fontSize: 13.5, color: T.ink2, lineHeight: 1.55, maxWidth: "58ch" }}>
+                    Nothing has gone out yet. A plain thank-you to everyone who gave this year is the
+                    highest-return email in fundraising — three warm sentences, and Steward handles the
+                    footer, the suppressions and who opened it.
+                  </div>
+                ) : (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {hub.campaigns.map((c, i) => {
+                      const rate = c.recipient_count > 0 ? Math.round((c.open_count || 0) / c.recipient_count * 100) : null;
+                      return (
+                        <li key={c.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
+                                                borderBottom: i < hub.campaigns.length - 1 ? "1px solid " + T.bg2 : "none" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</div>
+                            <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 2 }}>
+                              {c.status === "sent"
+                                ? `Sent to ${(c.recipient_count || 0).toLocaleString()}`
+                                : c.status === "sending" ? "Sending…" : "Draft"}
+                            </div>
+                          </div>
+                          {c.status === "sent" && rate !== null && (
+                            <div style={{ textAlign: "right", flexShrink: 0 }}>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: T.greenMid, fontFamily: "'DM Serif Display',Georgia,serif" }}>{rate}%</div>
+                              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: T.ink3 }}>opened</div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            {/* ── RIGHT RAIL: the audiences, and where their people live ── */}
+            <aside className="comm-hub-rail" style={{ flex: "0 0 320px", width: 320, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ padding: "13px 16px", borderBottom: "1px solid " + T.bg3 }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>Audiences</div>
+                  <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 3, lineHeight: 1.45 }}>
+                    Everyone lives on one list of people. An audience is a way of looking at it.
+                  </div>
+                </div>
+                {!hub ? <div style={{ padding: 18 }}><Spin /></div> : (
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {hub.audiences.map((a, i) => (
+                      <li key={a.id} style={{ padding: "12px 16px", borderBottom: i < hub.audiences.length - 1 ? "1px solid " + T.bg2 : "none" }}>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                          <span aria-hidden style={{ width: 7, height: 7, borderRadius: 99, flexShrink: 0,
+                            background: T[a.tone] || T.greenMid, transform: "translateY(-1px)" }} />
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: T.ink }}>{a.name}</span>
+                          <span style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+                            {a.count.toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 4, lineHeight: 1.45, paddingLeft: 15 }}>
+                          {a.description}
+                        </div>
+                        {/* WHERE THEY LIVE — the sentence this rail exists for,
+                            and it is shown at a count of ZERO too. An empty
+                            audience is exactly when somebody needs telling
+                            where those people would be kept; hiding the link
+                            there answers the question only for people who
+                            already knew the answer. */}
+                        {onNavigate && (
+                          <button onClick={() => onNavigate(a.livesOn.tab, a.livesOn.filter ? { personType: a.livesOn.filter } : {})}
+                            style={{ marginTop: 6, marginLeft: 15, background: "transparent", border: "none", padding: 0,
+                                     fontSize: 11.5, fontWeight: 700, color: a.count > 0 ? T.greenMid : T.ink3,
+                                     cursor: "pointer", textAlign: "left" }}>
+                            {a.count > 0 ? `${a.livesOn.label} →` : `None yet — ${a.livesOn.label} →`}
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <div style={{ padding: "11px 16px", borderTop: "1px solid " + T.bg3, background: T.bg2 }}>
+                  <button onClick={() => setNav("audience")}
+                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: T.ink2, cursor: "pointer" }}>
+                    Build a new audience →
+                  </button>
+                </div>
+              </div>
+
+              {/* sequences, because a running sequence is mail she is sending
+                  right now and belongs beside the audiences it draws from */}
+              {hub && hub.sequences.length > 0 && (
+                <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "13px 16px", borderBottom: "1px solid " + T.bg3, fontSize: 14.5, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>
+                    Sequences
+                  </div>
+                  <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                    {hub.sequences.map((q, i) => (
+                      <li key={q.id} style={{ padding: "11px 16px", display: "flex", alignItems: "center", gap: 10,
+                                              borderBottom: i < hub.sequences.length - 1 ? "1px solid " + T.bg2 : "none" }}>
+                        <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.name}</span>
+                        <span style={{ fontSize: 11, color: q.status === "active" ? T.greenMid : T.ink3, fontWeight: 700, flexShrink: 0 }}>
+                          {q.status === "active" ? `${q.active} enrolled` : "Off"}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </aside>
           </div>
         )}
 

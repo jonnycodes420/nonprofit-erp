@@ -3341,6 +3341,35 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_cheque
                     ON gifts (org_id) WHERE cheque_asset_id IS NOT NULL`);
 
+  // ── BUILD-97 — AN AUDIENCE IS A THING WITH A NAME ────────────────────────
+  // A campaign's audience used to be an anonymous JSON blob typed into the
+  // builder and discarded on send. A saved audience is that same segment with
+  // a name over it, so "Lapsed sponsors" is something she can point at on a
+  // Tuesday without composing anything.
+  //
+  // The segment column holds the EXISTING segment shape verbatim, so
+  // resolveCampaignRecipients stays the one resolver. A second resolver is how
+  // a campaign ends up going to a different list than the screen promised.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audiences (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      description TEXT,
+      segment JSONB NOT NULL,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audiences_org ON audiences (org_id, name)`);
+  // Two audiences with the same name in one org is a trap at send time: the
+  // confirmation names the audience, and naming it twice makes the
+  // confirmation meaningless. Case-insensitive, because "Sponsors" and
+  // "sponsors" are the same mistake.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS audiences_org_name_uk
+                    ON audiences (org_id, LOWER(name))`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

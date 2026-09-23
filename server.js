@@ -15933,14 +15933,168 @@ app.put("/fundraising/campaigns/:id", requireAuth, checkWriteAccess, wrap(async 
 // identically. Note the predicates read d.stage — the DB column — matching
 // what the client's SegmentPicker previews (fixed same pass; it read a
 // nonexistent d.pipeline_stage and showed 0 for stage segments).
-async function resolveCampaignRecipients(campaign, orgId) {
-  const segment = typeof campaign.segment === "string"
-    ? JSON.parse(campaign.segment || "{}")
-    : (campaign.segment || {});
-  let donors = await query(
+// ── BUILD-97 — AUDIENCES: THE THINGS WITH NAMES ───────────────────────────
+// The registry is shared/audiences.js so the rail and the resolver cannot
+// disagree about what exists. Loaded through the depositMod() convention
+// rather than a top-level .then that assigns a module-scope binding — that
+// leaves a window at boot where the list is empty and every audience is
+// unknown (the BUILD-95 §5B part 1 lesson).
+let _audMod = null;
+async function audienceMod() {
+  if (!_audMod) _audMod = await import("./shared/audiences.js");
+  return _audMod;
+}
+
+// ONE donor query, every audience counted off it. See filterBySegment.
+async function audienceRoster(orgId) {
+  const A = await audienceMod();
+  const donors = await query(
     "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
-    [orgId]
-  );
+    [orgId]);
+  const saved = await query(
+    "SELECT id, name, description, segment, created_at FROM audiences WHERE org_id=? ORDER BY LOWER(name)",
+    [orgId]).catch(() => []);
+
+  const builtins = A.BUILT_IN_AUDIENCES.map(a => ({
+    id: a.id, name: a.name, description: a.description, kind: "builtin", tone: a.tone,
+    mode: a.mode,
+    count: filterBySegment(donors, { mode: a.mode }).length,
+    // WHERE THESE PEOPLE LIVE. Allie should never have to wonder where her
+    // volunteers are kept — an audience names the screen its people are on.
+    livesOn: a.mode === "everyone" ? { tab: "donors", filter: null, label: "Donors — every type" }
+           : a.mode === "donors" ? { tab: "donors", filter: "donor", label: "Donors" }
+           : { tab: "donors", filter: a.mode, label: "Donors, filtered to " + a.name.toLowerCase() },
+  }));
+
+  const custom = saved.map(r => {
+    const seg = typeof r.segment === "string" ? JSON.parse(r.segment || "{}") : (r.segment || {});
+    return {
+      id: r.id, name: r.name, description: r.description || "", kind: "saved", tone: "greenMid",
+      mode: seg.mode, segment: seg, created_at: r.created_at,
+      count: filterBySegment(donors, seg).length,
+      livesOn: { tab: "donors", filter: seg.mode, label: "Donors" },
+    };
+  });
+
+  return {
+    audiences: [...builtins, ...custom],
+    // The reach line. DISTINCT people, not the sum of the audiences — a
+    // volunteer who gives is in two of them and must be one person here.
+    reach: donors.length,
+  };
+}
+
+app.get("/audiences", requireAuth, wrap(async (req, res) => {
+  res.json(await audienceRoster(req.user.orgId));
+}));
+
+app.post("/audiences", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const A = await audienceMod();
+  const v = A.validateAudience(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
+  const seg = A.segmentFor({ mode: v.mode, stages: req.body.stages, tiers: req.body.tiers });
+  const id = "aud_" + uuid().slice(0, 8);
+  try {
+    await run(`INSERT INTO audiences (id, org_id, name, description, segment, created_by, created_by_name)
+               VALUES (?,?,?,?,?,?,?)`,
+      [id, req.user.orgId, v.name, v.description || null, JSON.stringify(seg),
+       req.user.userId, req.user.name || req.user.email || null]);
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "You already have an audience called that." });
+    throw err;
+  }
+  const [row] = await query("SELECT * FROM audiences WHERE id=?", [id]);
+  res.status(201).json(row);
+}));
+
+app.patch("/audiences/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const A = await audienceMod();
+  const [existing] = await query("SELECT * FROM audiences WHERE id=? AND org_id=?",
+    [req.params.id, req.user.orgId]);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const prev = typeof existing.segment === "string" ? JSON.parse(existing.segment || "{}") : existing.segment;
+  const v = A.validateAudience({
+    name: req.body.name !== undefined ? req.body.name : existing.name,
+    description: req.body.description !== undefined ? req.body.description : existing.description,
+    mode: req.body.mode !== undefined ? req.body.mode : prev.mode,
+    stages: req.body.stages !== undefined ? req.body.stages : prev.stages,
+    tiers: req.body.tiers !== undefined ? req.body.tiers : prev.tiers,
+  });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
+  const seg = A.segmentFor({ mode: v.mode,
+    stages: req.body.stages !== undefined ? req.body.stages : prev.stages,
+    tiers: req.body.tiers !== undefined ? req.body.tiers : prev.tiers });
+  try {
+    await run("UPDATE audiences SET name=?, description=?, segment=?, updated_at=NOW() WHERE id=? AND org_id=?",
+      [v.name, v.description || null, JSON.stringify(seg), req.params.id, req.user.orgId]);
+  } catch (err) {
+    if (err.code === "23505") return res.status(409).json({ error: "You already have an audience called that." });
+    throw err;
+  }
+  const [row] = await query("SELECT * FROM audiences WHERE id=?", [req.params.id]);
+  res.json(row);
+}));
+
+app.delete("/audiences/:id", requireAuth, wrap(async (req, res) => {
+  const r = await run("DELETE FROM audiences WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!r.changes) return res.status(404).json({ error: "Not found" });
+  // A campaign already sent keeps its recipient rows, so history is intact.
+  // A DRAFT pointing at this audience now resolves to nobody rather than to
+  // everybody — resolveSegmentSpec returns an empty manual list for a missing
+  // audience, which is the BUILD-88c rule held at the one place it matters.
+  res.json({ deleted: true });
+}));
+
+// The hub's single read. One payload so the landing screen is one request
+// rather than five that arrive in a different order every time.
+app.get("/communications/hub", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [roster, campaigns, seqs] = await Promise.all([
+    audienceRoster(orgId),
+    query(`SELECT id, name, subject, status, recipient_count, open_count, sent_at, created_at
+             FROM campaigns WHERE org_id=? ORDER BY COALESCE(sent_at, created_at) DESC LIMIT 6`, [orgId]),
+    query(`SELECT s.id, s.name, s.status,
+                  (SELECT COUNT(*) FROM sequence_enrollments e WHERE e.sequence_id=s.id AND e.status='active') AS active
+             FROM sequences s WHERE s.org_id=? AND s.trigger <> 'onboarding'
+            ORDER BY s.created_at DESC LIMIT 5`, [orgId]).catch(() => []),
+  ]);
+  const sent = campaigns.filter(c => c.status === "sent");
+  const totalSent = sent.reduce((n, c) => n + (c.recipient_count || 0), 0);
+  const totalOpen = sent.reduce((n, c) => n + (c.open_count || 0), 0);
+  res.json({
+    ...roster,
+    campaigns,
+    sequences: seqs.map(s => ({ ...s, active: parseInt(s.active, 10) || 0 })),
+    stats: {
+      totalSent,
+      openRate: totalSent > 0 ? Math.round(totalOpen / totalSent * 100) : null,
+      activeSequences: seqs.filter(s => s.status === "active").length,
+    },
+  });
+}));
+
+// BUILD-97 — a SAVED audience is a name over one of these same segments, so
+// it is resolved to its stored segment here and then filtered by the one
+// implementation below. Deliberately NOT recursive: an audience cannot be
+// built on another audience, so there is no cycle to guard and no chain of
+// indirection between "the screen said Sponsors" and who actually got mail.
+async function resolveSegmentSpec(segment, orgId) {
+  if (segment && segment.mode === "audience") {
+    const [row] = await query("SELECT segment FROM audiences WHERE id=? AND org_id=?",
+      [segment.audienceId, orgId]).catch(() => [null]);
+    if (!row) return { mode: "manual", donorIds: [] };   // a deleted audience is NOBODY, never everybody
+    const inner = typeof row.segment === "string" ? JSON.parse(row.segment || "{}") : (row.segment || {});
+    return inner && inner.mode === "audience" ? { mode: "manual", donorIds: [] } : inner;
+  }
+  return segment;
+}
+
+// PURE. Extracted from resolveCampaignRecipients so the hub can count every
+// audience from ONE donor query instead of one query per audience — on a
+// 25,000-donor org that was the difference between a screen and a stall. The
+// filtering rules are unchanged and there is still only one copy of them.
+function filterBySegment(allDonors, segment) {
+  let donors = allDonors;
   const mode = segment.mode || "legacy";
   if (mode === "major") {
     donors = donors.filter(d => Number(d.total_giving) >= 10000);
@@ -15981,6 +16135,18 @@ async function resolveCampaignRecipients(campaign, orgId) {
     if (segment.statuses && segment.statuses.length) donors = donors.filter(d => segment.statuses.includes(d.status));
   }
   return donors;
+}
+
+async function resolveCampaignRecipients(campaign, orgId) {
+  const raw = typeof campaign.segment === "string"
+    ? JSON.parse(campaign.segment || "{}")
+    : (campaign.segment || {});
+  const segment = await resolveSegmentSpec(raw, orgId);
+  const donors = await query(
+    "SELECT * FROM donors WHERE org_id = ? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
+    [orgId]
+  );
+  return filterBySegment(donors, segment);
 }
 
 app.post("/campaigns/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {

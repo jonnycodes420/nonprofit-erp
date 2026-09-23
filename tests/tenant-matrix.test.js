@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["statement_mappings", "gift_duplicate_questions",
+    for (const t of ["audiences", "statement_mappings", "gift_duplicate_questions",
       "giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
@@ -216,6 +216,13 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO statement_mappings (id,org_id,name,preset_key,mapping,drop_negative)
            VALUES ($1,$2,$3,'generic_statement','{"date":"Posting Date","amount":"Amount","donorName":"Description"}'::jsonb,true)`,
     [`smap_${o}`, o, `Zelle ${o}`]).catch(() => {});
+
+  // BUILD-97 — a named audience. Seeded per-org so the cross-tenant probe hits
+  // a row that really exists and is really refused, rather than 404-ing
+  // because there was nothing there to reach in the first place.
+  await q(`INSERT INTO audiences (id,org_id,name,description,segment)
+           VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
+    [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -246,6 +253,7 @@ function bResolver(routePath, param) {
     "giving-sources": `gsrc_${B}`,   // BUILD-89S 89a — a connected giving source
     "giving-recurring": `grec_${B}`, // BUILD-89S 89a — a recognised recurring commitment
     "statement-mappings": `smap_${B}`, // BUILD-92 A4 — a saved statement mapping
+    audiences: `aud_${B}`,           // BUILD-97 — a named audience is org B's business
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404
