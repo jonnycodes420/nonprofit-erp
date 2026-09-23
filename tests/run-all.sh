@@ -77,6 +77,18 @@
 set -u
 cd "$(dirname "$0")/.."
 
+# The suites are child processes: they inherit ONLY the shell env, not the
+# server's. CI exports these two at job level (ci.yml), so a suite that opens
+# its own pool in-process — helpers' `q`, or a module like assetStore that a
+# suite requires directly — works there and fails locally with either
+# "The server does not support SSL connections" (SSL on against the scratch
+# server, which has none) or `database "<your username>" does not exist` (no
+# connection string at all). Both are the ENVIRONMENT, not the code, and a
+# battery that is red for that reason tells you nothing about the build.
+# Defaulting them here makes a local run and a CI run the same run.
+export DB_SSL="${DB_SSL:-disable}"
+export DATABASE_URL="${DATABASE_URL:-postgresql://steward@localhost:5544/steward_loadtest}"
+
 # Self-contained suites (server + scratch DB only). Alphabetical.
 CORE=(
   attribution-completeness
