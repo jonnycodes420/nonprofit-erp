@@ -171,6 +171,48 @@ the bytes; do not trust `grep -r`.**
 
 ---
 
+## WHAT THE PRODUCTION QUERY FOUND (23 Sep, read-only)
+
+The incident was **twelve days old**, not one evening.
+
+| | |
+|---|---|
+| The "F" org | **`org_52c91560`, literally named "f"** — created 2026-09-08 18:17 via `/auth/register-org` (no close link; an onboarding drip appears 3s later, that route's signature) |
+| Its data | **25,034 donors**, **0 tagged `is_sample`**, 17,923 addresses outside reserved domains |
+| What it sent | **155 pledge reminders to 41 donors, 39 of them at real mailbox providers**, from 2026-09-10 |
+| Its twin | **`org_375ffb10`, named "s"** — same 25,034-donor import, **164 reminders to 41 donors, 39 at real providers** |
+| Combined | **319 reminders to 82 donors.** `reminder_step` reached 3, so the full 0/3/7/14 cadence ran — four emails each |
+| Still armed | 28 open pledge cadences on "f", 19 on "s", which would fire the moment ticks resume |
+
+`ava.moore80@yahoo.com`, `amy.castellanos34@twc.com`, `kwame.quimby20@hotmail.com`,
+`mary.gomez39@yahoo.com` — the same `firstname.lastname##@provider` shape as
+`levi.johnson88@yahoo.com`. Steward was dunning invented people for invented
+five-figure pledges at real addresses for twelve days.
+
+**`org_justinsplace` does not exist.** There are two orgs named *Justin's
+Place*, created three seconds apart: `org_a69dbc4f` (the real one — one user,
+`hello@justinsplaceky.com`, 53 donors, 122 gifts) and `org_35a1e5f3` (an
+accidental duplicate: no users, no donors). Allie's 53 donors are **all at
+`@example.com`** — the two emails that reached her went to the *user*, never to
+a donor.
+
+### Marked 23 Sep (mail off + demo)
+
+`org_52c91560` ("f"), `org_375ffb10` ("s"), `org_creo`, `org_a69dbc4f` and
+`org_35a1e5f3`. Justin's Place's onboarding drip was **deleted** — 1 enrolment,
+7 steps, 1 sequence — so no dormant row can fire when mail returns.
+
+"s" was not on the original list. Disabling one twin and leaving the other
+armed, when the other had sent *more*, was not defensible.
+
+### Still reachable if the key came back
+
+**3,514 addresses at real mailbox providers** across seven orgs that are still
+`emails_enabled=true`: Test1 (1,249), atkinson (1,249), 32 (407), Lit & culture
+(303), Poppy the pitty (303), Steward LLC (SALES) (2), Harbor Music School (1).
+**None of their donors are tagged `is_sample`** — so the donor-level gate does
+nothing for them. Only the org-level flag would, and they do not have it.
+
 ## STILL OPEN
 
 - **Resend suppressions** for `levi.johnson88@yahoo.com` and the seven other
