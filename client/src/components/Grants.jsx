@@ -188,7 +188,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
         </div>
       </div>}
 
-      <div className="grant-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"65fr 35fr",overflow:"hidden"}}>
+      <div className="grant-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"58fr 42fr",overflow:"hidden"}}>
         {/* LEFT */}
         <div style={{overflowY:"auto",padding:"22px 20px 24px 24px",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column",gap:18}}>
           <div className="grant-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
@@ -294,7 +294,11 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
               <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400}}>Activity Timeline</div>
               <button onClick={()=>setLogOpen(true)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
-            <TouchpointTimeline interactions={interactions}/>
+            <div style={{background:T.white,border:"1px solid "+T.green650,borderRadius:12,
+                         padding:interactions?.length?"14px 16px 2px":"4px 16px",
+                         maxHeight:420,overflowY:"auto"}}>
+              <TouchpointTimeline interactions={interactions}/>
+            </div>
           </div>
         </div>
       </div>
