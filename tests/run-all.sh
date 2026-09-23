@@ -142,6 +142,7 @@ CORE=(
   build97-audiences
   build98-photos
   build99-grant-timeline
+  build100-score-names
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

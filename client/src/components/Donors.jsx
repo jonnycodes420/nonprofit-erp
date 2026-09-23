@@ -108,6 +108,23 @@ const CSV_STANDARD_FIELDS = [
 // renders again: the DEFINITION (what the number means, in a sentence a
 // fundraiser would accept) and the SOURCE (where its inputs come from, named).
 // The panel's code is intact; turning it back on is these two lines.
+// ── BUILD-100 — THE SCORE SAYS WHAT IT IS ─────────────────────────────────
+// It was labelled "Score / 99" and read, reasonably, as a wealth or capacity
+// figure. It is neither. Every input is the org's OWN giving history — amount,
+// recency, frequency — so a retired teacher giving $50 a month for ten years
+// outscores a millionaire who gave once, which is correct and is the opposite
+// of what "score" implies next to a person's name.
+//
+// "Giving strength" is what it actually measures, and the definition travels
+// with it on the same hover convention the dashboards use (BUILD-86 C.3: a
+// number nobody can define is a number nobody should be shown).
+//
+// 99 is a CLAMP, not a denominator. The components top out at 100 and are
+// clamped to 5..99; it is not a percentage and it is not normalised against
+// anybody else, so two orgs' 77s are not comparable.
+const GIVING_STRENGTH_LABEL = "Giving strength";
+const GIVING_STRENGTH_DEF = "How strong this donor's giving has been with you \u2014 how much, how recently, and how often. Ranked 5 to 99 against a fixed scale, not against your other donors. It is NOT an estimate of what they could afford to give: nothing here looks outside your own records.";
+
 const WEALTH_SCORE_DEFINITION = null;
 const WEALTH_SCORE_SOURCE = null;
 
@@ -4987,9 +5004,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             )}
             <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#0d5c3a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],["Score",sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3]].map(([l,v,c])=>(
+              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#0d5c3a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],[GIVING_STRENGTH_LABEL,sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3,GIVING_STRENGTH_DEF]].map(([l,v,c,def])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>{l}</div>
+                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
+                    {l}
+                    {/* BUILD-100 — the definition travels with the number, on
+                        the dashboards' hover convention: reachable by keyboard,
+                        because a tooltip nobody can tab to is a definition that
+                        does not exist for half the people who need it. */}
+                    {def&&<span tabIndex={0} title={def} aria-label={def}
+                      style={{marginLeft:5,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,
+                              borderRadius:99,width:13,height:13,display:"inline-flex",alignItems:"center",
+                              justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>}
+                  </div>
                   <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
                 </div>
               ))}
@@ -6095,7 +6122,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               code is untouched below so that is a one-line change, not a
               rebuild. */}
           {WEALTH_SCORE_DEFINITION&&WEALTH_SCORE_SOURCE&&<div data-testid="dp-wealth-score">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Wealth Score</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Proven capacity</div>
             <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:14,padding:"16px"}}>
               {localScore!==null?(
                 <>
@@ -6196,7 +6223,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     return isNaN(dt)?null:dt.toLocaleDateString("en-US",{month:"short",year:"numeric"});
   };
 
-  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed","Score",""];
+  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed","Giving strength",""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
   return(
@@ -6223,7 +6250,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           <div className="re-col-lifetime" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Lifetime Giving</div>
           <div className="re-col-lastgift" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Last Gift</div>
           <div className="re-col-days" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Days Lapsed</div>
-          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Score</div>
+          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Giving strength</div>
           <div className="re-col-actions" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}></div>
         </div>
         {lapsed.map((d,idx)=>{
@@ -6646,7 +6673,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:"#0d5c3a"}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last Gift","Score",...(isAdmin?[""]:[])]
+            {["Donor","Stage","Owner","Lifetime","Last Gift","Giving strength",...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
                   style={{fontSize:10,fontWeight:800,color:"#0d5c3a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
@@ -6861,7 +6888,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
   return(
     <div className="filter-bar" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
       <div className="filter-bar-row" style={row}>
-        <span style={lbl}>Capacity Tier</span>
+        <span style={lbl} title={"Grouped by the largest and most consistent giving this donor has actually done \u2014 from your own records only. No external wealth screening."}>Proven capacity</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {TIER_META.map(t=>{const a=filters.tiers.includes(t.id);return(
             <button key={t.id} onClick={()=>tog("tiers",t.id)} style={{background:a?t.color+"22":T.bg,border:`1px solid ${a?t.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?t.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{t.label}</button>
@@ -7299,7 +7326,14 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       }catch(e){}
     }
     const prompts={
-      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nProvide:\n**Urgency Score:** X/10\n**Recommended Move:** [exact action]\n**Timing:** [when]\n**What to say:** [2-3 sentences]\n**Goal:** [what you're trying to achieve]`,
+      // BUILD-100 — NO "Urgency Score: X/10". It used to ask the model for one
+      // and print it. Nothing computed it, nothing defined it, and asking twice
+      // gave two numbers — the only figure on this screen that could not answer
+      // "how is this arrived at?". The real urgency is moveUrgency(): days since
+      // last contact against that stage's own thresholds, and it is on the
+      // Contact tile beside this panel already. The model is asked for the move,
+      // the timing and the words, which is what it is good for.
+      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nProvide:\n**Recommended Move:** [exact action]\n**Timing:** [when]\n**What to say:** [2-3 sentences]\n**Goal:** [what you're trying to achieve]`,
       outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
       email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
