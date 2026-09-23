@@ -841,8 +841,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // straight to that donor's profile, so a metric never requires a click
   // just to find out who it's about (see CLAUDE.md "name the vague anxiety
   // as a number" — this is the follow-through half of that pattern).
-  const DonorChip=({name,detail,onClick})=>(
-    <button onClick={onClick} style={{display:"flex",alignItems:"baseline",gap:5,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",cursor:"pointer",fontSize:11,maxWidth:170}}>
+  // BUILD-98 — a chip that names a person carries that person's face. `id` is
+  // optional so a caller with only a name still renders (initials), rather
+  // than the chip disappearing because a payload forgot to include an id.
+  const DonorChip=({id,name,detail,onClick})=>(
+    <button onClick={onClick} style={{display:"flex",alignItems:"center",gap:6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px 3px 3px",cursor:"pointer",fontSize:11,maxWidth:180}}>
+      <PersonMark id={id} name={name} size={20}/>
       <span style={{fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span>
       {detail&&<span style={{color:T.ink3,whiteSpace:"nowrap",flexShrink:0}}>{detail}</span>}
     </button>
@@ -1373,7 +1377,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             ):retentionBreakdown?.rows?.length>0&&(
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10}}>
                 {retentionBreakdown.rows.slice(0,3).map(r=>(
-                  <DonorChip key={r.donorId} name={r.donorName} detail={fmtFull(r.lastGiftAmount)} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
+                  <DonorChip key={r.donorId} id={r.donorId} name={r.donorName} detail={fmtFull(r.lastGiftAmount)} onClick={()=>onNavigate("donors",{selectDonorId:r.donorId})}/>
                 ))}
                 {retentionBreakdown.nonRetainedCount>3&&(
                   <MoreChip count={retentionBreakdown.nonRetainedCount-3} onClick={openRetentionBreakdown}/>
@@ -1421,7 +1425,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {stewardMetrics.firstTouchDelay.newestUntouched?.length>0&&(
                 <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:6,marginTop:10}}>
                   {stewardMetrics.firstTouchDelay.newestUntouched.map(d=>(
-                    <DonorChip key={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
+                    <DonorChip key={d.donorId} id={d.donorId} name={d.donorName} detail={`waiting ${daysDiff(d.firstGiftDate)}d`} onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}/>
                   ))}
                   {stewardMetrics.firstTouchDelay.untouchedCount>stewardMetrics.firstTouchDelay.newestUntouched.length&&(
                     <span style={{fontSize:11,color:T.ink3}}>+{stewardMetrics.firstTouchDelay.untouchedCount-stewardMetrics.firstTouchDelay.newestUntouched.length} more waiting</span>
@@ -2420,6 +2424,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 return(
                   <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.gold500,
                                          borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
+                    <PersonMark id={r.donor_id} name={r.donor_name} size={34}/>
                     <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
                       onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
                       <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>

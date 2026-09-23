@@ -6669,7 +6669,13 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     style={{width:15,height:15,cursor:"pointer",accentColor:"#0d5c3a"}} onClick={e=>e.stopPropagation()}/>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-                  <div style={{width:compact?22:32,height:compact?22:32,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:compact?10:12,fontWeight:800,color:stage.color,flexShrink:0,transition:"width 0.12s,height 0.12s"}}>{d.name[0]}</div>
+                  {/* BUILD-98 — her face, on the list she reads every day.
+                      The photo was on the profile and nowhere else, which is
+                      the one place she already knows who she is looking at.
+                      The stage tint survives as the initials fallback. */}
+                  <PersonMark id={d.id} name={d.name} kind={d.kind} size={compact?22:32}
+                    tint={stage.color+"22"} tintFg={stage.color}
+                    style={{transition:"width 0.12s,height 0.12s"}}/>
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                       <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span>
@@ -6722,7 +6728,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 style={{display:"none",alignItems:"center",gap:12,padding:"13px 14px",background:checked?"#edf3ee":idx%2===0?T.white:"#faf9f6",borderBottom:isLast?"none":"1px solid "+T.bg3,cursor:"pointer",minHeight:64}}>
                 {selectMode&&<input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}} onClick={e=>e.stopPropagation()}
                   style={{width:20,height:20,cursor:"pointer",accentColor:"#0d5c3a",flexShrink:0}}/>}
-                <div style={{width:34,height:34,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                <PersonMark id={d.id} name={d.name} kind={d.kind} size={34}
+                  tint={stage.color+"22"} tintFg={stage.color}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
                     {d.name}
@@ -6810,7 +6817,8 @@ function TeamView({donors,orgTeam,onSelectDonor}){
                 const stage=STAGES.find(s=>s.id===(d.stage||"cultivate"))||STAGES[2];
                 return(
                   <div key={d.id} onClick={()=>onSelectDonor(d)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
-                    <div style={{width:28,height:28,borderRadius:"50%",background:stage.color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:stage.color,flexShrink:0}}>{d.name[0]}</div>
+                    <PersonMark id={d.id} name={d.name} kind={d.kind} size={28}
+                      tint={stage.color+"22"} tintFg={stage.color}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                       <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{stage.label} · {fmtFull(d.total)}</div>

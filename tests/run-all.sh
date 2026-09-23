@@ -140,6 +140,7 @@ CORE=(
   build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
   incident-mail-gate
   build97-audiences
+  build98-photos
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

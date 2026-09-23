@@ -1379,7 +1379,12 @@ export function personInitials(name, kind) {
 // app shell still gets a legible mark rather than a transparent hole.
 export const PhotoContext = createContext({ photos: {}, refresh: () => {} });
 
-export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }) {
+// `tint`/`tintFg` colour the INITIALS FALLBACK only — never the photo. Several
+// donor lists tinted their initials circle with the person's pipeline stage,
+// which is real information, and swapping those for a plain PersonMark would
+// have bought faces at the cost of a signal. A caller that passes no tint gets
+// the org accent exactly as before.
+export function PersonMark({ id, name, kind, url, size = 34, style = {}, title, tint, tintFg }) {
   const ctx = useContext(PhotoContext);
   const src = url !== undefined ? url : (id ? (ctx.photos || {})[id] : null);
   const [broken, setBroken] = useState(false);
@@ -1410,8 +1415,8 @@ export function PersonMark({ id, name, kind, url, size = 34, style = {}, title }
     <div data-testid="person-mark" title={title || name || ""} aria-hidden="true"
       style={{
         ...base,
-        background: "var(--org-accent, " + T.greenDk + ")",
-        color: "var(--org-accent-fg, " + T.white + ")",
+        background: tint || "var(--org-accent, " + T.greenDk + ")",
+        color: tintFg || (tint ? T.ink : "var(--org-accent-fg, " + T.white + ")"),
         fontSize: Math.max(9, Math.round(size * 0.4)),
         fontWeight: 800, letterSpacing: "0.02em",
       }}>
