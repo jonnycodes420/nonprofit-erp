@@ -223,6 +223,19 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       vocabularySetAt: org.vocabulary_set_at || null,
       timezone:    org.timezone || "",
       timezone_confirmed_at: org.timezone_confirmed_at || null,
+      // ── INCIDENT 2026-09-22 / BUILD-97 Part 0 — THE TWO FLAGS THAT DECIDE
+      // WHETHER MAIL LEAVES THIS ORGANISATION, ON THE SCREEN RATHER THAN ONLY
+      // IN THE DATABASE. `orgMaySendEmail()` has read them since the incident;
+      // nothing rendered them, so an org whose mail was off looked exactly like
+      // an org whose mail was on, and the only way to tell was a production
+      // query. A person cannot be held to a state they cannot see.
+      //
+      // THIS WHITELIST IS THE TRAP. `GET /org` returns `SELECT *`, so both
+      // columns were already crossing the wire and being thrown away HERE —
+      // the same shape as BUILD-89's adaptDonor defect, where assignedTo was
+      // dropped on every refresh because the adapter did not name it.
+      isDemoOrg:     org.is_demo_org === true,
+      emailsEnabled: org.emails_enabled !== false,
     },
     donors: donors.map(adaptDonor),
     grants: grants.map(g => ({

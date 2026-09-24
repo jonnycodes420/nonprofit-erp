@@ -298,5 +298,41 @@ for (const f of fs.readdirSync(path.join(root, "scripts")).filter(n => /^seed-.*
   ok(/emails_enabled/.test(src), `${f} must create its orgs with emails_enabled=false (a seeded org mails nobody)`);
 }
 
+// -- BUILD-97 Part 0 -- NO SOURCE FILE MAY CONTAIN A RAW NUL BYTE ----------
+// `shared/importShape.js` carried two literal NUL bytes, typed as a join
+// separator. One consequence, and it is not cosmetic: `grep` classifies a file
+// containing a NUL as BINARY and SILENTLY SKIPS IT. The largest mapper module
+// in the repo -- 4,180 lines, 60+ exported functions -- was invisible to every
+// tree-wide search anyone had ever run over it, including safety sweeps.
+//
+// That is the same mechanism, exactly, that let `steward-messy-2500-v2.csv`
+// (440 real mailbox addresses) survive a scan that reported the tree clean on
+// 22 September. The incident write-up's one lesson was "for a safety sweep,
+// read the bytes; do not trust grep -r". This guard reads the BYTES.
+//
+// PROVEN ABLE TO FAIL: the check is run against a synthetic buffer containing
+// a NUL below, and must report it. A guard that has never been shown failing
+// is a guard nobody knows the shape of.
+const hasNul = buf => buf.includes(0x00);
+ok(hasNul(Buffer.from([0x61, 0x00, 0x62])), "the NUL check itself detects a NUL (proven able to fail)");
+ok(!hasNul(Buffer.from('const SEP = "\\u0000";', "utf8")), "...and an ESCAPED NUL in source is not a raw NUL");
+
+const SRC_EXT = /\.(js|jsx|mjs|cjs|json|md|sh|yml|yaml|css|html)$/;
+const SKIP_DIR = new Set(["node_modules", ".git", "dist", "build", "coverage", ".next"]);
+const nulFiles = [];
+(function walkForNul(dir) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (SKIP_DIR.has(entry.name)) continue;
+      walkForNul(path.join(dir, entry.name));
+    } else if (SRC_EXT.test(entry.name)) {
+      const full = path.join(dir, entry.name);
+      if (hasNul(fs.readFileSync(full))) nulFiles.push(path.relative(root, full));
+    }
+  }
+})(root);
+ok(nulFiles.length === 0,
+   "no source file contains a raw NUL byte (grep reads such a file as binary and skips it): " + nulFiles.join(", "));
+
 console.log(`script-guards: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

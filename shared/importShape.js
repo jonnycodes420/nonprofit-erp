@@ -766,6 +766,19 @@ export function dedupeHeaderCells(cells) {
   });
 }
 
+// ── THE SEPARATOR, WRITTEN AS AN ESCAPE AND NOT AS A BYTE ──────────────────
+// This joins header cells so two header rows can be compared as one string,
+// and it has to be a character that cannot occur in a spreadsheet cell — which
+// NUL is. It used to be typed here as a LITERAL NUL BYTE, and that one byte
+// made this file — the largest mapper module in the repo — read as BINARY to
+// `grep`, which then silently skipped it in every tree-wide search. That is
+// precisely the class that let a 440-address fixture hide from the safety
+// sweep on 22 September ("for a safety sweep, read the bytes; do not trust
+// grep -r"). Written as an escape it is the same character and the file is
+// text. `tests/script-guards.test.js` reads the BYTES of every source file and
+// fails on a raw NUL, so this cannot come back.
+const SEP = "\u0000";
+
 const PAGE_RE = /^page\s+\d+(\s+of\s+\d+)?$/i;
 const TOTAL_LABEL_RE = /^(grand\s+)?total[s]?$/i;
 const SUBTOTAL_RE = /^sub\s*-?\s*total[s]?$/i;
@@ -779,7 +792,7 @@ export function classifyBodyRow(cells, headerCells) {
   // an exact repeat of the header (page-break re-print)
   const hc = headerCells.map(c => String(c ?? "").trim());
   const cc = cells.map(c => String(c ?? "").trim());
-  if (hc.length && cc.length && hc.filter(Boolean).join(" ") === cc.filter(Boolean).join(" ")) {
+  if (hc.length && cc.length && hc.filter(Boolean).join(SEP) === cc.filter(Boolean).join(SEP)) {
     return { kind: "repeated_header" };
   }
   if (filled.length <= 2 && filled.some(c => PAGE_RE.test(c))) return { kind: "page_marker" };

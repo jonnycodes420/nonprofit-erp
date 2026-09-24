@@ -186,6 +186,48 @@ function AppShell() {
   // a same-session guard so a re-render cannot greet twice before the stamp
   // lands. A failure here is silent: nobody's first day is blocked by a
   // greeting that could not load.
+  // -- INCIDENT 2026-09-22 / BUILD-97 Part 0 -- DEMONSTRATION DATA SAYS SO,
+  // ON EVERY SCREEN, IN THE PRODUCT ITSELF.
+  //
+  // On 22 September a production organisation dunned invented people at real
+  // mailboxes for twelve days. Two gates were built that night and both work:
+  // `donorMailDecision` refuses an `is_sample` donor, and `orgMaySendEmail`
+  // refuses a whole org marked `is_demo_org`. Neither of them is VISIBLE. An
+  // org full of fiction looked exactly like an org full of customers, which is
+  // how 25,034 invented donors sat in production for twelve days without
+  // anyone noticing what they were.
+  //
+  // A BANNER, NOT A HOME SECTION. A section can be hidden (BUILD-34 lets a
+  // user hide any hideable section) and is only on one tab; "the numbers you
+  // are reading are invented" has to be true on the screen you are reading
+  // them on. It rides the same banner stack as the billing states, above
+  // everything, on every tab.
+  //
+  // TWO STATES, BECAUSE THE TWO GATES ARE DIFFERENT GUARANTEES:
+  //   - `isDemoOrg` -> the ORG-level gate. Nothing leaves at all.
+  //   - sample rows in an org that is NOT flagged -> the DONOR-level gate.
+  //     Those people get no mail; everyone else in the org still does.
+  // Saying the first sentence when only the second is true would be a promise
+  // the product cannot keep.
+  const [sampleStatus,setSampleStatus]=useState(null);
+  const loadSampleStatus=()=>apiFetch("/org/sample-data-status")
+    .then(setSampleStatus).catch(()=>setSampleStatus(null));
+  useEffect(()=>{ if(getToken()) loadSampleStatus(); },[]);
+  const [clearingSample,setClearingSample]=useState(false);
+  async function clearSampleFromBanner(){
+    if(clearingSample)return;
+    setClearingSample(true);
+    try{
+      await apiFetch("/org/clear-sample-data",{method:"POST"});
+      setSampleStatus({hasSampleData:false,sampleDonorCount:0});
+      // The donor lists on screen still hold the rows that were just deleted.
+      // Reload rather than leave a screen describing people who no longer
+      // exist -- the clear action is rare and a full reload is the honest
+      // cheapest correct answer.
+      window.location.reload();
+    }catch(e){ setClearingSample(false); }
+  }
+
   const [welcome,setWelcome]=useState(null);
   useEffect(()=>{
     if(!getToken())return;
@@ -551,6 +593,37 @@ function AppShell() {
       </div>
     </div>
 
+    {/* The demo/sample banner sits ABOVE the billing states deliberately: a
+        billing problem is about this organisation's account, and "none of this
+        is real" is about every number underneath it. It is NOT dismissible. */}
+    {(data.org?.isDemoOrg||sampleStatus?.hasSampleData)&&(
+      <div data-testid="demo-data-banner" role="status" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
+        <span style={{flex:1,minWidth:240}}>
+          {data.org?.isDemoOrg?(
+            <><strong style={{color:T.gold50}}>This is a demonstration organisation.</strong>{" "}
+              Everything in it is invented, and Steward will not send email to anyone here — not a
+              receipt, not a reminder, not a campaign.</>
+          ):(
+            <><strong style={{color:T.gold50}}>
+              {sampleStatus.sampleDonorCount} sample {sampleStatus.sampleDonorCount===1?"donor is":"donors are"} loaded.</strong>{" "}
+              They are invented, they are counted in nothing you report, and Steward will not email
+              them. Everyone else in this organisation still receives mail as normal.</>
+          )}
+        </span>
+        {sampleStatus?.hasSampleData&&(
+          <button data-testid="demo-banner-clear" onClick={clearSampleFromBanner} disabled={clearingSample}
+            style={{background:T.gold500,border:"none",borderRadius:8,color:T.ink,fontSize:12,fontWeight:700,cursor:clearingSample?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:clearingSample?0.7:1}}>
+            {clearingSample?"Clearing…":"Clear the sample data"}
+          </button>
+        )}
+        {!sampleStatus?.hasSampleData&&(
+          <button onClick={()=>navigateTo("settings",{section:"data"})}
+            style={{background:"none",border:"1px solid "+T.gold100,borderRadius:8,color:T.gold100,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>
+            Your data →
+          </button>
+        )}
+      </div>
+    )}
     {showReadOnlyBanner&&<div style={{background:T.terra700,borderBottom:"1px solid "+T.terracotta,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.terra200,flexWrap:"wrap"}}>
       <span style={{flex:1,minWidth:200}}><strong style={{color:T.terra100}}>Your account is read-only.</strong> {subStatus==="trial_expired"?"Your free trial has ended.":"Your subscription has ended."} Export your data or reactivate to continue.</span>
       <button onClick={exportDataFromBanner} disabled={exportingBanner} style={{background:"none",border:"1px solid "+T.terra200,borderRadius:8,color:T.terra200,fontSize:12,fontWeight:700,cursor:exportingBanner?"not-allowed":"pointer",padding:"4px 12px",whiteSpace:"nowrap",opacity:exportingBanner?0.7:1}}>{exportingBanner?"Exporting…":"Export data →"}</button>
