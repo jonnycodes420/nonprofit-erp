@@ -25461,14 +25461,50 @@ app.get("/recurring/unlinked", requireAuth, wrap(async (req, res) => {
       connectedFromFile: facts.connected,
     },
     stats: { sent: stats.sent, reconnected: stats.reconnected, monthlyBack: Math.round(stats.monthly_back * 100) / 100 },
+    // BUILD-96 Part 4 — WHO RETRIES THE CARD. An org taking its monthly gifts
+    // through a provider that runs its own dunning must not ALSO be offered
+    // Steward's reconnect link: two emails four days apart about the same
+    // card, from two systems, is worse than either alone. The screen turns the
+    // engine off and says whose job it is.
+    dunning: await dunningOwner(orgId),
     list,
   });
 }));
+
+// The one place that answers "does Steward retry this org's cards, or does
+// somebody else?" Read by the Recurring screen and by the send route, so the
+// sentence on screen and the refusal behind the button cannot disagree.
+async function dunningOwner(orgId) {
+  const { PROVIDERS } = await import("./shared/givingSources.js");
+  const rows = await query(
+    "SELECT provider FROM giving_sources WHERE org_id=? AND status <> 'disconnected'", [orgId]);
+  for (const r of rows) {
+    const p = PROVIDERS[r.provider];
+    if (p && p.dunning === "provider") {
+      return { engine: "provider", provider: p.key, providerLabel: p.label, sentence: p.dunningSentence };
+    }
+  }
+  return { engine: "steward", provider: null, providerLabel: null, sentence: null };
+}
 
 app.post("/recurring/unlinked/send-reconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const ids = Array.isArray(req.body.donorIds) ? req.body.donorIds.slice(0, 500) : [];
   if (!ids.length) return res.status(400).json({ error: "donorIds required" });
+
+  // THE ENGINE IS OFF, NOT JUST HIDDEN. A button removed from a screen is a
+  // button somebody reaches with a saved link, an old tab or a script. For an
+  // org whose provider runs its own dunning, this refuses — which is what
+  // makes "zero reconnect emails" a property of the product rather than of the
+  // current markup.
+  const own = await dunningOwner(orgId);
+  if (own.engine === "provider") {
+    return res.status(409).json({
+      error: "dunning_belongs_to_provider",
+      provider: own.provider,
+      message: own.sentence,
+    });
+  }
   const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
   const donors = await query(
     `SELECT id, name, email, imported_sustainer_amount::float AS amount, imported_sustainer_last_gift AS last_gift

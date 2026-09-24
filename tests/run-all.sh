@@ -139,7 +139,7 @@ CORE=(
   build94-photo build94-people build94-sequences build94-bulk build94-calendar build94-welcome
   build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
   incident-mail-gate
-  build96-sample-data build96-ai-gate
+  build96-sample-data build96-ai-gate build96-verifying
   build97-audiences
   build98-photos
   build99-grant-timeline

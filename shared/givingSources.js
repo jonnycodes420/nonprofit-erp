@@ -56,6 +56,18 @@ export const PROVIDERS = {
   },
   zeffy: {
     key: "zeffy", label: "Zeffy", mode: "api", recurring: "inferred",
+    // ── BUILD-96 Part 4 — WHO RETRIES THE CARD ─────────────────────────────
+    // Zeffy runs its own dunning: 4-5 retries about four days apart, a donor
+    // email with a self-service card-update link each time, and
+    // auto-cancellation if they all fail. Steward CANNOT retry a Zeffy card
+    // and must not imply it can — a reconnect link from Steward would land in
+    // the same inbox as Zeffy's own, four days apart, about the same card.
+    //
+    // What Steward does, and Zeffy does not, is tell the ORGANISATION that a
+    // three-year monthly sponsor was quietly cancelled. Zeffy recovers the
+    // card; Steward recovers the relationship.
+    dunning: "provider",
+    dunningSentence: "Zeffy retries the card and emails your donor. Steward tells you when a monthly gift has stopped.",
     credentialFields: [{ name: "apiKey", label: "API key", secret: true }],
     help: "In Zeffy, an admin opens Settings, then Integrations, chooses API, and copies the key.",
     steps: [

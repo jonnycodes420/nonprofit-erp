@@ -81,8 +81,15 @@ async function reset() {
   const direct = (gs.match(/const DIRECT_ORDER=\[([^\]]*)\]/) || [])[1] || "";
   const upload = (gs.match(/const UPLOAD_ORDER=\[([^\]]*)\]/) || [])[1] || "";
   const keys = t => t.split(",").map(x => x.trim().replace(/["']/g, "")).filter(Boolean);
-  ok("the direct group is exactly the four providers with an API",
-     keys(direct).join(",") === "paypal,zeffy,stripe,givebutter", keys(direct));
+  // BUILD-96 Part 4 — DERIVED FROM THE REGISTRY, not a hardcoded four.
+  // This used to pin the literal list "paypal,zeffy,stripe,givebutter", which
+  // passed while SQUARE — an api-mode provider with a merged adapter — was
+  // missing from the page entirely. An assertion whose own comment says "the
+  // registry decides, not the page" has to actually ask the registry, or it
+  // pins the omission instead of catching it.
+  ok("the direct group is EVERY provider the registry says has an API",
+     keys(direct).slice().sort().join(",") === lib.API_PROVIDERS.slice().sort().join(","),
+     { onPage: keys(direct), inRegistry: lib.API_PROVIDERS });
   ok("...and every one of them is mode api in the registry",
      keys(direct).every(k => lib.PROVIDERS[k] && lib.PROVIDERS[k].mode === "api"),
      keys(direct).filter(k => lib.PROVIDERS[k]?.mode !== "api"));

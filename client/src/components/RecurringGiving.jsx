@@ -424,6 +424,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
   const giving = data.list.filter(u => !u.stopped);
   const toggle = id => setSel(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const sendable = data.list.filter(u => u.email && !u.reconnectedAt);
+  const providerDunning = data.dunning && data.dunning.engine === "provider";
   const sendTargets = [...sel].filter(id => sendable.some(u => u.donorId === id));
   const send = async () => {
     if (!sendTargets.length || busy) return;
@@ -437,7 +438,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
   };
   const row = (u) => (
     <div key={u.donorId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderTop: `1px solid ${T.bg2}` }}>
-      {!isReadOnly && u.email && !u.reconnectedAt && (
+      {!isReadOnly && !providerDunning && u.email && !u.reconnectedAt && (
         <input type="checkbox" checked={sel.has(u.donorId)} onChange={() => toggle(u.donorId)} style={{ width: 15, height: 15, cursor: "pointer" }} />
       )}
       <div {...interactive(() => onNavigate("donors", { selectDonorId: u.donorId }), { label: `Open ${u.donorName}` })} style={{ flex: 1, minWidth: 0, borderRadius: 6, padding: "2px 4px", margin: "-2px -4px" }}>
@@ -468,7 +469,21 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
             </div>
           )}
         </div>
-        {!isReadOnly && sendable.length > 0 && (
+        {/* BUILD-96 Part 4 — for an org on a provider that runs its own
+            dunning, the reconnect engine is VISIBLY off and the screen says
+            whose job it is. Zeffy retries 4-5 times about four days apart with
+            a card-update link each time; a Steward reconnect link would land
+            in the same inbox, about the same card, from a second system. What
+            Steward does and Zeffy does not is tell the ORGANISATION that a
+            three-year sponsor was quietly cancelled — so the list below stays,
+            and only the sending goes. */}
+        {providerDunning && (
+          <div data-testid="recurring-dunning-note"
+            style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55, maxWidth: "52ch" }}>
+            {data.dunning.sentence}
+          </div>
+        )}
+        {!isReadOnly && !providerDunning && sendable.length > 0 && (
           <button onClick={send} disabled={busy || sendTargets.length === 0}
             title={sendTargets.length === 0 ? "Select sustainers below (those with an email on file)" : undefined}
             style={{ background: sendTargets.length ? (T.gold500 || "#c9a84c") : T.bg2, border: "none", borderRadius: 9, padding: "9px 16px", color: sendTargets.length ? T.ink : T.ink3, fontSize: 12.5, fontWeight: 700, cursor: sendTargets.length && !busy ? "pointer" : "not-allowed" }}>

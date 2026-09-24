@@ -85,3 +85,36 @@ console before it goes live.** The deposit sheet accepts twenty photographs in
 one press, so an unbounded key is an unbounded invoice. Full recipe in
 `MANUAL-STEPS.md` §13, including the notice obligation for orgs that were
 already on Steward when it is switched on.
+
+## 5. The two asks, in one sentence each (BUILD-96 Part 4)
+
+Zeffy and Square both have merged, green adapters that have **never seen a real
+payload**, and there is an organisation in the pipeline for each. Until one
+real account has synced, both stay off the public allowlist
+(`shared/publicSources.js`, still empty) and both show in-app as *"Available,
+being verified with a first organization."*
+
+**Ask Laura (Hooves of Hope — Zeffy):** for a read-only API key from her Zeffy
+account, which an admin copies from Settings → Integrations → API.
+
+**Ask Allie (Justin's Place — Square):** for a production access token from her
+Square account, and for which of her Square locations (or which item name)
+counts as a donation, because Square is a point of sale and the same row shape
+carries a lesson fee and a gift.
+
+Each is one screen and about two minutes at their end. Neither can be
+substituted with a sandbox: a sandbox confirms the password was accepted and
+tells us nothing about whether the mapping is right, which is the whole
+question.
+
+**When one comes back:** connect it, press Test, read the first payload against
+what the provider's own dashboard says the money was, and only then mark its
+`SOURCES.md` row and add the key to `PUBLIC_SOURCE_ALLOWLIST` — in that order,
+never any other.
+
+**And for Laura specifically:** Steward will not send her donors reconnect
+links, and her Recurring screen says so in one line. Zeffy runs its own
+dunning — 4 to 5 retries about four days apart with a card-update link each
+time — so a Steward link would land in the same inbox about the same card.
+Zeffy recovers the card; Steward recovers the relationship, by telling her a
+three-year sponsor was quietly cancelled, which Zeffy does not.

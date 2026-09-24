@@ -1267,7 +1267,28 @@ const SOURCE_LOGOS={};   // key -> imported asset URL, once the files exist
 // The two groups, in order. Track C may merge another direct source; it is
 // added here and nowhere else. Cash App and Venmo are pinned to the upload
 // group by the registry's own `mode`, and a guard holds them there.
-const DIRECT_ORDER=["paypal","zeffy","stripe","givebutter"];
+const DIRECT_ORDER=["paypal","zeffy","stripe","givebutter","square"];
+
+// ── BUILD-96 Part 4 — AN ADAPTER THAT HAS NEVER SEEN A REAL PAYLOAD ────────
+// Zeffy and Square both have merged, green adapters and NEITHER has read a
+// real payment. That is the state BUILD-91's rule was written for: they stay
+// off the public allowlist entirely (shared/publicSources.js — still empty),
+// and in-app they say what is actually true rather than sitting in the row
+// looking exactly like PayPal.
+//
+// "Available" is honest — the adapter is there and an org can connect one
+// today. "Being verified with a first organization" is the part that stops it
+// reading as a finished integration, and the ask is the one thing Jonathan
+// needs from that organisation, in one sentence, so the screen is also the
+// request. Nothing else is promised here.
+//
+// A key leaves this map the moment a real account has synced through it, and
+// BLOCKED-build95.md §5 is where the two asks are tracked.
+const VERIFYING={
+  zeffy:  "To be one of the first: a read-only API key from your Zeffy account.",
+  square: "To be one of the first: a production access token from your Square account.",
+};
+const VERIFYING_LINE="Available, being verified with a first organization.";
 const UPLOAD_ORDER=["cashapp","venmo"];
 const STATEMENT_LINE="Once a month, drop the statement in.";
 // The bank is not a provider and never will be one, so it is a tile in its own
@@ -1437,14 +1458,20 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
         {DIRECT_ORDER.filter(k=>providerByKey[k]).map(k=>{
           const p=providerByKey[k], s=byProvider[k], state=sourceState(s);
           const gifts=s&&s.everChecked?`, ${s.giftsThisWeek} new gift${s.giftsThisWeek===1?"":"s"} this week`:"";
+          // An unverified provider says so INSTEAD of the generic line, and
+          // only while nothing is connected: once this org has connected one,
+          // what its own connection is doing is the more useful truth.
+          const verifying=state==="none"&&VERIFYING[k];
           const status=state==="connected"?checkedPhrase(s.lastSyncedAt)+gifts
             :state==="waiting"||state==="failed"?triedPhrase(s.lastTriedAt||s.lastErrorAt||s.lastSyncedAt)
+            :verifying?VERIFYING_LINE
             :"Steward checks every six hours once it is connected.";
           // The SERVER's own sentence, never a code, and never twice.
           const row=state!=="none"&&sayErrorOnce(s)?<span>{s.lastError}</span>:null;
           return (
             <div key={k} {...(state!=="none"?{"data-testid":"gs-row"}:{})}>
               <GivingSourceTile title={p.label} logoKey={k} state={state} statusLine={status} error={row}
+                note={verifying?<span data-testid="gs-verifying-ask">{VERIFYING[k]}</span>:null}
                 openLabel={state==="none"?`Connect ${p.label}`:`${p.label}, ${STATE_LABEL[state].toLowerCase()}`}
                 onOpen={()=>{ if(credState.ready&&isAdmin&&!isReadOnly) startConnect(p); }}
                 actions={state!=="none"?(
