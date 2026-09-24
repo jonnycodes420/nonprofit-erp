@@ -33,7 +33,7 @@ const S = {
   // pushing the whole agreement sideways.
   tableWrap: { overflowX: "auto", margin: "0 0 16px", WebkitOverflowScrolling: "touch" },
   table: { borderCollapse: "collapse", width: "100%", minWidth: 560, fontSize: 13.5, color: "#3d4a42" },
-  th: { textAlign: "left", verticalAlign: "top", padding: "8px 12px 8px 0", borderBottom: "1px solid #c9c4b8",
+  th: { textAlign: "left", verticalAlign: "top", padding: "8px 12px 8px 0", borderBottom: "1px solid #ddd9d0",
         fontWeight: 700, color: "#0f1a12", lineHeight: 1.5 },
   td: { textAlign: "left", verticalAlign: "top", padding: "10px 12px 10px 0", borderBottom: "1px solid #ddd9d0",
         lineHeight: 1.6 },
