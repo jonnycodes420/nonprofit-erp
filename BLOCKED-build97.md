@@ -272,3 +272,60 @@ tuned against sentences written by the person specifying the product.
 
 Ten sentences from the person who will actually type them is the difference
 between a demo and a feature, and it is ten minutes of her time.
+
+## 12 · Part 4 — integrations that are proven, not listed. NOTHING WAS DONE, and that is the honest state.
+
+Part 4's own sentence: *"Nothing in this part is code except fixing what the
+real payload breaks."* No real payload arrived, so no code was written and none
+should have been. This section IS Part 4's deliverable.
+
+**The rule, restated so it cannot drift:** an adapter moves from *written* to
+*proven* only by a real account, a walked sync on production, and the figures
+read back by hand. The marketing page reads from the **proven** list, and the
+proven list is currently **empty**.
+
+| # | Adapter | State | Waiting on | Date named |
+|---|---|---|---|---|
+| 1 | **Zeffy** | written, never walked | Laura's key | **29 Sept** |
+| 2 | **Square** | written, never walked | Allie's token | the second visit |
+| 3 | **QuickBooks** (91f/91g) | blocked at the credential | Intuit keys | — |
+| 4 | **PayPal** | written, never walked | the $1 walk | — |
+
+**And a prerequisite that gates all four:** `STEWARD_CREDENTIAL_KEY` must be set
+on Railway before any organisation can connect any source at all. Unset,
+`seal()` throws, the connect route answers 503 and nothing is written — the
+feature is *unavailable* rather than *insecure*, which is correct and is also
+why none of these can be walked until it is set.
+
+**What each proof looks like, in ten minutes:** connect the real account →
+`POST /giving-sources/:id/sync` → read the run summary → open the org's gift
+list → check the rows against the provider's own dashboard, by eye, including
+the **fee** and the **gross** → record it here as done, with the date and the
+figures. A sync that "worked" without the figures being read back is not a
+proof; it is a green tick.
+
+**Each adapter already declares its own uncertainty.** Zeffy and Givebutter
+carry a `FIELD_MAP` of candidate paths per contract field, and their suites
+assert every declared candidate is actually read — so a wrong guess fails *by
+column name* rather than arriving as a silently empty donor. That is what makes
+each of these a ten-minute correction rather than a rebuild.
+
+---
+
+## 13 · Part 5 — what the observability page does NOT yet watch
+
+Built and green. Three honest gaps, named rather than left to be discovered:
+
+- **It has no screen.** `GET /admin/observability` returns the four sections and
+  the alarm; the AdminDashboard has no tab rendering them yet. The data is the
+  hard part and it is done; the page is an afternoon.
+- **`_stewardOrgId` is set by no call site yet.** The wrapper logs the org when
+  an option carries it and `null` otherwise, and a null org is honest — a
+  password reset genuinely has no tenant. But the 26 existing send sites do not
+  pass one, so today's rows carry an org only where the log row was written
+  directly. **The demo-org alarm therefore cannot see a send whose org is
+  unknown**, which is the one gap in it that matters; stamping the option at
+  the donor-facing send sites is the fix, and it is mechanical.
+- **The 5xx burst counter is per PROCESS.** Railway runs one instance today, so
+  it is accurate today. With two instances each would count its own window and
+  the threshold would take twice as long to trip.

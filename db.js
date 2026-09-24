@@ -3479,6 +3479,44 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_drafts_org ON agent_drafts (org_id, status, created_at DESC)`);
 
+  // ── BUILD-97 Part 5 — EVERY MESSAGE THAT LEFT THE BUILDING ──────────────
+  // Written by the ONE wrapper around the Resend client (server.js), so every
+  // one of the 26 existing send sites and every future one lands here without
+  // anybody remembering to make it.
+  //
+  // THE RECIPIENT DOMAIN, NEVER THE ADDRESS. A super-admin needs to see that
+  // mail went to yahoo.com from a demo org — which is the exact shape of the
+  // 22 September incident — and does not need a list of donors' email
+  // addresses sitting in an ops table.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_log (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      recipient_domain TEXT,
+      kind TEXT,
+      subject TEXT,
+      status TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_time ON email_log (created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_email_log_org ON email_log (org_id, created_at DESC)`);
+
+  // Every background tick, with its last run and its result. `processDigests`
+  // and its eight siblings ran on a timer with nowhere to report to: a tick
+  // that threw was a console line on a server nobody was reading.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tick_log (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      ok BOOLEAN,
+      detail TEXT,
+      error TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tick_log_name ON tick_log (name, started_at DESC)`);
+
   // ── PAUSE ALL, ONE BUTTON ────────────────────────────────────────────────
   // On the ORG, not on each instruction: "stop everything" has to be one
   // switch, and a switch that works by updating N rows can half-fail.

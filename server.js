@@ -48,7 +48,90 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
+// ── BUILD-97 Part 5 — THE CHOKE POINT THAT DID NOT EXIST ───────────────────
+// The incident write-up's last open item, verbatim: "server.js still has ~20
+// separate resend.emails.send( call sites. The two gates cover every one that
+// matters today, but there is no single choke point, and the next send path
+// added will not automatically pass through either gate."
+//
+// There are 26 of them. Rewriting 26 call sites is a refactor with 26 chances
+// to get one wrong, and it would still not stop the 27th. Wrapping the CLIENT
+// does: `emails.send` is one method on one object, so every existing call site
+// and every future one is logged BY CONSTRUCTION, including ones written by
+// somebody who never read this comment.
+//
+// It LOGS. It does not gate — the two gates (`orgMaySendEmail` and
+// `donorMailDecision`) stay exactly where they are, above the send paths that
+// matter, because a gate at the client would have no idea which donor a message
+// is for. What this buys is the OTHER half the incident needed: an outside
+// observer. On 22 September the only way to find out what had been sent was to
+// read the Resend console.
+//
+// RECIPIENT DOMAIN, NEVER THE ADDRESS. A super-admin needs to see that mail
+// went to yahoo.com from a demo org; they do not need a list of donors'
+// email addresses in an ops table (steward-data-handling.md).
+const _rawResend = new Resend(process.env.RESEND_API_KEY);
+const EMAIL_LOG_RETENTION_DAYS = 30;
+
+// The org this send belongs to is taken from an explicit `_stewardOrgId` on the
+// options when a call site knows it, and is otherwise null. A null org is
+// honest — some sends (a password reset, the MIGC contact form) genuinely have
+// no tenant — and it is better than a guess, because the whole point of this
+// table is telling the truth about what left the building.
+function _logOutboundEmail(opts, result, err) {
+  const to = Array.isArray(opts && opts.to) ? opts.to[0] : (opts && opts.to);
+  const domain = String(to || "").split("@")[1] || "";
+  const row = [
+    "eml_" + uuid().slice(0, 12),
+    (opts && opts._stewardOrgId) || null,
+    domain.toLowerCase().slice(0, 120),
+    String((opts && opts._stewardKind) || "").slice(0, 60) || null,
+    String((opts && opts.subject) || "").slice(0, 200),
+    err ? "failed" : "sent",
+    err ? String(err.message || err).slice(0, 300) : null,
+  ];
+  // Never let logging break a send, and never let it throw into a caller that
+  // is already handling a provider failure.
+  run(`INSERT INTO email_log (id,org_id,recipient_domain,kind,subject,status,error)
+       VALUES (?,?,?,?,?,?,?)`, row).catch(() => {});
+}
+
+// A PROXY, NOT A REPLACEMENT. The first cut of this wrapper was an object
+// literal with one method on it, which silently deleted the rest of the client
+// — `resend.domains.create` became undefined, and the sending-domain claim
+// route started answering "could not reach the mail provider". The full battery
+// caught it (tests/build88c-domain.test.js) and it is the right lesson: a
+// wrapper around somebody else's object has to pass through everything it did
+// not come to change.
+//
+// So this forwards every property to the real client and overrides exactly one
+// method. A Resend SDK upgrade that adds a new surface gets it for free, and
+// still cannot add an unlogged send.
+const resend = new Proxy(_rawResend, {
+  get(target, prop, receiver) {
+    if (prop !== "emails") return Reflect.get(target, prop, receiver);
+    const emails = Reflect.get(target, prop, receiver);
+    return new Proxy(emails, {
+      get(eTarget, eProp, eReceiver) {
+        if (eProp !== "send") {
+          const v = Reflect.get(eTarget, eProp, eReceiver);
+          return typeof v === "function" ? v.bind(eTarget) : v;
+        }
+        return async function send(opts) {
+          let out, thrown = null;
+          try {
+            out = await eTarget.send(opts);
+          } catch (e) { thrown = e; }
+          // The log must never break a send, and never swallow a provider
+          // failure the caller is already handling.
+          try { _logOutboundEmail(opts, out, thrown || (out && out.error)); } catch (_) { /* ignore */ }
+          if (thrown) throw thrown;
+          return out;
+        };
+      },
+    });
+  },
+});
 const { getDb, query, run, uuid, seedOrgData, withTransaction, withAdvisoryLock, queryTx, runTx } = require("./db");
 // BUILD-89S - the provider adapter registry and the read-only HTTP guard.
 const sourceAdapters = require("./sources/index.js");
@@ -1833,7 +1916,13 @@ app.use((req, res, next) => {
 });
 
 // ── Async error wrapper ────────────────────────────────────────────────────
-const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(err => {
+  // BUILD-97 Part 5 — every route's failure already passes through here, so
+  // this is where a 5xx burst is countable without an APM and without missing
+  // a route. It only NOTES; noteServerError rate-limits the alert itself.
+  try { noteServerError(); } catch (_) { /* never let telemetry break an error path */ }
+  next(err);
+});
 
 // BUILD-72 Part 1 — an import that does not reconcile is not a 500. The
 // transaction has already rolled back by the time this runs (db.js's
@@ -4025,7 +4114,7 @@ async function processSmartMoves() {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processSmartMoves().catch(console.error), 40000);
-  setInterval(() => processSmartMoves().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processSmartMoves", processSmartMoves).catch(console.error), 5 * 60 * 1000);
 }
 
 // Signal-based move SUGGESTIONS for a donor (never auto-applied). The officer
@@ -10229,7 +10318,7 @@ async function processGivingSources({ orgId = null } = {}) {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processGivingSources().catch(console.error), 90000);
-  setInterval(() => processGivingSources().catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
+  setInterval(() => recordTick("processGivingSources", processGivingSources).catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
 }
 
 // Ops/test hook, same bar as /recurring/check-cards: drives the schedule for
@@ -16021,6 +16110,175 @@ async function audienceRoster(orgId) {
   };
 }
 
+// ── BUILD-97 Part 5 — OBSERVABILITY, BECAUSE YOU CANNOT RUN WHAT YOU CANNOT
+// SEE ──────────────────────────────────────────────────────────────────────
+// The 22 September incident ran for TWELVE DAYS. It was found in a Resend log
+// at eleven at night, by somebody who went looking because three delivered
+// messages had turned up. The brief's own sentence: "The incident on the 22nd
+// would have shown here in one line at 3 PM instead of in a Resend log at 11."
+//
+// One page, super-admin only. Everything on it is a READ.
+
+// A tick that throws is a console line on a server nobody is reading. This
+// wraps one, records it, and never changes what the tick does.
+async function recordTick(name, fn) {
+  const id = "tick_" + uuid().slice(0, 10);
+  await run(`INSERT INTO tick_log (id,name) VALUES (?,?)`, [id, name]).catch(() => {});
+  try {
+    const detail = await fn();
+    await run(`UPDATE tick_log SET finished_at=NOW(), ok=TRUE, detail=? WHERE id=?`,
+      [typeof detail === "string" ? detail.slice(0, 300) : null, id]).catch(() => {});
+    return detail;
+  } catch (e) {
+    await run(`UPDATE tick_log SET finished_at=NOW(), ok=FALSE, error=? WHERE id=?`,
+      [String(e && e.message || e).slice(0, 400), id]).catch(() => {});
+    // A TICK FAILURE IS AN ALERT, not just a row. It is one of the three things
+    // the brief says Jonathan hears about.
+    opsAlert("tick_failed", `Background job "${name}" failed`,
+      `${name} threw: ${String(e && e.message || e).slice(0, 400)}`).catch(() => {});
+    throw e;
+  }
+}
+
+// ── THE ONE PLACE STEWARD MAILS JONATHAN ───────────────────────────────────
+// Deliberately narrow. Three triggers, named in the brief: a send to a real
+// mailbox provider from a demo org, a tick failure, a 5xx burst. It rides the
+// RAW client, not the wrapped one, because an alert about mail must not depend
+// on the thing it is alerting about — and it is de-duplicated per hour per
+// kind, because an alert that arrives forty times is an alert nobody reads.
+const _opsAlertSent = new Map();
+async function opsAlert(kind, subject, body) {
+  const to = process.env.FOUNDER_EMAIL;
+  if (!to) return { skipped: "no_founder_email" };
+  const hourKey = kind + ":" + new Date().toISOString().slice(0, 13);
+  if (_opsAlertSent.has(hourKey)) return { skipped: "already_alerted_this_hour" };
+  _opsAlertSent.set(hourKey, true);
+  if (_opsAlertSent.size > 200) _opsAlertSent.clear();
+  console.error(`[ops-alert] ${kind}: ${subject}`);
+  try {
+    await _rawResend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      to, subject: `[Steward] ${subject}`,
+      html: `<p>${String(body).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</p>`,
+    });
+    return { sent: true };
+  } catch (e) { return { failed: String(e && e.message || e) }; }
+}
+
+// Addresses that cannot reach a real person — RFC 2606's reserved names, which
+// publish no MX. Everything else is a real mailbox somewhere, which is the
+// whole point of the check.
+//
+// It lives in shared/reservedDomains.js rather than here because
+// tests/email-links.test.js bans the LOOPBACK HOSTNAME from server.js
+// OUTRIGHT -- no exception list, because the moment a guard grows one it stops
+// being checkable. The predicate legitimately has to name that hostname, so it
+// went somewhere it can. (And this comment deliberately does not write it
+// either: a guard that greps source must strip comments first, or the file
+// explaining why a string was removed fails the rule it documents -- a trap
+// this repo has already paid for twice.)
+let _reservedDomains = null;
+async function reservedDomains() {
+  return _reservedDomains || (_reservedDomains = await import("./shared/reservedDomains.js"));
+}
+
+// The alert the incident would have tripped on 10 September: a demo org sent
+// mail to a real mailbox provider. Run on a tick rather than in the send path,
+// so a slow check can never delay or break a send.
+async function checkDemoOrgSends() {
+  const rows = await query(
+    `SELECT e.org_id, o.name AS org_name, e.recipient_domain, COUNT(*)::int AS n
+       FROM email_log e JOIN orgs o ON o.id = e.org_id
+      WHERE e.created_at >= NOW() - INTERVAL '1 hour'
+        AND e.status = 'sent'
+        AND (o.is_demo_org = TRUE OR o.emails_enabled = FALSE)
+      GROUP BY e.org_id, o.name, e.recipient_domain`);
+  const { reachesARealMailbox } = await reservedDomains();
+  const bad = rows.filter(r => r.recipient_domain && reachesARealMailbox(r.recipient_domain));
+  if (!bad.length) return "clean";
+  await opsAlert("demo_org_send",
+    `A demo organisation sent mail to a real address`,
+    bad.map(b => `${b.org_name} (${b.org_id}) sent ${b.n} to ${b.recipient_domain}`).join("; "));
+  return `ALERTED: ${bad.length}`;
+}
+
+// A 5xx burst. Counted from the tick log's failures plus the process's own
+// counter, so it does not need an APM.
+let _fiveXXWindow = [];
+function noteServerError() {
+  const now = Date.now();
+  _fiveXXWindow = _fiveXXWindow.filter(t => now - t < 10 * 60000);
+  _fiveXXWindow.push(now);
+  if (_fiveXXWindow.length >= 25) {
+    opsAlert("5xx_burst", "Steward is returning server errors",
+      `${_fiveXXWindow.length} 5xx responses in the last ten minutes.`).catch(() => {});
+    _fiveXXWindow = [];
+  }
+}
+
+// THE PAGE. One route, super-admin only, four sections, all reads.
+app.get("/admin/observability", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const [emails, ticks, sources, agent, demoSends] = await Promise.all([
+    // Every outbound email in the last 7 days: org, recipient DOMAIN, template
+    // and status. Never the address.
+    query(`SELECT e.id, e.org_id, o.name AS org_name, o.is_demo_org, o.emails_enabled,
+                  e.recipient_domain, e.kind, e.subject, e.status, e.error, e.created_at
+             FROM email_log e LEFT JOIN orgs o ON o.id = e.org_id
+            WHERE e.created_at >= NOW() - INTERVAL '7 days'
+            ORDER BY e.created_at DESC LIMIT 500`),
+    // Every background tick with its last run and result.
+    query(`SELECT DISTINCT ON (name) name, started_at, finished_at, ok, detail, error
+             FROM tick_log ORDER BY name, started_at DESC`),
+    // Every giving-source sync with rows read and errors.
+    query(`SELECT gs.id, gs.org_id, o.name AS org_name, gs.provider, gs.status,
+                  gs.last_synced_at, gs.last_error
+             FROM giving_sources gs LEFT JOIN orgs o ON o.id = gs.org_id
+            ORDER BY gs.last_synced_at DESC NULLS LAST LIMIT 200`).catch(() => []),
+    // Every agent run with proposals made and withheld.
+    query(`SELECT r.id, r.org_id, o.name AS org_name, r.started_at, r.status,
+                  r.drafted, r.sent, r.declined, r.withheld, r.withheld_reason, r.error
+             FROM agent_runs r LEFT JOIN orgs o ON o.id = r.org_id
+            WHERE r.started_at >= NOW() - INTERVAL '7 days'
+            ORDER BY r.started_at DESC LIMIT 200`).catch(() => []),
+    query(`SELECT COUNT(*)::int AS n FROM email_log e JOIN orgs o ON o.id = e.org_id
+            WHERE e.created_at >= NOW() - INTERVAL '7 days' AND e.status='sent'
+              AND (o.is_demo_org = TRUE OR o.emails_enabled = FALSE)`),
+  ]);
+
+  // THE ONE LINE THAT WOULD HAVE ENDED THE INCIDENT ON DAY ONE.
+  const { reachesARealMailbox } = await reservedDomains();
+  const realProviderFromDemo = emails.filter(e =>
+    e.status === "sent" && e.recipient_domain && reachesARealMailbox(e.recipient_domain)
+    && (e.is_demo_org === true || e.emails_enabled === false));
+
+  res.json({
+    window: "7 days",
+    emails,
+    // Counted separately so it is a HEADLINE, not a row somebody has to spot.
+    alarm: {
+      demoOrgRealSends: realProviderFromDemo.length,
+      demoOrgSendsAny: (demoSends && demoSends[0] && demoSends[0].n) || 0,
+      failedTicks: ticks.filter(t => t.ok === false).map(t => t.name),
+      sourceErrors: (sources || []).filter(x => x.last_error).map(x => x.id),
+      sentence: realProviderFromDemo.length
+        ? `${realProviderFromDemo.length} message${realProviderFromDemo.length === 1 ? "" : "s"} ` +
+          `reached a real mailbox provider from an organisation marked as demonstration data.`
+        : "",
+    },
+    ticks, sources, agentRuns: agent,
+    // What the alert would do, and to whom, stated rather than assumed.
+    alerting: { to: process.env.FOUNDER_EMAIL || null,
+                configured: !!process.env.FOUNDER_EMAIL,
+                triggers: ["a demo org sending to a real address", "a background tick failing", "a 5xx burst"] },
+  });
+}));
+
+// Drives the demo-org check now, for ops and for the suite.
+app.post("/admin/observability/run-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const demo = await recordTick("demo-org-send-check", checkDemoOrgSends);
+  res.json({ ok: true, demo });
+}));
+
 // ── BUILD-97 Part 3 — THE AGENT SHE INSTRUCTS ──────────────────────────────
 // BUILD-75 C.2's line does not move: agents read, draft and propose; a human
 // commits anything that moves money or reaches a donor. What this adds is the
@@ -16945,7 +17203,7 @@ async function processScheduledCampaigns() {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processScheduledCampaigns().catch(console.error), 20000);
-  setInterval(() => processScheduledCampaigns().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processScheduledCampaigns", processScheduledCampaigns).catch(console.error), 5 * 60 * 1000);
 }
 
 // ── Tracking pixel (no auth) ───────────────────────────────────────────────
@@ -20303,7 +20561,7 @@ async function processDigests(now = new Date()) {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processDigests().catch(console.error), 30000);
-  setInterval(() => processDigests().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processDigests", processDigests).catch(console.error), 5 * 60 * 1000);
 }
 
 // ── BUILD-36 A3 — the daily due/overdue task reminder ────────────────────────
@@ -20386,7 +20644,7 @@ async function processDailyTaskReminders(now = new Date(), { force = false } = {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processDailyTaskReminders().catch(console.error), 45000);
-  setInterval(() => processDailyTaskReminders().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processDailyTaskReminders", processDailyTaskReminders).catch(console.error), 5 * 60 * 1000);
 }
 
 // POST /digests/run-daily (requireAuth + requireAdmin) — drive the daily
@@ -20537,7 +20795,7 @@ if (!backgroundTicksDisabled()) {
 // spend queries discovering there is nothing to do.
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processTrackedSequences().catch(e => console.error("[seq]", e.message)), 90000);
-  setInterval(() => processTrackedSequences().catch(e => console.error("[seq]", e.message)), 15 * 60 * 1000);
+  setInterval(() => recordTick("processTrackedSequences", processTrackedSequences).catch(e => console.error("[seq]", e.message)), 15 * 60 * 1000);
 }
 
 
@@ -20957,13 +21215,13 @@ async function processThreadNudges(now = new Date()) {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processThreadNudges().catch(console.error), 50000);
-  setInterval(() => processThreadNudges().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processThreadNudges", processThreadNudges).catch(console.error), 5 * 60 * 1000);
   // BUILD-88b B.2 — the late-instalment sweep rides the SAME timer family, not
   // a second scheduler. It opens threads and sends nothing, so it is safe to
   // run hourly: the `threads_one_open` index makes a repeat a no-op, and
   // `reminder_thread_id` makes it a no-op per instalment too.
   setTimeout(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 70000);
-  setInterval(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
+  setInterval(() => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
 }
 
 // POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
@@ -21109,7 +21367,7 @@ async function processStepReminders(now = new Date()) {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processStepReminders().catch(console.error), 52000);
-  setInterval(() => processStepReminders().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processStepReminders", processStepReminders).catch(console.error), 5 * 60 * 1000);
 }
 
 // POST /step-reminders/run — the ops/test hook, same bar as POST /nudges/run.
@@ -23477,7 +23735,7 @@ async function processDunning() {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processDunning().catch(console.error), 5000);
-  setInterval(() => processDunning().catch(console.error), 60 * 60 * 1000);
+  setInterval(() => recordTick("processDunning", processDunning).catch(console.error), 60 * 60 * 1000);
 }
 
 // ── THE CARD THAT IS GOING TO DIE, BEFORE IT DIES (2026-09-11) ─────────────
@@ -23669,7 +23927,7 @@ async function processCardExpiry() {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processCardExpiry().catch(console.error), 65000);
-  setInterval(() => processCardExpiry().catch(console.error), 6 * 60 * 60 * 1000);
+  setInterval(() => recordTick("processCardExpiry", processCardExpiry).catch(console.error), 6 * 60 * 60 * 1000);
 }
 
 // Ops/test hook — same bar as /recurring/process-dunning. {dryRun} composes
@@ -24035,7 +24293,7 @@ async function retryFailedNotifications({ force = false } = {}) {
 // the tick as designed.
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {
   setTimeout(() => retryFailedNotifications().catch(console.error), 50000);
-  setInterval(() => retryFailedNotifications().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("retryFailedNotifications", retryFailedNotifications).catch(console.error), 5 * 60 * 1000);
 }
 
 // ── BUILD-62 Part 3 — the reconciliation SWEEP ──────────────────────────────
@@ -24565,7 +24823,7 @@ async function processWorkflowSweeps(onlyOrgId = null) {
 }
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processWorkflowSweeps().catch(console.error), 25000);
-  setInterval(() => processWorkflowSweeps().catch(console.error), 5 * 60 * 1000);
+  setInterval(() => recordTick("processWorkflowSweeps", processWorkflowSweeps).catch(console.error), 5 * 60 * 1000);
 }
 // BUILD-51b — keep /health's themeAssets.dbFallbackRows fresh (failed-S3-put
 // visibility); same 5-min cadence, never a second scheduler. BUILD-56 adds
