@@ -166,6 +166,10 @@ const { putThemeAsset, getThemeAsset, pruneThemeAssets, pruneUnreferencedAssets,
 // (a person's face is not theme imagery; see personPhoto.js's header).
 const personPhoto = require("./personPhoto");
 const { computeGuardsOk } = require("./guards");
+// BUILD-96 Part 2 — the ONE definition of what sample data is. The guard, the
+// counts and the delete all read from it; three lists would disagree, and the
+// way they would disagree is by deleting something real.
+const sampleDataMod = require("./sampleData");
 const { PRODUCT_ID } = require("./product");
 // BUILD-72 Part 4 — THE date seam. Every civil-date boundary in the product
 // goes through here, computed in the ORGANIZATION's timezone. See orgTime.js
@@ -5386,12 +5390,16 @@ app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
 
 // ── Sample data ────────────────────────────────────────────────────────────
 app.get("/org/sample-data-status", requireAuth, wrap(async (req, res) => {
-  const rows = await query(
-    "SELECT COUNT(*) as cnt FROM donors WHERE org_id=? AND is_sample=true",
-    [req.user.orgId]
-  );
-  const sampleDonorCount = parseInt(rows[0].cnt || 0);
-  res.json({ hasSampleData: sampleDonorCount > 0, sampleDonorCount });
+  // BUILD-96 Part 2 — this route now carries the whole picture, because Home
+  // reads it to decide whether to say "you're looking at sample data". A
+  // banner driven by a different count from the one the clear acts on would
+  // eventually outlive the rows it is about.
+  const counts = await sampleDataMod.countSampleData(query, req.user.orgId);
+  res.json({
+    hasSampleData: counts.people > 0 || counts.gifts > 0,
+    sampleDonorCount: counts.people,
+    counts,
+  });
 }));
 
 app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
@@ -5630,27 +5638,37 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     );
   }
 
-  res.json({ ok: true, donorCount: donors.length });
+  // BUILD-96 Part 2 — THE LOADER TAGS EVERYTHING IT IS RESPONSIBLE FOR.
+  // Every INSERT above carries `is_sample` in its own column list. These three
+  // tables the loader does not write at all — a Thread, a household, an
+  // enrolment appear later, because of the people it just wrote — so the sweep
+  // runs here and again before any clear. Without it the columns BUILD-96
+  // added would be a default nobody ever sets.
+  const tagged = await sampleDataMod.tagSampleRows({ query, run }, orgId).catch(err => {
+    console.error("[sample-data] post-load tagging failed:", err.message);
+    return {};
+  });
+
+  res.json({ ok: true, donorCount: donors.length, tagged });
 }));
 
 app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
+  // An org clearing its OWN sample data. This is the "get the demo donors out
+  // of the way before I import my real file" path, and it deliberately does
+  // NOT carry the super-admin route's refuse-on-real-gift guard: an org that
+  // has already entered one real gift would otherwise be stuck with the demo
+  // people forever. It is safe without it because the set it deletes is
+  // defined by membership, not by judgement — only rows tagged sample, or
+  // hanging off a person who is.
   const orgId = req.user.orgId;
-  await run("DELETE FROM event_attendees WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM events WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM interactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  // Receipts never issue for is_sample gifts (issueGiftReceipt skips them
-  // outright) — this is belt-and-braces cleanup, not expected to find rows.
-  await run("DELETE FROM receipts WHERE org_id=? AND gift_id IN (SELECT id FROM gifts WHERE org_id=? AND is_sample=true)", [orgId, orgId]).catch(()=>{});
-  await run("DELETE FROM gifts WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM fin_transactions WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM donors WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM grants WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM campaigns WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM tasks WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM volunteers WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM board_members WHERE org_id=? AND is_sample=true", [orgId]).catch(()=>{});
-  await run("DELETE FROM fin_funds WHERE org_id=? AND id IN (?,?,?)", [orgId,"fund_smpl_general","fund_smpl_edu","fund_smpl_capital"]).catch(()=>{});
-  res.json({ ok: true });
+  const { deleted, errors } = await sampleDataMod.clearSampleData({ query, run }, orgId);
+  // Sample funds predate the is_sample column on fin_funds and were seeded
+  // with fixed ids; the tagged delete covers them now, this covers a row
+  // seeded before the tag existed.
+  await run("DELETE FROM fin_funds WHERE org_id=? AND id IN (?,?,?)",
+    [orgId, "fund_smpl_general", "fund_smpl_edu", "fund_smpl_capital"]).catch(() => {});
+  if (errors.length) return res.status(500).json({ error: "Some sample rows could not be removed", errors, deleted });
+  res.json({ ok: true, deleted });
 }));
 
 // ── One-time backfill: create missing gift touchpoints ────────────────────
@@ -27639,6 +27657,85 @@ app.post("/admin/orgs/:id/email-switch", requireAuth, requireSuperAdmin, wrap(as
   const [after] = await query("SELECT id, name, emails_enabled, is_demo_org FROM orgs WHERE id=?", [orgId]);
   res.json({ ok: true, org: after });
 }));
+
+// ── BUILD-96 Part 2 — CLEAR SAMPLE DATA, on somebody else's org ────────────
+// org_justinsplace holds invented people under a real organisation's name.
+// Before Allie's real export loads, all of that has to go and NOTHING else —
+// her users, her five real funds, her vocabulary, the Welcome sequence
+// definition and every setting stay exactly as they are.
+//
+// This is a super-admin action rather than a button in her Settings because
+// the org is handed over already provisioned: she should never have to think
+// about the fiction, only stop seeing it.
+//
+// GET first, always. A destructive action on someone else's data says what it
+// is about to do before it does it.
+app.get("/admin/orgs/:id/sample-data", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgs = await query("SELECT id, name FROM orgs WHERE id=?", [req.params.id]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  const counts = await sampleDataMod.countSampleData(query, req.params.id);
+  res.json({
+    org: orgs[0],
+    counts,
+    // The guard, surfaced BEFORE the press rather than as an error after it.
+    clearable: counts.realGifts === 0,
+    blockedBy: counts.realGifts > 0
+      ? `${counts.realGifts} gift${counts.realGifts === 1 ? "" : "s"} this org entered itself`
+      : null,
+  });
+}));
+
+app.post("/admin/orgs/:id/clear-sample-data", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const orgId = req.params.id;
+  const orgs = await query("SELECT id, name FROM orgs WHERE id=?", [orgId]);
+  if (!orgs.length) return res.status(404).json({ error: "Org not found" });
+  if (!req.body || req.body.confirm !== true) return res.status(400).json({ error: "confirm: true required" });
+
+  const counts = await sampleDataMod.countSampleData(query, orgId);
+
+  // THE GUARD. A gift the provisioning path did not write means somebody has
+  // started using this org, and clearing it is never what was meant — the
+  // realistic accident is not a wrong click on the right org, it is the right
+  // click on the wrong one. An audit row records the refusal too: a
+  // near-miss on a customer's data is exactly the thing worth being able to
+  // find afterwards.
+  if (counts.realGifts > 0) {
+    await auditSampleData(orgId, "refused", req.user, counts,
+      { reason: "org has gifts the provisioning path did not write" });
+    return res.status(409).json({
+      error: `Refused: ${orgId} has ${counts.realGifts} gift${counts.realGifts === 1 ? "" : "s"} that the provisioning script did not write. This org has real data in it.`,
+      counts,
+    });
+  }
+
+  const { deleted, errors } = await sampleDataMod.clearSampleData({ query, run }, orgId);
+  await run("DELETE FROM fin_funds WHERE org_id=? AND id IN (?,?,?)",
+    [orgId, "fund_smpl_general", "fund_smpl_edu", "fund_smpl_capital"]).catch(() => {});
+
+  if (errors.length) {
+    await auditSampleData(orgId, "refused", req.user, counts, { errors, deleted, partial: true });
+    return res.status(500).json({ error: "Some sample rows could not be removed", errors, deleted });
+  }
+
+  await auditSampleData(orgId, "cleared", req.user, counts, { deleted });
+  const after = await sampleDataMod.countSampleData(query, orgId);
+  res.json({ ok: true, before: counts, deleted, after });
+}));
+
+// Append-only. A write failure is logged and never fails the action it
+// records — an audit row is evidence, not a permission (the BUILD-93
+// convention, same as auditUserAdmin).
+async function auditSampleData(orgId, action, actor, counts, detail) {
+  try {
+    await run(
+      `INSERT INTO sample_data_audit (id, org_id, action, actor_user_id, actor_email, counts, detail)
+       VALUES (?,?,?,?,?,?,?)`,
+      ["sda_" + uuid().slice(0, 8), orgId, action, actor?.userId || null, actor?.email || null,
+       JSON.stringify(counts || {}), detail ? JSON.stringify(detail) : null]);
+  } catch (err) {
+    console.error("[sample-data] audit write failed (action continues):", err.message);
+  }
+}
 
 app.delete("/admin/orgs/:id", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const { confirm } = req.body;

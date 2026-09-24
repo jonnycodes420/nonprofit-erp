@@ -412,6 +412,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [driftStepDirty,setDriftStepDirty]=useState(false);
   const loadDrift=()=>apiFetch("/drift").then(r=>{setDriftData(r);setDriftAllData(null);}).catch(()=>{});
 
+  // BUILD-96 Part 2 — SAMPLE DATA, SAID ON THE SCREEN SHE READS.
+  //
+  // The banner at the top of every tab already says "53 sample donors are
+  // loaded", and that is the compliance sentence: they are invented, they are
+  // counted in nothing, Steward will not mail them.
+  //
+  // This is a different sentence for a different person. An org handed over
+  // already provisioned — Allie's — is one where the invented people are not
+  // something she loaded and has to clear; they are what was there when she
+  // first signed in, under her own organisation's name. She does not need to
+  // be told the numbers are fake twice. She needs to be told her real ones are
+  // coming, and from whom.
+  //
+  // It reads the same route the banner and the clear both read, so the line
+  // and the rows cannot disagree, and it disappears the moment they are gone.
+  const [sampleStatus,setSampleStatus]=useState(null);
+  useEffect(()=>{apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});},[]);
+
   // ── BUILD-81 — THE THREAD, the first section of the work column ──────────
   const [threadsData,setThreadsData]=useState(null);
   const [convoFor,setConvoFor]=useState(null); // {donor:{id,name}, thread} → the log-one-line modal
@@ -1832,6 +1850,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // the first thing on Home after the greeting and the setup card.
   const threadSection=(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* ABOVE the Thread, not inside it. The Thread is the work; this is
+              a note about whose work it is, and it outranks the first row. */}
+          {surface==="home"&&sampleStatus?.hasSampleData&&(
+            <div data-testid="home-sample-line"
+              style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
+              You're looking at sample data. Your own donors arrive when Jonathan loads your file.
+            </div>
+          )}
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>

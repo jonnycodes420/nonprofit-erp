@@ -3529,6 +3529,48 @@ async function initSchema() {
   await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS prompt_full TEXT`);
   await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS response_full TEXT`);
   await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS run_id TEXT`);
+  // ── BUILD-96 Part 2 — SAMPLE DATA HAS TO BE EXACTLY KNOWABLE ─────────────
+  // A real organisation's org now holds invented people under its own name, so
+  // "clear the sample data" has to mean exactly the rows the provisioning path
+  // wrote — not a heuristic, and never one row belonging to a customer.
+  //
+  // `is_sample` already existed on twelve tables. It did NOT exist on the
+  // three that BUILD-85/BUILD-94 added, each of which the sample loader now
+  // writes: a Thread, a household, a sequence enrolment. Deriving them from
+  // the donor ("a Thread whose donor is a sample donor") would be exact TODAY
+  // and a guess the moment anything else hangs off a Thread, so they are
+  // tagged like everything else.
+  //
+  // DEFAULT false, and the direction matters for the same reason welcomed_at
+  // defaults to NOW(): "not sample" is the safe answer for every row that
+  // already exists and every fixture that inserts one without thinking about
+  // it. A NULL-means-sample column would have put every customer's Threads
+  // inside the blast radius of this route.
+  for (const t of ["threads", "households", "sequence_enrollments"]) {
+    await pool.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS is_sample BOOLEAN DEFAULT false`);
+    // ADD COLUMN IF NOT EXISTS ... DEFAULT x does NOTHING when the column
+    // already exists, including the default (BUILD-95's welcomed_at lesson).
+    await pool.query(`ALTER TABLE ${t} ALTER COLUMN is_sample SET DEFAULT false`);
+    await pool.query(`UPDATE ${t} SET is_sample = false WHERE is_sample IS NULL`);
+  }
+
+  // Clearing sample data is destructive and is done on someone else's org, so
+  // it leaves an actor and a count behind. Append-only; never read by the
+  // product, only by a person asking "what happened to that org".
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sample_data_audit (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      actor_user_id TEXT,
+      actor_email TEXT,
+      counts JSONB,
+      detail JSONB,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT sample_data_audit_action CHECK (action IN ('cleared','refused'))
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sample_data_audit_org
+                    ON sample_data_audit (org_id, created_at DESC)`);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
