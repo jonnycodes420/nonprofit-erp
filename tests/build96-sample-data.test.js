@@ -86,9 +86,28 @@ const count = async (table, org, where = "") =>
   console.log("\n— §1 · a fresh org is provisioned, and every row it wrote carries the tag —");
 
   const loaded = await api("POST", "/org/load-sample-data", adminTok, {});
-  ok("sample data loads", loaded.status === 200 && loaded.body.donorCount > 0, loaded.body);
+  ok("sample data loads", loaded.status === 200, loaded.body);
 
   const sampleDonors = await count("donors", ORG, "AND is_sample=true");
+  // THE ROUTE REPORTS WHAT IT WROTE, not a constant. `donorCount` used to be
+  // `donors.length` — 25 whether or not a single row landed — which is how the
+  // global-id collision below stayed invisible.
+  ok("...and the route reports the rows it ACTUALLY wrote",
+     loaded.body.donorCount === sampleDonors && sampleDonors > 0,
+     { reported: loaded.body.donorCount, actual: sampleDonors });
+
+  // A SAMPLE ID BELONGS TO ONE ORG. donors.id is a bare global PRIMARY KEY and
+  // every sample insert is ON CONFLICT (id) DO NOTHING, so while the ids were
+  // fixed constants the SECOND org on an installation to load sample data got
+  // nothing and was told it worked. The ids are namespaced per org now, and
+  // §5 is what proves it by loading a second org.
+  const ids = (await q(`SELECT id FROM donors WHERE org_id=$1 AND is_sample=true ORDER BY id`, [ORG]))
+    .map(r => r.id);
+  ok("no sample id is a bare global constant any more",
+     ids.length > 0 && ids.every(id => /__[0-9a-f]{8}$/.test(id)), ids.slice(0, 3));
+  const D1 = ids.find(id => id.startsWith("smpl_d1__"));
+  const D2 = ids.find(id => id.startsWith("smpl_d2__"));
+  ok("...and the people are still findable by their own key", !!D1 && !!D2, { D1, D2 });
   const sampleGifts  = await count("gifts", ORG, "AND is_sample=true");
   ok("it wrote sample people", sampleDonors > 0, sampleDonors);
   ok("it wrote sample gifts", sampleGifts > 0, sampleGifts);
@@ -102,10 +121,10 @@ const count = async (table, org, where = "") =>
   // it wrote — so they are created here the way the product creates them, and
   // the sweep is what has to find them.
   await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on)
-           VALUES ('th_b96','${ORG}','smpl_d1','thank','Thank Margaret',CURRENT_DATE,CURRENT_DATE)`);
+           VALUES ('th_b96',$1,$2,'thank','Thank Margaret',CURRENT_DATE,CURRENT_DATE)`, [ORG, D1]);
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id,joint_acknowledgment)
-           VALUES ('hh_b96','${ORG}','The Whitfield Household','smpl_d1',true)`);
-  await q(`UPDATE donors SET household_id='hh_b96' WHERE id IN ('smpl_d1','smpl_d2')`);
+           VALUES ('hh_b96',$1,'The Whitfield Household',$2,true)`, [ORG, D1]);
+  await q(`UPDATE donors SET household_id='hh_b96' WHERE id = ANY($1)`, [[D1, D2]]);
   await q(`INSERT INTO sequences (id,org_id,name,trigger,status)
            VALUES ('seq_b96','${ORG}','Welcome','first_gift','off')`);
   // The placeholder steps BUILD-94 provisions with it — the words she has not
@@ -117,7 +136,7 @@ const count = async (table, org, where = "") =>
             [`ss_b96_${n}`, n, (n - 1) * 3, subj, "[placeholder — Allie writes this]"]);
   }
   await q(`INSERT INTO sequence_enrollments (id,sequence_id,org_id,donor_id,current_step,status)
-           VALUES ('se_b96','seq_b96','${ORG}','smpl_d1',0,'active')`);
+           VALUES ('se_b96','seq_b96',$1,$2,0,'active')`, [ORG, D1]);
 
   ok("a Thread, a household and an enrolment now exist, untagged",
      (await count("threads", ORG, "AND is_sample IS NOT TRUE")) === 1 &&
@@ -244,9 +263,17 @@ const count = async (table, org, where = "") =>
   // ── §5 · another org in the same database ────────────────────────────────
   console.log("\n— §5 · the org next door is untouched —");
 
-  await api("POST", "/org/load-sample-data", otherTok, {});
+  const otherLoad = await api("POST", "/org/load-sample-data", otherTok, {});
   const otherBefore = await count("donors", OTHER, "AND is_sample=true");
-  ok("the other org has its own sample people", otherBefore > 0, otherBefore);
+  // THE REGRESSION THIS PINS. With fixed global ids the second org to load
+  // sample data wrote nothing at all and was told it had worked.
+  ok("A SECOND ORG CAN LOAD SAMPLE DATA TOO", otherBefore > 0, otherBefore);
+  ok("...and is told the truth about how many rows it got",
+     otherLoad.body.donorCount === otherBefore, { reported: otherLoad.body.donorCount, actual: otherBefore });
+  ok("...with ids that do not collide with the first org's",
+     (await q(`SELECT COUNT(*)::int AS c FROM donors d1
+                 WHERE d1.org_id=$1 AND EXISTS (SELECT 1 FROM donors d2 WHERE d2.org_id=$2 AND d2.id=d1.id)`,
+              [ORG, OTHER]))[0].c === 0);
 
   await api("POST", `/admin/orgs/${ORG}/clear-sample-data`, superTok, { confirm: true });
   ok("clearing THIS org did not touch the other one",

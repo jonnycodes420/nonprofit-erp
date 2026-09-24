@@ -44,3 +44,44 @@ is tell the ORGANISATION that a three-year monthly sponsor was quietly
 cancelled. **Zeffy recovers the card; Steward recovers the relationship.**
 
 **What is needed:** one real Zeffy API key, or a scrubbed export.
+
+## 3. Cheque reading has never run against a real photograph
+
+`scripts/build95-cheque-drill.js` exists and has never been run against
+anything but the fixture. Everything the reading is supposed to do — read a
+handwritten amount, read the written-out words, and **refuse when the two
+disagree** — is asserted against synthetic input only, and handwriting is the
+single thing a fixture cannot honestly stand in for.
+
+Until the drill has run, `claude/BUILD-95.md` says **"reading unproven"**, and
+that line stays there regardless of how green the suite is.
+
+**What is needed:** three real cheque photographs, photographed the way a
+treasurer would actually photograph them — on a desk, in ordinary light, at an
+angle, one of them handwritten badly. Not scans, and not three that are all
+easy. Then:
+
+```
+ANTHROPIC_API_KEY=sk-ant-… node scripts/build95-cheque-drill.js a.jpg b.jpg c.jpg
+```
+
+Record **what came back beside what was actually written**, including whether
+the figures and the words settled. The interesting outcome is not "it read
+them" — it is what it did with the one it could not read.
+
+A real cheque is a real donor's name, account number and signature. Use three
+from an organisation that has agreed to it, or three written for the purpose,
+and do not commit the images.
+
+## 4. `ANTHROPIC_API_KEY` is not on Railway (BUILD-96 Part 3)
+
+Both model features — cheque reading and the BUILD-97 agent — are off on
+production, and fail absent rather than broken: the deposit sheet still
+photographs the cheques, and the agent box on Home says "Not enabled for this
+organization yet."
+
+**What is needed:** the key, **and a monthly spend cap set in the Anthropic
+console before it goes live.** The deposit sheet accepts twenty photographs in
+one press, so an unbounded key is an unbounded invoice. Full recipe in
+`MANUAL-STEPS.md` §13, including the notice obligation for orgs that were
+already on Steward when it is switched on.

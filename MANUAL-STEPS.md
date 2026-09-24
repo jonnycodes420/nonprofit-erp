@@ -382,3 +382,72 @@ mail off and no onboarding drip.
 3. `railway variables --service nonprofit-erp --set "DISABLE_BACKGROUND_TICKS=0"`
 4. Confirm `/health` is ok and the boot log no longer says "background ticks DISABLED".
 5. Then, and only then, add the seeded addresses to Resend suppressions.
+
+---
+
+## §13 — `ANTHROPIC_API_KEY` AND A SPEND CAP (BUILD-96 Part 3, 2026-09-24)
+
+> Numbered §13, not §12: §12 is the outbound-email incident and other
+> documents already cite it by number. BUILD-96's brief said "§12"; this is
+> the same step under a number that does not collide.
+
+**Two features do nothing on production until this is set**, and both fail the
+same way on purpose — absent, not broken:
+
+| Feature | With no key |
+|---|---|
+| Reading cheque photographs (BUILD-95) | the deposit sheet **still photographs the cheques** and attaches them to each line. The "Steward reads them" sentence is replaced and no read is attempted. |
+| Steward's agent (BUILD-97 Part 3) | the box on Home says "Not enabled for this organization yet." No textarea, no button. |
+
+Both read one gate (`aiGate`, server.js). Neither sends anything anywhere
+without it.
+
+### 1. Set the key
+
+```
+railway variables --service nonprofit-erp --set "ANTHROPIC_API_KEY=sk-ant-…"
+```
+
+Use a key **created for this service only**, so it can be revoked without
+touching anything else.
+
+### 2. Set a monthly spend cap — do this BEFORE the key goes live
+
+In the Anthropic console → **Billing → Usage limits**, set a monthly cap on the
+workspace this key belongs to.
+
+Why it is not optional: a cheque read is an image request, and the deposit
+sheet accepts **twenty photographs in one press**. A treasurer working through
+a year of banked cheques, or a loop that retries a failing read, is a cost with
+no ceiling. The cap is the ceiling, and hitting it fails the feature — which is
+exactly the harmless direction, because the photographs still attach and the
+sheet still works by hand.
+
+Suggested starting cap: low enough that a runaway month is an annoyance rather
+than an invoice. Raise it when there is a real usage number to raise it against.
+
+### 3. Tell the customers, before the first read
+
+The disclosure is already written and deployed — `steward-data-handling.md`, the
+customer agreement's subprocessor table (section 16), and one line in each org's
+Settings → Your Data. Anthropic is named as a **subprocessor**, in the United
+States, and the per-org switch defaults **on**.
+
+No further notice is needed for an org that signs up after this is live. For an
+organisation already on Steward when the key is switched on, the agreement says
+notice is given within the Service before a new subprocessor receives donor
+data — so **switch it on for demo and provisioned orgs first**, and give notice
+before it reaches a paying customer's org.
+
+### 4. Then run the drill
+
+`scripts/build95-cheque-drill.js` has **never run against a real photograph**.
+Until it has, `claude/BUILD-95.md` says "reading unproven" and that line stays.
+
+```
+ANTHROPIC_API_KEY=sk-ant-… node scripts/build95-cheque-drill.js cheque1.jpg cheque2.jpg cheque3.jpg
+```
+
+Three real cheques, and record what came back beside what was actually written
+— including whether the figures and the words settled. See
+`BLOCKED-build95.md` §4.

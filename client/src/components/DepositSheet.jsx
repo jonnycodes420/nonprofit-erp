@@ -18,7 +18,7 @@
 // The commit button is dead until the list is empty AND the cents add up; the
 // server refuses the same two ways, so a stale tab cannot record a slip that
 // does not foot. Nothing here sends anything.
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api";
 import { T, Modal, fmtFull } from "./shared";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
@@ -90,6 +90,48 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
   // the deposit sheet already routes to "needs you" rather than to a guess.
   const [reading, setReading] = useState(false);
   const [readNote, setReadNote] = useState(null);
+
+  // BUILD-96 Part 3 — READING IS A SUBPROCESSOR, AND IT MAY NOT BE ON.
+  //
+  // A photograph of a cheque carries a name, an amount, a bank and a
+  // signature, and reading it means sending that image to Anthropic. Two
+  // things can stop it: no key configured on Steward's side, or this
+  // organisation switched it off in Settings.
+  //
+  // When it is off, THE PHOTOGRAPHS STILL HAPPEN. The evidence was always the
+  // more valuable half — three months later "did Margaret really write $250?"
+  // is answered by the cheque, whether or not a model ever looked at it — and
+  // the sheet has taken per-line photographs since BUILD-95 without any model
+  // at all. So the control stays and stops reading, rather than vanishing and
+  // taking the evidence with it.
+  const [aiStatus, setAiStatus] = useState(null);
+  useEffect(() => { apiFetch("/org/ai-status").then(setAiStatus).catch(() => setAiStatus(null)); }, []);
+  // null (not yet answered, or the route failed) reads as ON: the route is the
+  // convenience, the server's 503 is the actual gate, and a failed status
+  // fetch must not remove a working feature.
+  const canRead = aiStatus ? aiStatus.chequeReading !== false : true;
+
+  // Photographs, and nothing leaves. The same FileReader the read path uses,
+  // stopping one step earlier.
+  const attachCheques = async (files) => {
+    const list = Array.from(files || []).slice(0, 20);
+    if (!list.length) return;
+    setErr(""); setReadNote(null);
+    try {
+      const imgs = await Promise.all(list.map((f, i) => new Promise((res, rej) => {
+        const fr = new FileReader();
+        fr.onload = () => res({ line: i + 1, image: fr.result });
+        fr.onerror = rej;
+        fr.readAsDataURL(f);
+      })));
+      const next = {};
+      for (const im of imgs) next[im.line] = im.image;
+      setCheques(next);
+    } catch (e) {
+      rethrowProgrammerError(e);
+      setErr(errorMessage(e, "Steward could not attach those photographs."));
+    }
+  };
 
   const readCheques = async (files) => {
     const list = Array.from(files || []).slice(0, 20);
@@ -230,11 +272,13 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                          fontSize: 12.5, fontWeight: 700, color: reading ? T.ink3 : T.ink, background: T.white }}>
                 <input type="file" accept="image/*" capture="environment" multiple disabled={reading}
                   style={{ display: "none" }}
-                  onChange={e => { readCheques(e.target.files); e.target.value = ""; }} />
+                  onChange={e => { (canRead ? readCheques : attachCheques)(e.target.files); e.target.value = ""; }} />
                 {reading ? "Reading…" : "◫ Photograph the cheques"}
               </label>
               <span style={{ fontSize: 11.5, color: T.ink3 }}>
-                Steward reads them and fills in the lines. Nothing is recorded until you commit.
+                {canRead
+                  ? "Steward reads them and fills in the lines. Nothing is recorded until you commit."
+                  : "The photographs attach to each line. Reading the amounts isn't switched on for your organisation."}
               </span>
             </div>
             {readNote && (

@@ -5388,6 +5388,42 @@ app.put("/orgs/branding", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   res.json({ ...orgs[0], adjusted: !!(normalized && normalized.adjusted) });
 }));
 
+// ── BUILD-96 Part 3 — WHAT THE SCREEN NEEDS TO KNOW BEFORE IT DRAWS ────────
+// The client reads this so a control can be ABSENT rather than present and
+// broken. "Photograph the cheques" that returns a 503 when pressed is worse
+// than no button: it teaches somebody the product is unreliable, when the
+// truth is that a key is not set.
+//
+// It reports the two conditions SEPARATELY, because they are different facts
+// about different people. `configured` is Steward's — whether a key exists at
+// all. `enabled` is the organisation's own choice. A screen that collapsed
+// them would tell an org it had switched something off that it never touched.
+app.get("/org/ai-status", requireAuth, wrap(async (req, res) => {
+  const [org] = await query("SELECT ai_enabled FROM orgs WHERE id=?", [req.user.orgId]);
+  const configured = !!process.env.ANTHROPIC_API_KEY;
+  const enabled = !(org && org.ai_enabled === false);
+  res.json({
+    configured,
+    enabled,
+    // The two features, named, so a future one does not inherit this answer by
+    // accident.
+    chequeReading: configured && enabled,
+    agentDrafting: configured && enabled,
+    provider: "Anthropic",
+  });
+}));
+
+// The switch. Org admin, not super-admin: it is the organisation's decision
+// about its own donors' images, and the sentence it belongs to is in its own
+// Settings.
+app.patch("/org/ai-settings", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const { enabled } = req.body || {};
+  if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
+  await run("UPDATE orgs SET ai_enabled=? WHERE id=?", [enabled, req.user.orgId]);
+  console.log(`[ai-settings] ${req.user.orgId} ai_enabled=${enabled} by ${req.user.email || req.user.userId}`);
+  res.json({ ok: true, enabled, configured: !!process.env.ANTHROPIC_API_KEY });
+}));
+
 // ── Sample data ────────────────────────────────────────────────────────────
 app.get("/org/sample-data-status", requireAuth, wrap(async (req, res) => {
   // BUILD-96 Part 2 — this route now carries the whole picture, because Home
@@ -5417,6 +5453,29 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   const userRows = await query("SELECT name FROM users WHERE id=?", [userId]);
   const userName = userRows[0]?.name || "Sample User";
 
+  // ── BUILD-96 Part 2 FIX — A SAMPLE ID BELONGS TO ONE ORG ─────────────────
+  // Every sample row used a FIXED id: smpl_d1…smpl_d25, smpl_g*,
+  // fund_smpl_general. `donors.id` is a bare global PRIMARY KEY, not
+  // (org_id, id), and every insert below is ON CONFLICT (id) DO NOTHING.
+  //
+  // So the SECOND org on an installation to load sample data got NOTHING, and
+  // was told it worked — every insert conflicted with the first org's rows and
+  // did nothing, and the response reported `donors.length`, a constant, rather
+  // than a count of anything written. On production org_creo holds those ids,
+  // which means this has been broken for every other org since the feature
+  // existed, silently, in the direction where the screen says yes.
+  //
+  // It was found by a battery run, not by a test: another suite's org held the
+  // ids and ten assertions in build96-sample-data failed for what looked like
+  // this build's bug. It was the product lying about a write.
+  //
+  // The ids are now namespaced per org. The arrays below keep their RAW keys
+  // because they cross-reference each other (a task points at "smpl_d3"), and
+  // `sid` is applied at every insert — one function, so a reference and its
+  // target can never be namespaced differently.
+  const sidTag = crypto.createHash("sha1").update(String(orgId)).digest("hex").slice(0, 8);
+  const sid = key => `${key}__${sidTag}`;
+
   // ORG_TZ_SEAM_OK (BUILD-75 A.5) — sample dates are civil dates in the ORG's
   // timezone; the old UTC slice dated every demo row for tomorrow when the
   // sample data was loaded in the local evening.
@@ -5424,7 +5483,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   function dAgo(n) { return orgTime.addDays(sampleToday, -n); }
 
   // Insert 3 sample funds
-  const fGen = "fund_smpl_general", fEdu = "fund_smpl_edu", fCap = "fund_smpl_capital";
+  const fGen = sid("fund_smpl_general"), fEdu = sid("fund_smpl_edu"), fCap = sid("fund_smpl_capital");
   await run(`INSERT INTO fin_funds (id,org_id,name,description,restricted,is_sample) VALUES (?,?,?,?,false,true) ON CONFLICT (id) DO NOTHING`,
     [fGen, orgId, "General Operating", "Unrestricted operating support"]);
   await run(`INSERT INTO fin_funds (id,org_id,name,description,restricted,is_sample) VALUES (?,?,?,?,true,true) ON CONFLICT (id) DO NOTHING`,
@@ -5465,7 +5524,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     await run(
       `INSERT INTO donors (id,org_id,name,email,phone,stage,total_giving,last_gift_amount,last_gift_date,gift_count,city,state,zip,assigned_to,assigned_to_name,is_sample,created_by,created_by_name)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [d.id,orgId,d.name,d.email,d.phone,d.stage,d.total,d.last,d.lastGift,d.giftCount,d.city,d.state,d.zip,userId,userName,userId,userName]
+      [sid(d.id),orgId,d.name,d.email,d.phone,d.stage,d.total,d.last,d.lastGift,d.giftCount,d.city,d.state,d.zip,userId,userName,userId,userName]
     );
   }
 
@@ -5476,11 +5535,11 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     const method = (d.stage==="steward"||d.stage==="solicit") ? "check" : "credit_card";
     await run(
       `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      ["smpl_g"+n, orgId, d.id, d.last, d.lastGift, "cash", fundId, method, userId, userName]
+      [sid("smpl_g"+n), orgId, sid(d.id), d.last, d.lastGift, "cash", fundId, method, userId, userName]
     );
     await run(
       `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      ["smpl_ftx"+n, orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId, userId, userName]
+      [sid("smpl_ftx"+n), orgId, d.lastGift, `Gift — ${d.name}`, d.name, d.last, "income", null, fundId, userId, userName]
     );
   }
   // Additional historical gifts for top donors
@@ -5494,11 +5553,11 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const g of oldGifts) {
     await run(
       `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,payment_method,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [g.id,orgId,g.donor,g.amount,g.date,"cash",g.fund,g.method,userId,userName]
+      [sid(g.id),orgId,sid(g.donor),g.amount,g.date,"cash",g.fund,g.method,userId,userName]
     );
     await run(
       `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [g.id+"_ftx",orgId,g.date,`Historical gift`,donors.find(d=>d.id===g.donor)?.name||"",g.amount,"income",null,g.fund,userId,userName]
+      [sid(g.id+"_ftx"),orgId,g.date,`Historical gift`,donors.find(d=>d.id===g.donor)?.name||"",g.amount,"income",null,g.fund,userId,userName]
     );
   }
 
@@ -5514,7 +5573,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const e of expenses) {
     await run(
       `INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [e.id,orgId,e.date,e.desc,e.vendor,e.amount,"expense",null,e.fund,userId,userName]
+      [sid(e.id),orgId,e.date,e.desc,e.vendor,e.amount,"expense",null,e.fund,userId,userName]
     );
   }
 
@@ -5528,12 +5587,12 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const g of grants) {
     await run(
       `INSERT INTO grants (id,org_id,funder,program,amount,status,deadline,notes,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [g.id,orgId,g.funder,g.program,g.amount,g.status,g.deadline,g.notes,userId,userName]
+      [sid(g.id),orgId,g.funder,g.program,g.amount,g.status,g.deadline,g.notes,userId,userName]
     );
   }
 
   // 2 events
-  const ev1 = "smpl_ev1", ev2 = "smpl_ev2";
+  const ev1 = sid("smpl_ev1"), ev2 = sid("smpl_ev2");
   await run(
     `INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
     [ev1,orgId,"Annual Spring Gala","gala",dAgo(30),dAgo(30),"The Plaza Hotel, NYC","Our signature annual fundraising gala celebrating 10 years of impact.",200,"completed",185000,42000,userId,userName]
@@ -5555,14 +5614,14 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     if (!dn) continue;
     await run(
       `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,gift_amount,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT DO NOTHING`,
-      [a.aId,ev1,orgId,a.dId,dn.name,dn.email,"attended",a.gift]
+      [sid(a.aId),ev1,orgId,sid(a.dId),dn.name,dn.email,"attended",a.gift]
     );
   }
 
   // 1 email campaign
   await run(
     `INSERT INTO campaigns (id,org_id,name,subject,body,status,briefing,goal_amount,raised_amount,start_date,end_date,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-    ["smpl_camp1",orgId,"Year-End Giving Appeal","Make a difference before the year ends",
+    [sid("smpl_camp1"),orgId,"Year-End Giving Appeal","Make a difference before the year ends",
      "Dear {{first_name}},\n\nAs the year draws to a close, we reflect on the incredible impact your support has made possible. This year, our students performed on stages across New York City, received 47 scholarships, and logged over 12,000 hours of instruction.\n\nYour gift today — doubled by a board matching challenge — will fund another year of transformative programming.\n\nWith gratitude,\n{{user_name}}",
      "sent",
      "Lead with the 3 scholarship recipient stories. Emphasize the 2:1 board match — expires Dec 31. Subject line A/B: test urgency vs. impact angle. Send to all active donors + lapsed within 2 years.",
@@ -5590,7 +5649,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const i of interactions) {
     await run(
       `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,is_sample) VALUES (?,?,?,?,?,?,?,?,true) ON CONFLICT (id) DO NOTHING`,
-      [i.id,orgId,i.donor,i.type,i.note,i.date,userId,userName]
+      [sid(i.id),orgId,sid(i.donor),i.type,i.note,i.date,userId,userName]
     );
   }
 
@@ -5605,7 +5664,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const t of tasks) {
     await run(
       `INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,0,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [t.id,orgId,t.title,t.due,t.priority,"donor",t.donor,userId,userName]
+      [sid(t.id),orgId,t.title,t.due,t.priority,"donor",t.donor?sid(t.donor):null,userId,userName]
     );
   }
 
@@ -5619,7 +5678,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const v of volunteers) {
     await run(
       `INSERT INTO volunteers (id,org_id,name,email,hours,skills,notes,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [v.id,orgId,v.name,v.email,v.hours,v.skills,v.notes,userId,userName]
+      [sid(v.id),orgId,v.name,v.email,v.hours,v.skills,v.notes,userId,userName]
     );
   }
 
@@ -5634,7 +5693,7 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
   for (const b of board) {
     await run(
       `INSERT INTO board_members (id,org_id,name,role,giving_level,committees,is_sample,created_by,created_by_name) VALUES (?,?,?,?,?,?,true,?,?) ON CONFLICT (id) DO NOTHING`,
-      [b.id,orgId,b.name,b.role,b.giving_level,b.committees,userId,userName]
+      [sid(b.id),orgId,b.name,b.role,b.giving_level,b.committees,userId,userName]
     );
   }
 
@@ -5649,7 +5708,13 @@ app.post("/org/load-sample-data", requireAuth, wrap(async (req, res) => {
     return {};
   });
 
-  res.json({ ok: true, donorCount: donors.length, tagged });
+  // WHAT WAS ACTUALLY WRITTEN. `donors.length` is a constant and reported 25
+  // even when every insert had conflicted away to nothing, which is how the
+  // id collision above stayed invisible. A route that writes rows reports the
+  // rows it wrote.
+  const [wrote] = await query(
+    "SELECT COUNT(*)::int AS c FROM donors WHERE org_id=? AND is_sample=true", [orgId]);
+  res.json({ ok: true, donorCount: (wrote && wrote.c) || 0, tagged });
 }));
 
 app.post("/org/clear-sample-data", requireAuth, wrap(async (req, res) => {
@@ -10478,7 +10543,19 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
   if (!items.length) return res.status(400).json({ error: "no_cheques" });
   if (items.length > cr.CHEQUE_READ_MAX_IMAGES)
     return res.status(400).json({ error: "too_many", message: `Read at most ${cr.CHEQUE_READ_MAX_IMAGES} cheques at a time.` });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: "reading_unavailable" });
+  // BUILD-96 Part 3 — the same gate the agent uses. A photograph of a cheque
+  // is the most sensitive image this product holds and it does not leave on a
+  // different rule from the one the org read in Settings.
+  const gate = await aiGate(req.user.orgId);
+  if (!gate.ok) {
+    return res.status(503).json({
+      error: "reading_unavailable",
+      reason: gate.reason,
+      message: gate.reason === "ai_disabled"
+        ? "Reading cheque photographs is turned off for this organisation. You can turn it back on in Settings."
+        : "Reading cheque photographs is not enabled yet.",
+    });
+  }
 
   const TOOL = {
     name: "record_cheque",
@@ -16318,10 +16395,35 @@ async function thresholdsMod() { return import("./shared/thresholds.js"); }
 const AGENT_MODEL = "claude-opus-5";
 const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
 
+// ── BUILD-96 Part 3 — THE ONE GATE IN FRONT OF ANTHROPIC ───────────────────
+// Two features send an organisation's own data to a third party: cheque
+// reading sends a photograph of a cheque, and the agent sends rows and
+// vocabulary. They are named together in steward-data-handling.md and in the
+// customer agreement's subprocessor table because they are one disclosure, so
+// they are gated together here for the same reason — two gates would
+// eventually disagree, and the way they would disagree is by one of them
+// sending something after an organisation said not to.
+//
+// Two conditions, and the reason says WHICH:
+//   ai_no_key   — no ANTHROPIC_API_KEY. Nothing is configured; this is
+//                 Steward's state, not the org's, and the control is ABSENT
+//                 rather than broken (MANUAL-STEPS §12).
+//   ai_disabled — the org turned it off in Settings. Its choice, per org.
+async function aiGate(orgId) {
+  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, reason: "ai_no_key" };
+  const [org] = await query("SELECT ai_enabled FROM orgs WHERE id=?", [orgId]);
+  if (!org) return { ok: false, reason: "org_not_found" };
+  // A column added by a migration that has not run yet reads undefined, and
+  // undefined must mean ON — the same direction as the DEFAULT.
+  if (org.ai_enabled === false) return { ok: false, reason: "ai_disabled" };
+  return { ok: true, reason: null };
+}
+
 // One place decides whether the agent may act for this org, and it answers with
 // a REASON rather than a boolean, because a quiet screen has to say why.
 async function agentGate(orgId) {
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, reason: "agent_unavailable" };
+  const ai = await aiGate(orgId);
+  if (!ai.ok) return { ok: false, reason: ai.reason === "ai_no_key" ? "agent_unavailable" : ai.reason };
   const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]);
   if (!org) return { ok: false, reason: "org_not_found" };
   if (org.agent_paused_at) return { ok: false, reason: "agent_paused" };
@@ -16851,6 +16953,19 @@ app.get("/agent/drafts", requireAuth, wrap(async (req, res) => {
 
 // The daily line, for Home and the morning email.
 app.get("/agent/daily-line", requireAuth, wrap(async (req, res) => {
+  // BUILD-96 Part 3 — the box on Home asks this first, so a gated org gets one
+  // sentence instead of an input that answers 503 when she presses it.
+  const gate = await aiGate(req.user.orgId);
+  if (!gate.ok) {
+    return res.json({
+      available: false,
+      reason: gate.reason,
+      line: null,
+      message: gate.reason === "ai_disabled"
+        ? "Steward's drafting is turned off for this organisation."
+        : "Not enabled for this organization yet.",
+    });
+  }
   const A = await agentShapeMod();
   const [row] = await query(
     `SELECT COALESCE(SUM(drafted),0)::int AS drafted, COALESCE(SUM(sent),0)::int AS sent,
@@ -16861,7 +16976,8 @@ app.get("/agent/daily-line", requireAuth, wrap(async (req, res) => {
     [req.user.orgId]);
   const [d] = await query(
     `SELECT COUNT(*)::int AS n FROM agent_drafts WHERE org_id=? AND status='pending'`, [req.user.orgId]);
-  res.json({ line: A.dailyLine({ did: (w && w.n) || 0, sent: (row && row.sent) || 0, waiting: (d && d.n) || 0 }),
+  res.json({ available: true,
+             line: A.dailyLine({ did: (w && w.n) || 0, sent: (row && row.sent) || 0, waiting: (d && d.n) || 0 }),
              did: (w && w.n) || 0, sent: (row && row.sent) || 0, waiting: (d && d.n) || 0 });
 }));
 

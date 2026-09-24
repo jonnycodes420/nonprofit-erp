@@ -139,7 +139,7 @@ CORE=(
   build94-photo build94-people build94-sequences build94-bulk build94-calendar build94-welcome
   build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
   incident-mail-gate
-  build96-sample-data
+  build96-sample-data build96-ai-gate
   build97-audiences
   build98-photos
   build99-grant-timeline
@@ -184,10 +184,24 @@ for name in "${RUN[@]}"; do
   log="$LOGDIR/${name}.log"
   t0=$(date +%s)
   node "$file" >"$log" 2>&1
+  rc=$?
   t1=$(date +%s)
   secs=$((t1 - t0))
   last=$(tail -1 "$log")
-  if [[ "$last" == *"0 failed"* ]]; then
+  # THE GATE IS THE EXIT CODE, not the last line.
+  #
+  # It used to be `[[ "$last" == *"0 failed"* ]]`, and that is a substring
+  # match: a suite ending "46 passed, 10 failed" CONTAINS "0 failed" and was
+  # printed green. Any suite failing exactly 10, 20, 30 … assertions passed the
+  # battery, and the battery is the gate a future build must keep green. Found
+  # on 2026-09-24 when build96-sample-data reported "46 passed, 10 failed" and
+  # run-all.sh called it PASS.
+  #
+  # helpers' summary() already does `process.exit(fail ? 1 : 0)`, so the
+  # authoritative answer was there the whole time and was being ignored. It is
+  # also strictly better than any string match for the case that matters most:
+  # a suite that CRASHES before printing a summary at all.
+  if [ "$rc" -eq 0 ]; then
     printf "  \033[32mPASS\033[0m  %-24s %4ss  %s\n" "$name" "$secs" "$last"
     pass=$((pass+1))
   else

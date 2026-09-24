@@ -2046,6 +2046,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <button onClick={()=>onNavigate("settings",{section:"agent"})} style={sLink}>Activity →</button>
       </div>
       <div style={{padding:"4px 20px 16px"}}>
+        {/* BUILD-96 Part 3 — A GATED ORG GETS A SENTENCE, NOT AN INPUT.
+            The agent sends this organisation's rows and vocabulary to
+            Anthropic, and there are two reasons it may not: no key is
+            configured on Steward's side, or this org turned it off. Either
+            way, a textarea and a "Show me the plan" button that answer 503
+            when pressed teach her the product is broken. She gets the reason
+            instead, and nothing to press. */}
+        {agentDaily&&agentDaily.available===false?(
+          <div data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
+            {agentDaily.message||"Not enabled for this organization yet."}
+          </div>
+        ):(<>
         {/* THE DAILY LINE, which is what this section replaced. It says nothing
             at all when there is nothing to say, rather than rendering a
             template with holes in it (the BUILD-86 C.2 rule). */}
@@ -2112,6 +2124,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             )}
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

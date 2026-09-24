@@ -374,6 +374,25 @@ const mkDonor = (id, org, name, opts = {}) => q(
     // HOME: the box she types into, and the daily line.
     const box = page.locator('[data-testid="agent-box"]');
     ok("Home carries the 'Tell Steward what to do' box", await box.count() === 1, await box.count());
+
+    // BUILD-96 Part 3 — THE BOX HAS TWO SHAPES NOW, and which one it takes is
+    // the point. The agent sends this organisation's rows and vocabulary to
+    // Anthropic, so a gated org gets ONE SENTENCE and nothing to press —
+    // a textarea that answers 503 when pressed teaches her the product is
+    // broken when the truth is that a key is not set. Below, the input is
+    // asserted only where a key makes it real; where there is none, the
+    // sentence is asserted instead, and the legs that need a live model stop
+    // here rather than pass quietly.
+    const gated = await page.locator('[data-testid="agent-unavailable"]').count() === 1;
+    if (gated) {
+      ok("with no ANTHROPIC_API_KEY, Home says so in one sentence",
+         (await page.locator('[data-testid="agent-unavailable"]').innerText())
+           .includes("Not enabled for this organization yet"), true);
+      ok("…and offers NOTHING to press — absent, not broken",
+         await page.locator('[data-testid="agent-input"]').count() === 0 &&
+         await page.locator('[data-testid="agent-ask"]').count() === 0, true);
+      console.log("  (the on-screen refusal leg needs ANTHROPIC_API_KEY — see BLOCKED-build95.md §4)");
+    } else {
     ok("…with somewhere to type", await page.locator('[data-testid="agent-input"]').count() === 1);
     const boxText = (await box.count()) ? await box.innerText() : "";
     ok("…and it promises nothing happens until she says so",
@@ -392,6 +411,7 @@ const mkDonor = (id, org, name, opts = {}) => q(
     ok("…in words that say what Steward will do instead",
        /will not do that/i.test(rt) && /draft what to say/i.test(rt), rt.slice(0, 220));
     ok("…and no plan is offered", await page.locator('[data-testid="agent-plan"]').count() === 0);
+    }
 
     // THE ACTIVITY SCREEN.
     await page.goto(APP + "/dashboard", { waitUntil: "networkidle" });

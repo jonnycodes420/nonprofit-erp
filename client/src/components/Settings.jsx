@@ -1951,6 +1951,18 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [gmailToast,setGmailToast]=useState("");
 
   const [sampleStatus,setSampleStatus]=useState(null);
+  // BUILD-96 Part 3 — the Anthropic disclosure and its per-org switch.
+  const [aiStatus,setAiStatus]=useState(null);
+  const [aiSaving,setAiSaving]=useState(false);
+  async function toggleAi(next){
+    if(aiSaving)return;
+    setAiSaving(true);
+    try{
+      const r=await apiFetch("/org/ai-settings",{method:"PATCH",body:JSON.stringify({enabled:next})});
+      setAiStatus(a=>({...(a||{}),enabled:r.enabled,chequeReading:r.configured&&r.enabled,agentDrafting:r.configured&&r.enabled}));
+    }catch(e){ /* the switch stays where it was; the server is the gate */ }
+    setAiSaving(false);
+  }
   const [sampleLoading,setSampleLoading]=useState(false);
   const [sampleClearing,setSampleClearing]=useState(false);
   const [exporting,setExporting]=useState(false);
@@ -1969,6 +1981,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     apiFetch("/impact-metrics").then(setImpactMetrics).catch(()=>{});
     apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
+    apiFetch("/org/ai-status").then(setAiStatus).catch(()=>{});
 
     const params=new URLSearchParams(window.location.search);
     if(params.get("gmailConnected")==="true"){
@@ -2655,6 +2668,46 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </button>
         </div>
       </div>
+
+      {/* BUILD-96 Part 3 — THE SUBPROCESSOR, SAID IN THE ORGANISATION'S OWN
+          SETTINGS. Two features send this organisation's data to Anthropic: a
+          photograph of a cheque, and the rows the agent drafts from. That is a
+          disclosure, not a feature description, so it lives beside the export
+          and the sample data rather than in a help article — and it comes with
+          the switch, because "our board does not want donor images leaving the
+          building" is a legitimate answer that needs somewhere to live.
+
+          Shown only when a key is CONFIGURED. Offering an organisation a
+          switch for something Steward cannot do either way is a setting that
+          means nothing. */}
+      {aiStatus&&aiStatus.configured&&(
+        <div data-testid="settings-ai-disclosure"
+          style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"20px 24px"}}>
+          <SectionLabel>Reading and drafting</SectionLabel>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6,maxWidth:560}}>
+            Cheque photographs are read by Anthropic to suggest an amount, and Steward&apos;s agent drafts
+            from your records through Anthropic. Nothing is entered or sent until you confirm it.
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+            <button data-testid="settings-ai-toggle"
+              onClick={()=>toggleAi(!aiStatus.enabled)} disabled={!isAdmin||aiSaving}
+              style={{background:aiStatus.enabled?"#c9a84c":"transparent",color:aiStatus.enabled?"#fff":T.ink,
+                      border:aiStatus.enabled?"none":"1px solid "+T.bg3,borderRadius:8,padding:"8px 18px",
+                      fontSize:13,fontWeight:700,cursor:(!isAdmin||aiSaving)?"not-allowed":"pointer",
+                      opacity:(!isAdmin||aiSaving)?0.6:1}}>
+              {aiSaving?"Saving…":aiStatus.enabled?"On":"Off"}
+            </button>
+            <span style={{fontSize:12.5,color:T.ink3}}>
+              {aiStatus.enabled
+                ? "Turn this off and Steward stops sending anything to Anthropic. Cheque photographs still attach to each line."
+                : "Off. Cheque photographs still attach to each line; Steward will not read them or draft from your records."}
+            </span>
+          </div>
+          {!isAdmin&&(
+            <div style={{fontSize:12,color:T.ink3,marginTop:10}}>Only an admin can change this.</div>
+          )}
+        </div>
+      )}
 
       {sampleStatus&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"20px 24px"}}>

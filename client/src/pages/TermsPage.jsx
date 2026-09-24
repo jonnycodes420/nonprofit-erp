@@ -27,6 +27,16 @@ const S = {
   li: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, marginBottom: 6 },
   ul: { paddingLeft: 20, margin: "0 0 16px" },
   a: { color: "#0d5c3a", textDecoration: "none" },
+  // BUILD-96 Part 3 — the subprocessor table. `tableWrap` is not decoration:
+  // this table has four columns on a 720px page and a phone is narrower than
+  // its narrowest useful width, so it scrolls INSIDE its own box rather than
+  // pushing the whole agreement sideways.
+  tableWrap: { overflowX: "auto", margin: "0 0 16px", WebkitOverflowScrolling: "touch" },
+  table: { borderCollapse: "collapse", width: "100%", minWidth: 560, fontSize: 13.5, color: "#3d4a42" },
+  th: { textAlign: "left", verticalAlign: "top", padding: "8px 12px 8px 0", borderBottom: "1px solid #c9c4b8",
+        fontWeight: 700, color: "#0f1a12", lineHeight: 1.5 },
+  td: { textAlign: "left", verticalAlign: "top", padding: "10px 12px 10px 0", borderBottom: "1px solid #ddd9d0",
+        lineHeight: 1.6 },
 };
 
 export default function TermsPage() {
@@ -136,7 +146,57 @@ export default function TermsPage() {
         <p style={S.p}><strong>Donor accounts</strong> are personal, free, and optional. You agree to register only email addresses you control. You may delete your account at any time; deletion removes your account and its links but does not alter any nonprofit's own records of its donors. Each nonprofit sees only its own relationship with you — we never share your giving at one organization with another.</p>
         <p style={S.p}><strong>Nonprofit network signup (Portal tier):</strong> by applying you represent that the information you provide — organization name, EIN, website, contact email — is truthful and that you are authorized to act for the organization. Listings are granted only after EIN verification against the IRS tax-exempt list, completed Stripe onboarding (donations settle only into your organization's own Stripe account — Steward never holds funds), and human review. We may decline, hold, or remove a listing at any time, and listings are automatically suspended if an EIN leaves the IRS list or a Stripe account is disconnected or restricted. Content you publish to donor-facing surfaces (impact updates, branding) must be truthful and yours to publish. The Portal tier covers the donor portal, gift recording, receipts, and impact updates; it does not include the Steward CRM.</p>
 
-        <h2 style={S.h2}>16. Contact</h2>
+        {/* BUILD-96 Part 3 — THE SUBPROCESSOR TABLE.
+            There was no such table until now, which was the gap: Resend has
+            held every donor's name and gift amount since BUILD-88c and the
+            agreement never named it. Cheque reading is what forced it — a
+            photograph of a cheque is the most sensitive thing the product
+            handles — so the table names all of them, not only the new one.
+            INTERIM, same attorney pass pending as sections 14 and 15. */}
+        <h2 style={S.h2}>16. Service Providers (Subprocessors)</h2>
+        <p style={S.p}>Steward uses the following third parties to run the Service. Each sees only what the table says, uses it only to provide its part of the Service, and is bound not to use it for anything else. We will give notice within the Service before adding a subprocessor that receives donor data.</p>
+        <div style={S.tableWrap}>
+        <table style={S.table}>
+          <thead>
+            <tr><th style={S.th}>Provider</th><th style={S.th}>Purpose</th><th style={S.th}>What it receives</th><th style={S.th}>Location</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={S.td}><strong>Resend</strong></td>
+              <td style={S.td}>sending email on your behalf — appeals, receipts, statements, reminders, sequences</td>
+              <td style={S.td}>the recipient&apos;s email address, the subject and the message body, which for a receipt includes a donor&apos;s name, gift amount and date</td>
+              <td style={S.td}>United States</td>
+            </tr>
+            <tr>
+              <td style={S.td}><strong>Anthropic</strong></td>
+              <td style={S.td}>reading amounts from cheque photographs an organization chooses to upload, and drafting text from an organization&apos;s own records on its instruction</td>
+              <td style={S.td}>the cheque photograph alone (no donor record, and no name lookup outside your organization), or the instruction, your vocabulary and the rows Steward selected for it. Images and records are <strong>not retained by the provider for training</strong>. Off until you enable it, and switchable off per organization in Settings</td>
+              <td style={S.td}>United States</td>
+            </tr>
+            <tr>
+              <td style={S.td}><strong>Railway</strong></td>
+              <td style={S.td}>hosting the Service and its database</td>
+              <td style={S.td}>everything you store in Steward, encrypted in transit and at rest</td>
+              <td style={S.td}>United States</td>
+            </tr>
+            <tr>
+              <td style={S.td}><strong>Stripe</strong></td>
+              <td style={S.td}>your own giving account, and separately Steward&apos;s own subscription billing</td>
+              <td style={S.td}>for giving, what a donor enters at checkout — Steward never holds the funds; for billing, your organization&apos;s own payment details</td>
+              <td style={S.td}>United States</td>
+            </tr>
+            <tr>
+              <td style={S.td}><strong>The giving sources you connect</strong></td>
+              <td style={S.td}>reading completed gifts from accounts you already hold (PayPal, Zeffy, Givebutter, Square)</td>
+              <td style={S.td}>nothing. Steward only reads; see section 14</td>
+              <td style={S.td}>per provider</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <p style={S.p}>Providers that receive nothing are listed so the table is the whole answer rather than the convenient part of it.</p>
+
+        <h2 style={S.h2}>17. Contact</h2>
         <p style={S.p}>For questions about these Terms, contact us at <a href="mailto:legal@stewardapp.dev" style={S.a}>legal@stewardapp.dev</a>.</p>
       </div>
     </div>

@@ -72,6 +72,38 @@ read.
 The gifts it already read stay on your donor records, because the money did
 arrive that way and deleting that history would be the lie.
 
+## Reading cheques and drafting text (BUILD-96 Part 3, 2026-09-24)
+
+**Anthropic** (anthropic.com) is a **subprocessor**, in the United States. Two
+features send data to it, and nothing else in Steward does.
+
+| | What is sent | What is NOT sent |
+|---|---|---|
+| **Reading a cheque photograph** | the photograph your treasurer chose to upload, and nothing beside it — no donor record, no name lookup, no history | your donor list. The image is read on its own; the payer's name is matched against your records **afterwards, inside Steward** |
+| **Steward's agent drafting text** | the instruction your staff typed, your organisation's vocabulary, and the rows **Steward selected for that instruction** — capped, org-scoped, and excluding anyone nothing may be drafted for | a database handle, a query the model wrote, any row outside the org, or any row outside the selection |
+
+**Images and records are not retained by the provider for training.**
+
+**A cheque photograph is the most sensitive image this product holds.** It
+carries a name, an amount, a bank, an account number and a signature. That is
+why reading is a disclosure with a switch rather than a feature with a button:
+
+- It is **off entirely** until an API key is configured. With no key the
+  deposit sheet still photographs the cheques — the evidence was always the
+  more valuable half, and it is what answers "did Margaret really write $250?"
+  three months later — and the control simply does not offer to read them.
+- Each organisation can **switch it off**, in Settings → Your Data, under
+  *Reading and drafting*. Default on. Off stops both features at once: they
+  share one gate, because two gates would eventually disagree and the way they
+  would disagree is by one of them sending something after you said not to.
+- **Nothing is entered or sent until you confirm it.** A read fills the deposit
+  sheet's paste box and cannot post a gift; an amount the two halves of the
+  cheque disagree about lands **blank** rather than guessed. The agent shows
+  you the plan, and the count of messages it would send, before anything runs.
+
+**The cost is Steward's, not yours.** Reading and drafting are included; there
+is no per-page or per-draft charge to your organisation.
+
 ## Email opens (BUILD-94 Part 4, decided 2026-09-22)
 
 **Steward counts opens per campaign and shows nothing per person.**

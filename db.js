@@ -3572,6 +3572,27 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sample_data_audit_org
                     ON sample_data_audit (org_id, created_at DESC)`);
 
+  // ── BUILD-96 Part 3 — THE MODEL IS A SUBPROCESSOR AND A COST ─────────────
+  // Two features send an organisation's data to Anthropic: cheque reading
+  // sends a PHOTOGRAPH OF A CHEQUE — a name, an amount, a bank and a
+  // signature, the most sensitive image this product will ever hold — and the
+  // BUILD-97 agent sends rows and vocabulary from the org's own records.
+  //
+  // Both are now switchable PER ORG, defaulting ON. Default-on because an org
+  // that has read the sentence in Settings and done nothing has consented to
+  // the thing the sentence describes, and default-off would ship a feature
+  // nobody finds. Switchable because "our board does not want donor images
+  // leaving the building" is a legitimate answer and needs somewhere to live
+  // that is not an email to support.
+  //
+  // DEFAULT true and backfilled true, the same direction as welcomed_at and
+  // for the same reason: every existing org already has these features, and a
+  // NULL-means-off column would silently switch them off for everybody on
+  // deploy.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN DEFAULT true`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN ai_enabled SET DEFAULT true`);
+  await pool.query(`UPDATE orgs SET ai_enabled = true WHERE ai_enabled IS NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
