@@ -1,11 +1,6 @@
 {
-<<<<<<< HEAD
- "generatedAt": "2026-09-24T23:50:03.844Z",
- "count": 492,
-=======
- "generatedAt": "2026-09-24T04:39:56.057Z",
- "count": 496,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+ "generatedAt": "2026-09-24T23:57:42.400Z",
+ "count": 507,
  "routes": [
   {
    "method": "POST",
@@ -64,11 +59,7 @@
   {
    "method": "GET",
    "path": "/campaigns/templates",
-<<<<<<< HEAD
-   "line": 3252,
-=======
-   "line": 3408,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3416,
    "auth": [
     "requireAuth"
    ],
@@ -88,11 +79,7 @@
   {
    "method": "POST",
    "path": "/campaigns/segment-preview",
-<<<<<<< HEAD
-   "line": 3275,
-=======
-   "line": 3431,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3439,
    "auth": [
     "requireAuth"
    ],
@@ -114,11 +101,7 @@
   {
    "method": "POST",
    "path": "/campaigns/:id/test",
-<<<<<<< HEAD
-   "line": 3309,
-=======
-   "line": 3465,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3473,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -143,11 +126,7 @@
   {
    "method": "GET",
    "path": "/org/sending-domain",
-<<<<<<< HEAD
-   "line": 3390,
-=======
-   "line": 3546,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3554,
    "auth": [
     "requireAuth"
    ],
@@ -167,11 +146,7 @@
   {
    "method": "POST",
    "path": "/org/sending-domain",
-<<<<<<< HEAD
-   "line": 3398,
-=======
-   "line": 3554,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3562,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -193,11 +168,7 @@
   {
    "method": "POST",
    "path": "/org/sending-domain/check",
-<<<<<<< HEAD
-   "line": 3462,
-=======
-   "line": 3618,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3626,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -218,11 +189,7 @@
   {
    "method": "DELETE",
    "path": "/org/sending-domain",
-<<<<<<< HEAD
-   "line": 3497,
-=======
-   "line": 3653,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3661,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -244,11 +211,7 @@
   {
    "method": "GET",
    "path": "/thank-yous",
-<<<<<<< HEAD
-   "line": 3515,
-=======
-   "line": 3671,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3679,
    "auth": [
     "requireAuth"
    ],
@@ -268,11 +231,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/opened",
-<<<<<<< HEAD
-   "line": 3548,
-=======
-   "line": 3704,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3712,
    "auth": [
     "requireAuth"
    ],
@@ -296,11 +255,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/sent",
-<<<<<<< HEAD
-   "line": 3558,
-=======
-   "line": 3714,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3722,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -325,11 +280,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/:id/skip",
-<<<<<<< HEAD
-   "line": 3590,
-=======
-   "line": 3746,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3754,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -354,11 +305,7 @@
   {
    "method": "POST",
    "path": "/thank-yous/mark-all-sent",
-<<<<<<< HEAD
-   "line": 3597,
-=======
-   "line": 3753,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3761,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -379,11 +326,7 @@
   {
    "method": "PUT",
    "path": "/org/voice-samples",
-<<<<<<< HEAD
-   "line": 3629,
-=======
-   "line": 3785,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3793,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -407,11 +350,7 @@
   {
    "method": "GET",
    "path": "/org/voice-samples",
-<<<<<<< HEAD
-   "line": 3640,
-=======
-   "line": 3796,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3804,
    "auth": [
     "requireAuth"
    ],
@@ -431,11 +370,7 @@
   {
    "method": "POST",
    "path": "/pledges/run-reminders",
-<<<<<<< HEAD
-   "line": 3652,
-=======
-   "line": 3808,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3816,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -458,11 +393,7 @@
   {
    "method": "GET",
    "path": "/health",
-<<<<<<< HEAD
-   "line": 3684,
-=======
-   "line": 3840,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3848,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -480,11 +411,7 @@
   {
    "method": "POST",
    "path": "/invitation-request",
-<<<<<<< HEAD
-   "line": 3741,
-=======
-   "line": 3897,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3905,
    "auth": [
     "invitationLimiter"
    ],
@@ -517,11 +444,7 @@
   {
    "method": "POST",
    "path": "/admin/notifications/retry",
-<<<<<<< HEAD
-   "line": 3784,
-=======
-   "line": 3940,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3948,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -544,11 +467,7 @@
   {
    "method": "POST",
    "path": "/admin/debug/sentry-test",
-<<<<<<< HEAD
-   "line": 3795,
-=======
-   "line": 3951,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 3959,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -571,11 +490,7 @@
   {
    "method": "POST",
    "path": "/auth/login",
-<<<<<<< HEAD
-   "line": 4333,
-=======
-   "line": 4489,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4497,
    "auth": [
     "loginIpLimiter",
     "loginAccountLimiter"
@@ -601,11 +516,7 @@
   {
    "method": "POST",
    "path": "/auth/register",
-<<<<<<< HEAD
-   "line": 4366,
-=======
-   "line": 4522,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4530,
    "auth": [
     "registerLimiter"
    ],
@@ -636,11 +547,7 @@
   {
    "method": "POST",
    "path": "/auth/forgot-password",
-<<<<<<< HEAD
-   "line": 4408,
-=======
-   "line": 4564,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4572,
    "auth": [
     "passwordResetLimiter"
    ],
@@ -664,11 +571,7 @@
   {
    "method": "POST",
    "path": "/auth/reset-password",
-<<<<<<< HEAD
-   "line": 4486,
-=======
-   "line": 4642,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4650,
    "auth": [
     "passwordResetLimiter"
    ],
@@ -693,11 +596,7 @@
   {
    "method": "POST",
    "path": "/auth/register-org",
-<<<<<<< HEAD
-   "line": 4512,
-=======
-   "line": 4668,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4676,
    "auth": [
     "registerLimiter"
    ],
@@ -727,11 +626,7 @@
   {
    "method": "GET",
    "path": "/me",
-<<<<<<< HEAD
-   "line": 4618,
-=======
-   "line": 4774,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4782,
    "auth": [
     "requireAuth"
    ],
@@ -751,11 +646,7 @@
   {
    "method": "PUT",
    "path": "/me/notification-prefs",
-<<<<<<< HEAD
-   "line": 4632,
-=======
-   "line": 4788,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4796,
    "auth": [
     "requireAuth"
    ],
@@ -775,11 +666,7 @@
   {
    "method": "GET",
    "path": "/me/home-layout",
-<<<<<<< HEAD
-   "line": 4668,
-=======
-   "line": 4824,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4832,
    "auth": [
     "requireAuth"
    ],
@@ -799,11 +686,7 @@
   {
    "method": "PUT",
    "path": "/me/home-layout",
-<<<<<<< HEAD
-   "line": 4676,
-=======
-   "line": 4832,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4840,
    "auth": [
     "requireAuth"
    ],
@@ -823,11 +706,7 @@
   {
    "method": "DELETE",
    "path": "/me/home-layout",
-<<<<<<< HEAD
-   "line": 4685,
-=======
-   "line": 4841,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4849,
    "auth": [
     "requireAuth"
    ],
@@ -847,11 +726,7 @@
   {
    "method": "POST",
    "path": "/onboarding/complete",
-<<<<<<< HEAD
-   "line": 4691,
-=======
-   "line": 4847,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4855,
    "auth": [
     "requireAuth"
    ],
@@ -871,11 +746,7 @@
   {
    "method": "GET",
    "path": "/org",
-<<<<<<< HEAD
-   "line": 4698,
-=======
-   "line": 4854,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 4862,
    "auth": [
     "requireAuth"
    ],
@@ -895,11 +766,7 @@
   {
    "method": "GET",
    "path": "/dashboards/:key",
-<<<<<<< HEAD
-   "line": 4929,
-=======
-   "line": 5085,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5093,
    "auth": [
     "requireAuth"
    ],
@@ -921,11 +788,7 @@
   {
    "method": "GET",
    "path": "/dashboards/:key/pdf",
-<<<<<<< HEAD
-   "line": 5006,
-=======
-   "line": 5162,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5170,
    "auth": [
     "requireAuth"
    ],
@@ -947,11 +810,7 @@
   {
    "method": "GET",
    "path": "/dashboards",
-<<<<<<< HEAD
-   "line": 5020,
-=======
-   "line": 5176,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5184,
    "auth": [
     "requireAuth"
    ],
@@ -971,11 +830,7 @@
   {
    "method": "GET",
    "path": "/org/welcome",
-<<<<<<< HEAD
-   "line": 5040,
-=======
-   "line": 5196,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5204,
    "auth": [
     "requireAuth"
    ],
@@ -995,11 +850,7 @@
   {
    "method": "POST",
    "path": "/org/welcome/seen",
-<<<<<<< HEAD
-   "line": 5059,
-=======
-   "line": 5215,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5223,
    "auth": [
     "requireAuth"
    ],
@@ -1019,11 +870,7 @@
   {
    "method": "GET",
    "path": "/org/vocabulary",
-<<<<<<< HEAD
-   "line": 5064,
-=======
-   "line": 5220,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5228,
    "auth": [
     "requireAuth"
    ],
@@ -1043,11 +890,7 @@
   {
    "method": "PUT",
    "path": "/org/vocabulary",
-<<<<<<< HEAD
-   "line": 5085,
-=======
-   "line": 5241,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5249,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -1071,11 +914,7 @@
   {
    "method": "GET",
    "path": "/org/setup-status",
-<<<<<<< HEAD
-   "line": 5107,
-=======
-   "line": 5263,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5271,
    "auth": [
     "requireAuth"
    ],
@@ -1095,11 +934,7 @@
   {
    "method": "POST",
    "path": "/org/setup-confirm-no-gifts",
-<<<<<<< HEAD
-   "line": 5196,
-=======
-   "line": 5352,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5360,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1120,11 +955,7 @@
   {
    "method": "PUT",
    "path": "/org/setup-card",
-<<<<<<< HEAD
-   "line": 5201,
-=======
-   "line": 5357,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5365,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1147,11 +978,7 @@
   {
    "method": "PATCH",
    "path": "/orgs/:id",
-<<<<<<< HEAD
-   "line": 5211,
-=======
-   "line": 5367,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5375,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1198,11 +1025,7 @@
   {
    "method": "PUT",
    "path": "/orgs/branding",
-<<<<<<< HEAD
-   "line": 5366,
-=======
-   "line": 5522,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5530,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -1228,11 +1051,7 @@
   {
    "method": "GET",
    "path": "/org/ai-status",
-<<<<<<< HEAD
-   "line": 5409,
-=======
-   "line": 5565,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5573,
    "auth": [
     "requireAuth"
    ],
@@ -1252,11 +1071,7 @@
   {
    "method": "PATCH",
    "path": "/org/ai-settings",
-<<<<<<< HEAD
-   "line": 5427,
-=======
-   "line": 5583,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5591,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1279,11 +1094,7 @@
   {
    "method": "GET",
    "path": "/org/sample-data-status",
-<<<<<<< HEAD
-   "line": 5436,
-=======
-   "line": 5592,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5600,
    "auth": [
     "requireAuth"
    ],
@@ -1303,11 +1114,7 @@
   {
    "method": "POST",
    "path": "/org/load-sample-data",
-<<<<<<< HEAD
-   "line": 5449,
-=======
-   "line": 5605,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5613,
    "auth": [
     "requireAuth"
    ],
@@ -1327,11 +1134,7 @@
   {
    "method": "POST",
    "path": "/org/clear-sample-data",
-<<<<<<< HEAD
-   "line": 5728,
-=======
-   "line": 5884,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5892,
    "auth": [
     "requireAuth"
    ],
@@ -1351,11 +1154,7 @@
   {
    "method": "GET",
    "path": "/org/team",
-<<<<<<< HEAD
-   "line": 5754,
-=======
-   "line": 5910,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5918,
    "auth": [
     "requireAuth"
    ],
@@ -1375,11 +1174,7 @@
   {
    "method": "DELETE",
    "path": "/users/:id",
-<<<<<<< HEAD
-   "line": 5785,
-=======
-   "line": 5941,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 5949,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1404,11 +1199,7 @@
   {
    "method": "POST",
    "path": "/auth/invite",
-<<<<<<< HEAD
-   "line": 5847,
-=======
-   "line": 6003,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6011,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1434,11 +1225,7 @@
   {
    "method": "GET",
    "path": "/auth/invite/:token",
-<<<<<<< HEAD
-   "line": 5913,
-=======
-   "line": 6069,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6077,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1460,11 +1247,7 @@
   {
    "method": "POST",
    "path": "/auth/invite/accept",
-<<<<<<< HEAD
-   "line": 5927,
-=======
-   "line": 6083,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6091,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -1496,11 +1279,7 @@
   {
    "method": "GET",
    "path": "/donors",
-<<<<<<< HEAD
-   "line": 6027,
-=======
-   "line": 6183,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6191,
    "auth": [
     "requireAuth"
    ],
@@ -1523,11 +1302,7 @@
   {
    "method": "GET",
    "path": "/donors/summaries",
-<<<<<<< HEAD
-   "line": 6080,
-=======
-   "line": 6236,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6244,
    "auth": [
     "requireAuth"
    ],
@@ -1547,11 +1322,7 @@
   {
    "method": "GET",
    "path": "/donors/duplicates",
-<<<<<<< HEAD
-   "line": 6127,
-=======
-   "line": 6283,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6291,
    "auth": [
     "requireAuth"
    ],
@@ -1571,11 +1342,7 @@
   {
    "method": "GET",
    "path": "/donors/export/csv",
-<<<<<<< HEAD
-   "line": 6197,
-=======
-   "line": 6353,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6361,
    "auth": [
     "requireAuth"
    ],
@@ -1595,11 +1362,7 @@
   {
    "method": "GET",
    "path": "/donors/custom-field-values/all",
-<<<<<<< HEAD
-   "line": 6221,
-=======
-   "line": 6377,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6385,
    "auth": [
     "requireAuth"
    ],
@@ -1619,11 +1382,7 @@
   {
    "method": "GET",
    "path": "/donors/stage-counts",
-<<<<<<< HEAD
-   "line": 6237,
-=======
-   "line": 6393,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6401,
    "auth": [
     "requireAuth"
    ],
@@ -1643,11 +1402,7 @@
   {
    "method": "GET",
    "path": "/donors/:id",
-<<<<<<< HEAD
-   "line": 6265,
-=======
-   "line": 6421,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6429,
    "auth": [
     "requireAuth"
    ],
@@ -1671,11 +1426,7 @@
   {
    "method": "POST",
    "path": "/donors",
-<<<<<<< HEAD
-   "line": 6313,
-=======
-   "line": 6469,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6477,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -1710,11 +1461,7 @@
   {
    "method": "POST",
    "path": "/donors/import",
-<<<<<<< HEAD
-   "line": 6593,
-=======
-   "line": 6749,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6757,
    "auth": [
     "requireAuth"
    ],
@@ -1738,11 +1485,7 @@
   {
    "method": "POST",
    "path": "/donors/import-combined",
-<<<<<<< HEAD
-   "line": 6832,
-=======
-   "line": 6988,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 6996,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -1778,11 +1521,7 @@
   {
    "method": "PUT",
    "path": "/donors/:id",
-<<<<<<< HEAD
-   "line": 7677,
-=======
-   "line": 7849,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7857,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -1823,11 +1562,7 @@
   {
    "method": "PATCH",
    "path": "/donors/:id/stage",
-<<<<<<< HEAD
-   "line": 7736,
-=======
-   "line": 7908,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7916,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -1856,11 +1591,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id",
-<<<<<<< HEAD
-   "line": 7770,
-=======
-   "line": 7942,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7950,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -1885,11 +1616,7 @@
   {
    "method": "PATCH",
    "path": "/donors/:id/assign",
-<<<<<<< HEAD
-   "line": 7779,
-=======
-   "line": 7951,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7959,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -1919,11 +1646,7 @@
   {
    "method": "PATCH",
    "path": "/donors/bulk-stage",
-<<<<<<< HEAD
-   "line": 7796,
-=======
-   "line": 7968,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7976,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -1950,11 +1673,7 @@
   {
    "method": "PATCH",
    "path": "/donors/bulk-assign",
-<<<<<<< HEAD
-   "line": 7816,
-=======
-   "line": 7988,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 7996,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -1982,11 +1701,7 @@
   {
    "method": "POST",
    "path": "/donors/bulk-delete",
-<<<<<<< HEAD
-   "line": 7862,
-=======
-   "line": 8034,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8042,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2011,11 +1726,7 @@
   {
    "method": "POST",
    "path": "/donors/purge-trash",
-<<<<<<< HEAD
-   "line": 7890,
-=======
-   "line": 8062,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8070,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2036,11 +1747,7 @@
   {
    "method": "POST",
    "path": "/donors/merge",
-<<<<<<< HEAD
-   "line": 7930,
-=======
-   "line": 8102,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8110,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2067,11 +1774,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/interactions",
-<<<<<<< HEAD
-   "line": 8036,
-=======
-   "line": 8219,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8227,
    "auth": [
     "requireAuth"
    ],
@@ -2100,11 +1803,7 @@
   {
    "method": "DELETE",
    "path": "/interactions/:id",
-<<<<<<< HEAD
-   "line": 8064,
-=======
-   "line": 8247,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8255,
    "auth": [
     "requireAuth"
    ],
@@ -2128,11 +1827,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/gifts",
-<<<<<<< HEAD
-   "line": 8165,
-=======
-   "line": 8348,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8356,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2179,11 +1874,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id",
-<<<<<<< HEAD
-   "line": 8311,
-=======
-   "line": 8506,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8514,
    "auth": [
     "requireAuth"
    ],
@@ -2222,11 +1913,7 @@
   {
    "method": "DELETE",
    "path": "/gifts/:id",
-<<<<<<< HEAD
-   "line": 8393,
-=======
-   "line": 8588,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8596,
    "auth": [
     "requireAuth"
    ],
@@ -2250,11 +1937,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/pledges",
-<<<<<<< HEAD
-   "line": 8452,
-=======
-   "line": 8647,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8655,
    "auth": [
     "requireAuth"
    ],
@@ -2278,11 +1961,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/pledges",
-<<<<<<< HEAD
-   "line": 8480,
-=======
-   "line": 8675,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8683,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2319,11 +1998,7 @@
   {
    "method": "GET",
    "path": "/pledges/:id/installments",
-<<<<<<< HEAD
-   "line": 8594,
-=======
-   "line": 8789,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8797,
    "auth": [
     "requireAuth"
    ],
@@ -2347,11 +2022,7 @@
   {
    "method": "PUT",
    "path": "/pledges/:id/installments",
-<<<<<<< HEAD
-   "line": 8610,
-=======
-   "line": 8805,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8813,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2381,11 +2052,7 @@
   {
    "method": "PUT",
    "path": "/pledges/:id",
-<<<<<<< HEAD
-   "line": 8630,
-=======
-   "line": 8825,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8833,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2419,11 +2086,7 @@
   {
    "method": "DELETE",
    "path": "/pledges/:id",
-<<<<<<< HEAD
-   "line": 8703,
-=======
-   "line": 8898,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 8906,
    "auth": [
     "requireAuth"
    ],
@@ -2447,11 +2110,7 @@
   {
    "method": "GET",
    "path": "/receipts/preview",
-<<<<<<< HEAD
-   "line": 9133,
-=======
-   "line": 9328,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9336,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2472,11 +2131,7 @@
   {
    "method": "POST",
    "path": "/receipts/year-end-run",
-<<<<<<< HEAD
-   "line": 9175,
-=======
-   "line": 9370,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9378,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -2501,11 +2156,7 @@
   {
    "method": "GET",
    "path": "/receipts/:id/pdf",
-<<<<<<< HEAD
-   "line": 9217,
-=======
-   "line": 9412,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9420,
    "auth": [
     "requireAuth"
    ],
@@ -2529,11 +2180,7 @@
   {
    "method": "POST",
    "path": "/receipts/:id/void",
-<<<<<<< HEAD
-   "line": 9232,
-=======
-   "line": 9427,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9435,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -2560,11 +2207,7 @@
   {
    "method": "POST",
    "path": "/gifts/:id/receipt",
-<<<<<<< HEAD
-   "line": 9246,
-=======
-   "line": 9441,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9449,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2591,11 +2234,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/receipts",
-<<<<<<< HEAD
-   "line": 9273,
-=======
-   "line": 9468,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9476,
    "auth": [
     "requireAuth"
    ],
@@ -2619,11 +2258,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/year-end-statement",
-<<<<<<< HEAD
-   "line": 9283,
-=======
-   "line": 9478,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9486,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2651,11 +2286,7 @@
   {
    "method": "GET",
    "path": "/org/import-health",
-<<<<<<< HEAD
-   "line": 9326,
-=======
-   "line": 9521,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9529,
    "auth": [
     "requireAuth"
    ],
@@ -2675,11 +2306,7 @@
   {
    "method": "POST",
    "path": "/org/import-health/confirm-gift",
-<<<<<<< HEAD
-   "line": 9332,
-=======
-   "line": 9527,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9535,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2703,11 +2330,7 @@
   {
    "method": "POST",
    "path": "/donors/import-semantics",
-<<<<<<< HEAD
-   "line": 9345,
-=======
-   "line": 9540,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9548,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2735,11 +2358,7 @@
   {
    "method": "POST",
    "path": "/imports",
-<<<<<<< HEAD
-   "line": 9707,
-=======
-   "line": 9902,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9910,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2760,11 +2379,7 @@
   {
    "method": "GET",
    "path": "/giving-sources/providers",
-<<<<<<< HEAD
-   "line": 9755,
-=======
-   "line": 9950,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9958,
    "auth": [
     "requireAuth"
    ],
@@ -2784,11 +2399,7 @@
   {
    "method": "GET",
    "path": "/giving-sources",
-<<<<<<< HEAD
-   "line": 9780,
-=======
-   "line": 9975,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 9983,
    "auth": [
     "requireAuth"
    ],
@@ -2808,11 +2419,7 @@
   {
    "method": "GET",
    "path": "/statement-mappings",
-<<<<<<< HEAD
-   "line": 9917,
-=======
-   "line": 10112,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10120,
    "auth": [
     "requireAuth"
    ],
@@ -2832,11 +2439,7 @@
   {
    "method": "POST",
    "path": "/statement-mappings",
-<<<<<<< HEAD
-   "line": 9926,
-=======
-   "line": 10121,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10129,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -2857,11 +2460,7 @@
   {
    "method": "POST",
    "path": "/statement-mappings/match",
-<<<<<<< HEAD
-   "line": 9964,
-=======
-   "line": 10159,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10167,
    "auth": [
     "requireAuth"
    ],
@@ -2883,11 +2482,7 @@
   {
    "method": "DELETE",
    "path": "/statement-mappings/:id",
-<<<<<<< HEAD
-   "line": 9976,
-=======
-   "line": 10171,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10179,
    "auth": [
     "requireAuth"
    ],
@@ -2911,11 +2506,7 @@
   {
    "method": "GET",
    "path": "/giving-sources/duplicates",
-<<<<<<< HEAD
-   "line": 9989,
-=======
-   "line": 10184,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10192,
    "auth": [
     "requireAuth"
    ],
@@ -2935,11 +2526,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/duplicates/:id/same-gift",
-<<<<<<< HEAD
-   "line": 10015,
-=======
-   "line": 10210,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10218,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -2965,11 +2552,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/duplicates/:id/keep-both",
-<<<<<<< HEAD
-   "line": 10033,
-=======
-   "line": 10228,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10236,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -2995,11 +2578,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/other",
-<<<<<<< HEAD
-   "line": 10082,
-=======
-   "line": 10277,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10285,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3021,11 +2600,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/test",
-<<<<<<< HEAD
-   "line": 10098,
-=======
-   "line": 10293,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10301,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3046,11 +2621,7 @@
   {
    "method": "POST",
    "path": "/giving-sources",
-<<<<<<< HEAD
-   "line": 10123,
-=======
-   "line": 10318,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10326,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3072,11 +2643,7 @@
   {
    "method": "PATCH",
    "path": "/giving-sources/:id",
-<<<<<<< HEAD
-   "line": 10224,
-=======
-   "line": 10419,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10427,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3108,11 +2675,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/:id/sync",
-<<<<<<< HEAD
-   "line": 10266,
-=======
-   "line": 10461,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10469,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3138,11 +2701,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/:id/sync-fixture",
-<<<<<<< HEAD
-   "line": 10281,
-=======
-   "line": 10476,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10484,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3169,11 +2728,7 @@
   {
    "method": "DELETE",
    "path": "/giving-sources/:id",
-<<<<<<< HEAD
-   "line": 10297,
-=======
-   "line": 10492,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10500,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3199,11 +2754,7 @@
   {
    "method": "GET",
    "path": "/giving-recurring",
-<<<<<<< HEAD
-   "line": 10313,
-=======
-   "line": 10508,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10516,
    "auth": [
     "requireAuth"
    ],
@@ -3223,11 +2774,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/:id/confirm",
-<<<<<<< HEAD
-   "line": 10353,
-=======
-   "line": 10548,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10556,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3252,11 +2799,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/:id/dismiss",
-<<<<<<< HEAD
-   "line": 10366,
-=======
-   "line": 10561,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10569,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3281,11 +2824,7 @@
   {
    "method": "POST",
    "path": "/giving-sources/run-schedule",
-<<<<<<< HEAD
-   "line": 10417,
-=======
-   "line": 10612,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10620,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3306,11 +2845,7 @@
   {
    "method": "POST",
    "path": "/giving-recurring/sweep",
-<<<<<<< HEAD
-   "line": 10425,
-=======
-   "line": 10620,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10628,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -3331,11 +2866,7 @@
   {
    "method": "GET",
    "path": "/imports",
-<<<<<<< HEAD
-   "line": 10430,
-=======
-   "line": 10625,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10633,
    "auth": [
     "requireAuth"
    ],
@@ -3355,11 +2886,7 @@
   {
    "method": "GET",
    "path": "/imports/:id",
-<<<<<<< HEAD
-   "line": 10456,
-=======
-   "line": 10651,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10659,
    "auth": [
     "requireAuth"
    ],
@@ -3383,11 +2910,7 @@
   {
    "method": "POST",
    "path": "/deposits/read-cheques",
-<<<<<<< HEAD
-   "line": 10547,
-=======
-   "line": 10742,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10750,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3410,11 +2933,7 @@
   {
    "method": "POST",
    "path": "/deposits/plan",
-<<<<<<< HEAD
-   "line": 10640,
-=======
-   "line": 10835,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10843,
    "auth": [
     "requireAuth"
    ],
@@ -3434,11 +2953,7 @@
   {
    "method": "POST",
    "path": "/deposits/commit",
-<<<<<<< HEAD
-   "line": 10653,
-=======
-   "line": 10848,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 10856,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3459,11 +2974,7 @@
   {
    "method": "POST",
    "path": "/imports/:id/reverse",
-<<<<<<< HEAD
-   "line": 10825,
-=======
-   "line": 11020,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11028,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -3489,11 +3000,7 @@
   {
    "method": "GET",
    "path": "/import-merges",
-<<<<<<< HEAD
-   "line": 10865,
-=======
-   "line": 11060,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11068,
    "auth": [
     "requireAuth"
    ],
@@ -3513,11 +3020,7 @@
   {
    "method": "POST",
    "path": "/import-merges/:id/undo",
-<<<<<<< HEAD
-   "line": 10875,
-=======
-   "line": 11070,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11078,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3542,11 +3045,7 @@
   {
    "method": "POST",
    "path": "/gifts/import-history",
-<<<<<<< HEAD
-   "line": 10902,
-=======
-   "line": 11097,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11105,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3572,11 +3071,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/planned-gifts",
-<<<<<<< HEAD
-   "line": 11180,
-=======
-   "line": 11375,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11383,
    "auth": [
     "requireAuth"
    ],
@@ -3600,11 +3095,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/planned-gifts",
-<<<<<<< HEAD
-   "line": 11186,
-=======
-   "line": 11381,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11389,
    "auth": [
     "requireAuth"
    ],
@@ -3633,11 +3124,7 @@
   {
    "method": "PUT",
    "path": "/planned-gifts/:id",
-<<<<<<< HEAD
-   "line": 11219,
-=======
-   "line": 11414,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11422,
    "auth": [
     "requireAuth"
    ],
@@ -3666,11 +3153,7 @@
   {
    "method": "DELETE",
    "path": "/planned-gifts/:id",
-<<<<<<< HEAD
-   "line": 11234,
-=======
-   "line": 11429,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11437,
    "auth": [
     "requireAuth"
    ],
@@ -3694,11 +3177,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/materials",
-<<<<<<< HEAD
-   "line": 11241,
-=======
-   "line": 11436,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11444,
    "auth": [
     "requireAuth"
    ],
@@ -3722,11 +3201,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/materials",
-<<<<<<< HEAD
-   "line": 11274,
-=======
-   "line": 11469,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11477,
    "auth": [
     "requireAuth"
    ],
@@ -3756,11 +3231,7 @@
   {
    "method": "DELETE",
    "path": "/materials/:id",
-<<<<<<< HEAD
-   "line": 11305,
-=======
-   "line": 11500,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11508,
    "auth": [
     "requireAuth"
    ],
@@ -3784,11 +3255,7 @@
   {
    "method": "GET",
    "path": "/households",
-<<<<<<< HEAD
-   "line": 11352,
-=======
-   "line": 11547,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11555,
    "auth": [
     "requireAuth"
    ],
@@ -3808,11 +3275,7 @@
   {
    "method": "GET",
    "path": "/households/:id",
-<<<<<<< HEAD
-   "line": 11364,
-=======
-   "line": 11559,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11567,
    "auth": [
     "requireAuth"
    ],
@@ -3836,11 +3299,7 @@
   {
    "method": "POST",
    "path": "/households",
-<<<<<<< HEAD
-   "line": 11424,
-=======
-   "line": 11619,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11627,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3869,11 +3328,7 @@
   {
    "method": "PUT",
    "path": "/households/:id",
-<<<<<<< HEAD
-   "line": 11444,
-=======
-   "line": 11639,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11647,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -3905,11 +3360,7 @@
   {
    "method": "DELETE",
    "path": "/households/:id",
-<<<<<<< HEAD
-   "line": 11473,
-=======
-   "line": 11668,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11676,
    "auth": [
     "requireAuth"
    ],
@@ -3933,11 +3384,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/soft-credit",
-<<<<<<< HEAD
-   "line": 11485,
-=======
-   "line": 11680,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 11688,
    "auth": [
     "requireAuth"
    ],
@@ -3961,7 +3408,7 @@
   {
    "method": "GET",
    "path": "/gifts/:id/extras",
-   "line": 11770,
+   "line": 11778,
    "auth": [
     "requireAuth"
    ],
@@ -3985,7 +3432,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id/extras",
-   "line": 11797,
+   "line": 11805,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4010,7 +3457,7 @@
   {
    "method": "GET",
    "path": "/tribute-notices",
-   "line": 11813,
+   "line": 11821,
    "auth": [
     "requireAuth"
    ],
@@ -4030,7 +3477,7 @@
   {
    "method": "POST",
    "path": "/tribute-notices/:id/sent",
-   "line": 11821,
+   "line": 11829,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4055,7 +3502,7 @@
   {
    "method": "POST",
    "path": "/tribute-notices/:id/skip",
-   "line": 11827,
+   "line": 11835,
    "auth": [
     "requireAuth"
    ],
@@ -4078,12 +3525,225 @@
   },
   {
    "method": "GET",
+   "path": "/acknowledgments/templates",
+   "line": 11978,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/acknowledgments/templates",
+   "line": 11987,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/acknowledgments/templates/:id",
+   "line": 12002,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/acknowledgments/templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "DELETE",
+   "path": "/acknowledgments/templates/:id",
+   "line": 12017,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/acknowledgments/templates",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/acknowledgments/backlog",
+   "line": 12024,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/backlog",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/acknowledgments/settings",
+   "line": 12048,
+   "auth": [
+    "requireAuth",
+    "requireAdmin",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 4,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/settings",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/acknowledgments/letters/preview",
+   "line": 12056,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/letters/preview",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/acknowledgments/letters/pdf",
+   "line": 12067,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/letters/pdf",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/acknowledgments/labels/pdf",
+   "line": 12085,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/acknowledgments/labels/pdf",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/acknowledgments/mark",
+   "line": 12101,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [],
+    "query": [],
+    "body": [
+     "giftIds"
+    ]
+   },
+   "identifiers": [
+    "giftIds"
+   ],
+   "frontend": {
+    "probe": "/acknowledgments/mark",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
    "path": "/donors/:id/designations",
-<<<<<<< HEAD
-   "line": 11510,
-=======
-   "line": 11842,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12131,
    "auth": [
     "requireAuth"
    ],
@@ -4107,11 +3767,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/designations",
-<<<<<<< HEAD
-   "line": 11517,
-=======
-   "line": 11849,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12138,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4138,11 +3794,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id/designations/:kind",
-<<<<<<< HEAD
-   "line": 11527,
-=======
-   "line": 11859,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12148,
    "auth": [
     "requireAuth"
    ],
@@ -4167,11 +3819,7 @@
   {
    "method": "GET",
    "path": "/portfolio/officers",
-<<<<<<< HEAD
-   "line": 11537,
-=======
-   "line": 11869,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12158,
    "auth": [
     "requireAuth"
    ],
@@ -4191,11 +3839,7 @@
   {
    "method": "PUT",
    "path": "/portfolio/officers/:userId/color",
-<<<<<<< HEAD
-   "line": 11572,
-=======
-   "line": 11904,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12193,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -4224,11 +3868,7 @@
   {
    "method": "GET",
    "path": "/pipeline",
-<<<<<<< HEAD
-   "line": 11590,
-=======
-   "line": 11922,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12211,
    "auth": [
     "requireAuth"
    ],
@@ -4255,11 +3895,7 @@
   {
    "method": "POST",
    "path": "/pipeline/add",
-<<<<<<< HEAD
-   "line": 11743,
-=======
-   "line": 12075,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12364,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4285,11 +3921,7 @@
   {
    "method": "POST",
    "path": "/pipeline/remove",
-<<<<<<< HEAD
-   "line": 11765,
-=======
-   "line": 12097,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12386,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4315,11 +3947,7 @@
   {
    "method": "POST",
    "path": "/pipeline/:donorId/move",
-<<<<<<< HEAD
-   "line": 11779,
-=======
-   "line": 12111,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12400,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4348,11 +3976,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/move-suggestions",
-<<<<<<< HEAD
-   "line": 11806,
-=======
-   "line": 12138,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12427,
    "auth": [
     "requireAuth"
    ],
@@ -4376,11 +4000,7 @@
   {
    "method": "POST",
    "path": "/pipeline/run-auto-lapse",
-<<<<<<< HEAD
-   "line": 11815,
-=======
-   "line": 12147,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12436,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -4401,11 +4021,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/moves",
-<<<<<<< HEAD
-   "line": 11821,
-=======
-   "line": 12153,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12442,
    "auth": [
     "requireAuth"
    ],
@@ -4429,11 +4045,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/opportunities",
-<<<<<<< HEAD
-   "line": 11830,
-=======
-   "line": 12162,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12451,
    "auth": [
     "requireAuth"
    ],
@@ -4457,11 +4069,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/opportunities",
-<<<<<<< HEAD
-   "line": 11838,
-=======
-   "line": 12170,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12459,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4491,11 +4099,7 @@
   {
    "method": "PUT",
    "path": "/opportunities/:id",
-<<<<<<< HEAD
-   "line": 11857,
-=======
-   "line": 12189,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12478,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4530,11 +4134,7 @@
   {
    "method": "DELETE",
    "path": "/opportunities/:id",
-<<<<<<< HEAD
-   "line": 11890,
-=======
-   "line": 12222,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12511,
    "auth": [
     "requireAuth"
    ],
@@ -4558,11 +4158,7 @@
   {
    "method": "GET",
    "path": "/pipeline/officer-activity",
-<<<<<<< HEAD
-   "line": 11898,
-=======
-   "line": 12230,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12519,
    "auth": [
     "requireAuth"
    ],
@@ -4585,11 +4181,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/relationships",
-<<<<<<< HEAD
-   "line": 11933,
-=======
-   "line": 12265,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12554,
    "auth": [
     "requireAuth"
    ],
@@ -4613,11 +4205,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/relationships",
-<<<<<<< HEAD
-   "line": 11974,
-=======
-   "line": 12306,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12595,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4647,11 +4235,7 @@
   {
    "method": "DELETE",
    "path": "/donor-relationships/:id",
-<<<<<<< HEAD
-   "line": 12006,
-=======
-   "line": 12338,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12627,
    "auth": [
     "requireAuth"
    ],
@@ -4675,11 +4259,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/score",
-<<<<<<< HEAD
-   "line": 12014,
-=======
-   "line": 12346,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12635,
    "auth": [
     "requireAuth",
     "requirePlan(team)",
@@ -4705,11 +4285,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/fund-affinity",
-<<<<<<< HEAD
-   "line": 12020,
-=======
-   "line": 12352,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12641,
    "auth": [
     "requireAuth"
    ],
@@ -4733,11 +4309,7 @@
   {
    "method": "GET",
    "path": "/grants",
-<<<<<<< HEAD
-   "line": 12073,
-=======
-   "line": 12405,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12694,
    "auth": [
     "requireAuth"
    ],
@@ -4760,11 +4332,7 @@
   {
    "method": "POST",
    "path": "/grants",
-<<<<<<< HEAD
-   "line": 12115,
-=======
-   "line": 12447,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12736,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4800,11 +4368,7 @@
   {
    "method": "PUT",
    "path": "/grants/:id",
-<<<<<<< HEAD
-   "line": 12143,
-=======
-   "line": 12475,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12764,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -4848,11 +4412,7 @@
   {
    "method": "GET",
    "path": "/grants/:id/manual-match",
-<<<<<<< HEAD
-   "line": 12258,
-=======
-   "line": 12590,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12879,
    "auth": [
     "requireAuth"
    ],
@@ -4876,11 +4436,7 @@
   {
    "method": "DELETE",
    "path": "/grants/:id",
-<<<<<<< HEAD
-   "line": 12280,
-=======
-   "line": 12612,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12901,
    "auth": [
     "requireAuth"
    ],
@@ -4904,11 +4460,7 @@
   {
    "method": "GET",
    "path": "/grants/:id",
-<<<<<<< HEAD
-   "line": 12286,
-=======
-   "line": 12618,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12907,
    "auth": [
     "requireAuth"
    ],
@@ -4932,11 +4484,7 @@
   {
    "method": "POST",
    "path": "/grants/:id/interactions",
-<<<<<<< HEAD
-   "line": 12299,
-=======
-   "line": 12631,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12920,
    "auth": [
     "requireAuth"
    ],
@@ -4964,11 +4512,7 @@
   {
    "method": "GET",
    "path": "/volunteers",
-<<<<<<< HEAD
-   "line": 12313,
-=======
-   "line": 12645,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12934,
    "auth": [
     "requireAuth"
    ],
@@ -4988,11 +4532,7 @@
   {
    "method": "POST",
    "path": "/volunteers",
-<<<<<<< HEAD
-   "line": 12321,
-=======
-   "line": 12653,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12942,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5023,11 +4563,7 @@
   {
    "method": "PUT",
    "path": "/volunteers/:id",
-<<<<<<< HEAD
-   "line": 12336,
-=======
-   "line": 12668,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12957,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5061,11 +4597,7 @@
   {
    "method": "GET",
    "path": "/volunteers/donor-prospects",
-<<<<<<< HEAD
-   "line": 12375,
-=======
-   "line": 12707,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 12996,
    "auth": [
     "requireAuth"
    ],
@@ -5085,11 +4617,7 @@
   {
    "method": "GET",
    "path": "/tasks",
-<<<<<<< HEAD
-   "line": 12395,
-=======
-   "line": 12727,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13016,
    "auth": [
     "requireAuth"
    ],
@@ -5111,11 +4639,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/tasks",
-<<<<<<< HEAD
-   "line": 12413,
-=======
-   "line": 12745,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13034,
    "auth": [
     "requireAuth"
    ],
@@ -5139,11 +4663,7 @@
   {
    "method": "POST",
    "path": "/tasks",
-<<<<<<< HEAD
-   "line": 12424,
-=======
-   "line": 12756,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13045,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5175,11 +4695,7 @@
   {
    "method": "PUT",
    "path": "/tasks/:id",
-<<<<<<< HEAD
-   "line": 12474,
-=======
-   "line": 12806,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13095,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5213,11 +4729,7 @@
   {
    "method": "POST",
    "path": "/tasks/:id/complete",
-<<<<<<< HEAD
-   "line": 12514,
-=======
-   "line": 12846,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13135,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5244,11 +4756,7 @@
   {
    "method": "DELETE",
    "path": "/tasks/:id",
-<<<<<<< HEAD
-   "line": 12526,
-=======
-   "line": 12858,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13147,
    "auth": [
     "requireAuth"
    ],
@@ -5272,11 +4780,7 @@
   {
    "method": "GET",
    "path": "/board",
-<<<<<<< HEAD
-   "line": 12533,
-=======
-   "line": 12865,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13154,
    "auth": [
     "requireAuth"
    ],
@@ -5296,11 +4800,7 @@
   {
    "method": "POST",
    "path": "/board",
-<<<<<<< HEAD
-   "line": 12538,
-=======
-   "line": 12870,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13159,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5329,11 +4829,7 @@
   {
    "method": "GET",
    "path": "/financials",
-<<<<<<< HEAD
-   "line": 12553,
-=======
-   "line": 12885,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13174,
    "auth": [
     "requireAuth"
    ],
@@ -5353,11 +4849,7 @@
   {
    "method": "POST",
    "path": "/financials/month",
-<<<<<<< HEAD
-   "line": 12581,
-=======
-   "line": 12913,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13202,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -5391,11 +4883,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats",
-<<<<<<< HEAD
-   "line": 12608,
-=======
-   "line": 12940,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13229,
    "auth": [
     "requireAuth"
    ],
@@ -5415,11 +4903,7 @@
   {
    "method": "GET",
    "path": "/dashboard/home",
-<<<<<<< HEAD
-   "line": 12665,
-=======
-   "line": 12997,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13286,
    "auth": [
     "requireAuth"
    ],
@@ -5441,11 +4925,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/visits/breakdown",
-<<<<<<< HEAD
-   "line": 12792,
-=======
-   "line": 13124,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13413,
    "auth": [
     "requireAuth"
    ],
@@ -5465,11 +4945,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/moves/breakdown",
-<<<<<<< HEAD
-   "line": 12822,
-=======
-   "line": 13154,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13443,
    "auth": [
     "requireAuth"
    ],
@@ -5489,11 +4965,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/gifts/breakdown",
-<<<<<<< HEAD
-   "line": 12853,
-=======
-   "line": 13185,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13474,
    "auth": [
     "requireAuth"
    ],
@@ -5513,11 +4985,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/pipeline/breakdown",
-<<<<<<< HEAD
-   "line": 12887,
-=======
-   "line": 13219,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13508,
    "auth": [
     "requireAuth"
    ],
@@ -5537,11 +5005,7 @@
   {
    "method": "GET",
    "path": "/dashboard/my-stats/lapsed/breakdown",
-<<<<<<< HEAD
-   "line": 12915,
-=======
-   "line": 13247,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13536,
    "auth": [
     "requireAuth"
    ],
@@ -5561,11 +5025,7 @@
   {
    "method": "GET",
    "path": "/dashboard/today",
-<<<<<<< HEAD
-   "line": 12940,
-=======
-   "line": 13272,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 13561,
    "auth": [
     "requireAuth"
    ],
@@ -5587,11 +5047,7 @@
   {
    "method": "GET",
    "path": "/drift",
-<<<<<<< HEAD
-   "line": 13380,
-=======
-   "line": 13712,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14001,
    "auth": [
     "requireAuth"
    ],
@@ -5614,11 +5070,7 @@
   {
    "method": "POST",
    "path": "/drift/:donorId/done",
-<<<<<<< HEAD
-   "line": 13476,
-=======
-   "line": 13808,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14097,
    "auth": [
     "requireAuth"
    ],
@@ -5645,11 +5097,7 @@
   {
    "method": "GET",
    "path": "/threads/:id/calendar",
-<<<<<<< HEAD
-   "line": 13910,
-=======
-   "line": 14242,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14531,
    "auth": [
     "requireAuth"
    ],
@@ -5673,11 +5121,7 @@
   {
    "method": "GET",
    "path": "/threads/:id/calendar.ics",
-<<<<<<< HEAD
-   "line": 13927,
-=======
-   "line": 14259,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14548,
    "auth": [
     "requireAuth"
    ],
@@ -5701,11 +5145,7 @@
   {
    "method": "GET",
    "path": "/threads",
-<<<<<<< HEAD
-   "line": 13940,
-=======
-   "line": 14272,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14561,
    "auth": [
     "requireAuth"
    ],
@@ -5731,11 +5171,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/conversations",
-<<<<<<< HEAD
-   "line": 13959,
-=======
-   "line": 14291,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14580,
    "auth": [
     "requireAuth"
    ],
@@ -5765,11 +5201,7 @@
   {
    "method": "POST",
    "path": "/threads/:id/dismiss",
-<<<<<<< HEAD
-   "line": 14080,
-=======
-   "line": 14412,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14701,
    "auth": [
     "requireAuth"
    ],
@@ -5793,11 +5225,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/threads",
-<<<<<<< HEAD
-   "line": 14125,
-=======
-   "line": 14457,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14746,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5824,11 +5252,7 @@
   {
    "method": "POST",
    "path": "/threads/plan",
-<<<<<<< HEAD
-   "line": 14173,
-=======
-   "line": 14505,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14794,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -5853,11 +5277,7 @@
   {
    "method": "GET",
    "path": "/threads/health",
-<<<<<<< HEAD
-   "line": 14269,
-=======
-   "line": 14601,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14890,
    "auth": [
     "requireAuth"
    ],
@@ -5879,11 +5299,7 @@
   {
    "method": "GET",
    "path": "/goals/active",
-<<<<<<< HEAD
-   "line": 14275,
-=======
-   "line": 14607,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14896,
    "auth": [
     "requireAuth"
    ],
@@ -5903,11 +5319,7 @@
   {
    "method": "POST",
    "path": "/goals",
-<<<<<<< HEAD
-   "line": 14361,
-=======
-   "line": 14693,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 14982,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -5935,11 +5347,7 @@
   {
    "method": "POST",
    "path": "/metrics/reset-baselines",
-<<<<<<< HEAD
-   "line": 14388,
-=======
-   "line": 14720,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15009,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -5960,11 +5368,7 @@
   {
    "method": "GET",
    "path": "/metrics/stewardship-summary",
-<<<<<<< HEAD
-   "line": 14394,
-=======
-   "line": 14726,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15015,
    "auth": [
     "requireAuth"
    ],
@@ -5986,11 +5390,7 @@
   {
    "method": "GET",
    "path": "/dashboard/stewardship-debt/breakdown",
-<<<<<<< HEAD
-   "line": 14456,
-=======
-   "line": 14788,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15077,
    "auth": [
     "requireAuth"
    ],
@@ -6012,11 +5412,7 @@
   {
    "method": "GET",
    "path": "/dashboard/retention/breakdown",
-<<<<<<< HEAD
-   "line": 14481,
-=======
-   "line": 14813,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15102,
    "auth": [
     "requireAuth"
    ],
@@ -6038,11 +5434,7 @@
   {
    "method": "GET",
    "path": "/dashboard",
-<<<<<<< HEAD
-   "line": 14515,
-=======
-   "line": 14847,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15136,
    "auth": [
     "requireAuth"
    ],
@@ -6062,11 +5454,7 @@
   {
    "method": "POST",
    "path": "/ai/stream",
-<<<<<<< HEAD
-   "line": 14539,
-=======
-   "line": 14871,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15160,
    "auth": [
     "requireAuth"
    ],
@@ -6091,11 +5479,7 @@
   {
    "method": "POST",
    "path": "/ai/column-map",
-<<<<<<< HEAD
-   "line": 14570,
-=======
-   "line": 14902,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15191,
    "auth": [
     "requireAuth"
    ],
@@ -6118,11 +5502,7 @@
   {
    "method": "GET",
    "path": "/unsubscribe",
-<<<<<<< HEAD
-   "line": 15157,
-=======
-   "line": 15489,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15778,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -6144,11 +5524,7 @@
   {
    "method": "POST",
    "path": "/unsubscribe",
-<<<<<<< HEAD
-   "line": 15168,
-=======
-   "line": 15500,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 15789,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -6170,11 +5546,7 @@
   {
    "method": "GET",
    "path": "/campaigns",
-<<<<<<< HEAD
-   "line": 15509,
-=======
-   "line": 15841,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16130,
    "auth": [
     "requireAuth"
    ],
@@ -6194,11 +5566,7 @@
   {
    "method": "GET",
    "path": "/campaigns/sent",
-<<<<<<< HEAD
-   "line": 15534,
-=======
-   "line": 15866,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16155,
    "auth": [
     "requireAuth"
    ],
@@ -6218,11 +5586,7 @@
   {
    "method": "GET",
    "path": "/campaigns/:id",
-<<<<<<< HEAD
-   "line": 15568,
-=======
-   "line": 15900,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16189,
    "auth": [
     "requireAuth"
    ],
@@ -6246,11 +5610,7 @@
   {
    "method": "POST",
    "path": "/campaigns",
-<<<<<<< HEAD
-   "line": 15584,
-=======
-   "line": 15916,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16205,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6278,11 +5638,7 @@
   {
    "method": "PUT",
    "path": "/campaigns/:id",
-<<<<<<< HEAD
-   "line": 15600,
-=======
-   "line": 15932,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16221,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6315,11 +5671,7 @@
   {
    "method": "DELETE",
    "path": "/campaigns/:id",
-<<<<<<< HEAD
-   "line": 15624,
-=======
-   "line": 15956,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16245,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -6344,11 +5696,7 @@
   {
    "method": "PUT",
    "path": "/campaigns/:id/briefing",
-<<<<<<< HEAD
-   "line": 15638,
-=======
-   "line": 15970,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16259,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6378,11 +5726,7 @@
   {
    "method": "GET",
    "path": "/campaigns/:id/progress",
-<<<<<<< HEAD
-   "line": 15650,
-=======
-   "line": 15982,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16271,
    "auth": [
     "requireAuth"
    ],
@@ -6406,11 +5750,7 @@
   {
    "method": "GET",
    "path": "/fundraising/overview",
-<<<<<<< HEAD
-   "line": 15891,
-=======
-   "line": 16223,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16512,
    "auth": [
     "requireAuth"
    ],
@@ -6432,11 +5772,7 @@
   {
    "method": "GET",
    "path": "/fundraising/campaigns",
-<<<<<<< HEAD
-   "line": 16035,
-=======
-   "line": 16367,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16656,
    "auth": [
     "requireAuth"
    ],
@@ -6456,11 +5792,7 @@
   {
    "method": "GET",
    "path": "/fundraising/goals",
-<<<<<<< HEAD
-   "line": 16040,
-=======
-   "line": 16372,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16661,
    "auth": [
     "requireAuth"
    ],
@@ -6480,11 +5812,7 @@
   {
    "method": "POST",
    "path": "/fundraising/campaigns",
-<<<<<<< HEAD
-   "line": 16083,
-=======
-   "line": 16415,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16704,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6515,11 +5843,7 @@
   {
    "method": "PUT",
    "path": "/fundraising/campaigns/:id",
-<<<<<<< HEAD
-   "line": 16115,
-=======
-   "line": 16447,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16736,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6553,11 +5877,7 @@
   {
    "method": "GET",
    "path": "/admin/observability",
-<<<<<<< HEAD
-   "line": 16323,
-=======
-   "line": 16655,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 16944,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -6578,11 +5898,7 @@
   {
    "method": "POST",
    "path": "/admin/observability/run-checks",
-<<<<<<< HEAD
-   "line": 16380,
-=======
-   "line": 16712,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17001,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -6603,11 +5919,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions",
-<<<<<<< HEAD
-   "line": 16789,
-=======
-   "line": 17121,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17410,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6628,11 +5940,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/confirm",
-<<<<<<< HEAD
-   "line": 16839,
-=======
-   "line": 17171,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17460,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6657,11 +5965,7 @@
   {
    "method": "GET",
    "path": "/agent/instructions",
-<<<<<<< HEAD
-   "line": 16868,
-=======
-   "line": 17200,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17489,
    "auth": [
     "requireAuth"
    ],
@@ -6681,11 +5985,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/pause",
-<<<<<<< HEAD
-   "line": 16879,
-=======
-   "line": 17211,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17500,
    "auth": [
     "requireAuth"
    ],
@@ -6709,11 +6009,7 @@
   {
    "method": "POST",
    "path": "/agent/instructions/:id/resume",
-<<<<<<< HEAD
-   "line": 16886,
-=======
-   "line": 17218,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17507,
    "auth": [
     "requireAuth"
    ],
@@ -6737,11 +6033,7 @@
   {
    "method": "POST",
    "path": "/agent/pause-all",
-<<<<<<< HEAD
-   "line": 16895,
-=======
-   "line": 17227,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17516,
    "auth": [
     "requireAuth"
    ],
@@ -6761,11 +6053,7 @@
   {
    "method": "POST",
    "path": "/agent/resume-all",
-<<<<<<< HEAD
-   "line": 16900,
-=======
-   "line": 17232,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17521,
    "auth": [
     "requireAuth"
    ],
@@ -6785,11 +6073,7 @@
   {
    "method": "GET",
    "path": "/agent/activity",
-<<<<<<< HEAD
-   "line": 16908,
-=======
-   "line": 17240,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17529,
    "auth": [
     "requireAuth"
    ],
@@ -6809,11 +6093,7 @@
   {
    "method": "POST",
    "path": "/agent/writes/:id/undo",
-<<<<<<< HEAD
-   "line": 16936,
-=======
-   "line": 17268,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17557,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6838,11 +6118,7 @@
   {
    "method": "GET",
    "path": "/agent/drafts",
-<<<<<<< HEAD
-   "line": 16953,
-=======
-   "line": 17285,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17574,
    "auth": [
     "requireAuth"
    ],
@@ -6862,11 +6138,7 @@
   {
    "method": "GET",
    "path": "/agent/daily-line",
-<<<<<<< HEAD
-   "line": 16963,
-=======
-   "line": 17295,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17584,
    "auth": [
     "requireAuth"
    ],
@@ -6886,11 +6158,7 @@
   {
    "method": "GET",
    "path": "/audiences",
-<<<<<<< HEAD
-   "line": 16992,
-=======
-   "line": 17324,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17613,
    "auth": [
     "requireAuth"
    ],
@@ -6910,11 +6178,7 @@
   {
    "method": "POST",
    "path": "/audiences",
-<<<<<<< HEAD
-   "line": 16996,
-=======
-   "line": 17328,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17617,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6938,11 +6202,7 @@
   {
    "method": "PATCH",
    "path": "/audiences/:id",
-<<<<<<< HEAD
-   "line": 17015,
-=======
-   "line": 17347,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17636,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -6973,11 +6233,7 @@
   {
    "method": "DELETE",
    "path": "/audiences/:id",
-<<<<<<< HEAD
-   "line": 17043,
-=======
-   "line": 17375,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17664,
    "auth": [
     "requireAuth"
    ],
@@ -7001,11 +6257,7 @@
   {
    "method": "GET",
    "path": "/communications/hub",
-<<<<<<< HEAD
-   "line": 17055,
-=======
-   "line": 17387,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17676,
    "auth": [
     "requireAuth"
    ],
@@ -7025,11 +6277,7 @@
   {
    "method": "POST",
    "path": "/campaigns/:id/send",
-<<<<<<< HEAD
-   "line": 17157,
-=======
-   "line": 17489,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17778,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7055,11 +6303,7 @@
   {
    "method": "GET",
    "path": "/track/:recipientId/open.gif",
-<<<<<<< HEAD
-   "line": 17352,
-=======
-   "line": 17684,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 17973,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7081,11 +6325,7 @@
   {
    "method": "GET",
    "path": "/programs",
-<<<<<<< HEAD
-   "line": 17412,
-=======
-   "line": 17744,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18033,
    "auth": [
     "requireAuth"
    ],
@@ -7105,11 +6345,7 @@
   {
    "method": "POST",
    "path": "/programs",
-<<<<<<< HEAD
-   "line": 17430,
-=======
-   "line": 17762,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18051,
    "auth": [
     "requireAuth"
    ],
@@ -7141,11 +6377,7 @@
   {
    "method": "PUT",
    "path": "/programs/:id",
-<<<<<<< HEAD
-   "line": 17447,
-=======
-   "line": 17779,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18068,
    "auth": [
     "requireAuth"
    ],
@@ -7181,11 +6413,7 @@
   {
    "method": "DELETE",
    "path": "/programs/:id",
-<<<<<<< HEAD
-   "line": 17467,
-=======
-   "line": 17799,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18088,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7210,11 +6438,7 @@
   {
    "method": "POST",
    "path": "/programs/:id/grants",
-<<<<<<< HEAD
-   "line": 17473,
-=======
-   "line": 17805,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18094,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7243,11 +6467,7 @@
   {
    "method": "DELETE",
    "path": "/programs/:id/grants/:grantId",
-<<<<<<< HEAD
-   "line": 17499,
-=======
-   "line": 17831,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18120,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7274,11 +6494,7 @@
   {
    "method": "GET",
    "path": "/annual-fund",
-<<<<<<< HEAD
-   "line": 17509,
-=======
-   "line": 17841,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18130,
    "auth": [
     "requireAuth"
    ],
@@ -7300,11 +6516,7 @@
   {
    "method": "POST",
    "path": "/annual-fund/goal",
-<<<<<<< HEAD
-   "line": 17588,
-=======
-   "line": 17920,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18209,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7328,11 +6540,7 @@
   {
    "method": "POST",
    "path": "/stripe/connect",
-<<<<<<< HEAD
-   "line": 17603,
-=======
-   "line": 17935,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18224,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7353,11 +6561,7 @@
   {
    "method": "POST",
    "path": "/stripe/donation-page",
-<<<<<<< HEAD
-   "line": 17648,
-=======
-   "line": 17980,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18269,
    "auth": [
     "requireAuth"
    ],
@@ -7384,11 +6588,7 @@
   {
    "method": "GET",
    "path": "/stripe/status",
-<<<<<<< HEAD
-   "line": 17680,
-=======
-   "line": 18012,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18301,
    "auth": [
     "requireAuth"
    ],
@@ -7408,11 +6608,7 @@
   {
    "method": "GET",
    "path": "/org/public-list",
-<<<<<<< HEAD
-   "line": 17691,
-=======
-   "line": 18023,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18312,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7430,11 +6626,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/public",
-<<<<<<< HEAD
-   "line": 17697,
-=======
-   "line": 18029,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18318,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7456,11 +6648,7 @@
   {
    "method": "GET",
    "path": "/giving-pages",
-<<<<<<< HEAD
-   "line": 17740,
-=======
-   "line": 18072,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18361,
    "auth": [
     "requireAuth"
    ],
@@ -7480,11 +6668,7 @@
   {
    "method": "POST",
    "path": "/giving-pages",
-<<<<<<< HEAD
-   "line": 17777,
-=======
-   "line": 18109,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18398,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7518,11 +6702,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id",
-<<<<<<< HEAD
-   "line": 17804,
-=======
-   "line": 18136,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18425,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7560,11 +6740,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/page",
-<<<<<<< HEAD
-   "line": 17896,
-=======
-   "line": 18228,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18517,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7589,11 +6765,7 @@
   {
    "method": "PUT",
    "path": "/giving-pages/:id/page/draft",
-<<<<<<< HEAD
-   "line": 17913,
-=======
-   "line": 18245,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18534,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7619,11 +6791,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/starter",
-<<<<<<< HEAD
-   "line": 17938,
-=======
-   "line": 18270,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18559,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7649,11 +6817,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/publish",
-<<<<<<< HEAD
-   "line": 17952,
-=======
-   "line": 18284,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18573,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7679,11 +6843,7 @@
   {
    "method": "POST",
    "path": "/giving-pages/:id/page/revert",
-<<<<<<< HEAD
-   "line": 17963,
-=======
-   "line": 18295,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18584,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7709,11 +6869,7 @@
   {
    "method": "DELETE",
    "path": "/giving-pages/:id",
-<<<<<<< HEAD
-   "line": 17975,
-=======
-   "line": 18307,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18596,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -7738,11 +6894,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/giving-page/:pageSlug/public",
-<<<<<<< HEAD
-   "line": 17984,
-=======
-   "line": 18316,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18605,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7765,11 +6917,7 @@
   {
    "method": "POST",
    "path": "/org/:orgSlug/giving-page/:pageSlug/fundraisers",
-<<<<<<< HEAD
-   "line": 18137,
-=======
-   "line": 18469,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18758,
    "auth": [
     "donateLimiter"
    ],
@@ -7801,11 +6949,7 @@
   {
    "method": "GET",
    "path": "/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
-<<<<<<< HEAD
-   "line": 18208,
-=======
-   "line": 18540,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18829,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -7830,11 +6974,7 @@
   {
    "method": "GET",
    "path": "/peer-fundraisers/manage/:token",
-<<<<<<< HEAD
-   "line": 18248,
-=======
-   "line": 18580,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18869,
    "auth": [
     "fundraiserManageLimiter"
    ],
@@ -7858,11 +6998,7 @@
   {
    "method": "PUT",
    "path": "/peer-fundraisers/manage/:token",
-<<<<<<< HEAD
-   "line": 18270,
-=======
-   "line": 18602,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18891,
    "auth": [
     "fundraiserManageLimiter"
    ],
@@ -7891,11 +7027,7 @@
   {
    "method": "GET",
    "path": "/giving-pages/:id/fundraisers",
-<<<<<<< HEAD
-   "line": 18303,
-=======
-   "line": 18635,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18924,
    "auth": [
     "requireAuth"
    ],
@@ -7919,11 +7051,7 @@
   {
    "method": "PUT",
    "path": "/peer-fundraisers/:id",
-<<<<<<< HEAD
-   "line": 18323,
-=======
-   "line": 18655,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18944,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -7951,11 +7079,7 @@
   {
    "method": "POST",
    "path": "/donate/:orgSlug",
-<<<<<<< HEAD
-   "line": 18350,
-=======
-   "line": 18682,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 18971,
    "auth": [
     "donateLimiter"
    ],
@@ -7992,11 +7116,7 @@
   {
    "method": "POST",
    "path": "/stripe/campaign-link",
-<<<<<<< HEAD
-   "line": 18508,
-=======
-   "line": 18840,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19129,
    "auth": [
     "requireAuth"
    ],
@@ -8022,11 +7142,7 @@
   {
    "method": "GET",
    "path": "/finance/accounts",
-<<<<<<< HEAD
-   "line": 18543,
-=======
-   "line": 18875,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19164,
    "auth": [
     "requireAuth"
    ],
@@ -8046,11 +7162,7 @@
   {
    "method": "POST",
    "path": "/finance/accounts",
-<<<<<<< HEAD
-   "line": 18551,
-=======
-   "line": 18883,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19172,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8077,11 +7189,7 @@
   {
    "method": "PUT",
    "path": "/finance/accounts/:id",
-<<<<<<< HEAD
-   "line": 18567,
-=======
-   "line": 18899,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19188,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8111,11 +7219,7 @@
   {
    "method": "GET",
    "path": "/finance/funds",
-<<<<<<< HEAD
-   "line": 18586,
-=======
-   "line": 18918,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19207,
    "auth": [
     "requireAuth"
    ],
@@ -8135,11 +7239,7 @@
   {
    "method": "POST",
    "path": "/finance/funds",
-<<<<<<< HEAD
-   "line": 18604,
-=======
-   "line": 18936,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19225,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8165,11 +7265,7 @@
   {
    "method": "PUT",
    "path": "/finance/funds/:id",
-<<<<<<< HEAD
-   "line": 18620,
-=======
-   "line": 18952,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19241,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8200,11 +7296,7 @@
   {
    "method": "GET",
    "path": "/finance/transactions",
-<<<<<<< HEAD
-   "line": 18649,
-=======
-   "line": 18981,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19270,
    "auth": [
     "requireAuth"
    ],
@@ -8233,11 +7325,7 @@
   {
    "method": "POST",
    "path": "/finance/transactions",
-<<<<<<< HEAD
-   "line": 18669,
-=======
-   "line": 19001,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19290,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -8272,11 +7360,7 @@
   {
    "method": "DELETE",
    "path": "/finance/transactions/:id",
-<<<<<<< HEAD
-   "line": 18699,
-=======
-   "line": 19031,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19320,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8301,11 +7385,7 @@
   {
    "method": "GET",
    "path": "/finance/budgets",
-<<<<<<< HEAD
-   "line": 18736,
-=======
-   "line": 19068,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19357,
    "auth": [
     "requireAuth"
    ],
@@ -8328,11 +7408,7 @@
   {
    "method": "POST",
    "path": "/finance/budgets",
-<<<<<<< HEAD
-   "line": 18793,
-=======
-   "line": 19125,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19414,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8362,11 +7438,7 @@
   {
    "method": "DELETE",
    "path": "/finance/budgets/:id",
-<<<<<<< HEAD
-   "line": 18827,
-=======
-   "line": 19159,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19448,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8392,11 +7464,7 @@
   {
    "method": "GET",
    "path": "/finance/summary",
-<<<<<<< HEAD
-   "line": 18884,
-=======
-   "line": 19216,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19505,
    "auth": [
     "requireAuth"
    ],
@@ -8418,11 +7486,7 @@
   {
    "method": "GET",
    "path": "/finance/stripe-summary",
-<<<<<<< HEAD
-   "line": 18980,
-=======
-   "line": 19312,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19601,
    "auth": [
     "requireAuth"
    ],
@@ -8442,11 +7506,7 @@
   {
    "method": "GET",
    "path": "/finance/audit-log",
-<<<<<<< HEAD
-   "line": 19027,
-=======
-   "line": 19359,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19648,
    "auth": [
     "requireAuth"
    ],
@@ -8470,11 +7530,7 @@
   {
    "method": "POST",
    "path": "/demo-request",
-<<<<<<< HEAD
-   "line": 19043,
-=======
-   "line": 19375,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19664,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -8502,11 +7558,7 @@
   {
    "method": "GET",
    "path": "/reports/board",
-<<<<<<< HEAD
-   "line": 19097,
-=======
-   "line": 19429,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19718,
    "auth": [
     "requireAuth"
    ],
@@ -8526,11 +7578,7 @@
   {
    "method": "GET",
    "path": "/reports/board/:id/pdf",
-<<<<<<< HEAD
-   "line": 19110,
-=======
-   "line": 19442,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19731,
    "auth": [
     "requireAuth"
    ],
@@ -8554,11 +7602,7 @@
   {
    "method": "POST",
    "path": "/reports/board",
-<<<<<<< HEAD
-   "line": 19128,
-=======
-   "line": 19460,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 19749,
    "auth": [
     "requireAuth"
    ],
@@ -8578,11 +7622,7 @@
   {
    "method": "GET",
    "path": "/reports/activity",
-<<<<<<< HEAD
-   "line": 20254,
-=======
-   "line": 20599,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 20888,
    "auth": [
     "requireAuth"
    ],
@@ -8606,11 +7646,7 @@
   {
    "method": "GET",
    "path": "/reports/:key",
-<<<<<<< HEAD
-   "line": 20267,
-=======
-   "line": 20612,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 20901,
    "auth": [
     "requireAuth"
    ],
@@ -8634,11 +7670,7 @@
   {
    "method": "POST",
    "path": "/digests/run-daily",
-<<<<<<< HEAD
-   "line": 20795,
-=======
-   "line": 21140,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 21429,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8662,11 +7694,7 @@
   {
    "method": "POST",
    "path": "/photos/run",
-<<<<<<< HEAD
-   "line": 21046,
-=======
-   "line": 21391,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 21680,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8687,11 +7715,7 @@
   {
    "method": "POST",
    "path": "/geocode/run",
-<<<<<<< HEAD
-   "line": 21053,
-=======
-   "line": 21398,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 21687,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8714,11 +7738,7 @@
   {
    "method": "GET",
    "path": "/geocode/status",
-<<<<<<< HEAD
-   "line": 21063,
-=======
-   "line": 21408,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 21697,
    "auth": [
     "requireAuth"
    ],
@@ -8738,11 +7758,7 @@
   {
    "method": "POST",
    "path": "/nudges/run",
-<<<<<<< HEAD
-   "line": 21374,
-=======
-   "line": 21719,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 22008,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8766,11 +7782,7 @@
   {
    "method": "POST",
    "path": "/step-reminders/run",
-<<<<<<< HEAD
-   "line": 21518,
-=======
-   "line": 21863,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 22152,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8795,11 +7807,7 @@
   {
    "method": "GET",
    "path": "/digests/preview",
-<<<<<<< HEAD
-   "line": 21532,
-=======
-   "line": 21877,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 22166,
    "auth": [
     "requireAuth"
    ],
@@ -8821,11 +7829,7 @@
   {
    "method": "POST",
    "path": "/digests/run",
-<<<<<<< HEAD
-   "line": 21560,
-=======
-   "line": 21905,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 22194,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -8851,11 +7855,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/impact-summary/pdf",
-<<<<<<< HEAD
-   "line": 22299,
-=======
-   "line": 22644,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 22933,
    "auth": [
     "requireAuth"
    ],
@@ -8879,11 +7879,7 @@
   {
    "method": "GET",
    "path": "/sequences/builder",
-<<<<<<< HEAD
-   "line": 22865,
-=======
-   "line": 23210,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23499,
    "auth": [
     "requireAuth"
    ],
@@ -8903,11 +7899,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked",
-<<<<<<< HEAD
-   "line": 22940,
-=======
-   "line": 23285,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23574,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8929,11 +7921,7 @@
   {
    "method": "PUT",
    "path": "/sequences/tracked/:id",
-<<<<<<< HEAD
-   "line": 22941,
-=======
-   "line": 23286,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23575,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -8959,11 +7947,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id",
-<<<<<<< HEAD
-   "line": 22943,
-=======
-   "line": 23288,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23577,
    "auth": [
     "requireAuth"
    ],
@@ -8987,11 +7971,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id/turn-on-preview",
-<<<<<<< HEAD
-   "line": 22955,
-=======
-   "line": 23300,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23589,
    "auth": [
     "requireAuth"
    ],
@@ -9015,11 +7995,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/turn-on",
-<<<<<<< HEAD
-   "line": 22971,
-=======
-   "line": 23316,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23605,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9045,11 +8021,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/turn-off",
-<<<<<<< HEAD
-   "line": 23006,
-=======
-   "line": 23351,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23640,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9075,11 +8047,7 @@
   {
    "method": "GET",
    "path": "/sequences/tracked/:id/preview",
-<<<<<<< HEAD
-   "line": 23016,
-=======
-   "line": 23361,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23650,
    "auth": [
     "requireAuth"
    ],
@@ -9107,11 +8075,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/:id/enroll/:donorId",
-<<<<<<< HEAD
-   "line": 23055,
-=======
-   "line": 23400,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23689,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9138,11 +8102,7 @@
   {
    "method": "DELETE",
    "path": "/sequences/tracked/:id/enroll/:donorId",
-<<<<<<< HEAD
-   "line": 23101,
-=======
-   "line": 23446,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23735,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9169,11 +8129,7 @@
   {
    "method": "GET",
    "path": "/sequences/home",
-<<<<<<< HEAD
-   "line": 23118,
-=======
-   "line": 23463,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23752,
    "auth": [
     "requireAuth"
    ],
@@ -9193,11 +8149,7 @@
   {
    "method": "POST",
    "path": "/sequences/tracked/run",
-<<<<<<< HEAD
-   "line": 23145,
-=======
-   "line": 23490,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23779,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9220,11 +8172,7 @@
   {
    "method": "POST",
    "path": "/sequences/process",
-<<<<<<< HEAD
-   "line": 23160,
-=======
-   "line": 23505,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23794,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9245,11 +8193,7 @@
   {
    "method": "GET",
    "path": "/sequences",
-<<<<<<< HEAD
-   "line": 23166,
-=======
-   "line": 23511,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23800,
    "auth": [
     "requireAuth"
    ],
@@ -9269,11 +8213,7 @@
   {
    "method": "POST",
    "path": "/sequences",
-<<<<<<< HEAD
-   "line": 23179,
-=======
-   "line": 23524,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23813,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9299,11 +8239,7 @@
   {
    "method": "GET",
    "path": "/sequences/:id/steps",
-<<<<<<< HEAD
-   "line": 23198,
-=======
-   "line": 23543,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23832,
    "auth": [
     "requireAuth"
    ],
@@ -9327,11 +8263,7 @@
   {
    "method": "GET",
    "path": "/sequences/:id/enrollments",
-<<<<<<< HEAD
-   "line": 23205,
-=======
-   "line": 23550,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23839,
    "auth": [
     "requireAuth"
    ],
@@ -9355,11 +8287,7 @@
   {
    "method": "POST",
    "path": "/sequences/:id/enroll",
-<<<<<<< HEAD
-   "line": 23223,
-=======
-   "line": 23568,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23857,
    "auth": [
     "requireAuth",
     "requirePlan(team)"
@@ -9387,11 +8315,7 @@
   {
    "method": "POST",
    "path": "/sequences/:id/unenroll",
-<<<<<<< HEAD
-   "line": 23256,
-=======
-   "line": 23601,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23890,
    "auth": [
     "requireAuth"
    ],
@@ -9418,11 +8342,7 @@
   {
    "method": "PUT",
    "path": "/sequences/:id",
-<<<<<<< HEAD
-   "line": 23266,
-=======
-   "line": 23611,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23900,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9453,11 +8373,7 @@
   {
    "method": "PATCH",
    "path": "/sequences/:id/status",
-<<<<<<< HEAD
-   "line": 23288,
-=======
-   "line": 23633,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23922,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9484,11 +8400,7 @@
   {
    "method": "DELETE",
    "path": "/sequences/:id",
-<<<<<<< HEAD
-   "line": 23299,
-=======
-   "line": 23644,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23933,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9513,11 +8425,7 @@
   {
    "method": "GET",
    "path": "/impact-metrics",
-<<<<<<< HEAD
-   "line": 23308,
-=======
-   "line": 23653,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23942,
    "auth": [
     "requireAuth"
    ],
@@ -9537,11 +8445,7 @@
   {
    "method": "POST",
    "path": "/impact-metrics",
-<<<<<<< HEAD
-   "line": 23313,
-=======
-   "line": 23658,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23947,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9567,11 +8471,7 @@
   {
    "method": "PUT",
    "path": "/impact-metrics/:id",
-<<<<<<< HEAD
-   "line": 23325,
-=======
-   "line": 23670,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23959,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9602,11 +8502,7 @@
   {
    "method": "DELETE",
    "path": "/impact-metrics/:id",
-<<<<<<< HEAD
-   "line": 23336,
-=======
-   "line": 23681,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23970,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9631,11 +8527,7 @@
   {
    "method": "GET",
    "path": "/milestone-drafts",
-<<<<<<< HEAD
-   "line": 23344,
-=======
-   "line": 23689,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23978,
    "auth": [
     "requireAuth"
    ],
@@ -9657,11 +8549,7 @@
   {
    "method": "PUT",
    "path": "/milestone-drafts/:id",
-<<<<<<< HEAD
-   "line": 23357,
-=======
-   "line": 23702,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 23991,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9689,11 +8577,7 @@
   {
    "method": "POST",
    "path": "/milestone-drafts/:id/dismiss",
-<<<<<<< HEAD
-   "line": 23369,
-=======
-   "line": 23714,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24003,
    "auth": [
     "requireAuth"
    ],
@@ -9717,11 +8601,7 @@
   {
    "method": "POST",
    "path": "/milestone-drafts/:id/send",
-<<<<<<< HEAD
-   "line": 23378,
-=======
-   "line": 23723,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24012,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -9747,11 +8627,7 @@
   {
    "method": "GET",
    "path": "/note-reminders",
-<<<<<<< HEAD
-   "line": 23422,
-=======
-   "line": 23767,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24056,
    "auth": [
     "requireAuth"
    ],
@@ -9773,11 +8649,7 @@
   {
    "method": "POST",
    "path": "/note-reminders/:id/send",
-<<<<<<< HEAD
-   "line": 23437,
-=======
-   "line": 23782,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24071,
    "auth": [
     "requireAuth"
    ],
@@ -9801,11 +8673,7 @@
   {
    "method": "POST",
    "path": "/note-reminders/:id/dismiss",
-<<<<<<< HEAD
-   "line": 23460,
-=======
-   "line": 23805,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24094,
    "auth": [
     "requireAuth"
    ],
@@ -9829,11 +8697,7 @@
   {
    "method": "POST",
    "path": "/voice-memos/transcribe",
-<<<<<<< HEAD
-   "line": 23477,
-=======
-   "line": 23822,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24111,
    "auth": [
     "requireAuth"
    ],
@@ -9859,11 +8723,7 @@
   {
    "method": "POST",
    "path": "/voice-memos/save",
-<<<<<<< HEAD
-   "line": 23535,
-=======
-   "line": 23880,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24169,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -9893,11 +8753,7 @@
   {
    "method": "GET",
    "path": "/import-field-mappings",
-<<<<<<< HEAD
-   "line": 23597,
-=======
-   "line": 23942,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24231,
    "auth": [
     "requireAuth"
    ],
@@ -9919,11 +8775,7 @@
   {
    "method": "GET",
    "path": "/custom-fields",
-<<<<<<< HEAD
-   "line": 23608,
-=======
-   "line": 23953,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24242,
    "auth": [
     "requireAuth"
    ],
@@ -9946,11 +8798,7 @@
   {
    "method": "GET",
    "path": "/custom-fields/kept-raw",
-<<<<<<< HEAD
-   "line": 23621,
-=======
-   "line": 23966,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24255,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -9971,11 +8819,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/kept-raw/:donorId",
-<<<<<<< HEAD
-   "line": 23646,
-=======
-   "line": 23991,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24280,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10004,11 +8848,7 @@
   {
    "method": "POST",
    "path": "/custom-fields",
-<<<<<<< HEAD
-   "line": 23662,
-=======
-   "line": 24007,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24296,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10037,11 +8877,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/reorder",
-<<<<<<< HEAD
-   "line": 23701,
-=======
-   "line": 24046,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24335,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10068,11 +8904,7 @@
   {
    "method": "PUT",
    "path": "/custom-fields/:id",
-<<<<<<< HEAD
-   "line": 23712,
-=======
-   "line": 24057,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24346,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10105,11 +8937,7 @@
   {
    "method": "POST",
    "path": "/custom-fields/:id/archive",
-<<<<<<< HEAD
-   "line": 23755,
-=======
-   "line": 24100,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24389,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10135,11 +8963,7 @@
   {
    "method": "POST",
    "path": "/custom-fields/:id/restore",
-<<<<<<< HEAD
-   "line": 23766,
-=======
-   "line": 24111,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24400,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10165,11 +8989,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/custom-fields",
-<<<<<<< HEAD
-   "line": 23780,
-=======
-   "line": 24125,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24414,
    "auth": [
     "requireAuth"
    ],
@@ -10193,11 +9013,7 @@
   {
    "method": "PUT",
    "path": "/donors/:id/custom-fields",
-<<<<<<< HEAD
-   "line": 23788,
-=======
-   "line": 24133,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24422,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10224,11 +9040,7 @@
   {
    "method": "GET",
    "path": "/gifts/:id/custom-fields",
-<<<<<<< HEAD
-   "line": 23799,
-=======
-   "line": 24144,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24433,
    "auth": [
     "requireAuth"
    ],
@@ -10252,11 +9064,7 @@
   {
    "method": "PUT",
    "path": "/gifts/:id/custom-fields",
-<<<<<<< HEAD
-   "line": 23807,
-=======
-   "line": 24152,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24441,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10283,11 +9091,7 @@
   {
    "method": "POST",
    "path": "/recurring/check-cards",
-<<<<<<< HEAD
-   "line": 24078,
-=======
-   "line": 24423,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 24712,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10312,11 +9116,7 @@
   {
    "method": "POST",
    "path": "/admin/reconcile/run",
-<<<<<<< HEAD
-   "line": 24555,
-=======
-   "line": 24900,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25189,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -10337,11 +9137,7 @@
   {
    "method": "POST",
    "path": "/admin/webhook-subscriptions/check",
-<<<<<<< HEAD
-   "line": 24562,
-=======
-   "line": 24907,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25196,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -10362,11 +9158,7 @@
   {
    "method": "GET",
    "path": "/workflows",
-<<<<<<< HEAD
-   "line": 24991,
-=======
-   "line": 25336,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25625,
    "auth": [
     "requireAuth"
    ],
@@ -10386,11 +9178,7 @@
   {
    "method": "GET",
    "path": "/workflows/:id/runs",
-<<<<<<< HEAD
-   "line": 25024,
-=======
-   "line": 25369,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25658,
    "auth": [
     "requireAuth"
    ],
@@ -10414,11 +9202,7 @@
   {
    "method": "PUT",
    "path": "/workflows/:id",
-<<<<<<< HEAD
-   "line": 25033,
-=======
-   "line": 25378,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25667,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10447,11 +9231,7 @@
   {
    "method": "POST",
    "path": "/workflows/simulate",
-<<<<<<< HEAD
-   "line": 25058,
-=======
-   "line": 25403,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25692,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10480,11 +9260,7 @@
   {
    "method": "POST",
    "path": "/recurring/process-dunning",
-<<<<<<< HEAD
-   "line": 25069,
-=======
-   "line": 25414,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25703,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10505,11 +9281,7 @@
   {
    "method": "POST",
    "path": "/workflows/run-sweeps",
-<<<<<<< HEAD
-   "line": 25078,
-=======
-   "line": 25423,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25712,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -10530,11 +9302,7 @@
   {
    "method": "GET",
    "path": "/recurring/update-card",
-<<<<<<< HEAD
-   "line": 25092,
-=======
-   "line": 25437,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25726,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -10559,11 +9327,7 @@
   {
    "method": "GET",
    "path": "/recurring/roster",
-<<<<<<< HEAD
-   "line": 25169,
-=======
-   "line": 25514,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25803,
    "auth": [
     "requireAuth"
    ],
@@ -10583,11 +9347,7 @@
   {
    "method": "GET",
    "path": "/recurring/movement",
-<<<<<<< HEAD
-   "line": 25241,
-=======
-   "line": 25586,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25875,
    "auth": [
     "requireAuth"
    ],
@@ -10607,11 +9367,7 @@
   {
    "method": "GET",
    "path": "/recurring/exceptions",
-<<<<<<< HEAD
-   "line": 25317,
-=======
-   "line": 25662,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 25951,
    "auth": [
     "requireAuth"
    ],
@@ -10631,11 +9387,7 @@
   {
    "method": "GET",
    "path": "/recurring/unlinked",
-<<<<<<< HEAD
-   "line": 25414,
-=======
-   "line": 25759,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26048,
    "auth": [
     "requireAuth"
    ],
@@ -10655,11 +9407,7 @@
   {
    "method": "POST",
    "path": "/recurring/unlinked/send-reconnect",
-<<<<<<< HEAD
-   "line": 25498,
-=======
-   "line": 25843,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26132,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -10685,11 +9433,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/pause",
-<<<<<<< HEAD
-   "line": 25558,
-=======
-   "line": 25903,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26192,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10716,11 +9460,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/resume",
-<<<<<<< HEAD
-   "line": 25592,
-=======
-   "line": 25937,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26226,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10745,11 +9485,7 @@
   {
    "method": "POST",
    "path": "/recurring/subs/:subId/cancel",
-<<<<<<< HEAD
-   "line": 25615,
-=======
-   "line": 25960,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26249,
    "auth": [
     "requireAuth"
    ],
@@ -10773,11 +9509,7 @@
   {
    "method": "PUT",
    "path": "/recurring/subs/:subId/fund",
-<<<<<<< HEAD
-   "line": 25639,
-=======
-   "line": 25984,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26273,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10802,11 +9534,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposals",
-<<<<<<< HEAD
-   "line": 25667,
-=======
-   "line": 26012,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26301,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -10834,11 +9562,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposals/:id/resend",
-<<<<<<< HEAD
-   "line": 25749,
-=======
-   "line": 26094,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26383,
    "auth": [
     "requireAuth"
    ],
@@ -10862,11 +9586,7 @@
   {
    "method": "GET",
    "path": "/recurring/proposal",
-<<<<<<< HEAD
-   "line": 25811,
-=======
-   "line": 26156,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26445,
    "auth": [
     "donateLimiter"
    ],
@@ -10890,11 +9610,7 @@
   {
    "method": "POST",
    "path": "/recurring/proposal/confirm",
-<<<<<<< HEAD
-   "line": 25856,
-=======
-   "line": 26201,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26490,
    "auth": [
     "donateLimiter"
    ],
@@ -10918,11 +9634,7 @@
   {
    "method": "GET",
    "path": "/recurring/health",
-<<<<<<< HEAD
-   "line": 26009,
-=======
-   "line": 26354,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26643,
    "auth": [
     "requireAuth"
    ],
@@ -10942,11 +9654,7 @@
   {
    "method": "GET",
    "path": "/impact",
-<<<<<<< HEAD
-   "line": 26116,
-=======
-   "line": 26461,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26750,
    "auth": [
     "requireAuth"
    ],
@@ -10966,11 +9674,7 @@
   {
    "method": "POST",
    "path": "/recurring/:donorId/resend",
-<<<<<<< HEAD
-   "line": 26299,
-=======
-   "line": 26644,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26933,
    "auth": [
     "requireAuth"
    ],
@@ -10994,11 +9698,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/recurring-subscription",
-<<<<<<< HEAD
-   "line": 26329,
-=======
-   "line": 26674,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 26963,
    "auth": [
     "requireAuth"
    ],
@@ -11022,11 +9722,7 @@
   {
    "method": "POST",
    "path": "/pledges/process-reminders",
-<<<<<<< HEAD
-   "line": 26465,
-=======
-   "line": 26812,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27101,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11047,11 +9743,7 @@
   {
    "method": "POST",
    "path": "/pledges/:id/resend",
-<<<<<<< HEAD
-   "line": 26474,
-=======
-   "line": 26821,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27110,
    "auth": [
     "requireAuth"
    ],
@@ -11075,11 +9767,7 @@
   {
    "method": "GET",
    "path": "/admin/billing-diagnostic",
-<<<<<<< HEAD
-   "line": 26655,
-=======
-   "line": 27002,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27291,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11100,11 +9788,7 @@
   {
    "method": "GET",
    "path": "/billing/status",
-<<<<<<< HEAD
-   "line": 26666,
-=======
-   "line": 27013,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27302,
    "auth": [
     "requireAuth"
    ],
@@ -11124,11 +9808,7 @@
   {
    "method": "POST",
    "path": "/billing/create-checkout",
-<<<<<<< HEAD
-   "line": 26765,
-=======
-   "line": 27112,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27401,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11151,11 +9831,7 @@
   {
    "method": "POST",
    "path": "/billing/create-portal",
-<<<<<<< HEAD
-   "line": 26827,
-=======
-   "line": 27174,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27463,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11176,11 +9852,7 @@
   {
    "method": "POST",
    "path": "/admin/close-links",
-<<<<<<< HEAD
-   "line": 27086,
-=======
-   "line": 27433,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27722,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11201,11 +9873,7 @@
   {
    "method": "GET",
    "path": "/admin/close-links",
-<<<<<<< HEAD
-   "line": 27266,
-=======
-   "line": 27613,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 27902,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11226,11 +9894,7 @@
   {
    "method": "POST",
    "path": "/billing/cancel",
-<<<<<<< HEAD
-   "line": 27381,
-=======
-   "line": 27728,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28017,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -11251,11 +9915,7 @@
   {
    "method": "GET",
    "path": "/billing/cancel/:token",
-<<<<<<< HEAD
-   "line": 27422,
-=======
-   "line": 27769,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28058,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -11277,11 +9937,7 @@
   {
    "method": "POST",
    "path": "/billing/cancel/:token",
-<<<<<<< HEAD
-   "line": 27437,
-=======
-   "line": 27784,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28073,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -11303,11 +9959,7 @@
   {
    "method": "POST",
    "path": "/billing/trial-reminders/run",
-<<<<<<< HEAD
-   "line": 27542,
-=======
-   "line": 27889,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28178,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11331,11 +9983,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs",
-<<<<<<< HEAD
-   "line": 27633,
-=======
-   "line": 27980,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28269,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11356,11 +10004,7 @@
   {
    "method": "GET",
    "path": "/admin/metrics",
-<<<<<<< HEAD
-   "line": 27657,
-=======
-   "line": 28004,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28293,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11381,11 +10025,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs/:id",
-<<<<<<< HEAD
-   "line": 27711,
-=======
-   "line": 28058,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28347,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11410,11 +10050,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/extend-trial",
-<<<<<<< HEAD
-   "line": 27737,
-=======
-   "line": 28084,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28373,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11441,11 +10077,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/change-plan",
-<<<<<<< HEAD
-   "line": 27759,
-=======
-   "line": 28106,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28395,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11472,11 +10104,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/email-switch",
-<<<<<<< HEAD
-   "line": 27778,
-=======
-   "line": 28125,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28414,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11505,11 +10133,7 @@
   {
    "method": "GET",
    "path": "/admin/orgs/:id/sample-data",
-<<<<<<< HEAD
-   "line": 27833,
-=======
-   "line": 28180,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28469,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11534,11 +10158,7 @@
   {
    "method": "POST",
    "path": "/admin/orgs/:id/clear-sample-data",
-<<<<<<< HEAD
-   "line": 27848,
-=======
-   "line": 28195,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28484,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11565,11 +10185,7 @@
   {
    "method": "DELETE",
    "path": "/admin/orgs/:id",
-<<<<<<< HEAD
-   "line": 27900,
-=======
-   "line": 28247,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28536,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11596,11 +10212,7 @@
   {
    "method": "GET",
    "path": "/admin/data-integrity",
-<<<<<<< HEAD
-   "line": 27987,
-=======
-   "line": 28334,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28623,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11621,11 +10233,7 @@
   {
    "method": "POST",
    "path": "/admin/data-integrity/fix",
-<<<<<<< HEAD
-   "line": 28033,
-=======
-   "line": 28380,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28669,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -11646,11 +10254,7 @@
   {
    "method": "POST",
    "path": "/gmail/auth-url",
-<<<<<<< HEAD
-   "line": 28210,
-=======
-   "line": 28557,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28846,
    "auth": [
     "requireAuth"
    ],
@@ -11670,11 +10274,7 @@
   {
    "method": "GET",
    "path": "/gmail/callback",
-<<<<<<< HEAD
-   "line": 28226,
-=======
-   "line": 28573,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28862,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -11696,11 +10296,7 @@
   {
    "method": "GET",
    "path": "/gmail/status",
-<<<<<<< HEAD
-   "line": 28274,
-=======
-   "line": 28621,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28910,
    "auth": [
     "requireAuth"
    ],
@@ -11720,11 +10316,7 @@
   {
    "method": "DELETE",
    "path": "/gmail/disconnect",
-<<<<<<< HEAD
-   "line": 28290,
-=======
-   "line": 28637,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28926,
    "auth": [
     "requireAuth"
    ],
@@ -11744,11 +10336,7 @@
   {
    "method": "POST",
    "path": "/gmail/sync",
-<<<<<<< HEAD
-   "line": 28303,
-=======
-   "line": 28650,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28939,
    "auth": [
     "requireAuth"
    ],
@@ -11768,11 +10356,7 @@
   {
    "method": "POST",
    "path": "/gmail/send",
-<<<<<<< HEAD
-   "line": 28313,
-=======
-   "line": 28660,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 28949,
    "auth": [
     "requireAuth"
    ],
@@ -11799,11 +10383,7 @@
   {
    "method": "GET",
    "path": "/gmail/thread/:donorId",
-<<<<<<< HEAD
-   "line": 28369,
-=======
-   "line": 28716,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29005,
    "auth": [
     "requireAuth"
    ],
@@ -11827,11 +10407,7 @@
   {
    "method": "GET",
    "path": "/events",
-<<<<<<< HEAD
-   "line": 28392,
-=======
-   "line": 28739,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29028,
    "auth": [
     "requireAuth"
    ],
@@ -11851,11 +10427,7 @@
   {
    "method": "POST",
    "path": "/events",
-<<<<<<< HEAD
-   "line": 28412,
-=======
-   "line": 28759,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29048,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11885,11 +10457,7 @@
   {
    "method": "PUT",
    "path": "/events/:id",
-<<<<<<< HEAD
-   "line": 28428,
-=======
-   "line": 28775,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29064,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -11926,11 +10494,7 @@
   {
    "method": "DELETE",
    "path": "/events/:id",
-<<<<<<< HEAD
-   "line": 28454,
-=======
-   "line": 28801,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29090,
    "auth": [
     "requireAuth"
    ],
@@ -11954,11 +10518,7 @@
   {
    "method": "GET",
    "path": "/events/:id",
-<<<<<<< HEAD
-   "line": 28462,
-=======
-   "line": 28809,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29098,
    "auth": [
     "requireAuth"
    ],
@@ -11982,11 +10542,7 @@
   {
    "method": "POST",
    "path": "/events/:id/attendees",
-<<<<<<< HEAD
-   "line": 28487,
-=======
-   "line": 28834,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29123,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12018,11 +10574,7 @@
   {
    "method": "PATCH",
    "path": "/events/:id/attendees/:attendeeId",
-<<<<<<< HEAD
-   "line": 28524,
-=======
-   "line": 28871,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29160,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12055,11 +10607,7 @@
   {
    "method": "DELETE",
    "path": "/events/:id/attendees/:attendeeId",
-<<<<<<< HEAD
-   "line": 28576,
-=======
-   "line": 28923,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29212,
    "auth": [
     "requireAuth"
    ],
@@ -12085,11 +10633,7 @@
   {
    "method": "POST",
    "path": "/events/:id/follow-up",
-<<<<<<< HEAD
-   "line": 28584,
-=======
-   "line": 28931,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29220,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12118,11 +10662,7 @@
   {
    "method": "GET",
    "path": "/donors/:id/events",
-<<<<<<< HEAD
-   "line": 28610,
-=======
-   "line": 28957,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29246,
    "auth": [
     "requireAuth"
    ],
@@ -12146,11 +10686,7 @@
   {
    "method": "GET",
    "path": "/org/export",
-<<<<<<< HEAD
-   "line": 28626,
-=======
-   "line": 28973,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29262,
    "auth": [
     "requireAuth"
    ],
@@ -12170,11 +10706,7 @@
   {
    "method": "GET",
    "path": "/org/export/csv",
-<<<<<<< HEAD
-   "line": 28711,
-=======
-   "line": 29058,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29347,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12199,11 +10731,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/config",
-<<<<<<< HEAD
-   "line": 29226,
-=======
-   "line": 29573,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29862,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -12225,11 +10753,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/request-link",
-<<<<<<< HEAD
-   "line": 29239,
-=======
-   "line": 29586,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29875,
    "auth": [
     "portalLinkIpLimiter",
     "portalLinkEmailLimiter"
@@ -12254,11 +10778,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/verify",
-<<<<<<< HEAD
-   "line": 29265,
-=======
-   "line": 29612,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29901,
    "auth": [
     "portalLinkIpLimiter"
    ],
@@ -12282,11 +10802,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/logout",
-<<<<<<< HEAD
-   "line": 29305,
-=======
-   "line": 29652,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29941,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -12308,11 +10824,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/session",
-<<<<<<< HEAD
-   "line": 29312,
-=======
-   "line": 29659,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29948,
    "auth": [
     "requirePortalSession"
    ],
@@ -12336,11 +10848,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/give-default",
-<<<<<<< HEAD
-   "line": 29323,
-=======
-   "line": 29670,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29959,
    "auth": [
     "requirePortalSession"
    ],
@@ -12364,11 +10872,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/me",
-<<<<<<< HEAD
-   "line": 29345,
-=======
-   "line": 29692,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 29981,
    "auth": [
     "requirePortalSession"
    ],
@@ -12392,11 +10896,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/impact/:updateId/viewed",
-<<<<<<< HEAD
-   "line": 29573,
-=======
-   "line": 29920,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30209,
    "auth": [
     "requirePortalSession"
    ],
@@ -12422,11 +10922,7 @@
   {
    "method": "GET",
    "path": "/portal/:orgSlug/receipts/:id/pdf",
-<<<<<<< HEAD
-   "line": 29583,
-=======
-   "line": 29930,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30219,
    "auth": [
     "requirePortalSession"
    ],
@@ -12454,11 +10950,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/pause",
-<<<<<<< HEAD
-   "line": 29618,
-=======
-   "line": 29965,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30254,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -12487,11 +10979,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/resume",
-<<<<<<< HEAD
-   "line": 29655,
-=======
-   "line": 30002,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30291,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -12518,11 +11006,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/amount",
-<<<<<<< HEAD
-   "line": 29679,
-=======
-   "line": 30026,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30315,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -12549,11 +11033,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/cancel",
-<<<<<<< HEAD
-   "line": 29729,
-=======
-   "line": 30076,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30365,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -12580,11 +11060,7 @@
   {
    "method": "POST",
    "path": "/portal/:orgSlug/recurring/:subId/update-card",
-<<<<<<< HEAD
-   "line": 29757,
-=======
-   "line": 30104,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30393,
    "auth": [
     "portalMutationLimiter",
     "requirePortalSession"
@@ -12611,11 +11087,7 @@
   {
    "method": "GET",
    "path": "/portal-assets/:id",
-<<<<<<< HEAD
-   "line": 29782,
-=======
-   "line": 30129,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30418,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -12639,11 +11111,7 @@
   {
    "method": "GET",
    "path": "/person-photos/:id",
-<<<<<<< HEAD
-   "line": 29821,
-=======
-   "line": 30168,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30457,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -12668,11 +11136,7 @@
   {
    "method": "GET",
    "path": "/people/photos",
-<<<<<<< HEAD
-   "line": 29853,
-=======
-   "line": 30200,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30489,
    "auth": [
     "requireAuth"
    ],
@@ -12692,11 +11156,7 @@
   {
    "method": "POST",
    "path": "/gifts/:id/cheque",
-<<<<<<< HEAD
-   "line": 29971,
-=======
-   "line": 30308,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30607,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12723,11 +11183,7 @@
   {
    "method": "POST",
    "path": "/donors/:id/photo",
-<<<<<<< HEAD
-   "line": 29982,
-=======
-   "line": 30319,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30618,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12754,7 +11210,7 @@
   {
    "method": "POST",
    "path": "/photos/bulk",
-   "line": 30005,
+   "line": 30641,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12777,11 +11233,7 @@
   {
    "method": "DELETE",
    "path": "/donors/:id/photo",
-<<<<<<< HEAD
-   "line": 30072,
-=======
-   "line": 30328,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30708,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -12806,11 +11258,7 @@
   {
    "method": "POST",
    "path": "/assets/run-purge",
-<<<<<<< HEAD
-   "line": 30085,
-=======
-   "line": 30341,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30721,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12831,11 +11279,7 @@
   {
    "method": "GET",
    "path": "/portal-settings",
-<<<<<<< HEAD
-   "line": 30089,
-=======
-   "line": 30345,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 30725,
    "auth": [
     "requireAuth"
    ],
@@ -12855,11 +11299,7 @@
   {
    "method": "GET",
    "path": "/portal-page",
-<<<<<<< HEAD
-   "line": 30650,
-=======
-   "line": 30906,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31286,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -12880,11 +11320,7 @@
   {
    "method": "PUT",
    "path": "/portal-page/draft",
-<<<<<<< HEAD
-   "line": 30660,
-=======
-   "line": 30916,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31296,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12906,11 +11342,7 @@
   {
    "method": "POST",
    "path": "/portal-page/publish",
-<<<<<<< HEAD
-   "line": 30674,
-=======
-   "line": 30930,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31310,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12932,11 +11364,7 @@
   {
    "method": "POST",
    "path": "/portal-page/revert",
-<<<<<<< HEAD
-   "line": 30683,
-=======
-   "line": 30939,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31319,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12958,11 +11386,7 @@
   {
    "method": "POST",
    "path": "/portal-page/starter",
-<<<<<<< HEAD
-   "line": 30692,
-=======
-   "line": 30948,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31328,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -12984,11 +11408,7 @@
   {
    "method": "PUT",
    "path": "/portal-settings",
-<<<<<<< HEAD
-   "line": 30707,
-=======
-   "line": 30963,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31343,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13010,11 +11430,7 @@
   {
    "method": "GET",
    "path": "/impact-updates",
-<<<<<<< HEAD
-   "line": 30851,
-=======
-   "line": 31107,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31487,
    "auth": [
     "requireAuth"
    ],
@@ -13034,11 +11450,7 @@
   {
    "method": "POST",
    "path": "/impact-updates",
-<<<<<<< HEAD
-   "line": 30871,
-=======
-   "line": 31127,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31507,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13060,11 +11472,7 @@
   {
    "method": "PUT",
    "path": "/impact-updates/:id",
-<<<<<<< HEAD
-   "line": 30903,
-=======
-   "line": 31159,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31539,
    "auth": [
     "requireAuth",
     "requireAdmin",
@@ -13090,11 +11498,7 @@
   {
    "method": "GET",
    "path": "/portal-engagement",
-<<<<<<< HEAD
-   "line": 30941,
-=======
-   "line": 31197,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31577,
    "auth": [
     "requireAuth"
    ],
@@ -13114,11 +11518,7 @@
   {
    "method": "DELETE",
    "path": "/impact-updates/:id",
-<<<<<<< HEAD
-   "line": 30962,
-=======
-   "line": 31218,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31598,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13143,11 +11543,7 @@
   {
    "method": "GET",
    "path": "/portal-audit",
-<<<<<<< HEAD
-   "line": 30973,
-=======
-   "line": 31229,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31609,
    "auth": [
     "requireAuth",
     "requireAdmin"
@@ -13168,11 +11564,7 @@
   {
    "method": "POST",
    "path": "/account/signup",
-<<<<<<< HEAD
-   "line": 31126,
-=======
-   "line": 31382,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31762,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -13193,11 +11585,7 @@
   {
    "method": "POST",
    "path": "/account/verify",
-<<<<<<< HEAD
-   "line": 31162,
-=======
-   "line": 31418,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31798,
    "auth": [
     "accountIpLimiter"
    ],
@@ -13217,11 +11605,7 @@
   {
    "method": "POST",
    "path": "/account/login",
-<<<<<<< HEAD
-   "line": 31177,
-=======
-   "line": 31433,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31813,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -13242,11 +11626,7 @@
   {
    "method": "POST",
    "path": "/account/logout",
-<<<<<<< HEAD
-   "line": 31206,
-=======
-   "line": 31462,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31842,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
@@ -13264,11 +11644,7 @@
   {
    "method": "POST",
    "path": "/account/request-link",
-<<<<<<< HEAD
-   "line": 31220,
-=======
-   "line": 31476,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31856,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -13289,11 +11665,7 @@
   {
    "method": "POST",
    "path": "/account/link-verify",
-<<<<<<< HEAD
-   "line": 31257,
-=======
-   "line": 31513,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31893,
    "auth": [
     "accountIpLimiter"
    ],
@@ -13313,11 +11685,7 @@
   {
    "method": "POST",
    "path": "/account/request-reset",
-<<<<<<< HEAD
-   "line": 31276,
-=======
-   "line": 31532,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31912,
    "auth": [
     "accountIpLimiter",
     "accountEmailLimiter"
@@ -13338,11 +11706,7 @@
   {
    "method": "POST",
    "path": "/account/reset",
-<<<<<<< HEAD
-   "line": 31298,
-=======
-   "line": 31554,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31934,
    "auth": [
     "accountIpLimiter"
    ],
@@ -13362,11 +11726,7 @@
   {
    "method": "POST",
    "path": "/account/change-password",
-<<<<<<< HEAD
-   "line": 31325,
-=======
-   "line": 31581,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31961,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13386,11 +11746,7 @@
   {
    "method": "POST",
    "path": "/account/change-email",
-<<<<<<< HEAD
-   "line": 31343,
-=======
-   "line": 31599,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31979,
    "auth": [
     "requireDonorAccount",
     "accountIpLimiter"
@@ -13411,11 +11767,7 @@
   {
    "method": "POST",
    "path": "/account/change-email/confirm",
-<<<<<<< HEAD
-   "line": 31361,
-=======
-   "line": 31617,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 31997,
    "auth": [
     "accountIpLimiter"
    ],
@@ -13435,11 +11787,7 @@
   {
    "method": "POST",
    "path": "/account/aliases",
-<<<<<<< HEAD
-   "line": 31390,
-=======
-   "line": 31646,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32026,
    "auth": [
     "requireDonorAccount",
     "accountIpLimiter",
@@ -13461,11 +11809,7 @@
   {
    "method": "POST",
    "path": "/account/aliases/verify",
-<<<<<<< HEAD
-   "line": 31417,
-=======
-   "line": 31673,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32053,
    "auth": [
     "accountIpLimiter"
    ],
@@ -13485,11 +11829,7 @@
   {
    "method": "DELETE",
    "path": "/account/aliases/:id",
-<<<<<<< HEAD
-   "line": 31433,
-=======
-   "line": 31689,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32069,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13513,11 +11853,7 @@
   {
    "method": "POST",
    "path": "/account/links/:id/unlink",
-<<<<<<< HEAD
-   "line": 31441,
-=======
-   "line": 31697,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32077,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13541,11 +11877,7 @@
   {
    "method": "POST",
    "path": "/account/links/:id/relink",
-<<<<<<< HEAD
-   "line": 31449,
-=======
-   "line": 31705,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32085,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13569,11 +11901,7 @@
   {
    "method": "DELETE",
    "path": "/account",
-<<<<<<< HEAD
-   "line": 31460,
-=======
-   "line": 31716,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32096,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13593,11 +11921,7 @@
   {
    "method": "GET",
    "path": "/account/me",
-<<<<<<< HEAD
-   "line": 31473,
-=======
-   "line": 31729,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32109,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13617,11 +11941,7 @@
   {
    "method": "GET",
    "path": "/account/dashboard",
-<<<<<<< HEAD
-   "line": 31510,
-=======
-   "line": 31766,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32146,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13641,11 +11961,7 @@
   {
    "method": "GET",
    "path": "/account/recurring",
-<<<<<<< HEAD
-   "line": 31655,
-=======
-   "line": 31911,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32291,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13665,11 +11981,7 @@
   {
    "method": "GET",
    "path": "/account/tax-summary",
-<<<<<<< HEAD
-   "line": 31677,
-=======
-   "line": 31933,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32313,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13689,11 +12001,7 @@
   {
    "method": "GET",
    "path": "/network/directory",
-<<<<<<< HEAD
-   "line": 31729,
-=======
-   "line": 31985,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32365,
    "auth": [
     "requireDonorAccount",
     "directorySearchLimiter"
@@ -13717,11 +12025,7 @@
   {
    "method": "POST",
    "path": "/account/orgs/add",
-<<<<<<< HEAD
-   "line": 31788,
-=======
-   "line": 32044,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32424,
    "auth": [
     "requireDonorAccount",
     "addOrgLimiter"
@@ -13742,11 +12046,7 @@
   {
    "method": "DELETE",
    "path": "/account/follows/:id",
-<<<<<<< HEAD
-   "line": 31814,
-=======
-   "line": 32070,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32450,
    "auth": [
     "requireDonorAccount"
    ],
@@ -13770,11 +12070,7 @@
   {
    "method": "GET",
    "path": "/network/config",
-<<<<<<< HEAD
-   "line": 31845,
-=======
-   "line": 32101,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32481,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 1,
@@ -13792,11 +12088,7 @@
   {
    "method": "POST",
    "path": "/network/signup",
-<<<<<<< HEAD
-   "line": 31850,
-=======
-   "line": 32106,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32486,
    "auth": [
     "networkSignupLimiter"
    ],
@@ -13825,11 +12117,7 @@
   {
    "method": "GET",
    "path": "/network/application",
-<<<<<<< HEAD
-   "line": 31919,
-=======
-   "line": 32175,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32555,
    "auth": [
     "requireAuth"
    ],
@@ -13849,11 +12137,7 @@
   {
    "method": "GET",
    "path": "/admin/network/applications",
-<<<<<<< HEAD
-   "line": 31935,
-=======
-   "line": 32191,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32571,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -13876,11 +12160,7 @@
   {
    "method": "POST",
    "path": "/admin/network/applications/:id/decide",
-<<<<<<< HEAD
-   "line": 31964,
-=======
-   "line": 32220,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32600,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -13905,11 +12185,7 @@
   {
    "method": "POST",
    "path": "/admin/network/run-gate-sweep",
-<<<<<<< HEAD
-   "line": 32056,
-=======
-   "line": 32312,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32692,
    "auth": [
     "requireAuth",
     "requireSuperAdmin"
@@ -13932,11 +12208,7 @@
   {
    "method": "POST",
    "path": "/inbound-email",
-<<<<<<< HEAD
-   "line": 32111,
-=======
-   "line": 32367,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32747,
    "auth": [],
    "sourceSeen": true,
    "layerCount": 2,
@@ -13954,11 +12226,7 @@
   {
    "method": "GET",
    "path": "/settings/inbound-email",
-<<<<<<< HEAD
-   "line": 32185,
-=======
-   "line": 32441,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32821,
    "auth": [
     "requireAuth"
    ],
@@ -13978,11 +12246,7 @@
   {
    "method": "POST",
    "path": "/settings/inbound-email/assign",
-<<<<<<< HEAD
-   "line": 32212,
-=======
-   "line": 32468,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32848,
    "auth": [
     "requireAuth",
     "checkWriteAccess"
@@ -14009,11 +12273,7 @@
   {
    "method": "POST",
    "path": "/settings/inbound-email/discard",
-<<<<<<< HEAD
-   "line": 32235,
-=======
-   "line": 32491,
->>>>>>> 301b44a (BUILD-98 (switch) Part 1: a gift is counted once, on the person whose money it was)
+   "line": 32871,
    "auth": [
     "requireAuth",
     "checkWriteAccess"

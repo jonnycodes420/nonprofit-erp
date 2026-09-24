@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, API } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
@@ -104,6 +104,8 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     // no tab of that name exists, and Fundraising is where money-in lives
     // (Overview, Campaigns, Giving Pages, Recurring, Funds), so it lives here.
     { id: "deposits", label: "Deposits" },
+    // BUILD-98 (switch) Part 2 — the gifts nobody has thanked, and the letters.
+    { id: "acknowledgments", label: "Acknowledgments" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -135,6 +137,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
           itself. */}
       {!loading && subtab === "deposits" && (
         <DepositsView isReadOnly={isReadOnly} roTip={roTip} />
+      )}
+
+      {!loading && subtab === "acknowledgments" && (
+        <AcknowledgmentsView isReadOnly={isReadOnly} roTip={roTip} />
       )}
 
       {!loading && subtab === "campaigns" && (
@@ -792,6 +798,125 @@ function DepositsView({ isReadOnly, roTip }) {
         </div>
       )}
       {open && <DepositSheetModal today={today} onClose={() => { setOpen(false); load(); }} />}
+    </div>
+  );
+}
+
+// ── BUILD-98 (switch) Part 2 — ACKNOWLEDGMENTS ─────────────────────────────
+// The gifts nobody has thanked, older than the org's own N days. Pick them,
+// print one letter per donor (window-envelope address block), print labels,
+// then mark them sent. Printing changes nothing; marking is its own press,
+// because a printed letter still in the tray has not been sent.
+function AcknowledgmentsView({ isReadOnly, roTip }) {
+  const [data, setData] = useState(null);
+  const [tpls, setTpls] = useState([]);
+  const [tplId, setTplId] = useState("");
+  const [sel, setSel] = useState(() => new Set());
+  const [preview, setPreview] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => {
+    apiFetch("/acknowledgments/backlog").then(r => { setData(r); setSel(new Set((r.gifts || []).filter(g => g.hasAddress && !g.deceased).map(g => g.id))); })
+      .catch(e => setMsg(errorMessage(e, "Could not load the gifts waiting for a thank-you.")));
+    apiFetch("/acknowledgments/templates").then(r => setTpls(r.templates || [])).catch(() => setTpls([]));
+  };
+  useEffect(() => { load(); }, []);
+  const ids = [...sel];
+  const body = () => JSON.stringify({ giftIds: ids, templateId: tplId || null });
+  const download = async (path, name) => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch(API + path, { method: "POST", headers: { Authorization: "Bearer " + localStorage.getItem("npe_token"), "Content-Type": "application/json" }, body: body() });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(j.message || j.error || "Could not make the PDF."); }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = name; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const skipped = Number(r.headers.get("X-Letters-Skipped") || 0);
+      if (skipped) setMsg(`${skipped} could not be printed. Check the list below for why.`);
+    } catch (e) { setMsg(errorMessage(e, "Could not make the PDF.")); }
+    setBusy(false);
+  };
+  const doPreview = async () => {
+    setBusy(true); setMsg("");
+    try { setPreview(await apiFetch("/acknowledgments/letters/preview", { method: "POST", body: body() })); }
+    catch (e) { setMsg(errorMessage(e, "Could not preview the letters.")); }
+    setBusy(false);
+  };
+  const mark = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await apiFetch("/acknowledgments/mark", { method: "POST", body: JSON.stringify({ giftIds: ids, via: "letter" }) });
+      setMsg(`${r.marked} marked as thanked by letter.`); setPreview(null); load();
+    } catch (e) { setMsg(errorMessage(e, "Could not mark them.")); }
+    setBusy(false);
+  };
+  const gifts = data?.gifts || [];
+  const toggle = id => setSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const btn = (label, onClick, primary, testId) => (
+    <button onClick={onClick} disabled={busy || !ids.length || (isReadOnly && primary)} title={isReadOnly && primary ? roTip : undefined} data-testid={testId}
+      style={{ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px",
+        color: T.ink, fontSize: 13, fontWeight: 700, cursor: busy || !ids.length ? "not-allowed" : "pointer", opacity: busy || !ids.length ? 0.55 : 1 }}>{label}</button>
+  );
+  if (!data) return <div style={{ padding: 32, color: T.ink3, fontSize: 13 }}>{msg || "Loading…"}</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="ack-view">
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, maxWidth: 620 }}>{data.sentence}</div>
+        <label style={{ fontSize: 12, color: T.ink3, display: "flex", alignItems: "center", gap: 6 }}>
+          Days
+          <input type="number" min={0} max={365} defaultValue={data.days} data-testid="ack-days" disabled={isReadOnly}
+            onBlur={e => { const n = Number(e.target.value); if (Number.isInteger(n) && n !== data.days)
+              apiFetch("/acknowledgments/settings", { method: "PUT", body: JSON.stringify({ backlogDays: n }) }).then(load)
+                .catch(err => setMsg(errorMessage(err, "Only an administrator can change this."))); }}
+            style={{ width: 60, background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 8px", fontSize: 13, color: T.ink }} />
+        </label>
+      </div>
+      {gifts.length === 0 ? (
+        <div style={{ fontSize: 13, color: T.ink }}>Every gift older than {data.days === 1 ? "a day" : `${data.days} days`} has been thanked.</div>
+      ) : (<>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={tplId} onChange={e => setTplId(e.target.value)} data-testid="ack-template"
+            style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: T.ink }}>
+            {tpls.map(t => <option key={t.id || "builtin"} value={t.id || ""}>{t.name}</option>)}
+          </select>
+          {btn("Preview", doPreview, false, "ack-preview")}
+          {btn("Print letters", () => download("/acknowledgments/letters/pdf", "thank-you-letters.pdf"), false, "ack-print")}
+          {btn("Mailing labels", () => download("/acknowledgments/labels/pdf", "mailing-labels.pdf"), false, "ack-labels")}
+          {btn("Mark as sent", mark, true, "ack-mark")}
+          <span style={{ fontSize: 12, color: T.ink3 }}>{ids.length} of {gifts.length} chosen</span>
+        </div>
+        {msg && <div role="status" style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
+        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
+          {gifts.map(g => (
+            <label key={g.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderTop: "1px solid " + T.bg3, fontSize: 13, color: T.ink, cursor: "pointer" }}>
+              <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} style={{ accentColor: T.greenDk }} />
+              <span style={{ fontWeight: 700, minWidth: 160 }}>{g.name}</span>
+              <span style={{ color: T.ink3, minWidth: 90 }}>{g.date}</span>
+              <span>{fmtFull(g.amount)}</span>
+              {g.fund && <span style={{ color: T.ink3 }}>{g.fund}</span>}
+              <span style={{ marginLeft: "auto", color: T.ink3, fontSize: 12 }}>
+                {g.deceased ? "Marked deceased: thank the family by hand" : !g.hasAddress ? "No postal address, so no letter" : ""}
+              </span>
+            </label>
+          ))}
+        </div>
+      </>)}
+      {preview && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-testid="ack-preview-list">
+          {preview.skipped?.length > 0 && (
+            <div style={{ fontSize: 13, color: T.ink }}>
+              Not printed: {preview.skipped.map(s => `${s.name} (${s.why})`).join("; ")}.
+            </div>
+          )}
+          {(preview.letters || []).slice(0, 3).map(l => (
+            <pre key={l.donorId} style={{ whiteSpace: "pre-wrap", fontFamily: "Georgia, serif", fontSize: 13, background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: 16, margin: 0, color: T.ink }}>
+              {l.address.join("\n") + "\n\n" + l.text}
+            </pre>
+          ))}
+          {(preview.letters || []).length > 3 && <div style={{ fontSize: 12, color: T.ink3 }}>and {preview.letters.length - 3} more in the PDF.</div>}
+        </div>
+      )}
     </div>
   );
 }

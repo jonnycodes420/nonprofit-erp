@@ -3645,6 +3645,28 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribute_notices_open ON tribute_notices (org_id, created_at DESC) WHERE status = 'waiting'`);
 
+  // ── BUILD-98 (switch) Part 2 — ACKNOWLEDGMENTS AND LETTERS THAT PRINT ──────
+  // The letter in the org's own words, merged per donor (shared/ackLetter.js
+  // refuses an unknown field at save). Who thanked a gift, and how, lives on the
+  // gift beside the stamp that already said when.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ack_letter_templates (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      body TEXT NOT NULL,
+      is_default BOOLEAN NOT NULL DEFAULT false,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ack_tpl_org ON ack_letter_templates (org_id)`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledged_by TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledged_by_name TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS acknowledged_via TEXT`);
+  // How late a gift is before it counts as the backlog — the org's own N.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ack_backlog_days INTEGER DEFAULT 7`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

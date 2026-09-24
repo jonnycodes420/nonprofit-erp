@@ -11838,6 +11838,287 @@ app.post("/tribute-notices/:id/skip", requireAuth, wrap(async (req, res) => {
   res.json({ ok: true });
 }));
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD-98 (switch) Part 2 — ACKNOWLEDGMENTS AND LETTERS THAT PRINT
+// ════════════════════════════════════════════════════════════════════════════
+// shared/ackLetter.js holds the rules (merge fields refused at save, a field
+// with no value named rather than printed blank, amounts summed in cents). This
+// is the stack of paper: the backlog, the batch PDF with the address where a
+// #10 window is, the labels, and the stamp that says who thanked whom, when
+// and how. Steward prints; a person posts. Nothing here sends anything.
+let ACK = null;
+const ACK_READY = import("./shared/ackLetter.js").then(m => { ACK = m; return m; });
+
+async function ackOrg(orgId) {
+  const [o] = await query(
+    `SELECT id, name, legal_name, receipt_address, receipt_signature_name, receipt_signature_title,
+            logo_data, brand_accent, brand_accent_fg, ack_backlog_days FROM orgs WHERE id=?`, [orgId]);
+  if (!o) return null;
+  const display = await donorFacingOrgName(orgId, o.name || "").catch(() => o.name || "");
+  return { ...o, display };
+}
+
+async function ackTemplate(orgId, templateId) {
+  await ACK_READY;
+  if (templateId) {
+    const [t] = await query("SELECT * FROM ack_letter_templates WHERE id=? AND org_id=?", [templateId, orgId]);
+    return t || null;
+  }
+  // Only a template somebody MARKED default stands in for "no choice". Taking
+  // whichever saved template came first would print the wrong letter.
+  const [t] = await query("SELECT * FROM ack_letter_templates WHERE org_id=? AND is_default=true ORDER BY created_at ASC LIMIT 1", [orgId]);
+  return t || { id: null, name: "Standard thank-you", body: ACK.DEFAULT_ACK_TEMPLATE, is_default: true, builtIn: true };
+}
+
+// The gifts, grouped into one letter per donor. Every id is checked against
+// this org; a foreign id is simply not found.
+async function ackLetterSet(orgId, giftIds, templateId, { addressesOnly = false, signerFallback = null } = {}) {
+  await ACK_READY;
+  const ids = [...new Set((Array.isArray(giftIds) ? giftIds : []).map(String).filter(Boolean))].slice(0, 1000);
+  if (!ids.length) return { error: "Choose the gifts to write letters for." };
+  const tpl = await ackTemplate(orgId, templateId);
+  if (!tpl) return { notFound: true };
+  const org = await ackOrg(orgId);
+  const rows = await query(
+    `SELECT g.id, g.donor_id, g.amount, g.date, g.tribute_type, g.tribute_name, f.name AS fund,
+            d.name, d.kind, d.salutation, d.address, d.address2, d.city, d.state, d.zip, d.country, d.deceased
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id
+      WHERE g.org_id=? AND g.id = ANY(?) AND d.deleted_at IS NULL
+      ORDER BY d.name, g.date`, [orgId, ids]);
+  const byDonor = new Map();
+  for (const r of rows) {
+    const e = byDonor.get(r.donor_id) || { donor: r, gifts: [] };
+    e.gifts.push({ id: r.id, amount: r.amount, date: r.date, fund: r.fund, tributeType: r.tribute_type, tributeName: r.tribute_name });
+    byDonor.set(r.donor_id, e);
+  }
+  // The letter is signed by the org's receipt signer when one is set, and
+  // otherwise by the person printing it — a letter she prints goes out over
+  // her name, which is true. Never blank: an unsigned letter is not posted.
+  const signer = org.receipt_signature_name || signerFallback || "";
+  const orgFields = { name: org.display, signer, signerTitle: org.receipt_signature_name ? (org.receipt_signature_title || "") : "" };
+  const letters = [], skipped = [];
+  for (const { donor, gifts } of byDonor.values()) {
+    const giftIdsHere = gifts.map(g => g.id);
+    // A letter to somebody who has died is not a thank-you; it goes to the
+    // family by hand, and the batch says so rather than printing it.
+    if (donor.deceased) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: "marked deceased" }); continue; }
+    const address = ACK.addressLines(donor);
+    if (!address) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: "no postal address on file" }); continue; }
+    // Labels need an address and nothing else; a template the gift cannot fill
+    // must not cost somebody their envelope.
+    if (addressesOnly) { letters.push({ donorId: donor.donor_id, name: donor.name, address, text: "", giftIds: giftIdsHere, totalCents: 0 }); continue; }
+    const fields = ACK.letterFields({ donor, gifts, org: orgFields });
+    const r = ACK.renderLetter(tpl.body, fields);
+    if (r.missing.length) { skipped.push({ donorId: donor.donor_id, name: donor.name, giftIds: giftIdsHere, why: `nothing to put in ${r.missing.map(k => `{{${k}}}`).join(", ")}` }); continue; }
+    letters.push({ donorId: donor.donor_id, name: donor.name, address, text: r.text, giftIds: giftIdsHere, totalCents: fields._totalCents });
+  }
+  const found = new Set(rows.map(r => r.id));
+  return { template: { id: tpl.id, name: tpl.name, builtIn: !!tpl.builtIn }, org, letters, skipped,
+           notFound: ids.filter(id => !found.has(id)).length };
+}
+
+function renderLettersPdf(org, letters, { dateLine }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", margins: { top: 50, bottom: 40, left: 72, right: 72 }, autoFirstPage: false });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    const INK = "#0f1a12", SUB = "#5a554f";
+    const accent = org.brand_accent || "#0d5c3a";
+    let logo = null;
+    if (org.logo_data && /^data:image\/(png|jpe?g);base64,/.test(org.logo_data)) {
+      try { logo = Buffer.from(org.logo_data.split(",")[1], "base64"); } catch { logo = null; }
+    }
+    for (const L of letters) {
+      doc.addPage();
+      const PW = doc.page.width;
+      // Letterhead: the org's name and return address, top left; the logo right.
+      doc.rect(0, 0, PW, 6).fill(accent);
+      if (logo) { try { doc.image(logo, PW - 72 - 60, 22, { fit: [60, 44] }); } catch { /* a logo that will not draw costs the logo, not the letter */ } }
+      doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(org.display, 72, 26, { width: PW - 220, lineBreak: false });
+      if (org.receipt_address) doc.font("Helvetica").fontSize(8.5).fillColor(SUB).text(org.receipt_address, 72, 44, { width: PW - 220 });
+      doc.font("Helvetica").fontSize(10).fillColor(INK).text(dateLine, 72, 100, { width: PW - 144, align: "right" });
+      // The address, exactly where the window of a #10 envelope is.
+      doc.font("Helvetica").fontSize(11).fillColor(INK)
+        .text(L.address.join("\n"), ACK.WINDOW.x, ACK.WINDOW.y, { width: ACK.WINDOW.w, height: ACK.WINDOW.h, lineGap: 1 });
+      // The body starts below the window and is held to the page: a long
+      // letter is cut at the page, never allowed to spill onto a second.
+      const top = ACK.WINDOW.y + ACK.WINDOW.h + 40;
+      doc.font("Times-Roman").fontSize(11.5).fillColor(INK)
+        .text(L.text, 72, top, { width: PW - 144, height: doc.page.height - top - 50, lineGap: 3, ellipsis: true });
+    }
+    doc.end();
+  });
+}
+
+function renderLabelsPdf(addresses) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: false });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    let page = -1;
+    addresses.forEach((lines, i) => {
+      const o = ACK.labelOrigin(i);
+      if (o.page !== page) { doc.addPage(); page = o.page; }
+      doc.font("Helvetica").fontSize(10).fillColor("#0f1a12")
+        .text(lines.join("\n"), o.x + 12, o.y + 10, { width: ACK.LABELS_5160.w - 24, height: ACK.LABELS_5160.h - 14, lineGap: 0, ellipsis: true });
+    });
+    doc.end();
+  });
+}
+
+// ── ACKNOWLEDGMENT ROUTES ──────────────────────────────────────────────────
+app.get("/acknowledgments/templates", requireAuth, wrap(async (req, res) => {
+  await ACK_READY;
+  const rows = await query("SELECT id, name, body, is_default, created_by_name, updated_at FROM ack_letter_templates WHERE org_id=? ORDER BY is_default DESC, name", [req.user.orgId]);
+  res.json({
+    templates: rows.length ? rows : [{ id: null, name: "Standard thank-you", body: ACK.DEFAULT_ACK_TEMPLATE, is_default: true, builtIn: true }],
+    mergeFields: ACK.ACK_MERGE_FIELDS,
+  });
+}));
+
+app.post("/acknowledgments/templates", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await ACK_READY;
+  const name = String(req.body?.name || "").trim().slice(0, 120);
+  const body = String(req.body?.body || "");
+  if (!name) return res.status(400).json({ error: "Give the letter a name." });
+  const v = ACK.validateTemplate(body);
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
+  const id = "alt_" + uuid().slice(0, 10);
+  const makeDefault = req.body?.isDefault === true;
+  if (makeDefault) await run("UPDATE ack_letter_templates SET is_default=false WHERE org_id=?", [req.user.orgId]);
+  await run(`INSERT INTO ack_letter_templates (id,org_id,name,body,is_default,created_by,created_by_name) VALUES (?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, name, body, makeDefault, actor(req).id, actor(req).name]);
+  res.status(201).json({ id });
+}));
+
+app.put("/acknowledgments/templates/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await ACK_READY;
+  const [t] = await query("SELECT id FROM ack_letter_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const name = String(req.body?.name || "").trim().slice(0, 120);
+  const body = String(req.body?.body || "");
+  const v = ACK.validateTemplate(body);
+  if (!name) return res.status(400).json({ error: "Give the letter a name." });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
+  if (req.body?.isDefault === true) await run("UPDATE ack_letter_templates SET is_default=false WHERE org_id=?", [req.user.orgId]);
+  await run("UPDATE ack_letter_templates SET name=?, body=?, is_default=COALESCE(?, is_default), updated_at=NOW() WHERE id=? AND org_id=?",
+    [name, body, req.body?.isDefault === true ? true : null, t.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.delete("/acknowledgments/templates/:id", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM ack_letter_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// The backlog: gifts nobody has thanked, older than the org's own N days.
+app.get("/acknowledgments/backlog", requireAuth, wrap(async (req, res) => {
+  await ACK_READY;
+  const orgId = req.user.orgId;
+  const org = await ackOrg(orgId);
+  const days = Number.isInteger(org?.ack_backlog_days) && org.ack_backlog_days >= 0 ? org.ack_backlog_days : ACK.DEFAULT_ACK_BACKLOG_DAYS;
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  const cutoff = orgTime.addDays(today, -days);
+  const rows = await query(
+    `SELECT g.id, g.amount, g.date, g.donor_id, d.name, d.address, d.city, d.state, d.zip, d.deceased, f.name AS fund
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id
+      WHERE g.org_id=? AND COALESCE(g.acknowledgement_sent,false) = false AND g.acknowledgement_sent_at IS NULL
+        AND g.is_sample IS NOT TRUE AND d.is_sample IS NOT TRUE AND d.deleted_at IS NULL
+        AND g.date <= ? AND g.date >= ?
+      ORDER BY g.date ASC, d.name LIMIT 500`, [orgId, cutoff, orgTime.addDays(today, -730)]);
+  res.json({
+    days, cutoff,
+    // The one sentence under the count, per BUILD-97 Part 2.
+    sentence: `Gifts that arrived more than ${days === 1 ? "a day" : days + " days"} ago and nobody has marked as thanked. An administrator can change the number of days here.`,
+    gifts: rows.map(r => ({ id: r.id, amount: Number(r.amount), date: r.date, donorId: r.donor_id, name: r.name, fund: r.fund,
+      hasAddress: !!ACK.addressLines(r), deceased: !!r.deceased })),
+  });
+}));
+
+app.put("/acknowledgments/settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const n = Number(req.body?.backlogDays);
+  if (!Number.isInteger(n) || n < 0 || n > 365) return res.status(400).json({ error: "backlogDays is a whole number of days, 0 to 365." });
+  await run("UPDATE orgs SET ack_backlog_days=? WHERE id=?", [n, req.user.orgId]);
+  res.json({ backlogDays: n });
+}));
+
+// What the batch WOULD print, and who it would leave out and why. Read-only.
+app.post("/acknowledgments/letters/preview", requireAuth, wrap(async (req, res) => {
+  const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { signerFallback: me?.name || null });
+  if (set.error) return res.status(400).json({ error: set.error });
+  if (set.notFound === true) return res.status(404).json({ error: "Template not found" });
+  res.json({ template: set.template, letters: set.letters.map(l => ({ donorId: l.donorId, name: l.name, address: l.address, text: l.text, giftIds: l.giftIds, total: l.totalCents / 100 })),
+             skipped: set.skipped, giftsNotFound: set.notFound });
+}));
+
+// The PDF. One page per donor. A POST, because it carries a selection — and a
+// print changes nothing: marking the letters sent is its own request.
+app.post("/acknowledgments/letters/pdf", requireAuth, wrap(async (req, res) => {
+  const [me] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, req.body?.templateId || null, { signerFallback: me?.name || null });
+  if (set.error) return res.status(400).json({ error: set.error });
+  if (set.notFound === true) return res.status(404).json({ error: "Template not found" });
+  if (!set.letters.length) return res.status(409).json({ error: "no_letters", skipped: set.skipped,
+    message: "None of these gifts can be printed yet. The reason is beside each name." });
+  const today = orgToday(await orgTz(req.user.orgId));           // ORG_TZ_SEAM_OK
+  const pdf = await renderLettersPdf(set.org, set.letters, { dateLine: ACK.formatLetterDate(today) });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="thank-you-letters-${today}.pdf"`);
+  res.setHeader("X-Letters-Printed", String(set.letters.length));
+  res.setHeader("X-Letters-Skipped", String(set.skipped.length));
+  res.setHeader("Access-Control-Expose-Headers", "X-Letters-Printed, X-Letters-Skipped");
+  res.end(pdf);
+}));
+
+// Mailing labels, Avery 5160: one per donor, never one per gift.
+app.post("/acknowledgments/labels/pdf", requireAuth, wrap(async (req, res) => {
+  await ACK_READY;
+  const set = await ackLetterSet(req.user.orgId, req.body?.giftIds, null, { addressesOnly: true });
+  if (set.error) return res.status(400).json({ error: set.error });
+  const addresses = set.letters.map(l => l.address);
+  if (!addresses.length) return res.status(409).json({ error: "no_addresses", skipped: set.skipped });
+  const pdf = await renderLabelsPdf(addresses);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="mailing-labels.pdf"`);
+  res.setHeader("X-Labels", String(addresses.length));
+  res.setHeader("Access-Control-Expose-Headers", "X-Labels");
+  res.end(pdf);
+}));
+
+// Who thanked them, when, and how. Idempotent: a gift already marked keeps its
+// first stamp, because "who thanked them first" is the fact worth keeping.
+app.post("/acknowledgments/mark", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await ACK_READY;
+  const ids = [...new Set((Array.isArray(req.body?.giftIds) ? req.body.giftIds : []).map(String))].slice(0, 1000);
+  const via = String(req.body?.via || "");
+  if (!ids.length) return res.status(400).json({ error: "Choose the gifts that were thanked." });
+  if (!ACK.ACK_VIA.includes(via)) return res.status(400).json({ error: `How were they thanked? One of: ${ACK.ACK_VIA.join(", ")}.` });
+  // "Who thanked them" is read by a person, so it is their NAME — actor()'s
+  // name is the login email, which is an audit stamp, not a signature.
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const who = u?.name || actor(req).name;
+  const rows = await query(
+    `UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()),
+                      acknowledged_by=COALESCE(acknowledged_by, ?), acknowledged_by_name=COALESCE(acknowledged_by_name, ?),
+                      acknowledged_via=COALESCE(acknowledged_via, ?)
+      WHERE org_id=? AND id = ANY(?) RETURNING id`, [actor(req).id, who, via, req.user.orgId, ids]);
+  // The drafted thank-you (88b) for these gifts is done too; leaving it in the
+  // queue would ask her to thank somebody twice.
+  await run("UPDATE thank_you_drafts SET sent_at=COALESCE(sent_at, NOW()) WHERE org_id=? AND gift_id = ANY(?) AND sent_at IS NULL AND skipped_at IS NULL", [req.user.orgId, ids]).catch(() => {});
+  res.json({ marked: rows.length });
+}));
+
 // ── Constituent designations (BUILD-14) ────────────────────────────────────
 // First-class, filterable, reportable gift-vehicle / planned-giving flags.
 // Filter the donor list via GET /donors?designation=<kind>.

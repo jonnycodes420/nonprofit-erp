@@ -38,8 +38,8 @@ the suite reads the registry and finds each sentence in a real browser.
 
 ## What was counted
 
-**390 numeric render sites** across the active surfaces, of which **107 are
-claim-shaped**. *(388/106 at BUILD-97; BUILD-98 Part 1 added the soft-credit pair on the donor profile — `profile.creditHard` and `profile.creditWithSoft` in `shared/numberCensus.js`.)*
+**391 numeric render sites** across the active surfaces, of which **107 are
+claim-shaped**. *(388/106 at BUILD-97; BUILD-98 Part 1 added the soft-credit pair on the donor profile — `profile.creditHard` and `profile.creditWithSoft` in `shared/numberCensus.js`; Part 2 added one table cell, a gift amount in the acknowledgment backlog.)*
 
 *(The first run of the scanner reported 390. Three of those were **dates** —
 `new Date(x).toLocaleString()` — which this document's own rules exclude and the
@@ -62,7 +62,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 | `Dashboard.jsx` | 62 | 24 |
 | `Finance.jsx` | 43 | 3 |
 | `Reports.jsx` | 41 | 25 |
-| `Fundraising.jsx` | 30 | 16 |
+| `Fundraising.jsx` | 31 | 16 |
 | `Communications.jsx` | 20 | 6 |
 | `Grants.jsx` | 13 | 5 |
 | `AnnualFund.jsx` | 12 | 4 |

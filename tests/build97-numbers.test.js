@@ -66,7 +66,7 @@ const EXPECTED = {
   "components/Dashboard.jsx": 62,
   "components/Finance.jsx": 43,
   "components/Reports.jsx": 41,
-  "components/Fundraising.jsx": 30,
+  "components/Fundraising.jsx": 31,   // BUILD-98 Part 2: +1, a gift amount in the acknowledgment backlog row (a cell, not a claim)
   "components/Communications.jsx": 20,
   "components/Grants.jsx": 13,
   "components/AnnualFund.jsx": 12,
@@ -84,7 +84,7 @@ const EXPECTED = {
   "components/MetricBreakdownPanel.jsx": 1,
   "components/Uploader.jsx": 1,
 };
-const EXPECTED_TOTAL = 390;
+const EXPECTED_TOTAL = 391;
 const EXPECTED_CLAIMS = 107;
 
 (async () => {

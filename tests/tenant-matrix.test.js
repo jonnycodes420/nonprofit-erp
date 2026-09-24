@@ -123,6 +123,8 @@ async function seedOrg(o, tag) {
     [`g_${o}`, o, `d_${o}`, amt, TODAY, `c_${o}`, `fnd_${o}`]);
   // BUILD-98 Part 1 — a tribute notice and a soft credit, so the new
   // /gifts/:id/extras and /tribute-notices/:id routes are probed across the wall.
+  await q(`INSERT INTO ack_letter_templates (id,org_id,name,body) VALUES ($1,$2,$3,$4)`,
+    [`alt_${o}`, o, `${mark} Letter`, `Dear {{salutation}}, thank you from ${mark}.`]);
   await q(`INSERT INTO tribute_notices (id,org_id,gift_id,donor_id,tribute_type,honouree_name,body)
            VALUES ($1,$2,$3,$4,'memory',$5,$6)`, [`tn_${o}`, o, `g_${o}`, `d_${o}`, `${mark} Honouree`, `${mark} notice`]);
   await q(`INSERT INTO fin_transactions (id,org_id,date,description,amount,type,account_id,fund_id) VALUES ($1,$2,$3,$4,$5,'income',$6,$7)`,
@@ -278,6 +280,7 @@ function bResolver(routePath, param) {
     "statement-mappings": `smap_${B}`, // BUILD-92 A4 — a saved statement mapping
     audiences: `aud_${B}`,           // BUILD-97 — a named audience is org B's business
     "tribute-notices": `tn_${B}`,    // BUILD-98 Part 1 — a notice to a family is org B's business
+    acknowledgments: `alt_${B}`,     // BUILD-98 Part 2 — a letter template is org B's business
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404

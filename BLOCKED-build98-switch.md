@@ -44,3 +44,24 @@ matching employer columns. The multi-sheet **workbook** importer
 (`STANDARD_GIFT_FIELDS`, BUILD-82) already has a "Soft credit to" field that
 routes soft-credit ROWS into relationship links; it does not yet read tribute or
 matching-employer columns. Part 7's presets are where that lands.
+
+---
+
+## Part 2 · acknowledgments and letters
+
+### 2.1 · Steward prints; it does not post or email the letter
+The batch is a PDF and a set of labels. Emailing an acknowledgment from the
+same screen would be donor-facing mail from a template, and BUILD-75 C.2 says a
+human commits that — the 88b thank-you queue remains the one-at-a-time email
+path. If Jonathan wants "email the batch", it is a campaign-shaped send with its
+own mail kind and its own decision.
+
+### 2.2 · The window position is the #10 double-window standard, not measured
+`ACK.WINDOW` is set from the common #10 window spec (4½ × 1⅛ in, ⅞ in from the
+left, 2 in down once folded). **Print one on the org's actual envelopes before
+the first real batch** — window envelopes vary by a few sixteenths, and moving
+the block is one constant.
+
+### 2.3 · Labels are Avery 5160 only
+The 30-up 1 × 2⅝ in sheet is the one most offices stock. Other sizes are a
+geometry table each, added when someone asks.
