@@ -1872,6 +1872,14 @@ app.use((req, res, next) =>
   /^\/donors\/[^/]+\/photo$/.test(req.path)
     ? express.json({ limit: "16mb" })(req, res, next)
     : next());
+// BUILD-96 Part 5 — a HANDFUL of photos per request, not a folder. A folder of
+// two hundred headshots is hundreds of megabytes and fits in no request at
+// all, so the screen sends it in chunks and this is the size of one chunk. The
+// cap here and PHOTO_BULK_MAX below are one decision in two places: raising
+// either alone gets a PayloadTooLargeError, which surfaces as a bare 500 with
+// nothing useful in it — this route's first version did exactly that, and the
+// test that caught it is the oversize leg in build96-photos-folder.
+app.use("/photos/bulk", express.json({ limit: "24mb" }));
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
@@ -29917,6 +29925,16 @@ async function storeDonorPhoto({ orgId, donorId, dataUri, actorUser }) {
 // this product will ever hold. It is NOT a 512 square: a cheque cropped square
 // is a cheque you cannot read, so it keeps its shape and is capped on the long
 // edge instead.
+// BUILD-96 Part 5 — how many photographs ONE REQUEST may carry. Not how many
+// she may add: the screen chunks a folder into requests this size and adds up
+// the answers, because a folder of two hundred headshots is hundreds of
+// megabytes and fits in no request at all.
+//
+// Paired with the 24mb body limit registered for this path above. Twenty
+// photographs of a few megabytes each sit inside that with room to spare, and
+// a single photo is still capped at the same 10MB a one-at-a-time upload is.
+const PHOTO_BULK_MAX = 20;
+
 const CHEQUE_LONG_EDGE = 1600;
 // The same ceiling a headshot gets: a 10 MB master is not a cheque photograph,
 // and it is what the cap exists to refuse.
@@ -29968,6 +29986,87 @@ app.post("/donors/:id/photo", requireAuth, checkWriteAccess, wrap(async (req, re
   });
   if (r.error) return res.status(r.status || 400).json({ error: "invalid_photo", message: r.error });
   res.json({ ok: true, photoUrl: r.url });
+}));
+
+// ── BUILD-96 Part 5 — A FOLDER OF PHOTOS ───────────────────────────────────
+// She arrives with a folder of headshots off the old system. One at a time is
+// not a feature for 200 people.
+//
+// Every photo goes through the SAME storeDonorPhoto seam a single upload uses
+// — same cap, same type check, same resize, same asset history, same prune —
+// because a bulk path with its own quieter rules is how a 10 MB master or a
+// renamed PDF gets in. The only thing this route adds is deciding WHO.
+//
+// And it decides conservatively: shared/photoMatch.js attaches only when the
+// file name identifies exactly one person, by email, then legacy id, then
+// exact full name. Anything else comes back by file name for her to place.
+// Nothing is guessed on a partial name — a wrong face is not an error anyone
+// reviews, because a photo that "worked" is never looked at again.
+app.post("/photos/bulk", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const pm = await import("./shared/photoMatch.js");
+  const orgId = req.user.orgId;
+  const files = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (!files.length) return res.status(400).json({ error: "no_files" });
+  if (files.length > PHOTO_BULK_MAX)
+    return res.status(400).json({ error: "too_many", message: `Add at most ${PHOTO_BULK_MAX} photos at a time.` });
+
+  // The roster, once. A per-file lookup would be N queries and would also let
+  // two files race each other onto the same person.
+  const people = (await query(
+    `SELECT id, name, email, external_donor_id, external_donor_ids
+       FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]))
+    .map(r => ({
+      id: r.id, name: r.name, email: r.email,
+      externalId: r.external_donor_id,
+      externalIds: Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [],
+    }));
+  const index = pm.buildIndex(people);
+
+  let attached = 0;
+  const needsYou = [];
+  // A file name is the only thing shown back to her, so it is the only thing
+  // echoed — never the image, and never a path from her machine beyond the
+  // last segment.
+  const shown = f => String(f || "").split(/[\\/]/).pop().slice(0, 200);
+
+  for (const f of files) {
+    const fileName = shown(f?.fileName);
+    const m = pm.matchOne(fileName, index);
+
+    if (m.status === "bad_type") {
+      needsYou.push({ fileName, reason: "not_a_photo",
+        message: `${fileName} isn't a photo Steward can use.` });
+      continue;
+    }
+    if (m.status === "ambiguous") {
+      needsYou.push({ fileName, reason: "ambiguous", matchedBy: m.rule,
+        candidates: m.candidates.slice(0, 8).map(p => ({ id: p.id, name: p.name, email: p.email })),
+        message: `${fileName} could be more than one person.` });
+      continue;
+    }
+    if (m.status === "unmatched") {
+      needsYou.push({ fileName, reason: "no_match",
+        message: `${fileName} doesn't match anyone on file.` });
+      continue;
+    }
+
+    // Matched. The same seam as one-at-a-time, and a store failure is reported
+    // per file rather than failing the batch: 199 good photos should not be
+    // lost to one bad one.
+    const r = await storeDonorPhoto({
+      orgId, donorId: m.person.id, dataUri: f?.image, actorUser: req.user,
+    });
+    if (r.error) {
+      needsYou.push({ fileName, reason: "rejected", message: `${fileName}: ${r.error}` });
+      continue;
+    }
+    attached++;
+  }
+
+  res.json({
+    ok: true, attached, needsYou,
+    sentence: pm.photoReport({ attached, needsYou: needsYou.length }),
+  });
 }));
 
 app.delete("/donors/:id/photo", requireAuth, checkWriteAccess, wrap(async (req, res) => {

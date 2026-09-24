@@ -83,6 +83,29 @@ const EMAIL = "b41mobile@example.org";      // the shared 25-donor fixture org
     }
     if (!auth.token) return note("could not sign in to the fixture org");
 
+    // BUILD-96 Part 5 — SEED IF EMPTY, not only if NEW.
+    //
+    // The block above loads sample data only when it had to CREATE the org. An
+    // org that already exists but has been EMPTIED — empty-states clears this
+    // same fixture to test empty states, and it runs earlier in run-all.sh —
+    // signs in fine and then measures a Home with no Thread rows on it. The
+    // failure reads "the Thread has rows to measure — 0", which looks exactly
+    // like a layout regression and is a fixture that ran second.
+    //
+    // This is also only reliable since BUILD-96 Part 2 namespaced the sample
+    // ids per org: before that, re-loading here wrote nothing at all whenever
+    // any other org on the stack held smpl_d1, and said it had worked.
+    const [{ c: donorCount }] = await q(
+      `SELECT COUNT(*)::int AS c FROM donors d JOIN users u ON u.org_id=d.org_id
+        WHERE u.email=$1 AND d.deleted_at IS NULL`, [EMAIL]);
+    if (donorCount === 0) {
+      await api("POST", "/org/load-sample-data", auth.token, {});
+      const [{ c: after }] = await q(
+        `SELECT COUNT(*)::int AS c FROM donors d JOIN users u ON u.org_id=d.org_id
+          WHERE u.email=$1 AND d.deleted_at IS NULL`, [EMAIL]);
+      if (after === 0) return note("the fixture org is empty and sample data would not load");
+    }
+
     const browser = await chromium.launch();
     try {
       const measure = async (width, height) => {

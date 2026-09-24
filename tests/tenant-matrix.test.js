@@ -74,6 +74,12 @@ async function reset() {
   for (const org of [A, B]) {
     for (const t of ["agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
       "audiences", "statement_mappings", "gift_duplicate_questions",
+      // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
+      // only bites on the second run: the first leaves a row behind, and then
+      // `DELETE FROM orgs` fails its foreign key and the whole suite aborts
+      // with "SUITE ERROR" rather than an assertion. A teardown list that is
+      // one table short is a suite that passes once.
+      "ack_letter_templates",
       "giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",

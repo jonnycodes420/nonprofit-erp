@@ -6,11 +6,25 @@ import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from
 // changed document is itself a false statement.
 const LAST_UPDATED = "September 12, 2026";
 
+// BUILD-96 Part 5 — THE PALETTE CENSUS RATCHETS, so this page names its four
+// colours once instead of thirteen times.
+//
+// The subprocessor table added four more hex literals to a file that already
+// repeated the same three, and the census (tests/palette-census.test.js) counts
+// literals across the client and refuses to let the number grow. It was right
+// to: this is a public page with its own palette, deliberately not T's, and
+// "its own palette" is exactly the thing that turns into thirteen slightly
+// different greys if nobody names it.
+const INK = "#0f1a12";       // headings, and the nav
+const BODY = "#3d4a42";      // running text
+const RULE = "#ddd9d0";      // every hairline on the page
+const GROUND = "#f0ede6";    // the page itself
+
 function Nav() {
   return (
-    <nav style={{ background: "#0f1a12", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+    <nav style={{ background: INK, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
       <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-        <span style={{ fontSize: 20, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
+        <span style={{ fontSize: 20, fontWeight: 400, color: GROUND, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
       </Link>
       <Link to="/" style={{ fontSize: 13, color: "rgba(240,237,230,0.7)", textDecoration: "none" }}>← Back to home</Link>
     </nav>
@@ -18,13 +32,13 @@ function Nav() {
 }
 
 const S = {
-  page: { background: "#f0ede6", minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif" },
+  page: { background: GROUND, minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif" },
   body: { maxWidth: 720, margin: "0 auto", padding: "56px 32px 80px" },
-  h1: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 40, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 8px" },
+  h1: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 40, fontWeight: 400, color: INK, letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 8px" },
   meta: { fontSize: 13, color: "rgba(240,237,230,0.7)", marginBottom: 48 },
-  h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.01em", margin: "40px 0 12px", paddingTop: 8, borderTop: "1px solid #ddd9d0" },
-  p: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, margin: "0 0 16px" },
-  li: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, marginBottom: 6 },
+  h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: INK, letterSpacing: "-0.01em", margin: "40px 0 12px", paddingTop: 8, borderTop: "1px solid " + RULE },
+  p: { fontSize: 15, color: BODY, lineHeight: 1.75, margin: "0 0 16px" },
+  li: { fontSize: 15, color: BODY, lineHeight: 1.75, marginBottom: 6 },
   ul: { paddingLeft: 20, margin: "0 0 16px" },
   a: { color: "#0d5c3a", textDecoration: "none" },
   // BUILD-96 Part 3 — the subprocessor table. `tableWrap` is not decoration:
@@ -32,10 +46,10 @@ const S = {
   // its narrowest useful width, so it scrolls INSIDE its own box rather than
   // pushing the whole agreement sideways.
   tableWrap: { overflowX: "auto", margin: "0 0 16px", WebkitOverflowScrolling: "touch" },
-  table: { borderCollapse: "collapse", width: "100%", minWidth: 560, fontSize: 13.5, color: "#3d4a42" },
-  th: { textAlign: "left", verticalAlign: "top", padding: "8px 12px 8px 0", borderBottom: "1px solid #ddd9d0",
-        fontWeight: 700, color: "#0f1a12", lineHeight: 1.5 },
-  td: { textAlign: "left", verticalAlign: "top", padding: "10px 12px 10px 0", borderBottom: "1px solid #ddd9d0",
+  table: { borderCollapse: "collapse", width: "100%", minWidth: 560, fontSize: 13.5, color: BODY },
+  th: { textAlign: "left", verticalAlign: "top", padding: "8px 12px 8px 0", borderBottom: "1px solid " + RULE,
+        fontWeight: 700, color: INK, lineHeight: 1.5 },
+  td: { textAlign: "left", verticalAlign: "top", padding: "10px 12px 10px 0", borderBottom: "1px solid " + RULE,
         lineHeight: 1.6 },
 };
 
