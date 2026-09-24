@@ -3370,6 +3370,128 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS audiences_org_name_uk
                     ON audiences (org_id, LOWER(name))`);
 
+  // ── BUILD-97 Part 3 — THE AGENT SHE INSTRUCTS ───────────────────────────
+  // Three tables, and the third is the one that matters.
+  //
+  // Placed AFTER `orgs` and `users` because both are referenced, and the
+  // BUILD-88c lesson is that schema init ORDER is part of the commit: a table
+  // written beside its build's other work but BEFORE the table it references
+  // resolves fine on an existing database and throws on a FRESH one, which
+  // fails CI's boot step, which gates both deploy jobs.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_instructions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      -- Her words, verbatim. Never rewritten, never normalised: the log quotes
+      -- this back on every send, and a quote that is not what she typed is not
+      -- a quote.
+      text TEXT NOT NULL,
+      kind TEXT NOT NULL,                       -- task | standing
+      trigger TEXT,                             -- standing only
+      status TEXT NOT NULL DEFAULT 'planned',   -- planned | active | paused | done
+      -- THE DEFAULT IS 'draft' AT THE DATABASE, not only in the route. An
+      -- instruction that reaches this table without an explicit answer drafts;
+      -- it does not send. Named send_authorization rather than authorization,
+      -- which Postgres reserves, and it is the clearer name anyway: it
+      -- authorises SENDING and nothing else.
+      send_authorization TEXT NOT NULL DEFAULT 'draft',
+      plan JSONB,
+      last_count INTEGER,                       -- for the change-by-half re-show rule
+      created_by TEXT, created_by_name TEXT,
+      -- "She turned it on" has to be TRUE, so who and when are recorded, and a
+      -- super-admin is refused at the route (BUILD-94's rule, carried over).
+      turned_on_by TEXT, turned_on_by_name TEXT, turned_on_at TIMESTAMPTZ,
+      paused_at TIMESTAMPTZ, paused_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_instr_org ON agent_instructions (org_id, status)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_runs (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      instruction_id TEXT REFERENCES agent_instructions(id) ON DELETE CASCADE,
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      finished_at TIMESTAMPTZ,
+      status TEXT,                              -- running | done | refused | failed
+      plan JSONB,
+      -- What it READ, what it DID, what it DRAFTED, what it SENT, what it
+      -- DECLINED and why. All five, because "14 things" with no breakdown is a
+      -- number nobody can check.
+      read_summary TEXT,
+      actions JSONB,
+      drafted INTEGER DEFAULT 0,
+      sent INTEGER DEFAULT 0,
+      declined INTEGER DEFAULT 0,
+      withheld INTEGER DEFAULT 0,
+      withheld_reason TEXT,
+      error TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_runs_org ON agent_runs (org_id, started_at DESC)`);
+
+  // THE UNDO LEDGER. Every agent write records what the row looked like BEFORE
+  // it, so undo is a restore and not a guess. Thirty days, per the brief.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_writes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      run_id TEXT REFERENCES agent_runs(id) ON DELETE CASCADE,
+      instruction_id TEXT,
+      tool TEXT NOT NULL,
+      entity_table TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      -- A NULL before_row means the row did not exist, so undo deletes it.
+      -- A row means it did exist, so undo restores these columns.
+      before_row JSONB,
+      after_row JSONB,
+      -- The rows this action came from. An action that cannot cite one is not
+      -- taken, so this is never empty on a committed write.
+      cites JSONB,
+      undone_at TIMESTAMPTZ, undone_by TEXT, undone_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_writes_org ON agent_writes (org_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_writes_run ON agent_writes (run_id)`);
+
+  // THE AGENT'S DRAFTS HAVE THEIR OWN HOME, and that is a decision.
+  // `thank_you_drafts` is per-GIFT: its gift_id is NOT NULL and unique per org,
+  // because a thank-you is for a specific gift. An agent draft is a message to
+  // a person for whatever reason her instruction gave, and most of those
+  // reasons are not a gift. Forcing them into the same table would have meant
+  // either a fake gift id or dropping the uniqueness that keeps the thank-you
+  // queue honest.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS agent_drafts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      run_id TEXT REFERENCES agent_runs(id) ON DELETE CASCADE,
+      instruction_id TEXT,
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      subject TEXT,
+      body TEXT NOT NULL,
+      -- The rows this draft came from. A draft that cannot cite one is never
+      -- written, so this is never empty on a committed row.
+      cites JSONB NOT NULL DEFAULT '[]'::jsonb,
+      status TEXT NOT NULL DEFAULT 'pending',   -- pending | sent | dismissed
+      sent_at TIMESTAMPTZ, dismissed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_drafts_org ON agent_drafts (org_id, status, created_at DESC)`);
+
+  // ── PAUSE ALL, ONE BUTTON ────────────────────────────────────────────────
+  // On the ORG, not on each instruction: "stop everything" has to be one
+  // switch, and a switch that works by updating N rows can half-fail.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS agent_paused_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS agent_paused_by TEXT`);
+
+  // The prompt and the response, kept per org for thirty days (agentShape's
+  // PROMPT_RETENTION_DAYS). `ai_log` already existed and held a 100-character
+  // summary; the agent needs the whole exchange to be auditable.
+  await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS prompt_full TEXT`);
+  await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS response_full TEXT`);
+  await pool.query(`ALTER TABLE ai_log ADD COLUMN IF NOT EXISTS run_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

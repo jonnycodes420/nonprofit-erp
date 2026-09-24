@@ -59,6 +59,12 @@ export const HOME_SECTIONS = [
   // if it is not: "Welcome: 4 people in it, next send Thursday", and a failure
   // at the end of the same sentence (BUILD-37 H2 — never swallowed).
   { id: "sequences", label: "Sequences", hideable: true, surface: "home" },
+  // BUILD-97 Part 3 — the sixth Home section: the daily line, and the box she
+  // types an instruction into. NOT hideable: "Steward did 14 things for you
+  // yesterday" is the one place the agent accounts for itself on the screen she
+  // actually opens, and a surface that can act on her behalf must not be
+  // possible to hide from her.
+  { id: "agent", label: "Tell Steward what to do", hideable: false, surface: "home" },
 
   // ── the board's ──────────────────────────────────────────────────────────
   { id: "hero",             label: "Fundraising goal",      hideable: false, surface: "board" },

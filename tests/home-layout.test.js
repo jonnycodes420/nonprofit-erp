@@ -106,11 +106,18 @@ async function seedUser(o, id, tag) {
   // always was: neither screen may be blank.
   // BUILD-88b B.3 added `thankYous` to Home: ten in total.
   // BUILD-94 Part 3 added `sequences` to Home: eleven.
-  ok("canonical list is Home's sections then the board's, 11 in total",
-     HOME_SECTIONS.length === 11 && HOME_SECTIONS[0].id === "setup" && HOME_SECTIONS[1].id === "thread",
+  // BUILD-97 Part 3 added `agent` to Home: twelve. It is the sixth Home
+  // section — the daily line and the box she types an instruction into.
+  ok("canonical list is Home's sections then the board's, 12 in total",
+     HOME_SECTIONS.length === 12 && HOME_SECTIONS[0].id === "setup" && HOME_SECTIONS[1].id === "thread",
      HOME_SECTIONS.map(s => s.id));
-  ok("each surface's headline is unhideable — Home cannot be blank, nor can the board",
-     HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id).sort().join(",") === "hero,thread");
+  // REVIEWED CHANGE (BUILD-97 Part 3): `agent` joins the unhideable pair, and
+  // the reason is not "it is important". A surface that can ACT on her behalf
+  // must not be possible to hide from her: the daily line is the one place on
+  // the screen she actually opens where the agent accounts for what it did.
+  ok("each surface's headline is unhideable — and so is the agent's own account of itself",
+     HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id).sort().join(",") === "agent,hero,thread",
+     HOME_SECTIONS.filter(s => s.hideable === false).map(s => s.id));
 
   const m0 = mergeLayout(null);
   ok("merge(null) = the full default, everything visible", m0.length === DEFAULT_LAYOUT.length && m0.every(x => x.visible) && isDefaultLayout(m0));
@@ -133,7 +140,7 @@ async function seedUser(o, id, tag) {
   ok("merge keeps the user's order for known ids", m1.slice(0, 3).map(x => x.id).join(",") === "drift,hero,myPortfolio", m1);
   ok("merge drops retired/unknown ids", !m1.some(x => ["retiredSection", "work", "commandCenter", "goalCards", "retention"].includes(x.id)), m1.map(x => x.id));
   ok("NEW section ids appear for a stale config, visible, in canonical order",
-     m1.slice(3).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,thread:true,recurring:true,thankYous:true,sequences:true,retentionPipeline:true,monthly:true,impact:true", m1);
+     m1.slice(3).map(x => `${x.id}:${x.visible}`).join(",") === "setup:true,thread:true,recurring:true,thankYous:true,sequences:true,agent:true,retentionPipeline:true,monthly:true,impact:true", m1);
   ok("merge preserves saved hidden flags", m1.find(x => x.id === "myPortfolio").visible === false);
   ok("merged stale config is a full layout", m1.length === DEFAULT_LAYOUT.length);
 

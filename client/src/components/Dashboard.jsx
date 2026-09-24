@@ -424,6 +424,42 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Communications list cannot say different things about the same sequence.
   const [seqLines,setSeqLines]=useState([]);
   useEffect(()=>{apiFetch("/sequences/home").then(r=>setSeqLines((r&&r.sequences)||[])).catch(()=>setSeqLines([]));},[]);
+  // ── BUILD-97 Part 3 — THE AGENT ──────────────────────────────────────────
+  // The daily line, and whatever she is telling it to do. Failures are silent
+  // by design: the agent being unavailable must never blank her Home screen.
+  const [agentDaily,setAgentDaily]=useState(null);
+  const [agentText,setAgentText]=useState("");
+  const [agentPlan,setAgentPlan]=useState(null);
+  const [agentBusy,setAgentBusy]=useState(false);
+  const [agentErr,setAgentErr]=useState("");
+  const [agentResult,setAgentResult]=useState(null);
+  const loadAgentDaily=()=>apiFetch("/agent/daily-line")
+    .then(setAgentDaily).catch(()=>setAgentDaily(null));
+  useEffect(()=>{loadAgentDaily();},[]);
+  async function agentAsk(){
+    const text=agentText.trim();
+    if(!text||agentBusy)return;
+    setAgentBusy(true);setAgentErr("");setAgentPlan(null);setAgentResult(null);
+    try{
+      const r=await apiFetch("/agent/instructions",{method:"POST",body:JSON.stringify({text})});
+      setAgentPlan(r);
+    }catch(e){
+      // A MONEY INSTRUCTION IS REFUSED WITH ITS SENTENCE, not with an error
+      // code. She asked for something reasonable and is owed a reason.
+      setAgentErr(e&&e.sentence?e.sentence:errorMessage(e,"Steward could not plan that just now."));
+    }
+    setAgentBusy(false);
+  }
+  async function agentConfirm(){
+    if(!agentPlan||agentBusy)return;
+    setAgentBusy(true);setAgentErr("");
+    try{
+      const r=await apiFetch(`/agent/instructions/${agentPlan.id}/confirm`,{method:"POST",body:"{}"});
+      setAgentResult(r);setAgentPlan(null);setAgentText("");
+      loadAgentDaily();
+    }catch(e){ setAgentErr(errorMessage(e,"Steward could not run that.")); }
+    setAgentBusy(false);
+  }
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
   const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>{});
   useEffect(()=>{apiFetch("/threads/health").then(setThreadHealth).catch(()=>{});},[]);
@@ -1974,6 +2010,86 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // BUILD-94 Part 3 — one line per sequence, and nothing more. A sequence is
   // supposed to run without her; Home's whole job here is to prove it is
   // running, and to say so immediately when an email could not be sent.
+  // ── BUILD-97 Part 3 — "TELL STEWARD WHAT TO DO" ──────────────────────────
+  // One box on Home. She types an instruction in her own words; Steward shows
+  // her the PLAN before anything happens; she confirms once.
+  const agentSection=(
+    <div style={{...cardWrap}} data-testid="agent-box">
+      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
+        <span style={sTitle}>Tell Steward what to do</span>
+        <button onClick={()=>onNavigate("settings",{section:"agent"})} style={sLink}>Activity →</button>
+      </div>
+      <div style={{padding:"4px 20px 16px"}}>
+        {/* THE DAILY LINE, which is what this section replaced. It says nothing
+            at all when there is nothing to say, rather than rendering a
+            template with holes in it (the BUILD-86 C.2 rule). */}
+        {agentDaily&&agentDaily.line&&(
+          <div data-testid="agent-daily-line" style={{fontSize:13.5,lineHeight:1.55,color:T.ink,marginBottom:10}}>
+            {agentDaily.line}
+          </div>
+        )}
+        <textarea data-testid="agent-input" value={agentText} rows={2}
+          onChange={e=>setAgentText(e.target.value)}
+          placeholder="Find everyone who gave last October and hasn't this year, and draft me a note to each."
+          style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,
+                  padding:"10px 12px",fontSize:13.5,fontFamily:"inherit",color:T.ink,resize:"vertical"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
+          <button data-testid="agent-ask" onClick={agentAsk} disabled={agentBusy||!agentText.trim()}
+            style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",
+                    fontSize:13,fontWeight:700,cursor:agentBusy||!agentText.trim()?"not-allowed":"pointer",
+                    opacity:agentBusy||!agentText.trim()?0.55:1}}>
+            {agentBusy?"Thinking…":"Show me the plan"}
+          </button>
+          <span style={{fontSize:12,color:T.ink3}}>Nothing happens until you say so.</span>
+        </div>
+        {agentErr&&(
+          <div data-testid="agent-refusal" style={{marginTop:10,background:T.gold100,border:"1px solid "+T.gold300,
+                borderRadius:10,padding:"10px 12px",fontSize:13,lineHeight:1.55,color:T.ink}}>
+            {agentErr}
+          </div>
+        )}
+        {/* THE PLAN SHE READS BEFORE IT RUNS. */}
+        {agentPlan&&agentPlan.plan&&(
+          <div data-testid="agent-plan" style={{marginTop:12,background:T.bg,border:"1px solid "+T.bg3,
+                borderRadius:10,padding:"12px 14px"}}>
+            <div style={{fontSize:13.5,lineHeight:1.6,color:T.ink,marginBottom:8}}>{agentPlan.plan.summary}</div>
+            <ul style={{margin:"0 0 10px 0",paddingLeft:18,fontSize:13,color:T.ink2,lineHeight:1.6}}>
+              {(agentPlan.plan.steps||[]).map((st,i)=><li key={i}>{st.describes}</li>)}
+            </ul>
+            <div data-testid="agent-plan-sends" style={{fontSize:12.5,color:agentPlan.plan.sends>0?T.gold700:T.ink3,marginBottom:10}}>
+              {agentPlan.plan.sends>0
+                ? `${agentPlan.plan.sends} message${agentPlan.plan.sends===1?"":"s"} would be sent.`
+                : "Nothing sends."}
+            </div>
+            {agentPlan.retroactive&&(
+              <div style={{fontSize:12.5,color:T.ink3,marginBottom:10}}>{agentPlan.retroactive.sentence}</div>
+            )}
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <button data-testid="agent-confirm" onClick={agentConfirm} disabled={agentBusy}
+                style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",
+                        fontSize:13,fontWeight:700,cursor:agentBusy?"not-allowed":"pointer"}}>
+                {agentBusy?"Running…":"Do it"}
+              </button>
+              <button onClick={()=>setAgentPlan(null)}
+                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",
+                        color:T.ink2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                No, leave it
+              </button>
+            </div>
+          </div>
+        )}
+        {agentResult&&(
+          <div data-testid="agent-result" style={{marginTop:12,fontSize:13,lineHeight:1.6,color:T.ink2}}>
+            {`Steward did ${agentResult.done||0}, drafted ${agentResult.drafted||0}, sent ${agentResult.sent||0}.`}
+            {agentResult.withheld>0&&(
+              <span style={{color:T.gold700}}>{` ${agentResult.withheld} withheld — Steward could not point at the rows those came from.`}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   const sequencesSection=(seqLines&&seqLines.length)?(
     <div style={{...cardWrap}}>
       <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
@@ -2443,7 +2559,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         ):null;
 
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
         // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
         // stay a single per-user list (so BUILD-34's merge rule, its
         // stale-config guarantee and move-to-top all keep working untouched);

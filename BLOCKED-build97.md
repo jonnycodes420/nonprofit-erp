@@ -202,3 +202,73 @@ is written here rather than taken.
 excluded: it blocks the **phone**, and folding it into a flag that blocks email
 would silence people who only asked not to be rung up.
 
+
+## 9 · The agent's SEND half is built and deliberately not wired
+
+Part 3 asks for a per-instruction flip — **"send it and tell me"** — which is
+her signing that instruction once, the way she turns a sequence on once.
+
+**What is built:** the authorization is a column with a database default of
+`draft`; the plan validator refuses a plan that sends unless the instruction
+carries `send`; the tool table marks `send_email` as needing her signature; the
+Activity screen says of every instruction whether it is "drafts only" or
+"signed for sending"; and the suite asserts a sending plan is refused at
+`draft` and accepted at `send`.
+
+**What is NOT wired:** the run path writes `sent = 0` **unconditionally**.
+There is no code path in this build by which the agent sends a donor an email.
+
+**Why, and this is a decision rather than an omission.** Sending needs the
+Resend key, and the Resend key is *currently an invalid sentinel by deliberate
+incident containment* (`INCIDENT-2026-09-22-outbound-email.md`). Shipping a
+send path that has never once been walked — into the exact product that emailed
+a stranger three weeks ago — is the same mistake with a newer name on it. The
+incident's own lesson was that five of eight messages were stopped by the
+*provider*, which is luck, not a control.
+
+**What it needs before it is wired, in order:**
+
+1. The Resend key back (blocked on §3 above: the 3,514 reachable addresses).
+2. One real send, walked by hand, to one real address Jonathan owns, from an
+   instruction he signed himself — the BUILD-95 cheque-drill pattern.
+3. The send recorded in `agent_runs.sent` and on the Activity screen, and the
+   instruction quoted in the log line on that send, *verified by reading the
+   log*, not by reading the code.
+
+Until all three, `send_authorization: "send"` is a state an instruction can be
+in that changes what the *plan* is allowed to contain and nothing else.
+
+---
+
+## 10 · The agent needs `ANTHROPIC_API_KEY`, and the suite is honest about it
+
+`shared/agentShape.js`, the guards, the plan validator, the Activity screen, the
+undo, the pause and the tenancy wall are all asserted **without a key** — 101
+assertions, 23 of them in a browser. That is deliberate: *a safety property that
+can only be checked with a paid key is a safety property that does not get
+checked.*
+
+What is **not** exercised without one is the two routes that actually call the
+model: `POST /agent/instructions` (build the plan) and the model half of
+`confirm` (produce the actions). With no key both answer `503
+agent_unavailable` by name, and the suite asserts that too.
+
+**Needed:** `ANTHROPIC_API_KEY` on Railway with a spend cap, per the brief. Then
+re-run `tests/build97-agent.test.js` — it has a keyed branch that plans a real
+instruction and asserts the plan sends nothing.
+
+---
+
+## 11 · Ten real instructions in Allie's words, still not supplied
+
+Repeated from §5 because Part 3 is now built and this is the gap it leaves.
+
+The money refusal, the plan validator and the tool set were all shaped against
+**the brief's own eight examples**. They are the nearest thing to her words in
+hand and they are not her words. The refusal net in particular is a judgement
+about phrasing — it catches "cancel her monthly gift" and lets "Which of my
+sponsors have a card that failed twice?" through, which is right, and it was
+tuned against sentences written by the person specifying the product.
+
+Ten sentences from the person who will actually type them is the difference
+between a demo and a feature, and it is ten minutes of her time.

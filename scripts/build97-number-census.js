@@ -104,7 +104,13 @@ const OUT_OF_SCOPE = {
 const PATTERNS = [
   { key: "money",   re: /\{\s*fmtFull?\s*\(/g,                     what: "a money formatter reaching JSX" },
   { key: "percent", re: /\{[^{}]{1,80}\}\s*%|\$\{[^{}]{1,80}\}\s*%/g, what: "a percentage reaching JSX" },
-  { key: "count",   re: /\{[^{}]{1,60}\.toLocaleString\(\)/g,      what: "a formatted count reaching JSX" },
+  // A DATE IS NOT A COUNT, and this file's own rules above already exclude
+  // dates. The first cut of this pattern matched `new Date(x).toLocaleString()`
+  // anyway, so the scanner was breaking the contract it states at the top.
+  // Caught by the census's own drift assertion the moment Part 3 put a run
+  // timestamp on the Activity screen and the total went 390 to 391 — which is
+  // the census working, on itself.
+  { key: "count",   re: /\{(?![^{}]*\bDate\s*\()[^{}]{1,60}\.toLocaleString\(\)/g, what: "a formatted count reaching JSX" },
   { key: "score",   re: /\/\s*99|\/\s*10\b(?!\s*[)\],;])/g,        what: "an explicit score out of a fixed ceiling" },
 ];
 

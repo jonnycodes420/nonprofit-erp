@@ -64,10 +64,10 @@ async function reset() {
 const EXPECTED = {
   "components/Donors.jsx": 115,
   "components/Dashboard.jsx": 62,
-  "components/Finance.jsx": 44,
+  "components/Finance.jsx": 43,
   "components/Reports.jsx": 41,
   "components/Fundraising.jsx": 30,
-  "components/Communications.jsx": 21,
+  "components/Communications.jsx": 20,
   "components/Grants.jsx": 13,
   "components/AnnualFund.jsx": 12,
   "components/shared.jsx": 9,
@@ -84,7 +84,7 @@ const EXPECTED = {
   "components/MetricBreakdownPanel.jsx": 1,
   "components/Uploader.jsx": 1,
 };
-const EXPECTED_TOTAL = 390;
+const EXPECTED_TOTAL = 388;
 const EXPECTED_CLAIMS = 106;
 
 (async () => {

@@ -140,8 +140,18 @@ const root = path.join(__dirname, "..");
   // later is a donor who was welcomed by nobody.
   //
   // It is ONE LINE per sequence, hideable, and below the five lists of people.
-  ok("Home renders the five lists of people, plus the one line per sequence",
-     home.slice().sort().join(",") === "drift,recurring,sequences,setup,thankYous,thread", home);
+  //
+  // REVIEWED CONTRACT CHANGE (BUILD-97 Part 3). Home gains a sixth section:
+  // `agent` — the daily line, and the box she types an instruction into. It is
+  // held to the SAME argument the sequence line had to win, and it wins it the
+  // same way: its rows do not name a person either, and it earns its place
+  // because it is the one surface that can ACT on her behalf. "Steward did 14
+  // things for you yesterday, sent 0, 6 drafts waiting" is the account it owes
+  // her, on the screen she actually opens, and BUILD-97 makes it unhideable for
+  // exactly that reason — where the sequence line is hideable, because a
+  // sequence only ever sends words she wrote herself.
+  ok("Home renders the five lists of people, the sequence line, and the agent's own account",
+     home.slice().sort().join(",") === "agent,drift,recurring,sequences,setup,thankYous,thread", home);
   // COMMENTS ARE NOT A SCREEN. The note explaining what was removed names the
   // thing it removed; a guard that cannot tell a comment from a render forces
   // you to stop writing down why.

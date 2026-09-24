@@ -143,7 +143,7 @@ CORE=(
   build98-photos
   build99-grant-timeline
   build100-score-names
-  build97-part0 build97-npsp build97-numbers
+  build97-part0 build97-npsp build97-numbers build97-agent
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

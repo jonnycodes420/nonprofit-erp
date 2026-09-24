@@ -72,7 +72,8 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["audiences", "statement_mappings", "gift_duplicate_questions",
+    for (const t of ["agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
+      "audiences", "statement_mappings", "gift_duplicate_questions",
       "giving_recurring", "giving_sources", "thank_you_drafts", "pledge_installments", "imports", "board_reports", "donor_relationships", "donor_designations",
       "portal_audit_log", "digest_sends", "notification_sends", "workflow_runs", "workflows",
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
@@ -223,6 +224,18 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // BUILD-97 Part 3 — an instruction, a run and a write, per org. Seeded
+  // directly rather than through the routes because creating one calls a model,
+  // and a tenancy probe must not depend on an API key being present. The point
+  // is that org A's token, aimed at org B's instruction id, reaches nothing.
+  await q(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,plan)
+           VALUES ($1,$2,$3,'task','active','draft','{"steps":[]}'::jsonb)`,
+    [`ai_${o}`, o, `Instruction belonging to ${o}`]).catch(() => {});
+  await q(`INSERT INTO agent_runs (id,org_id,instruction_id,status) VALUES ($1,$2,$3,'done')`,
+    [`arun_${o}`, o, `ai_${o}`]).catch(() => {});
+  await q(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,cites)
+           VALUES ($1,$2,$3,$4,'set_stage','donors',$5,'{"stage":"prospect"}'::jsonb,'[]'::jsonb)`,
+    [`aw_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`]).catch(() => {});
 }
 
 // ── The cross-tenant resolver: (path segment or param name) → org B's row id.
@@ -258,6 +271,11 @@ function bResolver(routePath, param) {
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404
   // for the wrong reason. Point them at org B's real question instead.
+  // BUILD-97 Part 3 — the agent's own rows. `/agent/instructions/:id/...` and
+  // `/agent/writes/:id/undo` both use :id, and the first segment is `agent` for
+  // both, so they are resolved by PATH rather than by segment.
+  if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;
+  if (routePath.startsWith("/agent/writes/")) return `aw_${B}`;
   if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

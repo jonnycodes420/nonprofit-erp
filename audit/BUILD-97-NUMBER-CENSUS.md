@@ -38,8 +38,14 @@ the suite reads the registry and finds each sentence in a real browser.
 
 ## What was counted
 
-**390 numeric render sites** across the active surfaces, of which **106 are
+**388 numeric render sites** across the active surfaces, of which **106 are
 claim-shaped**.
+
+*(The first run of the scanner reported 390. Three of those were **dates** —
+`new Date(x).toLocaleString()` — which this document's own rules exclude and the
+pattern matched anyway. The census caught it on itself: Part 3 put a run
+timestamp on the Activity screen, the total moved, and the drift assertion
+refused. Two of the three were pre-existing, in Finance and Communications.)*
 
 A **claim** is a figure in display type, under a label, standing alone and
 inviting a reading: *Weighted forecast $59,500*. A **cell** is a number in a
@@ -54,10 +60,10 @@ things that matter, and a census nobody can read is a census nobody checks.
 |---|---|---|
 | `Donors.jsx` | 115 | 15 |
 | `Dashboard.jsx` | 62 | 24 |
-| `Finance.jsx` | 44 | 3 |
+| `Finance.jsx` | 43 | 3 |
 | `Reports.jsx` | 41 | 25 |
 | `Fundraising.jsx` | 30 | 16 |
-| `Communications.jsx` | 21 | 6 |
+| `Communications.jsx` | 20 | 6 |
 | `Grants.jsx` | 13 | 5 |
 | `AnnualFund.jsx` | 12 | 4 |
 | `shared.jsx` | 9 | 0 |
@@ -286,7 +292,7 @@ Drift surface, with grant-cycle language and no Re-engage button.
 
 ## What this census does NOT claim
 
-- It does not claim that 390 is every number in the product. It is every number
+- It does not claim that 388 is every number in the product. It is every number
   matched by four named patterns, on the surfaces listed, with the noise rules
   stated in the scanner. The scanner is the definition; the count is reproducible
   and the patterns are readable.
