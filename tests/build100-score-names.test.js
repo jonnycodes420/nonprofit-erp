@@ -31,10 +31,20 @@ const SRC = path.join(__dirname, "..", "client", "src", "components");
   const donors = fs.readFileSync(path.join(SRC, "Donors.jsx"), "utf8");
 
   console.log("\n— §1 · the number says what it is —");
-  ok('the profile tile is labelled "Giving strength"',
+  ok('the figure is labelled "Giving strength"',
     /GIVING_STRENGTH_LABEL\s*=\s*"Giving strength"/.test(donors), null);
-  const def = (donors.match(/const GIVING_STRENGTH_DEF = "([^"]+)"/) || [])[1] || "";
+  // REVIEWED CONTRACT CHANGE (BUILD-97 Part 2): the sentence moved OUT of a
+  // local constant in this component and into shared/numberCensus.js, which is
+  // now the one place any number on screen may be defined. It is the same
+  // string — the local constant is assigned FROM the registry — and the
+  // assertions below are unchanged, which is the point: the words BUILD-100
+  // chose are still the words, they just live somewhere a second copy cannot
+  // be made of them.
+  const census = await import("../shared/numberCensus.js");
+  const def = census.censusById("list.givingStrength").sentence;
   ok("…and carries a definition", def.length > 40, def.slice(0, 60));
+  ok("…read from the ONE registry, never a second copy in the component",
+    /GIVING_STRENGTH_DEF = censusById\("list\.givingStrength"\)\.sentence/.test(donors), null);
   // The whole point: it must deny the reading it used to invite.
   ok("…that says explicitly it is NOT an estimate of what they could give",
     /NOT an estimate/i.test(def), def);
@@ -76,21 +86,43 @@ const SRC = path.join(__dirname, "..", "client", "src", "components");
   await page.waitForTimeout(1200);
   await page.locator('button:has-text("Donors")').first().click();
   await page.waitForTimeout(2200);
-  const row = page.locator("text=Margaret Chen").first();
-  if (await row.count()) { await row.click(); await page.waitForTimeout(1800); }
+  // BUILD-97 Part 2 — stay on the DIRECTORY. Opening a record is how this walk
+  // used to reach the tile; the column header is what carries the label and the
+  // definition now.
 
+  // ── REVIEWED CONTRACT CHANGE (BUILD-97 Part 2, two commits after this
+  // suite was written) ────────────────────────────────────────────────────
+  // This section used to assert the giving-strength TILE renders on the donor
+  // profile with its definition. BUILD-97 Part 2 took that tile OFF this
+  // screen, and the reasoning is a continuation of this build's, not a reversal
+  // of it: renaming "Score 77/99" to "Giving strength" fixed the WORD and could
+  // not fix the SHAPE — a number out of 99, in display type, beside one
+  // person's name, is read as a verdict on that person however carefully it is
+  // labelled, and the officer reading it is deciding how much to ask them for.
+  //
+  // What BUILD-100 actually proved is unchanged and still asserted here: the
+  // label, the definition's exact words, the keyboard reachability, the screen
+  // reader. It is now proved on the DIRECTORY COLUMN, where the figure still
+  // lives — a sort order across a list rather than a judgement on one record.
+  //
+  // The tile's ABSENCE is asserted by tests/build97-numbers.test.js §3, which
+  // is where it belongs: this suite is about what the number is CALLED.
   const found = await page.evaluate(() => {
-    const labelled = [...document.querySelectorAll("div")].some(d => /GIVING STRENGTH/i.test(d.textContent || "") && d.children.length <= 2);
     const mark = [...document.querySelectorAll("[title]")].find(e => /how recently/i.test(e.getAttribute("title") || ""));
-    return { labelled, hasDef: !!mark, tabbable: mark ? mark.getAttribute("tabindex") === "0" : false,
+    const labelled = [...document.querySelectorAll("div")].some(d => /GIVING STRENGTH/i.test(d.textContent || "") && d.children.length <= 2);
+    const tileGone = ![...document.querySelectorAll("div")].some(d =>
+      /\b\d{1,2}\s*\/\s*99\b/.test(d.textContent || "") && d.children.length === 0);
+    return { labelled, tileGone, hasDef: !!mark,
+             tabbable: mark ? mark.getAttribute("tabindex") === "0" : false,
              aria: mark ? !!mark.getAttribute("aria-label") : false };
   });
-  ok("the tile is labelled Giving strength on screen", found.labelled, found);
+  ok("the column is labelled Giving strength on screen", found.labelled, found);
   ok("…the definition is on it", found.hasDef, found);
   // A tooltip nobody can reach is a definition that does not exist for half
   // the people who need it — the dashboards' own rule.
   ok("…reachable by keyboard", found.tabbable, found);
   ok("…and exposed to a screen reader", found.aria, found);
+  ok("…and no bare N/99 figure is drawn on this screen (BUILD-97 Part 2)", found.tileGone, found);
   await browser.close();
 
   await closeDb();

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
+import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
@@ -58,7 +59,19 @@ function MovementSummary({ movement }) {
   return (
     <div style={{ background: T.bgCard, border: `1px solid ${T.bg3}`, borderRadius: 12, padding: "20px 22px", display: "grid", gridTemplateColumns: "minmax(180px,1fr) minmax(240px,1.4fr) minmax(200px,1fr)", gap: 28 }} className="rec-movement">
       <div>
-        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>Monthly recurring revenue</div>
+        {/* BUILD-97 Part 2 — the figure's own sentence, from the census. The
+            line under it says how many sustainers it is made of, which is its
+            COMPOSITION; it never said what the number means, and a yearly gift
+            counted as a twelfth is exactly the sort of thing a director is
+            asked about in a board meeting. */}
+        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+          Monthly recurring revenue
+          <span tabIndex={0} data-testid="rec-def-mrr"
+            title={censusById("recurring.mrr").sentence} aria-label={censusById("recurring.mrr").sentence}
+            style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: T.ink3, border: `1px solid ${T.bg3}`,
+                     borderRadius: 99, width: 13, height: 13, display: "inline-flex", alignItems: "center",
+                     justifyContent: "center", cursor: "help", verticalAlign: "middle" }}>?</span>
+        </div>
         <div style={{ fontSize: 34, fontWeight: 800, fontFamily: "'DM Serif Display',serif", color: T.ink, lineHeight: 1.15, margin: "6px 0 2px" }}>{fmtFull(movement.mrr)}</div>
         <div style={{ fontSize: 12, color: T.ink3 }}>
           {movement.healthyCount} active sustainer{movement.healthyCount === 1 ? "" : "s"}

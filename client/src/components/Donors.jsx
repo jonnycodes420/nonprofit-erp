@@ -10,6 +10,7 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { detectNpsp, npspMapping, npspOrganizationName, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
+import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
@@ -123,8 +124,29 @@ const CSV_STANDARD_FIELDS = [
 // 99 is a CLAMP, not a denominator. The components top out at 100 and are
 // clamped to 5..99; it is not a percentage and it is not normalised against
 // anybody else, so two orgs' 77s are not comparable.
+// BUILD-97 Part 2 — the label and the sentence come from the CENSUS, which is
+// the one place a number on screen is allowed to be defined. They were two
+// local constants here and the column headers used a THIRD spelling (a bare
+// string literal), so the definition BUILD-100 wrote reached exactly one tile
+// — the one this build then took off the screen.
 const GIVING_STRENGTH_LABEL = "Giving strength";
-const GIVING_STRENGTH_DEF = "How strong this donor's giving has been with you \u2014 how much, how recently, and how often. Ranked 5 to 99 against a fixed scale, not against your other donors. It is NOT an estimate of what they could afford to give: nothing here looks outside your own records.";
+const GIVING_STRENGTH_DEF = censusById("list.givingStrength").sentence;
+
+// The keyboard-reachable definition mark, used by every column header that
+// carries a number somebody could misread. Same affordance BUILD-100 built for
+// the profile tile: a tooltip nobody can tab to is a definition that does not
+// exist for half the people who need it.
+function ColDef({ text, testid, dark }) {
+  return (
+    <span tabIndex={0} title={text} aria-label={text} data-testid={testid}
+      style={{ marginLeft: 5, fontSize: 9, fontWeight: 700,
+               color: dark ? "rgba(240,237,230,0.7)" : T.ink3,
+               border: `1px solid ${dark ? "rgba(240,237,230,0.35)" : T.bg3}`,
+               borderRadius: 99, width: 13, height: 13, display: "inline-flex",
+               alignItems: "center", justifyContent: "center", cursor: "help",
+               verticalAlign: "middle" }}>?</span>
+  );
+}
 
 const WEALTH_SCORE_DEFINITION = null;
 const WEALTH_SCORE_SOURCE = null;
@@ -5083,8 +5105,26 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </div>
               </div>
             )}
-            <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
-              {[["Lifetime",fmtFull(donor.total),T.ink],["Last Gift",lastGiftDisplay,"#0d5c3a"],["Contact",`${urg.days}d ago`,urg.urgencyColor],[GIVING_STRENGTH_LABEL,sc!=null?`${sc}/99`:"no gifts on file",sc!=null?scoreColor:T.ink3,GIVING_STRENGTH_DEF]].map(([l,v,c,def])=>(
+            {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
+                BUILD-100 renamed it ("Score 77/99" → "Giving strength") and
+                said plainly what it was not, and that was the right first move
+                and not the last one. What it could not fix is the SHAPE: a
+                number out of 99, in display type, beside one person's name, is
+                read as a verdict on that person however carefully it is
+                labelled — and the officer reading it is about to decide how
+                much to ask them for.
+                It survives as a COLUMN on the directory and the re-engage
+                list, where it is a sort order across a list rather than a
+                judgement on the one record somebody opened, and it carries its
+                definition there (see shared/numberCensus.js). The score itself
+                is untouched: `donorScore` still computes it, the lists still
+                show it, and turning the tile back on is this array.
+                The three that stay each carry their own sentence now, on the
+                keyboard-reachable hover BUILD-100 built for the fourth. */}
+            <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+              {[["Lifetime",fmtFull(donor.total),T.ink,censusById("profile.lifetime").sentence],
+                ["Last Gift",lastGiftDisplay,"#0d5c3a",censusById("profile.lastGift").sentence],
+                ["Contact",`${urg.days}d ago`,urg.urgencyColor,censusById("profile.contact").sentence]].map(([l,v,c,def])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                   <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
                     {l}
@@ -5092,7 +5132,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         the dashboards' hover convention: reachable by keyboard,
                         because a tooltip nobody can tab to is a definition that
                         does not exist for half the people who need it. */}
-                    {def&&<span tabIndex={0} title={def} aria-label={def}
+                    {def&&<span tabIndex={0} title={def} aria-label={def} data-testid={"dp-tile-def-"+l}
                       style={{marginLeft:5,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,
                               borderRadius:99,width:13,height:13,display:"inline-flex",alignItems:"center",
                               justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>}
@@ -6303,7 +6343,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     return isNaN(dt)?null:dt.toLocaleDateString("en-US",{month:"short",year:"numeric"});
   };
 
-  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed","Giving strength",""];
+  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed",GIVING_STRENGTH_LABEL,""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
   return(
@@ -6330,7 +6370,9 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
           <div className="re-col-lifetime" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Lifetime Giving</div>
           <div className="re-col-lastgift" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Last Gift</div>
           <div className="re-col-days" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Days Lapsed</div>
-          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Giving strength</div>
+          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>
+            {GIVING_STRENGTH_LABEL}<ColDef text={GIVING_STRENGTH_DEF} testid="re-def-giving-strength" dark/>
+          </div>
           <div className="re-col-actions" style={{fontSize:10,fontWeight:700,color:"#fff",textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}></div>
         </div>
         {lapsed.map((d,idx)=>{
@@ -6753,10 +6795,13 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:"#0d5c3a"}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last Gift","Giving strength",...(isAdmin?[""]:[])]
+            {["Donor","Stage","Owner","Lifetime","Last Gift",GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{fontSize:10,fontWeight:800,color:"#0d5c3a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>{h}</div>
+                  style={{fontSize:10,fontWeight:800,color:"#0d5c3a",textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>
+                  {h}
+                  {h===GIVING_STRENGTH_LABEL&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
+                </div>
               ))}
           </div>
           {/* Rows */}

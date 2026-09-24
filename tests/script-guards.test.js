@@ -161,6 +161,12 @@ const PROD_READONLY = [
   // human reads in a row. Pure: no server, no database, no network, and the
   // date is pinned so a regeneration only moves when the grammar moves.
   "build86-notes-fixture",
+  // BUILD-97 Part 2 — the numeric census. A pure SOURCE scan: reads the
+  // client's active surfaces off disk and counts the places a number is drawn
+  // for a person to read. No server, no database, no network. Run BY
+  // tests/build97-numbers.test.js so the enumeration cannot drift away from
+  // audit/BUILD-97-NUMBER-CENSUS.md.
+  "build97-number-census",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

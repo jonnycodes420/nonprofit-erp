@@ -10994,8 +10994,13 @@ app.get("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
 app.post("/donors/:id/planned-gifts", requireAuth, wrap(async (req, res) => {
   const { type, estimated_value, date_indicated, notes } = req.body;
   if (!type) return res.status(400).json({ error: "type required" });
-  const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const donorCheck = await query("SELECT id, name, kind, planned_giving FROM donors WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
+  // BUILD-97 Part 2 — every planned-gift type is a thing that happens because a
+  // PERSON died. A foundation does not leave a bequest.
+  if (donorCheck[0].kind === "organisation" || donorCheck[0].kind === "anonymous") {
+    return res.status(400).json({ error: PERSON_ONLY_SENTENCE("be given a planned gift", donorCheck[0].name) });
+  }
   const id = "pg_" + uuid().slice(0,8);
   await run(
     "INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value,date_indicated,notes,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -11179,15 +11184,47 @@ app.get("/households/:id", requireAuth, wrap(async (req, res) => {
 
 // Validate a proposed member set: all ids exist in this org, none already in
 // a DIFFERENT household. Returns { error } (with status) or { ids, primary }.
+// ── BUILD-97 Part 2 — AN ORGANISATION IS NOT A PERSON, AND THE PERSON
+// SURFACES ARE WHERE THAT HAS TEETH ────────────────────────────────────────
+// BUILD-80 Part 7 gave `donors.kind` three values and used it to keep
+// organisations off Drift and the re-engage list, and stopped there. Two person
+// surfaces were left open, and both are the kind of wrong that reaches a donor:
+//
+//   · A HOUSEHOLD is a marriage or a family living at one address, combined for
+//     acknowledgment. "The Sunrise Foundation Household" is not a thing, and
+//     the combined figure it produces would put a foundation's grants on a
+//     person's giving record.
+//   · A PLANNED GIFT is a bequest, an estate, an IRA beneficiary designation, a
+//     life-insurance policy. Every one of them is a thing that happens because
+//     a PERSON died. A foundation does not leave a bequest, and a chip on its
+//     record saying it might is the product not knowing what it is looking at.
+//
+// One helper, one sentence, so the two refusals cannot drift apart. Kind NULL
+// is a legacy row and reads as a person (the BUILD-84 rule), so nothing that
+// predates the column is refused.
+const PERSON_ONLY_SENTENCE = (what, name) =>
+  `${name || "That record"} is an organisation, not a person, so it cannot ${what}. ` +
+  `Organisations have their own list, with grant-cycle language rather than household and estate language.`;
+
+async function donorIsOrganisation(donorId, orgId) {
+  const rows = await query("SELECT id, name, kind FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
+  if (!rows.length) return null;                       // caller answers 404 as it already does
+  return { ...rows[0], isOrg: rows[0].kind === "organisation" || rows[0].kind === "anonymous" };
+}
+
 async function validateHouseholdMembers(memberIds, primaryDonorId, orgId, allowHouseholdId) {
   const ids = Array.isArray(memberIds) ? [...new Set(memberIds.filter(Boolean))] : [];
   if (ids.length < 2) return { status: 400, error: "A household needs at least two members." };
   const members = await query(
-    "SELECT id, household_id FROM donors WHERE id = ANY(?) AND org_id=? AND deleted_at IS NULL",
+    "SELECT id, name, kind, household_id FROM donors WHERE id = ANY(?) AND org_id=? AND deleted_at IS NULL",
     [ids, orgId]);
   if (members.length !== ids.length) return { status: 404, error: "One or more donors not found in this organization." };
   const foreign = members.find(m => m.household_id && m.household_id !== allowHouseholdId);
   if (foreign) return { status: 400, error: "A donor is already in another household." };
+  // BUILD-97 Part 2 — a household is people. Checked on the MEMBER LIST rather
+  // than at either route, so the create path and the edit path cannot disagree.
+  const orgMember = members.find(m => m.kind === "organisation" || m.kind === "anonymous");
+  if (orgMember) return { status: 400, error: PERSON_ONLY_SENTENCE("be part of a household", orgMember.name) };
   const primary = primaryDonorId && ids.includes(primaryDonorId) ? primaryDonorId : ids[0];
   return { ids, primary };
 }

@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, PageTitle, EmptyState, fmt, fmtFull, interactive, LockedFeature, goToPricing, DriftBadge, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { censusById } from "../../../shared/numberCensus.js";
 
 // Forward major-gifts pipeline + trailing re-engagement column. Mirrors
 // server's ALL_PIPELINE_STAGES ordering.
@@ -274,9 +275,20 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
           return (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
               <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-                <Stat label="Open asks" value={fmtFull(f.open)} sub={`${f.openCount} open`} color={T.gold600} empty={noOpen} />
-                <Stat label="Weighted forecast" value={fmtFull(f.weighted)} sub="by stage" color={T.greenMid} empty={noOpen} />
-                <Stat label="Closed this FY" value={fmtFull(f.wonThisPeriod)} sub={`${f.wonCount} won`} color={T.greenDk} empty={noWon} />
+                {/* BUILD-97 Part 2 — each of these three carries its sentence
+                    now, from shared/numberCensus.js. "Weighted forecast" is the
+                    one that nearly came off: its whole explanation was the two
+                    words "by stage", and the figure multiplies every open ask
+                    by a fixed probability for the donor's stage — six numbers
+                    somebody decided once and nothing in the file measured. It
+                    survives because those percentages CAN be said out loud, and
+                    only while they are. */}
+                <Stat label="Open asks" value={fmtFull(f.open)} sub={`${f.openCount} open`} color={T.gold600} empty={noOpen}
+                      def={censusById("pipeline.open").sentence} testid="pipe-def-open" />
+                <Stat label="Weighted forecast" value={fmtFull(f.weighted)} sub="by stage" color={T.greenMid} empty={noOpen}
+                      def={censusById("pipeline.weighted").sentence} testid="pipe-def-weighted" />
+                <Stat label="Closed this FY" value={fmtFull(f.wonThisPeriod)} sub={`${f.wonCount} won`} color={T.greenDk} empty={noWon}
+                      def={censusById("pipeline.closed").sentence} testid="pipe-def-closed" />
               </div>
               {allEmpty && <div style={{ fontSize: 12, color: T.ink3, textAlign: "right", maxWidth: 360 }}>No asks recorded — the board tracks people, asks track money.</div>}
             </div>
@@ -390,12 +402,20 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
 }
 
 const filterInp = { padding: "7px 10px", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, fontSize: 13, fontFamily: "'DM Sans',sans-serif", background: T.bgCard, color: T.ink };
-function Stat({ label, value, sub, color, empty }) {
+function Stat({ label, value, sub, color, empty, def, testid }) {
   // D-2 Fix A (BUILD-45): an empty tile shows an em dash in warm grey (T.ink3 =
   // #5a554f) + "No asks logged yet" — never a $0 that asserts "you have nothing."
+  // BUILD-97 Part 2: and it carries its definition, keyboard-reachable, because
+  // a figure in display type under a label is a claim.
   return (
     <div style={{ textAlign: "right" }}>
-      <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 11, color: T.ink3, textTransform: "uppercase", letterSpacing: ".04em", fontWeight: 700 }}>
+        {label}
+        {def && <span tabIndex={0} title={def} aria-label={def} data-testid={testid}
+          style={{ marginLeft: 5, fontSize: 9, fontWeight: 700, color: T.ink3, border: `1px solid ${T.bg3}`,
+                   borderRadius: 99, width: 13, height: 13, display: "inline-flex", alignItems: "center",
+                   justifyContent: "center", cursor: "help", verticalAlign: "middle" }}>?</span>}
+      </div>
       <div style={{ fontSize: 22, fontWeight: 800, color: empty ? T.ink3 : color, lineHeight: 1.1 }}>{empty ? "—" : value}</div>
       <div style={{ fontSize: 11, color: T.ink3 }}>{empty ? "No asks logged yet" : sub}</div>
     </div>
