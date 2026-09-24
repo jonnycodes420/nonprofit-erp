@@ -497,12 +497,31 @@ export function matchNamesCompatible(a, b) {
 // solicitable record. These probes are deliberately anchored (no "Deceased
 // Spouse Name" false positives); values parse through parseBoolFlag.
 const DECEASED_HDR = /^(is\s+)?deceased\??$/i;
-const DNC_HDR = /^(do\s*not\s*(contact|solicit|mail|email)|dns|dnc|no\s*(contact|solicitation)|opt(ed)?[\s-]*out)\??$/i;
+// BUILD-97 Part 1 — SALESFORCE SPELLS AN OPT-OUT DIFFERENTLY, AND NOTHING HERE
+// RECOGNISED IT. NPSP's Contact export carries `Email Opt Out` (the standard
+// `HasOptedOutOfEmail` field). This pattern is anchored to the WHOLE header, so
+// "Email Opt Out" matched neither `opt(ed)?[\s-]*out` (extra leading word) nor
+// any CSV_FIELDS label — it was silently unrecognised, and every donor who had
+// asked that organisation to stop emailing them imported as reachable. That is
+// the exact class BUILD-58 Part 2 exists to prevent, one spelling wider.
+//
+// `do not call` is deliberately NOT here: it blocks the PHONE, and folding it
+// into a flag that blocks marketing email would silence people who only asked
+// not to be rung up.
+const DNC_HDR = /^(do\s*not\s*(contact|solicit|mail|email)|dns|dnc|no\s*(contact|solicitation)|opt(ed)?[\s-]*out|email\s*opt[\s-]*out|opt(ed)?[\s-]*out\s*of\s*email|hasoptedoutofemail)\??$/i;
 export function detectFlagColumns(headers = []) {
   const hs = headers.map(h => String(h));
+  const deceasedCols = hs.filter(h => DECEASED_HDR.test(h.trim()));
+  const doNotContactCols = hs.filter(h => DNC_HDR.test(h.trim()));
   return {
-    deceasedCol: hs.find(h => DECEASED_HDR.test(h.trim())) || "",
-    doNotContactCol: hs.find(h => DNC_HDR.test(h.trim())) || "",
+    // The first of each stays the answer, so every existing caller is
+    // unchanged. The FULL lists are new, because a file can carry two columns
+    // that mean the same refusal (NPSP ships `Do Not Contact` AND `Email Opt
+    // Out`) and a mapper that reads one of them loses the other's people.
+    deceasedCol: deceasedCols[0] || "",
+    doNotContactCol: doNotContactCols[0] || "",
+    deceasedCols,
+    doNotContactCols,
   };
 }
 export function parseBoolFlag(val) {
@@ -1870,6 +1889,45 @@ export function fundNameFromCell(raw) {
 // cash, never a $0 gift. Refund/Reversal → negative gift; a POSITIVE
 // Reversal is an error asking for a human. Anything else → shown on the
 // mapper as an unrecognised type with count and examples.
+// ── BUILD-97 Part 1 — A STAGE IS NOT A TYPE, AND THE DIFFERENCE IS MONEY ───
+// A CRM export can carry TWO columns that decide whether a row is money:
+//
+//   Type  — WHAT the money was (cash, check, in-kind, a pledge).
+//   Stage — WHETHER it arrived (Closed Won, Pledged, Closed Lost).
+//
+// Steward has read Type since BUILD-80. Salesforce NPSP — the system the
+// organisations Steward is being sold to are leaving — puts the answer in
+// STAGE, and an Opportunity export is a third of stages that are not money.
+//
+// THESE CANNOT SHARE `classifyGiftType`, and the reason is the unknown case.
+// An unrecognised TYPE falls through to cash on purpose: "Gala Table" is a
+// type nobody enumerated and the money still arrived. An unrecognised STAGE
+// must NEVER fall through to cash, because every Salesforce admin can add a
+// stage, and a stage nobody enumerated is a row where it is genuinely unknown
+// whether anything was received. Guessing "yes" overstates the total; guessing
+// "no" understates it. It is set aside BY NAME so a human answers.
+//
+// `known:false` is the flag the review step reads to ask that question.
+const GIFT_STAGE_RECEIVED = new Set(["closed won", "closed-won", "won", "received", "posted", "paid"]);
+const GIFT_STAGE_PLEDGE = new Set(["pledged", "promised", "granted", "committed", "awarded"]);
+const GIFT_STAGE_NOT_RECEIVED = new Set([
+  "closed lost", "closed-lost", "lost", "prospecting", "qualification",
+  "proposal", "proposal/price quote", "negotiation", "negotiation/review",
+  "submitted", "in progress", "cultivation", "identification", "declined", "withdrawn",
+]);
+
+export function classifyGiftStage(raw) {
+  const t = String(raw ?? "").trim().toLowerCase();
+  // A BLANK stage is not "no stage, therefore fine". A gift ledger with a
+  // stage column and an empty cell is a row nobody finished, and it is set
+  // aside with that said out loud.
+  if (!t) return { kind: "not_received", label: "no stage on the row", known: false };
+  if (GIFT_STAGE_RECEIVED.has(t)) return { kind: "received", label: "received", known: true };
+  if (GIFT_STAGE_PLEDGE.has(t)) return { kind: "pledge", label: "a commitment, not money received", known: true };
+  if (GIFT_STAGE_NOT_RECEIVED.has(t)) return { kind: "not_received", label: t, known: true };
+  return { kind: "not_received", label: `a stage Steward does not know: "${String(raw).trim()}"`, known: false };
+}
+
 const GIFT_TYPE_CASH = new Set(["", "cash", "check", "credit card", "cc", "ach", "online", "venmo", "stock", "recurring", "grant", "eft", "wire", "paypal", "card"]);
 export function classifyGiftType(raw) {
   const t = String(raw ?? "").trim().toLowerCase();
@@ -1996,7 +2054,16 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
   const semantics = { pledges: [], inKind: [], links: [], reviewTwins: [], unrecognizedTypes: new Map() };
   const semanticTally = { softCredits: { rows: 0, dollars: 0 }, pledges: { rows: 0, dollars: 0 },
     inKind: { rows: 0, dollars: 0 }, matching: { rows: 0, dollars: 0 }, pledgeScheduled: { rows: 0, dollars: 0 },
-    anonymous: { rows: 0, dollars: 0 } };
+    anonymous: { rows: 0, dollars: 0 },
+    // BUILD-97 Part 1 -- rows a STAGE column says never arrived. Counted, with
+    // dollars, because "a third of this file is not money" is the single most
+    // load-bearing sentence an NPSP import can say, and a bucket with no
+    // dollars in it cannot say it.
+    notReceived: { rows: 0, dollars: 0 } };
+  // The stages this file used that Steward does not recognise, with counts and
+  // examples -- the same shape as unrecognizedTypes, and read by the review
+  // step to ask a human rather than to guess.
+  const unknownStages = new Map();
   rows.forEach((row, i) => {
     // BUILD-79 Part 1/5 — real physical lines when the caller has them (chrome
     // removal makes "index + 2" wrong on report exports).
@@ -2276,6 +2343,70 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     const dateParse = normalizeDate(rawDate, { currentYear, dayFirst });
     const dateVal = dateParse.value;
 
+    // ── BUILD-97 Part 1 — THE STAGE DECIDES WHETHER THIS IS MONEY ────────
+    // Placed ABOVE every type branch on purpose. A Salesforce Opportunity at
+    // "Closed Lost" carries a Payment Method of Check and an Amount of $75;
+    // read as a type it is a cash gift, and it is a gift that never happened.
+    // Whether money ARRIVED outranks what kind of money it would have been.
+    //
+    // A row set aside here is SKIPPED with its reason and its dollars, never
+    // dropped: rows_in_file = gifts + skipped + errored is the BUILD-72
+    // invariant, and a stage filter that quietly shrank the file would break
+    // it in exactly the way that invariant exists to catch.
+    // AN IN-KIND MARKER IS NOT A GIFT TYPE, AND IT OUTRANKS THE STAGE.
+    // NPSP records an in-kind gift by filling `npsp__In_Kind_Type__c` ("Auction
+    // item", "Professional services") — the column's PRESENCE is the fact, and
+    // its value is a free-text description nobody enumerated. Mapping it to
+    // `type` therefore sent it through classifyGiftType, which does not know
+    // "Auction item", called it unrecognized and let it fall through to CASH:
+    // a signed print counted as $300 of money received. `txMap.inKind` names
+    // the column whose non-blank value means "this was never money", which is
+    // the same rule the preset's own row decision applies.
+    if (txMap.inKind) {
+      const marker = String(row[txMap.inKind] ?? "").trim();
+      if (marker) {
+        items.push({ key, donor, gift: null });
+        semanticTally.inKind.rows++; semanticTally.inKind.dollars += dollars;
+        semantics.inKind.push({ donorKey: key, donorName: donor.name, donorEmail: donor.email || "",
+          fmv: dollars || null, date: dateVal || null,
+          description: marker + (noteText ? " — " + noteText.slice(0, 260) : ""), line });
+        record("skipped", "in_kind", dollars, donor.name);
+        fileDollars += dollars;
+        return;
+      }
+    }
+    if (txMap.stage) {
+      const staged = classifyGiftStage(row[txMap.stage]);
+      if (!staged.known) {
+        // `stageKey`, never `key` -- `key` is the DONOR key in this scope and
+        // is read three lines below. Shadowing it here would work and would be
+        // the next person's twenty minutes.
+        const stageKey = String(row[txMap.stage] ?? "").trim() || "(blank)";
+        const e = unknownStages.get(stageKey) || { count: 0, examples: [] };
+        e.count++; if (e.examples.length < 3) e.examples.push({ line, name: donor.name });
+        unknownStages.set(stageKey, e);
+      }
+      if (staged.kind === "not_received") {
+        items.push({ key, donor, gift: null });
+        semanticTally.notReceived.rows++; semanticTally.notReceived.dollars += dollars;
+        record("skipped", "not_received:" + staged.label, dollars, donor.name);
+        fileDollars += dollars;
+        return;
+      }
+      if (staged.kind === "pledge" && typed.kind !== "pledge") {
+        // The stage says commitment and the type column did not. Routed the
+        // same way an explicit "Pledge" type routes, so there is ONE pledge
+        // path and not a second one that behaves slightly differently.
+        items.push({ key, donor, gift: null });
+        semanticTally.pledges.rows++; semanticTally.pledges.dollars += dollars;
+        semantics.pledges.push({ donorKey: key, donorName: donor.name, donorEmail: donor.email || "",
+          amount: dollars, date: dateVal || null, notes: noteText.slice(0, 500),
+          externalId: externalIdVal || undefined, line });
+        record("skipped", "pledge_commitment", dollars, donor.name);
+        fileDollars += dollars;
+        return;
+      }
+    }
     if (typed.kind === "soft_credit") {
       // Not money. A link from the credited person to the base gift (same
       // Gift ID or a -SC suffix); the person is created if new.
@@ -2526,6 +2657,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       links: semantics.links,
       reviewTwins: semantics.reviewTwins,
       unrecognizedTypes: [...semantics.unrecognizedTypes.entries()].map(([type, e]) => ({ type, count: e.count, examples: e.examples })),
+      unknownStages: [...unknownStages.entries()].map(([stage, e]) => ({ stage, count: e.count, examples: e.examples })),
       tally: Object.fromEntries(Object.entries(semanticTally).map(([k, v]) => [k, { rows: v.rows, dollars: Math.round(v.dollars * 100) / 100 }])),
     },
     amountConventions: { ...conventionCounts, column: amountConv ? amountConv.columnConvention : "us" },

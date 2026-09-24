@@ -163,3 +163,42 @@ credential can be sealed (carried over from BUILD-89S; still open).
   credential can be sealed until it is set.
 - **`GEOCODIO_API_KEY` on Railway** (BUILD-84) — without it the donor map has
   no pins. Cosmetic beside the rest of this list, and still not set.
+## 8 · One refusal field, two refusal columns — a decision about contacting real people
+
+Found building the NPSP preset, and it is not Salesforce-specific.
+
+NPSP's Contact export ships **both** `Do Not Contact` (`npsp__Do_Not_Contact__c`)
+and `Email Opt Out` (`HasOptedOutOfEmail`), and they are **different people**:
+one asked the organisation to stop entirely, the other asked it to stop
+emailing. Steward's CSV donor import has **one** such field (`doNotContact`),
+and `buildAutoMapping` gives a target to exactly one column, so the second
+column's people import as reachable.
+
+**Two things were done, and one was deliberately not:**
+
+- **Done:** `Email Opt Out` is now *recognised at all*. It was not — the
+  anchored `DNC_HDR` pattern wanted the whole header to be "opt out", and no
+  `CSV_FIELDS` label matched either, so the column was silently unrecognised and
+  every donor in it imported as reachable. That is the BUILD-58 Part 2 class,
+  one spelling wider, and it would have shipped with the first real Salesforce
+  file.
+- **Done:** when a file carries two such columns, the mapper says so on screen,
+  names both, and says what the consequence is — "anyone marked only in
+  *Email Opt Out* will import as reachable — check that column before you send
+  anything."
+- **NOT done, deliberately:** making the flag field the **OR of several
+  columns**. That is the right fix, and it needs a decision this build may not
+  make for itself: which refusal outranks which, and whether an org that marked
+  somebody "do not email" but not "do not contact" should be reachable by post.
+  Guessing it silences people who did not ask to be silenced, or mails people
+  who did.
+
+**Decision needed:** should a donor flagged in *any* recognised refusal column
+import as `doNotContact`? The conservative answer (yes — the union) is probably
+right and is one line, but it is a decision about contacting real people, so it
+is written here rather than taken.
+
+`do_not_call` is already excluded from that union on purpose, and stays
+excluded: it blocks the **phone**, and folding it into a flag that blocks email
+would silence people who only asked not to be rung up.
+

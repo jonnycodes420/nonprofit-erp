@@ -9,6 +9,7 @@ import { bestCampaignMatch } from "../lib/campaignMatch";
 import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
+import { detectNpsp, npspMapping, npspOrganizationName, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
 import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
 class ErrorBoundary extends Component {
@@ -878,8 +879,37 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     setShape(det.shape); setShapeOverride(null); setShapeDetail(det);
     // Donor-field mapping is over the non-year columns (year columns are gifts,
     // configured separately) so a wide file's donor grid stays clean.
-    setMapping(buildAutoMapping(headers.filter(h => !YEAR_HDR_PAT.test(String(h))), rows));
-    setTxMap(autoDetectTxMapping(headers, rows));
+    // ── BUILD-97 Part 1 — A RECOGNISED EXPORT'S PRESET OUTRANKS THE GUESS ───
+    // `buildAutoMapping` reads one header at a time and knows nothing about
+    // which system wrote the file. The NPSP preset knows both, so where it has
+    // an answer it wins: `Account Name` is `organization` on a contact sheet
+    // and `orgName` on a gift sheet, `Primary Campaign Source` is the FUND
+    // (which no generic guess would reach), and `Stage` is a column the
+    // generic mapper has no target for at all — unmapped, it would let a
+    // Closed Lost row import as cash.
+    //
+    // Every header the preset does NOT name keeps whatever the generic guess
+    // made of it, and the person can still change any of it: this is a
+    // pre-filled answer, not a locked one.
+    const npspAuto = detectNpsp(headers);
+    const autoDonor = buildAutoMapping(headers.filter(h => !YEAR_HDR_PAT.test(String(h))), rows);
+    const autoTx = autoDetectTxMapping(headers, rows);
+    if (npspAuto.isNpsp) {
+      const pre = npspMapping(headers, { object: npspAuto.object });
+      if (npspAuto.object === NPSP_OBJECT_OPPORTUNITY) {
+        // txMap is field -> header (the inverse of the donor mapping's shape).
+        const inv = {};
+        for (const [header, field] of Object.entries(pre.mapping)) inv[field] = header;
+        setMapping(autoDonor);
+        setTxMap({ ...autoTx, ...inv });
+      } else {
+        setMapping({ ...autoDonor, ...pre.mapping });
+        setTxMap(autoTx);
+      }
+    } else {
+      setMapping(autoDonor);
+      setTxMap(autoTx);
+    }
     const cfg = autoDetectWideConfig(headers, rows);
     setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
     setParsed({ headers, rows });
@@ -1045,6 +1075,20 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   const mcStatusHeader = useMemo(
     () => (parsed?.headers || []).find(h => /^(member )?status$/i.test(String(h).trim())) || null,
     [parsed]);
+  // ── BUILD-97 Part 1 — SALESFORCE NPSP ─────────────────────────────────────
+  // The same shape as the Mailchimp preset above, and for the same reason: a
+  // migration off the Nonprofit Success Pack is two exports Steward already
+  // knows how to read, so this is a PRE-FILLED ANSWER to the questions this
+  // mapper already asks — never a second importer.
+  //
+  // The one question left for the person is the one that cannot be read off a
+  // file: a stage this organisation invented. Everything else — which column
+  // is the close date, which is the amount, whether `Account Name` is an
+  // organisation or somebody's household — is decided by the preset and shown.
+  const npsp = useMemo(
+    () => (parsed?.headers ? npspMapping(parsed.headers) : null),
+    [parsed]);
+  const npspIs = !!(npsp && npsp.detected && npsp.detected.isNpsp);
   const [mcFileStatus, setMcFileStatus] = useState(null);
   const [mcApplyTagTypes, setMcApplyTagTypes] = useState(false);
   useEffect(() => {
@@ -2465,6 +2509,42 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {headersUnrecognized && (
                 <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                </div>
+              )}
+              {/* BUILD-97 Part 1 — this file looks like a Salesforce NPSP export. */}
+              {npspIs && (
+                <div data-testid="npsp-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
+                  <div style={{fontWeight:800,marginBottom:5}}>
+                    This looks like a Salesforce export{npsp.object===NPSP_OBJECT_OPPORTUNITY?" — the gift report":" — the contact report"}.
+                  </div>
+                  <div style={{marginBottom:npsp.warnings.length||npsp.ignored.length?8:0,color:T.ink2}}>
+                    The columns are mapped.{" "}
+                    {npsp.object===NPSP_OBJECT_OPPORTUNITY
+                      ? NPSP_PRESET.cashRule
+                      : "An account named like a household is a PERSON; only an organisation account becomes an organisation."}
+                  </div>
+                  {/* A refusal Steward understood and could not use is said out
+                      loud, with both column names in it. Silence here is how
+                      somebody who asked to be left alone gets emailed. */}
+                  {npsp.warnings.map((w,i)=>(
+                    <div key={i} data-testid="npsp-warning" style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:8,padding:"7px 10px",marginBottom:6,color:T.ink}}>
+                      {w.sentence}
+                    </div>
+                  ))}
+                  {npsp.ignored.length>0 && (
+                    <details data-testid="npsp-ignored">
+                      <summary style={{cursor:"pointer",color:T.ink3,fontSize:12}}>
+                        {npsp.ignored.length} column{npsp.ignored.length===1?"":"s"} read and set aside
+                      </summary>
+                      <ul style={{margin:"6px 0 0 0",paddingLeft:18,color:T.ink2}}>
+                        {npsp.ignored.map(ig=>(
+                          <li key={ig.header} style={{marginBottom:3}}>
+                            <strong>{ig.header}</strong> — {ig.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
                 </div>
               )}
               {/* BUILD-94 Part 2 — this file looks like a Mailchimp audience. */}

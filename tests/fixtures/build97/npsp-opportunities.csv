@@ -1,0 +1,13 @@
+Opportunity ID,Opportunity Name,Account Name,Account Record Type,Primary Contact,Contact ID,Amount,Close Date,Stage,Primary Campaign Source,Payment Method,In-Kind Type,Opportunity Record Type,Description,Created Date,Owner Name
+006Aa00000Zz001,Barnett Household $500 Donation,Barnett Household,Household Account,Allie Barnett,003Aa00000AbCdE,500.00,2026-03-04,Closed Won,Spring Appeal 2026,Check,,Donation,,2026-03-04,Dev Director
+006Aa00000Zz002,Barnett Household $250 Donation,Barnett Household,Household Account,Allie Barnett,003Aa00000AbCdE,250.00,2025-11-18,Closed Won,Year End 2025,Credit Card,,Donation,,2025-11-18,Dev Director
+006Aa00000Zz003,Reyes Household $1000 Donation,Reyes Household,Household Account,Marcus Reyes,003Aa00000AbCdF,1000.00,2026-01-09,Closed Won,Spring Appeal 2026,ACH,,Donation,,2026-01-09,Dev Director
+006Aa00000Zz004,Sunrise Foundation Capacity Grant,Sunrise Foundation,Organization,,003Aa00000AbCdI,25000.00,2026-02-01,Closed Won,Capacity Grant,Check,,Grant,Year one of three,2026-02-01,ED
+006Aa00000Zz005,Cedar Grove Trust Commitment,Cedar Grove Trust,Organization,,003Aa00000AbCdJ,10000.00,2026-05-20,Pledged,Capacity Grant,,,Grant,Board approved May 2026,2026-05-20,ED
+006Aa00000Zz006,Okafor Household Spring Ask,Okafor Household,Household Account,Tom Okafor,003Aa00000AbCdK,75.00,2026-06-02,Closed Lost,Spring Appeal 2026,,,Donation,Declined,2026-05-01,Dev Director
+006Aa00000Zz007,Lim Household Major Gift Ask,Lim Household,Household Account,Grace Lim,003Aa00000AbCdL,5000.00,2026-07-15,Prospecting,Major Gifts,,,Donation,First conversation booked,2026-06-20,ED
+006Aa00000Zz008,Whitfield Household Year End,Whitfield Household,Household Account,Dolores Whitfield,003Aa00000AbCdG,150.00,2024-12-01,Closed Won,Year End 2024,Check,,Donation,,2024-12-01,Dev Director
+006Aa00000Zz009,Nandakumar Household Spring Gift,Nandakumar Household,Household Account,Priya Nandakumar,003Aa00000AbCdH,60.00,2026-04-10,Closed Won,Spring Appeal 2026,Credit Card,,Donation,,2026-04-10,Dev Director
+006Aa00000Zz010,Reyes Household Auction Item,Reyes Household,Household Account,Marcus Reyes,003Aa00000AbCdF,300.00,2026-08-01,Closed Won,,,Auction item,In-Kind Gift,Signed print for the gala auction,2026-08-01,Dev Director
+006Aa00000Zz011,Okafor Household Monthly Commitment,Okafor Household,Household Account,Tom Okafor,003Aa00000AbCdK,40.00,2026-09-01,Promised,Monthly Giving,,,Donation,Starts October,2026-08-25,Dev Director
+006Aa00000Zz012,Lim Household Board Review,Lim Household,Household Account,Grace Lim,003Aa00000AbCdL,90.00,2026-05-05,Awaiting Board Review,Spring Appeal 2026,,,Donation,Custom stage this org added,2026-05-01,ED
