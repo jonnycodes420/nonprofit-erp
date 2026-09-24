@@ -10,7 +10,7 @@
 //    file's donors (the Part 7 kill assertion, done via a poisoned batch)
 // Scratch server + Postgres per tests/README.md.
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
 
 const A = "org_wb82_a";
 async function reset() {
@@ -98,7 +98,7 @@ const countGifts = async () => (await q(`SELECT COUNT(*)::int n FROM gifts WHERE
   const bigDonors = Array.from({ length: 5000 }, (_, i) => ({ name: `Kill Drill ${i}`, email: `kd${i}@x.org`, stage: "prospect" }));
   const bigGifts = Array.from({ length: 15000 }, (_, i) => ({ donorIndex: i % 5000, amount: 25, date: "2024-02-01", type: "cash", campaign: "", notes: "" }));
   const ac = new AbortController();
-  const killReq = fetch("http://localhost:5601/donors/import-combined", {
+  const killReq = fetch(BASE + "/donors/import-combined", {   // BASE, never a literal port (BUILD-72)
     method: "POST", signal: ac.signal,
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + tok },
     body: JSON.stringify({ donors: bigDonors, gifts: bigGifts, identityResolved: true }),

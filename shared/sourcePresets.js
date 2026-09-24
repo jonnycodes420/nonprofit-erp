@@ -229,6 +229,8 @@ export function applySourcePreset(key, headers = []) {
     amount: "", date: "", type: "", campaign: "", notes: "", phone: "",
     address: "", city: "", state: "", zip: "", owner: "", externalId: "",
     fund: "", paymentMethod: "", donorType: "",
+    // BUILD-98 (switch) Part 1 — a statement names no soft credit, tribute or match.
+    softCreditName: "", softCreditAmount: "", tributeType: "", tributeName: "", tributeNotify: "", matchEmployer: "",
   };
   const matched = {};
   for (const [field, candidates] of Object.entries(p.columns)) {

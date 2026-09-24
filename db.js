@@ -3593,6 +3593,58 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ALTER COLUMN ai_enabled SET DEFAULT true`);
   await pool.query(`UPDATE orgs SET ai_enabled = true WHERE ai_enabled IS NULL`);
 
+  // ── BUILD-98 Part 1 — SOFT CREDITS, TRIBUTES, MATCHES ─────────────────────
+  // shared/giftCredit.js is the rule: a gift is counted once, on the person
+  // whose money it was. A soft credit is a row POINTING at a gift; nothing that
+  // totals money reads this table unless it is asked to.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS gift_soft_credits (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      gift_id TEXT NOT NULL REFERENCES gifts(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL CHECK (amount > 0),
+      pct NUMERIC(5,2),
+      role TEXT NOT NULL DEFAULT 'other',
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (gift_id, donor_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gsc_org_donor ON gift_soft_credits (org_id, donor_id)`);
+  // Tribute: a fact about the gift. The honouree is a record when there is one
+  // (tribute_donor_id) and a name when there is not.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_type TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_donor_id TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS tribute_name TEXT`);
+  // Matching: the employee's gift names the employer and the pledge that holds
+  // the expected match; the employer's pledge names the gift it matches.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS match_employer_id TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS match_pledge_id TEXT`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS is_match BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE pledges ADD COLUMN IF NOT EXISTS matches_gift_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_pledges_matches_gift ON pledges (matches_gift_id) WHERE matches_gift_id IS NOT NULL`);
+  // The notice to the family — a DRAFT, never sent by Steward, and it holds no
+  // amount because the family is never told one.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tribute_notices (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      gift_id TEXT NOT NULL REFERENCES gifts(id) ON DELETE CASCADE,
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      tribute_type TEXT NOT NULL,
+      honouree_name TEXT NOT NULL,
+      notify_name TEXT,
+      notify_email TEXT,
+      notify_address TEXT,
+      body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'waiting',   -- waiting | sent | skipped
+      sent_at TIMESTAMPTZ, sent_by TEXT, sent_by_name TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (gift_id)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tribute_notices_open ON tribute_notices (org_id, created_at DESC) WHERE status = 'waiting'`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

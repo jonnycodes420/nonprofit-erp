@@ -1487,7 +1487,9 @@ export function autoDetectTxMapping(headers, rows) {
   // Campaign-or-nothing and Payment Method was read as the GIFT TYPE, which is
   // how "Fund → new custom field" and "Payment Method → type" reached a real
   // org's receipt. A column with a standard home never falls through to custom.
-  const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"",fund:"",paymentMethod:"",donorType:"" };
+  const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"",fund:"",paymentMethod:"",donorType:"",
+                // BUILD-98 Part 1 — a gift's soft credit, tribute and matching employer.
+                softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
     const hl = h.toLowerCase().trim();
@@ -1525,6 +1527,16 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.state    && /^(state|province)$/.test(hl))                                map.state    = h;
     if (!map.zip      && /^(zip(.?code)?|postal(.?code)?)$/.test(hl))                  map.zip      = h;
     if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
+    // BUILD-98 (switch) Part 1 — softCreditName / softCreditAmount /
+    // tributeName / tributeType / tributeNotify / matchEmployer are TARGETS a
+    // person chooses, and are deliberately NOT claimed by header here. A real
+    // export's "Matching Employer" is usually a fact about the DONOR (their
+    // employer has a programme), not a promise that THIS gift will be matched;
+    // auto-mapping it would write an expected-match pledge — promised money —
+    // on every one of their gifts. "Soft Credit To" on a donor file is likewise
+    // a note, and the BUILD-78 golden file (tests/fixtures/build78) pins it as
+    // text that creates nobody. Presets that KNOW the column (NPSP's API names)
+    // map it; the generic mapper offers it and asks.
   }
   // A.7 — the old "Fund maps to campaign if no campaign column exists" fallback
   // is GONE. Fund has a home of its own now, and a fund is not an appeal.
@@ -1991,6 +2003,30 @@ export function parseAttributionNote(note) {
 //                         value that fails coercion REFUSES the row with its
 //                         line number (4.2): never coerced, never blanked,
 //                         never quietly stored as text.
+// BUILD-98 Part 1 — the soft credit, tribute and matching employer a gift row
+// names. Carried to the server AS NAMES: the server resolves them against the
+// org's own records after the gifts land (a soft-credit person is created if
+// new; an honouree stays a name unless they are on file; an employer is found
+// or created as an organisation). Nothing here is money — the gift's amount is
+// the gift's, and none of these add to it.
+export function giftCreditFromRow(row, txMap) {
+  const cell = k => (txMap[k] ? String(row[txMap[k]] ?? "").trim() : "");
+  const out = {};
+  const sc = cell("softCreditName");
+  if (sc) {
+    const amt = cell("softCreditAmount");
+    const isPct = /%|percent/i.test(String(txMap.softCreditAmount || "")) || /%$/.test(amt);
+    const num = amt ? Number(amt.replace(/[$,%\s]/g, "")) : null;
+    out.softCredit = { name: sc.slice(0, 200),
+      ...(num != null && Number.isFinite(num) && num > 0 ? (isPct ? { pct: num } : { amount: num }) : {}) };
+  }
+  const tn = cell("tributeName");
+  if (tn) out.tribute = { name: tn.slice(0, 200), type: cell("tributeType") || null, notifyName: cell("tributeNotify") || null };
+  const me = cell("matchEmployer");
+  if (me) out.matchEmployer = me.slice(0, 200);
+  return out;
+}
+
 export function buildTransactionRows(parsed, txMap, opts = {}) {
   // FIX (2026-09-10) — `new Date().toISOString()` is a UTC CALENDAR DATE, and
   // this comparison decides whether a gift is refused as future-dated or a
@@ -2306,6 +2342,7 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
       notes: noteText,
       externalId: txMap.externalId ? (String(row[txMap.externalId] || "").trim() || undefined) : undefined,
       customFields: rowGiftCf,   // BUILD-78: raw, re-validated by the server seam
+      ...giftCreditFromRow(row, txMap),
     });
 
     // ── BUILD-80 Part 8 — the Frequency column is a CLAIM about cadence,

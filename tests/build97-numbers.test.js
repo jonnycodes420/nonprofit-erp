@@ -49,7 +49,7 @@ const ME = "numbers@b97.example.org";
 // the one that bit: logging a planned gift writes one, and it holds a donor_id.
 // ORG is declared ABOVE this on purpose - a const read above its own
 // declaration is the shape that has cost this repo three separate builds.
-const CHILD_TABLES = ["interactions", "threads", "tasks", "planned_gifts", "households",
+const CHILD_TABLES = ["gift_soft_credits", "interactions", "threads", "tasks", "planned_gifts", "households",
   "gifts", "donors", "users", "fin_transactions", "budgets", "accounts", "fin_funds"];
 async function reset() {
   for (const t of CHILD_TABLES) await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -62,7 +62,7 @@ async function reset() {
 // screen is a change to what the product tells somebody, and it has to be
 // written down either way.
 const EXPECTED = {
-  "components/Donors.jsx": 115,
+  "components/Donors.jsx": 117,   // BUILD-98 Part 1: +2, the soft-credit pair (profile.creditHard / creditWithSoft)
   "components/Dashboard.jsx": 62,
   "components/Finance.jsx": 43,
   "components/Reports.jsx": 41,
@@ -84,8 +84,8 @@ const EXPECTED = {
   "components/MetricBreakdownPanel.jsx": 1,
   "components/Uploader.jsx": 1,
 };
-const EXPECTED_TOTAL = 388;
-const EXPECTED_CLAIMS = 106;
+const EXPECTED_TOTAL = 390;
+const EXPECTED_CLAIMS = 107;
 
 (async () => {
   console.log("build97-numbers");
@@ -316,6 +316,21 @@ const EXPECTED_CLAIMS = 106;
         ok(`…reachable by keyboard and exposed to a reader`,
            aria === e.sentence && (await el.getAttribute("tabindex")) === "0", { aria });
       }
+    }
+    // BUILD-98 Part 1 — the soft-credit pair renders only on a record another
+    // gift credits, so give Allie one and look again.
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type) VALUES ('g_b98num',$1,'d_p2',400,'2026-09-01','cash') ON CONFLICT DO NOTHING`, [ORG]);
+    await q(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,role) VALUES ('gsc_b98num',$1,'g_b98num','d_p1',400,'spouse') ON CONFLICT DO NOTHING`, [ORG]);
+    await page.goto(APP + "/donors/d_p1", { waitUntil: "networkidle" });
+    await page.waitForTimeout(2500);
+    for (const id of ["profile.creditHard", "profile.creditWithSoft"]) {
+      const e = CENSUS.censusById(id);
+      const el = page.locator(`[data-testid="${e.testid}"]`);
+      const n = await el.count();
+      ok(`${e.label} renders on a soft-credited record`, n === 1, { testid: e.testid, count: n });
+      if (n === 1) ok(`…with the registry's exact sentence, reachable by keyboard`,
+        (await el.getAttribute("title")) === e.sentence && (await el.getAttribute("aria-label")) === e.sentence
+        && (await el.getAttribute("tabindex")) === "0");
     }
     await browser.close();
   }

@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
+    for (const t of ["tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
       "audiences", "statement_mappings", "gift_duplicate_questions",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
@@ -121,6 +121,10 @@ async function seedOrg(o, tag) {
     [`c_${o}`, o, `${mark} Campaign`]);
   await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign_id,fund_id) VALUES ($1,$2,$3,$4,$5,'cash',$6,$7)`,
     [`g_${o}`, o, `d_${o}`, amt, TODAY, `c_${o}`, `fnd_${o}`]);
+  // BUILD-98 Part 1 — a tribute notice and a soft credit, so the new
+  // /gifts/:id/extras and /tribute-notices/:id routes are probed across the wall.
+  await q(`INSERT INTO tribute_notices (id,org_id,gift_id,donor_id,tribute_type,honouree_name,body)
+           VALUES ($1,$2,$3,$4,'memory',$5,$6)`, [`tn_${o}`, o, `g_${o}`, `d_${o}`, `${mark} Honouree`, `${mark} notice`]);
   await q(`INSERT INTO fin_transactions (id,org_id,date,description,amount,type,account_id,fund_id) VALUES ($1,$2,$3,$4,$5,'income',$6,$7)`,
     [`ft_${o}`, o, TODAY, `${mark} Txn`, ledger, `acct_${o}`, `fnd_${o}`]);
   await q(`INSERT INTO grants (id,org_id,funder,program,amount,status) VALUES ($1,$2,$3,'Prog',50000,'prospecting')`,
@@ -273,6 +277,7 @@ function bResolver(routePath, param) {
     "giving-recurring": `grec_${B}`, // BUILD-89S 89a — a recognised recurring commitment
     "statement-mappings": `smap_${B}`, // BUILD-92 A4 — a saved statement mapping
     audiences: `aud_${B}`,           // BUILD-97 — a named audience is org B's business
+    "tribute-notices": `tn_${B}`,    // BUILD-98 Part 1 — a notice to a family is org B's business
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404

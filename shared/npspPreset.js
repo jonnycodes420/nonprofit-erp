@@ -124,6 +124,17 @@ export const NPSP_OPPORTUNITY_COLUMNS = {
   // reads as an unrecognised type and falls through to cash — a signed print
   // counted as money received.
   inKind:        ["npsp__in_kind_type__c", "in-kind type", "in kind type"],
+  // BUILD-98 Part 1 — NPSP's tribute and matching-gift fields on the
+  // Opportunity. Candidate spellings from NPSP's documented object model, not
+  // walked on a real file (the same confidence as everything above). NPSP
+  // keeps SOFT CREDITS on Opportunity Contact Roles, which a plain Opportunity
+  // report does not carry; a report that adds the role's contact shows it as
+  // "Soft Credit Contact", which is the one spelling listed here.
+  tributeType:   ["npsp__tribute_type__c", "tribute type"],
+  tributeName:   ["npsp__honoree_name__c", "honoree name", "honoree contact"],
+  tributeNotify: ["npsp__notification_recipient_name__c", "notification recipient name", "notification recipient"],
+  matchEmployer: ["npsp__matching_gift_account__c", "matching gift account"],
+  softCreditName:["soft credit contact", "soft credit contact name"],
 };
 
 // The opportunity columns Steward reads for a DECISION but does not import as

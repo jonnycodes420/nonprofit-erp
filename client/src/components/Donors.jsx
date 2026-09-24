@@ -2212,6 +2212,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   const TX_ROLES = [
     ["donorName","Donor name"],["donorEmail","Email"],["amount","Gift amount"],["date","Gift date"],
     ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["externalId","Gift / transaction ID"],["phone","Phone"],["city","City"],["state","State"],
+    ["softCreditName","Soft credit to"],["softCreditAmount","Soft credit amount"],
+    ["tributeName","In honour or memory of"],["tributeType","Tribute type"],["tributeNotify","Tribute: who to tell"],
+    ["matchEmployer","Matching employer"],
     ...(isTeam ? [["owner","Assigned officer"]] : []),
   ];
 
@@ -4449,6 +4452,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
   const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+  const [giftErr,setGiftErr]=useState("");
+  const [giftMoreOpen,setGiftMoreOpen]=useState(false);
   // BUILD-45 §1.1 F-3 — idempotency key minted lazily per submit attempt and
   // cleared only on SUCCESS: a double-tap (or retry after a network error)
   // replays the same key and the server records exactly one gift.
@@ -4785,12 +4790,31 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     }catch(e){console.error(e);}
   };
 
+  // BUILD-98 Part 1 — a person named on the form is one of THIS org's
+  // records, found by exact name. A name that is not on file is said out
+  // loud rather than guessed at (an honouree is the exception: a memorial is
+  // often for somebody who never gave, so their name alone is enough).
+  const findByName=nm=>{const n=String(nm||"").trim().toLowerCase();if(!n)return null;const hits=allDonors.filter(d=>String(d.name||"").trim().toLowerCase()===n);return hits.length===1?hits[0]:null;};
+  const giftExtrasBody=()=>{
+    const f=addGiftForm,out={};
+    if(f.scName){const p=findByName(f.scName);if(!p)throw new Error(`${f.scName} is not in your records. Add them first, then credit them.`);
+      out.softCredits=[{donorId:p.id,role:"recommender",...(f.scAmount?{amount:Number(f.scAmount)}:{})}];}
+    if(f.tribType&&f.tribName){const h=findByName(f.tribName);
+      out.tribute={type:f.tribType,donorId:h?h.id:null,name:f.tribName,notifyName:f.tribNotify||null,notifyEmail:f.tribNotifyEmail||null};}
+    if(f.matchEmployer){const e=findByName(f.matchEmployer);if(!e)throw new Error(`${f.matchEmployer} is not in your records. Add the employer first.`);
+      out.match={employerId:e.id,...(f.matchAmount?{amount:Number(f.matchAmount)}:{})};}
+    return out;
+  };
   const addGift=async()=>{
     if(!addGiftForm.amount||isNaN(Number(addGiftForm.amount)))return;
+    let extras;
+    try{extras=giftExtrasBody();}catch(e){setGiftErr(e.message);return;}
+    setGiftErr("");
     setGiftSaving(true);
     if(!addGiftIdemRef.current)addGiftIdemRef.current=crypto.randomUUID();
     try{
       await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({
+        ...extras,
         amount:Number(addGiftForm.amount),date:addGiftForm.date,type:addGiftForm.type,
         campaignId:addGiftForm.campaign_id||undefined,notes:addGiftForm.notes,
         fund_id:addGiftForm.fund_id,payment_method:addGiftForm.payment_method,
@@ -4803,7 +4827,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
       loadGiftsFull();
       if(addGiftForm.pledgeId)loadPledges();
-    }catch(e){console.error(e);}
+    }catch(e){setGiftErr(errorMessage(e,"The gift could not be saved."));}
     setGiftSaving(false);
   };
 
@@ -5182,6 +5206,32 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
             {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
 
+            {/* BUILD-98 Part 1 — soft credit on OTHER people's gifts. Hard
+                credit is their own money and stays the headline; "with soft
+                credit" is a second figure, labelled, with the gifts it comes
+                from listed so the number can be checked. */}
+            {softCredit?.giftSoftCredits?.length>0&&(
+              <div data-testid="soft-credit-panel" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.greenDk}}>Soft credit</span>
+                <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                  {[["Their own giving",softCredit.hardCredit,T.ink,censusById("profile.creditHard")],
+                    ["With soft credit",softCredit.hardPlusGiftSoft,T.gold600,censusById("profile.creditWithSoft")]].map(([l,v,c,e])=>(
+                    <div key={l} data-testid={e.testid} title={e.sentence} aria-label={e.sentence} tabIndex={0}>
+                      <div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>{l}</div>
+                      <div style={{fontSize:16,fontWeight:800,color:c}}>{fmtFull(v||0)}</div>
+                    </div>))}
+                </div>
+                                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {softCredit.giftSoftCredits.slice(0,8).map(sc=>(
+                    <div key={sc.id} style={{display:"flex",gap:8,fontSize:12,color:T.ink}}>
+                      <span style={{fontWeight:700}}>{sc.giverName}</span>
+                      <span style={{color:T.ink3}}>{sc.date}</span>
+                      <span style={{marginLeft:"auto"}}>{fmtFull(sc.amount)}</span>
+                    </div>))}
+                </div>
+              </div>
+            )}
+
             {/* Household & planned giving (BUILD-14) */}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -5464,6 +5514,28 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   ))}
                 </select>
               )}
+              {/* BUILD-98 Part 1 — soft credit, tribute, matching gift. Closed by
+                  default: most gifts are none of these, and three blank rows on
+                  every gift is how a form starts to feel like paperwork. */}
+              <datalist id="gift-people">{allDonors.slice(0,2000).map(d=><option key={d.id} value={d.name}/>)}</datalist>
+              <button type="button" onClick={()=>setGiftMoreOpen(o=>!o)} data-testid="gift-more-toggle"
+                style={{background:"transparent",border:"none",padding:"2px 0",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>
+                {giftMoreOpen?"Hide soft credit, tribute and match":"Soft credit, tribute or matching gift"}
+              </button>
+              {giftMoreOpen&&(()=>{const inp={background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",width:"100%"};return(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+                  <input list="gift-people" value={addGiftForm.scName||""} onChange={e=>setAddGiftForm(p=>({...p,scName:e.target.value}))} placeholder="Soft credit to (a person on file)" style={inp} data-testid="gift-sc-name"/>
+                  <input value={addGiftForm.scAmount||""} onChange={e=>setAddGiftForm(p=>({...p,scAmount:e.target.value}))} placeholder="Soft credit amount (blank = whole gift)" type="number" style={inp}/>
+                  <select value={addGiftForm.tribType||""} onChange={e=>setAddGiftForm(p=>({...p,tribType:e.target.value}))} style={inp} data-testid="gift-trib-type">
+                    <option value="">Not a tribute gift</option><option value="honor">In honour of</option><option value="memory">In memory of</option>
+                  </select>
+                  <input list="gift-people" value={addGiftForm.tribName||""} onChange={e=>setAddGiftForm(p=>({...p,tribName:e.target.value}))} placeholder="Who it honours" style={inp} data-testid="gift-trib-name"/>
+                  <input value={addGiftForm.tribNotify||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotify:e.target.value}))} placeholder="Tell (e.g. the Lee family)" style={inp}/>
+                  <input value={addGiftForm.tribNotifyEmail||""} onChange={e=>setAddGiftForm(p=>({...p,tribNotifyEmail:e.target.value}))} placeholder="Their email or leave blank" style={inp}/>
+                  <input list="gift-people" value={addGiftForm.matchEmployer||""} onChange={e=>setAddGiftForm(p=>({...p,matchEmployer:e.target.value}))} placeholder="Employer that will match it" style={inp}/>
+                  <input value={addGiftForm.matchAmount||""} onChange={e=>setAddGiftForm(p=>({...p,matchAmount:e.target.value}))} placeholder="Expected match (blank = same amount)" type="number" style={inp}/>
+                </div>);})()}
+              {giftErr&&<div role="alert" style={{fontSize:12,color:T.terracotta,marginBottom:8}}>{giftErr}</div>}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
                   <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#0d5c3a"}}/>

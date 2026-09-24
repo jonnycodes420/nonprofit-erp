@@ -96,6 +96,28 @@ export const NUMBER_CENSUS = [
     testid: "dp-tile-def-Contact",
   },
 
+  // BUILD-98 Part 1 — soft credit. Shown only on a record somebody else's gift
+  // credits, and always as TWO figures: their own money first, then the same
+  // with soft credit added, so the second can never be read as the first.
+  {
+    id: "profile.creditHard",
+    surface: "Donor profile",
+    label: "Their own giving",
+    computation: "donors.total_giving — the same figure as Lifetime, repeated beside the soft-credit total it is compared with",
+    sentence: "Money this person gave themselves. Gifts that only credit them are not in it.",
+    where: HOVER,
+    testid: "credit-hard",
+  },
+  {
+    id: "profile.creditWithSoft",
+    surface: "Donor profile",
+    label: "With soft credit",
+    computation: "donors.total_giving + SUM(gift_soft_credits.amount WHERE donor_id = this person)",
+    sentence: "Their own giving plus gifts other people made that credit them, such as a grant they recommended from a donor-advised fund. No report or total adds this in.",
+    where: HOVER,
+    testid: "credit-hard-soft",
+  },
+
   // ── THE DONOR LISTS ──────────────────────────────────────────────────────
   // Giving strength SURVIVES as a list column and does NOT survive as a tile
   // on the profile — the census document has the reasoning, and it is not a

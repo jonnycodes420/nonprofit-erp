@@ -2361,7 +2361,171 @@ async function recordGift(o) {
   } catch (e) { console.error("[seq] gift trigger:", e.message); }
 
 
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment };
+  // BUILD-98 Part 1 — soft credits, a tribute, an expected match. Checked by
+  // the caller BEFORE the gift was written (checkGiftExtras); written here so
+  // every door that passes them lands them the same way.
+  let extras = null;
+  if (o.extras) {
+    try { extras = await writeGiftExtras(orgId, gift, o.extras, { actorId, actorName }); }
+    catch (e) { console.error("[gift] extras:", e.message); }
+  }
+
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, extras };
+}
+
+// ── BUILD-98 Part 1 — SOFT CREDITS, TRIBUTES, MATCHES ──────────────────────
+// shared/giftCredit.js holds the rule; these are its only writers. Every id a
+// caller names is checked against THIS org before anything is written, and a
+// gift's extras are checked BEFORE the gift is written, so a refused soft
+// credit refuses the gift rather than leaving half of it behind.
+let GC = null;
+const GC_READY = import("./shared/giftCredit.js").then(m => { GC = m; return m; });
+
+async function orgDonorIds(orgId, ids) {
+  const list = [...new Set((ids || []).filter(Boolean).map(String))];
+  if (!list.length) return new Set();
+  const rows = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND id = ANY(?)", [orgId, list]);
+  return new Set(rows.map(r => r.id));
+}
+
+// Checks a gift's extras against the org and the amount. Returns the normalised
+// extras, or the reasons (400) / the foreign ids (404, never planted).
+async function checkGiftExtras(orgId, hardDonorId, giftCents, raw = {}) {
+  await GC_READY;
+  const out = { softCredits: [], tribute: null, match: null };
+  const errors = [];
+  const soft = Array.isArray(raw.softCredits) ? raw.softCredits : [];
+  const trib = raw.tribute && typeof raw.tribute === "object" ? raw.tribute : null;
+  const match = raw.match && typeof raw.match === "object" ? raw.match : null;
+  const named = [...soft.map(s => s?.donorId), trib?.donorId, match?.employerId].filter(Boolean);
+  const owned = await orgDonorIds(orgId, named);
+  const foreign = named.filter(id => !owned.has(String(id)));
+  if (foreign.length) return { notFound: true };
+  if (soft.length) {
+    const v = GC.validateSoftCredits(giftCents, hardDonorId, soft);
+    if (!v.ok) errors.push(...v.errors); else out.softCredits = v.rows;
+  }
+  if (trib) {
+    const type = GC.TRIBUTE_TYPES.includes(trib.type) ? trib.type : GC.normaliseTributeType(trib.type);
+    const name = String(trib.name || "").trim().slice(0, 200);
+    if (!type) errors.push("a tribute is in honour of someone or in memory of someone");
+    else if (!trib.donorId && !name) errors.push("a tribute names the person it honours");
+    else out.tribute = {
+      type, donorId: trib.donorId ? String(trib.donorId) : null, name,
+      notifyName: String(trib.notifyName || "").trim().slice(0, 200) || null,
+      notifyEmail: String(trib.notifyEmail || "").trim().slice(0, 200) || null,
+      notifyAddress: String(trib.notifyAddress || "").trim().slice(0, 500) || null,
+    };
+  }
+  if (match) {
+    if (!match.employerId) errors.push("a match names the employer");
+    else if (String(match.employerId) === hardDonorId) errors.push("a person cannot match their own gift");
+    else {
+      const c = GC.expectedMatchCents(giftCents, match);
+      if (c.error) errors.push(c.error);
+      else out.match = { employerId: String(match.employerId), cents: c.cents, dueDate: /^\d{4}-\d{2}-\d{2}$/.test(match.dueDate || "") ? match.dueDate : null };
+    }
+  }
+  return errors.length ? { errors } : { extras: out };
+}
+
+// Writes the extras for a gift that now exists. Idempotent per gift: soft
+// credits are REPLACED as a set, a tribute notice is one per gift, a match
+// pledge is one per gift (uq_pledges_matches_gift).
+async function writeGiftExtras(orgId, gift, extras, { actorId = null, actorName = null } = {}) {
+  await GC_READY;
+  const result = { softCredits: 0, tributeNotice: null, matchPledgeId: null };
+  if (!gift || !extras) return result;
+  if (Array.isArray(extras.softCredits)) {
+    await run("DELETE FROM gift_soft_credits WHERE gift_id=? AND org_id=?", [gift.id, orgId]);
+    for (const s of extras.softCredits) {
+      await run(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (gift_id, donor_id) DO NOTHING`,
+        ["gsc_" + uuid().slice(0, 10), orgId, gift.id, s.donorId, s.cents / 100, s.pct, s.role, actorId, actorName]);
+      result.softCredits++;
+    }
+  }
+  if (extras.tribute) {
+    const t = extras.tribute;
+    let honouree = t.name;
+    if (t.donorId) {
+      const [h] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [t.donorId, orgId]);
+      honouree = h?.name || honouree;
+    }
+    await run("UPDATE gifts SET tribute_type=?, tribute_donor_id=?, tribute_name=? WHERE id=? AND org_id=?",
+      [t.type, t.donorId, honouree, gift.id, orgId]);
+    // The family gets a notice only when somebody named who to tell. It is a
+    // DRAFT: Steward never sends a letter to a grieving family.
+    if (t.notifyName || t.notifyEmail || t.notifyAddress) {
+      const [donor] = await query("SELECT name, kind FROM donors WHERE id=? AND org_id=?", [gift.donor_id, orgId]);
+      const [org] = await query("SELECT name, receipt_signature_name FROM orgs WHERE id=?", [orgId]);
+      const orgName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
+      const body = GC.tributeNoticeBody({
+        notifyName: t.notifyName, donorName: donor?.kind === "anonymous" ? null : donor?.name,
+        honoureeName: honouree, type: t.type, orgName, signer: org?.receipt_signature_name || null,
+      });
+      const id = "tn_" + uuid().slice(0, 10);
+      const ins = await query(
+        `INSERT INTO tribute_notices (id,org_id,gift_id,donor_id,tribute_type,honouree_name,notify_name,notify_email,notify_address,body,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT (gift_id) DO UPDATE SET tribute_type=EXCLUDED.tribute_type, honouree_name=EXCLUDED.honouree_name,
+           notify_name=EXCLUDED.notify_name, notify_email=EXCLUDED.notify_email, notify_address=EXCLUDED.notify_address,
+           body=EXCLUDED.body WHERE tribute_notices.status='waiting'
+         RETURNING id`,
+        [id, orgId, gift.id, gift.donor_id, t.type, honouree, t.notifyName, t.notifyEmail, t.notifyAddress, body, actorId, actorName]);
+      result.tributeNotice = ins[0]?.id || null;
+    }
+  }
+  if (extras.match) {
+    const m = extras.match;
+    const due = m.dueDate || orgTime.addDays(String(gift.date).slice(0, 10), 90);
+    const pid = "pl_" + uuid().slice(0, 8);
+    const ins = await query(
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,is_match,matches_gift_id,created_by,created_by_name)
+       VALUES (?,?,?,?,?,'open',?,true,?,?,?) ON CONFLICT (matches_gift_id) WHERE matches_gift_id IS NOT NULL DO NOTHING RETURNING id`,
+      [pid, orgId, m.employerId, m.cents / 100, due, "Expected matching gift", gift.id, actorId, actorName]);
+    if (ins.length) {
+      // One instalment for the whole match, so the existing rule in recordGift
+      // applies the employer's cheque to it from any door, to the cent.
+      await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
+        ["pi_" + uuid().slice(0, 8), orgId, pid, due, m.cents / 100]);
+      await run("UPDATE gifts SET match_employer_id=?, match_pledge_id=? WHERE id=? AND org_id=?", [m.employerId, pid, gift.id, orgId]);
+      result.matchPledgeId = pid;
+      // The match may ALREADY be here — an import carries the employee's gift
+      // and the company's cheque in the same file, or staff record the match
+      // after the fact. An employer gift for exactly the expected amount, on or
+      // after this gift, not already paying another pledge, is that match.
+      const [already] = await query(
+        `SELECT id FROM gifts WHERE org_id=? AND donor_id=? AND pledge_id IS NULL
+           AND round(amount::numeric * 100)::bigint = ? AND date >= ? ORDER BY date ASC, id LIMIT 1`,
+        [orgId, m.employerId, m.cents, String(gift.date).slice(0, 10)]);
+      if (already) {
+        await run("UPDATE pledge_installments SET paid_gift_id=?, paid_at=NOW() WHERE pledge_id=? AND org_id=? AND paid_gift_id IS NULL", [already.id, pid, orgId]);
+        await run("UPDATE gifts SET pledge_id=? WHERE id=? AND org_id=?", [pid, already.id, orgId]);
+        await recalcPledgePayment(pid, orgId).catch(e => console.error("[match] recalc:", e.message));
+        result.matchAlreadyReceived = already.id;
+      }
+    } else {
+      const [existing] = await query("SELECT id FROM pledges WHERE matches_gift_id=? AND org_id=?", [gift.id, orgId]);
+      result.matchPledgeId = existing?.id || null;
+    }
+  }
+  return result;
+}
+
+// One donor's credit: hard is the gift rows, soft is the rows pointing at
+// other people's gifts. The second is never added into the first anywhere
+// except on the line that says it is "with soft credit".
+async function donorCreditTotals(orgId, donorId) {
+  const [[h], [s]] = await Promise.all([
+    query("SELECT COALESCE(SUM(amount),0)::numeric AS t, COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=?", [orgId, donorId]),
+    query(`SELECT COALESCE(SUM(sc.amount),0)::numeric AS t, COUNT(*)::int AS n FROM gift_soft_credits sc
+             JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+            WHERE sc.org_id=? AND sc.donor_id=?`, [orgId, donorId]),
+  ]);
+  const hardCents = Math.round(Number(h?.t || 0) * 100);
+  const softCents = Math.round(Number(s?.t || 0) * 100);
+  return { ...GC.creditTotals(hardCents, softCents), hardCount: h?.n || 0, softCount: s?.n || 0 };
 }
 
 
@@ -3203,7 +3367,7 @@ async function processPledgeInstallmentReminders(opts = {}) {
          JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
         WHERE i.org_id = ? AND i.paid_gift_id IS NULL AND i.due_date <= ?
           AND i.reminder_thread_id IS NULL
-          AND p.status = 'open' AND COALESCE(p.is_shell,false) = false
+          AND p.status = 'open' AND COALESCE(p.is_shell,false) = false AND COALESCE(p.is_match,false) = false
           AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
           AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE
           AND d.do_not_solicit IS NOT TRUE
@@ -7008,6 +7172,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // rolls back in full rather than landing a short count. Individual batches run
   // inside SAVEPOINTs so one bad batch is survivable AND counted, instead of
   // killing the request or (as before) vanishing into a warning nobody reads.
+  const pendingGiftCredit = [];   // BUILD-98 Part 1 — soft credits/tributes/matches, applied after commit
   await withAdvisoryLock(`import:${orgId}`, async () => {
   await withTransaction(async (txc) => {
   // Email dedup. BUILD-72 Part 1: the dedup now keeps the EXISTING donor's ID
@@ -7279,6 +7444,10 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // home read as "→ new custom field" on the receipt.
       fund: String(g.fund || "").trim().slice(0, 120) || null,
       paymentMethod: String(g.paymentMethod || "").trim().slice(0, 60) || null,
+      // BUILD-98 Part 1 — the row's soft credit, tribute and matching employer,
+      // as NAMES; written after the transaction commits (importGiftExtras).
+      credit: (g.softCredit || g.tribute || g.matchEmployer)
+        ? { softCredit: g.softCredit || null, tribute: g.tribute || null, matchEmployer: g.matchEmployer || null } : null,
       customFields: giftCfByIdx.get(gi) || null });   // BUILD-78 — validated above
   }
   duplicateCandidates = {
@@ -7431,6 +7600,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         const g = rowByGid.get(r.id);
         if (!g) continue;
         keptRows.push(g);
+        if (g.credit) pendingGiftCredit.push({ giftId: r.id, g });
         // BUILD-88a A.1 — the timeline entry LINKS to its gift and carries no
         // copy of the amount. It used to read "Gift received: $5,000 (cash)",
         // which is how the same gift came to be drawn twice on a donor's
@@ -7652,8 +7822,18 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   try { geocodeQueued = await markDonorsForGeocoding(orgId); }
   catch (e) { console.error("[combined-import] geocode mark failed:", e.message); }
 
+  // BUILD-98 Part 1 — soft credits, tributes and expected matches, written
+  // AFTER the gifts committed (they point at gift rows). A name that cannot be
+  // placed is counted and named, never guessed.
+  let giftCredit = null;
+  if (pendingGiftCredit.length) {
+    try { giftCredit = await importGiftExtras(orgId, pendingGiftCredit, actor(req)); }
+    catch (e) { console.error("[combined-import] gift credit failed:", e.message); giftCredit = { error: e.message }; }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
+             giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
              duplicateCandidates, externalIdDupes,
              // A.7 — rows whose source id was already taken by a DIFFERENT
              // gift: imported, un-idded, and said out loud.
@@ -7948,6 +8128,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     "note_reminders", "donor_materials", "planned_gifts",
     "payment_recovery_events", "recurring_subscriptions", "tasks",
     "volunteers", "campaign_recipients",
+    "tribute_notices",                       // BUILD-98 Part 1
   ];
   // UNIQUE(x, donor_id) tables: the primary's own row wins a conflict, the
   // secondary's duplicate is dropped, non-conflicting rows are reassigned.
@@ -7955,6 +8136,7 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     ["custom_field_values", "field_id"],
     ["sequence_enrollments", "sequence_id"],
     ["event_attendees", "event_id"],
+    ["gift_soft_credits", "gift_id"],        // BUILD-98 Part 1
   ];
 
   const reassigned = {};
@@ -7975,6 +8157,15 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     await runTx(client, "UPDATE donor_relationships SET donor_id_a=? WHERE org_id=? AND donor_id_a=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE donor_relationships SET donor_id_b=? WHERE org_id=? AND donor_id_b=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "DELETE FROM donor_relationships WHERE org_id=? AND donor_id_a=donor_id_b", [orgId]);
+    // BUILD-98 Part 1 — a gift that names the secondary as its honouree or
+    // its matching employer names the primary now; and a soft credit that
+    // landed the merged person on their OWN gift is not a soft credit (the
+    // hard credit already counts it), so it goes.
+    await runTx(client, "UPDATE gifts SET tribute_donor_id=? WHERE org_id=? AND tribute_donor_id=?", [primaryId, orgId, secondaryId]);
+    await runTx(client, "UPDATE gifts SET match_employer_id=? WHERE org_id=? AND match_employer_id=?", [primaryId, orgId, secondaryId]);
+    await runTx(client,
+      `DELETE FROM gift_soft_credits sc USING gifts g
+        WHERE sc.gift_id = g.id AND sc.org_id=? AND sc.donor_id = g.donor_id`, [orgId]);
 
     // Fill the primary's blanks from the secondary (never overwrite a
     // non-empty primary value — the officer chose the primary for a reason).
@@ -8249,6 +8440,17 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const idemKey = typeof req.body.idempotencyKey === "string" && req.body.idempotencyKey.trim()
     ? req.body.idempotencyKey.trim().slice(0, 128) : null;
 
+  // BUILD-98 Part 1 — soft credits, a tribute, an expected match. All checked
+  // before the gift exists: a refused extra refuses the gift.
+  let giftExtras = null;
+  if (req.body.softCredits || req.body.tribute || req.body.match) {
+    const ck = await checkGiftExtras(req.user.orgId, req.params.id, Math.round(amt * 100),
+      { softCredits: req.body.softCredits, tribute: req.body.tribute, match: req.body.match });
+    if (ck.notFound) return res.status(404).json({ error: "Donor not found" });
+    if (ck.errors) return res.status(400).json({ error: ck.errors.join("; ") });
+    giftExtras = ck.extras;
+  }
+
   // BUILD-88a A.1 — THROUGH THE ONE FUNCTION. The insert, the donor rollup,
   // the ledger stamp and the timeline entry all lived here as four separate
   // statements, each with its own idea of a gift; they are recordGift's now.
@@ -8258,6 +8460,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
     notes: notes || "", fundId: fundId || null, paymentMethod: req.body.paymentMethod,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
+    extras: giftExtras,
   });
   if (written.duplicate) {
     const dupGift = await query("SELECT * FROM gifts WHERE org_id=? AND idempotency_key=?", [req.user.orgId, idemKey]);
@@ -11495,7 +11698,144 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
     householdCombined = parseFloat(agg[0].combined) || 0;
     softCredit = householdCombined - hardCredit;
   }
-  res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined });
+  // BUILD-98 Part 1 — the soft credits on OTHER people's gifts, which is a
+  // different thing from the household view above: a DAF recommender, the
+  // spouse on a joint cheque, the board member who asked. Hard stays hard;
+  // "with soft credit" is its own figure, beside it and labelled.
+  const scRows = await query(
+    `SELECT sc.id, sc.amount, sc.pct, sc.role, g.id AS gift_id, g.date, g.amount AS gift_amount,
+            dg.id AS giver_id, dg.name AS giver_name
+       FROM gift_soft_credits sc
+       JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+       JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 200`, [req.user.orgId, req.params.id]);
+  const giftSoftCents = scRows.reduce((t, r) => t + Math.round(Number(r.amount) * 100), 0);
+  res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined,
+    giftSoftCredit: giftSoftCents / 100,
+    hardPlusGiftSoft: (Math.round(hardCredit * 100) + giftSoftCents) / 100,
+    giftSoftCredits: scRows.map(r => ({ id: r.id, amount: Number(r.amount), pct: r.pct == null ? null : Number(r.pct), role: r.role,
+      giftId: r.gift_id, date: r.date, giftAmount: Number(r.gift_amount), giverId: r.giver_id, giverName: r.giver_name })) });
+}));
+
+
+// BUILD-98 Part 1 — an imported gift's soft credit, tribute and matching
+// employer, from NAMES. Resolution is deterministic and org-scoped: an email or
+// an exact name that points at exactly one record is that record; a person
+// named as a soft credit who is not on file is CREATED (a DAF recommender is a
+// person the org should know); an honouree who is not on file stays a NAME
+// (a memorial is often for somebody who never gave); a matching employer is
+// found by exact name or created as an organisation.
+async function importGiftExtras(orgId, pending, who) {
+  await GC_READY;
+  const out = { softCredits: 0, tributes: 0, tributeNotices: 0, matches: 0, peopleCreated: 0, unresolved: [] };
+  const cache = new Map();
+  const byName = async (name, { create = false, kind = null } = {}) => {
+    const nm = String(name || "").trim();
+    if (!nm) return null;
+    const key = (kind || "p") + ":" + nm.toLowerCase();
+    if (cache.has(key)) return cache.get(key);
+    const rows = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 2", [orgId, nm]);
+    let id = rows.length ? rows[0].id : null;
+    if (!id && create) {
+      id = "d_" + uuid().slice(0, 10);
+      await run(`INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+        [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]', who.id, who.name]);
+      out.peopleCreated++;
+    }
+    cache.set(key, id);
+    return id;
+  };
+  for (const { giftId, g } of pending) {
+    const [gift] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [giftId, orgId]);
+    if (!gift) continue;
+    const cents = Math.round(Number(gift.amount) * 100);
+    const raw = {};
+    const c = g.credit;
+    if (c.softCredit && c.softCredit.name) {
+      const pid = await byName(c.softCredit.name, { create: true });
+      if (pid && pid !== gift.donor_id) raw.softCredits = [{ donorId: pid, amount: c.softCredit.amount ?? null, pct: c.softCredit.pct ?? null, role: "recommender" }];
+      else if (!pid) out.unresolved.push({ kind: "soft_credit", name: c.softCredit.name });
+    }
+    if (c.tribute && c.tribute.name) {
+      const type = GC.normaliseTributeType(c.tribute.type) || GC.TRIBUTE_HONOR;
+      if (!GC.normaliseTributeType(c.tribute.type) && c.tribute.type) out.unresolved.push({ kind: "tribute_type", name: c.tribute.type });
+      const hid = await byName(c.tribute.name);
+      raw.tribute = { type, donorId: hid, name: c.tribute.name, notifyName: c.tribute.notifyName || null };
+    }
+    if (c.matchEmployer) {
+      const eid = await byName(c.matchEmployer, { create: true, kind: "organisation" });
+      if (eid && eid !== gift.donor_id) raw.match = { employerId: eid };
+    }
+    const ck = await checkGiftExtras(orgId, gift.donor_id, cents, raw);
+    if (ck.errors || ck.notFound) { out.unresolved.push({ kind: "gift_credit", name: giftId, why: (ck.errors || ["not found"]).join("; ") }); continue; }
+    const r = await writeGiftExtras(orgId, gift, ck.extras, { actorId: who.id, actorName: who.name });
+    out.softCredits += r.softCredits; if (ck.extras.tribute) out.tributes++;
+    if (r.tributeNotice) out.tributeNotices++; if (r.matchPledgeId) out.matches++;
+  }
+  return out;
+}
+// ── BUILD-98 Part 1 — a gift's soft credits, tribute and match ─────────────
+app.get("/gifts/:id/extras", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, donor_id, amount, tribute_type, tribute_donor_id, tribute_name, match_employer_id, match_pledge_id FROM gifts WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Gift not found" });
+  const [soft, notice, match] = await Promise.all([
+    query(`SELECT sc.donor_id, sc.amount, sc.pct, sc.role, d.name FROM gift_soft_credits sc
+             JOIN donors d ON d.id = sc.donor_id AND d.org_id = sc.org_id
+            WHERE sc.gift_id=? AND sc.org_id=? ORDER BY d.name`, [g.id, orgId]),
+    query("SELECT id, status, notify_name, notify_email, notify_address, body FROM tribute_notices WHERE gift_id=? AND org_id=?", [g.id, orgId]),
+    g.match_pledge_id ? query(
+      `SELECT p.id, p.amount, p.status, p.due_date, d.name AS employer_name, COALESCE(pp.paid,0) AS paid
+         FROM pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
+         LEFT JOIN (SELECT pledge_id, SUM(amount) AS paid FROM gifts WHERE org_id=? AND pledge_id IS NOT NULL GROUP BY pledge_id) pp ON pp.pledge_id = p.id
+        WHERE p.id=? AND p.org_id=?`, [orgId, g.match_pledge_id, orgId]) : [],
+  ]);
+  res.json({
+    softCredits: soft.map(r => ({ donorId: r.donor_id, name: r.name, amount: Number(r.amount), pct: r.pct == null ? null : Number(r.pct), role: r.role })),
+    tribute: g.tribute_type ? { type: g.tribute_type, donorId: g.tribute_donor_id, name: g.tribute_name } : null,
+    tributeNotice: notice[0] || null,
+    match: match[0] ? { pledgeId: match[0].id, employerId: g.match_employer_id, employerName: match[0].employer_name,
+      expected: Number(match[0].amount), received: Number(match[0].paid), status: match[0].status, dueDate: match[0].due_date } : null,
+  });
+}));
+
+// Add or change them after the gift exists. Soft credits are REPLACED as a set;
+// a tribute is set; a match is added once (a second one is refused by the
+// database, not by an if-statement).
+app.put("/gifts/:id/extras", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT * FROM gifts WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Gift not found" });
+  const ck = await checkGiftExtras(orgId, g.donor_id, Math.round(Number(g.amount) * 100),
+    { softCredits: req.body?.softCredits, tribute: req.body?.tribute, match: req.body?.match });
+  if (ck.notFound) return res.status(404).json({ error: "Donor not found" });
+  if (ck.errors) return res.status(400).json({ error: ck.errors.join("; ") });
+  const extras = { ...ck.extras };
+  if (!Array.isArray(req.body?.softCredits)) delete extras.softCredits;   // absent means "leave them"
+  const result = await writeGiftExtras(orgId, g, extras, { actorId: actor(req).id, actorName: actor(req).name });
+  res.json({ ok: true, ...result });
+}));
+
+// The notices waiting to go to families. Steward never sends one: she prints
+// or copies it, and marks it sent.
+app.get("/tribute-notices", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT t.id, t.gift_id, t.tribute_type, t.honouree_name, t.notify_name, t.notify_email, t.notify_address, t.body, t.status, t.created_at,
+            d.id AS donor_id, d.name AS donor_name
+       FROM tribute_notices t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id=? AND t.status='waiting' AND d.deleted_at IS NULL ORDER BY t.created_at DESC LIMIT 200`, [req.user.orgId]);
+  res.json({ notices: rows });
+}));
+app.post("/tribute-notices/:id/sent", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const { changes } = await run("UPDATE tribute_notices SET status='sent', sent_at=NOW(), sent_by=?, sent_by_name=? WHERE id=? AND org_id=? AND status='waiting'",
+    [actor(req).id, actor(req).name, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+app.post("/tribute-notices/:id/skip", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("UPDATE tribute_notices SET status='skipped' WHERE id=? AND org_id=? AND status='waiting'", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
 }));
 
 // ── Constituent designations (BUILD-14) ────────────────────────────────────
@@ -12768,7 +13108,7 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
        JOIN pledges p ON p.id = i.pledge_id AND p.org_id = i.org_id
        JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id
       WHERE i.org_id=? AND i.paid_gift_id IS NULL AND i.due_date <= ?
-        AND p.status='open' AND COALESCE(p.is_shell,false) = false
+        AND p.status='open' AND COALESCE(p.is_shell,false) = false AND COALESCE(p.is_match,false) = false
         AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE`,
     [orgId, orgTime.addDays(pledgeToday, -PLEDGE_LATE_DAYS)]);
   const [shellRow] = await query(
@@ -19595,6 +19935,10 @@ function parseReportParams(q, org = null) {   // ORG_TZ_SEAM_OK
   p.scope = q.scope === "lifetime" ? "lifetime" : "period";
   p.limit = Math.min(Math.max(parseInt(q.limit, 10) || 25, 1), 100);
   p.view = q.view === "household" ? "household" : "individual"; // top-donors grouping (BUILD-14)
+  // BUILD-98 Part 1 — reports are HARD credit unless somebody asks. `credit=soft`
+  // adds a separate soft-credit column beside the hard total; it never changes
+  // the ranking or the total a report states.
+  p.credit = q.credit === "soft" ? "soft" : "hard";
   p.format = q.format === "csv" ? "csv" : "json";
   return p;
 }
@@ -19777,7 +20121,16 @@ async function reportTopDonors(orgId, p) {
       `SELECT id, name, COALESCE(total_giving,0) AS total, COALESCE(gift_count,0) AS gift_count, last_gift_date
        FROM donors WHERE org_id = ? AND deleted_at IS NULL AND COALESCE(total_giving,0) > 0
        ORDER BY COALESCE(total_giving,0) DESC LIMIT ?`, [orgId, p.limit]);
-    return { scope: "lifetime", rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date })) };
+    let soft = new Map();
+    if (p.credit === "soft" && rows.length) {
+      const sr = await query(
+        `SELECT sc.donor_id, COALESCE(SUM(sc.amount),0) AS soft FROM gift_soft_credits sc
+           JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+          WHERE sc.org_id=? AND sc.donor_id = ANY(?) GROUP BY sc.donor_id`, [orgId, rows.map(r => r.id)]);
+      soft = new Map(sr.map(r => [r.donor_id, Number(r.soft)]));
+    }
+    return { scope: "lifetime", credit: p.credit, rows: rows.map((r, i) => ({ rank: i + 1, id: r.id, name: r.name, total: Number(r.total), giftCount: Number(r.gift_count), lastGiftDate: r.last_gift_date,
+      ...(p.credit === "soft" ? { softCredit: soft.get(r.id) || 0 } : {}) })) };
   }
   const params = [];
   const where = reportGiftWhere(p, orgId, params);
@@ -26412,7 +26765,8 @@ async function processPledgeReminders() {
     for (const _o of _overdueOrgs) {
       await run(
         `UPDATE pledges SET first_overdue_at=NOW(), next_reminder_at=NOW(), updated_at=NOW()
-         WHERE org_id=? AND status='open' AND first_overdue_at IS NULL AND due_date::date < ?::date`,
+         WHERE org_id=? AND status='open' AND first_overdue_at IS NULL AND due_date::date < ?::date
+           AND COALESCE(is_match,false) = false`,
         [_o.id, orgToday(_o)]
       );
     }
@@ -26422,7 +26776,8 @@ async function processPledgeReminders() {
       `SELECT p.*, d.name AS donor_name, d.email AS donor_email
        FROM pledges p
        JOIN donors d ON d.id = p.donor_id
-       WHERE p.status = 'open' AND p.next_reminder_at <= NOW()`
+       WHERE p.status = 'open' AND p.next_reminder_at <= NOW()
+         AND COALESCE(p.is_match,false) = false`
     );
     for (const p of rows) {
       try {
