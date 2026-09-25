@@ -86,6 +86,12 @@ async function reset() {
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
       "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
+      // `grants` delete below would usually take them — but `grant_id` is
+      // nullable, so a row without one would survive and block the org delete
+      // with an FK violation that reads as a product bug. Named explicitly and
+      // ordered BEFORE `grants`, which is the rule this list exists for.
+      "grant_milestones", "grant_documents",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`

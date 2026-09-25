@@ -2646,6 +2646,41 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_ms_one_per_date
                       ON grant_milestones (grant_id, kind, due_date)`);
 
+  // ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ────────────────
+  // One row per file, pointing at the BUILD-51 asset store by bare asset id
+  // (the donor-photo shape, because these are served through their own signed
+  // front door rather than as a public /portal-assets path).
+  //
+  // `asset_id` is in `collectLiveAssetRefs`, WITHOUT WHICH the 90-day
+  // retention sweep would destroy a signed funder agreement. That line is
+  // load-bearing, not belt-and-braces.
+  //
+  // NOT versioned by a column: two proposals are two rows and the version is
+  // DERIVED from upload order (grantDocs.withVersions). A version column is a
+  // number somebody has to keep in step, and this one has no reason to be.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_documents (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      doc_type TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      content_type TEXT,
+      bytes INTEGER,
+      notes TEXT,
+      uploaded_by TEXT,
+      uploaded_by_name TEXT,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_docs_grant ON grant_documents (grant_id, uploaded_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_docs_org ON grant_documents (org_id)`);
+  // The SAME bytes filed twice under one type on one grant is a double-click,
+  // not two documents. Different types (a PDF that is both the proposal and
+  // the agreement) stay two rows, because that is a real thing.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_docs_one_per_type
+                      ON grant_documents (grant_id, doc_type, asset_id)`);
+
   // THE ORG'S OWN LEAD TIMES, one JSONB rather than five columns: the set is
   // fixed by shared/grantMilestones.js and always read whole. NULL means
   // "nobody has chosen", which is what makes the defaults still reachable if

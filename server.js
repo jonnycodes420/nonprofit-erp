@@ -1936,6 +1936,16 @@ app.use((req, res, next) =>
 // nothing useful in it — this route's first version did exactly that, and the
 // test that caught it is the oversize leg in build96-photos-folder.
 app.use("/photos/bulk", express.json({ limit: "24mb" }));
+// BUILD-100 (grants) Part 3 — a grant document is capped at 20MB of DECODED
+// file (grantDocs.DOC_MAX_BYTES), which is ~27.4MB of base64 plus the JSON
+// around it. Matched by path so the rest of the /grants family keeps the 5mb
+// cap. THIS LIMIT AND THAT CAP ARE ONE DECISION — see the note on
+// DOC_MAX_BYTES; raising either alone gives a PayloadTooLargeError that
+// surfaces as a bare 500.
+app.use((req, res, next) =>
+  /^\/grants\/[^/]+\/documents$/.test(req.path)
+    ? express.json({ limit: "30mb" })(req, res, next)
+    : next());
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
@@ -15058,6 +15068,191 @@ app.put("/org/grant-lead-days", requireAuth, requireAdmin, checkWriteAccess, wra
 app.post("/grants/milestones/run", requireAuth, requireAdmin, wrap(async (req, res) => {
   const summary = await processGrantMilestones(req.user.orgId, { today: req.body && req.body.today });
   res.json(summary);
+}));
+
+
+// ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ──────────────────
+// grantDocs.js holds the types, the byte checks and the signed door.
+const grantDocs = require("./grantDocs.js");
+
+function grantDocUrl(orgId, assetId) {
+  return grantDocs.signDocUrl({ orgId, assetId });
+}
+
+function grantDocRow(r, orgId) {
+  return {
+    id: r.id, grantId: r.grant_id,
+    docType: r.doc_type, docTypeLabel: grantDocs.docTypeLabel(r.doc_type),
+    fileName: r.file_name, contentType: r.content_type || null, bytes: r.bytes || null,
+    notes: r.notes || "",
+    // ISO, ALWAYS. `uploaded_at` is a timestamptz and pg hands it back as a JS
+    // Date; `String(date)` is "Thu Sep 25 2026 …", which sorts lexically by
+    // WEEKDAY NAME. Both the version numbering and the funder list sort on this
+    // value, so a Date here silently numbered "proposal #1" and "#2" by the day
+    // of the week they were uploaded. Same class as BUILD-86's TO_CHAR lesson.
+    uploadedAt: r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : r.uploaded_at,
+    uploadedByName: r.uploaded_by_name || "",
+    // The link is minted PER READ and lives thirty minutes. A stored URL is a
+    // URL that outlives the reason it was made.
+    url: grantDocUrl(orgId, r.asset_id),
+    funderName: r.funder_name || r.funder || "", program: r.program || "",
+  };
+}
+
+// POST /grants/:id/documents — one file, on a grant that already exists.
+app.post("/grants/:id/documents", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+
+  const docType = String(req.body.docType || "");
+  if (!grantDocs.DOC_TYPE_KEYS.includes(docType)) {
+    return res.status(400).json({ code: "bad_doc_type",
+      error: `A document is one of: ${grantDocs.DOC_TYPES.map(t => t.label).join(", ")}.` });
+  }
+
+  // A data URI, the shape every other upload in this product takes.
+  const m = /^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/s.exec(String(req.body.file || ""));
+  if (!m) return res.status(400).json({ code: "no_file", error: "Attach a file." });
+  const mime = m[1].toLowerCase();
+  if (!grantDocs.mimeAllowed(mime)) {
+    return res.status(400).json({ code: "bad_file_type",
+      error: "Steward stores PDFs, Word documents, images and plain text. It deliberately refuses anything that can carry a script." });
+  }
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); }
+  catch { return res.status(400).json({ code: "no_file", error: "That file could not be read." }); }
+  if (!buffer.length) return res.status(400).json({ code: "no_file", error: "That file is empty." });
+  if (buffer.length > grantDocs.DOC_MAX_BYTES) {
+    return res.status(400).json({ code: "file_too_large",
+      error: `That file is ${Math.round(buffer.length / 1024 / 1024)} MB. The limit is ${grantDocs.DOC_MAX_BYTES / 1024 / 1024} MB.` });
+  }
+  // THE BYTES DECIDE. A caller declaring application/pdf over an HTML payload
+  // is the hole this closes, and it is checked BEFORE anything is stored.
+  if (!grantDocs.bytesMatchMime(buffer, mime)) {
+    return res.status(400).json({ code: "file_type_mismatch",
+      error: `That file does not look like a ${grantDocs.extensionFor(mime) || mime}. Check you attached what you meant to.` });
+  }
+
+  const asset = await putThemeAsset({
+    orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime,
+  });
+  const id = "gdoc_" + uuid().slice(0, 10);
+  const fileName = grantDocs.sanitizeFilename(req.body.fileName, mime);
+  // The SAME bytes under the SAME type on one grant is a double-click, not two
+  // documents — the unique index says so and this answers it as success rather
+  // than an error, because from the user's side the file IS on the grant.
+  const ins = await query(
+    `INSERT INTO grant_documents (id,org_id,grant_id,doc_type,asset_id,file_name,content_type,bytes,notes,uploaded_by,uploaded_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (grant_id, doc_type, asset_id) DO NOTHING
+     RETURNING id`,
+    [id, orgId, g.id, docType, asset.id, fileName, mime, buffer.length,
+     String(req.body.notes || "").slice(0, 2000), actor(req).id,
+     (await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]))[0]?.name || actor(req).name]);
+  const finalId = ins.length ? ins[0].id
+    : (await query("SELECT id FROM grant_documents WHERE grant_id=? AND doc_type=? AND asset_id=?",
+        [g.id, docType, asset.id]))[0].id;
+  await recordAssetPointerHistory(orgId, "grant.document", finalId, null, asset.id, req.user);
+
+  const [row] = await query(
+    `SELECT d.*, g.program, g.funder, f.name AS funder_name
+       FROM grant_documents d JOIN grants g ON g.id=d.grant_id AND g.org_id=d.org_id
+       LEFT JOIN donors f ON f.id=g.funder_donor_id AND f.org_id=g.org_id
+      WHERE d.id=?`, [finalId]);
+  res.status(201).json({ ...grantDocRow(row, orgId), duplicate: ins.length === 0 });
+}));
+
+// GET /grants/:id/documents — the grant's own file list, versioned by date.
+app.get("/grants/:id/documents", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const rows = await query(
+    `SELECT d.*, g.program, g.funder, f.name AS funder_name
+       FROM grant_documents d JOIN grants g ON g.id=d.grant_id AND g.org_id=d.org_id
+       LEFT JOIN donors f ON f.id=g.funder_donor_id AND f.org_id=g.org_id
+      WHERE d.grant_id=? AND d.org_id=? ORDER BY d.uploaded_at ASC`, [g.id, orgId]);
+  const docs = grantDocs.withVersions(rows.map(r => grantDocRow(r, orgId)));
+  res.json({ documents: docs, sentence: grantDocs.documentSentence(docs), docTypes: grantDocs.DOC_TYPES });
+}));
+
+// DELETE /grants/documents/:docId — ungated, per the DELETE convention. The
+// asset is NOT destroyed here: it is soft-deleted by the retention sweep once
+// nothing points at it (BUILD-56's one destruction seam), so a mistaken delete
+// is recoverable for ninety days.
+app.delete("/grants/documents/:docId", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id, asset_id FROM grant_documents WHERE id=? AND org_id=?",
+    [req.params.docId, orgId]);
+  if (!d) return res.status(404).json({ error: "Document not found" });
+  await run("DELETE FROM grant_documents WHERE id=? AND org_id=?", [d.id, orgId]);
+  await recordAssetPointerHistory(orgId, "grant.document", d.id, d.asset_id, null, req.user);
+  res.json({ ok: true, id: d.id });
+}));
+
+// GET /funders/:donorId/documents — EVERY document across a funder's grants.
+// The brief asks for this because the question is "have we ever signed
+// anything with these people", and that question spans grants.
+app.get("/funders/:donorId/documents", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const fr = await resolveFunder(orgId, req.params.donorId);
+  if (!fr.ok) {
+    const code = fr.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: fr.problem.message, code: fr.problem.code });
+  }
+  const rows = await query(
+    `SELECT d.*, g.program, g.funder, g.status AS grant_status, f.name AS funder_name
+       FROM grant_documents d
+       JOIN grants g ON g.id = d.grant_id AND g.org_id = d.org_id
+       LEFT JOIN donors f ON f.id = g.funder_donor_id AND f.org_id = g.org_id
+      WHERE d.org_id=? AND g.funder_donor_id=? ORDER BY d.uploaded_at ASC`, [orgId, fr.funder.id]);
+  // Versions are PER GRANT, not per funder — "proposal #2" means the second
+  // proposal on that grant, and numbering across grants would be a figure
+  // nobody could reconcile against anything.
+  const byGrant = new Map();
+  for (const r of rows) {
+    if (!byGrant.has(r.grant_id)) byGrant.set(r.grant_id, []);
+    byGrant.get(r.grant_id).push(grantDocRow(r, orgId));
+  }
+  const documents = [];
+  for (const [, list] of byGrant) documents.push(...grantDocs.withVersions(list));
+  documents.sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
+  res.json({
+    funder: { funderId: fr.funder.id, name: fr.funder.name },
+    documents, sentence: grantDocs.documentSentence(documents), docTypes: grantDocs.DOC_TYPES,
+  });
+}));
+
+// GET /grant-documents/:id — the signed, expiring, PRIVATE door.
+// Unauthenticated by design (a browser fetches a file with no auth header);
+// the URL carries its own signature and the org comes from the STORED ROW.
+app.get("/grant-documents/:id", wrap(async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
+  const [row] = await query(
+    `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`,
+    [id, grantDocs.DOC_ASSET_KIND]);
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const v = grantDocs.verifyDocUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
+  // ONE answer for expired and for wrong-org alike, so a probe cannot tell
+  // "this agreement exists in another tenant" from "this link is old".
+  if (!v.ok) return res.status(403).json({ error: "link_expired" });
+  const asset = await getThemeAsset(id);
+  if (!asset) return res.status(404).json({ error: "not_found" });
+  // The stored filename is looked up for the download name; the bytes are
+  // addressed by asset id, so the name is only ever a label.
+  const [meta] = await query(
+    "SELECT file_name FROM grant_documents WHERE asset_id=? AND org_id=? LIMIT 1", [id, row.org_id]);
+  res.set("Content-Type", asset.contentType);
+  // A document is never rendered inline: a PDF viewer in our own origin is a
+  // parser we did not choose running on a file a funder sent.
+  const safeName = grantDocs.sanitizeFilename((meta && meta.file_name) || "document", asset.contentType);
+  res.set("Content-Disposition", `attachment; filename="${safeName.replace(/"/g, "")}"`);
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
+  res.set("ETag", `"${asset.id}"`);
+  res.send(asset.buffer);
 }));
 
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
