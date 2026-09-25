@@ -1,5 +1,18 @@
 # Steward — Nonprofit ERP SaaS
 
+> **`BLOCKED-*.md` NO LONGER EXISTS (2026-09-25).** All 53 of those files were
+> deleted and replaced by **one** `NEEDS-JONATHAN.md` at the repo root, which
+> holds ONLY what physically requires him — a credential, a password, a real
+> customer's file or token, a payment, or a legal signature — one line each with
+> the exact click or paste. **Everything else was decided**, and each decision is
+> recorded in the commit that made it.
+>
+> The dated build entries further down still cite the old filenames. They are a
+> historical log and have deliberately not been rewritten; read any
+> `BLOCKED-…md` reference below as "see NEEDS-JONATHAN.md, or the item was
+> decided". Do not create a new `BLOCKED-*.md`: decide it, or put it in
+> `NEEDS-JONATHAN.md` if it genuinely cannot be decided without him.
+
 ## Strategic pivot (2026-07-12) — READ THIS FIRST
 Steward pivoted from a full 11-tab nonprofit ERP to a focused **retention/stewardship product** built around Donors + Grants + Communications.
 
@@ -56,7 +69,7 @@ Suite `tests/build98-letters.test.js` (31, in run-all). Fundraising → **Acknow
 - Year-end statements were already right (BUILD's receipt path, IRS language + EIN); the suite pins that one foots to the donor's gifts in cents.
 
 ## BUILD-98 (switch) PART 1 — SOFT CREDITS, TRIBUTES, MATCHING GIFTS (2026-09-24)
-**The BUILD-98 label was already used by the photos build (8feaf60), so this build's files carry `-switch`: brief `claude/BUILD-98-switch.md` (committed this time — BUILD-96's never was, and is lost), decisions `BLOCKED-build98-switch.md`.** Suite `tests/build98-credit.test.js` (49, in run-all). Built in a separate worktree (`../nonprofit-erp-b98`, branch `build-98`) because another session was running BUILD-96 on main in the same tree — **two sessions in one working tree cost this build two reverts and a stash; use a worktree.**
+**The BUILD-98 label was already used by the photos build (8feaf60), so this build's files carry `-switch`: brief `claude/BUILD-98-switch.md` (committed this time — BUILD-96's never was, and is lost), decisions `the commit messages for BUILD-98 (switch)`.** Suite `tests/build98-credit.test.js` (49, in run-all). Built in a separate worktree (`../nonprofit-erp-b98`, branch `build-98`) because another session was running BUILD-96 on main in the same tree — **two sessions in one working tree cost this build two reverts and a stash; use a worktree.**
 - **THE RULE (`shared/giftCredit.js`): A GIFT IS COUNTED ONCE, ON THE PERSON WHOSE MONEY IT WAS.** A soft credit is a ROW POINTING AT A GIFT (`gift_soft_credits`, amount or percentage, ≤ the gift, never the giver themselves, UNIQUE per gift+person). Nothing that totals money reads it: `gifts.amount`, `donors.total_giving` and `fin_transactions` are untouched, so the ledger posts once and the bookkeeper export is hard credit by construction. The profile shows **Their own giving** and **With soft credit** side by side (census entries `profile.creditHard`/`creditWithSoft`); reports are hard unless `?credit=soft`, which adds a separate column and never changes a total or a rank. The existing HOUSEHOLD soft credit (BUILD-14) is a different lens and stays separate.
 - **EXTRAS ARE CHECKED BEFORE THE GIFT IS WRITTEN** (`checkGiftExtras`): a refused soft credit refuses the gift, a foreign id is 404 with nothing planted. They are written in `recordGift` (`o.extras` → `writeGiftExtras`), so every door lands them the same way; `PUT /gifts/:id/extras` adds them after the fact.
 - **TRIBUTE**: `gifts.tribute_type/tribute_donor_id/tribute_name`. The honouree is a record when there is one and a NAME when there is not — an import never invents a record for a memorial. A notify name/email/address writes ONE `tribute_notices` draft per gift. **Steward never sends it, and the notice module is handed no amount, so it cannot state one.**

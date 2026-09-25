@@ -33,7 +33,7 @@ import { resolvePairing, cardChrome } from "../lib/portalTheme";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { fmtDay } from "../lib/money"; // BUILD-64 Part 4 — the ONE donor-facing date formatter
 
-export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (BLOCKED-consumer-brand.md)
+export const CONSUMER_BRAND = "Steward"; // plain Steward (go-live 2026-08-12); rename = one commit (the list just below)
 
 // Same-origin in production via the vercel.json /account-api proxy (the
 // session cookie must stay first-party); VITE_ACCOUNT_API is the local-

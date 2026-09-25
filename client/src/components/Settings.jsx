@@ -467,7 +467,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
   // FIX (2026-09-10) — the next-step form REFUSES a time until this is a
   // human's choice, and it links straight here. A deep link that exists to fix
   // one setting has to land on that setting, so the card scrolls itself into
-  // view and rings once. (BUILD-84's timed reminder; see BLOCKED-build84.md.)
+  // view and rings once. (BUILD-84's timed reminder; see NEEDS-JONATHAN.md.)
   const cardRef=useRef(null);
   const [ring,setRing]=useState(false);
   useEffect(()=>{

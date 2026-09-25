@@ -32224,7 +32224,7 @@ const requireFlag = (on) => (req, res, next) => on ? next() : res.status(404).js
 
 // Consumer-surface brand string — placeholder pending the founder decision
 // (GivingDashboard.jsx's header comment lists every place this lives).
-const CONSUMER_BRAND = "Steward"; // consumer surface = plain Steward (go-live decision 2026-08-12; rename stays one commit — BLOCKED-consumer-brand.md)
+const CONSUMER_BRAND = "Steward"; // consumer surface = plain Steward (go-live decision 2026-08-12; a rename is still one commit — GivingDashboard.jsx lists the places)
 const foldEmail = (e) => String(e || "").trim().toLowerCase();
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
