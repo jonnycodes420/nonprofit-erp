@@ -3,6 +3,7 @@ import { apiFetch, API } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
+import { MembersView } from "./Memberships";
 import { EventsDesk } from "./EventsDesk";
 import { ProposalsView, PortfolioView, PlansView, MajorGiftsDashboard } from "./MajorGifts";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
@@ -125,6 +126,9 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
+    // BUILD-101 Part 1 — levels and the people on them. A membership payment
+    // is a gift, so this screen counts people, never a second money total.
+    { id: "members", label: "Members" },
     { id: "funds", label: "Funds" },
   ];
 
@@ -194,6 +198,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
 
       {!loading && subtab === "recurring" && (
         <RecurringView onNavigate={onNavigate} isReadOnly={isReadOnly} />
+      )}
+
+      {!loading && subtab === "members" && (
+        <MembersView isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "funds" && (

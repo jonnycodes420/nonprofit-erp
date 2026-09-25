@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useContext, Component } from "react";
 import Papa from "papaparse";
 import { VolunteerPanel, HoursImportModal } from "./VolunteerPanel";
+import { MembershipPanel } from "./Memberships";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
@@ -5345,6 +5346,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
             {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
             <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
+            <MembershipPanel donor={donor} isReadOnly={isReadOnly}/>
 
             {/* Household & planned giving (BUILD-14) */}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>

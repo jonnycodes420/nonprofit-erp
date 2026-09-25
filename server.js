@@ -31411,6 +31411,178 @@ async function eventDonorFor(orgId, body, who) {
   return id;
 }
 
+// ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────
+// A membership is one person on one level. Its payment is a GIFT through
+// recordGift with the level's fair-market value as the quid-pro-quo, so the
+// existing receipt states the deductible split and the ledger posts once:
+// membership money and donation money are the same rows, and the split is a
+// fact on the gift, never a second total.
+let MB = null;
+const MB_READY = import("./shared/membership.js").then(m => { MB = m; return m; });
+const mbCents = v => Math.round(Number(v) * 100);
+function membershipLevelPayload(l, counts = null) {
+  const priceCents = mbCents(l.price), fmvCents = mbCents(l.fmv);
+  return { id: l.id, name: l.name, price: priceCents / 100, fmv: fmvCents / 100, deductible: (priceCents - fmvCents) / 100,
+    term: l.term, termLabel: MB ? MB.TERM_LABEL[l.term] : l.term, scope: l.scope,
+    benefits: Array.isArray(l.benefits) ? l.benefits : [], active: l.active !== false,
+    fmvSentence: MB ? MB.fmvSentence({ priceCents, fmvCents }) : null, counts };
+}
+
+app.get("/membership-levels", requireAuth, wrap(async (req, res) => {
+  await MB_READY;
+  const levels = await query(`SELECT * FROM membership_levels WHERE org_id=? ORDER BY active DESC, position, price`, [req.user.orgId]);
+  const counts = await query(`SELECT level_id, status, COUNT(*)::int n FROM memberships WHERE org_id=? GROUP BY 1,2`, [req.user.orgId]);
+  const by = {};
+  for (const c of counts) (by[c.level_id] ||= { active: 0, grace: 0, lapsed: 0, cancelled: 0 })[c.status] = c.n;
+  res.json({ levels: levels.map(l => membershipLevelPayload(l, by[l.id] || { active: 0, grace: 0, lapsed: 0, cancelled: 0 })) });
+}));
+
+// Prices and the value of benefits are the org's policy: admins set them.
+app.post("/membership-levels", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await MB_READY;
+  const v = MB.validateLevel(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level, id = "mbl_" + uuid().slice(0, 8), who = actor(req);
+  await run(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+    [id, req.user.orgId, L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), who.id, who.name]);
+  res.status(201).json({ id, sentence: MB.fmvSentence(L) });
+}));
+
+app.put("/membership-levels/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await MB_READY;
+  const [l] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!l) return res.status(404).json({ error: "Not found" });
+  const cur = membershipLevelPayload(l);
+  const v = MB.validateLevel({ ...cur, ...req.body });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level;
+  const active = typeof req.body?.active === "boolean" ? req.body.active : l.active !== false;
+  await run(`UPDATE membership_levels SET name=?, price=?, fmv=?, term=?, scope=?, benefits=?::jsonb, active=? WHERE id=? AND org_id=?`,
+    [L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), active, l.id, req.user.orgId]);
+  res.json({ ok: true, sentence: MB.fmvSentence(L) });
+}));
+
+// A level somebody has held cannot vanish from under their receipt; retire it
+// (active=false) instead.
+app.delete("/membership-levels/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [used] = await query(`SELECT COUNT(*)::int n FROM memberships WHERE level_id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (used?.n) return res.status(409).json({ error: "level_in_use", message: "People have held this level. It can be retired, not removed." });
+  const { changes } = await run(`DELETE FROM membership_levels WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// Put a person on a level. The membership row is CLAIMED FIRST, so the
+// one-current-membership index — not an if-statement — refuses a second one
+// before any money is written; if the gift then fails, the claim is released.
+async function enrollMembership({ orgId, donorId, level, startsOn = null, paid = true, paymentMethod = null,
+                                  idemKey = null, source = "staff", who }) {
+  await MB_READY;
+  const [donor] = await query(`SELECT id, name, household_id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!donor) throw Object.assign(new Error("Donor not found"), { status: 404 });
+  if (idemKey) {
+    const [prior] = await query(`SELECT m.* FROM memberships m JOIN gifts g ON g.id=m.gift_id WHERE m.org_id=? AND g.idempotency_key=?`, [orgId, idemKey]);
+    if (prior) return { membership: prior, duplicate: true };
+  }
+  const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK
+  const start = startsOn || today;
+  const expires = MB.expiryFor({ term: level.term, startsOn: start });
+  const id = "mb_" + uuid().slice(0, 10);
+  try {
+    await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?)`,
+      [id, orgId, donorId, level.scope === "household" ? donor.household_id || null : null, level.id, start, start, expires,
+       paid ? paymentMethod : "complimentary", source, who.id, who.name]);
+  } catch (e) {
+    if (e.code !== "23505") throw e;
+    const [cur] = await query(`SELECT m.expires_on, l.name FROM memberships m JOIN membership_levels l ON l.id=m.level_id
+                                WHERE m.org_id=? AND m.donor_id=? AND m.status IN ('active','grace')`, [orgId, donorId]);
+    throw Object.assign(new Error(`${donor.name} already holds a ${cur ? cur.name : "current"} membership${cur && cur.expires_on ? ", through " + cur.expires_on : ""}. Renew it rather than adding a second.`),
+      { status: 409, code: "membership_current" });
+  }
+  let giftId = null;
+  if (paid) {
+    try {
+      const written = await recordGift({
+        orgId, donorId, amount: mbCents(level.price) / 100, date: today, type: "cash",
+        notes: `${level.name} membership`, paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
+        quidProQuoValue: mbCents(level.fmv) / 100,
+        quidProQuoDesc: MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] }),
+        actorId: who.id, actorName: who.name, source: "membership",
+        ledgerDescription: `${level.name} membership`,
+        timelineNote: `Joined as a ${level.name} member${expires ? ", through " + expires : ""}`,
+      });
+      giftId = written.duplicate ? (await query(`SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?`, [orgId, idemKey]))[0]?.id || null
+                                 : written.gift.id;
+    } catch (e) {
+      await run(`DELETE FROM memberships WHERE id=? AND org_id=?`, [id, orgId]).catch(() => {});
+      throw e;
+    }
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
+  }
+  const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+  return { membership: m, giftId };
+}
+
+app.post("/donors/:id/memberships", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [String(req.body?.levelId || ""), orgId]);
+  if (!level) return res.status(404).json({ error: "Level not found" });
+  if (level.active === false) return res.status(400).json({ error: `${level.name} is retired. Choose a current level.` });
+  const startsOn = req.body?.startsOn && /^\d{4}-\d{2}-\d{2}$/.test(req.body.startsOn) ? req.body.startsOn : null;
+  const idem = typeof req.body?.idempotencyKey === "string" && req.body.idempotencyKey.trim() ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+  try {
+    const r = await enrollMembership({ orgId, donorId: req.params.id, level, startsOn, paid: req.body?.paid !== false,
+      paymentMethod: req.body?.paymentMethod || null, idemKey: idem, who: actor(req) });
+    res.status(r.duplicate ? 200 : 201).json(r);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.code || e.message, message: e.message });
+    throw e;
+  }
+}));
+
+app.get("/donors/:id/memberships", requireAuth, wrap(async (req, res) => {
+  const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT m.id, m.status, m.joined_on, m.starts_on, m.expires_on, m.gift_id, m.payment_method, m.source,
+            l.id AS level_id, l.name AS level_name, l.term, l.scope
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id
+      WHERE m.donor_id=? AND m.org_id=? ORDER BY m.starts_on DESC, m.created_at DESC`, [d.id, req.user.orgId]);
+  res.json({ memberships: rows, current: rows.find(r => r.status === "active" || r.status === "grace") || null,
+    sentence: "Memberships are counted apart from giving: the payment is a gift, and the part that bought benefits is not deductible." });
+}));
+
+// The Members screen: every membership, counts by level and status, sortable
+// by expiry (soonest first by default — that is the list someone works from).
+app.get("/memberships", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const where = ["m.org_id=?"], args = [orgId];
+  if (req.query.status && ["active", "grace", "lapsed", "cancelled"].includes(String(req.query.status))) { where.push("m.status=?"); args.push(String(req.query.status)); }
+  if (req.query.levelId) { where.push("m.level_id=?"); args.push(String(req.query.levelId)); }
+  const dir = req.query.sort === "expiry_desc" ? "DESC" : "ASC";
+  const rows = await query(
+    `SELECT m.id, m.donor_id, d.name AS donor_name, m.status, m.joined_on, m.starts_on, m.expires_on, m.gift_id,
+            l.id AS level_id, l.name AS level_name, l.term
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id JOIN donors d ON d.id=m.donor_id
+      WHERE ${where.join(" AND ")} ORDER BY m.expires_on ${dir} NULLS LAST, d.name LIMIT 1000`, args);
+  const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? GROUP BY 1`, [orgId]);
+  const byStatus = { active: 0, grace: 0, lapsed: 0, cancelled: 0 };
+  for (const c of counts) byStatus[c.status] = c.n;
+  res.json({ members: rows, byStatus,
+    sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period." });
+}));
+
+// Cancelling stops a membership; it does not refund the gift (a refund is its
+// own act on the gift). Never write-gated: a lapsed org can always stop one.
+app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
+  const r = await query(`UPDATE memberships SET status='cancelled', cancelled_at=NOW(), updated_at=NOW()
+                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
 // ── EVENT ROUTES (levels, registration, tables, attendance) ─────────────────
 app.get("/events/:id/levels", requireAuth, wrap(async (req, res) => {
   const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);

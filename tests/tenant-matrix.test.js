@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
+    for (const t of ["memberships", "membership_levels", "api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
       "audiences", "statement_mappings", "gift_duplicate_questions",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
@@ -158,6 +158,8 @@ async function seedOrg(o, tag) {
     [`ea_${o}`, `ev_${o}`, o, `d_${o}`, `${mark} Attendee`]);
   await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role) VALUES ($1,$2,$3,$4,3,'Barn')`, [`vs_${o}`, o, `d_${o}`, TODAY]);
   await q(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash) VALUES ($1,$2,'Zapier','stw_xxxxxx',$3)`, [`ak_${o}`, o, `hash_${o}`]);
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term) VALUES ($1,$2,'Family',100,25,'12_months')`, [`mbl_${o}`, o]);
+  await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status) VALUES ($1,$2,$3,$4,$5,$5,$5,'active')`, [`mb_${o}`, o, `d_${o}`, `mbl_${o}`, TODAY]);
   // BUILD-98 (switch) Part 4 — a ticket level, so /event-levels/:id is probed.
   await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv) VALUES ($1,$2,$3,'ticket',$4,150,60)`,
     [`evl_${o}`, o, `ev_${o}`, `${mark} Level`]);
@@ -321,6 +323,8 @@ function bResolver(routePath, param) {
     "event-levels": `evl_${B}`,      // BUILD-98 Part 4 — a ticket level is org B's business
     "volunteer-shifts": `vs_${B}`,   // BUILD-98 Part 5 — a volunteer's shift is org B's business
     "api-keys": `ak_${B}`,           // BUILD-98 Part 6 — org A cannot revoke org B's key
+    "membership-levels": `mbl_${B}`, // BUILD-101 — org A cannot edit or remove org B's levels
+    "memberships": `mb_${B}`,        // BUILD-101 — org A cannot cancel org B's member
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404

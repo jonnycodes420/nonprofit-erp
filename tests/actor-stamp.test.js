@@ -29,6 +29,8 @@ const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
 const ACTOR_TABLES = ["gifts", "donors", "pledges", "tasks", "campaigns", "grants", "events",
   "households", "opportunities", "receipts", "giving_pages", "planned_gifts",
   "volunteers", "board_members", "fin_transactions", "sequences",
+  // BUILD-101 — memberships and their levels carry an identity like everything else.
+  "membership_levels", "memberships",
   // BUILD-78 Part 9 — schema-shaped writes and custom-value audit events
   // carry an identity like everything else.
   "custom_field_defs", "custom_field_events"];
