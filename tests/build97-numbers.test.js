@@ -113,6 +113,17 @@ const EXPECTED_CLAIMS = 107;
   const unlisted = Object.entries(r.byFile)
     .filter(([f, n]) => n !== null && n > 0 && EXPECTED[f] === undefined).map(([f]) => f);
   ok("no scanned file carries numbers the census does not list", unlisted.length === 0, unlisted);
+  // BUILD-98 (switch) Part 3 — THE SCOPE ITSELF CANNOT DRIFT. The scan list is
+  // explicit, so a NEW screen file was invisible to the census: neither counted
+  // nor excluded. Every component and page must be in one list or the other.
+  const scopeSrc = fs.readFileSync(path.join(root, "scripts", "build97-number-census.js"), "utf8");
+  const named = new Set([...scopeSrc.matchAll(/"((?:components|pages)\/[A-Za-z0-9]+\.jsx)"/g)].map(m => m[1]));
+  const onDisk = [
+    ...fs.readdirSync(path.join(root, "client", "src", "components")).filter(f => f.endsWith(".jsx")).map(f => "components/" + f),
+    ...fs.readdirSync(path.join(root, "client", "src", "pages")).filter(f => f.endsWith(".jsx")).map(f => "pages/" + f),
+  ];
+  const nowhere = onDisk.filter(f => !named.has(f) && !f.includes("_censusprobe"));
+  ok("every screen file is either scanned or named out of scope with a reason", nowhere.length === 0, nowhere);
   ok("every out-of-scope surface names its reason",
      Object.values(r.outOfScope).every(v => typeof v === "string" && v.length > 15),
      r.outOfScope);

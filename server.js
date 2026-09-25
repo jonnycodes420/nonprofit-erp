@@ -20877,6 +20877,296 @@ const REPORT_HANDLERS = {
 // org gets 403 plan_required (the client renders an upgrade state).
 const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD-98 (switch) Part 3 — REPORTS PEOPLE CAN BUILD
+// ════════════════════════════════════════════════════════════════════════════
+// shared/reportBuilder.js is the catalogue and the compiler: a field is a NAME
+// looked up there, never a string of SQL, and every value is a bound
+// parameter. This block adds the org scope, runs it, and keeps what she saved.
+// The twelve standard reports that Reports already answers CALL Reports' own
+// handler through reportToCsv's own shaping, so a saved LYBUNT and the Reports
+// tab's LYBUNT are one computation.
+let RB = null;
+const RB_READY = import("./shared/reportBuilder.js").then(m => { RB = m; return m; });
+
+async function rbCustomDefs(orgId) {
+  return query("SELECT key, label, type, entity FROM custom_field_defs WHERE org_id=? AND archived_at IS NULL", [orgId]).catch(() => []);
+}
+
+// The date words a stored definition may use, resolved on the org's own
+// calendar every time it runs — a saved "this year" is this year.
+async function rbTokens(orgId) {
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                 // ORG_TZ_SEAM_OK
+  const fy = reportYearBounds(reportCurrentYear("fiscal", org), "fiscal");
+  return { today, fyStart: fy.from, fyEnd: fy.to, twoYearsAgo: orgTime.addDays(today, -730) };
+}
+
+const rbCents = v => Math.round(Number(v) * 100);
+
+// Run a builder definition for one org. Returns {columns, rows, totals, groups}.
+// The compiled SQL carries its own $n placeholders and contains no `?`, so it
+// passes through query()'s ?-to-$n rewrite untouched (asserted in the suite).
+async function runBuilderDef(orgId, def) {
+  await RB_READY;
+  const c = RB.compile(RB.resolveDateTokens(def, await rbTokens(orgId)), { customDefs: await rbCustomDefs(orgId), paramStart: 2 });
+  if (!c.ok) return { errors: c.errors };
+  const where = [`${c.orgCol} = $1`, ...c.where].join(" AND ");
+  const params = [orgId, ...c.params];
+  // Totals are summed in the DATABASE over exactly the rows the filter names,
+  // then read back to the cent — never re-added from a capped page.
+  const sumSel = c.sums.map((s, i) => `COALESCE(SUM(${s.sql}),0) AS s${i}`).join(", ");
+  const [tot] = await query(`SELECT COUNT(*)::int AS n${sumSel ? ", " + sumSel : ""} FROM ${c.from} WHERE ${where}`, params);
+  const totals = { count: tot.n, sums: c.sums.map((s, i) => ({ key: s.key, label: s.label, cents: rbCents(tot["s" + i]) })) };
+  if (c.group) {
+    const gSel = c.sums.map((s, i) => `COALESCE(SUM(${s.sql}),0) AS s${i}`).join(", ");
+    const rows = await query(
+      `SELECT ${c.group.sql} AS g, COUNT(*)::int AS n${gSel ? ", " + gSel : ""} FROM ${c.from} WHERE ${where}
+        GROUP BY 1 ORDER BY 1 NULLS LAST LIMIT ${c.limit}`, params);
+    const columns = [{ key: "group", label: c.group.label, type: "text" }, { key: "count", label: "Count", type: "number" },
+      ...c.sums.map((s, i) => ({ key: "s" + i, label: s.label, type: "money" }))];
+    return { columns, rows: rows.map(r => ({ group: r.g ?? "(blank)", count: r.n, ...Object.fromEntries(c.sums.map((s, i) => ["s" + i, rbCents(r["s" + i]) / 100])) })), totals, grouped: true };
+  }
+  const sel = c.columns.map((f, i) => `${f.sql} AS c${i}`).join(", ");
+  const order = c.sort ? `${c.sort.sql} ${c.sort.dir} NULLS LAST` : "1";
+  const rows = await query(`SELECT ${sel} FROM ${c.from} WHERE ${where} ORDER BY ${order} LIMIT ${c.limit}`, params);
+  return {
+    columns: c.columns.map((f, i) => ({ key: "c" + i, label: f.label, type: f.type })),
+    rows: rows.map(r => Object.fromEntries(c.columns.map((f, i) => ["c" + i, f.type === "money" ? rbCents(r["c" + i]) / 100 : r["c" + i]]))),
+    totals, capped: totals.count > rows.length,
+  };
+}
+
+// Gifts by month, this year beside last year, from the giving-summary handler
+// itself — the Reports tab's monthly figures, twice, aligned by fiscal month.
+async function reportByMonthVsLastYear(orgId, p) {
+  const prev = { ...p, year: p.year - 1, ...reportYearBounds(p.year - 1, p.yearMode) };
+  const [cur, last] = await Promise.all([reportGivingSummary(orgId, p), reportGivingSummary(orgId, prev)]);
+  const idx = (ym, start) => (Number(ym.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(ym.slice(5, 7)) - Number(start.slice(5, 7));
+  const rows = [];
+  for (let i = 0; i < 12; i++) {
+    const c = cur.monthly.find(m => idx(m.month, p.from) === i);
+    const l = last.monthly.find(m => idx(m.month, prev.from) === i);
+    const ym = orgTime.addDays(p.from, i * 31).slice(0, 7);
+    rows.push({ month: ym, thisYear: c ? c.total : 0, lastYear: l ? l.total : 0 });
+  }
+  return { from: p.from, to: p.to, rows, total: cur.total, lastTotal: last.total };
+}
+
+async function runStandardReport(orgId, std) {
+  if (std.kind === "builder") return runBuilderDef(orgId, std.def);
+  const p = parseReportParams({ ...std.params }, await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  if (std.handler === "by-month-vs-last-year") {
+    const d = await reportByMonthVsLastYear(orgId, p);
+    return { columns: [{ key: "month", label: "Month", type: "text" }, { key: "thisYear", label: "This year", type: "money" }, { key: "lastYear", label: "Last year", type: "money" }],
+             rows: d.rows, totals: { count: d.rows.length, sums: [{ key: "thisYear", label: "This year", cents: rbCents(d.total) }, { key: "lastYear", label: "Last year", cents: rbCents(d.lastTotal) }] } };
+  }
+  const data = await REPORT_HANDLERS[std.handler](orgId, p);
+  // The SAME shaping the Reports tab's CSV uses — one table, one definition.
+  const { headers, rows } = reportToCsv(std.handler, data);
+  return { columns: headers.map((h, i) => ({ key: "c" + i, label: h, type: "text" })),
+           rows: rows.map(r => Object.fromEntries(r.map((v, i) => ["c" + i, v]))),
+           totals: { count: rows.length, sums: [] }, raw: data };
+}
+
+async function savedReportFor(orgId, userId, id) {
+  await RB_READY;
+  const std = RB.STANDARD_REPORTS.find(r => "std:" + r.key === id);
+  if (std) return { id, name: std.name, question: std.question, standard: true, kind: std.kind, def: std.def || null, std };
+  const [r] = await query("SELECT * FROM saved_reports WHERE id=? AND org_id=? AND (shared = true OR owner_id = ?)", [id, orgId, userId]);
+  if (!r) return null;
+  return { id: r.id, name: r.name, question: r.question, standard: false, kind: "builder", def: asJson(r.definition, {}), row: r };
+}
+
+async function runSaved(orgId, rep) {
+  return rep.standard ? runStandardReport(orgId, rep.std) : runBuilderDef(orgId, rep.def);
+}
+
+// ── REPORT-BUILDER ROUTES ──────────────────────────────────────────────────
+app.get("/report-builder/catalogue", requireAuth, wrap(async (req, res) => {
+  await RB_READY;
+  const defs = await rbCustomDefs(req.user.orgId);
+  res.json({
+    entities: RB.ENTITY_KEYS.map(k => {
+      const E = RB.ENTITIES[k];
+      const custom = E.custom ? defs.filter(d => d.entity === E.custom.entity && RB.CUSTOM_KEY.test(d.key)).map(d => RB.fieldFor(k, "cf:" + d.key, defs)).filter(Boolean) : [];
+      return { key: k, label: E.label, fields: [...Object.entries(E.fields).map(([fk, f]) => ({ key: fk, label: f.label, type: f.type, groupOnly: !!f.groupOnly })),
+        ...custom.map(f => ({ key: f.key, label: f.label, type: f.type, custom: true }))] };
+    }),
+    ops: Object.entries(RB.OPS).map(([k, o]) => ({ key: k, label: o.label, types: o.types })),
+  });
+}));
+
+// Run a definition that has not been saved. A read; changes nothing.
+app.post("/report-builder/run", requireAuth, wrap(async (req, res) => {
+  const out = await runBuilderDef(req.user.orgId, req.body?.definition || {});
+  if (out.errors) return res.status(400).json({ error: out.errors.join(" "), errors: out.errors });
+  res.json(out);
+}));
+
+app.get("/saved-reports", requireAuth, wrap(async (req, res) => {
+  await RB_READY;
+  const mine = await query(
+    `SELECT id, name, question, shared, owner_id, owner_name, schedule, updated_at FROM saved_reports
+      WHERE org_id=? AND (shared = true OR owner_id = ?) ORDER BY name`, [req.user.orgId, req.user.userId]);
+  res.json({
+    standard: RB.STANDARD_REPORTS.map(r => ({ id: "std:" + r.key, name: r.name, question: r.question })),
+    saved: mine.map(r => ({ id: r.id, name: r.name, question: r.question, shared: r.shared, mine: r.owner_id === req.user.userId,
+      ownerName: r.owner_name, schedule: r.schedule, updatedAt: r.updated_at })),
+  });
+}));
+
+app.post("/saved-reports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await RB_READY;
+  const name = String(req.body?.name || "").trim().slice(0, 120);
+  const def = req.body?.definition || {};
+  if (!name) return res.status(400).json({ error: "Give the report a name." });
+  const v = RB.validateDefinition(def, { customDefs: await rbCustomDefs(req.user.orgId) });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
+  const schedule = RB.SCHEDULES.includes(req.body?.schedule ?? null) ? (req.body?.schedule ?? null) : null;
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const id = "rpt_" + uuid().slice(0, 10);
+  await run(`INSERT INTO saved_reports (id,org_id,name,question,definition,shared,owner_id,owner_name,schedule,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, name, String(req.body?.question || "").slice(0, 300) || null, JSON.stringify(def),
+     req.body?.shared === true, req.user.userId, u?.name || null, schedule, actor(req).id, actor(req).name]);
+  res.status(201).json({ id });
+}));
+
+// Only the owner edits or deletes; a shared report is readable by the org and
+// changeable by the person who made it.
+app.put("/saved-reports/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await RB_READY;
+  const [r] = await query("SELECT * FROM saved_reports WHERE id=? AND org_id=? AND owner_id=?", [req.params.id, req.user.orgId, req.user.userId]);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  const def = req.body?.definition ?? asJson(r.definition, {});
+  const v = RB.validateDefinition(def, { customDefs: await rbCustomDefs(req.user.orgId) });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join(" ") });
+  const schedule = req.body && "schedule" in req.body ? (RB.SCHEDULES.includes(req.body.schedule) ? req.body.schedule : null) : r.schedule;
+  await run(`UPDATE saved_reports SET name=?, question=?, definition=?, shared=?, schedule=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [String(req.body?.name ?? r.name).trim().slice(0, 120) || r.name, req.body?.question ?? r.question, JSON.stringify(def),
+     typeof req.body?.shared === "boolean" ? req.body.shared : r.shared, schedule, r.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.delete("/saved-reports/:id", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM saved_reports WHERE id=? AND org_id=? AND owner_id=?", [req.params.id, req.user.orgId, req.user.userId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+app.get("/saved-reports/:id/run", requireAuth, wrap(async (req, res) => {
+  const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
+  if (!rep) return res.status(404).json({ error: "Not found" });
+  const out = await runSaved(req.user.orgId, rep);
+  if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
+  const { raw, ...rest } = out; void raw;
+  res.json({ report: { id: rep.id, name: rep.name, question: rep.question, standard: rep.standard, definition: rep.def }, ...rest });
+}));
+
+function rbFormatCell(v, type) {
+  if (v === null || v === undefined) return "";
+  if (type === "money") return "$" + (rbCents(v) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (type === "bool") return v ? "Yes" : "No";
+  return String(v);
+}
+
+app.get("/saved-reports/:id/csv", requireAuth, wrap(async (req, res) => {
+  const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
+  if (!rep) return res.status(404).json({ error: "Not found" });
+  const out = await runSaved(req.user.orgId, rep);
+  if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
+  const slug = String(rep.name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "report";
+  sendReportCsv(res, `${slug}.csv`, out.columns.map(c => c.label), out.rows.map(r => out.columns.map(c => r[c.key])));
+}));
+
+app.get("/saved-reports/:id/pdf", requireAuth, wrap(async (req, res) => {
+  const rep = await savedReportFor(req.user.orgId, req.user.userId, req.params.id);
+  if (!rep) return res.status(404).json({ error: "Not found" });
+  const out = await runSaved(req.user.orgId, rep);
+  if (out.errors) return res.status(400).json({ error: out.errors.join(" ") });
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", layout: "landscape", margin: 36, bufferPages: true });
+  const chunks = []; doc.on("data", c => chunks.push(c));
+  const done = new Promise(r => doc.on("end", r));
+  const W = doc.page.width - 72, n = Math.max(out.columns.length, 1), cw = W / n;
+  doc.font("Helvetica-Bold").fontSize(15).fillColor("#0f1a12").text(rep.name, 36, 36);
+  if (rep.question) doc.font("Helvetica").fontSize(9.5).fillColor("#5a554f").text(rep.question);
+  doc.moveDown(0.6);
+  const header = () => {
+    const y = doc.y;
+    out.columns.forEach((c, i) => doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#0f1a12").text(c.label, 36 + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
+    doc.moveTo(36, y + 13).lineTo(36 + W, y + 13).strokeColor("#e8e4db").stroke(); doc.y = y + 17;
+  };
+  header();
+  for (const r of out.rows) {
+    if (doc.y > doc.page.height - 60) { doc.addPage(); header(); }
+    const y = doc.y;
+    out.columns.forEach((c, i) => doc.font("Helvetica").fontSize(8.5).fillColor("#0f1a12").text(rbFormatCell(r[c.key], c.type), 36 + i * cw, y, { width: cw - 6, lineBreak: false, ellipsis: true }));
+    doc.y = y + 13;
+  }
+  doc.moveDown(0.5).font("Helvetica").fontSize(8.5).fillColor("#5a554f")
+    .text(`${out.totals.count.toLocaleString("en-US")} rows${out.totals.sums.length ? " · " + out.totals.sums.map(s => `${s.label} ${rbFormatCell(s.cents / 100, "money")}`).join(" · ") : ""}${out.capped ? ` · first ${out.rows.length} shown` : ""}`, 36);
+  doc.end(); await done;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(rep.name).replace(/[^\w -]/g, "")}.pdf"`);
+  res.end(Buffer.concat(chunks));
+}));
+
+// ── THE WEEKLY EMAIL ───────────────────────────────────────────────────────
+// Monday morning, org-local, ONCE per report per week: saved_report_sends is
+// reserved BEFORE the send (the digest_sends discipline) and released if the
+// send fails. It goes to the report's OWNER — staff mail, branded, no donor
+// footer — and its only link opens the report in Steward, a plain GET that
+// changes nothing.
+async function runSavedReportScheduleForOrg(org, { weekKey, force = false } = {}) {
+  const reps = await query("SELECT * FROM saved_reports WHERE org_id=? AND schedule='weekly'", [org.id]);
+  let sent = 0, skipped = 0;
+  for (const r of reps) {
+    const reserved = await query(
+      "INSERT INTO saved_report_sends (id,org_id,report_id,period_key) VALUES (?,?,?,?) ON CONFLICT (report_id, period_key) DO NOTHING RETURNING id",
+      ["rps_" + uuid().slice(0, 10), org.id, r.id, weekKey]);
+    if (!reserved.length) { skipped++; continue; }
+    const [owner] = await query("SELECT email, name FROM users WHERE id=? AND org_id=?", [r.owner_id, org.id]);
+    if (!owner?.email) { skipped++; continue; }
+    const out = await runBuilderDef(org.id, asJson(r.definition, {}));
+    if (out.errors) { await run("DELETE FROM saved_report_sends WHERE id=?", [reserved[0].id]); skipped++; continue; }
+    const link = `${publicAppUrl()}/dashboard?report=${encodeURIComponent(r.id)}`;
+    const head = out.columns.map(c => `<th style="text-align:left;padding:4px 8px;border-bottom:1px solid #e8e4db;font-size:12px">${escapeHtml(c.label)}</th>`).join("");
+    const body = out.rows.slice(0, 20).map(row => `<tr>${out.columns.map(c => `<td style="padding:4px 8px;font-size:12px">${escapeHtml(rbFormatCell(row[c.key], c.type))}</td>`).join("")}</tr>`).join("");
+    const html = `<div style="font-family:Arial,sans-serif;color:#0f1a12"><p style="font-size:15px"><strong>${escapeHtml(r.name)}</strong>: ${out.totals.count.toLocaleString("en-US")} ${out.totals.count === 1 ? "row" : "rows"} this week.</p>
+      <table style="border-collapse:collapse">${head ? `<tr>${head}</tr>` : ""}${body}</table>
+      ${out.totals.count > 20 ? `<p style="font-size:12px;color:#5a554f">and ${out.totals.count - 20} more.</p>` : ""}
+      <p><a href="${link}">Open the report in Steward</a></p></div>`;
+    const ok = await sendGiftAlertEmail(org, owner.email, `${r.name} — your weekly report`, html);
+    if (!ok) { await run("DELETE FROM saved_report_sends WHERE id=?", [reserved[0].id]); skipped++; continue; }
+    await run("UPDATE saved_reports SET last_sent_at=NOW() WHERE id=?", [r.id]);
+    sent++;
+  }
+  return { sent, skipped, force };
+}
+
+async function processSavedReportSchedule() {
+  const orgs = await query("SELECT DISTINCT o.id, o.name, o.timezone FROM orgs o JOIN saved_reports r ON r.org_id = o.id WHERE r.schedule='weekly'");
+  for (const org of orgs) {
+    const clock = orgTime.orgClock(org);
+    const dow = new Date(clock.date + "T12:00:00Z").getUTCDay();   // the org's civil date's weekday
+    if (dow !== 1 || clock.hour < 6 || clock.hour >= 12) continue;  // Monday morning, org-local
+    await runSavedReportScheduleForOrg(org, { weekKey: "wk:" + clock.date });
+  }
+}
+if (!backgroundTicksDisabled()) {
+  setInterval(() => recordTick("processSavedReportSchedule", processSavedReportSchedule).catch(console.error), 5 * 60 * 1000);
+}
+
+// Ops/test hook: drive the exact scheduled path for the caller's org.
+app.post("/saved-reports/run-schedule", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name, timezone FROM orgs WHERE id=?", [req.user.orgId]);
+  const weekKey = /^wk:\d{4}-\d{2}-\d{2}$/.test(String(req.body?.weekKey || "")) ? req.body.weekKey : "wk:" + orgToday(await orgTz(req.user.orgId));   // ORG_TZ_SEAM_OK
+  res.json(await runSavedReportScheduleForOrg(org, { weekKey }));
+}));
+
+
 // Reports are read paths — requireAuth only, never checkWriteAccess (a
 // read_only org keeps full report access, consistent with GETs/exports
 // everywhere else).

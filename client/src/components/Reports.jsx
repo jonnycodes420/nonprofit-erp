@@ -1,6 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature, goToPricing } from "./shared";
+import { SavedReportsView } from "./ReportBuilder";
+
+// BUILD-98 (switch) Part 3 — the tab id for "Your reports".
+const SAVED_TAB = "saved";
 import { errorMessage } from "../lib/domainError";
 
 // ── Reports (BUILD-02) ──────────────────────────────────────────────────────
@@ -113,8 +117,8 @@ function PctBar({ pct }) {
 // "This week" lands on Giving Summary with a custom from/to matching the
 // chip's exact Monday-based week, so the destination shows the SAME number
 // the chip claimed. Consumed on mount only (App remounts via navNonce).
-export function Reports({ onNavigate, initialReport, initialParams }) {
-  const [active, setActive] = useState(initialReport || "giving-summary");
+export function Reports({ onNavigate, initialReport, initialParams, initialSavedReport }) {
+  const [active, setActive] = useState(initialSavedReport ? "saved" : (initialReport || "giving-summary"));
   const [yearMode, setYearModeState] = useState(() => initialParams?.yearMode || localStorage.getItem("steward_reports_yearmode") || "fiscal");
   const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
   const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
@@ -163,6 +167,11 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
 
   function buildParams() {
     const q = new URLSearchParams();
+    // BUILD-98 (switch) Part 3 — "Your reports" has no period of its own. It
+    // must return BEFORE the period branch: on a first render opened straight
+    // onto this tab (the weekly email's link) the default preset has not
+    // resolved yet, and reading `.year` off it took the whole tab down.
+    if (active === SAVED_TAB) return q;
     if (DIGEST_REPORTS.includes(active)) { q.set("type", digestType); return q; }
     if (active === "solicitations") { q.set("yearMode", yearMode); return q; }
     if (active === "retention") { q.set("yearMode", yearMode); return q; }
@@ -184,6 +193,8 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
 
   useEffect(() => {
     if (customIncomplete || presetPending) return;
+    // BUILD-98 (switch) Part 3 — "Your reports" fetches its own; nothing here.
+    if (active === SAVED_TAB) return;
     let dead = false;
     setLoading(true); setErr(""); setPlanLocked(false);
     const url = DIGEST_REPORTS.includes(active) ? `/digests/preview?${paramsStr}` : `/reports/${active}?${paramsStr}`;
@@ -478,11 +489,15 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
       {/* Report picker — horizontal tabs. (BUILD-12: the per-report grey
           "question this answers" subtitle was removed as decorative clutter.) */}
       <SectionTabs className="reports-tabbar"
-        tabs={REPORT_DEFS.map(r => ({ id: r.key, label: r.label }))}
+        tabs={[{ id: SAVED_TAB, label: "Your reports" }, ...REPORT_DEFS.map(r => ({ id: r.key, label: r.label }))]}
         active={active} onSelect={setActive} style={{ marginBottom: 14 }} />
 
+      {/* BUILD-98 (switch) Part 3 — the twelve everyday questions, the org's
+          saved reports, and the builder. */}
+      {active === SAVED_TAB && <SavedReportsView initialReportId={initialSavedReport || null} />}
+
       {/* Main */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {active !== SAVED_TAB && <div style={{ flex: 1, minWidth: 0 }}>
         <Card style={{ padding: "18px 22px" }}>
           {/* Param bar */}
           <div className="reports-parambar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
@@ -562,7 +577,7 @@ export function Reports({ onNavigate, initialReport, initialParams }) {
             return <>{errBlock}{body}</>;
           })()}
         </Card>
-      </div>
+      </div>}
     </div>
   </div>;
 }

@@ -65,3 +65,22 @@ the block is one constant.
 ### 2.3 · Labels are Avery 5160 only
 The 30-up 1 × 2⅝ in sheet is the one most offices stock. Other sizes are a
 geometry table each, added when someone asks.
+
+---
+
+## Part 3 · reports people can build
+
+### 3.1 · The weekly email carries the first twenty rows in the body
+A scheduled report is internal staff mail to its owner. It carries up to twenty
+rows inline and links to the rest. For a report about donors that is donor
+data in an inbox; if an org wants the email to say only "your report is ready"
+with no rows, that is a per-report setting to add, not a default to guess.
+
+### 3.2 · Standard reports are fiscal-year by default
+LYBUNT, SYBUNT, retention and gifts-by-month run on the org's fiscal year (the
+July-1 rule, or the org's own fiscal start month). A calendar-year variant is a
+saved copy away; say if the twelve should default to calendar instead.
+
+### 3.3 · Scheduling is weekly only
+The brief says "schedule as a weekly email". Monthly is one more period key and
+one more line in `SCHEDULES`, added when somebody asks for it.

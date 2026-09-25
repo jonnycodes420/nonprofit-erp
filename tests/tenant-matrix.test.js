@@ -72,7 +72,7 @@ const TODAY = iso(new Date());
 
 async function reset() {
   for (const org of [A, B]) {
-    for (const t of ["tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
+    for (const t of ["saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
       "audiences", "statement_mappings", "gift_duplicate_questions",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
@@ -123,6 +123,8 @@ async function seedOrg(o, tag) {
     [`g_${o}`, o, `d_${o}`, amt, TODAY, `c_${o}`, `fnd_${o}`]);
   // BUILD-98 Part 1 — a tribute notice and a soft credit, so the new
   // /gifts/:id/extras and /tribute-notices/:id routes are probed across the wall.
+  await q(`INSERT INTO saved_reports (id,org_id,name,definition,shared,owner_id) VALUES ($1,$2,$3,$4,true,$5)`,
+    [`rpt_${o}`, o, `${mark} Report`, JSON.stringify({ entity: "people", columns: ["name"] }), `u_${o}_admin`]);
   await q(`INSERT INTO ack_letter_templates (id,org_id,name,body) VALUES ($1,$2,$3,$4)`,
     [`alt_${o}`, o, `${mark} Letter`, `Dear {{salutation}}, thank you from ${mark}.`]);
   await q(`INSERT INTO tribute_notices (id,org_id,gift_id,donor_id,tribute_type,honouree_name,body)
@@ -281,6 +283,7 @@ function bResolver(routePath, param) {
     audiences: `aud_${B}`,           // BUILD-97 — a named audience is org B's business
     "tribute-notices": `tn_${B}`,    // BUILD-98 Part 1 — a notice to a family is org B's business
     acknowledgments: `alt_${B}`,     // BUILD-98 Part 2 — a letter template is org B's business
+    "saved-reports": `rpt_${B}`,     // BUILD-98 Part 3 — a saved report is org B's business
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404

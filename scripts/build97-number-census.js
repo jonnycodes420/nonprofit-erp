@@ -82,6 +82,7 @@ const SURFACES = [
   "components/PortalWidgets.jsx",
   "components/PortalBanner.jsx",
   "components/shared.jsx",
+  "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather
@@ -96,6 +97,21 @@ const OUT_OF_SCOPE = {
   "pages/Portal.jsx": "the donor's own portal, white-label, its own palette and guards",
   "pages/GivingDashboard.jsx": "the donor-side giving account, not a staff surface",
   "pages/AdminDashboard.jsx": "super-admin ops tool, its own palette and audience",
+  // BUILD-98 (switch) Part 3 — these were in NEITHER list, which the census
+  // could not see: a new screen file was silently out of scope. Each now has
+  // its reason, and tests/build97-numbers.test.js fails on the next file that
+  // has neither.
+  "pages/LoginPage.jsx": "sign-in form; carries no figures",
+  "pages/ForgotPasswordPage.jsx": "password-reset request form; carries no figures",
+  "pages/ResetPasswordPage.jsx": "password-reset form; carries no figures",
+  "pages/InvitePage.jsx": "accept-an-invitation form; carries no figures",
+  "pages/Invitation.jsx": "public request-an-invitation form; its own guards (landing verifier)",
+  "pages/JoinNetwork.jsx": "public network sign-up, flagged off in production (BUILD-46)",
+  "pages/ManageFundraiser.jsx": "a peer fundraiser's own public edit page on publicTheme.js",
+  "pages/PortalEditor.jsx": "the donor-portal page builder; its figures are the portal's, previewed",
+  "pages/PrivacyPage.jsx": "legal text; its numbers are dates and section numbers",
+  "pages/TermsPage.jsx": "legal text; its numbers are dates, prices pinned by tests/one-date.test.js",
+  "pages/WelcomePage.jsx": "first-run onboarding; the import receipt it shows is census'd in Donors.jsx",
 };
 
 // ── THE PATTERNS ───────────────────────────────────────────────────────────

@@ -3667,6 +3667,36 @@ async function initSchema() {
   // How late a gift is before it counts as the backlog — the org's own N.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS ack_backlog_days INTEGER DEFAULT 7`);
 
+  // ── BUILD-98 (switch) Part 3 — REPORTS PEOPLE CAN BUILD ─────────────────
+  // A saved report is a DEFINITION — field names from shared/reportBuilder.js's
+  // catalogue — never SQL. Private to its owner unless shared.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_reports (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      question TEXT,
+      definition JSONB NOT NULL,
+      shared BOOLEAN NOT NULL DEFAULT false,
+      owner_id TEXT, owner_name TEXT,
+      schedule TEXT,                           -- NULL | 'weekly'
+      last_sent_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_saved_reports_org ON saved_reports (org_id)`);
+  // ONCE per report per week: reserved before the send, released if it fails.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS saved_report_sends (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      report_id TEXT NOT NULL REFERENCES saved_reports(id) ON DELETE CASCADE,
+      period_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (report_id, period_key)
+    )`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

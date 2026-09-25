@@ -286,7 +286,7 @@ function AppShell() {
     setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
     setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
-    setReportsIntent(opts?.report&&t==="reports"?{report:opts.report,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
+    setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
@@ -307,6 +307,12 @@ function AppShell() {
       window.history.replaceState({},"","/dashboard");
     }
     const params=new URLSearchParams(window.location.search);
+    // BUILD-98 (switch) Part 3 — the weekly report email's one link. A GET
+    // that opens the report and changes nothing.
+    if(params.get("report")){
+      navigateTo("reports",{savedReport:params.get("report")});
+      window.history.replaceState({},"","/dashboard");
+    }
     if(params.get("stripe_connected")==="true"){
       setStripeToast(true);
       window.history.replaceState({},"","/dashboard");
@@ -702,7 +708,7 @@ function AppShell() {
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
-      {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent}/>}
+      {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
