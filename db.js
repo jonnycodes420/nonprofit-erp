@@ -2537,6 +2537,14 @@ async function initSchema() {
   // Where the donation form sits. NOT a widget: a giving page that can lose its
   // form is a page that silently stopped doing its one job.
   await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS form_position TEXT`).catch(() => {});
+  // BUILD-102 (Steward Give) Part 1 — WHAT THE DONOR IS OFFERED, beside the
+  // widgets that surround it. A form is a giving page with a form config; there
+  // is deliberately NO `forms` table, because a second table would be two ways to
+  // reach one Stripe account and two answers to "which form took this gift".
+  // NULL means "never configured", which renders the defaults — so every giving
+  // page that already exists is a working form the moment this ships, and
+  // `shared/formConfig.js` is the one validator that decides what may be in here.
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS form_config JSONB`).catch(() => {});
   // pledges.campaign_id — a pledge attributes at pledge time; payments against
   // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
   // pledged (committed-but-unpaid) is a separate figure, never summed in.

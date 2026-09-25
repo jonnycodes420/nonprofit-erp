@@ -20542,6 +20542,116 @@ const givingPageOr404 = async (id, orgId) => {
   return p || null;
 };
 
+// ── BUILD-102 (Steward Give) Part 1 — A FORM IS A GIVING PAGE WITH A CONFIG ──
+// shared/formConfig.js is the ONE validator and the ONE spec builder. The editor
+// and the page a stranger opens from a QR code derive their form from the SAME
+// function — not two components fed similar props — so a preview cannot show a
+// field the donor will not get.
+async function formConfigMod() { return import("./shared/formConfig.js"); }
+
+// The org's own funds, which is what makes "a fund from another org is refused"
+// a fact rather than a hope (BUILD-37 B9: the caller does not get to assert what
+// it owns).
+async function orgFundIdsFor(orgId) {
+  return (await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId])).map(r => r.id);
+}
+async function orgFundsForSpec(orgId) {
+  return query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [orgId]);
+}
+
+// GET /giving-pages/:id/form — the stored config, the spec the editor renders,
+// and the registry the editor's own labels come from (never a copy of them).
+app.get("/giving-pages/:id/form", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const funds = await orgFundsForSpec(req.user.orgId);
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgName = await donorFacingOrgName(req.user.orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  res.json({
+    pageId: pg.id, pageTitle: pg.title, pageSlug: pg.slug, status: pg.status,
+    config: F.normalizeFormConfig(pg.form_config, { orgFundIds: funds.map(f => f.id) }),
+    // THE SAME SPEC THE DONOR GETS. The editor's phone preview renders this.
+    spec: F.formSpec(pg.form_config, { funds, orgName }),
+    funds: funds.map(f => ({ id: f.id, name: f.name })),
+    // The registry, so the editor's copy is ONE string from here to the screen.
+    designationModes: F.DESIGNATION_MODES,
+    questionTypes: F.QUESTION_TYPES,
+    frequencies: F.FREQUENCIES,
+    limits: F.LIMITS,
+    defaults: F.DEFAULT_CONFIG,
+  });
+}));
+
+// PUT /giving-pages/:id/form — save it. The validator is the SAME one the editor
+// read, so a field the editor offered cannot be a field the server refuses.
+app.put("/giving-pages/:id/form", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const orgFundIds = await orgFundIdsFor(req.user.orgId);
+  const v = F.validateFormConfig(req.body && req.body.config, { orgFundIds });
+  // EVERY BAD FIELD IS NAMED, not just the first — an editor that reports one
+  // problem at a time makes somebody press save five times to learn five things.
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_form_config", errors: v.errors });
+
+  await run("UPDATE giving_pages SET form_config=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [JSON.stringify(v.config), pg.id, req.user.orgId]);
+
+  // A CUSTOM QUESTION IS A CUSTOM FIELD ON THE PERSON, created here so an answer
+  // is queryable in the report builder like any other field (Part 3 writes the
+  // answers). Created, never renamed and never deleted: a field somebody already
+  // answered is data, and a form edit must not take it away.
+  const failedQuestions = [];
+  // `custom_field_defs` is the BUILD-78 table the report builder reads
+  // (`rbCustomDefs`), keyed by `key` — NOT the older `custom_fields`, which has
+  // no key column at all and which nothing in the report builder can see. A
+  // question written into the wrong table would be an answer nobody can filter
+  // on, which is the whole promise of Part 3.
+  //
+  // AND THE ENTITY IS `donor`, NOT `person`. `CF_ENTITIES` is ["donor","gift"]
+  // and reportBuilder's people entity declares `custom: { entity: "donor" }`, so
+  // `person` would have stored a definition the catalogue cannot see — a field
+  // that exists and is invisible, which is worse than one that does not exist.
+  // The suite caught it by asking the catalogue rather than trusting the insert.
+  const created = [];
+  for (const q of v.config.questions) {
+    const [existing] = await query(
+      "SELECT id FROM custom_field_defs WHERE org_id=? AND entity='donor' AND key=?", [req.user.orgId, q.key]);
+    if (existing) continue;
+    const t = F.questionType(q.type);
+    const [maxPos] = await query(
+      "SELECT MAX(position) AS mp FROM custom_field_defs WHERE org_id=? AND entity='donor'", [req.user.orgId]);
+    const id = "cfd_" + uuid().slice(0, 10);
+    try {
+      await run(
+        `INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
+         VALUES (?,?,'donor',?,?,?,?,?,?,?,'donation_form')`,
+        [id, req.user.orgId, q.key, q.label, t ? t.cfType : "text",
+         JSON.stringify(q.options || []), Number((maxPos && maxPos.mp) || 0) + 1,
+         actor(req).id, actor(req).name]);
+      created.push({ key: q.key, label: q.label, type: t ? t.cfType : "text" });
+    } catch (e) {
+      // A field that cannot be created is a question whose answers would go
+      // nowhere, so it is REPORTED rather than swallowed — the form still saves,
+      // because refusing the whole save over one field would lose her other work.
+      console.error("[form] custom field for question", q.key, e.message);
+      failedQuestions.push({ key: q.key, label: q.label, why: e.message });
+    }
+  }
+
+  const funds = await orgFundsForSpec(req.user.orgId);
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgName = await donorFacingOrgName(req.user.orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  res.json({
+    pageId: pg.id, config: v.config,
+    spec: F.formSpec(v.config, { funds, orgName }),
+    customFieldsCreated: created,
+    // Said out loud rather than swallowed (BUILD-37 H2).
+    questionsWithoutAField: failedQuestions,
+  });
+}));
+
 app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
@@ -20715,6 +20825,13 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       // sees no change at all, which is what makes this safe to ship.
       page: builtWidgets,
       formPosition: formPos,
+      // BUILD-102 Part 1 — THE FORM THE DONOR IS OFFERED, from the same
+      // `formSpec` the editor's preview renders. Not a second shape derived from
+      // the same row: the same function, so the two cannot drift.
+      form: (await formConfigMod()).formSpec(page.form_config, {
+        funds: funds.map(f => ({ id: f.id, name: f.name })),
+        orgName: org.donor_facing_name,
+      }),
     },
     funds,
     peerFundraisers: {
