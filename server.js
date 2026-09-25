@@ -6398,7 +6398,16 @@ const DONOR_SORTS = {
 function buildDonorListFilter(req) {
   const where = ["org_id = ?", "deleted_at IS NULL"];
   const params = [req.user.orgId];
-  const { search, stage, status, assignedTo, designation, household } = req.query;
+  const { search, stage, status, assignedTo, designation, household, role } = req.query;
+  // FIX-1 D — DONORS SHOWS DONORS. The Directory asks for role=donor; search
+  // and every older caller leave it off and still see everyone. An unknown
+  // role throws (400 at the route) rather than being quietly ignored, because
+  // an ignored filter is a list that says "donors" and holds everybody.
+  if (role !== undefined && role !== "") {
+    if (!["donor", "volunteer", "staff_board"].includes(String(role)))
+      return { badRole: true };
+    where.push(PT.typeSql(String(role)));
+  }
   if (search && String(search).trim()) {
     const s = "%" + String(search).trim().toLowerCase() + "%";
     where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
@@ -6429,7 +6438,9 @@ function buildDonorListFilter(req) {
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const filter = buildDonorListFilter(req);
+  if (filter.badRole) return res.status(400).json({ error: "unknown_role", sentence: "A role is Donor, Volunteer, or Staff and board." });
+  const { whereSql, params, orderBy } = filter;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
@@ -6599,7 +6610,9 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 // GET /donors, exports EVERY matching row. Staff-level (it's data staff
 // already see), never checkWriteAccess-gated (export-routes convention).
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
-  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const filter = buildDonorListFilter(req);
+  if (filter.badRole) return res.status(400).json({ error: "unknown_role", sentence: "A role is Donor, Volunteer, or Staff and board." });
+  const { whereSql, params, orderBy } = filter;
   const donors = await query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
   // headed with the CURRENT label, rendered per the type table.
@@ -8128,7 +8141,21 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              duplicateGroups, matchesExistingCount });
 }));
 
+// FIX-1 D — the people doors (roles as chips, the role lists, the Donor lock),
+// in their own module. Registered with app.* so the route inventory and the
+// tenant matrix see every one of them.
+const PEOPLE = require("./routes/people.js").register(app, {
+  query, run, requireAuth, checkWriteAccess, wrap, actor, PT: () => PT,
+  enrollInSequences: (...a) => enrollInSequences(...a),
+});
+
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  // FIX-1 D — DONOR IS SET BY GIVING, on this door too. Checked BEFORE any
+  // write, so a refused change leaves the whole record untouched.
+  if (req.body.personTypes !== undefined) {
+    const refused = await PEOPLE.donorRemovalProblem(req.user.orgId, req.params.id, req.body.personTypes);
+    if (refused) return res.status(409).json(refused);
+  }
   const { name, email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
 

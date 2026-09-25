@@ -131,6 +131,17 @@ function buildInventory(app) {
   const serverSrc = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
   const routes = walkRouter(app);
   const paramMap = sourceParamMap(serverSrc);
+  // FIX-1 — routes moved OUT of server.js into routes/*.js modules register
+  // with app.* (so the live walk above sees them); their SOURCE has to be read
+  // too, or every moved route loses its auth annotation and its params. A key
+  // already found in server.js wins.
+  const routesDir = path.join(ROOT, "routes");
+  if (fs.existsSync(routesDir)) {
+    for (const f of fs.readdirSync(routesDir).filter(n => n.endsWith(".js")).sort()) {
+      const m = sourceParamMap(fs.readFileSync(path.join(routesDir, f), "utf8"));
+      for (const [k, v] of m) if (!paramMap.has(k)) paramMap.set(k, { ...v, file: "routes/" + f });
+    }
+  }
   const clientFiles = loadClientFiles();
   return routes.map(r => {
     const pm = paramMap.get(`${r.method} ${r.path}`) || { path: new Set(), query: new Set(), body: new Set(), gates: null, line: null };
