@@ -79,6 +79,10 @@ const SELF_REFUSING = [
   // its own. Refuses a non-loopback BASE and refuses to run with NODE_ENV
   // production; the one row it causes is the agent_run the route itself logs.
   "build99-brief-drill",
+  // BUILD-99 (major gifts) — the end-of-build walk. Writes through the real
+  // routes on a loopback stack, so it refuses a non-loopback BASE outright;
+  // there is no read-only mode for a walk whose point is that the writes land.
+  "build99-walk",
   // BUILD-78 Part 0 — the cross-org field_id red-run reproduction. Runs
   // entirely through tests/helpers, whose api()/q() refuse any non-loopback
   // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and
