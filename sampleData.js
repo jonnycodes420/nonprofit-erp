@@ -88,6 +88,19 @@ const DONOR_CHILD_TABLES = [
 // the confirmation names what she will actually stop seeing.
 const HEADLINE = ["people", "gifts", "households", "threads", "tasks", "enrollments", "timeline"];
 
+// ── TABLES THE CASCADE HANDLES, RECORDED SO NOBODY ADDS THEM TWICE ─────────
+// BUILD-98's `gift_soft_credits` and `tribute_notices` are keyed by donor_id AND
+// gift_id, and they are deliberately NOT in the lists above: both FKs are
+// ON DELETE CASCADE, so removing a sample donor or gift takes its credits and
+// notices with it. Adding them to DONOR_CHILD_TABLES would be harmless but
+// misleading — it would suggest this file is the thing keeping them consistent.
+//
+// What matters is that the guarantee now rests on a foreign key defined in
+// another build's migration. `tests/build96-sample-data.test.js` PINS both
+// cascades: change either to NO ACTION and the suite says so, rather than a
+// customer's handover failing with "Some sample rows could not be removed".
+const CASCADE_HANDLED = ["gift_soft_credits", "tribute_notices"];
+
 // A gift the provisioning path did not write. This is the whole safety
 // property: an org with one hand-entered gift is an org somebody has started
 // using, and clearing it is never what was meant.
@@ -247,6 +260,6 @@ async function clearSampleData({ query, run }, orgId) {
 }
 
 module.exports = {
-  TAGGED_TABLES, DONOR_CHILD_TABLES, HEADLINE, REAL_GIFT_SQL, HOUSEHOLD_BY_DONOR_SQL,
+  TAGGED_TABLES, DONOR_CHILD_TABLES, CASCADE_HANDLED, HEADLINE, REAL_GIFT_SQL, HOUSEHOLD_BY_DONOR_SQL,
   sampleDonorIds, countSampleData, clearSampleData, tagSampleRows,
 };

@@ -225,6 +225,34 @@ const count = async (table, org, where = "") =>
   ok("no orphan household survived the people it named",
      (await count("households", ORG)) === 0);
 
+  // BUILD-98 added gift_soft_credits and tribute_notices, both keyed by
+  // donor_id AND gift_id, and neither is in sampleData.js's lists. The clear is
+  // still correct — both FKs are ON DELETE CASCADE, so removing a sample donor
+  // or gift takes its credits and notices with it — but that means THIS
+  // GUARANTEE NOW RESTS ON A FOREIGN KEY DEFINED IN SOMEBODY ELSE'S MIGRATION.
+  //
+  // Change either FK to NO ACTION or RESTRICT and this clear starts returning
+  // 500 "Some sample rows could not be removed" on any org whose sample data
+  // includes a soft credit. So the cascade is pinned here rather than trusted:
+  // if a future build alters it, this line says so instead of a customer's
+  // handover failing.
+  for (const t of ["gift_soft_credits", "tribute_notices"]) {
+    const fks = await q(
+      `SELECT a.attname AS col, c.confdeltype
+         FROM pg_constraint c
+         JOIN unnest(c.conkey) k ON true
+         JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k
+        WHERE c.contype='f' AND c.conrelid::regclass::text=$1
+          AND a.attname IN ('donor_id','gift_id')`, [t]);
+    if (!fks.length) continue;   // table not in this schema version
+    ok(`${t}'s donor_id/gift_id CASCADE on delete — the clear relies on it`,
+       fks.length === 2 && fks.every(f => f.confdeltype === "c"),
+       fks.map(f => `${f.col}=${f.confdeltype}`));
+  }
+  ok("...and no soft credit or tribute notice outlived the sample people",
+     (await q(`SELECT COALESCE((SELECT COUNT(*)::int FROM gift_soft_credits WHERE org_id=$1),0) AS c`, [ORG])
+       .then(r => r[0].c).catch(() => 0)) === 0);
+
   const clearAudit = await q(
     `SELECT action, actor_email, counts, detail FROM sample_data_audit
       WHERE org_id=$1 AND action='cleared'`, [ORG]);
