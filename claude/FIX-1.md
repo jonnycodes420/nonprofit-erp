@@ -47,7 +47,7 @@ Five workstreams A–E in parallel, each its own agent, worktree (`~/steward-fix
 Full battery, tenant battery, landing verifier, prod smoke, CI green, both SHAs, "prod is N behind main". Then the same walk, recorded at 1440 and 390 on a fixture org, screenshots in `docs/fix-1/`.
 
 ## FOR JONATHAN
-- The Agent's look: two directions as screenshots before A builds past its first part. Pick one.
+- The Agent's look: **DECIDED — Direction 2, the run sheet** (docs/fix-1/agent-directions/README.md). A is held until the split is done.
 - Removing the Accounts tab and the two AI buttons in Finance is a cut; say if either should stay.
 - Board and staff under Settings → Organization is a guess.
 

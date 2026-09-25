@@ -13,3 +13,9 @@ Rendered at 1440 and 390; neither scrolls sideways.
   state, the open plan on the right as a checklist (what it read, each step,
   its state), the confirm at the foot of the sheet. Busier, and it shows history
   and the current plan at once.
+
+## DECIDED (25 September, Jonathan): Direction 2 — the run sheet.
+The cream sheet on ink. Workstream A builds the Agent room this way once the
+split is done, and not before. His words: "I always love the white/cream."
+So the sheet is where the content lives — the plan, the drafts waiting, the
+guardrails — and the ink is the room around it, never the other way round.
