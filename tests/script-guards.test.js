@@ -83,6 +83,11 @@ const SELF_REFUSING = [
   // routes on a loopback stack, so it refuses a non-loopback BASE outright;
   // there is no read-only mode for a walk whose point is that the writes land.
   "build99-walk",
+  // BUILD-102 (Steward Give) — the walk. It writes a form, a gift, a tribute draft
+  // and a match pledge through the real routes, so a non-loopback BASE or APP_URL is
+  // refused outright rather than guarded: there is no read-only mode for a walk
+  // whose whole point is that the writes land.
+  "build102-walk",
   // BUILD-78 Part 0 — the cross-org field_id red-run reproduction. Runs
   // entirely through tests/helpers, whose api()/q() refuse any non-loopback
   // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and
