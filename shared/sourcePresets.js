@@ -233,6 +233,12 @@ export function applySourcePreset(key, headers = []) {
     softCreditName: "", softCreditAmount: "", tributeType: "", tributeName: "", tributeNotify: "", matchEmployer: "",
     // BUILD-98 (switch) Part 6 — nor a wealth screen.
     wealthRating: "", wealthCapacity: "", wealthDate: "",
+    // BUILD-99 (major gifts) Part 6 — a bank or processor statement names no
+    // open ask either. Present so this preset speaks the mapper's OWN
+    // vocabulary field for field, which is the property build89s-presets exists
+    // to hold: a field the mapper has and a preset does not is a column that
+    // silently has nowhere to go.
+    proposalPurpose: "", proposalAmount: "", proposalStage: "", proposalCloseDate: "", proposalProbability: "",
   };
   const matched = {};
   for (const [field, candidates] of Object.entries(p.columns)) {

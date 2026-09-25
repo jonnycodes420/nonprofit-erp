@@ -12659,7 +12659,7 @@ app.get("/donors/:id/moves", requireAuth, wrap(async (req, res) => {
 app.get("/donors/:id/opportunities", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
   const rows = await query(
-    "SELECT * FROM opportunities WHERE org_id=? AND donor_id=? ORDER BY (status='open') DESC, created_at DESC",
+    "SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE org_id=? AND donor_id=? ORDER BY (status='open') DESC, created_at DESC",
     [req.user.orgId, req.params.id]);
   res.json(rows.map(o => ({ ...o, target_amount: parseFloat(o.target_amount) || 0, gift_amount: o.gift_amount == null ? null : parseFloat(o.gift_amount) })));
 }));
@@ -12688,14 +12688,14 @@ app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWri
     "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,proposal_stage,officer_id,officer_name,expected_close,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt,
      P99.statusForStage("asked"), "asked", officerId, officerName || "", expectedClose || null, actor(req).id, actor(req).name]);
-  const rows = await query("SELECT * FROM opportunities WHERE id=?", [id]);
+  const rows = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [id]);
   res.status(201).json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0 });
 }));
 
 // PUT /opportunities/:id — edit, or close won/lost. Closing 'won' links the
 // real gift and records the actual gift amount (the ask-vs-gift accountability).
 app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
-  const existing = await query("SELECT * FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  const existing = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!existing.length) return res.status(404).json({ error: "Opportunity not found" });
   const { name, targetAmount, expectedClose, status, giftId, giftAmount } = req.body;
   const sets = [], params = [];
@@ -12730,7 +12730,7 @@ app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess
   if (!sets.length) return res.status(400).json({ error: "Nothing to update" });
   params.push(req.params.id, req.user.orgId);
   await run(`UPDATE opportunities SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
-  const rows = await query("SELECT * FROM opportunities WHERE id=?", [req.params.id]);
+  const rows = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [req.params.id]);
   res.json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0, gift_amount: rows[0].gift_amount == null ? null : parseFloat(rows[0].gift_amount) });
 }));
 
@@ -12752,23 +12752,15 @@ app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) => {
 // keep reading THE SAME ROWS. One ask, one place.
 async function proposalMod() { return import("./shared/proposalShape.js"); }
 
-// A `DATE` column comes back from pg as a JS Date at LOCAL midnight, and
-// `String(thatDate).slice(0,10)` is "Sun Nov 15" — which is what the screen
-// showed on this suite's first run, and what every sort and filter downstream
-// would then have been comparing. `toISOString()` is not the fix either: local
-// midnight east of UTC is the PREVIOUS day in UTC, so an expected close date
-// would move by one. The local calendar parts are the only reading that is
-// right in every timezone, because a DATE has no timezone to begin with.
-function civilDateOf(v) {
-  if (!v) return null;
-  if (v instanceof Date) {
-    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, "0"), d = String(v.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  const s = String(v).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
-}
-
+// THE DATABASE FORMATS THE DATE, AND NOTHING HERE PARSES ONE.
+// A `DATE` column comes back from pg as a JS Date at LOCAL midnight, so
+// `String(d).slice(0,10)` is "Sun Nov 15" — which is what this screen showed on
+// its first run. The first fix read the Date's LOCAL calendar parts, which is
+// right for THIS input and is still the wrong SHAPE: `tests/date-seam.test.js`
+// names any helper that reads a process-local date as tainted, and it is right
+// to, because the next caller will hand it something built in a different zone.
+// So the date is TO_CHAR'd in SQL (BUILD-86's own gotcha says exactly this) and
+// read as the string it already is. There is no date helper here to taint.
 // The wire shape. Money leaves as dollars (every other money route does) AND as
 // integer cents, because the weighted total is computed in cents and a screen
 // that re-derives cents from a float is how a total ends up a penny out.
@@ -12779,7 +12771,7 @@ function proposalRow(r, funds) {
     purpose: r.name || "", askAmount: toDollars(askCents), askCents,
     stage: r.proposal_stage, status: r.status,
     probability: r.probability == null ? null : Number(r.probability),
-    expectedClose: civilDateOf(r.expected_close),
+    expectedClose: r.expected_close_civil || null,
     fundId: r.fund_id || null,
     fundName: r.fund_id ? (funds?.get(r.fund_id) || null) : null,
     officerId: r.officer_id || null, officerName: r.officer_name || "",
@@ -12841,7 +12833,7 @@ app.get("/donors/:id/proposals", requireAuth, wrap(async (req, res) => {
   const P = await proposalMod();
   const funds = await orgFundNames(req.user.orgId);
   const rows = await query(
-    `SELECT * FROM opportunities WHERE org_id=? AND donor_id=?
+    `SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE org_id=? AND donor_id=?
       ORDER BY (proposal_stage = ANY(?::text[])) DESC, expected_close NULLS LAST, created_at DESC`,
     [req.user.orgId, req.params.id, P.OPEN_STAGE_KEYS]);
   const proposals = rows.map(r => proposalRow(r, funds));
@@ -12929,7 +12921,7 @@ app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAc
   }
   await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} — ${money.formatCentsPlain(askCents)}, ${P.stageLabel(stage)}`);
   const funds = await orgFundNames(orgId);
-  const [row] = await query("SELECT * FROM opportunities WHERE id=?", [id]);
+  const [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [id]);
   res.status(201).json(proposalRow(row, funds));
 }));
 
@@ -12937,10 +12929,15 @@ app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAc
 // ask, and what happened" has to be answerable from the record and not from
 // somebody's memory of a screen.
 async function logProposalLine(orgId, donorId, req, note) {
+  // THE ORG'S CALENDAR, NOT THE PROCESS'S. `new Date().toISOString().slice(0,10)`
+  // is a UTC day, so a proposal moved at 8pm Eastern would be stamped tomorrow
+  // — and this row is what "when did we ask" reads off. Found by
+  // tests/date-seam.test.js §5, which is what that scan is for.
+  const org = await orgTz(orgId);
   await run(
     `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
      VALUES (?,?,?,'proposal',?,?,?,?)`,
-    ["int_" + uuid().slice(0, 10), orgId, donorId, new Date().toISOString().slice(0, 10), note,
+    ["int_" + uuid().slice(0, 10), orgId, donorId, orgToday(org), note,   // ORG_TZ_SEAM_OK
      actor(req).id, actor(req).name]).catch(e => console.error("[proposal] timeline:", e.message));
 }
 
@@ -12959,7 +12956,7 @@ async function logProposalLine(orgId, donorId, req, note) {
 app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const P = await proposalMod();
   const orgId = req.user.orgId;
-  const [existing] = await query("SELECT * FROM opportunities WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  const [existing] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!existing) return res.status(404).json({ error: "Proposal not found" });
 
   const patch = {}, sets = [], params = [];
@@ -13022,7 +13019,10 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
 
     if (patch.stage === "declined") {
       put("decline_reason", req.body.declineReason);
-      put("declined_on", req.body.declinedOn || new Date().toISOString().slice(0, 10));
+      // The date a decline is RECORDED is the org's civil today, never UTC's —
+      // a no at 8pm Eastern is today's no, and this date is on the record for
+      // good (reopening keeps it).
+      put("declined_on", req.body.declinedOn || orgToday(await orgTz(orgId)));   // ORG_TZ_SEAM_OK
       sets.push("closed_at=NOW()");
       put("gift_id", null); put("pledge_id", null); put("commit_kind", null);
     } else if (patch.stage === "committed" || patch.stage === "stewarding") {
@@ -13044,7 +13044,7 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
             ? (() => { try { return parseMoneyOrThrow(req.body.committedAmount, "committedAmount"); } catch { return null; } })()
             : askCents;
           if (!(committedCents > 0)) return res.status(400).json({ error: "A positive committed amount is required." });
-          const due = req.body.pledgeDueDate || civilDateOf(existing.expected_close) || new Date().toISOString().slice(0, 10);
+          const due = req.body.pledgeDueDate || existing.expected_close_civil || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
           const pid = "pl_" + uuid().slice(0, 8);
           await run(
             `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
@@ -13084,7 +13084,7 @@ app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wr
   params.push(req.params.id, orgId);
   await run(`UPDATE opportunities SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
   const funds = await orgFundNames(orgId);
-  const [row] = await query("SELECT * FROM opportunities WHERE id=?", [req.params.id]);
+  const [row] = await query("SELECT *, to_char(expected_close,'YYYY-MM-DD') AS expected_close_civil FROM opportunities WHERE id=?", [req.params.id]);
   res.json({ ...proposalRow(row, funds), wrote });
 }));
 
@@ -13111,7 +13111,7 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
   }
   if (req.query.open === "1") { where.push("o.proposal_stage = ANY(?::text[])"); args.push(P.OPEN_STAGE_KEYS); }
   const rows = await query(
-    `SELECT o.*, d.name AS donor_name FROM opportunities o
+    `SELECT o.*, to_char(o.expected_close,'YYYY-MM-DD') AS expected_close_civil, d.name AS donor_name FROM opportunities o
        JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
       WHERE ${where.join(" AND ")}`, args);
   const funds = await orgFundNames(orgId);
@@ -13672,7 +13672,8 @@ async function briefRowsFor(orgId, donorId) {
 
   // THE OPEN PROPOSAL.
   for (const o of await query(
-    `SELECT o.id, o.name, o.target_amount, o.proposal_stage, o.probability, o.expected_close, o.notes, f.name AS fund_name
+    `SELECT o.id, o.name, o.target_amount, o.proposal_stage, o.probability, o.notes, f.name AS fund_name,
+            to_char(o.expected_close,'YYYY-MM-DD') AS expected_close_civil
        FROM opportunities o LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id
       WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
       ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
@@ -13680,7 +13681,7 @@ async function briefRowsFor(orgId, donorId) {
     lines.push(`proposal:${o.id} — an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
       + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
       + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
-      + `${o.expected_close ? `, expected to close ${civilDateOf(o.expected_close)}` : ""}`
+      + `${o.expected_close_civil ? `, expected to close ${o.expected_close_civil}` : ""}`
       + `${o.notes ? `. The officer's note on it: "${String(o.notes).slice(0, 400)}"` : "."}`);
   }
 
@@ -13712,9 +13713,14 @@ async function briefRowsFor(orgId, donorId) {
 
   // The grounded numeric set: every figure that genuinely appears in the rows,
   // so `ungroundedClaims` can tell a fact from an invented rule.
+  // THE MONEY SEAM, not Math.round — `tests/money-cents.test.js` is right that a
+  // bare `Math.round(Number(x))` on a dollars value is the banned shape wherever
+  // it appears, and "it is only feeding a text check" is not an exemption: the
+  // next person to copy this line will not be feeding a text check.
   const grounded = [];
-  for (const g of gifts) { grounded.push(Math.round(Number(g.amount) || 0)); }
-  grounded.push(Number(donor.gift_count) || 0, Math.round(Number(donor.total_giving) || 0));
+  for (const g of gifts) { const c = toCents(g.amount); if (c != null) grounded.push(toDollars(c), c); }
+  grounded.push(Number(donor.gift_count) || 0);
+  { const c = toCents(donor.total_giving); if (c != null) grounded.push(toDollars(c), c); }
   for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
 
   return { donor, org, t, refs, lines, grounded: [...new Set(grounded)], giftCount: gifts.length };

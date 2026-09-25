@@ -234,14 +234,28 @@ const plus = n => { const d = new Date(); d.setDate(d.getDate() + n); return civ
 
   // ── §5 · THE ONLY TARGET IS PART 2'S ────────────────────────────────────
   console.log("\n— §5 · no goal is invented here —");
-  const keys = JSON.stringify(d.body);
-  ok("§5 the payload carries no target, benchmark or industry figure",
-     !/\bbenchmark\b/i.test(keys) && !/\bindustry\b/i.test(keys) && !/"target"/.test(keys), true);
+  // NEVER `JSON.stringify` A PAYLOAD AND THEN SEARCH THE STRING — BUILD-84's
+  // census rule, and this suite's first cut broke it (caught by build84 §4, which
+  // is exactly what that guard is for). Walk the payload: collect every KEY name
+  // and every string VALUE, then look at those.
+  const walkKeys = (o, keys = [], strings = []) => {
+    if (o === null || o === undefined) return { keys, strings };
+    if (typeof o === "string") { strings.push(o); return { keys, strings }; }
+    if (Array.isArray(o)) { for (const v of o) walkKeys(v, keys, strings); return { keys, strings }; }
+    if (typeof o === "object") { for (const [k, v] of Object.entries(o)) { keys.push(k); walkKeys(v, keys, strings); } }
+    return { keys, strings };
+  };
+  const w = walkKeys(d.body);
+  ok("§5 the payload carries NO key called target", !w.keys.includes("target"), w.keys.filter(k => /target/i.test(k)));
+  ok("§5 …and no sentence names a benchmark or an industry figure",
+     w.strings.every(x => !/\bbenchmark\b/i.test(x) && !/\bindustry\b/i.test(x)),
+     w.strings.filter(x => /benchmark|industry/i.test(x)));
   // The target lives on the portfolio, where she typed it, and nowhere else.
   await api("PUT", "/portfolio/u_dash_a/target", tok, { target: 100000 });
   const d2 = await api("GET", "/major-gifts/dashboard", tok);
   ok("§5 setting a portfolio target does not put one on this screen",
-     !/"target"/.test(JSON.stringify(d2.body)) && d2.body.tiles.committedThisYear.value === cents(30000));
+     !walkKeys(d2.body).keys.includes("target") && d2.body.tiles.committedThisYear.value === cents(30000),
+     walkKeys(d2.body).keys.filter(k => /target/i.test(k)));
   ok("§5 …and the portfolio still has it", (await api("GET", "/portfolio/u_dash_a", tok)).body.target.set === true);
 
   // ── §6 · THE WALL ───────────────────────────────────────────────────────
@@ -249,7 +263,10 @@ const plus = n => { const d = new Date(); d.setDate(d.getDate() + n); return civ
   const theirs = await api("GET", "/major-gifts/dashboard", tok2);
   ok("§6 their dashboard loads", theirs.status === 200);
   ok("§6 …with none of org A's money", theirs.body.tiles.pipeline.value === 0 && theirs.body.tiles.committedThisYear.value === 0, theirs.body.tiles);
-  ok("§6 …and none of org A's officers", !JSON.stringify(theirs.body).includes("Allie Barnett"));
+  // Walked, not stringified — the BUILD-84 rule, same as §5 above.
+  ok("§6 …and none of org A's officers",
+     walkKeys(theirs.body).strings.every(x => !x.includes("Allie Barnett")),
+     walkKeys(theirs.body).strings.filter(x => x.includes("Allie Barnett")));
   ok("§6 …and none of org A's conversations", theirs.body.officerActivity.rows.length === 0, theirs.body.officerActivity.rows);
   ok("§6 …and an honest empty sentence rather than somebody else's figures",
      /No proposals on file yet/.test(theirs.body.empty || ""), theirs.body.empty);
