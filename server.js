@@ -7986,16 +7986,44 @@ app.delete("/donors/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 }));
 
 app.patch("/donors/:id/assign", requireAuth, requireAdmin, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
-  const { assignedTo, assignedToName } = req.body;
+  const { assignedTo } = req.body;
   // Assignment IS pipeline membership (BUILD-30): assigning an officer puts the
   // donor in that officer's portfolio AND on their board immediately; unassigning
   // (assignedTo null) removes them from the board and back to the Directory only.
+  //
+  // BUILD-99 (major gifts) Part 2 — THREE THINGS THIS ROUTE WAS NOT DOING, and
+  // `/donors/bulk-assign` one screen over was doing all three:
+  //   · the officer id was never checked against THIS org, so a foreign user id
+  //     landed on the row and that person appeared as the owner of a donor they
+  //     cannot see;
+  //   · the owner's NAME came off the payload, so a caller could write any name
+  //     beside any id — an identity the row then asserts on every screen;
+  //   · there was no actor, so "why is this person on my list" had no answer.
+  // The name is now read from the users row and the actor is stamped, which is
+  // the BUILD-75 rule this table was already inside.
+  let officerId = null, officerName = null;
+  if (assignedTo) {
+    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
+    if (!u) return res.status(404).json({ error: "Officer not found in your organisation" });
+    officerId = u.id; officerName = u.name;
+  }
+  // THE NAME ON THE STAMP IS A NAME, NOT A LOGIN. `actor(req).name` is the
+  // caller's EMAIL — right for an audit column, wrong the moment a screen reads
+  // it back as "assigned by …". This is the third appearance of that class
+  // (BUILD-98 Part 2 caught it on "who thanked them"), so the id stays the
+  // actor's and the name is read off the users row.
+  const byName = (await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]))[0]?.name
+    || actor(req).name;
   const affected = await run(
-    `UPDATE donors SET assigned_to=?, assigned_to_name=?, updated_at=NOW() WHERE id=? AND org_id=?`,
-    [assignedTo || null, assignedToName || null, req.params.id, req.user.orgId]
+    `UPDATE donors SET assigned_to=?, assigned_to_name=?,
+       assigned_by=?, assigned_by_name=?, assigned_at=CASE WHEN ?::text IS NULL THEN NULL ELSE NOW() END,
+       pending_assignee_invite_id=NULL, pending_assignee_name=NULL, updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [officerId, officerName, officerId ? actor(req).id : null, officerId ? byName : null,
+     officerId, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Donor not found" });
-  res.json({ success: true });
+  res.json({ success: true, assignedTo: officerId, assignedToName: officerName });
 }));
 
 // ── Bulk donor operations ──────────────────────────────────────────────────
@@ -8056,15 +8084,19 @@ app.patch("/donors/bulk-assign", requireAuth, requireAdmin, requirePlan("team"),
   const userRow = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [assignedTo, req.user.orgId]);
   if (!userRow.length) return res.status(400).json({ error: "User not found in your org" });
   const assignedToName = userRow[0].name;
+  // BUILD-99 Part 2 — the stamp's NAME is a name; see /donors/:id/assign.
+  const bulkByName = (await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]))[0]?.name
+    || actor(req).name;
 
   // Bulk-assigning to an officer puts the batch in that officer's portfolio AND
   // on their board — assignment IS membership (BUILD-30), no separate flag. Any
   // prior pending-invite hold is cleared.
   const result = await run(
     `UPDATE donors SET assigned_to=?, assigned_to_name=?,
+       assigned_by=?, assigned_by_name=?, assigned_at=NOW(),
        pending_assignee_invite_id=NULL, pending_assignee_name=NULL, updated_at=NOW()
      WHERE id = ANY(?) AND org_id = ? AND deleted_at IS NULL`,
-    [assignedTo, assignedToName, ids, req.user.orgId]);
+    [assignedTo, assignedToName, actor(req).id, bulkByName, ids, req.user.orgId]);
   res.json({ updated: result.changes, assignedToName });
 }));
 
@@ -12956,6 +12988,226 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
     funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
     officers: officers.map(o => ({ id: o.id, name: o.name })),
   });
+}));
+
+// ── BUILD-99 (major gifts) Part 2 — PORTFOLIOS ─────────────────────────────
+// `portfolioMembership` above is STILL the one definition of who is in a
+// portfolio (BUILD-30, and it cost a build to settle). Nothing here forks it.
+// What is new is what she puts AROUND that list: the order she reads it in, the
+// target and count cap she typed, and who assigned each person to her.
+async function portfolioMod() { return import("./shared/portfolioShape.js"); }
+
+// The org's own word for "major prospect", in cents. A threshold Steward chose
+// would be a claim about what a big gift is at an organisation it knows nothing
+// about — so the DEFAULT is $1,000 and the answer is the org's.
+async function majorProspectCents(orgId) {
+  const [o] = await query("SELECT major_prospect_cents FROM orgs WHERE id=?", [orgId]);
+  const v = o && o.major_prospect_cents != null ? Number(o.major_prospect_cents) : 100000;
+  return Number.isFinite(v) && v > 0 ? Math.round(v) : 100000;
+}
+
+// The officer whose portfolio is being read, resolved against THIS org. A
+// non-admin may only read their own (the BUILD-31 rule: cross-officer visibility
+// is the oversight Team sells, and it is admin-only) — and they are DOWNGRADED
+// to their own rather than refused, which is the precedent that route set.
+async function resolvePortfolioOfficer(req, wanted) {
+  const isAdmin = req.user.role === "admin";
+  const want = String(wanted || "").trim();
+  const id = (!isAdmin || !want || want === "me") ? req.user.userId : want;
+  const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [id, req.user.orgId]);
+  if (!u) return null;
+  return { id: u.id, name: u.name, downgraded: !isAdmin && want && want !== req.user.userId };
+}
+
+// ROUTE ORDER IS PART OF THE CONTRACT: this is declared BEFORE
+// `/portfolio/:officerId` or Express matches "unassigned-prospects" as an
+// officer id and answers 404 for a screen that is not asking about an officer
+// at all. (`/portfolio/officers` sits further up the file for the same reason.)
+// GET /portfolio/unassigned-prospects — lifetime over the ORG's threshold, no
+// owner. This is the list to assign FROM, which is the only reason it exists.
+app.get("/portfolio/unassigned-prospects", requireAuth, wrap(async (req, res) => {
+  const PF = await portfolioMod();
+  const orgId = req.user.orgId;
+  const thresholdCents = await majorProspectCents(orgId);
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const rows = await query(
+    `SELECT id, name, email, kind, total_giving, gift_count, last_gift_date, stage, suggested_stage
+       FROM donors
+      WHERE org_id=? AND deleted_at IS NULL AND assigned_to IS NULL
+        AND pending_assignee_invite_id IS NULL
+        AND is_sample IS NOT TRUE AND COALESCE(deceased,false) = false
+        AND round(COALESCE(total_giving,0)::numeric * 100) >= ?
+      ORDER BY total_giving DESC NULLS LAST, id
+      LIMIT ?`, [orgId, thresholdCents, limit]);
+  const [c] = await query(
+    `SELECT COUNT(*)::int AS n FROM donors
+      WHERE org_id=? AND deleted_at IS NULL AND assigned_to IS NULL
+        AND pending_assignee_invite_id IS NULL
+        AND is_sample IS NOT TRUE AND COALESCE(deceased,false) = false
+        AND round(COALESCE(total_giving,0)::numeric * 100) >= ?`, [orgId, thresholdCents]);
+  res.json({
+    thresholdCents, thresholdAmount: toDollars(thresholdCents),
+    count: c.n, shown: rows.length,
+    sentence: PF.unassignedSentence({ count: c.n, thresholdCents }, money.formatCents),
+    prospects: rows.map(r => ({
+      donorId: r.id, name: r.name, email: r.email, kind: r.kind || "person",
+      lifetime: toDollars(toCents(r.total_giving) || 0), giftCount: Number(r.gift_count) || 0,
+      lastGiftDate: r.last_gift_date || null, stage: r.stage || r.suggested_stage || null,
+    })),
+  });
+}));
+
+// GET /portfolio/:officerId — her people, in the order the brief asks for.
+// ONE batch of reads (the BUILD-54 §1 pattern), never a query per person.
+app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
+  const PF = await portfolioMod();
+  const P = await proposalMod();
+  const orgId = req.user.orgId;
+  const officer = await resolvePortfolioOfficer(req, req.params.officerId);
+  if (!officer) return res.status(404).json({ error: "Officer not found" });
+
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const fy = orgPeriodBounds(org, "fiscal_year", 0);
+  const fyYear = Number(String(fy.key).replace("fy:", ""));
+  const today = orgToday(org);
+
+  // THE MEMBERSHIP IS THE SHARED ONE. Read it, then decorate it.
+  const m = portfolioMembership({ orgId, userId: officer.id, scope: "mine", assignedTo: officer.id, alias: "d" });
+  const people = await query(
+    `SELECT d.id, d.name, d.email, d.kind, d.stage, d.suggested_stage, d.total_giving,
+            d.last_gift_date, d.last_gift_amount, d.assigned_by_name, d.assigned_at
+       FROM donors d WHERE ${m.where} ORDER BY d.id`, m.params);
+  const ids = people.map(p => p.id);
+
+  const openAsk = new Map(), lastConv = new Map(), nextStep = new Map();
+  if (ids.length) {
+    for (const r of await query(
+      `SELECT donor_id, COALESCE(SUM(target_amount),0) AS amt, COUNT(*)::int AS n
+         FROM opportunities WHERE org_id=? AND donor_id = ANY(?) AND proposal_stage = ANY(?::text[])
+        GROUP BY donor_id`, [orgId, ids, P.OPEN_STAGE_KEYS]))
+      openAsk.set(r.donor_id, { cents: toCents(r.amt) || 0, count: r.n });
+    // The LAST LOGGED CONVERSATION, which is a fact on the interactions table —
+    // one row per donor via DISTINCT ON, not a correlated subquery per person.
+    for (const r of await query(
+      `SELECT DISTINCT ON (donor_id) donor_id, type, date, note, logged_by_name
+         FROM interactions WHERE org_id=? AND donor_id = ANY(?)
+          AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship','gift','event'])
+        ORDER BY donor_id, date DESC, created_at DESC`, [orgId, ids]))
+      lastConv.set(r.donor_id, { type: r.type, date: r.date, note: (r.note || "").slice(0, 220), by: r.logged_by_name || "" });
+    // The NEXT STEP comes from the Thread (BUILD-81) — the one open one per
+    // donor, which the partial unique index makes true by construction.
+    for (const r of await query(
+      `SELECT donor_id, next_step_label, next_step_type, due_date, due_time
+         FROM threads WHERE org_id=? AND donor_id = ANY(?) AND closed_at IS NULL`, [orgId, ids]))
+      nextStep.set(r.donor_id, { label: r.next_step_label, type: r.next_step_type, due: r.due_date, time: r.due_time });
+  }
+
+  const rows = people.map(p => {
+    const lc = lastConv.get(p.id) || null;
+    const days = lc && /^\d{4}-\d{2}-\d{2}$/.test(String(lc.date))
+      ? Math.max(0, orgTime.daysBetween(String(lc.date), today)) : null;
+    const ask = openAsk.get(p.id) || { cents: 0, count: 0 };
+    return {
+      donorId: p.id, name: p.name, email: p.email, kind: p.kind || "person",
+      stage: p.stage || p.suggested_stage || null, placed: !!p.stage,
+      lifetime: toDollars(toCents(p.total_giving) || 0),
+      lifetimeCents: toCents(p.total_giving) || 0,
+      openAskCents: ask.cents, openAskAmount: toDollars(ask.cents), openProposals: ask.count,
+      daysSinceContact: days,
+      contactPhrase: PF.contactPhrase(days), quiet: PF.isQuiet(days),
+      lastConversation: lc, nextStep: nextStep.get(p.id) || null,
+      assignedByName: p.assigned_by_name || null, assignedAt: p.assigned_at || null,
+    };
+  });
+  const ranked = PF.rankPortfolio(rows);
+
+  // Committed THIS FISCAL YEAR, against the target she typed. Committed, not
+  // asked — a target is about money that landed.
+  const [won] = await query(
+    `SELECT COALESCE(SUM(COALESCE(gift_amount, target_amount)),0) AS amt, COUNT(*)::int AS n
+       FROM opportunities WHERE org_id=? AND officer_id=? AND status='won'
+        AND closed_at >= ?::date AND closed_at < (?::date + 1)`, [orgId, officer.id, fy.start, fy.end]);
+  const [t] = await query("SELECT target_amount, count_cap FROM portfolio_targets WHERE org_id=? AND user_id=? AND fiscal_year=?",
+    [orgId, officer.id, fyYear]);
+  const prog = PF.targetProgress({
+    targetCents: t && t.target_amount != null ? toCents(t.target_amount) : null,
+    committedCents: toCents(won.amt) || 0,
+    fiscalLabel: `FY ${fyYear}–${String(fyYear + 1).slice(2)}`,
+  });
+  const cap = PF.capState({ capCount: t ? t.count_cap : null, actualCount: ranked.length });
+
+  res.json({
+    officer: { id: officer.id, name: officer.name }, downgraded: !!officer.downgraded,
+    fiscalYear: fyYear, fiscalLabel: prog.fiscalLabel,
+    people: ranked,
+    count: { value: ranked.length, sentence: PF.portfolioCountSentence(ranked.length, officer.name) },
+    target: { ...prog, amount: prog.targetCents == null ? null : toDollars(prog.targetCents),
+              committedAmount: toDollars(prog.committedCents), committedCount: won.n,
+              sentence: PF.targetSentence(prog, money.formatCents) },
+    cap: { ...cap, sentence: PF.capSentence(cap) },
+  });
+}));
+
+// PUT /portfolio/:officerId/target — the target and the cap, both hers, both
+// optional. Sending null CLEARS one, which is how "I have not decided" is said.
+app.put("/portfolio/:officerId/target", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const isAdmin = req.user.role === "admin";
+  const want = String(req.params.officerId || "").trim();
+  // A staff member may set their OWN target and nobody else's; an admin may set
+  // anyone's in this org. REFUSED rather than downgraded, because a WRITE
+  // silently landing on a different row is worse than an error — and the first
+  // cut of this collapsed `want` into the caller's own id BEFORE the check, so
+  // the refusal could never fire and a staff member's attempt quietly wrote to
+  // her own target instead. Found by this part's own suite.
+  if (!isAdmin && want && want !== "me" && want !== req.user.userId) {
+    return res.status(403).json({ error: "You can set your own target." });
+  }
+  const id = (!isAdmin || !want || want === "me") ? req.user.userId : want;
+  const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [id, orgId]);
+  if (!u) return res.status(404).json({ error: "Officer not found" });
+
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const fyYear = req.body.fiscalYear != null
+    ? Number(req.body.fiscalYear)
+    : Number(String(orgPeriodBounds(org, "fiscal_year", 0).key).replace("fy:", ""));
+  if (!Number.isInteger(fyYear) || fyYear < 2000 || fyYear > 2100) return res.status(400).json({ error: "A fiscal year is required." });
+
+  let targetCents = null;
+  if (req.body.target !== undefined && req.body.target !== null && String(req.body.target).trim() !== "") {
+    try { targetCents = parseMoneyOrThrow(req.body.target, "target"); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+    if (targetCents <= 0) return res.status(400).json({ error: "A target has to be a positive amount, or blank." });
+  }
+  let cap = null;
+  if (req.body.countCap !== undefined && req.body.countCap !== null && String(req.body.countCap).trim() !== "") {
+    cap = Number(req.body.countCap);
+    if (!Number.isInteger(cap) || cap <= 0) return res.status(400).json({ error: "A count cap has to be a whole number, or blank." });
+  }
+
+  await run(
+    `INSERT INTO portfolio_targets (id,org_id,user_id,fiscal_year,target_amount,count_cap,created_by,created_by_name,updated_at)
+     VALUES (?,?,?,?,?,?,?,?,NOW())
+     ON CONFLICT (org_id, user_id, fiscal_year) DO UPDATE
+       SET target_amount=EXCLUDED.target_amount, count_cap=EXCLUDED.count_cap, updated_at=NOW()`,
+    ["pt_" + uuid().slice(0, 10), orgId, id, fyYear,
+     targetCents == null ? null : toDollars(targetCents), cap, actor(req).id, actor(req).name]);
+  const [row] = await query("SELECT * FROM portfolio_targets WHERE org_id=? AND user_id=? AND fiscal_year=?", [orgId, id, fyYear]);
+  res.json({
+    officer: { id: u.id, name: u.name }, fiscalYear: fyYear,
+    target: row.target_amount == null ? null : toDollars(toCents(row.target_amount) || 0),
+    countCap: row.count_cap == null ? null : Number(row.count_cap),
+  });
+}));
+
+// PUT /orgs/major-prospect-threshold — the org's own number, in its own money.
+app.put("/orgs/major-prospect-threshold", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  let cents;
+  try { cents = parseMoneyOrThrow(req.body.threshold, "threshold"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  if (!(cents > 0)) return res.status(400).json({ error: "A positive amount is required." });
+  await run("UPDATE orgs SET major_prospect_cents=? WHERE id=?", [cents, req.user.orgId]);
+  res.json({ thresholdCents: cents, thresholdAmount: toDollars(cents) });
 }));
 
 // GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.

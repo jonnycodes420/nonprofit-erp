@@ -88,6 +88,12 @@ async function reset() {
       "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
+      // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`
+      // is NOT, and it is here because its absence is what made this suite
+      // un-re-runnable after any crashed run — the exact class the file's own
+      // note names. A leftover api_keys row for org_mxa blocked the reset with
+      // an FK violation that reads as a product bug and is fixture hygiene.
+      "portfolio_targets", "api_keys",
       "invites", "portal_settings", "annual_fund_goals", "fundraising_goals", "metric_snapshots", "campaigns", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
@@ -264,6 +270,9 @@ function bResolver(routePath, param) {
   const byParam = {
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",
+    // BUILD-99 (major gifts) Part 2 — a portfolio is READ by officer id, so the
+    // cross-tenant probe is org B's own officer.
+    officerId: `u_${B}_staff`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;
@@ -295,6 +304,10 @@ function bResolver(routePath, param) {
   // BUILD-97 Part 3 — the agent's own rows. `/agent/instructions/:id/...` and
   // `/agent/writes/:id/undo` both use :id, and the first segment is `agent` for
   // both, so they are resolved by PATH rather than by segment.
+  // BUILD-99 (major gifts) Part 1 — a proposal IS a row in `opportunities`
+  // (shared/proposalShape.js says why there is no second table), so the
+  // cross-tenant probe is org B's own opportunity id.
+  if (routePath.startsWith("/proposals/")) return `op_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;
   if (routePath.startsWith("/agent/writes/")) return `aw_${B}`;
   if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;

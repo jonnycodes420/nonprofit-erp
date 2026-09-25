@@ -2333,6 +2333,45 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_officer ON opportunities (org_id, officer_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_close ON opportunities (org_id, expected_close)`);
 
+  // ── BUILD-99 (major gifts) Part 2 — PORTFOLIOS ────────────────────────────
+  // A portfolio is not a new membership concept: BUILD-30 settled that
+  // "assigned to an officer" IS "in that officer's portfolio" IS "on that
+  // officer's board", one state and no flag. What was missing is what the
+  // officer puts AROUND it — a target for the year and a count cap she chooses
+  // — and the actor on the assignment itself.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS portfolio_targets (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      -- The org's own fiscal year, as its OPENING calendar year, so a July-start
+      -- org's "2026-27" is stored as 2026 and orgPeriodBounds is the only
+      -- thing that has to know which months that covers. (NB no backticks in
+      -- here: a backtick inside a template literal ends it.)
+      fiscal_year INTEGER NOT NULL,
+      target_amount NUMERIC,
+      count_cap INTEGER,
+      created_by TEXT, created_by_name TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_targets ON portfolio_targets (org_id, user_id, fiscal_year)`);
+
+  // WHO ASSIGNED THEM, AND WHEN. `assigned_to`/`assigned_to_name` have existed
+  // since BUILD-14 and carried no actor, so "why is this person on my list"
+  // had no answer on the row. NULL means the assignment predates this build —
+  // never backfilled with a guess (the BUILD-75 actor rule).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_by TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_by_name TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ`);
+
+  // THE ORG SAYS WHAT "MAJOR PROSPECT" MEANS, IN ITS OWN MONEY. A threshold
+  // Steward chose would be a claim about what a big gift is at an organisation
+  // it knows nothing about — the BUILD-85 rule (money is relative to the org)
+  // in a setting rather than a score. $1,000 is the DEFAULT, not the answer.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS major_prospect_cents INTEGER DEFAULT 100000`);
+  await pool.query(`ALTER TABLE orgs ALTER COLUMN major_prospect_cents SET DEFAULT 100000`);
+
   // ── Development reporting cadence (BUILD-17) ─────────────────────────────
   // Append-only log of every digest email actually sent. The UNIQUE index on
   // (org_id, digest_type, period_key, recipient_user_id) is the idempotency

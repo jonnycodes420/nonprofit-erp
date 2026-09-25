@@ -37,6 +37,11 @@ async function mkOrg(id, plan, status) {
     [`u_${id}_s`, id, `${id}-staff@example.org`, hash]);
   await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count)
            VALUES ($1,$2,'PM Donor',$3,'active','cultivate',0,0)`, [`d_${id}`, id, `${id}-donor@example.org`]);
+  // BUILD-99 Part 1 — a SECOND person, so the two Team callers in the ask row
+  // can each hold an open proposal without colliding on the one-open-per-fund
+  // rule. See the note on that row.
+  await q(`INSERT INTO donors (id,org_id,name,email,status,stage,total_giving,gift_count)
+           VALUES ($1,$2,'PM Donor Two',$3,'active','cultivate',0,0)`, [`d_${id}_b`, id, `${id}-donor2@example.org`]);
   return { admin: await login(`${id}-admin@example.org`), staff: await login(`${id}-staff@example.org`) };
 }
 
@@ -73,7 +78,15 @@ async function mkOrg(id, plan, status) {
     // (distinct target stages per caller — the two Team callers share a donor)
     { name: "pipeline move", m: "POST", p: o => `/pipeline/${donor(o)}/move`, b: (o, i, ctx, caller) => ({ toStage: caller === "teamAdmin" ? "qualify" : "solicit", description: "pm44" }),
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
-    { name: "log ask (opportunity)", m: "POST", p: o => `/donors/${donor(o)}/opportunities`, b: () => ({ name: "PM Ask", targetAmount: 500 }),
+    // BUILD-99 (major gifts) Part 1 NARROWED this route: an ask is a proposal,
+    // and one person may hold only ONE OPEN proposal per fund. The two Team
+    // callers share a donor, so the second one 409'd — the same collision the
+    // pipeline-move row above already solves by giving each caller a distinct
+    // target. Here each caller asks a DIFFERENT PERSON, which is what the rule
+    // is for. (The refusal itself is asserted in build99-proposals §5.)
+    { name: "log ask (opportunity)", m: "POST",
+      p: (o, i, ctx, caller) => `/donors/${caller === "teamStaff" ? donor(o) + "_b" : donor(o)}/opportunities`,
+      b: () => ({ name: "PM Ask", targetAmount: 500 }),
       exp: { teamStaff: "open", teamAdmin: "open", coreAdmin: 403, roAdmin: 402 } },
     // BUILD-45 fixed F-1: these Team-layer writes now carry checkWriteAccess,
     // so a READ_ONLY (lapsed/trial-expired) Team org gets 402 — the plan gate
