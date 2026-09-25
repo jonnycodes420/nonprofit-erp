@@ -159,12 +159,19 @@ async function fixture() {
   const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
   let chromium = null;
   try { chromium = require(path.join(PW_DIR, "node_modules/playwright")).chromium; } catch { /* not installed */ }
-  const PREVIEW = "http://localhost:4173";
+  // APP_URL, NEVER A LITERAL PORT — the BUILD-92 B2 rule, which every other
+  // browser suite already follows and this one did not. A machine running a
+  // second checkout of this repo has a preview on :4173 serving a DIFFERENT
+  // stack, so the hardcoded port found a live page, declined to skip, and drove
+  // the wrong app: both assertions failed with "Page not found" while the
+  // product was fine. A false red is worse than a skip, because somebody spends
+  // an hour on it (BUILD-100 paid that hour).
+  const PREVIEW = (process.env.APP_URL || "http://localhost:4173").replace(/\/+$/, "");
   let previewUp = false;
   try { previewUp = (await fetch(PREVIEW + "/give/gpb/sponsor")).ok; } catch { /* not served */ }
 
   if (!chromium || !previewUp) {
-    console.log(`— browser leg SKIPPED (playwright at ${PW_DIR}: ${chromium ? "found" : "MISSING"}; preview on :4173: ${previewUp ? "up" : "DOWN"}) —`);
+    console.log(`— browser leg SKIPPED (playwright at ${PW_DIR}: ${chromium ? "found" : "MISSING"}; preview on ${PREVIEW}: ${previewUp ? "up" : "DOWN"}) —`);
   } else {
     console.log("— and it reads as ONE page in a browser —");
     await api("PUT", `/giving-pages/${PAGE}/page/draft`, tok, { widgets, formPosition: "bottom" });
