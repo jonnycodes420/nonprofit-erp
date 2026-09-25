@@ -3950,6 +3950,17 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_capacity TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_date TEXT`);
 
+  // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN FOR STAFF ──────────────
+  // The secret is SEALED (shared/secretBox, AAD = the org id), never stored
+  // readable. `mfa_last_counter` makes every code single-use. The org rule
+  // is off by default: turning it on is an admin's act, and only an admin
+  // who already has two-step on may do it.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret_sealed TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_pending_sealed TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_last_counter BIGINT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

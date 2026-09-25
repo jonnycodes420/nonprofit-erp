@@ -4587,8 +4587,94 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [user.org_id]);
   const org = orgs[0];
   const isSuperAdmin = !!user.is_super_admin;
+
+  // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN ──────────────────────────
+  // Someone with two-step on must send the code with the password. The two
+  // refusals are distinct because the screen asks two different things.
+  if (user.mfa_enabled_at) {
+    if (!req.body.code) return res.status(401).json({ error: "mfa_required", message: "Enter the six-digit code from your authenticator app." });
+    const ctr = await mfaVerifyForUser(user, req.body.code);
+    if (ctr === null) return res.status(401).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
+  } else if (user.role === "admin" && org && org.require_admin_mfa) {
+    // An admin in an org that requires two-step, who has not set it up,
+    // gets a session that opens ONLY the setup routes (auth.js enforces it).
+    const setupToken = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin, mfaSetup: true });
+    return res.json({ mfaSetupRequired: true, token: setupToken,
+      message: "Your organisation requires two-step sign-in for administrators. Set it up to continue." });
+  }
+
   const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+}));
+
+// ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN: THE ROUTES ─────────────────
+const TOTP = require("./totp");
+async function mfaVerifyForUser(user, code) {
+  if (!user.mfa_secret_sealed) return null;
+  const { open } = await import("./shared/secretBox.js");
+  let secret;
+  try { secret = open(user.mfa_secret_sealed, { aad: "mfa:" + user.org_id + ":" + user.id }); }
+  catch (e) { console.error("[mfa] could not open the sealed secret for", user.id, e.message); return null; }
+  const ctr = TOTP.verify(secret, code, { lastCounter: user.mfa_last_counter == null ? -1 : Number(user.mfa_last_counter) });
+  if (ctr === null) return null;
+  // Single use: a code accepted once is dead, by the counter, atomically.
+  const r = await query(`UPDATE users SET mfa_last_counter=? WHERE id=? AND (mfa_last_counter IS NULL OR mfa_last_counter < ?) RETURNING id`, [ctr, user.id, ctr]);
+  return r.length ? ctr : null;
+}
+app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
+  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
+  res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, orgRequiresForAdmins: !!(o && o.require_admin_mfa) });
+}));
+// Start setup: a new secret, sealed as PENDING until a code proves the app has it.
+app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
+  const { seal, credentialsConfigured } = await import("./shared/secretBox.js");
+  if (!credentialsConfigured()) return res.status(503).json({ error: "Two-step sign-in is not available on this server yet (STEWARD_CREDENTIAL_KEY is not set)." });
+  const secret = TOTP.newSecret();
+  await run(`UPDATE users SET mfa_pending_sealed=? WHERE id=?`, [seal(secret, { aad: "mfa:" + req.user.orgId + ":" + req.user.userId }), req.user.userId]);
+  res.json({ secret, otpauthUrl: TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId }),
+    sentence: "Add this to your authenticator app, then type the code it shows to finish." });
+}));
+// Finish setup with one good code. Returns a FULL session: a setup-only
+// session becomes a real one here, and nowhere else.
+app.post("/me/mfa/enable", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
+  if (!u || !u.mfa_pending_sealed) return res.status(400).json({ error: "Start setup first." });
+  const { open } = await import("./shared/secretBox.js");
+  const secret = open(u.mfa_pending_sealed, { aad: "mfa:" + u.org_id + ":" + u.id });
+  const ctr = TOTP.verify(secret, req.body && req.body.code);
+  if (ctr === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
+  await run(`UPDATE users SET mfa_secret_sealed=mfa_pending_sealed, mfa_pending_sealed=NULL, mfa_enabled_at=NOW(), mfa_last_counter=? WHERE id=?`, [ctr, u.id]);
+  const isSuperAdmin = !!u.is_super_admin;
+  const token = signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin });
+  const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [u.org_id]);
+  res.json({ enabled: true, token,
+    user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperAdmin, mfaEnabled: true },
+    org: org ? { ...org, onboarding_complete: org.onboarding_complete ?? 1 } : null });
+}));
+// Turning it off takes a current code — and an admin cannot turn it off while
+// the org requires it.
+app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
+  if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
+  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [u.org_id]);
+  if (u.role === "admin" && o && o.require_admin_mfa) return res.status(409).json({ error: "Your organisation requires two-step sign-in for administrators." });
+  if ((await mfaVerifyForUser(u, req.body && req.body.code)) === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
+  await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL WHERE id=?`, [u.id]);
+  res.json({ enabled: false });
+}));
+// The org rule. Only an admin who already has two-step on may switch it on —
+// nobody can lock themselves out of their own organisation by clicking a box.
+app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const want = req.body && req.body.requireAdminMfa;
+  if (typeof want !== "boolean") return res.status(400).json({ error: "requireAdminMfa must be true or false" });
+  if (want) {
+    const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
+    if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-step sign-in for yourself first." });
+  }
+  await run(`UPDATE orgs SET require_admin_mfa=? WHERE id=?`, [want, req.user.orgId]);
+  console.log(`[mfa] ${req.user.orgId} require_admin_mfa=${want} by ${req.user.email || req.user.userId}`);
+  res.json({ requireAdminMfa: want });
 }));
 
 app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
@@ -31769,6 +31855,35 @@ function toCsv(columns, rows) {
 // Sample rows are INCLUDED, identified by an is_sample column where the
 // table has one — honest and reversible (filter the column in a spreadsheet)
 // beats silently dropping rows from "everything".
+// ── BUILD-98 (switch) Part 8 — EVERYTHING, ONE BUTTON ──────────────────────
+// Every table that carries this org's id, found by asking the database rather
+// than by a list somebody has to remember to extend: a table added next month
+// is in the export the day it exists. The org's own row comes first.
+// NEVER write-gated (a lapsed org must always be able to leave with its data).
+// Credentials, tokens and hashes are LEFT OUT by column name, and the ids of
+// other organisations cannot appear because every read is `WHERE org_id = ?`.
+const EXPORT_WITHHELD_COLUMN = /password|token|secret|sealed|(^|_)hash($|_)|api_key|credential|pdf_data/i;
+app.get("/org/export/full", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const tables = (await query(
+    `SELECT table_name FROM information_schema.columns
+      WHERE table_schema='public' AND column_name='org_id' GROUP BY table_name ORDER BY table_name`)).map(r => r.table_name);
+  const strip = row => { const o = {}; for (const [k, v] of Object.entries(row)) if (!EXPORT_WITHHELD_COLUMN.test(k)) o[k] = v; return o; };
+  const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [orgId]);
+  const stamp = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="steward-everything-${(org && org.org_slug) || orgId}-${stamp}.json"`);
+  res.write(`{"exportedAt":${JSON.stringify(new Date().toISOString())},"organization":${JSON.stringify(strip(org || {}))},` +
+            `"withheld":${JSON.stringify("Passwords, sign-in secrets, tokens, key fingerprints and stored receipt PDFs are left out; the receipts themselves are in the tables.")},"tables":{`);
+  let first = true;
+  for (const t of tables) {
+    const rows = await query(`SELECT * FROM "${t.replace(/"/g, "")}" WHERE org_id=?`, [orgId]);
+    res.write(`${first ? "" : ","}${JSON.stringify(t)}:${JSON.stringify(rows.map(strip))}`);
+    first = false;
+  }
+  res.end("}}");
+}));
+
 app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { ZipArchive } = require("archiver"); // archiver v8 API — class export, not a factory function
   const orgId = req.user.orgId;
