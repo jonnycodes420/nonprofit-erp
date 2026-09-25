@@ -85,10 +85,18 @@ async function reset() {
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
-      // BUILD-102 (Steward Give) Part 6 — the form funnel. Cascades from giving_pages,
-    // but it is listed explicitly and BEFORE it: the cascade covers a page delete and
-    // this list has to survive an org delete too.
-    "form_events", "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      // BUILD-102 (Steward Give) Part 6 — the form funnel. It cascades from
+      // giving_pages, but it is named explicitly and ordered BEFORE it: the
+      // cascade covers a page delete, and this list has to survive an ORG delete
+      // too.
+      "form_events",
+      "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
+      // `grants` delete below would usually take them — but `grant_id` is
+      // nullable, so a row without one would survive and block the org delete
+      // with an FK violation that reads as a product bug. Named explicitly and
+      // ordered BEFORE `grants`, which is the rule this list exists for.
+      "grant_spend", "grant_milestones", "grant_documents",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`
@@ -300,6 +308,12 @@ function bResolver(routePath, param) {
     // BUILD-99 (major gifts) Part 4 — a brief IS an agent run, so the probe is
     // org B's own run id.
     runId: `arun_${B}`,
+    // BUILD-100 (grants) Parts 2, 3 and 4 — a deadline Steward watches, a file a
+    // grant carries and a line of restricted spending are each org B's business,
+    // and each route must answer 404 to org A rather than acting on the row.
+    msId: `gms_${B}`,
+    docId: `gdoc_${B}`,
+    spendId: `gsp_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;

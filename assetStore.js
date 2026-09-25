@@ -226,6 +226,15 @@ async function collectLiveAssetRefs(orgId) {
   for (const r of await query(`SELECT cheque_asset_id FROM gifts${w}`, p)) {
     if (ASSET_ID_RE.test(String(r.cheque_asset_id || ""))) refs.add(r.cheque_asset_id);
   }
+  // BUILD-100 (grants) Part 3 — a signed grant agreement and every report
+  // submitted are the EVIDENCE a funder audit asks for, and they are the most
+  // consequential files this product holds: an org that cannot produce the
+  // agreement it signed has a problem no screen can fix. Same rule as the
+  // cheque photo above, higher stakes — without this line the 90-day sweep
+  // would destroy them.
+  for (const r of await query(`SELECT asset_id FROM grant_documents${w}`, p)) {
+    if (ASSET_ID_RE.test(String(r.asset_id || ""))) refs.add(r.asset_id);
+  }
   for (const r of await query(`SELECT photos FROM impact_updates${w}`, p)) {
     for (const ph of (Array.isArray(r.photos) ? r.photos : [])) add(ph);
   }

@@ -1165,6 +1165,23 @@ async function initSchema() {
     END $$;`);
   }
 
+  // BUILD-100 (grants) Part 1 — A GRANT'S MONEY COULD NOT HOLD CENTS.
+  // `grants.amount` and `grants.received` have been INTEGER since the original
+  // schema, exactly as the gift columns above were until BUILD-08 Phase B found
+  // it live. A foundation awards $10,000 far more often than $10,000.37, which
+  // is why this survived — but an award applied from a real payment schedule, or
+  // a currency-converted one, is a number this column would have thrown on. The
+  // brief asks for the pipeline total IN CENTS, which this made impossible.
+  // Same guarded shape: only run the rewrite while the column is still integer.
+  for (const [tbl, col] of [["grants", "amount"], ["grants", "received"]]) {
+    await pool.query(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='${tbl}' AND column_name='${col}' AND data_type='integer') THEN
+        ALTER TABLE ${tbl} ALTER COLUMN ${col} TYPE NUMERIC USING ${col}::numeric;
+      END IF;
+    END $$;`);
+  }
+
   // BUILD-73 Part 2 — CENTS, AT THE DATABASE. The migration above stopped these
   // columns being INTEGER, which is what made cents storable; it left them
   // unconstrained NUMERIC, which stores $33.333 just as happily as $33.33.
@@ -1184,6 +1201,8 @@ async function initSchema() {
     ["donors", "total_giving"], ["donors", "last_gift_amount"],
     ["pledges", "amount"], ["fin_transactions", "amount"],
     ["recurring_subscriptions", "amount"],
+    // BUILD-100 (grants) Part 1 — a grant's money joins the same discipline.
+    ["grants", "amount"], ["grants", "received"],
   ]) {
     await pool.query(`DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM information_schema.columns
@@ -2617,6 +2636,179 @@ async function initSchema() {
   // campaign thermometer never drops just because a won grant's status moved on.
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS awarded_at TIMESTAMPTZ`);
+
+  // ── BUILD-100 (grants) Part 1 — A FUNDER IS A RECORD, NOT A STRING ────────
+  // `grants.funder` has been free TEXT since the original schema, so "Sunrise
+  // Foundation", "The Sunrise Foundation" and "Sunrise Fdn" were three funders
+  // that could never be counted together, and none of them had a program
+  // officer, an address or a giving history. BUILD-80 already settled what an
+  // institution is — a `donors` row with `kind='organisation'` — and a funder is
+  // one of those. So the grant points AT that record.
+  //
+  // `funder` (the text) STAYS and is kept in step, for the same reason
+  // `opportunities` kept its name in BUILD-99: every existing read, report and
+  // Kanban card uses it, and rewriting twenty call sites to chase a join is how
+  // one of them gets missed. The text is the label; the id is the truth.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS funder_donor_id TEXT REFERENCES donors(id) ON DELETE SET NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grants_org_funder ON grants (org_id, funder_donor_id)`);
+
+  // WHAT KIND OF FUNDER IT IS lives on the FUNDER, not on the grant — the
+  // Sunrise Foundation is a private foundation across every grant it ever makes,
+  // and storing it per grant would let two rows disagree about one organisation.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_type TEXT`);
+  // BUILD-100 (grants) Part 6 — A FUNDER'S EIN IS THE ONLY IDENTIFIER IN THIS
+  // DOMAIN THAT IS ACTUALLY UNIQUE, and an imported grant spreadsheet often
+  // carries it. Nine digits, no punctuation, stored only for an ORGANISATION.
+  // The partial unique index is what makes "match on EIN" a fact rather than a
+  // hope — two records claiming one EIN in one org is a duplicate to merge, not
+  // a state to reconcile at read time.
+  //
+  // NB the repo-wide rule from FIX-legal-entity stands: an EIN is not public
+  // and none is written down in this repository. This column holds a customer's
+  // own data, entered by a customer.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_ein TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS donors_one_funder_ein
+                      ON donors (org_id, funder_ein)
+                    WHERE funder_ein IS NOT NULL AND deleted_at IS NULL`).catch(e =>
+    console.error("[grants] donors_one_funder_ein:", e.message));
+
+  // BUILD-100 (grants) Part 6 — the source's OWN record id, when the file
+  // carried one. It is what makes importing the same export twice add nothing,
+  // and the partial unique index is what makes that a guarantee rather than a
+  // check-then-insert that loses a race.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS external_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grants_one_external_id
+                      ON grants (org_id, external_id) WHERE external_id IS NOT NULL`).catch(e =>
+    console.error("[grants] grants_one_external_id:", e.message));
+
+  // The request, the award, and where the money is allowed to go.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS amount_requested NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS amount_awarded NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restriction TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restricted_from TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restricted_until TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS cycle_name TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS officer_id TEXT`);
+  // The award IS a pledge from the funder (88b's path), and this is the link
+  // back to it, so "what did they actually commit to" is one row away.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS award_pledge_id TEXT`);
+  // A no, with its reason and whether to try again — the same discipline
+  // BUILD-99 gave a declined proposal.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS decline_reason TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS declined_on TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS reapply BOOLEAN`);
+
+  // ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ─────────
+  // A milestone is a dated thing owed on a grant. It is its own table rather
+  // than more columns because `report_due` REPEATS (a two-year grant reports
+  // twice) and a repeating thing cannot be a column.
+  //
+  // `thread_id` is the link to the BUILD-81 thread that carries it, and
+  // `state` is what the screen reads. The state `waiting` is the honest
+  // middle: `threads_one_open` allows exactly one open thread per donor, and
+  // a funder with three grants can have three milestones inside their lead
+  // windows at once, so the second WAITS and the next close advances it
+  // (BUILD-99's cultivation-plan answer to the same index).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_milestones (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      thread_id TEXT,
+      raised_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      completed_by TEXT,
+      completed_by_name TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_ms_org_due ON grant_milestones (org_id, due_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_ms_grant ON grant_milestones (grant_id)`);
+  // A milestone that is not repeatable exists at most ONCE per grant per kind.
+  // `report_due` is deliberately absent from the index's reach because the
+  // index keys on (grant, kind, due_date) — two reports on different dates are
+  // two milestones, two reports on the SAME date are one thing typed twice.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_ms_one_per_date
+                      ON grant_milestones (grant_id, kind, due_date)`);
+
+  // ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ────────────────
+  // One row per file, pointing at the BUILD-51 asset store by bare asset id
+  // (the donor-photo shape, because these are served through their own signed
+  // front door rather than as a public /portal-assets path).
+  //
+  // `asset_id` is in `collectLiveAssetRefs`, WITHOUT WHICH the 90-day
+  // retention sweep would destroy a signed funder agreement. That line is
+  // load-bearing, not belt-and-braces.
+  //
+  // NOT versioned by a column: two proposals are two rows and the version is
+  // DERIVED from upload order (grantDocs.withVersions). A version column is a
+  // number somebody has to keep in step, and this one has no reason to be.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_documents (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      doc_type TEXT NOT NULL,
+      asset_id TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      content_type TEXT,
+      bytes INTEGER,
+      notes TEXT,
+      uploaded_by TEXT,
+      uploaded_by_name TEXT,
+      uploaded_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_docs_grant ON grant_documents (grant_id, uploaded_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_docs_org ON grant_documents (org_id)`);
+  // The SAME bytes filed twice under one type on one grant is a double-click,
+  // not two documents. Different types (a PDF that is both the proposal and
+  // the agreement) stay two rows, because that is a real thing.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_docs_one_per_type
+                      ON grant_documents (grant_id, doc_type, asset_id)`);
+
+  // ── BUILD-100 (grants) Part 4 — SPENDING AGAINST A RESTRICTED AWARD ──────
+  // Entered BY HAND in this build. QuickBooks spend against a grant waits on
+  // 91f and the Intuit keys (the brief's own line), and the screen says so
+  // rather than implying a bank feed nobody connected.
+  //
+  // Amount is NUMERIC(12,2) like every other money column in this product, and
+  // every figure derived from it is summed in integer cents — a restricted
+  // balance is what an auditor reconciles.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_spend (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL,
+      spent_on TEXT NOT NULL,
+      description TEXT NOT NULL,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_spend_grant ON grant_spend (grant_id, spent_on)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_spend_org ON grant_spend (org_id)`);
+
+  // THE ORG'S OWN LEAD TIMES, one JSONB rather than five columns: the set is
+  // fixed by shared/grantMilestones.js and always read whole. NULL means
+  // "nobody has chosen", which is what makes the defaults still reachable if
+  // they ever change.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_lead_days JSONB`);
+
+  // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
+  // meant on a grant that has not been awarded, and on an awarded one it is what
+  // was asked for. Never guessed — a row with no amount stays null.
+  await pool.query(`UPDATE grants SET amount_requested = amount
+                     WHERE amount_requested IS NULL AND amount IS NOT NULL AND amount > 0`);
+  await pool.query(`UPDATE grants SET amount_awarded = amount
+                     WHERE amount_awarded IS NULL AND status = 'awarded' AND amount IS NOT NULL AND amount > 0`);
   // gifts.cover_fee_amount — the donor-covers-fees portion of a grossed-up
   // online gift (charged − intended). The gift row / receipt / ledger keep the
   // FULL charged amount (what actually moved, what the IRS acknowledgment must

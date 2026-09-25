@@ -97,9 +97,15 @@ const EXPECTED = {
   // sentence, one place — and tests/build99-dashboard.test.js §2c asserts the
   // screen holds no copy of one.
   "components/MajorGifts.jsx": 14,
+  // BUILD-100 (grants) Part 7 — every figure is the SERVER's, in cents, from
+  // shared/restrictedMoney.js / grantShape.js; each restricted figure carries
+  // its RESTRICTED_METRICS definition as its hover, one string from the registry.
+  "components/FunderPanel.jsx": 2,     // asked / awarded on a funder's grant row (cells)
+  "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
+  "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 408;
-const EXPECTED_CLAIMS = 119;
+const EXPECTED_TOTAL = 413;   // BUILD-100 Part 7: +5
+const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total)
 
 (async () => {
   console.log("build97-numbers");

@@ -195,11 +195,35 @@ const cents = v => Math.round(Number(v) * 100);
   // volunteer-to-donor conversion report) makes thirteen. BUILD-101 Part 5
   // adds the five membership reports (by level, expiring in 60 days, lapsed,
   // new and renewed by month, membership beside donation revenue): eighteen.
-  // BUILD-102 (Steward Give) Part 5 adds "Gifts by link source" — which email or
-  // ad brought this money in — making NINETEEN. The count stays a literal on
-  // purpose: a report added without a thought about this list fails here.
-  ok("§7 there are nineteen standard reports", (list.body.standard || []).length === 19,
+  // BUILD-100 (grants) Part 5 adds five — the pipeline, by funder, awarded versus
+  // requested by year, the deadlines due in 90 days, and restricted balances by
+  // grant — and BUILD-102 (Steward Give) Part 5 adds "Gifts by link source", which
+  // email or ad brought this money in: TWENTY-FOUR.
+  //
+  // The count is deliberately a literal so a report added without a thought about
+  // this list fails here. And the list is asserted BY NAME below rather than only
+  // by its length: two builds merging in parallel each got this number right for
+  // their own base and wrong for the merged tree, which a bare count cannot tell
+  // you — it fails, but it does not say which report is missing.
+  ok("§7 there are twenty-four standard reports", (list.body.standard || []).length === 24,
      (list.body.standard || []).map(r => r.id));
+  // EVERY ONE OF THE TWENTY-FOUR, NAMED. Both merging builds counted correctly for
+  // their own base; only the names say which list a merged tree actually has.
+  const EXPECTED_STANDARD = [
+    "ack-backlog", "board-giving", "by-fund", "by-month", "first-time",
+    "gifts-by-link-source",
+    "grant-deadlines-90", "grant-restricted-balances", "grants-awarded-vs-requested",
+    "grants-by-funder", "grants-pipeline",
+    "lapsed-24", "lybunt", "members-by-level", "members-expiring", "members-lapsed",
+    "members-new-renewed", "membership-revenue", "monthly-givers",
+    "pledges-outstanding", "retention", "sybunt", "top-50", "volunteers-who-give",
+  ];
+  const got = (list.body.standard || []).map(r => String(r.id).replace(/^std:/, "")).sort();
+  ok("§7 …and they are exactly the twenty-four, by name",
+     got.join(",") === EXPECTED_STANDARD.slice().sort().join(","),
+     { missing: EXPECTED_STANDARD.filter(k => !got.includes(k)),
+       unexpected: got.filter(k => !EXPECTED_STANDARD.includes(k)) });
+
   const broken = [];
   for (const s of list.body.standard || []) {
     const r = await api("GET", `/saved-reports/${encodeURIComponent(s.id)}/run`, tok);

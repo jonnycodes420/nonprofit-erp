@@ -2009,6 +2009,16 @@ app.use((req, res, next) =>
 // nothing useful in it — this route's first version did exactly that, and the
 // test that caught it is the oversize leg in build96-photos-folder.
 app.use("/photos/bulk", express.json({ limit: "24mb" }));
+// BUILD-100 (grants) Part 3 — a grant document is capped at 20MB of DECODED
+// file (grantDocs.DOC_MAX_BYTES), which is ~27.4MB of base64 plus the JSON
+// around it. Matched by path so the rest of the /grants family keeps the 5mb
+// cap. THIS LIMIT AND THAT CAP ARE ONE DECISION — see the note on
+// DOC_MAX_BYTES; raising either alone gives a PayloadTooLargeError that
+// surfaces as a bare 500.
+app.use((req, res, next) =>
+  /^\/grants\/[^/]+\/documents$/.test(req.path)
+    ? express.json({ limit: "30mb" })(req, res, next)
+    : next());
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the
@@ -2313,6 +2323,21 @@ async function recordGift(o) {
   if (fundId) {
     const okFund = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
     if (!okFund.length) { fundId = null; fundRefused = true; console.error(`[gift] refused a fund id that is not this org's: ${o.fundId}`); }
+  }
+  // BUILD-100 (grants) Part 4 — A PAYMENT AGAINST A RESTRICTED AWARD MAY NOT
+  // FALL BACK TO THE UNRESTRICTED FUND. The award is a pledge on the funder
+  // (Part 1), so a payment carries `pledgeId`; if that pledge is a grant award
+  // and the grant names a fund, THAT is the fund. Without this wire a $10,000
+  // program-restricted award's payments post to General Operating and the
+  // restriction is lost at the ledger — silently, since every other figure
+  // still adds up.
+  if (!fundId && !fundRefused && o.pledgeId) {
+    const [gf] = await query(
+      `SELECT g.fund_id FROM grants g
+        WHERE g.org_id = ? AND g.award_pledge_id = ? AND g.fund_id IS NOT NULL
+          AND g.restriction IN ('program_restricted','capital','time_restricted')`,
+      [orgId, o.pledgeId]);
+    if (gf && gf.fund_id) fundId = gf.fund_id;
   }
   if (!fundId && !fundRefused && o.defaultFund !== false) fundId = await orgUnrestrictedFundId(orgId);
   const paymentMethod = String(o.paymentMethod || "").trim() || GIFT_METHOD_UNKNOWN;
@@ -14729,6 +14754,1552 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // (funder name in vendor/description, or the exact grant amount)? Read-only,
 // org-scoped (foreign grant → 404); the human decides via the prompt whether
 // to link (PUT adoptTxnId) or book separately. 180-day window, newest first.
+
+// ── BUILD-100 (grants) Part 1 — FUNDERS AND GRANTS ─────────────────────────
+// A funder is an ORGANISATION on file (BUILD-80's `kind`), not a string in a
+// column, and a grant is one request to one of them. shared/grantShape.js holds
+// every rule; these routes are its writers. The existing `grants` table gains
+// the columns rather than being replaced — db.js says why.
+async function grantShapeMod() { return import("./shared/grantShape.js"); }
+
+// The wire shape. Money leaves as dollars AND as integer cents, because the
+// pipeline is summed in cents and a screen that re-derives cents from a float is
+// how a total ends up a penny out.
+function grantRow(r, { funds, officers } = {}) {
+  const reqC = toCents(r.amount_requested != null ? r.amount_requested : r.amount) || 0;
+  const awdC = toCents(r.amount_awarded) || 0;
+  const recC = toCents(r.received) || 0;
+  return {
+    id: r.id,
+    funderId: r.funder_donor_id || null,
+    funderName: r.funder_name || r.funder || "",
+    funderType: r.funder_type || null,
+    program: r.program || "",
+    amountRequested: toDollars(reqC), amountRequestedCents: reqC,
+    amountAwarded: awdC ? toDollars(awdC) : null, amountAwardedCents: awdC,
+    received: toDollars(recC), receivedCents: recC,
+    status: r.status_canonical || r.status,
+    restriction: r.restriction || null,
+    restrictedFrom: r.restricted_from || null,
+    restrictedUntil: r.restricted_until || null,
+    fundId: r.fund_id || null,
+    fundName: r.fund_id && funds ? (funds.get(r.fund_id) || null) : null,
+    cycleName: r.cycle_name || null,
+    officerId: r.officer_id || null,
+    officerName: r.officer_id && officers ? (officers.get(r.officer_id) || null) : (r.officer || ""),
+    awardPledgeId: r.award_pledge_id || null,
+    declineReason: r.decline_reason || null,
+    declinedOn: r.declined_on || null,
+    reapply: r.reapply === null || r.reapply === undefined ? null : !!r.reapply,
+    deadline: r.deadline || null,
+    reportDue: r.report_due || null,
+    notes: r.notes || "",
+    createdByName: r.created_by_name || "",
+    awardedAt: r.awarded_at || null,
+  };
+}
+
+async function orgFundNamesG(orgId) {
+  const rows = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+  return new Map(rows.map(r => [r.id, r.name]));
+}
+async function orgOfficerNames(orgId) {
+  const rows = await query("SELECT id, name FROM users WHERE org_id=?", [orgId]);
+  return new Map(rows.map(r => [r.id, r.name]));
+}
+
+// THE ONE PLACE A FUNDER IS RESOLVED, and the one place a person is refused.
+// A grant is an institutional relationship; a cheque from a private individual
+// is a GIFT. Calling it a grant puts it in the wrong half of every report an
+// auditor reads, which is why this is a refusal and not a warning.
+async function resolveFunder(orgId, funderDonorId) {
+  const G = await grantShapeMod();
+  const [d] = await query(
+    "SELECT id, name, kind, funder_type, funder_ein FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    [funderDonorId, orgId]);
+  const problem = G.funderProblem(d);
+  if (problem) return { ok: false, problem };
+  return { ok: true, funder: d };
+}
+
+// GET /funders — the organisations this org has asked, with what they have
+// given and what is open. A funder with no grants yet is still a funder.
+app.get("/funders", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT d.id, d.name, d.funder_type, d.email, d.city, d.state, d.total_giving,
+            COUNT(g.id)::int AS grant_count,
+            COALESCE(SUM(CASE WHEN g.status = ANY(?::text[]) THEN COALESCE(g.amount_requested, g.amount) END),0) AS open_requested,
+            COALESCE(SUM(CASE WHEN g.status='awarded' THEN COALESCE(g.amount_awarded, g.amount) END),0) AS awarded_total
+       FROM donors d
+       LEFT JOIN grants g ON g.funder_donor_id = d.id AND g.org_id = d.org_id AND g.is_sample IS NOT TRUE
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND LOWER(COALESCE(d.kind,'person')) IN ('organisation','organization')
+        AND (d.funder_type IS NOT NULL OR g.id IS NOT NULL)
+      GROUP BY d.id, d.name, d.funder_type, d.email, d.city, d.state, d.total_giving
+      ORDER BY d.name`,
+    [G.OPEN_STATUS_KEYS.concat(Object.keys(G.STATUS_ALIASES).filter(a => G.STATUS_ALIASES[a] && G.OPEN_STATUS_KEYS.includes(G.STATUS_ALIASES[a]))), orgId]);
+  res.json({
+    funders: rows.map(r => ({
+      funderId: r.id, name: r.name, funderType: r.funder_type || null,
+      funderTypeLabel: G.funderTypeLabel(r.funder_type), email: r.email || null,
+      city: r.city || null, state: r.state || null,
+      grantCount: r.grant_count,
+      openRequested: toDollars(toCents(r.open_requested) || 0),
+      awardedTotal: toDollars(toCents(r.awarded_total) || 0),
+      lifetimeGiving: toDollars(toCents(r.total_giving) || 0),
+    })),
+    funderTypes: G.FUNDER_TYPES,
+  });
+}));
+
+// PUT /funders/:donorId — say what kind of funder an organisation is. It lives
+// on the FUNDER because the Sunrise Foundation is a private foundation across
+// every grant it ever makes; per-grant storage would let two rows disagree.
+app.put("/funders/:donorId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const r = await resolveFunder(req.user.orgId, req.params.donorId);
+  if (!r.ok) {
+    const code = r.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: r.problem.message, code: r.problem.code });
+  }
+  // BUILD-100 Part 6 FIX — an ABSENT funderType leaves it alone. The first cut
+  // read `String(req.body.funderType || "")` whether the key was there or not,
+  // so a body carrying only an EIN was refused for a bad funder type: a route
+  // that cannot be called with one field is not a route somebody can use.
+  const hasType = Object.prototype.hasOwnProperty.call(req.body, "funderType");
+  const t = !hasType ? undefined
+    : (req.body.funderType === null || req.body.funderType === "" ? null : String(req.body.funderType));
+  if (t !== undefined && t !== null && !G.FUNDER_TYPE_KEYS.includes(t)) {
+    return res.status(400).json({ error: `Funder type must be one of: ${G.FUNDER_TYPES.map(x => x.label).join(", ")}.`, code: "bad_funder_type" });
+  }
+  // BUILD-100 Part 6 — the EIN, if they have it. Nine digits or nothing: a
+  // half-typed tax id that still matched on a prefix would be worse than none.
+  const I = await grantImportMod();
+  let ein;
+  if (Object.prototype.hasOwnProperty.call(req.body, "ein")) {
+    const raw = req.body.ein;
+    if (raw === null || String(raw).trim() === "") ein = null;
+    else {
+      ein = I.normalizeEin(raw);
+      if (!ein) return res.status(400).json({ code: "bad_ein",
+        error: "An EIN is nine digits, written 12-3456789. Leave it blank if you do not have it." });
+    }
+  }
+  if (t !== undefined) {
+    await run("UPDATE donors SET funder_type=?, updated_at=NOW() WHERE id=? AND org_id=?", [t, r.funder.id, req.user.orgId]);
+  }
+  if (ein !== undefined) {
+    // The partial unique index is the arbiter: two records claiming one EIN is a
+    // duplicate to merge, and the route says so rather than swallowing 23505.
+    try {
+      await run("UPDATE donors SET funder_ein=?, updated_at=NOW() WHERE id=? AND org_id=?", [ein, r.funder.id, req.user.orgId]);
+    } catch (e) {
+      if (String(e.code) === "23505") {
+        const [dup] = await query("SELECT name FROM donors WHERE org_id=? AND funder_ein=? AND deleted_at IS NULL",
+          [req.user.orgId, ein]);
+        return res.status(409).json({ code: "ein_already_on_file",
+          error: `${(dup && dup.name) || "Another record"} already carries that EIN. If they are the same funder, merge the two records.` });
+      }
+      throw e;
+    }
+  }
+  const [after] = await query("SELECT funder_type, funder_ein FROM donors WHERE id=? AND org_id=?", [r.funder.id, req.user.orgId]);
+  const type = (after && after.funder_type) || null;
+  res.json({ funderId: r.funder.id, name: r.funder.name, funderType: type, funderTypeLabel: G.funderTypeLabel(type),
+             ein: (after && after.funder_ein) || null });
+}));
+
+// GET /funders/:donorId/grants — a funder's own record: every grant, in order.
+app.get("/funders/:donorId/grants", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const r = await resolveFunder(req.user.orgId, req.params.donorId);
+  if (!r.ok) {
+    const code = r.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: r.problem.message, code: r.problem.code });
+  }
+  const funds = await orgFundNamesG(req.user.orgId);
+  const officers = await orgOfficerNames(req.user.orgId);
+  const rows = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type
+       FROM grants g JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=? AND g.funder_donor_id=? ORDER BY g.created_at DESC`,
+    [req.user.orgId, r.funder.id]);
+  const grants = rows.map(x => grantRow({ ...x, status_canonical: G.normalizeStatus(x.status) }, { funds, officers }));
+  res.json({
+    funder: { funderId: r.funder.id, name: r.funder.name, funderType: r.funder.funder_type || null,
+              funderTypeLabel: G.funderTypeLabel(r.funder.funder_type), ein: r.funder.funder_ein || null },
+    grants,
+    statuses: G.GRANT_STATUSES, restrictions: G.RESTRICTIONS, declineReasons: G.DECLINE_REASONS,
+  });
+}));
+
+// POST /funders/:donorId/grants — one request to one funder.
+app.post("/funders/:donorId/grants", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const fr = await resolveFunder(orgId, req.params.donorId);
+  if (!fr.ok) {
+    const code = fr.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: fr.problem.message, code: fr.problem.code });
+  }
+  let reqCents;
+  try { reqCents = parseMoneyOrThrow(req.body.amountRequested, "amountRequested"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+
+  const status = G.normalizeStatus(req.body.status || "researching") || String(req.body.status || "");
+  const v = G.validateGrant({
+    program: req.body.program, amountRequestedCents: reqCents, status,
+    restriction: req.body.restriction, restrictedFrom: req.body.restrictedFrom,
+    restrictedUntil: req.body.restrictedUntil,
+  }, { mode: "create" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+
+  const fund = await checkGrantFund(orgId, req.body.fundId || null);
+  if (!fund.ok) return res.status(404).json({ error: "Fund not found" });
+  const officer = await checkGrantOfficer(orgId, req.body.officerId || null);
+  if (!officer.ok) return res.status(404).json({ error: "Officer not found" });
+
+  const id = "gr_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,status,
+                         restriction,restricted_from,restricted_until,fund_id,cycle_name,officer_id,officer,
+                         notes,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, fr.funder.name, fr.funder.id, G.sanitizeProgram(req.body.program),
+     toDollars(reqCents), toDollars(reqCents), status,
+     req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
+     fund.fundId, G.sanitizeCycle(req.body.cycleName), officer.officerId, officer.officerName || "",
+     G.sanitizeNotes(req.body.notes), actor(req).id, actor(req).name]);
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [id]);
+  res.status(201).json(grantRow({ ...row, status_canonical: G.normalizeStatus(row.status) },
+    { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }));
+}));
+
+async function checkGrantFund(orgId, fundId) {
+  if (!fundId) return { ok: true, fundId: null };
+  const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+  return f ? { ok: true, fundId: f.id } : { ok: false };
+}
+async function checkGrantOfficer(orgId, officerId) {
+  if (!officerId) return { ok: true, officerId: null, officerName: null };
+  const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [officerId, orgId]);
+  return u ? { ok: true, officerId: u.id, officerName: u.name } : { ok: false };
+}
+
+// PUT /grants/:id/award — AWARDED WRITES THE AWARD AS A PLEDGE ON THE FUNDER.
+//
+// Not a gift: a foundation saying yes in March and paying in two instalments
+// across the year is a COMMITMENT, and Steward already has exactly the right
+// object for that (88b's pledge path, with instalments that close themselves
+// when the money arrives through any door). Writing a gift here would book money
+// that has not arrived; writing nothing would lose the schedule.
+//
+// It is its own route rather than a branch inside the general PUT because the
+// general PUT already carries the ledger stamp, the campaign attribution and the
+// adopt-an-existing-row guard, and threading a pledge writer through all of that
+// is how one of those stops working.
+app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const [g] = await query(
+    `SELECT g.*, d.name AS funder_name FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.id=? AND g.org_id=?`, [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  if (!g.funder_donor_id) {
+    return res.status(400).json({ code: "funder_not_linked",
+      error: "Link this grant to the funder's organisation record before awarding it — the pledge has to belong to somebody." });
+  }
+  let awardedCents;
+  try { awardedCents = parseMoneyOrThrow(req.body.amountAwarded, "amountAwarded"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  const v = G.validateGrant({ status: "awarded", amountAwardedCents: awardedCents,
+                              restriction: req.body.restriction !== undefined ? req.body.restriction : g.restriction,
+                              restrictedFrom: req.body.restrictedFrom !== undefined ? req.body.restrictedFrom : g.restricted_from,
+                              restrictedUntil: req.body.restrictedUntil !== undefined ? req.body.restrictedUntil : g.restricted_until },
+                            { mode: "patch" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  // ALREADY AWARDED WRITES NOTHING NEW. A second press must not produce a second
+  // pledge — the commitment exists, and a duplicate would double it in every
+  // total the funder appears in.
+  let pledgeId = g.award_pledge_id || null;
+  if (!pledgeId) {
+    pledgeId = "pl_" + uuid().slice(0, 8);
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
+    await run(
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
+       VALUES (?,?,?,?,?,'open',?,?,?)`,
+      [pledgeId, orgId, g.funder_donor_id, toDollars(awardedCents), due,
+       `Grant award: ${g.program || "grant"}`, actor(req).id, actor(req).name]);
+    // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give the
+    // funder's real payment schedule; neither given leaves one instalment for
+    // the whole award, so recordGift applies their cheque to it to the cent from
+    // whichever door it arrives through.
+    await writePledgeInstallments(orgId, pledgeId, {
+      amountCents: awardedCents, schedule: req.body.installments,
+      frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due,
+    }).catch(e => console.error("[grant] instalments:", e.message));
+    const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
+    if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
+      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, due, toDollars(awardedCents)]);
+  }
+
+  await run(
+    `UPDATE grants SET status='awarded', amount_awarded=?, award_pledge_id=?,
+       restriction=COALESCE(?, restriction), restricted_from=COALESCE(?, restricted_from),
+       restricted_until=COALESCE(?, restricted_until),
+       awarded_at=COALESCE(awarded_at, NOW()), updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [toDollars(awardedCents), pledgeId,
+     req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
+     g.id, orgId]);
+
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
+  const [inst] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
+  res.json({ ...grantRow({ ...row, status_canonical: "awarded" },
+                         { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }),
+             pledgeId, installments: inst.c });
+}));
+
+// PUT /grants/:id/decline — a no, with its reason, its date, and whether to try
+// again. Declining does NOT touch the award pledge if one somehow exists: money
+// already committed is a fact, and a status is not a reason to delete it.
+app.put("/grants/:id/decline", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const v = G.validateGrant({ status: "declined", declineReason: req.body.declineReason,
+                              declinedOn: req.body.declinedOn, reapply: req.body.reapply }, { mode: "patch" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+  const org = await orgTz(orgId);
+  await run(
+    `UPDATE grants SET status='declined', decline_reason=?, declined_on=?, reapply=?, updated_at=NOW()
+      WHERE id=? AND org_id=?`,
+    [req.body.declineReason, req.body.declinedOn || orgToday(org),    // ORG_TZ_SEAM_OK
+     req.body.reapply === undefined ? null : !!req.body.reapply, g.id, orgId]);
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
+  res.json(grantRow({ ...row, status_canonical: "declined" },
+    { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }));
+}));
+
+// GET /grants/pipeline — the Grants screen under Fundraising. By status in
+// dollars and count, filtered by program, officer and cycle, sorted by the next
+// deadline. EVERY FIGURE CARRIES ITS SENTENCE.
+app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const where = ["g.org_id = ?", "g.is_sample IS NOT TRUE"], args = [orgId];
+  if (req.query.officerId) { where.push("g.officer_id = ?"); args.push(String(req.query.officerId)); }
+  if (req.query.cycle) { where.push("LOWER(COALESCE(g.cycle_name,'')) = LOWER(?)"); args.push(String(req.query.cycle)); }
+  if (req.query.program) { where.push("LOWER(COALESCE(g.program,'')) LIKE LOWER(?)"); args.push("%" + String(req.query.program) + "%"); }
+  if (req.query.status) {
+    const want = String(req.query.status).split(",").map(x => G.normalizeStatus(x)).filter(Boolean);
+    if (!want.length) return res.status(400).json({ error: "Unknown status" });
+    // Match the canonical status AND every legacy spelling of it, so a filter
+    // does not silently hide rows written before this build.
+    const spellings = [...want];
+    for (const [alias, canon] of Object.entries(G.STATUS_ALIASES)) if (want.includes(canon)) spellings.push(alias);
+    where.push("LOWER(g.status) = ANY(?::text[])"); args.push(spellings);
+  }
+  const rows = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE ${where.join(" AND ")}`, args);
+  const funds = await orgFundNamesG(orgId), officers = await orgOfficerNames(orgId);
+  const all = rows.map(r => ({
+    ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
+    // The next dated thing on this grant, whichever it is. Part 2 replaces this
+    // with the milestone table; until then the two dates the row already has are
+    // the honest answer rather than a blank column.
+    nextDeadline: [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null,
+  }));
+  const sort = ["deadline", "amount", "funder", "status"].includes(String(req.query.sort)) ? String(req.query.sort) : "deadline";
+  const grants = G.sortGrants(all, sort);
+  const byStatus = G.pipelineByStatus(all).map(r => ({
+    ...r, amount: toDollars(r.cents), sentence: G.statusTileSentence(r, money.formatCentsPlain),
+  }));
+  const open = all.filter(x => G.isOpenStatus(x.status));
+  const openCents = open.reduce((s, x) => s + G.pipelineCentsFor(x), 0);
+  const cycles = [...new Set(all.map(x => x.cycleName).filter(Boolean))].sort();
+  res.json({
+    grants, byStatus, sort,
+    openPipeline: { cents: openCents, amount: toDollars(openCents), count: open.length,
+                    sentence: G.openPipelineSentence({ cents: openCents, count: open.length }, money.formatCentsPlain) },
+    statuses: G.GRANT_STATUSES, restrictions: G.RESTRICTIONS, declineReasons: G.DECLINE_REASONS,
+    funderTypes: G.FUNDER_TYPES, cycles,
+    funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
+    officers: [...officers.entries()].map(([id, name]) => ({ id, name })),
+  });
+}));
+
+
+// ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ───────────
+// A milestone, when its lead time arrives, IS a BUILD-81 thread on the
+// officer. shared/grantMilestones.js holds every rule and the reason the
+// middle state exists; these routes are its writers and the sweep.
+async function grantMsMod() { return import("./shared/grantMilestones.js"); }
+
+async function orgLeadDays(orgId) {
+  const M = await grantMsMod();
+  const [o] = await query("SELECT grant_lead_days FROM orgs WHERE id=?", [orgId]);
+  return M.normalizeLeadDays(o && o.grant_lead_days);
+}
+
+function milestoneRow(r, M, today, leadDays) {
+  const m = {
+    id: r.id, grantId: r.grant_id, kind: r.kind, kindLabel: M.milestoneLabel(r.kind),
+    dueDate: r.due_date, state: r.state, threadId: r.thread_id || null,
+    funderName: r.funder_name || r.funder || "", program: r.program || "",
+    grantStatus: r.status || null, notes: r.notes || "",
+    completedAt: r.completed_at || null, completedByName: r.completed_by_name || null,
+  };
+  const t = M.milestoneTiming(m, today);
+  m.band = t.band; m.overdueDays = t.overdueDays; m.daysUntil = t.days; m.sentence = t.sentence;
+  m.leadDays = M.leadDaysFor(r.kind, leadDays);
+  if (r.state === "waiting") m.waitingSentence = M.waitingSentence(m);
+  return m;
+}
+
+// THE ONE PLACE A MILESTONE BECOMES A THREAD.
+// Returns "raised" | "waiting" | null, and the WAITING answer is not a
+// failure — it is the `threads_one_open` index doing its job, recorded so the
+// screen can say why and the next close can advance it.
+async function raiseGrantMilestone(orgId, ms, { today }) {
+  const M = await grantMsMod();
+  try {
+    // The funder must still be an organisation on file. A milestone whose
+    // funder record was deleted has nobody to hang a thread on; it stays
+    // pending and is reported rather than silently dropped.
+    const [g] = await query(
+      `SELECT g.id, g.funder_donor_id, g.program, g.officer_id, g.status,
+              d.name AS funder_name, d.assigned_to, d.assigned_to_name
+         FROM grants g
+         LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+                           AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+        WHERE g.id = ? AND g.org_id = ?`, [ms.grant_id, orgId]);
+    if (!g || !g.funder_donor_id || !g.funder_name) return null;
+    if (!M.grantWantsMilestones(g.status)) return null;
+
+    const { sanitizeStepLabel } = await threadShapeMod();
+    const label = sanitizeStepLabel(M.milestoneStepLabel({
+      kind: ms.kind, funderName: g.funder_name, program: g.program,
+    })) || "Follow up on the grant";
+
+    // The officer who owns the GRANT owns the deadline; otherwise whoever owns
+    // the funder record. A deadline is one person's commitment.
+    let ownerId = g.officer_id || g.assigned_to || null, ownerName = g.assigned_to_name || null;
+    if (ownerId) {
+      const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [ownerId, orgId]);
+      if (u) ownerName = u.name; else { ownerId = null; ownerName = null; }
+    }
+
+    const thread = await withTransaction(client => openThreadTx(client, {
+      orgId, donorId: g.funder_donor_id,
+      // DUE ON THE MILESTONE'S OWN DATE, not today + the lead. The lead decides
+      // WHEN the officer is told; the deadline is still the deadline.
+      step: { type: "follow_up", label, due: ms.due_date },
+      openedOn: today, ownerId, ownerName,
+      actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+    }));
+
+    if (thread && thread.id) {
+      await run(`UPDATE grant_milestones SET state='raised', thread_id=?, raised_at=NOW(), updated_at=NOW()
+                  WHERE id=? AND org_id=?`, [thread.id, ms.id, orgId]);
+      return "raised";
+    }
+    // openThreadTx declines when the donor already holds an open thread. That
+    // is the constraint, not an error: the milestone waits its turn.
+    await run(`UPDATE grant_milestones SET state='waiting', updated_at=NOW()
+                WHERE id=? AND org_id=? AND state <> 'raised'`, [ms.id, orgId]);
+    return "waiting";
+  } catch (e) {
+    console.error("[grant-milestone] raise:", e.message);
+    return null;
+  }
+}
+
+// THE SWEEP. Idempotent and self-healing, in the BUILD-99 shape: it re-reads
+// `pending` AND `waiting` every pass, so a funder whose thread closed today
+// gets their next deadline raised with no second mechanism, and a pass that
+// was missed yesterday loses nothing (`dueWithinLead` stays true once true).
+async function processGrantMilestones(onlyOrgId = null, { today: pinnedToday = null } = {}) {
+  const M = await grantMsMod();
+  const orgs = onlyOrgId
+    ? await query("SELECT id FROM orgs WHERE id=?", [onlyOrgId])
+    : await query(`SELECT DISTINCT org_id AS id FROM grant_milestones
+                    WHERE state IN ('pending','waiting') AND org_id IS NOT NULL`);
+  const summary = { raised: 0, waiting: 0, checked: 0 };
+  for (const o of orgs) {
+    try {
+      const org = await orgTz(o.id);
+      const today = pinnedToday && testMode() ? pinnedToday : orgToday(org);   // ORG_TZ_SEAM_OK
+      const leadDays = await orgLeadDays(o.id);
+      const rows = await query(
+        `SELECT m.* FROM grant_milestones m
+           JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+          WHERE m.org_id=? AND m.state IN ('pending','waiting')
+            AND g.is_sample IS NOT TRUE
+          ORDER BY m.due_date ASC`, [o.id]);
+      for (const ms of rows) {
+        summary.checked++;
+        if (!M.dueWithinLead({ kind: ms.kind, dueDate: ms.due_date }, today, leadDays)) continue;
+        const r = await raiseGrantMilestone(o.id, ms, { today });
+        if (r === "raised") summary.raised++;
+        else if (r === "waiting") summary.waiting++;
+      }
+    } catch (e) { console.error(`[grant-milestone] sweep org=${o.id}:`, e.message); }
+  }
+  return summary;
+}
+
+// POST /grants/:id/milestones — add a dated thing owed on this grant.
+app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const kind = String(req.body.kind || "");
+  if (!M.MILESTONE_KEYS.includes(kind)) {
+    return res.status(400).json({ code: "bad_milestone_kind",
+      error: `A milestone is one of: ${M.MILESTONE_TYPES.map(t => t.label).join(", ")}.` });
+  }
+  const due = String(req.body.dueDate || "");
+  if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
+  const type = M.milestoneType(kind);
+  if (!type.repeatable) {
+    const [dupe] = await query(
+      "SELECT id, due_date FROM grant_milestones WHERE grant_id=? AND kind=? AND state <> 'skipped'",
+      [g.id, kind]);
+    if (dupe) {
+      return res.status(400).json({ code: "milestone_exists",
+        error: `This grant already has a ${type.label} on ${dupe.due_date}. Move that date rather than adding a second one.` });
+    }
+  }
+  const id = "gms_" + uuid().slice(0, 10);
+  await run(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,due_date,state,notes,created_by,created_by_name)
+             VALUES (?,?,?,?,?, 'pending', ?,?,?)`,
+    [id, orgId, g.id, kind, due, String(req.body.notes || "").slice(0, 2000),
+     actor(req).id, actor(req).name]);
+
+  // Raise it NOW if its lead time has already arrived — a report due next week
+  // typed in today must not wait for a sweep to notice.
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+  if (M.dueWithinLead({ kind, dueDate: due }, today, leadDays)) {
+    await raiseGrantMilestone(orgId, { id, grant_id: g.id, kind, due_date: due }, { today });
+  }
+  const [row] = await query(
+    `SELECT m.*, g.program, g.status, g.funder, d.name AS funder_name
+       FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+       LEFT JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id
+      WHERE m.id=?`, [id]);
+  res.status(201).json(milestoneRow(row, M, today, leadDays));
+}));
+
+// PUT /grants/milestones/:msId — MOVING THE DATE MOVES THE THREAD.
+// A date that moves and leaves a thread pointing at the old one is how an
+// officer ends up chasing a deadline that no longer exists.
+app.put("/grants/milestones/:msId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  const due = req.body.dueDate === undefined ? ms.due_date : String(req.body.dueDate || "");
+  if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+
+  await run(`UPDATE grant_milestones SET due_date=?, notes=COALESCE(?, notes), updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [due, req.body.notes === undefined ? null : String(req.body.notes).slice(0, 2000), ms.id, orgId]);
+
+  if (due !== ms.due_date && ms.thread_id) {
+    // The thread's own due date follows, through the threads table the Thread
+    // engine reads — the label is unchanged because the work is unchanged.
+    // `original_due_date` is preserved the way BUILD-81's snooze preserves it
+    // (COALESCE, so the FIRST date survives every later move): "we said the
+    // 14th" is a fact about the relationship, not a stale value.
+    // NB `threads` has no `updated_at` column — naming one 500'd this route
+    // and left the thread pointing at a deadline that had moved.
+    await run(`UPDATE threads
+                  SET due_date = ?,
+                      original_due_date = COALESCE(original_due_date, due_date)
+                WHERE id=? AND org_id=? AND closed_at IS NULL`, [due, ms.thread_id, orgId]);
+  }
+  // A date moved OUT beyond its lead time with no thread yet goes back to
+  // pending, so a waiting milestone that is no longer urgent stops queueing.
+  if (!ms.thread_id && ms.state === "waiting"
+      && !M.dueWithinLead({ kind: ms.kind, dueDate: due }, today, leadDays)) {
+    await run("UPDATE grant_milestones SET state='pending', updated_at=NOW() WHERE id=? AND org_id=?", [ms.id, orgId]);
+  }
+  if (!ms.thread_id && M.dueWithinLead({ kind: ms.kind, dueDate: due }, today, leadDays)) {
+    await raiseGrantMilestone(orgId, { ...ms, due_date: due }, { today });
+  }
+  const [row] = await query(
+    `SELECT m.*, g.program, g.status, g.funder, d.name AS funder_name
+       FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+       LEFT JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id
+      WHERE m.id=?`, [ms.id]);
+  res.json(milestoneRow(row, M, today, leadDays));
+}));
+
+// POST /grants/milestones/:msId/done — somebody did it.
+// It does NOT close the thread: the Thread engine's own close is honest
+// (BUILD-81's CHECK), and closing it from here would write a close with no
+// interaction behind it. The milestone is marked and the thread is the
+// officer's to log a line against.
+app.post("/grants/milestones/:msId/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
+  await run(`UPDATE grant_milestones SET state='done', completed_at=NOW(),
+               completed_by=?, completed_by_name=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [actor(req).id, (u && u.name) || actor(req).name, ms.id, orgId]);
+  const org = await orgTz(orgId);
+  res.json({ ok: true, id: ms.id, state: "done",
+    nextDeadlineSentence: M.milestoneTiming({ kind: ms.kind, dueDate: ms.due_date }, orgToday(org)).sentence });  // ORG_TZ_SEAM_OK
+}));
+
+// GET /grants/deadlines — the calendar, the list, and the Home line.
+app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const org = await orgTz(orgId);
+  const today = req.query.today && testMode() && M.isCivilDate(String(req.query.today))
+    ? String(req.query.today) : orgToday(org);                   // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+  const rows = await query(
+    `SELECT m.*, g.program, g.status, g.funder, g.officer_id, d.name AS funder_name
+       FROM grant_milestones m
+       JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE m.org_id=? AND g.is_sample IS NOT TRUE AND m.state <> 'skipped'
+      ORDER BY m.due_date ASC`, [orgId]);
+  const all = rows.map(r => milestoneRow(r, M, today, leadDays));
+  const open = all.filter(m => m.state !== "done");
+
+  // BUILD-100 Part 4 — A REPORT-DUE MILESTONE CARRIES ITS GRANT'S BALANCE,
+  // because the balance is what the report is about. Only for `report_due`: the
+  // figure is not relevant to an LOI deadline and a number on a row that does
+  // not need it is a number somebody has to decide to ignore. One batched read,
+  // never a query per row.
+  const reportGrantIds = [...new Set(open.filter(m => m.kind === "report_due").map(m => m.grantId))];
+  if (reportGrantIds.length) {
+    const R = await restrictedMod();
+    const moneyRows = await grantMoneyRows(orgId, `AND g.id = ANY(?::text[])`, [reportGrantIds]);
+    const byGrant = new Map(moneyRows.map(r => [r.id, grantBalanceFrom(R, r, today)]));
+    for (const m of open) {
+      if (m.kind !== "report_due") continue;
+      const b = byGrant.get(m.grantId);
+      if (b) m.balance = { restricted: b.restricted, remaining: b.remaining, remainingCents: b.remainingCents,
+                           spent: b.spent, received: b.received, sentence: b.sentence };
+    }
+  }
+  res.json({
+    today,
+    milestones: M.sortMilestones(open),
+    done: all.filter(m => m.state === "done").length,
+    overdue: open.filter(m => m.band === "overdue").length,
+    calendar: M.calendarFromMilestones(open, today),
+    homeLine: M.homeDeadlineLine(open, today),
+    leadDays,
+    milestoneTypes: M.MILESTONE_TYPES,
+  });
+}));
+
+// PUT /org/grant-lead-days — the org's own lead times (admins).
+app.put("/org/grant-lead-days", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  // MERGE OVER WHAT THE ORG ALREADY CHOSE, never over the defaults. Sending
+  // one key used to reset the other four to their defaults — an org that set
+  // the report lead to 45 in September lost it the moment it touched the
+  // decision lead in October, and nothing on the screen would have said so.
+  const stored = await orgLeadDays(req.user.orgId);
+  // pickLeadDays, NOT normalizeLeadDays: the latter fills from the DEFAULTS, so
+  // merging an invalid value in took the key back to its default instead of
+  // leaving the org's own choice standing. The patch contributes only the keys
+  // it actually got right.
+  const clean = M.normalizeLeadDays({ ...stored, ...M.pickLeadDays(req.body && req.body.leadDays) });
+  await run("UPDATE orgs SET grant_lead_days=?::jsonb WHERE id=?", [JSON.stringify(clean), req.user.orgId]);
+  res.json({ leadDays: clean, defaults: M.DEFAULT_LEAD_DAYS });
+}));
+
+// POST /grants/milestones/run — the ops/test door onto the sweep (the
+// /photos/run, /nudges/run convention). Caller's org only.
+app.post("/grants/milestones/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const summary = await processGrantMilestones(req.user.orgId, { today: req.body && req.body.today });
+  res.json(summary);
+}));
+
+
+// ── BUILD-100 (grants) Part 3 — THE FILES A GRANT CARRIES ──────────────────
+// grantDocs.js holds the types, the byte checks and the signed door.
+const grantDocs = require("./grantDocs.js");
+
+function grantDocUrl(orgId, assetId) {
+  return grantDocs.signDocUrl({ orgId, assetId });
+}
+
+function grantDocRow(r, orgId) {
+  return {
+    id: r.id, grantId: r.grant_id,
+    docType: r.doc_type, docTypeLabel: grantDocs.docTypeLabel(r.doc_type),
+    fileName: r.file_name, contentType: r.content_type || null, bytes: r.bytes || null,
+    notes: r.notes || "",
+    // ISO, ALWAYS. `uploaded_at` is a timestamptz and pg hands it back as a JS
+    // Date; `String(date)` is "Thu Sep 25 2026 …", which sorts lexically by
+    // WEEKDAY NAME. Both the version numbering and the funder list sort on this
+    // value, so a Date here silently numbered "proposal #1" and "#2" by the day
+    // of the week they were uploaded. Same class as BUILD-86's TO_CHAR lesson.
+    uploadedAt: r.uploaded_at instanceof Date ? r.uploaded_at.toISOString() : r.uploaded_at,
+    uploadedByName: r.uploaded_by_name || "",
+    // The link is minted PER READ and lives thirty minutes. A stored URL is a
+    // URL that outlives the reason it was made.
+    url: grantDocUrl(orgId, r.asset_id),
+    funderName: r.funder_name || r.funder || "", program: r.program || "",
+  };
+}
+
+// POST /grants/:id/documents — one file, on a grant that already exists.
+app.post("/grants/:id/documents", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+
+  const docType = String(req.body.docType || "");
+  if (!grantDocs.DOC_TYPE_KEYS.includes(docType)) {
+    return res.status(400).json({ code: "bad_doc_type",
+      error: `A document is one of: ${grantDocs.DOC_TYPES.map(t => t.label).join(", ")}.` });
+  }
+
+  // A data URI, the shape every other upload in this product takes.
+  const m = /^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/s.exec(String(req.body.file || ""));
+  if (!m) return res.status(400).json({ code: "no_file", error: "Attach a file." });
+  const mime = m[1].toLowerCase();
+  if (!grantDocs.mimeAllowed(mime)) {
+    return res.status(400).json({ code: "bad_file_type",
+      error: "Steward stores PDFs, Word documents, images and plain text. It deliberately refuses anything that can carry a script." });
+  }
+  let buffer;
+  try { buffer = Buffer.from(m[2], "base64"); }
+  catch { return res.status(400).json({ code: "no_file", error: "That file could not be read." }); }
+  if (!buffer.length) return res.status(400).json({ code: "no_file", error: "That file is empty." });
+  if (buffer.length > grantDocs.DOC_MAX_BYTES) {
+    return res.status(400).json({ code: "file_too_large",
+      error: `That file is ${Math.round(buffer.length / 1024 / 1024)} MB. The limit is ${grantDocs.DOC_MAX_BYTES / 1024 / 1024} MB.` });
+  }
+  // THE BYTES DECIDE. A caller declaring application/pdf over an HTML payload
+  // is the hole this closes, and it is checked BEFORE anything is stored.
+  if (!grantDocs.bytesMatchMime(buffer, mime)) {
+    return res.status(400).json({ code: "file_type_mismatch",
+      error: `That file does not look like a ${grantDocs.extensionFor(mime) || mime}. Check you attached what you meant to.` });
+  }
+
+  const asset = await putThemeAsset({
+    orgId, kind: grantDocs.DOC_ASSET_KIND, buffer, contentType: mime,
+  });
+  const id = "gdoc_" + uuid().slice(0, 10);
+  const fileName = grantDocs.sanitizeFilename(req.body.fileName, mime);
+  // The SAME bytes under the SAME type on one grant is a double-click, not two
+  // documents — the unique index says so and this answers it as success rather
+  // than an error, because from the user's side the file IS on the grant.
+  const ins = await query(
+    `INSERT INTO grant_documents (id,org_id,grant_id,doc_type,asset_id,file_name,content_type,bytes,notes,uploaded_by,uploaded_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (grant_id, doc_type, asset_id) DO NOTHING
+     RETURNING id`,
+    [id, orgId, g.id, docType, asset.id, fileName, mime, buffer.length,
+     String(req.body.notes || "").slice(0, 2000), actor(req).id,
+     (await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]))[0]?.name || actor(req).name]);
+  const finalId = ins.length ? ins[0].id
+    : (await query("SELECT id FROM grant_documents WHERE grant_id=? AND doc_type=? AND asset_id=?",
+        [g.id, docType, asset.id]))[0].id;
+  await recordAssetPointerHistory(orgId, "grant.document", finalId, null, asset.id, req.user);
+
+  const [row] = await query(
+    `SELECT d.*, g.program, g.funder, f.name AS funder_name
+       FROM grant_documents d JOIN grants g ON g.id=d.grant_id AND g.org_id=d.org_id
+       LEFT JOIN donors f ON f.id=g.funder_donor_id AND f.org_id=g.org_id
+      WHERE d.id=?`, [finalId]);
+  res.status(201).json({ ...grantDocRow(row, orgId), duplicate: ins.length === 0 });
+}));
+
+// GET /grants/:id/documents — the grant's own file list, versioned by date.
+app.get("/grants/:id/documents", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const rows = await query(
+    `SELECT d.*, g.program, g.funder, f.name AS funder_name
+       FROM grant_documents d JOIN grants g ON g.id=d.grant_id AND g.org_id=d.org_id
+       LEFT JOIN donors f ON f.id=g.funder_donor_id AND f.org_id=g.org_id
+      WHERE d.grant_id=? AND d.org_id=? ORDER BY d.uploaded_at ASC`, [g.id, orgId]);
+  const docs = grantDocs.withVersions(rows.map(r => grantDocRow(r, orgId)));
+  res.json({ documents: docs, sentence: grantDocs.documentSentence(docs), docTypes: grantDocs.DOC_TYPES });
+}));
+
+// DELETE /grants/documents/:docId — ungated, per the DELETE convention. The
+// asset is NOT destroyed here: it is soft-deleted by the retention sweep once
+// nothing points at it (BUILD-56's one destruction seam), so a mistaken delete
+// is recoverable for ninety days.
+app.delete("/grants/documents/:docId", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query("SELECT id, asset_id FROM grant_documents WHERE id=? AND org_id=?",
+    [req.params.docId, orgId]);
+  if (!d) return res.status(404).json({ error: "Document not found" });
+  await run("DELETE FROM grant_documents WHERE id=? AND org_id=?", [d.id, orgId]);
+  await recordAssetPointerHistory(orgId, "grant.document", d.id, d.asset_id, null, req.user);
+  res.json({ ok: true, id: d.id });
+}));
+
+// GET /funders/:donorId/documents — EVERY document across a funder's grants.
+// The brief asks for this because the question is "have we ever signed
+// anything with these people", and that question spans grants.
+app.get("/funders/:donorId/documents", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const fr = await resolveFunder(orgId, req.params.donorId);
+  if (!fr.ok) {
+    const code = fr.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: fr.problem.message, code: fr.problem.code });
+  }
+  const rows = await query(
+    `SELECT d.*, g.program, g.funder, g.status AS grant_status, f.name AS funder_name
+       FROM grant_documents d
+       JOIN grants g ON g.id = d.grant_id AND g.org_id = d.org_id
+       LEFT JOIN donors f ON f.id = g.funder_donor_id AND f.org_id = g.org_id
+      WHERE d.org_id=? AND g.funder_donor_id=? ORDER BY d.uploaded_at ASC`, [orgId, fr.funder.id]);
+  // Versions are PER GRANT, not per funder — "proposal #2" means the second
+  // proposal on that grant, and numbering across grants would be a figure
+  // nobody could reconcile against anything.
+  const byGrant = new Map();
+  for (const r of rows) {
+    if (!byGrant.has(r.grant_id)) byGrant.set(r.grant_id, []);
+    byGrant.get(r.grant_id).push(grantDocRow(r, orgId));
+  }
+  const documents = [];
+  for (const [, list] of byGrant) documents.push(...grantDocs.withVersions(list));
+  documents.sort((a, b) => String(b.uploadedAt).localeCompare(String(a.uploadedAt)));
+  res.json({
+    funder: { funderId: fr.funder.id, name: fr.funder.name },
+    documents, sentence: grantDocs.documentSentence(documents), docTypes: grantDocs.DOC_TYPES,
+  });
+}));
+
+// GET /grant-documents/:id — the signed, expiring, PRIVATE door.
+// Unauthenticated by design (a browser fetches a file with no auth header);
+// the URL carries its own signature and the org comes from the STORED ROW.
+app.get("/grant-documents/:id", wrap(async (req, res) => {
+  const id = String(req.params.id || "");
+  if (!ASSET_ID_RE.test(id)) return res.status(404).json({ error: "not_found" });
+  const [row] = await query(
+    `SELECT org_id FROM portal_assets WHERE id = ? AND kind = ? AND deleted_at IS NULL`,
+    [id, grantDocs.DOC_ASSET_KIND]);
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const v = grantDocs.verifyDocUrl({ orgId: row.org_id, assetId: id, e: req.query.e, s: req.query.s });
+  // ONE answer for expired and for wrong-org alike, so a probe cannot tell
+  // "this agreement exists in another tenant" from "this link is old".
+  if (!v.ok) return res.status(403).json({ error: "link_expired" });
+  const asset = await getThemeAsset(id);
+  if (!asset) return res.status(404).json({ error: "not_found" });
+  // The stored filename is looked up for the download name; the bytes are
+  // addressed by asset id, so the name is only ever a label.
+  const [meta] = await query(
+    "SELECT file_name FROM grant_documents WHERE asset_id=? AND org_id=? LIMIT 1", [id, row.org_id]);
+  res.set("Content-Type", asset.contentType);
+  // A document is never rendered inline: a PDF viewer in our own origin is a
+  // parser we did not choose running on a file a funder sent.
+  const safeName = grantDocs.sanitizeFilename((meta && meta.file_name) || "document", asset.contentType);
+  res.set("Content-Disposition", `attachment; filename="${safeName.replace(/"/g, "")}"`);
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
+  res.set("ETag", `"${asset.id}"`);
+  res.send(asset.buffer);
+}));
+
+
+// ── BUILD-100 (grants) Part 4 — WHERE RESTRICTED MONEY ACTUALLY IS ─────────
+// shared/restrictedMoney.js holds the four figures, their definitions, and the
+// reason "remaining" excludes what the funder still owes.
+async function restrictedMod() { return import("./shared/restrictedMoney.js"); }
+
+// ONE query for a grant's money, so the balance can never be assembled two
+// ways. `received` is the payments APPLIED TO THE AWARD PLEDGE — not every gift
+// the funder ever sent, which would fold an unrelated donation into a
+// restricted balance.
+async function grantMoneyRows(orgId, where = "", args = []) {
+  return query(
+    `SELECT g.id, g.restriction, g.restricted_until, g.fund_id, g.status, g.program,
+            g.amount_awarded, g.award_pledge_id,
+            d.name AS funder_name, f.name AS fund_name, f.restricted AS fund_restricted,
+            COALESCE((SELECT SUM(gi.amount) FROM gifts gi
+                       WHERE gi.org_id = g.org_id AND gi.pledge_id = g.award_pledge_id), 0) AS received,
+            COALESCE((SELECT SUM(s.amount) FROM grant_spend s
+                       WHERE s.org_id = g.org_id AND s.grant_id = g.id), 0) AS spent
+       FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.org_id = ? AND g.is_sample IS NOT TRUE ${where}`, [orgId, ...args]);
+}
+
+function grantBalanceFrom(R, r, today) {
+  const b = R.grantBalance({
+    awardedCents: toCents(r.amount_awarded) || 0,
+    receivedCents: toCents(r.received) || 0,
+    spentCents: toCents(r.spent) || 0,
+    restriction: r.restriction, restrictedUntil: r.restricted_until, today,
+  });
+  return {
+    grantId: r.id, funderName: r.funder_name || "", program: r.program || "",
+    grantStatus: r.status, fundId: r.fund_id || null, fundName: r.fund_name || null,
+    fundIsRestricted: r.fund_restricted === true,
+    ...b,
+    awarded: toDollars(b.awardedCents), received: toDollars(b.receivedCents),
+    spent: toDollars(b.spentCents), outstanding: toDollars(b.outstandingCents),
+    remaining: toDollars(b.remainingCents),
+    sentence: R.balanceSentence(b, money.formatCentsPlain),
+  };
+}
+
+// POST /grants/:id/spend — one line of spending against a restricted award.
+app.post("/grants/:id/spend", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, restriction FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  let cents;
+  try { cents = parseMoneyOrThrow(req.body.amount, "amount"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  const v = R.validateSpend({ amountCents: cents, spentOn: req.body.spentOn, description: req.body.description });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_spend", errors: v.errors });
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
+  const id = "gsp_" + uuid().slice(0, 10);
+  await run(`INSERT INTO grant_spend (id,org_id,grant_id,amount,spent_on,description,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?)`,
+    [id, orgId, g.id, toDollars(cents), String(req.body.spentOn),
+     String(req.body.description).trim().slice(0, 500), actor(req).id, (u && u.name) || actor(req).name]);
+  const [row] = (await grantMoneyRows(orgId, "AND g.id = ?", [g.id]));
+  const org = await orgTz(orgId);
+  res.status(201).json({
+    id, grantId: g.id, amount: toDollars(cents), amountCents: cents,
+    balance: grantBalanceFrom(R, row, orgToday(org)),                   // ORG_TZ_SEAM_OK
+    note: R.SPEND_SOURCE_NOTE,
+  });
+}));
+
+app.delete("/grants/spend/:spendId", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT id FROM grant_spend WHERE id=? AND org_id=?", [req.params.spendId, orgId]);
+  if (!s) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM grant_spend WHERE id=? AND org_id=?", [s.id, orgId]);
+  res.json({ ok: true, id: s.id });
+}));
+
+// GET /grants/:id/restricted — one grant's restricted position, with the
+// spending lines behind it so a figure can always be taken apart.
+app.get("/grants/:id/restricted", requireAuth, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const rows = await grantMoneyRows(orgId, "AND g.id = ?", [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: "Grant not found" });
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+  const balance = grantBalanceFrom(R, rows[0], today);
+  const spend = await query(
+    `SELECT id, amount, spent_on, description, created_by_name, created_at
+       FROM grant_spend WHERE org_id=? AND grant_id=? ORDER BY spent_on DESC, created_at DESC`,
+    [orgId, req.params.id]);
+  const payments = rows[0].award_pledge_id ? await query(
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    [orgId, rows[0].award_pledge_id]) : [];
+  res.json({
+    balance,
+    // EVERY FIGURE CARRIES ITS DEFINITION, one string from the registry.
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    metrics: R.RESTRICTED_METRICS,
+    spend: spend.map(s => ({
+      id: s.id, amount: toDollars(toCents(s.amount) || 0), amountCents: toCents(s.amount) || 0,
+      spentOn: s.spent_on, description: s.description, byName: s.created_by_name || "",
+    })),
+    payments: payments.map(p => ({
+      id: p.id, amount: toDollars(toCents(p.amount) || 0), amountCents: toCents(p.amount) || 0, date: p.date,
+    })),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  });
+}));
+
+// GET /finance/restricted — the org's restricted position, by grant.
+app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+  // Only AWARDED or CLOSED grants hold money. A submitted grant's restriction
+  // is a proposal, not a balance.
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const balances = rows.map(r => grantBalanceFrom(R, r, today));
+  const restricted = balances.filter(b => b.restricted);
+  const totals = R.restrictedTotals(balances);
+  res.json({
+    today,
+    grants: restricted.sort((a, b) => b.remainingCents - a.remainingCents),
+    unrestricted: balances.filter(b => !b.restricted).map(b => ({
+      grantId: b.grantId, funderName: b.funderName, program: b.program,
+      awarded: b.awarded, awardedCents: b.awardedCents, sentence: b.sentence,
+    })),
+    totals: { ...totals, awarded: toDollars(totals.awardedCents), received: toDollars(totals.receivedCents),
+              spent: toDollars(totals.spentCents), outstanding: toDollars(totals.outstandingCents),
+              remaining: toDollars(totals.remainingCents) },
+    sentence: R.totalsSentence(totals, money.formatCentsPlain),
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  });
+}));
+
+// ── BUILD-100 (grants) Part 6 — READING SOMEBODY ELSE'S GRANT SPREADSHEET ───
+// shared/grantImport.js is the preset — a preset on the mapper, never a second
+// importer (the 89d rule, fourth application). This is the ONE write path it
+// lands through, and it writes grants and funders and NOTHING ELSE: no gift, no
+// pledge, no milestone, no thread. An imported file is history (BUILD-83), and a
+// report that was due last March is not a follow-up somebody has to close this
+// morning.
+async function grantImportMod() { return import("./shared/grantImport.js"); }
+
+// GET /grants/import/preview — what Steward makes of a file, before it writes
+// anything. It reads and returns; it changes nothing, which is what makes the
+// four-state deposit-sheet discipline available here too.
+app.post("/grants/import/preview", requireAuth, wrap(async (req, res) => {
+  const out = await planGrantImport(req.user.orgId, req.body || {});
+  if (out.error) return res.status(400).json(out);
+  res.json({ ...out, wrote: false });
+}));
+
+// THE PLAN, shared by the preview and the commit, so the screen can never be
+// shown one thing and the database given another (the BUILD-95 rule: the commit
+// RE-PLANS server-side and writes from the plan, never from the client's copy).
+async function planGrantImport(orgId, body) {
+  const I = await grantImportMod();
+  const G = await grantShapeMod();
+  const headers = Array.isArray(body.headers) ? body.headers.map(h => String(h == null ? "" : h)) : [];
+  const rawRows = Array.isArray(body.rows) ? body.rows : [];
+  if (!headers.length) return { error: "That file has no header row.", code: "no_headers" };
+  if (!rawRows.length) return { error: "That file has no rows.", code: "no_rows" };
+  if (rawRows.length > 5000) {
+    return { error: "That file has more than 5,000 rows. Split it and import in two passes.", code: "too_many_rows" };
+  }
+
+  const detected = I.detectGrantSource(headers);
+  // A SOURCE THE PERSON STATES WINS over what Steward detected — they have the
+  // file open and Steward has a header row.
+  const source = I.GRANT_SOURCE_KEYS.includes(String(body.source || "")) ? String(body.source) : detected.source;
+  const { mapping, spellings, unrecognised } = I.grantMapping(headers);
+  // A MAPPING THE PERSON CORRECTED wins too, field by field, and only for a
+  // field this module knows — an unknown key cannot smuggle a column in.
+  if (body.mapping && typeof body.mapping === "object") {
+    for (const [f, h] of Object.entries(body.mapping)) {
+      if (I.GRANT_FIELD_KEYS.includes(f) && (h === null || headers.includes(String(h)))) {
+        if (h === null) delete mapping[f]; else mapping[f] = String(h);
+      }
+    }
+  }
+  if (!mapping.funderName && !mapping.funderEin) {
+    return { error: "Steward could not find the funder's name in that file. Point it at the column that holds it.",
+             code: "no_funder_column", headers, mapping, unrecognised, source, detected };
+  }
+
+  const built = I.buildGrantRows(rawRows, {
+    mapping, spellings, source, money,
+    cell: (row, header) => Array.isArray(row) ? row[headers.indexOf(header)] : (row || {})[header],
+  });
+
+  // ── RESOLVING THE FUNDERS ────────────────────────────────────────────────
+  // Every candidate the file could be talking about, read ONCE. A per-row query
+  // would be forty round trips on a forty-row file and 25,000 on a real one.
+  const candidates = (await query(
+    `SELECT id, name, kind, funder_ein FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]))
+    .map(d => ({ id: d.id, name: d.name, kind: d.kind, funderEin: d.funder_ein }));
+
+  const byKey = new Map();               // one decision per distinct funder in the file
+  for (const g of built.grants) {
+    const key = (I.normalizeEin(g.funderEin) ? "e:" + I.normalizeEin(g.funderEin) : "n:" + I.funderNameKey(g.funderName));
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, name: g.funderName, ein: I.normalizeEin(g.funderEin), lines: [],
+                       ...I.matchFunder({ name: g.funderName, ein: g.funderEin }, candidates) });
+    }
+    byKey.get(key).lines.push(g.line);
+  }
+
+  // Already on file, by the same key the write path will use.
+  const existingKeys = new Set();
+  for (const r of await query(
+    `SELECT g.id, g.program, g.deadline, g.external_id, d.name AS funder_name
+       FROM grants g LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=?`, [orgId])) {
+    existingKeys.add(I.grantDedupeKey({ externalId: r.external_id, funderName: r.funder_name || "",
+                                        program: r.program || "", deadline: r.deadline || null }));
+  }
+
+  const refused = [...built.refused];
+  const plan = [], seen = new Set();
+  let skipped = 0;
+  for (const g of built.grants) {
+    const key = (I.normalizeEin(g.funderEin) ? "e:" + I.normalizeEin(g.funderEin) : "n:" + I.funderNameKey(g.funderName));
+    const f = byKey.get(key);
+    if (f.refused === "funder_is_a_person") {
+      refused.push({ line: g.line, funderName: g.funderName, program: g.program,
+                     why: I.FUNDER_IS_A_PERSON, code: "funder_is_a_person", person: f.person });
+      continue;
+    }
+    if (f.refused === "funder_not_named") {
+      refused.push({ line: g.line, why: "no funder named", code: "funder_not_named" });
+      continue;
+    }
+    const dk = I.grantDedupeKey(g);
+    // THE SAME FILE TWICE ADDS NOTHING, and the same row twice INSIDE one file
+    // is the same thing — both are skipped and counted, never silently folded.
+    if (existingKeys.has(dk) || seen.has(dk)) { skipped++; continue; }
+    seen.add(dk);
+    plan.push({ ...g, funderKey: key, dedupeKey: dk });
+  }
+
+  const pipelineCents = plan.reduce((sum, g) =>
+    sum + (G.isOpenStatus(g.status) ? (g.amountRequestedCents || 0) : 0), 0);
+  const funders = [...byKey.values()].filter(f => !f.refused);
+  return {
+    source, detected, mapping, unrecognised,
+    grants: plan.map(g => ({ ...g, amountRequested: toDollars(g.amountRequestedCents),
+                             amountAwarded: g.amountAwardedCents == null ? null : toDollars(g.amountAwardedCents) })),
+    funders: funders.map(f => ({ name: f.name, ein: f.ein, donorId: f.donorId || null,
+                                 how: f.how || null, willCreate: !!f.create, grants: f.lines.length })),
+    counts: {
+      rows: rawRows.length, grants: plan.length, funders: funders.length,
+      willCreateFunders: funders.filter(f => f.create).length,
+      matchedByEin: funders.filter(f => f.how === "ein").length,
+      matchedByName: funders.filter(f => f.how === "name").length,
+      skipped, refused: refused.length, ...built.counted,
+    },
+    refused,
+    pipelineCents, pipeline: toDollars(pipelineCents),
+    // NOTHING IS INVENTED HERE AND THE PLAN SAYS SO, so nobody has to read the
+    // route to know what an import will and will not touch.
+    writes: ["grants", "funder organisations that were not on file"],
+    doesNotWrite: ["gifts", "pledges", "deadlines Steward watches", "follow-ups"],
+    plan_: plan,
+  };
+}
+
+// POST /grants/import — the ONE write path. Everything lands inside one
+// transaction, so a file that fails halfway leaves no half-imported pipeline.
+app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const I = await grantImportMod();
+  const orgId = req.user.orgId;
+  const plan = await planGrantImport(orgId, req.body || {});
+  if (plan.error) return res.status(400).json(plan);
+
+  const who = actor(req);
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
+  const byName = (u && u.name) || who.name;
+  const created = [], written = [];
+
+  await withTransaction(async (client) => {
+    const trun = (sql, args) => runTx(client, sql, args);
+    const tquery = (sql, args) => queryTx(client, sql, args);
+    // 1 — THE FUNDERS FIRST, and every one created as an ORGANISATION. A funder
+    // created as a person would be refused by Part 1's own door the next time
+    // anybody touched it, which is the shape of a bug that looks like data.
+    const resolved = new Map();
+    for (const f of plan.funders) {
+      if (f.donorId) { resolved.set(f.name, f.donorId); continue; }
+      const id = "dn_" + uuid().slice(0, 10);
+      await trun(
+        `INSERT INTO donors (id,org_id,name,kind,stage,status,total_giving,gift_count,funder_ein,
+                             person_types,created_by,created_by_name)
+         VALUES (?,?,?,'organisation','prospect','new',0,0,?,?,?,?)`,
+        [id, orgId, f.name, f.ein || null, JSON.stringify(["donor"]), who.id, byName]);
+      resolved.set(f.name, id);
+      created.push({ id, name: f.name, ein: f.ein || null });
+    }
+    // An EIN we now hold for a funder already on file is worth keeping, but it
+    // NEVER overwrites one somebody already typed.
+    for (const f of plan.funders) {
+      if (f.donorId && f.ein) {
+        await trun("UPDATE donors SET funder_ein=COALESCE(funder_ein, ?) WHERE id=? AND org_id=?",
+          [f.ein, f.donorId, orgId]).catch(() => {});
+      }
+    }
+
+    // 2 — THE FUND AND THE OFFICER, matched by name to what the org already has.
+    // NOTHING IS CREATED on either: a fund is a board decision (BUILD-88a's rule)
+    // and a user is a login. An unmatched name is carried into the notes so it is
+    // not lost, and counted.
+    const funds = new Map((await tquery("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]))
+      .map(f => [String(f.name).trim().toLowerCase(), f.id]));
+    const officers = new Map((await tquery("SELECT id, name FROM users WHERE org_id=?", [orgId]))
+      .map(o => [String(o.name || "").trim().toLowerCase(), o.id]));
+
+    for (const g of plan.plan_) {
+      const funderId = resolved.get(g.funderName);
+      const fundId = g.fundName ? funds.get(String(g.fundName).trim().toLowerCase()) || null : null;
+      const officerId = g.officerName ? officers.get(String(g.officerName).trim().toLowerCase()) || null : null;
+      const unmatched = [
+        g.fundName && !fundId ? `The file named the fund "${g.fundName}", which is not on the chart of accounts.` : null,
+        g.officerName && !officerId ? `The file named "${g.officerName}" as the officer, who is not a user here.` : null,
+      ].filter(Boolean);
+      const notes = [g.notes, ...unmatched].filter(Boolean).join(" ").slice(0, 4000) || null;
+      const id = "gr_" + uuid().slice(0, 10);
+      await trun(
+        `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,amount_awarded,
+                             status,deadline,restriction,fund_id,officer_id,cycle_name,decline_reason,declined_on,
+                             external_id,notes,is_sample,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,FALSE,?,?)`,
+        [id, orgId, g.funderName, funderId, g.program,
+         toDollars(g.amountAwardedCents || g.amountRequestedCents),
+         toDollars(g.amountRequestedCents),
+         g.amountAwardedCents == null ? null : toDollars(g.amountAwardedCents),
+         g.status, g.deadline, g.restriction, fundId, officerId, g.cycleName,
+         g.declineReason, g.declinedOn, g.externalId, notes, who.id, byName]);
+      // AN AWARDED GRANT IMPORTED FROM A FILE GETS NO PLEDGE. Part 1's award door
+      // writes one because a live award is money now promised; a historical award
+      // in a spreadsheet already had its cheques, and minting instalments for it
+      // would put money on the books twice — once as the file's history and once
+      // as a promise nobody is waiting for.
+      if (g.status === "awarded") {
+        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, NOW()) WHERE id=? AND org_id=?", [id, orgId]);
+      }
+      written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
+    }
+  });
+
+  const pipelineCents = plan.pipelineCents;
+  res.status(201).json({
+    source: plan.source, mapping: plan.mapping, unrecognised: plan.unrecognised,
+    counts: { ...plan.counts, created: created.length },
+    created, grants: written, refused: plan.refused,
+    pipelineCents, pipeline: toDollars(pipelineCents),
+    sentence: I.importSentence({ grants: written.length, funders: plan.counts.funders,
+      created: created.length, skipped: plan.counts.skipped, refused: plan.refused.length,
+      pipelineCents }, money.formatCentsPlain),
+    writes: plan.writes, doesNotWrite: plan.doesNotWrite,
+    wrote: true,
+  });
+}));
+
+// GET /grants/import/sources — what Steward can read, and how sure it is of each.
+app.get("/grants/import/sources", requireAuth, wrap(async (req, res) => {
+  const I = await grantImportMod();
+  res.json({ sources: I.GRANT_SOURCES, fields: I.GRANT_FIELD_KEYS,
+             columns: I.GRANT_COLUMNS, statusVocabulary: I.SOURCE_STATUS });
+}));
+
+// ── BUILD-100 (grants) Part 5 — THE AGENT DRAFTS A REPORT OUTLINE ───────────
+// "Draft the report outline for the Sunrise grant." What comes back is built
+// ONLY from that grant's own rows: what was promised, what the funder paid, what
+// was spent, and the programme's giving and people in the period.
+//
+// shared/grantOutline.js is the guarantee — no numeric field anywhere in the
+// schema, so every figure a reader sees is rendered HERE from the rows. And the
+// rule this part adds: an OUTCOME claim with no citation is dropped and counted,
+// because Steward holds no programme outcomes and a grant report is precisely
+// where a fluent model will invent one.
+async function grantOutlineMod() { return import("./shared/grantOutline.js"); }
+
+// WHAT THE MODEL IS HANDED, AND NOTHING ELSE — the same shape as the prospect
+// brief's row gathering, so there is one idea in this product about how a model
+// is grounded rather than two.
+async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = {}) {
+  const R = await restrictedMod();
+  const M = await grantMsMod();
+  const V = await import("./shared/vocabulary.js");
+  const org = await orgTz(orgId);
+  const [orgRow] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const t = V.makeT(orgRow && orgRow.vocabulary_json);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+
+  const rows = await grantMoneyRows(orgId, "AND g.id = ?", [grantId]);
+  if (!rows.length) return null;
+  const [g] = await query(
+    `SELECT g.*, d.name AS funder_name, u.name AS officer_name, f.name AS fund_name
+       FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.id=? AND g.org_id=?`, [grantId, orgId]);
+  const balance = grantBalanceFrom(R, rows[0], today);
+
+  // THE PERIOD. Default is the whole life of the award — from the day it was
+  // awarded (else the day the grant was opened) to today. A report period the
+  // caller states wins, because a funder names its own.
+  const CIVIL = /^\d{4}-\d{2}-\d{2}$/;
+  const start = CIVIL.test(String(from || "")) ? String(from)
+    : (g.awarded_at ? orgToday(org, g.awarded_at)                       // ORG_TZ_SEAM_OK
+       : (g.created_at ? orgToday(org, g.created_at) : today));         // ORG_TZ_SEAM_OK
+  const end = CIVIL.test(String(to || "")) ? String(to) : today;
+
+  const refs = new Set([`grant:${g.id}`]);
+  const lines = [];
+  const fundWord = t("fund_singular") || "fund";
+
+  // 1 — THE GRANT ITSELF: what was promised, in the proposal's own fields.
+  lines.push(`grant:${g.id} — a grant from ${g.funder_name || "a funder"} for "${g.program || "no programme named"}", `
+    + `requested ${money.formatCentsPlain(toCents(g.amount_requested) || 0)}, `
+    + `awarded ${money.formatCentsPlain(balance.awardedCents)}, currently ${g.status}`
+    + `${g.fund_name ? `, designated to the ${fundWord} "${g.fund_name}"` : ""}`
+    + `${g.restriction ? `, restriction "${g.restriction}"` : ""}`
+    + `${g.officer_name ? `, on ${g.officer_name}'s desk` : ""}`
+    + `${g.cycle_name ? `, cycle "${g.cycle_name}"` : ""}. `
+    + `The reporting period here is ${start} to ${end}.`
+    + (g.notes ? ` The note on the grant reads: "${String(g.notes).slice(0, 800)}"` : ""));
+
+  // 2 — THE DOCUMENTS. NOTHING IS PARSED: Steward stores a file, types it and
+  // dates it, so the row says a proposal EXISTS — never what it said. A model
+  // handed a filename must not be able to quote a document nobody read.
+  for (const d of await query(
+    `SELECT id, doc_type, file_name, uploaded_at FROM grant_documents
+      WHERE org_id=? AND grant_id=? ORDER BY uploaded_at ASC`, [orgId, g.id])) {
+    refs.add(`document:${d.id}`);
+    // THE ORG'S OWN CALENDAR, not UTC. `toISOString().slice(0,10)` on a
+    // timestamptz is a day out for every org west of Greenwich after 7pm, and
+    // `date-seam` is right to count it as an unrouted site (BUILD-89S's gotcha).
+    const storedOn = d.uploaded_at ? orgToday(org, d.uploaded_at) : null;     // ORG_TZ_SEAM_OK
+    lines.push(`document:${d.id} — a ${grantDocs.docTypeLabel(d.doc_type).toLowerCase()} on file, "${d.file_name}", `
+      + `stored ${storedOn || "on a date the record does not carry"}. `
+      + `Steward has NOT read this file; only that it exists is known.`);
+  }
+
+  // 3 — WHAT THE FUNDER PAID: payments applied to the award, each its own row.
+  for (const p of g.award_pledge_id ? await query(
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    [orgId, g.award_pledge_id]) : []) {
+    refs.add(`payment:${p.id}`);
+    lines.push(`payment:${p.id} — ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
+  }
+  lines.push(`grant:${g.id} — of the award, ${money.formatCentsPlain(balance.receivedCents)} has been received and `
+    + `${money.formatCentsPlain(balance.outstandingCents)} is still owed by the funder.`);
+
+  // 4 — WHAT WAS SPENT AGAINST IT. Entered by hand; the row says so, because a
+  // report that implies a bank feed is a report claiming more than it can.
+  for (const s of await query(
+    `SELECT id, amount, spent_on, description FROM grant_spend
+      WHERE org_id=? AND grant_id=? ORDER BY spent_on ASC`, [orgId, g.id])) {
+    refs.add(`spend:${s.id}`);
+    lines.push(`spend:${s.id} — ${money.formatCentsPlain(toCents(s.amount) || 0)} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
+  }
+  lines.push(`grant:${g.id} — ${money.formatCentsPlain(balance.spentCents)} has been recorded as spent against this award, `
+    + `leaving ${money.formatCentsPlain(balance.remainingCents)} of the money received still to spend.`);
+
+  // 5 — THE PROGRAMME'S OWN GIVING IN THE PERIOD. Only gifts to THIS grant's
+  // fund: a gift to another fund is not evidence about this programme.
+  let fundGifts = [], givers = [];
+  if (g.fund_id) {
+    fundGifts = await query(
+      `SELECT gi.id, gi.amount, gi.date, gi.donor_id, d.name AS donor_name
+         FROM gifts gi LEFT JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+          AND gi.date >= ? AND gi.date <= ?
+        ORDER BY gi.amount DESC NULLS LAST, gi.id LIMIT 25`, [orgId, g.fund_id, start, end]);
+    for (const gi of fundGifts) {
+      refs.add(`gift:${gi.id}`);
+      lines.push(`gift:${gi.id} — ${money.formatCentsPlain(toCents(gi.amount) || 0)} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
+        + `${gi.donor_name ? ` from ${gi.donor_name}` : ""}.`);
+    }
+    givers = await query(
+      `SELECT d.id, d.name, COUNT(gi.id) AS gifts, SUM(gi.amount) AS total
+         FROM gifts gi JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+          AND gi.date >= ? AND gi.date <= ? AND d.deleted_at IS NULL
+        GROUP BY d.id, d.name ORDER BY SUM(gi.amount) DESC NULLS LAST, d.id LIMIT 12`,
+      [orgId, g.fund_id, start, end]);
+    for (const p of givers) {
+      refs.add(`person:${p.id}`);
+      lines.push(`person:${p.id} — ${p.name} gave ${Number(p.gifts)} ${Number(p.gifts) === 1 ? "gift" : "gifts"} `
+        + `totalling ${money.formatCentsPlain(toCents(p.total) || 0)} to this ${fundWord} in the period.`);
+    }
+  }
+
+  // 6 — THE DEADLINES ON IT, so the outline can say what is due and when.
+  for (const ms of await query(
+    `SELECT id, kind, due_date, state, notes FROM grant_milestones
+      WHERE org_id=? AND grant_id=? ORDER BY due_date ASC`, [orgId, g.id])) {
+    refs.add(`milestone:${ms.id}`);
+    lines.push(`milestone:${ms.id} — ${M.milestoneStepLabel({ kind: ms.kind, funderName: g.funder_name, program: g.program })}, `
+      + `due ${ms.due_date}, currently ${ms.state}`
+      + `${String(ms.notes || "").trim() ? `. The note on it: "${String(ms.notes).slice(0, 300)}"` : "."}`);
+  }
+
+  // 7 — CONVERSATIONS WITH THE FUNDER, quoted rather than summarised away.
+  if (g.funder_donor_id) {
+    for (const i of await query(
+      `SELECT id, type, date, note, logged_by_name FROM interactions
+        WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> ''
+        ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, g.funder_donor_id])) {
+      refs.add(`conversation:${i.id}`);
+      lines.push(`conversation:${i.id} — ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
+    }
+  }
+
+  // THE GROUNDED NUMERIC SET, through the money seam (never a bare Math.round on
+  // a dollars value — `tests/money-cents.test.js` is right about that shape
+  // wherever it appears, and a text check is not an exemption).
+  const grounded = [];
+  const push = v => { const c = toCents(v); if (c != null) { grounded.push(toDollars(c), c); } };
+  push(g.amount_requested); push(g.amount_awarded);
+  for (const k of ["awardedCents", "receivedCents", "spentCents", "outstandingCents", "remainingCents"]) {
+    grounded.push(balance[k], toDollars(balance[k]));
+  }
+  for (const gi of fundGifts) push(gi.amount);
+  for (const p of givers) { push(p.total); grounded.push(Number(p.gifts) || 0); }
+  grounded.push(fundGifts.length, givers.length);
+  for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
+
+  return {
+    grant: g, org: orgRow, t, balance, refs, lines,
+    grounded: [...new Set(grounded.filter(Number.isFinite))],
+    period: { from: start, to: end },
+    counts: { documents: refs.size, fundGifts: fundGifts.length, people: givers.length },
+  };
+}
+
+// GET /grants/:id/outline-rows — EXACTLY what the model would be handed. Like
+// the brief's, this is not a test seam: the outline's promise is that every
+// sentence rests on a row you can open, and this is that list — provable with no
+// API key configured at all.
+app.get("/grants/:id/outline-rows", requireAuth, wrap(async (req, res) => {
+  const ctx = await grantOutlineRowsFor(req.user.orgId, req.params.id,
+    { from: req.query.from, to: req.query.to });
+  if (!ctx) return res.status(404).json({ error: "Grant not found" });
+  res.json({
+    grantId: ctx.grant.id, funderName: ctx.grant.funder_name || "", program: ctx.grant.program || "",
+    period: ctx.period, refs: [...ctx.refs], lines: ctx.lines, groundedValues: ctx.grounded,
+  });
+}));
+
+// POST /grants/:id/report-outline — draft it, validate it, log it as an agent run.
+app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const O = await grantOutlineMod();
+  const TH = await thresholdsMod();
+  const orgId = req.user.orgId;
+  // THE GRANT IS CHECKED FIRST, and that order is the point — the same defect
+  // the prospect brief paid for (BUILD-99): running the key gate first answers
+  // 503 to a cross-tenant probe instead of 404, telling the caller both that the
+  // route exists and what Steward's key state is.
+  const ctx = await grantOutlineRowsFor(orgId, req.params.id, { from: req.body.from, to: req.body.to });
+  if (!ctx) return res.status(404).json({ error: "Grant not found" });
+
+  const gate = await agentGate(orgId);
+  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason });
+
+  const runId = "arun_" + uuid().slice(0, 10);
+  await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
+    [runId, orgId, "running", JSON.stringify({ kind: "grant_report_outline", grantId: ctx.grant.id }),
+     `${ctx.refs.size} rows on the ${ctx.grant.funder_name || "funder"} grant`]);
+
+  const system = [
+    "You are drafting the OUTLINE of a report to a funder about a grant. A human will write the report from it and send it.",
+    "",
+    "You are given ROWS from this organisation's own records. Each row starts with a reference of the form kind:id.",
+    "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
+    "",
+    "RULES, and the first one is the whole job:",
+    "- YOU MAY NOT STATE AN OUTCOME. This organisation's records hold money, dates, documents and people — they do not hold",
+    "  attendance, results, or what changed for anybody. Do not write that anyone was served, reached, helped or improved.",
+    "  The outcomes section is a PROMPT to the human who knows; say plainly that the records cannot supply it.",
+    "- Use no figure that is not in the rows you were handed, and state no rule about how grants or giving work.",
+    "- A document row means a file EXISTS. You have not read it. Never say what a proposal or report said.",
+    "- Money still owed by the funder is not money received, and money received is not money spent. Keep them apart.",
+    "- Quote a conversation rather than summarising away the words the officer chose.",
+    "- Leave a section out if the rows say nothing about it. Do not pad.",
+    "- The headline names the grant and the period, and contains no figure.",
+    "",
+    "The sections you may use, and what each rests on:",
+    ...O.OUTLINE_SECTIONS.map(s => `- ${s.heading} — ${s.source || "NOTHING IN THE RECORDS. Say so; do not invent it."}`),
+  ].join("\n");
+  const user = [
+    `The rows, on the ${ctx.grant.funder_name || "funder"} grant for "${ctx.grant.program || "no programme named"}", `
+      + `period ${ctx.period.from} to ${ctx.period.to}:`,
+    "", ...ctx.lines, "", "Draft the outline.",
+  ].join("\n");
+
+  let raw = null, err = null;
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: AGENT_MODEL, max_tokens: 2000, system,
+      tools: [{ name: "outline", description: "The report outline a human writes the report from.", strict: true, input_schema: O.OUTLINE_SCHEMA }],
+      tool_choice: { type: "tool", name: "outline" },
+      messages: [{ role: "user", content: user }],
+    });
+    raw = (msg.content || []).find(b => b.type === "tool_use" && b.name === "outline")?.input || null;
+  } catch (e) { err = e.message || String(e); }
+
+  if (!raw) {
+    await run("UPDATE agent_runs SET status='failed', finished_at=NOW(), error=? WHERE id=?", [err || "no outline returned", runId]);
+    return res.status(502).json({ error: "The outline could not be drafted just now.", runId });
+  }
+
+  const checked = O.validateOutline(raw, {
+    rows: ctx.refs,
+    ungrounded: text => TH.ungroundedClaims(text, { groundedValues: ctx.grounded }).map(c => c.raw),
+  });
+  const payload = grantOutlinePayload(ctx, checked);
+  // THE FIGURES ARE STORED, NOT RECOMPUTED (the BUILD-87 Part 1 rule). A payment
+  // arriving next week must not silently change what an outline drafted today
+  // says the funder had paid — a draft somebody is working from is evidence of a
+  // moment, and one that edits itself is worth less than none.
+  await run(
+    `UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, declined=?, withheld=?, withheld_reason=? WHERE id=?`,
+    [JSON.stringify({ outline: checked, grantId: ctx.grant.id, period: ctx.period, payload }),
+     checked.droppedCount, checked.droppedCount, checked.droppedSentence, runId]);
+
+  res.json({ runId, ...payload });
+}));
+
+// ONE shape for the outline, read by the POST and by the read-back — a second
+// assembly is a second place for the figures to disagree with the rows.
+function grantOutlinePayload(ctx, checked) {
+  return {
+    grantId: ctx.grant.id, funderName: ctx.grant.funder_name || "", program: ctx.grant.program || "",
+    period: ctx.period,
+    headline: checked.headline, sections: checked.sections,
+    // EVERY FIGURE IS STEWARD'S, rendered from the rows the model was handed.
+    figures: {
+      awarded: ctx.balance.awarded, received: ctx.balance.received,
+      spent: ctx.balance.spent, outstanding: ctx.balance.outstanding, remaining: ctx.balance.remaining,
+      awardedCents: ctx.balance.awardedCents, receivedCents: ctx.balance.receivedCents,
+      spentCents: ctx.balance.spentCents, outstandingCents: ctx.balance.outstandingCents,
+      remainingCents: ctx.balance.remainingCents,
+      programmeGifts: ctx.counts.fundGifts, programmePeople: ctx.counts.people,
+    },
+    balanceSentence: ctx.balance.sentence,
+    dropped: checked.dropped, droppedSentence: checked.droppedSentence,
+    outcomesPrompt: checked.outcomesPrompt,
+    rowsRead: ctx.refs.size, footer: checked.footer,
+  };
+}
+
+// GET /grant-outlines/:runId — read one back. It is an agent run, so it is on
+// the Activity screen with everything else the agent did.
+app.get("/grant-outlines/:runId", requireAuth, wrap(async (req, res) => {
+  const [r] = await query("SELECT * FROM agent_runs WHERE id=? AND org_id=?", [req.params.runId, req.user.orgId]);
+  if (!r || !r.actions || !r.actions.payload) return res.status(404).json({ error: "Outline not found" });
+  res.json({ runId: r.id, writtenAt: r.finished_at, ...r.actions.payload });
+}));
+
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT id, funder, program, amount, status FROM grants WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
@@ -15542,9 +17113,18 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
     `SELECT COUNT(*)::int AS n FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
       WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ? AND d.deleted_at IS NULL`,
     [orgId, monthStart, monthEnd]);
+  // BUILD-100 (grants) Part 7 — grant deadlines inside Home's window, counted
+  // through grantMilestones' ONE window so this and the Deadlines screen's line
+  // cannot disagree. Open milestones only; a sample grant never counts.
+  const GM = await grantMsMod();
+  const openMs = await query(
+    `SELECT m.due_date FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+      WHERE m.org_id=? AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE`, [orgId]);
+  const grantDeadlinesSoon = GM.deadlinesInWindow(openMs.map(r => ({ dueDate: r.due_date })), pledgeToday).length;
   res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
              latePledgeInstallments: lateRow?.late || 0,
              membershipsExpiringThisMonth: expRow?.n || 0,
+             grantDeadlinesSoon, grantDeadlineWindowDays: GM.HOME_WINDOW_DAYS,
              pledgesNeedingSchedule: shellRow?.n || 0 });
 }));
 
@@ -22537,8 +24117,12 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     if (!g.deadline || g.status === "closed") return false;
     const d = new Date(g.deadline); return d >= now && d <= thirty;
   });
-  const pipelineValue = pipelineGrants.reduce((s, g) => s + (g.amount || 0), 0);
-  const awardedYTD    = activeGrants.reduce((s, g) => s + (g.received || 0), 0);
+  // BUILD-100 Part 1 migrated these columns INTEGER → NUMERIC(12,2), and pg
+  // serialises NUMERIC as a STRING, so `0 + "5000.00"` CONCATENATED: the board
+  // report's pipeline value read "05000.003000.00". Summed in integer cents
+  // through the one money seam, which is the rule for a figure a board reads.
+  const pipelineValue = toDollars(pipelineGrants.reduce((s, g) => s + (toCents(g.amount) || 0), 0));
+  const awardedYTD    = toDollars(activeGrants.reduce((s, g) => s + (toCents(g.received) || 0), 0));
 
   // Communications
   const sentQ        = allCampaigns.filter(c => c.status === "sent" && toDs(c.sent_at) >= qMs && toDs(c.sent_at) <= qMe);
@@ -23502,6 +25086,30 @@ function reportToCsv(key, data) {
       ];
       return { headers: ["Metric", "Value"], rows };
     }
+    // BUILD-100 (grants) Part 5 — the two computed grant reports export through
+    // the ONE `sendReportCsv` like every other, so the injection guard and the
+    // BOM come for free rather than being re-remembered.
+    case "grant-deadlines": {
+      const headers = ["Funder", "Programme", "Deadline", "Due", "Officer", "State", "Days overdue", "Note"];
+      const rows = data.rows.map(r => [r.funder, r.program, r.deadline, r.dueDate, r.officer,
+                                       r.state, r.overdueDays || "", r.note]);
+      return { headers, rows };
+    }
+    case "grant-restricted": {
+      const headers = ["Funder", "Programme", "Fund", "Restriction", "Awarded", "Received",
+                       "Spent", "Still owed", "Remaining to spend", "Restricted until"];
+      const rows = data.rows.map(r => [r.funder, r.program, r.fund, r.restriction,
+                                       r.awarded, r.received, r.spent, r.outstanding,
+                                       r.remaining, r.releaseDate || ""]);
+      // The TOTAL row is the org position, blank-separated so a spreadsheet
+      // never reads it as another grant.
+      rows.push(new Array(headers.length).fill(""));
+      const t = new Array(headers.length).fill("");
+      t[0] = "TOTAL"; t[4] = data.totals.awarded; t[5] = data.totals.received;
+      t[6] = data.totals.spent; t[7] = data.totals.outstanding; t[8] = data.totals.remaining;
+      rows.push(t);
+      return { headers, rows };
+    }
     case "bookkeeper": {
       // The fixed columns, then a totals row, then the SAME data a second way
       // as a trailing section. One file, two views, one set of cents.
@@ -23561,6 +25169,80 @@ function reportToCsv(key, data) {
   }
 }
 
+// ── BUILD-100 (grants) Part 5 — the two computed grant reports ─────────────
+// Both read the functions Parts 2 and 4 already own. A report that recomputed
+// a restricted balance its own way would eventually disagree with the screen,
+// and the screen is what an officer trusts.
+async function reportGrantDeadlines(orgId, p = {}) {
+  const M = await grantMsMod();
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                       // ORG_TZ_SEAM_OK
+  const days = Number.isFinite(Number(p.days)) ? Math.max(1, Math.min(730, Number(p.days))) : 90;
+  const leadDays = await orgLeadDays(orgId);
+  const rows = await query(
+    `SELECT m.*, g.program, g.status, g.funder, g.officer_id, d.name AS funder_name, u.name AS officer_name
+       FROM grant_milestones m
+       JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+      WHERE m.org_id = ? AND g.is_sample IS NOT TRUE
+        AND m.state NOT IN ('done','skipped')
+      ORDER BY m.due_date ASC`, [orgId]);
+  const all = rows.map(r => ({ ...milestoneRow(r, M, today, leadDays), officerName: r.officer_name || "(nobody)" }));
+  // OVERDUE COUNTS. A deadline three days past is more owed than one three days
+  // out, and a window that excluded it would answer the wrong question.
+  const within = all.filter(m => {
+    const d = M.daysBetween(today, m.dueDate);
+    return d !== null && d <= days;
+  });
+  return {
+    today, windowDays: days,
+    rows: within.map(m => ({
+      funder: m.funderName || "(not named)", program: m.program || "(not stated)",
+      deadline: m.kindLabel, dueDate: m.dueDate, officer: m.officerName,
+      state: m.state, overdueDays: m.overdueDays, note: m.sentence,
+    })),
+    total: within.length,
+    overdue: within.filter(m => m.band === "overdue").length,
+    waiting: within.filter(m => m.state === "waiting").length,
+  };
+}
+
+async function reportGrantRestricted(orgId) {
+  const R = await restrictedMod();
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                       // ORG_TZ_SEAM_OK
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const balances = rows.map(r => grantBalanceFrom(R, r, today));
+  const restricted = balances.filter(b => b.restricted);
+  const totals = R.restrictedTotals(balances);
+  return {
+    today,
+    rows: restricted
+      .sort((a, b) => b.remainingCents - a.remainingCents)
+      .map(b => ({
+        funder: b.funderName || "(not named)", program: b.program || "(not stated)",
+        fund: b.fundName || "(no fund)", restriction: b.restriction,
+        awarded: b.awarded, received: b.received, spent: b.spent,
+        outstanding: b.outstanding, remaining: b.remaining,
+        releaseDate: b.releaseDate, overspent: b.overspent, note: b.sentence,
+      })),
+    totals: {
+      grants: totals.grants,
+      awarded: toDollars(totals.awardedCents), received: toDollars(totals.receivedCents),
+      spent: toDollars(totals.spentCents), outstanding: toDollars(totals.outstandingCents),
+      remaining: toDollars(totals.remainingCents), overspentGrants: totals.overspentGrants,
+    },
+    // Summed in cents and exposed so a reader can reconcile the total against
+    // the rows without trusting the dollars.
+    totalsCents: {
+      awarded: totals.awardedCents, received: totals.receivedCents, spent: totals.spentCents,
+      outstanding: totals.outstandingCents, remaining: totals.remainingCents,
+    },
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  };
+}
 // ── BUILD-101 Part 5 — MEMBERSHIP REPORTS ─────────────────────────────────
 // Read paths like every other report, on the one CSV layer. Money is summed
 // in the database in integer CENTS; membership money and donation money are
@@ -23663,6 +25345,12 @@ const REPORT_HANDLERS = {
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other
   // report, on the BUILD-79 file layer; there is no second export path.
   "bookkeeper": reportBookkeeper,
+  // BUILD-100 (grants) Part 5 — the two grant reports that are COMPUTED rather
+  // than queried. They call the SAME functions the screens do, so a saved
+  // report and the screen can never show different figures (BUILD-98 Part 3's
+  // rule). Expressing either as a second query would be a second computation.
+  "grant-deadlines": reportGrantDeadlines,
+  "grant-restricted": reportGrantRestricted,
   // BUILD-101 Part 5 — memberships.
   "members-directory": reportMembersDirectory,
   "members-by-level": reportMembersByLevel,
@@ -24651,6 +26339,15 @@ if (!backgroundTicksDisabled()) {
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 70000);
   setInterval(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 5 * 60 * 1000);
+}
+
+// BUILD-100 (grants) Part 2 — the milestone sweep rides the EXISTING five-minute
+// tick rather than a second scheduler (the standing rule since BUILD-13). It is
+// offset from the photo queue so the two do not start in the same second, and it
+// is idempotent: a pass that raised nothing is a pass that found nothing due.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 95000);
+  setInterval(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 5 * 60 * 1000);
 }
 
 // BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
+import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
+import { GrantDocuments } from "./GrantDocuments";
 import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ function GrantLogModal({grant,onSave,onClose}){
 }
 
 // ── Grant Profile ──────────────────────────────────────────────────────────
-function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
+function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=false}){
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[notes,setNotes]=useState(grant.notes||"");const[savingNotes,setSavingNotes]=useState(false);
   const[editing,setEditing]=useState(false);
@@ -240,13 +242,9 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org}){
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px",fontSize:13,color:T.ink2,lineHeight:1.65,whiteSpace:"pre-wrap"}}>{grant.requirements}</div>
           </div>}
 
-          <div>
-            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Attachments</div>
-            <div style={{background:T.white,border:"1px dashed "+T.bg3,borderRadius:10,padding:"16px",textAlign:"center"}}>
-              <div style={{fontSize:12,color:T.ink3}}>No attachments yet</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4,opacity:0.7}}>File uploads coming soon</div>
-            </div>
-          </div>
+          {/* BUILD-100 Part 7 — the deadlines Steward watches, and the grant's documents. */}
+          <GrantDeadlinesPanel grantId={grant.id} isReadOnly={isReadOnly}/>
+          <GrantDocuments grantId={grant.id} isReadOnly={isReadOnly}/>
 
           {grant.history&&grant.history.length>0&&<div>
             <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Prior Awards</div>
@@ -437,10 +435,12 @@ function GrantKanban({ grants, onUpdate, onAddClick, onSelectGrant, isReadOnly }
 }
 
 // ── Grants ─────────────────────────────────────────────────────────────────
-export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentConsumed}) {
+export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSection,onIntentConsumed}) {
   const {auth}=useAuth();
   const isAdmin=auth?.user?.role==="admin";
-  const [subTab,setSubTab]=useState("pipeline");
+  const [subTab,setSubTab]=useState(initialSection==="deadlines"?"deadlines":"pipeline");
+  const [openMiss,setOpenMiss]=useState("");
+  const openGrant=id=>{const g=data.grants.find(x=>x.id===id); if(g){setOpenMiss("");setSelected(g);} else setOpenMiss("That grant is not in the list yet. Reload the page to see it.");};
   const [selected,setSelected]=useState(()=>initialGrantId?data.grants.find(g=>g.id===initialGrantId)||null:null);
 
   useEffect(()=>{
@@ -498,19 +498,20 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,onIntentCon
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     {selected ? (
-    <GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org}/>
+    <GrantProfile grant={selected} onClose={()=>setSelected(null)} onUpdate={onUpdate} onDelete={onDelete} isAdmin={isAdmin} org={data.org} isReadOnly={isReadOnly}/>
     ) : (<>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-      <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":"pipeline."}/>
+      <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":subTab==="deadlines"?"deadlines.":"pipeline."}/>
       <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3}}>
-        {[["pipeline","Pipeline"],["findgrants","Find Grants"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setSubTab(id)} style={{background:subTab===id?T.greenDk:"transparent",color:subTab===id?"#fff":T.ink3,border:"none",borderRadius:8,padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+        {[["pipeline","Pipeline"],["deadlines","Deadlines"],["findgrants","Find Grants"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setSubTab(id)} style={{background:subTab===id?T.greenDk:"transparent",color:subTab===id?T.white:T.ink3,border:"none",borderRadius:8,padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
             {id==="findgrants"&&<span style={{fontSize:10}}>✦</span>}{label}
           </button>
         ))}
       </div>
     </div>
     {subTab==="findgrants"&&<FindGrants data={data}/>}
+    {subTab==="deadlines"&&<>{openMiss&&<div role="status" style={{fontSize:13,color:T.ink3}}>{openMiss}</div>}<DeadlinesView isReadOnly={isReadOnly} isAdmin={isAdmin} onOpenGrant={openGrant}/></>}
     {subTab==="pipeline"&&<>
     {data.grants.length>0&&(()=>{
       const open=data.grants.filter(g=>GRANT_ACTIONABLE.has(g.status));

@@ -242,8 +242,16 @@ export function adaptData({ org, donors, grants, volunteers, tasks, board, finan
       id:        g.id,
       funder:    g.funder,
       program:   g.program || "",
-      amount:    g.amount || 0,
-      received:  g.received || 0,
+      // BUILD-100 Part 1 migrated `grants.amount`/`received` INTEGER →
+      // NUMERIC(12,2), and pg serialises NUMERIC as a STRING. Four client sums
+      // read these (the Kanban column totals, the pipeline totals, and the
+      // summary strip's "In the works" / "Received"), and `0 + "5000.00"`
+      // CONCATENATES: two grants summed to "05000.003000.00". parseFloat here
+      // fixes all four at the boundary rather than patching each reduce —
+      // exactly what BUILD-08 Phase B did to `adaptDonor` when the gift columns
+      // made the same move.
+      amount:    parseFloat(g.amount) || 0,
+      received:  parseFloat(g.received) || 0,
       status:    g.status,
       deadline:  g.deadline || "",
       reportDue: g.report_due || null,

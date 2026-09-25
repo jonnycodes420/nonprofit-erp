@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from "react";
+import { RestrictedView } from "./RestrictedView";
 import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { apiFetch } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
@@ -590,6 +591,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     { id:"overview",     label:"Overview" },
     { id:"transactions", label:"Transactions" },
     { id:"funds",        label:"Funds" },
+    { id:"restricted",   label:"Restricted" },
     { id:"budgets",      label:"Budgets" },
     { id:"accounts",     label:"Accounts" },
     { id:"audit",        label:"Audit Log" },
@@ -829,6 +831,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       )}
 
       <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar"/>
+
+      {/* ── Restricted (BUILD-100 Part 7) ── */}
+      {subtab === "restricted" && <RestrictedView isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
 
       {/* ── Overview ── */}
       {subtab === "overview" && <>

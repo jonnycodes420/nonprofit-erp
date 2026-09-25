@@ -165,7 +165,7 @@ async function fixture() {
   // stack, so the hardcoded port found a live page, declined to skip, and drove
   // the wrong app: both assertions failed with "Page not found" while the
   // product was fine. A false red is worse than a skip, because somebody spends
-  // an hour on it.
+  // an hour on it (BUILD-100 paid that hour).
   const PREVIEW = (process.env.APP_URL || "http://localhost:4173").replace(/\/+$/, "");
   let previewUp = false;
   try { previewUp = (await fetch(PREVIEW + "/give/gpb/sponsor")).ok; } catch { /* not served */ }

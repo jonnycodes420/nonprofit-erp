@@ -302,7 +302,11 @@ async function fixture() {
       // BUILD-94 Part 1 added two: the donor-photo upload route and the
       // import photo queue's own store. Both go through the same seam.
       // BUILD-95 added the cheque photograph — same seam, same store.
-      putThemeAsset: 8,            // theme upload · impact photo · campaign hero · widget image · legacy rescue · donor photo upload · import photo queue · cheque image
+      // BUILD-100 (grants) Part 3 — a grant DOCUMENT rides the same asset seam
+      // under its own kind, so it is a ninth call site and `grant_documents` is
+      // in `collectLiveAssetRefs` (without which the 90-day sweep destroys a
+      // signed funder agreement — asserted in build100-documents §5).
+      putThemeAsset: 9,            // theme upload · impact photo · campaign hero · widget image · legacy rescue · donor photo upload · import photo queue · cheque image · grant document
       pruneThemeAssets: 1,         // PUT /portal-settings (replace/clear)
       pruneUnreferencedAssets: 5,  // pruneImpactAssets / pruneCampaignAssets / pruneWidgetAssets bodies · donor photo set · donor photo clear
       pruneImpactAssets: 2,        // impact PUT, impact DELETE
@@ -312,7 +316,10 @@ async function fixture() {
       purgeExpiredAssets: 3,       // 6h tick (timeout+interval) + POST /assets/run-purge
       // Part 1 coverage: every pointer-mutation site records history. A new
       // mutation site must add BOTH the record call and this classification.
-      recordAssetPointerHistory: 17, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · portal page draft/publish/revert/starter · donor photo set/clear (BUILD-94) · cheque attach (BUILD-95) · giving page draft/publish/revert (BUILD-95 §5B)
+      // +2 for BUILD-100 Part 3: a grant document's pointer is recorded when it
+      // is stored and again when it is deleted, so the restore path can find the
+      // bytes inside the 90-day window.
+      recordAssetPointerHistory: 19, // settings loop · impact POST/PUT/DELETE · campaign POST/PUT/DELETE · portal page draft/publish/revert/starter · donor photo set/clear (BUILD-94) · cheque attach (BUILD-95) · giving page draft/publish/revert (BUILD-95 §5B) · grant document store/delete (BUILD-100)
     },
     "assetStore.js": { putThemeAsset: 0, pruneUnreferencedAssets: 1 /* the pruneThemeAssets alias body */, pruneThemeAssets: 0 },
   };
@@ -355,7 +362,10 @@ async function fixture() {
   // BUILD-95 added `gifts` (cheque_asset_id) — a photographed cheque is
   // evidence, and a sweep that destroyed it would remove the only record of
   // what a donor actually wrote.
-  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages", "donors", "gifts"]) {
+  // BUILD-100 (grants) Part 3 added `grant_documents` — a signed funder
+  // agreement is the most consequential file this product holds, and a purge
+  // that destroyed one would remove the only copy of terms an org is bound by.
+  for (const t of ["portal_settings", "impact_updates", "campaigns", "portal_pages", "donors", "gifts", "grant_documents"]) {
     ok(`collectLiveAssetRefs reads ${t}`, new RegExp(`collectLiveAssetRefs[\\s\\S]*?FROM ${t}`).test(store));
   }
   // dbFallback interaction (BUILD-51b alarm): soft-deleted rows are retained

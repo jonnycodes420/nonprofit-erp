@@ -89,6 +89,11 @@ const SURFACES = [
   "components/Memberships.jsx",    // BUILD-101 Part 1 — Fundraising → Members, and the profile panel
   "components/MajorGifts.jsx",     // BUILD-99 (major gifts) — Fundraising → Major gifts / Proposals / Portfolios / Plans, and three profile panels
   "components/SecurityPanel.jsx",  // BUILD-98 (switch) Part 8 — two-step sign-in and the full export (no figures)
+  "components/GrantDeadlines.jsx", // BUILD-100 (grants) Part 7 — Grants → Deadlines, and a grant's own deadlines
+  "components/GrantDocuments.jsx", // BUILD-100 (grants) Part 7 — documents on a grant
+  "components/FunderPanel.jsx",    // BUILD-100 (grants) Part 7 — the funder on an organisation's record
+  "components/RestrictedView.jsx", // BUILD-100 (grants) Part 7 — Finance → Restricted
+  "components/GrantImport.jsx",    // BUILD-100 (grants) Part 7 — Import grants
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather
