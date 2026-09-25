@@ -214,10 +214,17 @@ const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(64, 0x20)]).t
   ok("§3 exactly the TWO gifts to this grant's fund are rows, not the third",
      refs.filter(r => r.startsWith("gift:")).length === 2, refs);
   const joined = (rows.body.lines || []).join("\n");
+  // An AMOUNT is matched the way a row writes one — "$7,777", on a boundary —
+  // never as four digits anywhere: every row opens with `kind:<random id>`, and
+  // a bare /7,?777/ failed CI the day a generated id happened to contain 7777
+  // (the BUILD-84 substring class). Proven both ways right here.
+  const amountIn = (text, dollars) => new RegExp("\\$" + dollars.replace(",", ",?") + "(?![\\d,])").test(text);
+  ok("§3 the amount guard catches a real leak and ignores an id",
+     amountIn("gift:g_ab12 — $7,777.00 to the fund", "7,777") && !amountIn("gift:g_ab7777cd — $250.00 to the fund", "7,777"));
   ok("§3 …and the other fund's amount appears nowhere in the rows",
-     !/9,?999/.test(joined) && !/Something else/.test(joined));
+     !amountIn(joined, "9,999") && !/Something else/.test(joined));
   ok("§3 nothing from the other ORG is in the rows",
-     !/Somebody Else|Their programme|7,?777/.test(joined));
+     !/Somebody Else|Their programme/.test(joined) && !amountIn(joined, "7,777"));
   ok("§3 the two people who gave to the programme are named",
      /Mabel Fenwick/.test(joined) && /Ray Okonjo/.test(joined));
   // A DOCUMENT ROW MEANS A FILE EXISTS. Steward parses nothing (Part 3's rule),
@@ -417,7 +424,10 @@ const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(64, 0x20)]).t
   ok("§7 …and that row foots to the same cents as the screen",
      !!totalLine && money(totalLine.split(",")[8].replace(/"/g, ""))
        === (HAND.pay1 + HAND.pay2) - (HAND.spend1 + HAND.spend2), totalLine);
-  ok("§7 the other org's grant is not in this org's file", !/Somebody Else|7,?777/.test(csvText));
+  // A CSV amount is a whole CELL, never four digits inside an id.
+  const cells = csvText.split(/\r?\n/).flatMap(l => l.split(",").map(c => c.replace(/"/g, "").trim()));
+  ok("§7 the other org's grant is not in this org's file",
+     !/Somebody Else/.test(csvText) && !cells.some(c => /^\$?7,?777(\.\d{2})?$/.test(c)));
 
   // ── §8 · THE WALL ───────────────────────────────────────────────────────
   console.log("\n— §8 · another org's grant finds nothing —");
