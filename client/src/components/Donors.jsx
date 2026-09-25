@@ -31,7 +31,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { T, fmt, fmtFull, daysDiff, SC, askClaude, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, Card, AIBtn, AIPanel, PageTitle, EmptyState, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
-import { ProposalsPanel } from "./MajorGifts";
+import { ProposalsPanel, PlanPanel } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
@@ -5204,6 +5204,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 history is the evidence behind it. Team-locked for Core along with
                 the rest of the major-gifts layer (the 2026-07-19 split). */}
             {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>)}
+
+            {/* BUILD-99 Part 3 — the cultivation plan, beside the proposals it
+                is there to make possible. */}
+            {lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>)}
 
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>

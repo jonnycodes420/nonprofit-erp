@@ -4,7 +4,7 @@ import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartH
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { EventsDesk } from "./EventsDesk";
-import { ProposalsView, PortfolioView } from "./MajorGifts";
+import { ProposalsView, PortfolioView, PlansView } from "./MajorGifts";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -117,6 +117,8 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     // BUILD-99 Part 2 — a portfolio is the assignment list she already has
     // (BUILD-30), plus the target and cap she typed.
     { id: "portfolios", label: "Portfolios" },
+    // BUILD-99 Part 3 — the plans the organisation keeps. Nothing in one sends.
+    { id: "plans", label: "Plans" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -159,6 +161,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
 
       {!loading && subtab === "portfolios" && (
         <PortfolioView isReadOnly={isReadOnly} onNavigate={onNavigate} />
+      )}
+
+      {!loading && subtab === "plans" && (
+        <PlansView isReadOnly={isReadOnly} />
       )}
 
       {!loading && subtab === "events" && (

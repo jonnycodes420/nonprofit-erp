@@ -566,3 +566,221 @@ export function PortfolioView({ isReadOnly, onNavigate }) {
     </div>
   );
 }
+
+// ── CULTIVATION PLANS ───────────────────────────────────────────────────────
+// A plan is a sequence of Threads (BUILD-81), authored by the officer. NOTHING
+// HERE SENDS ANYTHING — there is no subject field and no schedule, because every
+// step is a human action that ends in a logged line. That is the whole
+// difference between a plan and a sequence.
+const PLAN_STEP_TINT = {
+  pending: { bg: T.bg2, fg: T.ink3, word: "Waiting" },
+  open:    { bg: T.gold100, fg: T.gold700, word: "Open" },
+  done:    { bg: T.green100, fg: T.greenDk, word: "Done" },
+  skipped: { bg: T.bg2, fg: T.ink3, word: "Skipped" },
+};
+
+function PlanSteps({ plan, onSkip, isReadOnly }) {
+  return (
+    <div data-testid="plan-steps" style={{ border: "1px solid " + T.bg3, borderRadius: 10, overflow: "hidden" }}>
+      {plan.steps.map(s => {
+        const t = PLAN_STEP_TINT[s.status] || PLAN_STEP_TINT.pending;
+        return (
+          <div key={s.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr 110px 88px 74px", gap: 10, alignItems: "center",
+                                   padding: "10px 12px", borderTop: "1px solid " + T.bg3 }}>
+            <div style={{ fontSize: 12, color: T.ink3, fontWeight: 700 }}>{s.seq}</div>
+            <div style={{ fontSize: 13, color: s.status === "skipped" ? T.ink3 : T.ink, overflowWrap: "anywhere" }}>{s.label}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>{niceDate(s.dueDate)}</div>
+            <span style={{ background: t.bg, color: t.fg, borderRadius: 99, padding: "3px 9px", fontSize: 11, fontWeight: 800, textAlign: "center" }}>{t.word}</span>
+            <div style={{ textAlign: "right" }}>
+              {!isReadOnly && (s.status === "pending" || s.status === "open") && (
+                <button onClick={() => onSkip(s)} title="Record that this step was skipped"
+                  style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 9px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Skip</button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// The panel on a person's record: apply a plan, or read the one they are on.
+export function PlanPanel({ donorId, isReadOnly, canWrite }) {
+  const [d, setD] = useState(null);
+  const [tpls, setTpls] = useState(null);
+  const [pick, setPick] = useState("");
+  const [err, setErr] = useState("");
+  const load = useCallback(() => {
+    apiFetch(`/donors/${donorId}/plan`).then(r => setD(r.plan)).catch(e => console.error("[plan]", e));
+    apiFetch("/cultivation-templates").then(r => setTpls(r.templates || [])).catch(() => setTpls([]));
+  }, [donorId]);
+  useEffect(() => { load(); }, [load]);
+  if (tpls === null) return null;
+
+  const apply = async () => {
+    setErr("");
+    try {
+      await apiFetch(`/donors/${donorId}/plan`, { method: "POST", body: JSON.stringify({ templateId: pick }) });
+      load();
+    } catch (e) { setErr(errorMessage(e, "That plan could not be applied.")); }
+  };
+  const skip = async (s) => {
+    setErr("");
+    try { await apiFetch(`/plan-steps/${s.id}/skip`, { method: "POST", body: JSON.stringify({}) }); load(); }
+    catch (e) { setErr(errorMessage(e, "That step could not be skipped.")); }
+  };
+  const stop = async () => {
+    setErr("");
+    try { await apiFetch(`/plans/${d.id}/stop`, { method: "POST", body: JSON.stringify({}) }); load(); }
+    catch (e) { setErr(errorMessage(e, "That plan could not be stopped.")); }
+  };
+
+  const active = d && d.status === "active";
+  const sel = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 12, background: T.white, color: T.ink };
+
+  return (
+    <div data-testid="donor-plan-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Cultivation plan</div>
+        {active && canWrite && !isReadOnly && (
+          <button onClick={stop} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 10px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Stop this plan</button>
+        )}
+      </div>
+      {err && <div style={{ fontSize: 11, color: T.terra700, marginBottom: 8 }}>{err}</div>}
+      {d ? (
+        <>
+          <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8 }}>{d.sentence}</div>
+          <PlanSteps plan={d} onSkip={skip} isReadOnly={isReadOnly || !canWrite} />
+          <div style={{ fontSize: 11, color: T.ink3, marginTop: 8 }}>
+            Applied {niceDate(d.appliedOn)}{d.appliedByName ? ` by ${d.appliedByName}` : ""}. Nothing in a plan sends anything — each step is yours to do.
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+          No plan applied. A plan is a sequence of follow-ups you write once and apply with one click; nothing in it sends anything.
+        </div>
+      )}
+      {(!active) && canWrite && !isReadOnly && tpls.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+          <select style={sel} value={pick} onChange={e => setPick(e.target.value)}>
+            <option value="">Choose a plan…</option>
+            {tpls.map(t => <option key={t.id} value={t.id}>{t.name} ({t.steps.length} {t.steps.length === 1 ? "step" : "steps"})</option>)}
+          </select>
+          <button onClick={apply} disabled={!pick}
+            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink,
+                     cursor: pick ? "pointer" : "not-allowed", opacity: pick ? 1 : 0.5 }}>Apply</button>
+        </div>
+      )}
+      {tpls.length === 0 && canWrite && (
+        <div style={{ fontSize: 11, color: T.ink3, marginTop: 10 }}>
+          No plans written yet — Fundraising → Plans is where the organisation keeps them.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── THE PLANS SCREEN (Fundraising → Plans) ─────────────────────────────────
+// Templates the organisation keeps. A step is a label, a kind the follow-up
+// engine already knows, and how many days after applying it is due.
+export function PlansView({ isReadOnly }) {
+  const [d, setD] = useState(null);
+  const [editing, setEditing] = useState(null);   // {id?|null, name, steps:[]}
+  const [err, setErr] = useState("");
+  const load = useCallback(() => { apiFetch("/cultivation-templates").then(setD).catch(e => console.error("[plans]", e)); }, []);
+  useEffect(() => { load(); }, [load]);
+  if (!d) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}><Spin /></div>;
+
+  const save = async () => {
+    setErr("");
+    const body = { name: editing.name, steps: editing.steps };
+    try {
+      if (editing.id) await apiFetch(`/cultivation-templates/${editing.id}`, { method: "PUT", body: JSON.stringify(body) });
+      else await apiFetch("/cultivation-templates", { method: "POST", body: JSON.stringify(body) });
+      setEditing(null); load();
+    } catch (e) { setErr(errorMessage(e, "That plan could not be saved.")); }
+  };
+  const archive = async (id) => {
+    setErr("");
+    try { await apiFetch(`/cultivation-templates/${id}`, { method: "DELETE" }); load(); }
+    catch (e) { setErr(errorMessage(e, "That plan could not be archived.")); }
+  };
+  const setStep = (i, k, v) => setEditing(p => ({ ...p, steps: p.steps.map((s, j) => j === i ? { ...s, [k]: v } : s) }));
+
+  const inp = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 13, background: T.white, color: T.ink };
+
+  return (
+    <div data-testid="plans-view">
+      {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 10 }}>{err}</div>}
+      {!editing && (
+        <>
+          <div style={{ fontSize: 13, color: T.ink3, marginBottom: 14, maxWidth: 620, lineHeight: 1.6 }}>
+            A plan is a sequence of follow-ups you write once and apply to somebody with one click, dated from the day you apply it.
+            Nothing in a plan sends anything; every step is a person doing something and logging it.
+          </div>
+          {!isReadOnly && (
+            <button onClick={() => setEditing({ id: null, name: "", steps: [{ type: "follow_up", label: "", offsetDays: 7 }] })}
+              style={{ background: T.gold, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer", marginBottom: 16 }}>
+              + Write a plan
+            </button>
+          )}
+          {d.templates.length === 0 ? (
+            <EmptyState title="No plans yet"
+              message="Write the sequence you already run in your head — visit, invite, send the report, ask — and apply it to somebody in one click." />
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {d.templates.map(t => (
+                <div key={t.id} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "14px 16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{t.name}</div>
+                    {!isReadOnly && (
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => setEditing({ id: t.id, name: t.name, steps: t.steps.map(s => ({ ...s })) })}
+                          style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 10px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Edit</button>
+                        <button onClick={() => archive(t.id)}
+                          style={{ background: "none", border: "1px solid " + T.terra200, borderRadius: 8, padding: "4px 10px", fontSize: 11, color: T.terra700, cursor: "pointer" }}>Archive</button>
+                      </div>
+                    )}
+                  </div>
+                  <ol style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13, color: T.ink2, lineHeight: 1.7 }}>
+                    {t.steps.map((s, i) => <li key={i}>{s.label} <span style={{ color: T.ink3 }}>· day {s.offsetDays}</span></li>)}
+                  </ol>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {editing && (
+        <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "18px 20px", maxWidth: 720 }}>
+          <label style={{ fontSize: 11, fontWeight: 700, color: T.ink2, display: "block", marginBottom: 4 }}>What is this plan for?</label>
+          <input style={{ ...inp, width: "100%", marginBottom: 14 }} value={editing.name}
+            onChange={e => setEditing(p => ({ ...p, name: e.target.value }))} placeholder="First-time $1,000 donor" />
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink2, marginBottom: 6 }}>The steps, in order</div>
+          {editing.steps.map((s, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr 110px 40px", gap: 8, marginBottom: 8, alignItems: "center" }}>
+              <input style={inp} value={s.label} onChange={e => setStep(i, "label", e.target.value)} placeholder="Visit her at the farm" />
+              <select style={inp} value={s.type} onChange={e => setStep(i, "type", e.target.value)}>
+                {(d.stepTypes || []).map((x, j) => <option key={j} value={x.type}>{x.label}</option>)}
+              </select>
+              <input style={inp} type="number" min="0" value={s.offsetDays}
+                onChange={e => setStep(i, "offsetDays", e.target.value === "" ? "" : Number(e.target.value))} />
+              <button onClick={() => setEditing(p => ({ ...p, steps: p.steps.filter((_, j) => j !== i) }))}
+                style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px", fontSize: 12, color: T.ink3, cursor: "pointer" }}>✕</button>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: T.ink3, marginBottom: 12 }}>
+            Days are counted from the day you apply the plan, and they may not go backwards.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => setEditing(p => ({ ...p, steps: [...p.steps, { type: "follow_up", label: "", offsetDays: (p.steps.at(-1)?.offsetDays || 0) + 14 }] }))}
+              disabled={editing.steps.length >= (d.maxSteps || 12)}
+              style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", fontSize: 12, color: T.ink2, cursor: "pointer" }}>+ Add a step</button>
+            <button onClick={save} style={{ background: T.gold, border: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Save</button>
+            <button onClick={() => setEditing(null)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", fontSize: 13, color: T.ink2, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
