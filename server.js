@@ -20669,6 +20669,75 @@ const givingPageOr404 = async (id, orgId) => {
   return p || null;
 };
 
+// ── BUILD-102 (Steward Give) Part 4 — THE EMBED ────────────────────────────
+// One public read, by FORM ID, so `embed.js` needs nothing but the id the org
+// pasted into its own page. It is the same payload shape the giving page's own
+// public route returns — the same `formSpec`, the same theme — because an embedded
+// form that differed from the hosted one would be a second product.
+//
+// AN ARCHIVED FORM ANSWERS 200 WITH `closed: true`, NOT 404. The embed is sitting
+// on somebody else's website: a 404 there renders as a broken box or a console
+// error on a page the org is judged by, where a quiet "this form is closed" line
+// is the truth and costs them nothing.
+app.get("/forms/:id/public", wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const [page] = await query(
+    `SELECT gp.*, o.id AS org_id, o.name AS org_name, o.org_slug, o.cover_fees_enabled,
+            o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
+       FROM giving_pages gp
+       JOIN orgs o ON o.id = gp.org_id
+       LEFT JOIN portal_settings ps ON ps.org_id = o.id
+      WHERE gp.id = ?`, [req.params.id]);
+  // An id that never existed is a 404 — there is nothing honest to render for it.
+  if (!page) return res.status(404).json({ error: "form_not_found" });
+  const orgName = await donorFacingOrgName(page.org_id, page.org_name || "").catch(() => page.org_name || "");
+  if (page.status !== "active") {
+    return res.json({
+      closed: true,
+      // Enough to render the line in the org's own colours rather than Steward's.
+      org: { name: orgName, slug: page.org_slug, theme: giveThemePayload(page) },
+      message: "This form is closed.",
+    });
+  }
+  const funds = await query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [page.org_id]);
+  res.json({
+    closed: false,
+    org: { name: orgName, slug: page.org_slug,
+           coverFeesEnabled: page.cover_fees_enabled !== false, theme: giveThemePayload(page) },
+    form: {
+      id: page.id, slug: page.slug, title: page.title,
+      spec: F.formSpec(page.form_config, { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+      upsellThresholdCents: page.form_upsell_threshold_cents != null
+        ? Number(page.form_upsell_threshold_cents)
+        : F.UPSELL_DEFAULT_THRESHOLD_CENTS,
+    },
+  });
+}));
+
+// GET /giving-pages/:id/embed — the two snippets, for Settings. Generated HERE so
+// the script URL, the id and the fallback cannot drift from each other in three
+// places of copy (the BUILD-95 registry lesson, applied to two lines of HTML).
+app.get("/giving-pages/:id/embed", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const base = publicAppUrl();
+  res.json({
+    pageId: pg.id, status: pg.status,
+    // ONE LINE, which is the whole promise of the product's first page.
+    script: `<script src="${base}/embed.js" data-form="${pg.id}"></script>`,
+    // The fallback, for a site that refuses third-party script tags (a Squarespace
+    // or Wix plan without code injection). It cannot self-size, so it carries a
+    // height somebody may change.
+    iframe: `<iframe src="${base}/embed/${pg.id}" width="100%" height="720" style="border:0" `
+      + `title="Donation form" loading="lazy"></iframe>`,
+    previewUrl: `${base}/embed/${pg.id}`,
+    // NO CARD FIELD EVER LIVES ON THE ORG'S SITE, and the screen says so rather
+    // than leaving somebody to wonder what their PCI exposure is.
+    note: "Payment always finishes on Stripe's own page. No card details are ever "
+      + "typed on your website, and the form cannot read the page it sits on.",
+  });
+}));
+
 // ── BUILD-102 (Steward Give) Part 1 — A FORM IS A GIVING PAGE WITH A CONFIG ──
 // shared/formConfig.js is the ONE validator and the ONE spec builder. The editor
 // and the page a stranger opens from a QR code derive their form from the SAME

@@ -21,6 +21,8 @@ const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
 const App                = React.lazy(() => import("./App"));
 const Donate             = React.lazy(() => import("./pages/Donate"));
+// BUILD-102 Part 4 — the form inside an org's own website, addressed by form ID.
+const EmbeddedForm       = React.lazy(() => import("./pages/EmbeddedForm"));
 const ManageFundraiser   = React.lazy(() => import("./pages/ManageFundraiser"));
 const Portal             = React.lazy(() => import("./pages/Portal")); // BUILD-45 donor portal (public, white-label)
 const PortalEditor       = React.lazy(() => import("./pages/PortalEditor")); // BUILD-54 §4 — staff-session edit mode, sample data only
@@ -192,6 +194,10 @@ function Root() {
           <Route path="/giving/confirm-alias" element={<GivingDashboard landing="confirm-alias" />} />
           <Route path="/giving/orgs/:orgSlug" element={<GivingOrgWrap />} />
           <Route path="/join" element={<JoinNetwork />} />
+          {/* BUILD-102 Part 4 — what embed.js points its iframe at. Public, and
+              deliberately NOT under /give: an embed is addressed by form ID, so
+              the org pastes one line and never has to know its own slugs. */}
+          <Route path="/embed/:formId" element={<EmbeddedForm />} />
           <Route path="/give/:orgSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug" element={<Donate />} />
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />
