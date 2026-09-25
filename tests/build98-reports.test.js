@@ -191,7 +191,9 @@ const cents = v => Math.round(Number(v) * 100);
 
   // ── §7 the twelve ────────────────────────────────────────────────────────
   const list = await api("GET", "/saved-reports", tok);
-  ok("§7 there are twelve standard reports", (list.body.standard || []).length === 12);
+  // Twelve from Part 3, and Part 5's "Volunteers who give" (the brief's
+  // volunteer-to-donor conversion report) makes thirteen.
+  ok("§7 there are thirteen standard reports", (list.body.standard || []).length === 13);
   const broken = [];
   for (const s of list.body.standard || []) {
     const r = await api("GET", `/saved-reports/${encodeURIComponent(s.id)}/run`, tok);

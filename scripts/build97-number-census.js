@@ -84,7 +84,9 @@ const SURFACES = [
   "components/shared.jsx",
   "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
   "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
-  "components/MajorGifts.jsx",     // BUILD-99 Part 1 — Fundraising → Proposals, and the profile panel
+  "components/VolunteerPanel.jsx", // BUILD-98 (switch) Part 5 — hours on the profile, and the hours import
+  "components/ApiKeysPanel.jsx",   // BUILD-98 (switch) Part 6 — API keys (dates and a prefix; no figures)
+  "components/MajorGifts.jsx",     // BUILD-99 (major gifts) — Fundraising → Major gifts / Proposals / Portfolios / Plans, and three profile panels
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather

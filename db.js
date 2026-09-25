@@ -3904,6 +3904,52 @@ async function initSchema() {
   // When this attendee's attendance reached their timeline — once, ever.
   await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS attendance_logged_at TIMESTAMPTZ`);
 
+  // ── BUILD-98 (switch) Part 5 — VOLUNTEERS AND HOURS ─────────────────────
+  // One row per shift, on the PERSON (donors row, BUILD-94 person types).
+  // import_key makes re-importing the same export a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_shifts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      hours NUMERIC(6,2) NOT NULL CHECK (hours > 0 AND hours <= 24),
+      role TEXT,
+      note TEXT,
+      via TEXT NOT NULL DEFAULT 'staff',       -- staff | self | import
+      import_key TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_person ON volunteer_shifts (org_id, person_id, date DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_shifts_import ON volunteer_shifts (org_id, import_key) WHERE import_key IS NOT NULL`);
+
+  // ── BUILD-98 (switch) Part 6 — A KEY THAT OPENS ONE ORG, READ ONLY ─────
+  // A key is shown ONCE and stored as its SHA-256; the prefix is kept so a
+  // list can say which key is which. Revoked keys stay as rows (who made
+  // it, when it was last used) — a revoke is a fact, not a delete.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      prefix TEXT NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      scopes JSONB NOT NULL DEFAULT '["read"]'::jsonb,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      last_used_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys (org_id, created_at DESC)`);
+  // Wealth screening is a PAID ADD-ON later (DonorSearch / iWave). These are
+  // the vendor's own figures, kept so an import from a CRM that has them does
+  // not throw them away. They are NOT Steward's wealth_score and never feed it.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_source TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_rating TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_capacity TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_date TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

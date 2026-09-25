@@ -11,6 +11,7 @@ import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./U
 import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { ApiKeysPanel } from "./ApiKeysPanel";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -2671,6 +2672,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       <div style={{marginTop:20}}>
         <GivingSourcesManager isReadOnly={isReadOnly} isAdmin={isAdmin}/>
       </div>
+      {isAdmin&&<div style={{marginTop:20}}><ApiKeysPanel isReadOnly={isReadOnly}/></div>}
       </>}
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}

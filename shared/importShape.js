@@ -497,6 +497,24 @@ export function matchNamesCompatible(a, b) {
 // solicitable record. These probes are deliberately anchored (no "Deceased
 // Spouse Name" false positives); values parse through parseBoolFlag.
 const DECEASED_HDR = /^(is\s+)?deceased\??$/i;
+// ── BUILD-98 (switch) Part 6 — a wealth screen the old CRM already paid for.
+// DonorSearch and iWave write these on a donor row. Steward keeps them AS
+// WRITTEN (a capacity is often a range) and never folds them into its own
+// wealth score. A plain "Score" or "Rating" is not claimed: it needs a
+// vendor or "wealth" in front of it.
+export const WEALTH_HDR = {
+  rating:   /^(ds|donor ?search|iwave|wealth)[ _-]*(rating|score)$/,
+  capacity: /^((ds|donor ?search|iwave|wealth)[ _-]*(estimated[ _-]*)?|estimated[ _-]*|gift[ _-]*)capacity([ _-]*range)?$/,
+  date:     /^((ds|donor ?search|iwave|wealth)[ _-]*(screen(ing)?[ _-]*)?|screening[ _-]*)date$/,
+};
+export function wealthScreenOf({ rating, capacity, date, headers = [] }) {
+  const t = (v, n) => String(v ?? "").trim().slice(0, n);
+  const r = t(rating, 64), c = t(capacity, 64), d = t(date, 32);
+  if (!r && !c && !d) return null;
+  const hs = headers.filter(Boolean).join(" ").toLowerCase();
+  const source = /iwave/.test(hs) ? "iWave" : /donor ?search|(^|\s)ds[ _-]/.test(hs) ? "DonorSearch" : "Wealth screening";
+  return { source, rating: r || null, capacity: c || null, date: d || null };
+}
 // BUILD-97 Part 1 — SALESFORCE SPELLS AN OPT-OUT DIFFERENTLY, AND NOTHING HERE
 // RECOGNISED IT. NPSP's Contact export carries `Email Opt Out` (the standard
 // `HasOptedOutOfEmail` field). This pattern is anchored to the WHOLE header, so
@@ -1490,6 +1508,8 @@ export function autoDetectTxMapping(headers, rows) {
   const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"",fund:"",paymentMethod:"",donorType:"",
                 // BUILD-98 Part 1 — a gift's soft credit, tribute and matching employer.
                 softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"",
+                // BUILD-98 Part 6 — a wealth screen the old CRM already paid for.
+                wealthRating:"",wealthCapacity:"",wealthDate:"",
                 // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, and
                 // the mapper has to be able to say so. A row carrying an ask
                 // amount and an open stage is money that has NOT arrived; without
@@ -1528,6 +1548,9 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.fund     && /^(fund|fund.?name|designation|restriction|purpose|allocation)$/.test(hl)) map.fund = h;
     if (!map.campaign && /^(campaign|appeal|appeal.?code|solicitation)$/.test(hl))     map.campaign = h;
     if (!map.donorType && /^(donor.?type|constituent.?type|record.?type|entity.?type)$/.test(hl)) map.donorType = h;
+    if (!map.wealthRating   && WEALTH_HDR.rating.test(hl))   map.wealthRating = h;
+    if (!map.wealthCapacity && WEALTH_HDR.capacity.test(hl)) map.wealthCapacity = h;
+    if (!map.wealthDate     && WEALTH_HDR.date.test(hl))     map.wealthDate = h;
     if (!map.notes    && /^(notes?|memo|comments?)$/.test(hl))                         map.notes    = h;
     if (!map.phone    && /^(phone|phone.?number|telephone|mobile|cell)$/.test(hl))     map.phone    = h;
     if (!map.address  && /^(address|street(.?address)?|address.?1|mailing.?address)$/.test(hl)) map.address = h;
@@ -2269,6 +2292,10 @@ export function buildTransactionRows(parsed, txMap, opts = {}) {
     // the column BUILD-82's workbook path has written since it existed); it
     // does not become a custom field on the CSV path either.
     if (txMap.donorType && row[txMap.donorType]) donor.donorType = String(row[txMap.donorType]).trim().slice(0, 64) || undefined;
+    // BUILD-98 Part 6 — the vendor's own figures, kept as the vendor wrote them.
+    const _ws = wealthScreenOf({ rating: txMap.wealthRating && row[txMap.wealthRating], capacity: txMap.wealthCapacity && row[txMap.wealthCapacity],
+      date: txMap.wealthDate && row[txMap.wealthDate], headers: [txMap.wealthRating, txMap.wealthCapacity, txMap.wealthDate] });
+    if (_ws && !donor.wealthScreen) donor.wealthScreen = _ws;
 
     const noteText = txMap.notes ? String(row[txMap.notes] || "") : "";
     const markers = detectNoteMarkers(noteText);
@@ -3415,6 +3442,10 @@ export const STANDARD_DONOR_FIELDS = [
   { key: "country",    label: "Country",      aliases: ["country"] },
   { key: "donorType",  label: "Donor type",   aliases: ["donor type", "constituent type", "record type", "entity type"] },
   { key: "board",      label: "Board",        aliases: ["board", "board member", "board?"] },
+  // BUILD-98 Part 6 — a wealth screen (DonorSearch / iWave) the old CRM carried.
+  { key: "wealthRating",   label: "Wealth screen rating",   aliases: ["ds rating", "donorsearch rating", "donor search rating", "iwave score", "iwave rating", "wealth rating", "wealth score"] },
+  { key: "wealthCapacity", label: "Wealth screen capacity", aliases: ["ds capacity", "donorsearch capacity", "iwave capacity", "wealth capacity", "estimated capacity", "gift capacity", "capacity range"] },
+  { key: "wealthDate",     label: "Wealth screen date",     aliases: ["ds date", "donorsearch date", "iwave date", "wealth screen date", "screening date"] },
   // The flag family (BUILD-58/BUILD-80) — detectExclusionColumn routes these;
   // they are here so the DROPDOWN shows them as standard targets too.
   { key: "doNotMail",    label: "Do not mail",    aliases: ["do not mail", "dnm", "no mail"], flag: true },
@@ -4019,6 +4050,9 @@ export function buildWorkbookDonors(sheet, mapping, opts = {}) {
       if (v) d[k] = v;
     }
     if (d.address1) { d.address = d.address1; delete d.address1; }
+    { const _ws = wealthScreenOf({ rating: get("wealthRating"), capacity: get("wealthCapacity"), date: get("wealthDate"),
+        headers: [col("wealthRating"), col("wealthCapacity"), col("wealthDate")] });
+      if (_ws) d.wealthScreen = _ws; }
     const xid = get("donorId");
     if (xid) d.externalDonorId = xid;
     if (d.email) { const { value } = normalizeEmail(d.email); d.email = value || d.email; }

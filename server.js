@@ -7365,6 +7365,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     ));
     if (r.ok) {
       created += batch.length;
+      // BUILD-98 (switch) Part 6 — a wealth screen the old CRM carried lands on
+      // its own four columns, as the vendor wrote it, inside the same savepointed
+      // transaction as the person it belongs to.
+      for (const d of batch) {
+        const w = wealthScreenParams(d);
+        if (w) await runTx(txc, `UPDATE donors SET wealth_screen_source=?, wealth_screen_rating=?, wealth_screen_capacity=?, wealth_screen_date=?
+                                   WHERE id=? AND org_id=?`, [w.source, w.rating, w.capacity, w.date, d._id, orgId]);
+      }
     } else {
       console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
@@ -8245,6 +8253,10 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     // its matching employer names the primary now; and a soft credit that
     // landed the merged person on their OWN gift is not a soft credit (the
     // hard credit already counts it), so it goes.
+    // BUILD-98 (switch) Part 5 — shifts are keyed by person_id, not donor_id,
+    // so the generic list above cannot move them; a merged volunteer keeps
+    // every hour they gave.
+    await runTx(client, "UPDATE volunteer_shifts SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET tribute_donor_id=? WHERE org_id=? AND tribute_donor_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET match_employer_id=? WHERE org_id=? AND match_employer_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client,
@@ -14427,6 +14439,289 @@ app.post("/grants/:id/interactions", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── Volunteers ─────────────────────────────────────────────────────────────
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD-98 (switch) Part 5 — VOLUNTEERS AND HOURS
+// ════════════════════════════════════════════════════════════════════════════
+// shared/volunteerHours.js holds the rules (hundredths, a 24-hour ceiling, an
+// import key). Hours live on the PERSON (donors row, BUILD-94's person types),
+// so a volunteer who gives is one record with both roles. Not scheduling.
+let VH = null;
+const VH_READY = import("./shared/volunteerHours.js").then(m => { VH = m; return m; });
+
+// A person who logged a shift IS a volunteer, on the same record — the
+// recordGift rule for "donor", applied to hours. "other" means "we do not know"
+// and a shift answers that.
+async function markVolunteer(orgId, personId) {
+  await run(`UPDATE donors SET person_types = CASE
+      WHEN person_types IS NULL THEN '["donor","volunteer"]'::jsonb
+      WHEN person_types @> '["volunteer"]'::jsonb THEN person_types
+      ELSE (person_types - 'other') || '["volunteer"]'::jsonb END
+    WHERE id=? AND org_id=?`, [personId, orgId]);
+}
+
+async function insertShift(orgId, personId, shift, { via, importKey = null, who }) {
+  const rows = await query(
+    `INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,note,via,import_key,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT (org_id, import_key) WHERE import_key IS NOT NULL DO NOTHING RETURNING id`,
+    ["vs_" + uuid().slice(0, 10), orgId, personId, shift.date, shift.hundredths / 100, shift.role, shift.note || null,
+     via, importKey, who.id, who.name]);
+  if (rows.length) await markVolunteer(orgId, personId);
+  return rows[0]?.id || null;
+}
+
+async function volunteerSummary(orgId, personId) {
+  const [t] = await query(`SELECT COALESCE(SUM(round(hours*100)),0)::bigint AS h, COUNT(*)::int AS n, MIN(date) AS first, MAX(date) AS last
+                             FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, personId]);
+  return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
+}
+
+// The volunteer's own link — signed, expiring, and it names ONE person in ONE
+// org. The signature covers both, so a token cannot be pointed at somebody
+// else. It is a link staff hand over; Steward never emails it on its own.
+function signVolunteerToken(orgId, personId, exp) {
+  const body = `${orgId}.${personId}.${exp}`;
+  const sig = crypto.createHmac("sha256", process.env.JWT_SECRET || "").update("volunteer-log:" + body).digest("base64url");
+  return Buffer.from(body).toString("base64url") + "." + sig;
+}
+function verifyVolunteerToken(token) {
+  const [b, sig] = String(token || "").split(".");
+  if (!b || !sig) return null;
+  let body; try { body = Buffer.from(b, "base64url").toString(); } catch { return null; }
+  const want = crypto.createHmac("sha256", process.env.JWT_SECRET || "").update("volunteer-log:" + body).digest("base64url");
+  if (want.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(want), Buffer.from(sig))) return null;
+  const [orgId, personId, exp] = body.split(".");
+  if (!orgId || !personId || !(Number(exp) > Date.now())) return null;
+  return { orgId, personId };
+}
+
+app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const shifts = await query(`SELECT id, date, hours, role, note, via, created_by_name FROM volunteer_shifts
+                               WHERE org_id=? AND person_id=? ORDER BY date DESC, created_at DESC LIMIT 100`, [req.user.orgId, d.id]);
+  res.json({ ...(await volunteerSummary(req.user.orgId, d.id)),
+    sentence: "Every shift logged for this person, by staff, by the volunteer from their link, or from an import.",
+    shifts: shifts.map(s => ({ ...s, hours: Number(s.hours) })) });
+}));
+
+app.post("/donors/:id/volunteer-hours", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await VH_READY;
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const v = VH.validateShift(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const id = await insertShift(req.user.orgId, d.id, v.shift, { via: "staff", who: actor(req) });
+  res.status(201).json({ id, ...(await volunteerSummary(req.user.orgId, d.id)) });
+}));
+
+app.delete("/volunteer-shifts/:id", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM volunteer_shifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// The link staff hand to a volunteer so they can log their own hours.
+app.post("/donors/:id/volunteer-link", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await VH_READY;
+  const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const exp = Date.now() + VH.SELF_LOG_DAYS * 86400000;
+  res.json({ url: `${publicAppUrl()}/volunteer/log?token=${signVolunteerToken(req.user.orgId, d.id, exp)}`,
+    expiresInDays: VH.SELF_LOG_DAYS,
+    sentence: `Anyone with this link can log hours for this person for the next ${VH.SELF_LOG_DAYS} days. Steward does not send it; you do.` });
+}));
+
+// The volunteer's page. A GET renders and CHANGES NOTHING (mail clients and
+// link scanners fetch links); the form POSTs.
+function volunteerPage(title, inner) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title></head>
+<body style="margin:0;background:#f0ede6;font-family:Arial,sans-serif;color:#0f1a12"><div style="max-width:440px;margin:40px auto;background:#fff;border:1px solid #e8e4db;border-radius:14px;padding:28px">${inner}</div></body></html>`;
+}
+app.get("/volunteer/log", donateLimiter, wrap(async (req, res) => {
+  const t = verifyVolunteerToken(req.query.token);
+  if (!t) return res.status(404).send(volunteerPage("Link expired", "<p>This link has expired or is not valid. Ask the organisation for a new one.</p>"));
+  const [p] = await query("SELECT d.name, o.name AS org FROM donors d JOIN orgs o ON o.id = d.org_id WHERE d.id=? AND d.org_id=? AND d.deleted_at IS NULL", [t.personId, t.orgId]);
+  if (!p) return res.status(404).send(volunteerPage("Link expired", "<p>This link is no longer valid.</p>"));
+  const orgName = await donorFacingOrgName(t.orgId, p.org).catch(() => p.org);
+  const first = String(p.name || "").split(/\s+/)[0];
+  const inp = "width:100%;box-sizing:border-box;border:1px solid #e8e4db;border-radius:8px;padding:10px;font-size:15px;margin:4px 0 12px";
+  res.setHeader("Cache-Control", "no-store");
+  res.send(volunteerPage(`Log your hours · ${orgName}`, `
+    <div style="font-size:13px;color:#5a554f">${escapeHtml(orgName)}</div>
+    <h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px;margin:6px 0 16px">Thank you, ${escapeHtml(first)}. How long did you help?</h1>
+    <form method="post" action="/volunteer/log">
+      <input type="hidden" name="token" value="${escapeHtml(String(req.query.token))}">
+      <label>Date<input name="date" type="date" required style="${inp}"></label>
+      <label>Hours<input name="hours" type="number" step="0.25" min="0.25" max="24" required style="${inp}"></label>
+      <label>What you did (optional)<input name="role" maxlength="120" style="${inp}"></label>
+      <button type="submit" style="background:#0d5c3a;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:700">Log my hours</button>
+    </form>`));
+}));
+app.post("/volunteer/log", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  await VH_READY;
+  const t = verifyVolunteerToken(req.body?.token);
+  if (!t) return res.status(404).send(volunteerPage("Link expired", "<p>This link has expired or is not valid.</p>"));
+  const [p] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [t.personId, t.orgId]);
+  if (!p) return res.status(404).send(volunteerPage("Link expired", "<p>This link is no longer valid.</p>"));
+  const v = VH.validateShift(req.body || {});
+  if (!v.ok) return res.status(400).send(volunteerPage("Check the form", `<p>Please give ${escapeHtml(v.errors.join(" and "))}.</p><p><a href="/volunteer/log?token=${encodeURIComponent(req.body.token)}">Go back</a></p>`));
+  await insertShift(t.orgId, p.id, v.shift, { via: "self", who: { id: "system:volunteer-link", name: "The volunteer, from their link" } });
+  const s = await volunteerSummary(t.orgId, p.id);
+  res.send(volunteerPage("Thank you", `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px">Thank you.</h1><p>${v.shift.hundredths / 100} hours logged. That makes ${s.totalHours} in all.</p><p><a href="/volunteer/log?token=${encodeURIComponent(req.body.token)}">Log another shift</a></p>`));
+}));
+
+// Hours from Wranglr or VolunteerHub. The client parses the file with the
+// preset; the server re-validates every row and matches people by email, then
+// by exact name, creating a Volunteer only when nobody answers to either.
+app.post("/volunteer-hours/import", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await VH_READY;
+  const orgId = req.user.orgId, who = actor(req);
+  const rows = Array.isArray(req.body?.shifts) ? req.body.shifts.slice(0, 20000) : [];
+  if (!rows.length) return res.status(400).json({ error: "No shifts to import." });
+  const out = { imported: 0, alreadyThere: 0, peopleCreated: 0, refused: [] };
+  const cache = new Map();
+  for (const [i, r] of rows.entries()) {
+    const v = VH.validateShift(r);
+    const name = String(r?.name || "").trim().slice(0, 200), email = String(r?.email || "").trim().toLowerCase().slice(0, 200);
+    if (!v.ok || (!name && !email)) { out.refused.push({ line: r?.line || i + 2, why: v.ok ? "no name or email" : v.errors.join("; ") }); continue; }
+    const ck = email || "n:" + name.toLowerCase();
+    let pid = cache.get(ck);
+    if (!pid) {
+      if (email) { const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]); if (m.length === 1) pid = m[0].id; }
+      if (!pid && name) { const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) LIMIT 2", [orgId, name]); if (m.length === 1) pid = m[0].id; }
+      if (!pid) {
+        pid = "d_" + uuid().slice(0, 10);
+        await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
+          [pid, orgId, name || email, email || null, who.id, who.name]);
+        out.peopleCreated++;
+      }
+      cache.set(ck, pid);
+    }
+    const key = VH.shiftKey({ email, name, date: v.shift.date, hundredths: v.shift.hundredths, role: v.shift.role });
+    const id = await insertShift(orgId, pid, v.shift, { via: "import", importKey: key, who });
+    if (id) out.imported++; else out.alreadyThere++;
+  }
+  res.json(out);
+}));
+
+// ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
+// Read scopes first. The rules:
+//   1. A key is shown ONCE, stored as its SHA-256, and names its org on the
+//      STORED ROW — nothing the caller sends can pick the org (BUILD-37 B9).
+//   2. A key opens /api/v1 and NOTHING ELSE. requireAuth never accepts one,
+//      and requireApiKey never accepts a staff JWT — two doors, two locks.
+//   3. Revoked is a 401 that reads exactly like a key that never existed.
+//   4. The list endpoints are newest-first with an id, which is what a Zapier
+//      POLLING trigger needs ("new person", "new gift"): Zapier dedupes by id.
+const API_KEY_PREFIX = "stw_";
+// The vendor's wealth-screen figures off an import row, trimmed and capped.
+// Hoisted (a function declaration) because the import route above calls it.
+function wealthScreenParams(d) {
+  const w = d && d.wealthScreen;
+  if (!w || typeof w !== "object") return null;
+  const t = (v, n) => (v == null ? null : (String(v).trim().slice(0, n) || null));
+  const o = { source: t(w.source, 40) || "Wealth screening", rating: t(w.rating, 64), capacity: t(w.capacity, 64), date: t(w.date, 32) };
+  return o.rating || o.capacity || o.date ? o : null;
+}
+const hashApiKey = k => crypto.createHash("sha256").update(String(k)).digest("hex");
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: rateLimitDisabled,
+  keyGenerator: req => {
+    const k = String(req.headers["x-api-key"] || (req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    return k.startsWith(API_KEY_PREFIX) ? "key:" + hashApiKey(k).slice(0, 16) : ipKeyGenerator(req.ip);
+  },
+});
+async function requireApiKey(req, res, next) {
+  try {
+    const raw = String(req.headers["x-api-key"] || (req.headers.authorization || "").replace(/^Bearer\s+/i, "")).trim();
+    const refuse = () => res.status(401).json({ error: "invalid_api_key", message: "That API key is not valid." });
+    if (!raw.startsWith(API_KEY_PREFIX) || raw.length < 20) return refuse();
+    const [k] = await query(`SELECT id, org_id, name, scopes, last_used_at FROM api_keys WHERE key_hash=? AND revoked_at IS NULL`, [hashApiKey(raw)]);
+    if (!k) return refuse();
+    req.apiKey = { id: k.id, orgId: k.org_id, name: k.name, scopes: Array.isArray(k.scopes) ? k.scopes : ["read"] };
+    // Stamp use at most once a minute — a busy integration must not turn
+    // every read into a write.
+    if (!k.last_used_at || Date.now() - new Date(k.last_used_at).getTime() > 60000)
+      run(`UPDATE api_keys SET last_used_at=NOW() WHERE id=?`, [k.id]).catch(() => {});
+    next();
+  } catch (e) { next(e); }
+}
+
+// ── Staff side: make, list and revoke keys (admin only) ────────────────────
+app.get("/api-keys", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const rows = await query(`SELECT id, name, prefix, scopes, created_by_name, created_at, last_used_at, revoked_at
+                              FROM api_keys WHERE org_id=? ORDER BY created_at DESC`, [req.user.orgId]);
+  res.json({ keys: rows.map(r => ({ id: r.id, name: r.name, prefix: r.prefix, scopes: r.scopes, createdBy: r.created_by_name,
+    createdAt: r.created_at, lastUsedAt: r.last_used_at, revokedAt: r.revoked_at })) });
+}));
+app.post("/api-keys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: "Give the key a name, so you can tell it apart later (for example, Zapier)." });
+  const secret = API_KEY_PREFIX + crypto.randomBytes(24).toString("base64url");
+  const prefix = secret.slice(0, 10);
+  const who = actor(req);
+  const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  const id = "ak_" + uuid().slice(0, 12);
+  await run(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash,scopes,created_by,created_by_name) VALUES (?,?,?,?,?,'["read"]'::jsonb,?,?)`,
+    [id, req.user.orgId, name, prefix, hashApiKey(secret), who.id, me?.name || who.name]);
+  res.json({ id, name, prefix, scopes: ["read"], key: secret,
+    sentence: "This is the only time the whole key is shown. Copy it now; Steward keeps only a fingerprint of it." });
+}));
+// Revoking is never write-gated: a lapsed org must always be able to shut a door.
+app.delete("/api-keys/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const r = await query(`UPDATE api_keys SET revoked_at=COALESCE(revoked_at, NOW()) WHERE id=? AND org_id=? RETURNING id`, [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// ── Key side: /api/v1, read only ───────────────────────────────────────────
+const apiPage = q => ({ limit: Math.max(1, Math.min(100, parseInt(q.limit, 10) || 50)), offset: Math.max(0, parseInt(q.offset, 10) || 0) });
+const apiPerson = d => ({
+  id: d.id, name: d.name, email: d.email || null, phone: d.phone || null,
+  city: d.city || null, state: d.state || null, zip: d.zip || null,
+  types: Array.isArray(d.person_types) ? d.person_types : ["donor"],
+  lifetimeGiving: Number(d.total_giving || 0), giftCount: Number(d.gift_count || 0),
+  lastGiftDate: d.last_gift_date || null, stage: d.stage || null,
+  wealthScreen: d.wealth_screen_source ? { source: d.wealth_screen_source, rating: d.wealth_screen_rating || null,
+    capacity: d.wealth_screen_capacity || null, date: d.wealth_screen_date || null } : null,
+  sample: !!d.is_sample, createdAt: d.created_at,
+});
+const API_PERSON_COLS = `id,name,email,phone,city,state,zip,person_types,total_giving,gift_count,last_gift_date,stage,
+  wealth_screen_source,wealth_screen_rating,wealth_screen_capacity,wealth_screen_date,is_sample,created_at`;
+app.get("/api/v1/me", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const [o] = await query(`SELECT name FROM orgs WHERE id=?`, [req.apiKey.orgId]);
+  res.json({ organization: o?.name || null, key: req.apiKey.name, scopes: req.apiKey.scopes });
+}));
+app.get("/api/v1/people", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const { limit, offset } = apiPage(req.query);
+  const rows = await query(`SELECT ${API_PERSON_COLS} FROM donors WHERE org_id=? AND deleted_at IS NULL
+                             ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, [req.apiKey.orgId, limit, offset]);
+  res.json({ data: rows.map(apiPerson), limit, offset });
+}));
+app.get("/api/v1/people/:id", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const [d] = await query(`SELECT ${API_PERSON_COLS} FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.params.id, req.apiKey.orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  res.json({ data: apiPerson(d) });
+}));
+app.get("/api/v1/gifts", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const { limit, offset } = apiPage(req.query);
+  const rows = await query(
+    `SELECT g.id, g.donor_id, g.amount, g.date, g.type, g.payment_method, g.created_at, g.is_sample,
+            f.name AS fund_name, COALESCE(c.name, g.campaign) AS campaign_name
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.deleted_at IS NULL
+       LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
+       LEFT JOIN campaigns c ON c.id=g.campaign_id AND c.org_id=g.org_id
+      WHERE g.org_id=? ORDER BY g.created_at DESC, g.id DESC LIMIT ? OFFSET ?`, [req.apiKey.orgId, limit, offset]);
+  res.json({ data: rows.map(g => ({ id: g.id, personId: g.donor_id, amount: Number(g.amount), date: g.date, type: g.type || null,
+    paymentMethod: g.payment_method || null, fund: g.fund_name || null, campaign: g.campaign_name || null,
+    sample: !!g.is_sample, createdAt: g.created_at })), limit, offset });
+}));
+// Anything else under /api/v1 — including a write — falls through to the
+// app's one 404 handler: a plain not-found, not a hint.
+
 app.get("/volunteers", requireAuth, wrap(async (req, res) => {
   const vols = await query(
     "SELECT * FROM volunteers WHERE org_id = ? ORDER BY hours DESC",
