@@ -138,7 +138,21 @@ const srv = http.createServer(async (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
-srv.listen(PORT, () => {
-  console.log(`[local-preview] http://localhost:${PORT} → dist ${DIST}`);
-  console.log(`[local-preview] proxying ${PROXY.length} vercel.json rewrites to ${API}`);
-});
+// BUILD-96 Part 6 — LISTEN ONLY WHEN RUN, EXPORT WHEN REQUIRED.
+//
+// `loadRewrites` is the thing worth asserting against: the comment above says
+// the table is derived and never copied, and the only way to prove that is for
+// a test to call this exact function rather than re-implement the derivation —
+// a test that re-implemented it would be a second copy of the list, which is
+// the failure mode the derivation exists to prevent.
+//
+// So the server starts only under `node scripts/local-preview.js`. Requiring
+// the file gets the functions and binds no port.
+if (require.main === module) {
+  srv.listen(PORT, () => {
+    console.log(`[local-preview] http://localhost:${PORT} → dist ${DIST}`);
+    console.log(`[local-preview] proxying ${PROXY.length} vercel.json rewrites to ${API}`);
+  });
+}
+
+module.exports = { loadRewrites, PROXY, API, PORT };

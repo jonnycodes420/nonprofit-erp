@@ -127,6 +127,70 @@ Allie Barnett named it first: a donor record with no face is a row, not a person
 
 **The token census RATCHETS DOWN, NEVER UP** (`tests/palette-census.test.js`). The finished parts are held at ZERO (no second green, no bright library red, overdue brass, sage gone from the app); every other count is a ceiling that may only fall, and the suite prints a note telling you to lower it when the gap opens. **A ratchet is not a weaker rule than "zero" — it is the same rule with a date on it, and unlike a TODO it cannot be quietly lost.** Public surfaces (landing, donor portal, giving dashboard) keep their own audited palettes and their own guards; they are excluded by name, with the reason, in the census.
 
+## THE TDZ RULE (standing, from BUILD-96 — this class has now cost four builds)
+
+**A module-scope or component-scope `const` must be DECLARED ABOVE EVERY LINE
+THAT READS IT. No exceptions, and "it works" is not evidence.**
+
+BUILD-84 (`stageBasis` between `payload` and `stagePreview`), BUILD-89
+(`onPanel` below `sHdrPad`, which read it), BUILD-95 (a third time), and
+BUILD-96 again — a blanket replace produced `const INK = INK;` in
+`TermsPage.jsx`, caught within the minute only because the page was rebuilt.
+
+**Why it keeps costing a whole build each time:** `const` and `let` hoist
+without initialising, so reading one early throws `ReferenceError: Cannot access
+'x' before initialization` AT RUNTIME, not at parse. Every unit test passes,
+`node --check` passes, eslint's default config passes, and the failure surfaces
+as a whole screen replaced by its error boundary — or, worse, as a *plausible
+domain message* when a `catch` around the render swallows it ("No rows ready —
+map at least one column"). Only a browser can tell you, which is why
+`rethrowProgrammerError` exists (BUILD-84 FIX) and why the browser legs of the
+battery are not optional.
+
+**The grep that catches it** — every `const`/`let`/`class` read above its own
+declaration in a file:
+
+`scripts/tdz-scan.js` — run it on a file, a directory, or with no argument for
+all of `client/src` and `shared/`:
+
+```bash
+node scripts/tdz-scan.js client/src/pages/TermsPage.jsx
+node scripts/tdz-scan.js                 # everything
+```
+
+It reports two shapes, and only one of them is in the default output:
+
+- **`SELF-REFERENCE`** — `const INK = INK;`, where the read is on the *same*
+  line as the declaration, so no line-number comparison can see it. This is the
+  form that bit BUILD-96. **Exit code 1, zero false positives on this
+  codebase**, and it needs no judgement at all. Getting there took four rounds:
+  strip comments/strings/regex literals (`const s = String(v).replace(/\s+/g,"")`
+  was read as `s` referencing itself, from inside `\s+`), exclude property
+  accesses and object keys (`const blob = await r.blob()`), cut the initialiser
+  at the statement boundary (`const in90 = new Date(t); in90.setDate(...)` is
+  fine), and exclude a shadowing arrow parameter (`const g = xs.map(g => g.id)`).
+- **`reads-above`** — a line above the declaration mentions the name. **Behind
+  `--all`**, because it reports ~209 candidates on this codebase and the large
+  majority are function parameters that merely share a spelling with a binding
+  declared later. It cannot be made exact without real scope analysis. Reach for
+  it when you are hunting a blank screen, not as a routine check.
+
+**A scanner nobody runs twice is worth nothing**, which is why the noisy half is
+opt-in rather than shipped in the default output.
+
+**Reading the output honestly:** a self-reference is always a bug. Otherwise a
+hit is only a BUG when the reading line runs
+at module/component evaluation time. A reference inside a function body that is
+merely *defined* earlier and *called* later is legal — `Nav()` referencing `INK`
+is fine. So triage each hit by asking **"does this line execute before the
+declaration does?"**, and when the answer is "only because of call order", move
+the declaration up anyway: relying on call order is how the next one of these
+gets written.
+
+**And the cheap structural habit that prevents all of it:** in a module, put
+every `const` that other top-level code reads — palettes, tables, registries,
+caps — in ONE block directly under the imports, above the first function.
+
 ## Design system
 - Colors: cream #f0ede6, dark green #0f1a12, primary green #1a6b4a, accent green #10b981, gold #c9a84c, terracotta (gold-tinted brown accent) #b8593f
 - Fonts: DM Serif Display + DM Sans

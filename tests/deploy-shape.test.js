@@ -186,6 +186,54 @@ function checkDeployShape(rootDir, entryRel, { useGit } = {}) {
   fs.rmSync(tmp, { recursive: true, force: true });
   fs.rmSync(tmp2, { recursive: true, force: true });
 
+  // ── BUILD-96 Part 6 — LOCAL PREVIEW AND vercel.json AGREE ────────────────
+  //
+  // scripts/local-preview.js exists to close one environment gap: in
+  // production Vercel rewrites a set of same-origin paths to the Railway
+  // backend, and `vite preview` does not, so the donor portal fetches
+  // /portal-api/... , gets index.html back, and sits on "Loading…" forever —
+  // which reads as a broken product and is a missing proxy.
+  //
+  // That table used to be a hand-kept transcription and it diverged exactly the
+  // way copies do: BUILD-94 added /person-photos to production and not to the
+  // script, so a donor photo rendered as initials in every local browser check
+  // while the suites, which call the API directly, stayed green.
+  //
+  // The script now DERIVES the table from vercel.json. This asserts it — by
+  // calling the script's own loadRewrites, never by re-deriving, because a
+  // second derivation here would be a second copy of the list and the very
+  // thing being guarded against.
+  const preview = require("../scripts/local-preview.js");
+  const vercel = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
+  const backendRules = (vercel.rewrites || [])
+    .filter(r => /^https?:\/\//.test(String(r.destination || "")));
+
+  ok(backendRules.length > 0, `vercel.json has backend rewrites to check — found ${backendRules.length}`);
+  ok(preview.PROXY.length === backendRules.length,
+     `local-preview proxies EVERY vercel.json backend rewrite (${preview.PROXY.length} of ${backendRules.length})`);
+
+  // Each source, as a concrete path, must be matched by the derived table, and
+  // must rewrite to the same backend path production sends it to. A count that
+  // matches while the mapping is wrong is the more dangerous shape.
+  for (const rule of backendRules) {
+    const src = String(rule.source);
+    const sample = src.replace(/:[A-Za-z_]+\*/g, "a/b").replace(/:[A-Za-z_]+/g, "seg");
+    const expected = String(rule.destination).replace(/^https?:\/\/[^/]+/, "")
+      .replace(/:[A-Za-z_]+\*/g, "a/b").replace(/:[A-Za-z_]+/g, "seg");
+    let got = null;
+    for (const [re, to] of preview.PROXY) {
+      const m = re.exec(sample);
+      if (m) { got = to(m); break; }
+    }
+    ok(got === expected,
+       `local-preview sends ${sample} to ${expected}${got === expected ? "" : ` — got ${got === null ? "NO MATCH" : got}`}`);
+  }
+
+  // And the one that actually bit: a path production rewrites must not be
+  // servable as the SPA fallback locally.
+  ok(backendRules.some(r => /^\/person-photos\//.test(String(r.source))),
+     "/person-photos is still among the rewrites (the BUILD-94 divergence)");
+
   console.log(`deploy-shape: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);
 })();

@@ -46,6 +46,49 @@ test is written to it:
 sentence, which is better: *no row on Home is a number without a name attached.*
 A count that labels the named rows under it is not that; a rate over 30 days is.
 
+### A2.1 · The sequences line — the first Home row that names no person
+
+*Added 2026-09-24, BUILD-96 Part 6. Recorded here because A2 is the file that
+holds Home's admission rules, and this is the first row admitted that the rule
+above does not obviously cover.*
+
+BUILD-94 Part 3 put one line per tracked sequence on Home:
+
+> `Welcome: 14 people in it, next send Tuesday · 2 emails could not be sent`
+
+**It stays, and the reason is a narrow one.** A2's rule is *no row on Home is a
+number without a name attached*, and every other Home row satisfies it by
+naming a **person** — the Thread names a donor, Drift names a donor, the
+recurring-failures group names the sustainer whose card failed. This one names
+a **sequence**. So it is admitted under the rule's actual purpose rather than
+its wording: the name attached to the number is the name of the thing she would
+act on, and "Welcome" is that thing. A sequence is supposed to run without her,
+and Home's whole job here is to prove it is running — and to say immediately
+when an email could not be sent, which is the only part she must act on.
+
+Two things make it a row rather than a metric: the count is the people
+currently enrolled, not a rate over a period; and `2 emails could not be sent`
+is an actionable failure with a destination, not a performance measure of her.
+
+**THE CONDITION FOR DEMOTING IT TO COMMUNICATIONS.** It moves off Home when
+either of these becomes true, and a future session should move it without
+further argument:
+
+1. **It stops being able to fail.** The `failedCount` clause is what earns the
+   row. If sequence sends acquire their own reliable alerting — a Thread touch
+   when a send fails, or an entry in the Needs-attention path — then Home's
+   version is a duplicate of a signal that already reached her, and a running
+   count of enrolled people is Communications' business. *(This is the likely
+   one.)*
+2. **There are more than about three tracked sequences.** One line proving one
+   thing is a row; six lines is a dashboard of somebody else's machinery, and
+   at that point the useful Home sentence is the exception — "one sequence has
+   stopped sending" — with the roster behind it in Communications.
+
+**What does NOT justify demoting it:** that it names no person. That is the
+observation this note exists to settle, not a reason on its own — Home's rule
+is about numbers without names, and this number has one.
+
 ### A3 · Part B is scoped to the enumerated surfaces, not to 0.3's count
 
 0.3 below counts **2,513** occurrences of "donor" in `client/src`. Routing all

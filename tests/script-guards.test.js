@@ -167,6 +167,12 @@ const PROD_READONLY = [
   // tests/build97-numbers.test.js so the enumeration cannot drift away from
   // audit/BUILD-97-NUMBER-CENSUS.md.
   "build97-number-census",
+  // BUILD-96 Part 6 — the TDZ scan. A pure SOURCE scan: reads client/src and
+  // shared off disk and reports `const`/`let`/`class` read before its own
+  // declaration. No server, no database, no network. Exits 1 on a
+  // self-reference (always a bug); the noisier read-above-declaration shape is
+  // behind --all because it needs human triage.
+  "tdz-scan",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in

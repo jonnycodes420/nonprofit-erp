@@ -118,3 +118,21 @@ dunning — 4 to 5 retries about four days apart with a card-update link each
 time — so a Steward link would land in the same inbox about the same card.
 Zeffy recovers the card; Steward recovers the relationship, by telling her a
 three-year sponsor was quietly cancelled, which Zeffy does not.
+
+## 6. Where did the horse come from? (BUILD-96 Part 6)
+
+**One question, for Jonathan only: was the reference bitmap you supplied for the
+horse your own image, or did it come from a stock library or a web search?**
+
+The motif is a single SVG path traced from that bitmap. The bitmap and the
+tracing script were never committed — they lived in a scratchpad — so the file
+is gone and nobody can inspect it. Tracing does not make it new work: a
+silhouette traced from a photograph is a derivative of the photograph.
+
+**This is not hypothetical.** `orgs.welcome_motif` is `horse` on
+`org_justinsplace`, which is a REAL organisation. The greeting is armed and
+draws the herd the first time Allie signs in. BUILD-96 did not disable it —
+that greeting is hers and this build was told not to touch her org — so the
+answer is needed BEFORE she signs in, not after.
+
+Recorded in `docs/ASSETS.md`, whose row stays open until it has his initials.
