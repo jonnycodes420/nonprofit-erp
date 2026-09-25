@@ -5,7 +5,7 @@ First-ever cold run of signup→value on production, scripted (Playwright,
 Test org: "QA Fresh Org 1784262298518" (throwaway plus-address of the founder
 email). **No payment was initiated at any point** (live Stripe keys — the
 donate page was render-only). Screenshots + raw step timings in the session
-records; org ids and cleanup instructions in `BLOCKED-build06-cleanup.md`
+records; org ids and cleanup in `NEEDS-JONATHAN.md` §8
 (deletion needs super-admin credentials this environment doesn't have).
 
 Note: run against the post-Phase-A/B/C deploy but **before Phase E's layout
@@ -33,7 +33,7 @@ about flow breakage, not aesthetics.
 | 14 | Reports: LYBUNT (3 correct donors from imported history, call-list framing) | PASS | 2.6s |
 | 15 | Settings → "Export all data (CSV)" zip download (3.4KB) | PASS | 2.7s |
 | 16 | Public donate page /give/:slug renders (amounts, frequency, designation, Stripe notice) — **not submitted** | PASS | 3.4s |
-| 17 | Delete test org | **BLOCKED** | see BLOCKED-build06-cleanup.md |
+| 17 | Delete test org | **needs super-admin** | see NEEDS-JONATHAN.md §8 |
 
 **Console errors: 0. Non-2xx responses: 0** (across the entire flow, both
 scripted passes).
@@ -100,5 +100,5 @@ selector issues; each did leave a throwaway org behind — cleanup file).
 
 Three test orgs remain on production pending super-admin deletion (ids,
 verification steps, and the Stripe-customer loose end in
-`BLOCKED-build06-cleanup.md`). The onboarding email drip to the test
+`NEEDS-JONATHAN.md` §8). The onboarding email drip to the test
 plus-addresses stops automatically once the orgs are deleted.

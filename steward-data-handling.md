@@ -8,7 +8,7 @@ What Steward stores, and who else sees it.
   matched donor's record as plain text — subject, date and body, with quoted
   replies trimmed and attachments dropped — and the inbound mail provider that
   receives the message on Steward's behalf holds it in transit. (The provider
-  has not been chosen yet; see `BLOCKED-build87.md`. This line names it as
+  is **Resend** (decided 2026-09-25: Resend already sends Steward's mail, so it is already a subprocessor and this disclosure does not grow by a name). Not yet switched on — see `NEEDS-JONATHAN.md` §9. Until it is, this line names it as
   "the inbound mail provider" until a human picks one, and the name goes here
   before a single message is received.)
 
@@ -36,7 +36,7 @@ What Steward stores, and who else sees it.
   domain, because Steward hosts the page that honours them. A recipient who
   inspects that link sees `stewardapp.dev` even when the message is sent from
   your own domain; putting that link on your domain is tracked separately in
-  `BLOCKED-custom-domains.md`.
+  a deferred item (path-based URLs remain v1).
 
 ## Connected giving sources (BUILD-89S, 2026-09-20)
 

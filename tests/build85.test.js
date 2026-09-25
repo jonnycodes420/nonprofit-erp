@@ -332,7 +332,7 @@ const mkThread = (id, org, donor, label, due, opened, { type = "follow_up", owne
      typeof health.open === "number" && health.medianDaysToClose !== undefined, health);
 
   // ── §8 · a revisit is a new promise about WHEN ───────────────────────────
-  // Shipped as BLOCKED-build85.md item 1 and fixed here. A "revisit"
+  // Shipped as a named gap and fixed here. A "revisit"
   // dismissal used to set `snoozed_until` and leave `due_date` alone, so a
   // thread deliberately deferred came back reading "overdue, day 180" and, by
   // owning the oldest-thread slot, headlined every morning email.

@@ -7,7 +7,7 @@
 // plain text". There was none. Everything secret this product holds in
 // Postgres today sits readable: `gmail_connections.access_token` and
 // `.refresh_token`, `users.mfa_secret`. That is a finding of its own and it is
-// written up in BLOCKED-build89a.md — this file does NOT retroactively fix
+// written up at the time — this file does NOT retroactively fix
 // those columns, and pretending otherwise would be worse than the gap.
 //
 // What it does do is make the NEW gap impossible: a giving source's

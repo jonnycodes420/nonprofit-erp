@@ -153,7 +153,7 @@ for (const [path, why] of [
 // deploy-vercel Actions job (green tests → vercel deploy → SHA-verified poll).
 // Re-enabling git auto-build here would let a red-test push ship the client —
 // a deliberate decision if ever, never a casual edit. (The ignored-build-step
-// alternative was rejected; see BLOCKED-vercel-gate.md.)
+// alternative was rejected; the Actions deploy path is live now.)
 ok(vj.git?.deploymentEnabled?.main === false,
   "vercel.json keeps git auto-build DISABLED for main (Actions-only frontend deploys)");
 

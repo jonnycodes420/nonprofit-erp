@@ -1,7 +1,7 @@
 // BUILD-82 — THE GOLDEN WORKBOOK SUITE (pure half). Drives the whole pure
 // layer over tests/fixtures/build82/steward-messy-25k-v3.xlsx (7.6MB, nine
 // sheets, 25,300 people, 92,227 gift rows) and pins every number the layer
-// measures. The Cowork generator/key never landed on disk (BLOCKED-build82.md),
+// measures. The Cowork generator/key never landed on disk,
 // so pins are MEASURED truth cross-checked against the spec's stated numbers;
 // where the spec states a number the artifact can no longer prove (net cash
 // $53,231,102.55), the suite asserts the itemised waterfall instead.

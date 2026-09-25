@@ -1582,7 +1582,7 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_threads_org_timed ON threads (org_id, due_date, due_time) WHERE closed_at IS NULL AND due_time IS NOT NULL`);
 
   // ── BUILD-86 FIX — SNOOZE MOVES THE DUE DATE, AND KEEPS THE FIRST ONE ─────
-  // BUILD-85 shipped with this named in BLOCKED-build85.md: a "revisit"
+  // BUILD-85 shipped with this named as a known gap: a "revisit"
   // dismissal set `snoozed_until` and left `due_date` where it was, so a
   // thread deliberately deferred for six months came back reading "overdue,
   // day 180", sorted to the top, and OWNED THE SUBJECT LINE of every morning
@@ -1702,7 +1702,7 @@ async function initSchema() {
   // domain" trust gap and does nothing about the other one: an unfamiliar
   // SENDING domain costs deliverability, and on a shared domain one org's spam
   // complaints drag down every other org's reputation. This is the other half
-  // (BLOCKED-sending-domains.md's shape, built).
+  // (the per-org sending-domain shape, built).
   //
   // The state machine is deliberately small: a domain, Resend's id for it, the
   // records the org must publish, a status, and the moment it verified. An org
@@ -2524,7 +2524,7 @@ async function initSchema() {
   // forced). bcryptjs cost 12 (matches staff auth; argon2id was rejected only
   // because it adds a native dep to a zero-native-deps deploy — documented
   // decision per the build brief). MFA columns are nullable placeholders —
-  // TOTP is specced in BLOCKED-donor-mfa.md, not silently skipped.
+  // TOTP is specced, not silently skipped — deferred, not in v1.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS donor_accounts (
       id TEXT PRIMARY KEY,

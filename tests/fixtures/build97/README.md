@@ -6,7 +6,7 @@ That is stated first because it is the most important thing about this file.
 lied for three builds, and it sanctions `tests/fixtures/external/*.json` only
 for payloads *recorded from a live service*. This fixture is deliberately NOT
 there: no real Justin's Place export was in hand when the preset was written
-(see `BLOCKED-build97.md` §2), so it carries the same status as every other
+(see `NEEDS-JONATHAN.md` §6), so it carries the same status as every other
 import fixture in this directory — a shape built from published documentation,
 useful for proving the LOGIC and worth nothing as proof that a real file looks
 like this.

@@ -34,7 +34,7 @@
 //
 // ── CONFIDENCE ─────────────────────────────────────────────────────────────
 // No real Justin's Place export was in hand when this was written (see
-// BLOCKED-build97.md). Every column below is a CANDIDATE SPELLING drawn from
+// NEEDS-JONATHAN.md §6). Every column below is a CANDIDATE SPELLING drawn from
 // NPSP's documented object model, in BOTH the spellings a real file arrives
 // in: the API names a Data Loader export writes (`npo02__TotalOppAmount__c`)
 // and the human labels a Salesforce REPORT export writes ("Total Gifts").
@@ -360,7 +360,7 @@ export function npspMapping(headers, { object } = {}) {
   // This does not get to be silent. The collision is reported as a WARNING the
   // review step must show, with both column names in it. The proper fix — a
   // flag field that can be the OR of several columns — is named in
-  // BLOCKED-build97.md rather than guessed at here, because deciding which
+  // NEEDS-JONATHAN.md §6 rather than guessed at here, because deciding which
   // refusal outranks which is a decision about contacting real people.
   const dncCandidates = (NPSP_CONTACT_COLUMNS.doNotContact || []).map(norm);
   const dncPresent = hs.filter(h => dncCandidates.includes(norm(h)));

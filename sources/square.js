@@ -33,7 +33,7 @@
 // item surfaces a distinguishing field. Until a real payload says otherwise,
 // the location/phrase gate above is the answer. Same discipline as Zeffy and
 // Givebutter: a DECLARED TABLE, and a suite that proves every candidate path
-// resolves. `BLOCKED-build95.md` names the live walk that closes it.
+// resolves. `NEEDS-JONATHAN.md` §6 names the live walk that closes it.
 //
 // Square gives nonprofits NO discounted rate — 2.6–3.5% like any merchant —
 // so an org on Square is there because of the card reader in the barn, not

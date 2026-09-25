@@ -163,15 +163,23 @@ async function reset() {
   // ── §5 · the asks are written down ───────────────────────────────────────
   console.log("\n— §5 · what Jonathan asks each of them —");
 
-  const blocked = read("BLOCKED-build95.md");
-  ok("the Zeffy ask is one sentence and names who", /\*\*Ask Laura/.test(blocked), true);
-  ok("...for a read-only API key", /read-only API key/.test(blocked), true);
-  ok("the Square ask names who", /\*\*Ask Allie/.test(blocked), true);
-  ok("...for a production access token", /production access token/.test(blocked), true);
+  // The 53 BLOCKED-*.md files are gone (2026-09-25); anything that physically
+  // requires Jonathan lives in ONE file, NEEDS-JONATHAN.md, and everything else
+  // was decided. These two asks are the reason that file has to keep naming a
+  // PERSON: "get a Zeffy key" is a task nobody owns, and an unowned task is how
+  // an adapter sits unverified for a month.
+  const needs = read("NEEDS-JONATHAN.md");
+  ok("the Zeffy ask names who", /\*\*Laura\*\*/.test(needs), true);
+  ok("...and asks for a read-only API key", /read-only API key/.test(needs), true);
+  ok("the Square ask names who", /\*\*Allie\*\*/.test(needs), true);
+  ok("...and asks for a production access token", /production access token/.test(needs), true);
   ok("...and for the one thing Square cannot answer alone — which location or item is a donation",
-     /counts as a donation/.test(blocked), true);
-  ok("and the order is written down: walk it, mark the row, THEN the allowlist",
-     /in that order,\s+never any other/.test(blocked), true);
+     /count as donations/.test(needs), true);
+  ok("the file holds ONLY what physically requires him, and says so",
+     /\*\*physically requires you\*\*/.test(needs), true);
+  ok("...and no BLOCKED-*.md file survives to disagree with it",
+     require("fs").readdirSync(require("path").join(__dirname, ".."))
+       .filter(f => /^BLOCKED-.*\.md$/.test(f)).length === 0, true);
 
   await reset();
   await closeDb();

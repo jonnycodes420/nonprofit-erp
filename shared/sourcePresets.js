@@ -25,7 +25,7 @@
 // 89d's brief asked for one real scrubbed export of each. None were available
 // when this was built, so each preset declares its own `confidence`, its
 // columns are CANDIDATE SPELLINGS (the same shape as the provider adapters'
-// FIELD_MAPs), and `BLOCKED-build89d.md` names the ten-minute walk that
+// FIELD_MAPs), and `NEEDS-JONATHAN.md` §6 names the walk that
 // confirms each one. A preset that turns out to be wrong is a one-line edit to
 // the table below, and its suite fails by column name rather than the file
 // importing quietly wrong.
@@ -115,7 +115,7 @@ export const SOURCE_PRESETS = {
   // about whether Cash App exports a CSV at all or only monthly PDF
   // statements. The columns below are the commonly-reported CSV shape. If the
   // real export turns out to be PDF-only, this preset is withdrawn rather than
-  // propped up — see BLOCKED-build89d.md. NO PDF PARSER WAS BUILT.
+  // propped up — see NEEDS-JONATHAN.md §6. NO PDF PARSER WAS BUILT.
   cashapp_csv: {
     key: "cashapp_csv",
     label: "Cash App statement",
@@ -144,7 +144,7 @@ export const SOURCE_PRESETS = {
   // The brief's rule, kept: no named preset for Givelify, Tithe.ly or anyone
   // else without a REAL exported file in the repo to build it against. There
   // is none for any of them (and none for the three above either — see
-  // BLOCKED-build89d.md), so guessing a vendor's column spellings would be a
+  // NEEDS-JONATHAN.md §6), so guessing a vendor's column spellings would be a
   // preset that fails quietly on the one file that matters. Instead there is
   // one preset that admits it knows nothing about the file and asks.
   //

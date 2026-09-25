@@ -31,7 +31,7 @@
 // deliberately absent here.
 //
 // Fixture key note: the Cowork-side fixture key file is not in the repo
-// (BLOCKED-build79.md) — these assertions bind to file-derived ground truth
+// (the fixture key never landed on disk) — these assertions bind to file-derived ground truth
 // + the spec's stated facts (2,500 records, TOTAL $2,035,978.52, header on
 // line 4).
 
@@ -158,7 +158,7 @@ async function reset() {
   // additionally counts the TRUE values of the 16 damaged cells (8 amount
   // traps $15,170 + 5 column-shifted amounts $3,025 + $15,700 of other
   // damage) that no honest parser can read out of the written bytes; the
-  // written-cells number is the one the summary may claim (BLOCKED-build80.md).
+  // written-cells number is the one the summary may claim.
   const amtScan = lib.scanAmountShapedColumns(a.headers, a.rows);
   ok("the independent scan reads the Amount column at $2,293,751.22 — convention-correct, never strip-and-hope",
     amtScan.header === "Amount" && amtScan.sum === 2293751.22, amtScan);

@@ -74,7 +74,7 @@ function assertAgree(label, handledSet, manifest) {
   // (2026-09-11) payment_method.automatically_updated joined it — the card
   // recovery work handles it and the live endpoint does not yet subscribe it.
   // This list growing IS the signal: each entry is a handler that will not fire
-  // in production until someone subscribes it. See BLOCKED-card-recovery.md.
+  // in production until someone subscribes it. See NEEDS-JONATHAN.md §4.
   const liveSubscribedNow = [
     "payment_intent.succeeded", "checkout.session.completed",
     "invoice.payment_failed", "invoice.payment_succeeded",

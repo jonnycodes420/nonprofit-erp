@@ -258,7 +258,7 @@ ok("the landing footer renders copyrightLine() — the year is computed, not typ
   //
   // So the guard is the same guard, pointed the right way: the receipt must
   // name the org, and must NOT name this company. See
-  // audit/FIX-legal-entity-FINDINGS.md §BLOCKED-1 and BLOCKED-fix-legal-entity.md.
+  // audit/FIX-legal-entity-FINDINGS.md §BLOCKED-1.
   const BASE = process.env.BASE || "http://localhost:5601";
   let reachable = false;
   try { reachable = (await fetch(BASE + "/health", { signal: AbortSignal.timeout(4000) })).ok; } catch {}

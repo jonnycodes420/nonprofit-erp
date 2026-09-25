@@ -1,7 +1,7 @@
 // BUILD-89S 89d — STATEMENT PRESETS. Run: node tests/build89s-presets.test.js
 //
 // No real export of any of the three was available when this was built (see
-// BLOCKED-build89d.md), so this suite does the two things that are worth doing
+// NEEDS-JONATHAN.md §6), so this suite does the two things that are worth doing
 // without one:
 //
 //   §1  IT PROVES THE TABLE IS LOAD-BEARING. Every candidate spelling declared

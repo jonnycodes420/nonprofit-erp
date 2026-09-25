@@ -131,7 +131,7 @@ export default function PrivacyPage() {
         <h2 style={S.h2}>12. Governing Law</h2>
         <p style={S.p}>This Privacy Policy is governed by the laws of the Commonwealth of Kentucky, United States. Any disputes arising from this policy shall be resolved in the state or federal courts located in Kentucky.</p>
 
-        {/* INTERIM — attorney replacement pending per BLOCKED-legal-network.md.
+        {/* INTERIM — attorney replacement pending per NEEDS-JONATHAN.md §7 — network.md.
             Scoped to the donor-account + network-signup surfaces; written
             plainly from audit/portal-data-handling.md. */}
         <h2 style={S.h2}>13. Donor Accounts &amp; the Giving Network</h2>

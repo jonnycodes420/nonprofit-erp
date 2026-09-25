@@ -317,7 +317,7 @@ const mkDonor = (id, org, name, opts = {}) => q(
     // The rest of the surface still works without a key — the Activity screen,
     // the undo and the pause are not the model's business.
     ok("…while the activity screen still answers", (await api("GET", "/agent/activity", tok)).status === 200);
-    console.log("  (the plan/run legs need ANTHROPIC_API_KEY — see BLOCKED-build97.md §4)");
+    console.log("  (the plan/run legs need ANTHROPIC_API_KEY — see NEEDS-JONATHAN.md §3)");
   } else {
     const planned = await api("POST", "/agent/instructions", tok,
       { text: "Find everyone who gave last October and has not given this year, and draft me a note to each." });
@@ -391,7 +391,7 @@ const mkDonor = (id, org, name, opts = {}) => q(
       ok("…and offers NOTHING to press — absent, not broken",
          await page.locator('[data-testid="agent-input"]').count() === 0 &&
          await page.locator('[data-testid="agent-ask"]').count() === 0, true);
-      console.log("  (the on-screen refusal leg needs ANTHROPIC_API_KEY — see BLOCKED-build95.md §4)");
+      console.log("  (the on-screen refusal leg needs ANTHROPIC_API_KEY — see NEEDS-JONATHAN.md §3)");
     } else {
     ok("…with somewhere to type", await page.locator('[data-testid="agent-input"]').count() === 1);
     const boxText = (await box.count()) ? await box.innerText() : "";

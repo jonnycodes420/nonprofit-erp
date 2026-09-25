@@ -140,7 +140,7 @@ variable, and nothing is written — the feature is unavailable rather than
 insecure.
 
 **Rotating this key orphans every stored credential** (there is no re-seal path
-yet — see BLOCKED-build89a.md §1). After a rotation every source must be
+yet). After a rotation every source must be
 disconnected and connected again.
 
 ### DONE 2026-09-22 — the key is set on prod
@@ -174,7 +174,7 @@ pre-charge reminder, both of which should read as coming from Jonathan.
 
 Then run one real close link on prod with your own card, confirm Stripe shows
 a trialing subscription with no charge, and cancel it. Full checklist and the
-reasoning: `BLOCKED-build90.md`.
+reasoning: the BUILD-90 findings.
 
 **Never set `STRIPE_BILLING_API_BASE` in production** — it is the local-test
 seam that points the billing client at a mock.
@@ -205,7 +205,7 @@ against products it created itself.
 Verified after the redeploy: `GET /admin/close-links` reports `ready: true` for
 all three, with Stripe's own amount and interval matching what the page quotes.
 
-**Still Jonathan's, and still not done:** §3 of `BLOCKED-build90.md` — one real
+**Still Jonathan's, and still not done:** `NEEDS-JONATHAN.md` §5 — one real
 close link on prod, walked with his own card, confirmed `trialing` with no
 charge, then cancelled and the throwaway org deleted. Nobody else can do that
 step.
@@ -250,7 +250,7 @@ row.
 
 **Documentation to correct after rotating** (they state the pair as fact):
 `CLAUDE.md` line 25, `PROGRESS.md` line 25, `QA_REPORT.md`,
-`BLOCKED-superadmin-removal.md`.
+`NEEDS-JONATHAN.md` §8.
 
 **Not affected:** the test suites. They mint their own fixture users and are
 refused against any non-loopback `BASE`/`DATABASE_URL` (`tests/helpers.js`),
@@ -258,7 +258,7 @@ so none of them can reach the production demo org at all.
 
 **The deeper fix is still open** and is not a password: Jonathan's super-admin
 account should not live in the same organisation as a shared demo login. See
-`BLOCKED-superadmin-removal.md`.
+`NEEDS-JONATHAN.md` §8.
 
 ## §10 — THE RESEND BOUNCE/COMPLAINT WEBHOOK (BUILD-94 Part 4, 2026-09-22)
 
@@ -349,7 +349,7 @@ single day, or **$0.00** spread over ten.
 **Never set `GEOCODIO_API_BASE` in production** — like `STRIPE_BILLING_API_BASE`
 it is the local-test seam that points the client at a mock.
 
-Reasoning and the provider comparison: `BLOCKED-build84.md` §1.
+Provider decided: Geocodio (US+Canada, 2,500 free lookups/day). `NEEDS-JONATHAN.md` §2.
 
 
 ## §12 — OUTBOUND EMAIL IS CURRENTLY BLOCKED ON PRODUCTION (incident 2026-09-22)
@@ -450,4 +450,4 @@ ANTHROPIC_API_KEY=sk-ant-… node scripts/build95-cheque-drill.js cheque1.jpg ch
 
 Three real cheques, and record what came back beside what was actually written
 — including whether the figures and the words settled. See
-`BLOCKED-build95.md` §4.
+`NEEDS-JONATHAN.md` §3.

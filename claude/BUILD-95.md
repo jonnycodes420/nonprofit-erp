@@ -43,7 +43,7 @@ set**, loudly, because silence reads as "Square had no donations."
 > PATCH: a rename that silently wiped the gate would stop every import with no
 > error. And Square is mirrored in `publicSources` but is **NOT on the
 > allowlist** and must not go there until a real dollar has come out of a real
-> Square account (`BLOCKED-build95.md` §1).
+> Square account (`NEEDS-JONATHAN.md` §6).
 
 ### 2 · "Where giving comes in" moved under Integrations — `a52d5df`
 `Settings.jsx`, `Dashboard.jsx`. Four test updates, each honest about what moved.
@@ -184,8 +184,8 @@ provisioned on prod with the `horse` motif and a first-run welcome armed.
 
 ## WHAT WAS NOT PROVEN
 
-- **Square has never seen a real payload** — `BLOCKED-build95.md` §1.
-- **Zeffy has never seen a real payload** — `BLOCKED-build95.md` §2. Zeffy's
+- **Square has never seen a real payload** — `NEEDS-JONATHAN.md` §6.
+- **Zeffy has never seen a real payload** — `NEEDS-JONATHAN.md` §6. Zeffy's
   public API is six endpoints, all GET; Steward can never process a Zeffy
   payment, only read one. **Zeffy recovers the card; Steward recovers the
   relationship.**

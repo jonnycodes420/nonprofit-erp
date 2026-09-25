@@ -1435,7 +1435,7 @@ const DIRECT_ORDER=["paypal","zeffy","stripe","givebutter","square"];
 // request. Nothing else is promised here.
 //
 // A key leaves this map the moment a real account has synced through it, and
-// BLOCKED-build95.md §5 is where the two asks are tracked.
+// NEEDS-JONATHAN.md §6 is where the two asks are tracked.
 const VERIFYING={
   zeffy:  "To be one of the first: a read-only API key from your Zeffy account.",
   square: "To be one of the first: a production access token from your Square account.",

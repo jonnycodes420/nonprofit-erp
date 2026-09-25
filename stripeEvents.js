@@ -35,7 +35,7 @@ const DONATION_WEBHOOK_EVENTS = [
   // NOTE THE CONSEQUENCE, which is the point of this manifest existing: until
   // the LIVE endpoint subscribes to it, /health's webhookSubscriptions diff
   // reports it missing and the handler never fires in production. That is the
-  // BUILD-62 class made visible instead of silent — see BLOCKED-card-recovery.md.
+  // BUILD-62 class made visible instead of silent — see NEEDS-JONATHAN.md §4.
   "payment_method.automatically_updated",
 ];
 

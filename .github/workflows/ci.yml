@@ -8,7 +8,7 @@
 # on a green `test` job — Railway's GitHub auto-deploy is disconnected and the
 # `deploy-railway` job below is the one path to the backend. `deploy-vercel`
 # is wired the same way but stays dormant until the VERCEL_TOKEN secret exists
-# (see BLOCKED-vercel-gate.md); until then Vercel's git auto-build still owns
+# (activation done 2026-08-12); until then Vercel's git auto-build still owned
 # the frontend. Break-glass + full before/after: audit/deploy-rewire.md.
 name: CI
 
@@ -210,7 +210,7 @@ jobs:
   # DORMANT GATE: the job-level `if` reads the repository VARIABLE
   # VERCEL_DEPLOY_ENABLED, so until it is set to 'true' the job renders as
   # SKIPPED (grey) — never a misleading green "success" that deployed nothing.
-  # Activation (see BLOCKED-vercel-gate.md): set the VERCEL_TOKEN secret AND
+  # Activation (DONE — token + variable are set): set the VERCEL_TOKEN secret AND
   # `gh variable set VERCEL_DEPLOY_ENABLED --body true`. Until then Vercel's
   # git auto-build continues to own production so the frontend can always
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
@@ -232,7 +232,7 @@ jobs:
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
             echo "::error::VERCEL_DEPLOY_ENABLED is true but the VERCEL_TOKEN secret is not set — refusing."
-            echo "See BLOCKED-vercel-gate.md."
+            echo "Set the VERCEL_TOKEN secret, or unset VERCEL_DEPLOY_ENABLED."
             exit 1
           fi
           # BUILD_SHA is the meta-tag fallback: the remote Vercel build has no

@@ -6,7 +6,7 @@
 // ── THE SAME HONESTY AS ZEFFY ──────────────────────────────────────────────
 // Givebutter's field-level reference could not be read without an account, so
 // the field resolution is a DECLARED TABLE and the suite proves every declared
-// candidate is actually read. `BLOCKED-build89e.md` names the live walk.
+// candidate is actually read. `NEEDS-JONATHAN.md` §6 names the live walk.
 //
 // ── WHY A FAILED PLAN COMES BACK AS A "FAILED" CONTRACT ROW ────────────────
 // Givebutter's webhooks include `plan.failed`, `plan.canceled` and

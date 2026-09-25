@@ -36,7 +36,7 @@
 // property reads through a mapper. That is the shape the uncertainty should
 // take: visible, in one place, and cheap to close.
 //
-// `BLOCKED-build89c.md` names the live walk that closes it.
+// `NEEDS-JONATHAN.md` §6 names the live walk that closes it.
 
 const { firstOf, toCents, toCivilDate, dropNotice } = require("./field.js");
 

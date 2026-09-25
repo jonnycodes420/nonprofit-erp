@@ -8,7 +8,7 @@
 // Everything in this file is PURE: no network, no database, no provider SDK,
 // no JSX. The webhook in server.js does exactly two things this module cannot
 // — read rows, and write them. That split is what lets the whole inbound path
-// be tested without a mail provider existing yet (see BLOCKED-build87.md: the
+// be tested without a mail provider existing yet (see NEEDS-JONATHAN.md §9: the
 // subprocessor and its DNS are a human's decision, deliberately not made here).
 //
 // THE RULES, and why each one is a refusal rather than a guess:

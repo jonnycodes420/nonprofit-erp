@@ -2614,7 +2614,7 @@ async function donorCreditTotals(orgId, donorId) {
 //   - a row that reads refunded and whose gift IS already on file is counted
 //     and NAMED on the run summary, so a human is told exactly which gift to
 //     look at rather than a number being silently wrong.
-// Named for its own build in BLOCKED-build89a.md.
+// Named for its own build at the time.
 const SOURCE_SYNC_MAX_PAGES = 400;
 const SOURCE_SYNC_RESYNC_DAYS = 3;   // providers publish late; re-read and let dedupe work
 const SYS_SOURCE = { id: "system:giving-source", name: "Connected giving source" };
@@ -15420,7 +15420,7 @@ async function resolvePdfLogo(brand) {
 // The donor-facing "From" — the org's name in the inbox, so a receipt reads as
 // coming from "CREO Arts", not a bare unfamiliar domain (BUILD-64 Part 2, the
 // "Now" half of sender identity; per-org sending DOMAINS are scoped separately
-// in BLOCKED-sending-domains.md). Header-injection-safe: no CR/LF/quotes/angles
+// in the per-org sending-domain write-up). Header-injection-safe: no CR/LF/quotes/angles
 // in the display name. The address itself is unchanged (noreply@stewardapp.dev).
 const DONOR_MAIL_ADDR = () => process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
 function fromWithDisplayName(displayName, addr) {
@@ -15568,7 +15568,7 @@ async function getSuppressionReason(email, orgId) {
 // kind fails CLOSED: classify it here before it can send.
 //
 // NB the transactional-vs-marketing line is a legal judgment as well as a
-// product one — flagged for attorney review in BLOCKED-build58.md; this table
+// product one — flagged for attorney review in NEEDS-JONATHAN.md §7; this table
 // is the product's best-faith classification, not a legal conclusion.
 // W-2 white-label sweep: the name a DONOR sees is the portal display name
 // when the org set one, never the staff-side orgs.name ("CREO Arts (Demo)").
@@ -17426,7 +17426,7 @@ async function agentRunPlan(orgId, instruction, { userId }) {
      withheldReasons.slice(0, 5).join(" · ").slice(0, 600) || null, runId]);
 
   // NOTHING IS SENT BY THIS PATH. `sent` is written as 0 above, deliberately
-  // and unconditionally: the signed-for-sending half is BLOCKED-build97.md §9,
+  // and unconditionally: the signed-for-sending half is still open,
   // because sending needs a Resend key that is currently an invalid sentinel by
   // deliberate incident containment, and shipping a send path that has never
   // once been walked is exactly the mistake that caused the incident.
@@ -30090,7 +30090,7 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
 //
 // Tenancy is path-based: /portal/:orgSlug (production reaches these routes
 // same-origin through the vercel.json /portal-api proxy, so the SameSite=Lax
-// HttpOnly session cookie flows; custom CNAME domains are BLOCKED-custom-
+// HttpOnly session cookie flows; custom CNAME domains are a deferred-
 // domains.md). Donors never get passwords — magic link only (P-1). Portal
 // sessions are a separate cookie + separate table from staff JWTs (P-4):
 // requirePortalSession reads ONLY the cookie (never Authorization), and every
@@ -32223,7 +32223,7 @@ const NETWORK_SIGNUP_ENABLED = process.env.NETWORK_SIGNUP_ENABLED === "1";
 const requireFlag = (on) => (req, res, next) => on ? next() : res.status(404).json({ error: "Not found" });
 
 // Consumer-surface brand string — placeholder pending the founder decision
-// (BLOCKED-consumer-brand.md lists every place this lives).
+// (GivingDashboard.jsx's header comment lists every place this lives).
 const CONSUMER_BRAND = "Steward"; // consumer surface = plain Steward (go-live decision 2026-08-12; rename stays one commit — BLOCKED-consumer-brand.md)
 const foldEmail = (e) => String(e || "").trim().toLowerCase();
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -32356,7 +32356,7 @@ app.post("/account/signup", requireFlag(DONOR_ACCOUNTS_ENABLED), accountIpLimite
   if (password.length < 8 || password.length > 200) return res.status(400).json({ error: "Password must be at least 8 characters" });
   // Interim legal posture (go-live 2026-08-12): explicit consent to the Terms
   // + Privacy Policy is required and audit-recorded. INTERIM pages pending the
-  // attorney pass (BLOCKED-legal-network.md).
+  // attorney pass (NEEDS-JONATHAN.md §7).
   if (req.body?.consent !== true) return res.status(400).json({ error: "consent_required", message: "Please agree to the Terms and Privacy Policy." });
   // Identical response whether or not the account exists (P-2 discipline).
   res.json({ received: true, message: "Check your email to verify your account." });
@@ -33297,7 +33297,7 @@ app.post("/admin/network/run-gate-sweep", requireAuth, requireSuperAdmin, wrap(a
 // NO PROVIDER IS CHOSEN HERE, DELIBERATELY. Picking who receives the mail is a
 // new subprocessor and a DNS change — a decision about what leaves the system
 // — so the webhook takes a NORMALIZED payload any provider can be adapted to
-// and the choice is written up in BLOCKED-build87.md for a human. All the
+// and the provider is decided (Resend) but not switched on — NEEDS-JONATHAN.md §9. All the
 // parsing, matching and stripping is in shared/inboundEmail.js, pure, so this
 // path is provable with no mail provider in existence.
 //

@@ -24,7 +24,7 @@
 //     site footer (full-bleed primary band).
 //
 // Brand: CONSUMER_BRAND is the placeholder pending the founder decision —
-// every place the string lives is listed in BLOCKED-consumer-brand.md.
+// every place the string lives is listed just below.
 // Feature-flagged: the server's /network/config gates this page; with
 // DONOR_ACCOUNTS_ENABLED off the page renders a quiet unavailable state.
 import React, { useEffect, useRef, useState } from "react";

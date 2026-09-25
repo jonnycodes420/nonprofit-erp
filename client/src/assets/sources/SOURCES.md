@@ -32,7 +32,7 @@ nothing else. Every tile currently renders in type.
 | Square | merged, green | no | squareup.com press/brand assets | none | no |
 | Cash App | n/a — statement upload | n/a | cash.app press page | none | no |
 | Venmo | n/a — statement upload | n/a | venmo.com brand guidelines | none | no |
-| QuickBooks (Intuit) | **not built — see BLOCKED-build91.md** | no | Intuit trademark and brand guidelines, via intuit.com legal | none | no |
+| QuickBooks (Intuit) | **not built — see NEEDS-JONATHAN.md §2** | no | Intuit trademark and brand guidelines, via intuit.com legal | none | no |
 
 **The brand-page locations above are descriptions of where to look, not fetched
 and verified URLs.** No page was opened in the build that wrote this file, and
