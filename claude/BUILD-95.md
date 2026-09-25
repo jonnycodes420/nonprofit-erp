@@ -14,6 +14,13 @@ named.
 commits behind main. CI green by workflow name (`CI`, `CodeQL`) on every commit
 below.
 
+**Re-verified 2026-09-24 (BUILD-96).** Prod has moved on to `20de118`
+(BUILD-97), and every commit named in this file is an ancestor of it — checked
+one at a time with `git merge-base --is-ancestor`, not inferred from the fact
+that main moved forward. A commit being older than prod is not the same as
+being IN prod; a rebase, a revert or a force-push breaks that assumption, which
+is why this is a check rather than a sentence.
+
 ---
 
 ## THE SEVEN THINGS
