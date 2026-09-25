@@ -8069,7 +8069,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } catch (e) { console.error("[combined-import] proposals failed:", e.message); proposalsImported = { error: e.message }; }
   }
 
+  // BUILD-101 Part 6 — memberships named in the file, written after the
+  // people exist (the client sends them with the LAST chunk). History only:
+  // no gift, no ledger row, and a level the org does not have is HELD.
+  let membershipsImported = null;
+  if (Array.isArray(req.body.memberships) && req.body.memberships.length) {
+    try { membershipsImported = await importMemberships(orgId, req.body.memberships, actor(req)); }
+    catch (e) { console.error("[combined-import] memberships failed:", e.message); membershipsImported = { error: e.message }; }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
+             memberships: membershipsImported, // BUILD-101 Part 6
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
              proposals: proposalsImported, // BUILD-99 Part 6 — open asks, routed off the cash total
@@ -31871,6 +31881,50 @@ app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
   if (!r.length) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
 }));
+
+// ── BUILD-101 Part 6 — MEMBERSHIPS FROM A FILE ────────────────────────────
+// Rows arrive already read by shared/membershipImport.js. Each is placed on a
+// person — by EMAIL, exactly, or by NAME when the row has no email (the oldest
+// matching record, the proposals/soft-credit rule) — and on one of the org's
+// OWN levels, matched case-insensitively. Everything that cannot be placed is
+// HELD with its line number and the reason; nothing is created to make a row
+// fit. An imported membership is history: it carries no payment (no gift, no
+// ledger row), its status comes from its dates, and a re-run adds nothing.
+async function importMemberships(orgId, rows, who) {
+  await MB_READY;
+  const MI = await import("./shared/membershipImport.js");
+  const out = { written: 0, skippedDuplicate: 0, held: [] };
+  const levels = await query("SELECT * FROM membership_levels WHERE org_id=?", [orgId]);
+  const today = orgToday(await orgTz(orgId));                  // ORG_TZ_SEAM_OK
+  const { graceDays } = await membershipSettings(orgId);
+  const hold = (r, why) => out.held.push({ line: Number.isInteger(r.line) ? r.line : null, name: r.name || r.email || null, level: r.level || null, why });
+  for (const r of rows.slice(0, 50000)) {
+    const level = MI.matchLevel(levels, r.level);
+    if (!level) { hold(r, `no level called "${String(r.level || "").slice(0, 60)}" — add it in Members, or fix the file`); continue; }
+    const iso = v => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const starts = iso(r.starts) || iso(r.joined);
+    if (!starts) { hold(r, "no start date that could be read"); continue; }
+    let donor = null;
+    if (r.email) [donor] = await query("SELECT id FROM donors WHERE org_id=? AND LOWER(email)=LOWER(?) AND deleted_at IS NULL ORDER BY created_at LIMIT 1", [orgId, r.email]);
+    if (!donor && r.name) [donor] = await query("SELECT id FROM donors WHERE org_id=? AND LOWER(name)=LOWER(?) AND deleted_at IS NULL ORDER BY created_at LIMIT 1", [orgId, String(r.name).trim()]);
+    if (!donor) { hold(r, "no one on file with that email or name"); continue; }
+    const expires = iso(r.expires) || MB.expiryFor({ term: level.term, startsOn: starts });
+    const [dup] = await query("SELECT id FROM memberships WHERE org_id=? AND donor_id=? AND level_id=? AND starts_on=?", [orgId, donor.id, level.id, starts]);
+    if (dup) { out.skippedDuplicate++; continue; }
+    const status = MB.statusOn({ expiresOn: expires, today, graceDays });
+    try {
+      await run(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status,status_changed_on,source,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,?,?,?,'import',?,?)`,
+        ["mb_" + uuid().slice(0, 10), orgId, donor.id, level.id, iso(r.joined) || starts, starts, expires, status,
+         status === "lapsed" ? MB.addDaysCivil(expires, graceDays + 1) : null, who.id, who.name]);
+      out.written++;
+    } catch (e) {
+      if (e.code !== "23505") throw e;
+      hold(r, "this person already holds a current membership");
+    }
+  }
+  return out;
+}
 
 // ── BUILD-101 Part 4 — A MEMBERSHIP BOUGHT ONLINE ─────────────────────────
 // The ONE step that turns an online membership payment into a membership. It

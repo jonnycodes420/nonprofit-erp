@@ -14,6 +14,7 @@ import { PERSON_TYPES } from "../../../shared/personType.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { detectNpsp, npspMapping, npspOrganizationName, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
 import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
+import { membershipColumns, detectMembershipPreset, buildMembershipRows, MEMBERSHIP_FIELDS, MEMBERSHIP_FIELD_LABELS, MEMBERSHIP_PRESETS } from "../../../shared/membershipImport.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
@@ -84,6 +85,10 @@ const CSV_FIELDS = [
   { key:"photo",     labels:["photo","photo url","photo_url","photourl","image","image url","image_url","picture","picture url","headshot","avatar","profile photo","profile image","constituent photo","photo link"] },
   { key:"deceased",     labels:["deceased","is deceased"] },
   { key:"doNotContact", labels:["do not contact","do not solicit","do not mail","do not email","dnc","dns","no contact"] },
+  // BUILD-101 Part 6 — memberships. No label matching here: a bare "Level" or
+  // "Expires" is claimed only when shared/membershipImport.js recognises the
+  // whole file as a membership file (a level AND a membership date).
+  ...MEMBERSHIP_FIELDS.map(key => ({ key, labels: [] })),
 ];
 const VALID_IMPORT_KEYS = new Set([...CSV_FIELDS.map(f => f.key), "_firstName", "_lastName"]);
 // FIX (2026-09-09) — the CSV donor shape's standard vocabulary in the shape the
@@ -95,6 +100,7 @@ const CSV_FIELD_LABELS = {
   status: "Status", organization: "Organization", city: "City", state: "State",
   address: "Address", zip: "ZIP", notes: "Notes", owner: "Owner",
   deceased: "Deceased", doNotContact: "Do not contact", photo: "Photo",
+  ...MEMBERSHIP_FIELD_LABELS,
 };
 const CSV_STANDARD_FIELDS = [
   { key: "_firstName", label: "First name" },
@@ -630,7 +636,8 @@ function buildWidePayload(parsed, donorMapping, yearCols, rowLines) {
 // request long enough to hit a platform timeout). Each chunk is self-contained:
 // its gifts are re-indexed to the chunk's local donor positions. Cross-chunk
 // email dedup is handled server-side (chunk N sees chunk N-1's committed rows).
-async function submitImportChunked(donors, gifts, onProgress, extras) {
+async function submitImportChunked(donorsIn, gifts, onProgress, extras) {
+  let donors = donorsIn;
   const CHUNK = 500;
   // BUILD-99 Part 6 — the open asks ride the same chunked submit and are
   // RE-INDEXED to each chunk's local donor positions exactly as the gifts are.
@@ -638,6 +645,11 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
   // land on whoever happened to sit at that position in chunk two.
   const proposals = (extras && Array.isArray(extras.proposals)) ? extras.proposals : [];
   const hasGifts = gifts.length > 0;
+  // BUILD-101 Part 6 — memberships ride the LAST chunk, when every person in
+  // the file already exists to put them on. The membership columns never
+  // reach a donor row.
+  const memberships = (extras && Array.isArray(extras.memberships)) ? extras.memberships : [];
+  donors = donors.map(d => { const o = { ...d }; for (const f of MEMBERSHIP_FIELDS) delete o[f]; return o; });
   const giftsByDonor = new Map();
   for (const g of gifts) {
     if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
@@ -659,6 +671,10 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     // BUILD-99 Part 6 — the open asks, counted like everything else so the
     // receipt can say what became of them.
     proposals: { written: 0, skippedDuplicate: 0, stageDefaulted: 0, probabilityDropped: 0, unresolved: [] },
+    // BUILD-101 Part 6 — what became of every membership row: written, already
+    // on file, or held with its line and reason (the file's own set-asides first).
+    memberships: { rows: memberships.length + ((extras && extras.membershipsSetAside) || []).length, written: 0, skippedDuplicate: 0,
+                   held: [...((extras && extras.membershipsSetAside) || [])] },
     duplicateGroups: [] };
   const total = donors.length;
   if (!total) return totals;
@@ -670,7 +686,9 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
       const pp = propsByDonor.get(start + localIdx);
       if (pp) pp.forEach(p => { const { donorIndex, ...rest } = p; chunkProposals.push({ ...rest, donorIndex: localIdx }); });
     });
-    if (hasGifts || chunkProposals.length) {
+    const isLast = start + CHUNK >= total;
+    const chunkMemberships = isLast ? memberships : [];
+    if (hasGifts || chunkProposals.length || chunkMemberships.length) {
       const chunkGifts = [];
       slice.forEach((_, localIdx) => {
         const gg = giftsByDonor.get(start + localIdx);
@@ -678,6 +696,7 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
       });
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
         ...(chunkProposals.length ? { proposals: chunkProposals } : {}),
+        ...(chunkMemberships.length ? { memberships: chunkMemberships } : {}),
         // BUILD-78 — the column ledger + saved mappings ride every chunk
         // (idempotent server-side); the ledger is validated per request.
         ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters,
@@ -703,6 +722,12 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
       totals.proposals.stageDefaulted += res.proposals.stageDefaulted || 0;
       totals.proposals.probabilityDropped += res.proposals.probabilityDropped || 0;
       if (res.proposals.unresolved?.length) totals.proposals.unresolved.push(...res.proposals.unresolved);
+    }
+    if (res.memberships) {                            // BUILD-101 Part 6
+      totals.memberships.written += res.memberships.written || 0;
+      totals.memberships.skippedDuplicate += res.memberships.skippedDuplicate || 0;
+      if (res.memberships.held?.length) totals.memberships.held.push(...res.memberships.held);
+      if (res.memberships.error) totals.memberships.held.push({ line: null, why: "the memberships could not be written: " + res.memberships.error });
     }
     if (res.duplicateGroups?.length) totals.duplicateGroups.push(...res.duplicateGroups);
     // Sum the per-request equations into one file-level equation. If ANY chunk
@@ -904,7 +929,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     if (!parsed) return false;
     const hs = parsed.headers.filter(h => h && !/^_\d+$/.test(h));
     if (!hs.length) return true;
-    const recognized = hs.filter(h => guessField(h)).length;
+    const memberCols = new Set(Object.values(membershipColumns(hs)));   // BUILD-101 Part 6
+    const recognized = hs.filter(h => guessField(h) || memberCols.has(h)).length;
     return recognized / parsed.headers.length < 0.5;
   }, [parsed]);
 
@@ -947,6 +973,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     // pre-filled answer, not a locked one.
     const npspAuto = detectNpsp(headers);
     const autoDonor = buildAutoMapping(headers.filter(h => !YEAR_HDR_PAT.test(String(h))), rows);
+    // BUILD-101 Part 6 — a membership file's level and dates are MAPPED, not
+    // left for a custom-field decision.
+    for (const [field, header] of Object.entries(membershipColumns(headers))) autoDonor[header] = field;
     const autoTx = autoDetectTxMapping(headers, rows);
     if (npspAuto.isNpsp) {
       const pre = npspMapping(headers, { object: npspAuto.object });
@@ -1334,6 +1363,18 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
       setErr(skippedCount ? `All ${skippedCount} rows skipped — no usable name or email.` : "Nothing to import — map a name or email column.");
       setLoading(false); return;
     }
+    // BUILD-101 Part 6 — memberships named on these rows, read from what the
+    // person finally mapped (the preset's guess, or her correction).
+    {
+      const memCols = {}, colFor = f => Object.keys(mapping).find(h => mapping[h] === f) || null;
+      for (const f of MEMBERSHIP_FIELDS) { const h = colFor(f); if (h) memCols[f] = h; }
+      if (memCols.membershipLevel) {
+        const mem = buildMembershipRows(parsed, memCols, { nameCol: colFor("name"), emailCol: colFor("email"),
+          firstCol: colFor("_firstName"), lastCol: colFor("_lastName"), dayFirst: dateConventionChoice === "dmy" });
+        if (mem.memberships.length || mem.setAside.length)
+          importExtras = { ...(importExtras || {}), memberships: mem.memberships, membershipsSetAside: mem.setAside };
+      }
+    }
     const payloadForSummary = activePayload;
     const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setProgress({ done:0, total:donors.length });
@@ -1543,7 +1584,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         if (effectiveShape === "wide") yearCols.forEach(yc => { if (yc.enabled) m[yc.col] = "gift (" + yc.col + ")"; else ignored.push(yc.col); });
         return classifyColumns(headers, m, ignored);
       })();
-      if (importExtras) {
+      // The column axis exists only where the transaction mapper built a
+      // ledger. BUILD-101 Part 6 found that "extras exist" was standing in for
+      // "a ledger exists": membership extras ride a donor-shaped file with no
+      // ledger, and the receipt crashed reading one that was not there.
+      if (importExtras && Array.isArray(importExtras.columnLedgerFull)) {
         totals.columnAxis = {
           inFile: physicalCols.total,
           summary: summarizeColumnLedger(physicalCols.total, importExtras.columnLedgerFull),
@@ -1858,6 +1903,16 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             {result.warned > 0    && <> · <strong>{result.warned}</strong> imported with warnings</>}
             {result.skipped > 0   && <> · <strong>{result.skipped.toLocaleString()}</strong> {result.refusedRows?.length ? "refused with line-numbered reasons" : "skipped (no name, email, or organization)"}</>}
           </div>
+          {/* BUILD-101 Part 6 — the memberships, and every row held, by line. */}
+          {result.memberships?.rows > 0 && (
+            <div data-testid="import-memberships" style={{textAlign:"left",fontSize:13,color:T.ink,lineHeight:1.7,marginBottom:16}}>
+              <strong>{result.memberships.written}</strong> membership{result.memberships.written===1?"":"s"} imported as history (no payments posted)
+              {result.memberships.skippedDuplicate > 0 && <> · <strong>{result.memberships.skippedDuplicate}</strong> already on file</>}
+              {result.memberships.held.length > 0 && <> · <strong>{result.memberships.held.length}</strong> held for you:</>}
+              {result.memberships.held.slice(0, 20).map((h, i) => (
+                <div key={i} style={{color:T.ink3}}>{h.line ? `Line ${h.line}` : "A row"}{h.name ? ` (${h.name})` : ""}: {h.why}</div>))}
+              {result.memberships.held.length > 20 && <div style={{color:T.ink3}}>and {result.memberships.held.length - 20} more.</div>}
+            </div>)}
           {/* BUILD-72 Part 1 — THE RECONCILIATION, on the user's screen.
               rows_in_file = created + skipped + errored, and the same for
               dollars. The user sees the arithmetic, not a reassurance that it
@@ -2613,6 +2668,22 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
                 </div>
               )}
+              {/* BUILD-101 Part 6 — a membership file, and whose. */}
+              {(() => {
+                const mk = parsed?.headers ? detectMembershipPreset(parsed.headers) : null;
+                if (!mk) return null;
+                const pz = MEMBERSHIP_PRESETS[mk];
+                return (
+                  <div data-testid="membership-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
+                    <div style={{fontWeight:800,marginBottom:5}}>This file carries memberships{mk==="plain"?"":` (${pz.label})`}.</div>
+                    <div style={{color:T.ink2}}>
+                      Each level is matched to your own levels; a level you do not have is held and listed by line, never created.
+                      These are imported as history: no payment is posted, and a date already past opens no renewal.
+                      {pz.confidence==="documented-not-walked"?` Mapped from ${pz.label}'s documented export, not yet from a real file — check the columns below.`:""}
+                      {pz.note?` ${pz.note}`:""}
+                    </div>
+                  </div>);
+              })()}
               {/* BUILD-98 (switch) Part 7 — another CRM's gift export. */}
               {mig && (
                 <div data-testid="migration-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
