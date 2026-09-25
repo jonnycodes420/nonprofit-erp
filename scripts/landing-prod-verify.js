@@ -175,8 +175,23 @@ const rgb = s => (s.match(/\d+/g) || []).slice(0, 3).map(Number);
   // the fetch before asserting — the guard tests what a reader who scrolls
   // there actually sees, not the browser's lazy-margin heuristics (which moved
   // when BUILD-82 shortened the section heads and turned this into a flake).
-  await page.evaluate(() => document.getElementById("closing")?.scrollIntoView({ block: "center" }));
-  await page.waitForFunction(() => { const i = document.querySelector("#closing img"); return i && i.naturalWidth > 0; }, { timeout: 15000 }).catch(() => {});
+  // BUILD-96: ALL THREE are loading="lazy", and only #closing was being
+  // scrolled to and waited for. #card-stops and #your-data were left to the
+  // browser's lazy-margin heuristics, so this pass raced them: on 2026-09-24
+  // against an UNCHANGED prod it went 80/0, then 79/1 on "your-data carries ONE
+  // photograph", then 80/0 again. Both images serve 200 at their exact repo
+  // byte sizes — the asset was never the problem, the assertion was.
+  //
+  // A guard that passes or fails on timing is worse than no guard: the next
+  // person reads a red landing verifier and cannot tell a broken image from a
+  // slow one. So every section gets the treatment #closing already had.
+  for (const id of ["card-stops", "your-data", "closing"]) {
+    await page.evaluate(sec => document.getElementById(sec)?.scrollIntoView({ block: "center" }), id);
+    await page.waitForFunction(sec => {
+      const imgs = [...(document.getElementById(sec)?.querySelectorAll("img") || [])];
+      return imgs.length > 0 && imgs.every(i => i.naturalWidth > 0);
+    }, id, { timeout: 15000 }).catch(() => {});
+  }
   const secImgs = await page.evaluate(() => {
     const grab = id => [...(document.getElementById(id)?.querySelectorAll("img") || [])].map(i => ({
       w: Number(i.getAttribute("width")) || 0, h: Number(i.getAttribute("height")) || 0,
