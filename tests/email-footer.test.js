@@ -10,7 +10,7 @@
 // (Resend's SDK honors RESEND_BASE_URL), so no real email ever leaves.
 
 const http = require("http");
-const { BASE, ok, summary, api, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, SINK_PORT, q, closeDb } = require("./helpers");
 
 const captured = []; // { path, body } for every POST the server makes to "Resend"
 const mock = http.createServer((req, res) => {
@@ -28,6 +28,12 @@ async function makeOrg(name, email) {
     orgName: name, userName: "Footer Test", email, password: "loadtest1234",
   });
   if (!r.body.token) throw new Error("register-org failed: " + r.text);
+  // Mail is opt-in per org, by a super-admin (2026-09-24): a new org starts
+  // OFF. This suite needs a mail-ON org, so it opts in (standing in for the
+  // super-admin switch) and waits out the 5s mail-gate cache the signup's own
+  // gate check just filled — the real switch route clears that cache; SQL can't.
+  await q("UPDATE orgs SET emails_enabled=true WHERE id=$1", [r.body.org.id]);
+  await new Promise(res => setTimeout(res, 5100));
   await api("POST", "/onboarding/complete", r.body.token);
   return r.body;
 }
@@ -80,5 +86,6 @@ async function sendCampaign(reg, donorEmail) {
   ok("escaped entities rendered", /Escape &amp; Sons &lt;Test&gt; · 1 &lt;script&gt;/.test(htmlC), htmlC.slice(-400));
 
   mock.close();
+  await closeDb();
   summary();
 })().catch(e => { console.error("SUITE ERROR:", e); mock.close(); process.exit(1); });

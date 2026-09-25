@@ -148,7 +148,9 @@ router.post("/contact", contactLimiter, wrap(async (req, res) => {
   // a mail failure must never fail the request.
   const to = process.env.MIGC_CONTACT_EMAIL;
   const from = process.env.MIGC_EMAIL_FROM;
-  if (process.env.RESEND_API_KEY && to && from) {
+  // The permanent block (mailBlock.js): this router has its own client, so it checks too.
+  if (to && require("../mailBlock").isBlockedAddress(to)) console.warn("[mail-block] REFUSED a MIGC notification to a blocked address");
+  else if (process.env.RESEND_API_KEY && to && from) {
     resend.emails.send({
       from,
       to,
