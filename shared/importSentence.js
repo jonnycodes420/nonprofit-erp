@@ -179,6 +179,9 @@ export const EXCLUSION_LABEL = {
 // are set aside and the receipt is allowed to say so.
 export const ROUTED_LABEL = {
   pledges: "pledge commitments",
+  // BUILD-99 (major gifts) Part 6 — an open ask is money that has NOT arrived,
+  // so it is ROUTED off the cash total like a pledge and named in its own words.
+  proposals: "open proposals",
   softCredits: "soft credit",
   inKind: "in-kind gifts",
   refunds: "refunds",

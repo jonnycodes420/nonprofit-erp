@@ -103,6 +103,36 @@ export const ENTITIES = {
       started:       { label: "Started", sql: "to_char(rs.created_at,'YYYY-MM-DD')", type: "date" },
     },
   },
+  // BUILD-99 (major gifts) Part 6 — PROPOSALS EXPORT WITH ALL THEIR FIELDS.
+  // `opportunities` is the table (shared/proposalShape.js says why there is no
+  // second one), so a saved report over proposals and the Proposals screen read
+  // the same rows — and `status` is deliberately NOT a field here: it is DERIVED
+  // from the stage, and offering both would let somebody build a report whose
+  // two columns could look like they disagreed.
+  proposals: {
+    label: "Proposals",
+    from: "opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id",
+    base: ["d.deleted_at IS NULL", "d.is_sample IS NOT TRUE"],
+    orgCol: "o.org_id",
+    fields: {
+      donor:        { label: "Person", sql: "d.name", type: "text" },
+      purpose:      { label: "What the ask is for", sql: "COALESCE(NULLIF(o.name,''),'(not stated)')", type: "text" },
+      ask:          { label: "Ask amount", sql: "o.target_amount", type: "money", sum: true },
+      stage:        { label: "Stage", sql: "o.proposal_stage", type: "text" },
+      probability:  { label: "Probability you set", sql: "o.probability", type: "number" },
+      expected:     { label: "Expected close", sql: "o.expected_close", type: "date" },
+      fund:         { label: "Fund", sql: "COALESCE(f.name,'(no fund)')", type: "text" },
+      officer:      { label: "Officer", sql: "o.officer_name", type: "text" },
+      notes:        { label: "Notes", sql: "COALESCE(o.notes,'')", type: "text" },
+      decline_reason: { label: "Why it was declined", sql: "COALESCE(o.decline_reason,'')", type: "text" },
+      declined_on:  { label: "Declined on", sql: "NULLIF(o.declined_on,'')", type: "date" },
+      committed:    { label: "Committed amount", sql: "o.gift_amount", type: "money", sum: true },
+      commit_kind:  { label: "Recorded as", sql: "COALESCE(o.commit_kind,'')", type: "text" },
+      opened:       { label: "Opened", sql: "to_char(o.created_at,'YYYY-MM-DD')", type: "date" },
+      closed:       { label: "Closed", sql: "to_char(o.closed_at,'YYYY-MM-DD')", type: "date" },
+      opened_by:    { label: "Opened by", sql: "COALESCE(o.created_by_name,'')", type: "text" },
+    },
+  },
   interactions: {
     label: "Conversations and notes",
     from: "interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id",

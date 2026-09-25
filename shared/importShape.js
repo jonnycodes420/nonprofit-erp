@@ -1489,7 +1489,15 @@ export function autoDetectTxMapping(headers, rows) {
   // org's receipt. A column with a standard home never falls through to custom.
   const map = { donorName:"",firstName:"",lastName:"",orgName:"",donorEmail:"",amount:"",date:"",type:"",campaign:"",notes:"",phone:"",address:"",city:"",state:"",zip:"",owner:"",externalId:"",fund:"",paymentMethod:"",donorType:"",
                 // BUILD-98 Part 1 — a gift's soft credit, tribute and matching employer.
-                softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"" };
+                softCreditName:"",softCreditAmount:"",tributeType:"",tributeName:"",tributeNotify:"",matchEmployer:"",
+                // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, and
+                // the mapper has to be able to say so. A row carrying an ask
+                // amount and an open stage is money that has NOT arrived; without
+                // these targets the only homes for it were `amount` (which would
+                // book it as cash) and a custom field (which would lose it).
+                // `owner` above is the Portfolio Owner target and already exists
+                // (BUILD-36 B2), surfaced here rather than invented again.
+                proposalPurpose:"",proposalAmount:"",proposalStage:"",proposalCloseDate:"",proposalProbability:"" };
   const sample = rows.slice(0,10);
   for (const h of headers) {
     const hl = h.toLowerCase().trim();
@@ -1527,6 +1535,17 @@ export function autoDetectTxMapping(headers, rows) {
     if (!map.state    && /^(state|province)$/.test(hl))                                map.state    = h;
     if (!map.zip      && /^(zip(.?code)?|postal(.?code)?)$/.test(hl))                  map.zip      = h;
     if (!map.owner)   map.owner = detectOwnerColumn([h]) ? h : map.owner;
+    // BUILD-99 Part 6 — the proposal columns ARE claimed by header, unlike the
+    // BUILD-98 extras below, and the difference is what the column means if we
+    // get it wrong. A mis-read "Matching Employer" writes promised money onto a
+    // gift; a mis-read "Ask Amount" writes a proposal, which is a row an officer
+    // reads and can delete. The regexes are ANCHORED and every one of them says
+    // ASK, PROPOSAL, OPPORTUNITY or SOLICITATION — a bare "Amount" is never one.
+    if (!map.proposalAmount && /^(ask(.?amount)?|proposal.?(amount|ask)|opportunity.?amount|solicitation.?amount|amount.?(asked|requested)|requested.?amount|target.?(ask|amount))$/.test(hl)) map.proposalAmount = h;
+    if (!map.proposalPurpose && /^(ask(.?(name|purpose|for))|proposal(.?(name|purpose|title))?|opportunity(.?name)?|solicitation(.?name)?)$/.test(hl)) map.proposalPurpose = h;
+    if (!map.proposalStage && /^(ask.?stage|proposal.?(stage|status)|opportunity.?stage|solicitation.?(stage|status)|stage.?name)$/.test(hl)) map.proposalStage = h;
+    if (!map.proposalCloseDate && /^(expected.?close(.?date)?|close.?date|ask.?date|proposal.?(date|due)|decision.?(date|expected)|anticipated.?close)$/.test(hl)) map.proposalCloseDate = h;
+    if (!map.proposalProbability && /^(probability|likelihood|confidence|probability.?\(?%?\)?|win.?probability)$/.test(hl)) map.proposalProbability = h;
     // BUILD-98 (switch) Part 1 — softCreditName / softCreditAmount /
     // tributeName / tributeType / tributeNotify / matchEmployer are TARGETS a
     // person chooses, and are deliberately NOT claimed by header here. A real

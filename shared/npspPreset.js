@@ -307,6 +307,41 @@ export const NPSP_STAGE_CASH = "cash";
 export const NPSP_STAGE_PLEDGE = "pledge";
 export const NPSP_STAGE_NOT_RECEIVED = "not_received";
 
+// ── BUILD-99 (major gifts) Part 6 — AN OPEN OPPORTUNITY IS A PROPOSAL ──────
+// Before this build every non-cash, non-pledge NPSP stage was REFUSED by name:
+// "money that did not arrive", counted and set aside so the reconciliation
+// invariant could state it. That was right when Steward had nowhere to put an
+// open ask. It now has one, and refusing four live Opportunities on a real
+// migration loses the pipeline the organisation came to Steward carrying.
+//
+// The mapping is NPSP's own ladder onto Steward's, and it is deliberately short:
+// only the stages that plainly mean "we are working on this" become proposals.
+// Closed Lost stays REFUSED rather than becoming a Declined proposal, because
+// NPSP's Closed Lost carries no reason and Steward's Declined requires one from
+// a fixed list — importing it would either invent a reason or write a row that
+// breaks its own rule.
+//
+// CLOSED WON IS A GIFT, NEVER A PROPOSAL. That is the brief's line and it is the
+// one that matters: money that arrived is money, and a proposal beside it would
+// double the organisation's own history.
+export const NPSP_STAGE_PROPOSAL = "proposal";
+export const NPSP_PROPOSAL_STAGES = {
+  "prospecting": "identified",
+  "qualification": "cultivating",
+  "cultivation": "cultivating",
+  "proposal/price quote": "asked",
+  "proposal": "asked",
+  "negotiation/review": "asked",
+  "negotiation": "asked",
+  "ask made": "asked",
+  "submitted": "asked",
+};
+// The stage word, normalised the way a Salesforce export writes it.
+export function npspProposalStage(stage) {
+  const k = String(stage || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return NPSP_PROPOSAL_STAGES[k] || null;
+}
+
 // The stages NPSP ships out of the box — for the help text and the fixture,
 // NOT for the decision, which is classifyGiftStage's.
 export const NPSP_DEFAULT_STAGES = [
@@ -449,6 +484,11 @@ export function npspGiftDecision(row = {}, { stageField } = {}) {
   }
   if (verdict.kind === NPSP_STAGE_CASH)   return { bucket: "cash", stage, reason: verdict.label };
   if (verdict.kind === NPSP_STAGE_PLEDGE) return { bucket: "routed", routedAs: "pledges", stage, reason: verdict.label };
+  // BUILD-99 Part 6 — an OPEN opportunity is a proposal, not a refusal. Checked
+  // AFTER cash and pledge, so a Closed Won can never fall through to here.
+  const prop = npspProposalStage(stage);
+  if (prop) return { bucket: "routed", routedAs: "proposals", stage, proposalStage: prop,
+                     reason: `an open ask at "${stage}" — imported as a proposal, not as money` };
   return { bucket: "refused", stage, reason: verdict.label, knownStage: verdict.known };
 }
 
@@ -464,5 +504,7 @@ export const NPSP_PRESET = {
   objects: [NPSP_OBJECT_CONTACT, NPSP_OBJECT_OPPORTUNITY],
   // The one sentence the review step owes a person before they commit.
   cashRule: "Only opportunities at stage Closed Won are counted as money received. " +
-            "Pledged and Promised become pledges; everything else is set aside and listed.",
+            "Pledged and Promised become pledges, an OPEN opportunity becomes a proposal " +
+            "(Prospecting is Identified, Qualification is Cultivating, Proposal and Negotiation are Asked), " +
+            "and everything else — Closed Lost included — is set aside and listed.",
 };

@@ -7867,9 +7867,25 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     catch (e) { console.error("[combined-import] gift credit failed:", e.message); giftCredit = { error: e.message }; }
   }
 
+  // BUILD-99 (major gifts) Part 6 — open asks from the file, written after the
+  // people exist. A proposal is NOT a gift: nothing below touches gifts, donor
+  // totals or the ledger, which is why an imported pipeline cannot inflate a
+  // giving history.
+  let proposalsImported = null;
+  if (Array.isArray(req.body.proposals) && req.body.proposals.length) {
+    try {
+      proposalsImported = await importProposals(orgId, req.body.proposals, actor(req),
+        // `indexToId` is the import's OWN donorIndex → donor id map, the same one
+        // the gift rows resolve through, so a proposal on row 7 lands on the
+        // person row 7 created rather than on whoever sorted seventh.
+        idx => (Number.isInteger(idx) ? (indexToId[idx] || null) : null));
+    } catch (e) { console.error("[combined-import] proposals failed:", e.message); proposalsImported = { error: e.message }; }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
+             proposals: proposalsImported, // BUILD-99 Part 6 — open asks, routed off the cash total
              duplicateCandidates, externalIdDupes,
              // A.7 — rows whose source id was already taken by a DIFFERENT
              // gift: imported, un-idded, and said out loud.
@@ -11793,6 +11809,107 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
 // person the org should know); an honouree who is not on file stays a NAME
 // (a memorial is often for somebody who never gave); a matching employer is
 // found by exact name or created as an organisation.
+// ── BUILD-99 (major gifts) Part 6 — PROPOSALS FROM A FILE ──────────────────
+// Written AFTER the import transaction commits, the same seam BUILD-98's gift
+// extras use and for the same reason: a proposal points at a person, and the
+// people are created inside that transaction.
+//
+// THREE RULES, and each one is why this is not just an INSERT loop:
+//   · A PROPOSAL IS NOT A GIFT. Nothing here touches `gifts`, `donors.total_giving`
+//     or the ledger. An imported open ask is money that has NOT arrived, and the
+//     import receipt routes it off the cash total by name ("open proposals").
+//   · ONE OPEN PER FUND STILL HOLDS. A file carrying two open asks on one person
+//     for one fund is a file with a duplicate in it; the second is SKIPPED and
+//     COUNTED, never written and never silently merged into the first.
+//   · A STAGE OR PROBABILITY THE PRODUCT DOES NOT RECOGNISE IS NOT GUESSED. An
+//     unreadable stage falls back to `identified` and is COUNTED as having done
+//     so; an unreadable probability is left BLANK, which the weighted total
+//     already knows how to say out loud. Neither is invented.
+async function importProposals(orgId, rows, who, donorIdByIndex) {
+  const P = await import("./shared/proposalShape.js");
+  const out = { written: 0, skippedDuplicate: 0, stageDefaulted: 0, probabilityDropped: 0,
+                unresolved: [], fundsCreated: 0 };
+  if (!Array.isArray(rows) || !rows.length) return out;
+
+  const fundCache = new Map();
+  const fundIdFor = async (name) => {
+    const nm = String(name || "").trim();
+    if (!nm) return null;
+    const key = nm.toLowerCase();
+    if (fundCache.has(key)) return fundCache.get(key);
+    const [hit] = await query("SELECT id FROM fin_funds WHERE org_id=? AND LOWER(name)=LOWER(?) LIMIT 1", [orgId, nm]);
+    let id = hit ? hit.id : null;
+    if (!id) {
+      // A fund named in a file IS a fund (BUILD-88a A.7), created UNRESTRICTED —
+      // a restriction is a board decision, not a column.
+      id = "fund_" + uuid().slice(0, 10);
+      await run("INSERT INTO fin_funds (id,org_id,name,restricted,description) VALUES (?,?,?,false,'Created by an import')",
+        [id, orgId, nm.slice(0, 120)]);
+      out.fundsCreated++;
+    }
+    fundCache.set(key, id);
+    return id;
+  };
+  const ownerCache = new Map();
+  const ownerFor = async (name) => {
+    const nm = String(name || "").trim();
+    if (!nm) return null;
+    const key = nm.toLowerCase();
+    if (ownerCache.has(key)) return ownerCache.get(key);
+    // Matched to a user of THIS org by name or email, exactly; ambiguity resolves
+    // to nobody (the import owner-matching rule — never mis-assign).
+    const hits = await query(
+      "SELECT id, name FROM users WHERE org_id=? AND (LOWER(name)=LOWER(?) OR LOWER(email)=LOWER(?)) LIMIT 2", [orgId, nm, nm]);
+    const u = hits.length === 1 ? hits[0] : null;
+    ownerCache.set(key, u);
+    return u;
+  };
+
+  for (const r of rows) {
+    let donorId = null;
+    if (r.donorIndex !== undefined && r.donorIndex !== null) donorId = donorIdByIndex(Number(r.donorIndex));
+    if (!donorId && r.donorName) {
+      const [d] = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 1",
+        [orgId, String(r.donorName).trim()]);
+      donorId = d ? d.id : null;
+    }
+    if (!donorId) { out.unresolved.push({ purpose: String(r.purpose || "").slice(0, 80), donorName: r.donorName || null, why: "nobody on file to put it on" }); continue; }
+
+    let askCents = 0;
+    try { askCents = parseMoneyOrThrow(r.askAmount, "askAmount"); } catch { askCents = 0; }
+    if (!(askCents > 0)) { out.unresolved.push({ purpose: String(r.purpose || "").slice(0, 80), why: "no ask amount that could be read" }); continue; }
+
+    let stage = String(r.stage || "").trim().toLowerCase();
+    if (!P.stageFor(stage)) { stage = "identified"; out.stageDefaulted++; }
+    const prob = P.normalizeProbability(r.probability);
+    if (prob === undefined) out.probabilityDropped++;
+
+    const fundId = await fundIdFor(r.fund);
+    const owner = await ownerFor(r.owner);
+    const purpose = P.sanitizePurpose(r.purpose) || "Ask";
+    const close = /^\d{4}-\d{2}-\d{2}$/.test(String(r.expectedClose || "")) ? String(r.expectedClose) : null;
+
+    const id = "opp_" + uuid().slice(0, 8);
+    const ins = await query(
+      `INSERT INTO opportunities
+         (id,org_id,donor_id,name,target_amount,status,proposal_stage,probability,fund_id,notes,
+          officer_id,officer_name,expected_close,created_by,created_by_name,updated_at)
+       SELECT ?::text,?::text,?::text,?::text,?::numeric,?::text,?::text,?::integer,?::text,?::text,
+              ?::text,?::text,?::date,?::text,?::text,NOW()
+        WHERE NOT EXISTS (
+          SELECT 1 FROM opportunities x WHERE x.org_id=?::text AND x.donor_id=?::text
+            AND COALESCE(x.fund_id,'') = ?::text AND x.proposal_stage = ANY(?::text[]))
+       RETURNING id`,
+      [id, orgId, donorId, purpose, toDollars(askCents), P.statusForStage(stage), stage,
+       prob == null || prob === undefined ? null : prob, fundId, P.sanitizeNotes(r.notes),
+       owner ? owner.id : null, owner ? owner.name : null, close, who.id, who.name,
+       orgId, donorId, fundId || "", P.isOpenStage(stage) ? P.OPEN_STAGE_KEYS : []]);
+    if (ins.length) out.written++;
+    else out.skippedDuplicate++;
+  }
+  return out;
+}
+
 async function importGiftExtras(orgId, pending, who) {
   await GC_READY;
   const out = { softCredits: 0, tributes: 0, tributeNotices: 0, matches: 0, peopleCreated: 0, unresolved: [] };
