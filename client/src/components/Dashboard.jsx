@@ -1869,6 +1869,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <span className="thread-note" style={{fontSize:14,color:T.ink2,lineHeight:1.45,maxWidth:"46ch"}}>
                     {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,
                                latePledgeInstallments:homeData?.latePledgeInstallments,
+                               membershipsExpiringThisMonth:homeData?.membershipsExpiringThisMonth,
                                vocabulary:data.org?.vocabulary})}
                   </span>
                 )}

@@ -18,7 +18,10 @@
 export const TERMS = ["12_months", "calendar_year", "lifetime"];
 export const TERM_LABEL = { "12_months": "12 months", calendar_year: "Calendar year", lifetime: "Lifetime" };
 export const SCOPES = ["individual", "household"];
-export const STATUSES = ["active", "grace", "lapsed", "cancelled"];
+export const STATUSES = ["active", "grace", "lapsed", "cancelled", "renewed"];
+// The org's two settings and their defaults (the brief's numbers).
+export const DEFAULT_RENEWAL_DAYS = 30;
+export const DEFAULT_GRACE_DAYS = 30;
 // A person HOLDS a membership while it is active or in its grace period; that
 // is what the one-per-person index guards.
 export const CURRENT_STATUSES = ["active", "grace"];
@@ -83,8 +86,35 @@ export function expiryFor({ term, startsOn }) {
 // A membership already lapsed starts again from today.
 export function renewalStart({ oldExpires, today, lapsed = false }) {
   if (!oldExpires || lapsed) return today;
-  const next = addDaysCivil(oldExpires, 1);
-  return next;
+  return addDaysCivil(oldExpires, 1);
+}
+
+// Where a membership stands on `today`, from its expiry and the org's grace
+// period. Status is DERIVED from the dates; the sweep only writes it down.
+export function statusOn({ expiresOn, today, graceDays = DEFAULT_GRACE_DAYS }) {
+  if (!expiresOn) return "active";
+  if (today <= expiresOn) return "active";
+  return today <= addDaysCivil(expiresOn, graceDays) ? "grace" : "lapsed";
+}
+
+// Inside the renewal window: expiring between today and `renewalDays` ahead.
+// A date already past is NOT in the window — an imported membership that
+// expired last spring is history, never a thread (Part 6).
+export function inRenewalWindow({ expiresOn, today, renewalDays = DEFAULT_RENEWAL_DAYS }) {
+  return !!expiresOn && expiresOn >= today && expiresOn <= addDaysCivil(today, renewalDays);
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export function civilLong(d) {
+  const p = parse(d); return p ? `${p.d} ${MONTHS[p.mo - 1]}` : "";
+}
+const firstOf = name => String(name || "").trim().split(/\s+/)[0] || "";
+// "Renew Maya's Family membership, expires 14 March" — the thread's label.
+// An organisation is named whole; a person by first name, as it is said aloud.
+export function renewalLabel({ donorName, levelName, expiresOn, isPerson = true }) {
+  const who = isPerson ? firstOf(donorName) : String(donorName || "").trim();
+  const poss = who ? (/s$/i.test(who) ? `${who}'` : `${who}'s`) : "the";
+  return `Renew ${poss} ${levelName} membership, expires ${civilLong(expiresOn)}`;
 }
 
 export function quidProQuoDescription({ levelName, benefits = [] }) {

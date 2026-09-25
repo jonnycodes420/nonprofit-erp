@@ -75,6 +75,9 @@ export const NEXT_STEP_TYPES = [
   // which promise, because "follow up" tells the officer nothing about what
   // they are walking into, and this is the most delicate note they send.
   { type: "pledge_reminder",    label: "Pledge instalment reminder" },
+  // BUILD-101 Part 2 — a membership inside its renewal window. The thread's
+  // own label names the person, the level and the date.
+  { type: "membership_renewal", label: "Renew membership" },
 ];
 
 // Pure civil-date addition (YYYY-MM-DD + n days), no Date-object timezone

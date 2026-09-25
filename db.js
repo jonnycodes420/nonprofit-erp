@@ -4007,6 +4007,25 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_memberships_current
                       ON memberships (org_id, donor_id) WHERE status IN ('active','grace')`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_org_expiry ON memberships (org_id, status, expires_on)`);
+  // BUILD-101 Part 2 — renewals. A renewed membership keeps its row and says
+  // so ('renewed'), the new term is a new row pointing back at it, and the
+  // renewal thread raised for an expiry is recorded against THAT expiry, so a
+  // second sweep over the same date finds nothing to do.
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewed_from TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewal_thread_id TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewal_thread_for TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS status_changed_on TEXT`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='memberships_status_check'
+                       AND pg_get_constraintdef(oid) LIKE '%renewed%') THEN
+        ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_status_check;
+        ALTER TABLE memberships ADD CONSTRAINT memberships_status_check
+          CHECK (status IN ('active','grace','lapsed','cancelled','renewed'));
+      END IF; END $$`);
+  // The two numbers an org may change: how early the renewal thread opens, and
+  // how long an expired membership is held in grace before it lapses.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_renewal_days INTEGER DEFAULT 30`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_grace_days INTEGER DEFAULT 30`);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.

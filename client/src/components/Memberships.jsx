@@ -15,8 +15,8 @@ import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
-const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled" };
-const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3 };
+const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled", renewed: "Renewed" };
+const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3, renewed: T.ink3 };
 const usd = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px", fontSize: 12, color: T.ink, background: T.white };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
@@ -41,12 +41,16 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
   // An org that sells no memberships sees nothing here.
   if (!data || (!data.memberships.length && !levels.length)) return null;
   const cur = data.current;
+  // One form, two acts: joining (no current membership) or renewing the one
+  // they hold. A renewal's new term starts the day after the old one ends.
   const join = async () => {
     setMsg("");
     try {
-      await apiFetch(`/donors/${donor.id}/memberships`, { method: "POST",
-        body: JSON.stringify({ levelId: form.levelId, paymentMethod: form.paymentMethod || null, idempotencyKey: form.key }) });
-      setForm(null); load(); onChanged && onChanged();
+      const body = JSON.stringify({ levelId: form.levelId, paymentMethod: form.paymentMethod || null, idempotencyKey: form.key });
+      const r = form.renew
+        ? await apiFetch(`/memberships/${cur.id}/renew`, { method: "POST", body })
+        : await apiFetch(`/donors/${donor.id}/memberships`, { method: "POST", body });
+      setForm(null); setMsg(r?.sentence || ""); load(); onChanged && onChanged();
     } catch (e) { setMsg(errorMessage(e, "That membership did not save.")); }
   };
   const chosen = form && levels.find(l => l.id === form.levelId);
@@ -66,7 +70,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
           {data.memberships.length ? "Not a current member." : "Not a member yet."}
         </div>
       )}
-      {data.memberships.filter(m => m !== cur).slice(0, 4).map(m => (
+      {data.memberships.filter(m => !cur || m.id !== cur.id).slice(0, 4).map(m => (
         <div key={m.id} style={{ display: "flex", gap: 8, fontSize: 12, color: T.ink }}>
           <span>{m.level_name}</span><StatusPill status={m.status} />
           <span style={{ color: T.ink3, marginLeft: "auto" }}>{m.starts_on}{m.expires_on ? ` to ${m.expires_on}` : ""}</span>
@@ -74,6 +78,9 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
       {!isReadOnly && !cur && levels.length > 0 && !form && (
         <button style={{ ...quietBtn, alignSelf: "flex-start" }} data-testid="membership-add"
           onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>Add a membership</button>)}
+      {!isReadOnly && cur && cur.expires_on && levels.length > 0 && !form && (
+        <button style={{ ...quietBtn, alignSelf: "flex-start" }} data-testid="membership-renew"
+          onClick={() => setForm({ renew: true, levelId: levels.some(l => l.id === cur.level_id) ? cur.level_id : levels[0].id, paymentMethod: "", key: newKey() })}>Renew</button>)}
       {form && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -85,9 +92,10 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
               {["check", "cash", "card", "bank transfer", "other"].map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
-          {chosen && <div style={{ fontSize: 12, color: T.ink3 }}>{chosen.fmvSentence} It is recorded as a {usd(chosen.price)} gift.</div>}
+          {chosen && <div style={{ fontSize: 12, color: T.ink3 }}>{chosen.fmvSentence} It is recorded as a {usd(chosen.price)} gift.
+            {form.renew && cur?.expires_on ? ` The new term starts the day after ${cur.expires_on}.` : ""}</div>}
           <div style={{ display: "flex", gap: 6 }}>
-            <button style={primaryBtn} onClick={join} data-testid="membership-save">Record membership</button>
+            <button style={primaryBtn} onClick={join} data-testid="membership-save">{form.renew ? "Record renewal" : "Record membership"}</button>
             <button style={quietBtn} onClick={() => setForm(null)}>Cancel</button>
           </div>
         </div>)}
@@ -104,12 +112,18 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [sort, setSort] = useState("expiry_asc");
   const [draft, setDraft] = useState(null); // new level form
   const [msg, setMsg] = useState("");
+  const [settings, setSettings] = useState(null);
   const loadLevels = () => apiFetch("/membership-levels").then(r => setLevels(r.levels || [])).catch(() => setLevels([]));
   const loadList = () => {
     const qs = new URLSearchParams(); if (status) qs.set("status", status); if (sort === "expiry_desc") qs.set("sort", "expiry_desc");
     apiFetch("/memberships?" + qs.toString()).then(setList).catch(() => setList({ members: [], byStatus: {}, sentence: "" }));
   };
-  useEffect(() => { loadLevels(); }, []);
+  useEffect(() => { loadLevels(); apiFetch("/org/membership-settings").then(setSettings).catch(() => setSettings(null)); }, []);
+  const saveSettings = async patch => {
+    setMsg("");
+    try { await apiFetch("/org/membership-settings", { method: "PUT", body: JSON.stringify(patch) }); setSettings(await apiFetch("/org/membership-settings")); }
+    catch (e) { setMsg(errorMessage(e, "That setting did not save.")); }
+  };
   useEffect(() => { loadList(); }, [status, sort]);
   const saveLevel = async () => {
     setMsg("");
@@ -130,6 +144,17 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
             <div style={{ fontSize: 12, color: T.ink3 }}>{STATUS_LABEL[s]}</div>
           </button>))}
       </div>
+
+      {settings && (
+        <div data-testid="membership-settings" style={{ fontSize: 13, color: T.ink2, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span>A renewal thread opens</span>
+          <input type="number" min="0" max="365" defaultValue={settings.renewalDays} disabled={!isAdmin || isReadOnly} aria-label="Renewal window in days"
+            onBlur={e => Number(e.target.value) !== settings.renewalDays && saveSettings({ renewalDays: e.target.value })} style={{ ...inp, width: 64 }} />
+          <span>days before a membership expires; an expired one stays in grace for</span>
+          <input type="number" min="0" max="365" defaultValue={settings.graceDays} disabled={!isAdmin || isReadOnly} aria-label="Grace period in days"
+            onBlur={e => Number(e.target.value) !== settings.graceDays && saveSettings({ graceDays: e.target.value })} style={{ ...inp, width: 64 }} />
+          <span>days, then lapses. Steward drafts the renewal note; nothing is sent.</span>
+        </div>)}
 
       <section>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>

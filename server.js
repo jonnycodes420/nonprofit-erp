@@ -2385,6 +2385,18 @@ async function recordGift(o) {
     await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
   }
 
+  // ── BUILD-101 Part 2 — A PAYMENT THAT IS A MEMBERSHIP RENEWAL ─────────────
+  // From every door, for the same reason as the instalment above: a gift of
+  // exactly the level's price from someone whose membership is due IS the
+  // renewal. Not for a payment that already said what it bought (an explicit
+  // membership or ticket carries its own quid pro quo) or one that just paid
+  // an instalment.
+  let appliedMembership = null;
+  if (o.membershipRenewal !== false && !appliedInstallment && o.quidProQuoValue == null && !o.recurring) {
+    appliedMembership = await applyGiftAsMembershipRenewal({ orgId, donorId: o.donorId, giftId, amount, actorId, actorName })
+      .catch(e => { console.error("[membership] renewal auto-apply:", e.message); return null; });
+  }
+
   // ── BUILD-88b B.3 — THE THANK-YOU IS DRAFTED, NEVER SENT ──────────────────
   // Every gift through this path earns a draft in her queue. The exclusions are
   // the ones that would make a thank-you wrong rather than merely unnecessary.
@@ -2434,7 +2446,7 @@ async function recordGift(o) {
     catch (e) { console.error("[gift] extras:", e.message); }
   }
 
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, extras };
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
 }
 
 // ── BUILD-98 Part 1 — SOFT CREDITS, TRIBUTES, MATCHES ──────────────────────
@@ -15315,8 +15327,16 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
              OR NOT EXISTS (SELECT 1 FROM pledge_installments i WHERE i.pledge_id = p.id))`,
     [orgId]);
 
+  // BUILD-101 Part 2 — memberships that expire this calendar month and are
+  // still held. Home says it in one line, and only when it is not zero.
+  const monthStart = pledgeToday.slice(0, 7) + "-01", monthEnd = pledgeToday.slice(0, 7) + "-31";
+  const [expRow] = await query(
+    `SELECT COUNT(*)::int AS n FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+      WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ? AND d.deleted_at IS NULL`,
+    [orgId, monthStart, monthEnd]);
   res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
              latePledgeInstallments: lateRow?.late || 0,
+             membershipsExpiringThisMonth: expRow?.n || 0,
              pledgesNeedingSchedule: shellRow?.n || 0 });
 }));
 
@@ -24281,6 +24301,9 @@ if (!backgroundTicksDisabled()) {
   // `reminder_thread_id` makes it a no-op per instalment too.
   setTimeout(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 70000);
   setInterval(() => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
+  // BUILD-101 Part 2 — memberships ride the same family. Opens threads, sends nothing.
+  setTimeout(() => processMembershipRenewals().catch(console.error), 80000);
+  setInterval(() => recordTick("processMembershipRenewals", processMembershipRenewals).then(o => o.opened && console.log(`[membership] ${o.opened} renewal thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
 }
 
 // POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
@@ -31507,7 +31530,7 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
       const written = await recordGift({
         orgId, donorId, amount: mbCents(level.price) / 100, date: today, type: "cash",
         notes: `${level.name} membership`, paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
-        quidProQuoValue: mbCents(level.fmv) / 100,
+        quidProQuoValue: mbCents(level.fmv) / 100, membershipRenewal: false,
         quidProQuoDesc: MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] }),
         actorId: who.id, actorName: who.name, source: "membership",
         ledgerDescription: `${level.name} membership`,
@@ -31581,6 +31604,225 @@ app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
                           WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
   if (!r.length) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
+}));
+
+// ── BUILD-101 Part 2 — RENEWALS THAT COME AROUND ──────────────────────────
+// Expiry drives everything. The org's two numbers (how early the renewal
+// thread opens, how long an expired membership sits in grace) are read here,
+// once, with their defaults.
+async function membershipSettings(orgId) {
+  await MB_READY;
+  const [o] = await query("SELECT membership_renewal_days, membership_grace_days FROM orgs WHERE id=?", [orgId]);
+  const n = (v, d) => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 365 ? Number(v) : d);
+  return { renewalDays: n(o?.membership_renewal_days, MB.DEFAULT_RENEWAL_DAYS), graceDays: n(o?.membership_grace_days, MB.DEFAULT_GRACE_DAYS) };
+}
+
+// THE ONE PLACE A MEMBERSHIP IS RENEWED. The old row becomes 'renewed' and a
+// new term begins the day after the OLD expiry while it is still current or in
+// grace — so paying early never costs a member time — or today once it has
+// lapsed. Serialised per person, because two doors can take the same cheque.
+// `attachGift` is either an existing gift (a payment recordGift recognised as
+// this renewal) or null, in which case this writes the payment itself.
+async function renewMembership({ orgId, membershipId, levelId = null, paymentMethod = null, idemKey = null,
+                                 existingGiftId = null, who, source = "staff" }) {
+  await MB_READY;
+  const [old] = await query(`SELECT * FROM memberships WHERE id=? AND org_id=?`, [membershipId, orgId]);
+  if (!old) throw Object.assign(new Error("Not found"), { status: 404 });
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [levelId || old.level_id, orgId]);
+  if (!level) throw Object.assign(new Error("Level not found"), { status: 404 });
+  if (level.active === false) throw Object.assign(new Error(`${level.name} is retired. Choose a current level.`), { status: 400 });
+  if (level.term === "lifetime" && old.status !== "lapsed")
+    throw Object.assign(new Error("A lifetime membership does not renew."), { status: 400 });
+  if (idemKey) {
+    const [prior] = await query(`SELECT m.* FROM memberships m JOIN gifts g ON g.id=m.gift_id WHERE m.org_id=? AND g.idempotency_key=?`, [orgId, idemKey]);
+    if (prior) return { membership: prior, duplicate: true };
+  }
+  return withAdvisoryLock(`membership:${orgId}:${old.donor_id}`, async () => {
+    const [cur] = await query(`SELECT status, expires_on FROM memberships WHERE id=? AND org_id=?`, [old.id, orgId]);
+    if (cur.status === "renewed" || cur.status === "cancelled")
+      throw Object.assign(new Error(`This membership was already ${cur.status}.`), { status: 409, code: "membership_" + cur.status });
+    const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    const continuing = cur.status === "active" || cur.status === "grace";
+    const start = MB.renewalStart({ oldExpires: cur.expires_on, today, lapsed: !continuing });
+    const expires = MB.expiryFor({ term: level.term, startsOn: start });
+    const id = "mb_" + uuid().slice(0, 10);
+    if (continuing) await run(`UPDATE memberships SET status='renewed', status_changed_on=?, updated_at=NOW() WHERE id=? AND org_id=?`, [today, old.id, orgId]);
+    try {
+      await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,renewed_from,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?,?)`,
+        [id, orgId, old.donor_id, old.household_id, level.id, continuing ? old.joined_on : start, start, expires,
+         paymentMethod, source, old.id, who.id, who.name]);
+    } catch (e) {
+      if (continuing) await run(`UPDATE memberships SET status=?, updated_at=NOW() WHERE id=? AND org_id=?`, [cur.status, old.id, orgId]);
+      if (e.code === "23505") throw Object.assign(new Error("This person already holds a current membership. Renew that one."), { status: 409, code: "membership_current" });
+      throw e;
+    }
+    const undo = async () => {
+      await run(`DELETE FROM memberships WHERE id=? AND org_id=?`, [id, orgId]).catch(() => {});
+      if (continuing) await run(`UPDATE memberships SET status=?, updated_at=NOW() WHERE id=? AND org_id=?`, [cur.status, old.id, orgId]).catch(() => {});
+    };
+    const fmv = mbCents(level.fmv) / 100;
+    const qpqDesc = MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] });
+    let giftId = existingGiftId;
+    try {
+      if (existingGiftId) {
+        // A payment that arrived through another door and was recognised as
+        // this renewal. It bought the same benefits a renewal buys, so it
+        // carries the same split — and says so on the timeline.
+        await run(`UPDATE gifts SET quid_pro_quo_value=?, quid_pro_quo_desc=?, deductible_amount=GREATEST(0, amount - ?)
+                    WHERE id=? AND org_id=?`, [fmv, qpqDesc, fmv, existingGiftId, orgId]);
+      } else {
+        const written = await recordGift({
+          orgId, donorId: old.donor_id, amount: mbCents(level.price) / 100, date: today, type: "cash",
+          notes: `${level.name} membership renewal`, paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
+          quidProQuoValue: fmv, quidProQuoDesc: qpqDesc, membershipRenewal: false,
+          actorId: who.id, actorName: who.name, source: "membership",
+          ledgerDescription: `${level.name} membership renewal`,
+          timelineNote: `Renewed the ${level.name} membership${expires ? ", through " + expires : ""}`,
+        });
+        giftId = written.duplicate ? (await query(`SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?`, [orgId, idemKey]))[0]?.id || null
+                                   : written.gift.id;
+      }
+    } catch (e) { await undo(); throw e; }
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
+    // The renewal thread closes as an OUTCOME, on the payment's own timeline
+    // line — the honest close (threads_close_honest), because the thing the
+    // thread asked for happened.
+    if (old.renewal_thread_id && giftId) {
+      const [line] = await query(`SELECT id FROM interactions WHERE org_id=? AND gift_id=? ORDER BY created_at LIMIT 1`, [orgId, giftId]);
+      if (line) await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+                            WHERE id=? AND org_id=? AND closed_at IS NULL`, [line.id, old.renewal_thread_id, orgId]);
+    }
+    const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+    return { membership: m, giftId, startsOn: start, expiresOn: expires,
+             sentence: continuing ? `The new term starts the day after the old one ends (${start}), so renewing early cost no time.`
+                                  : `The membership had lapsed, so the new term starts today.` };
+  });
+}
+
+// Called from recordGift, the door every payment passes through: a gift of
+// EXACTLY a level's price from a person whose membership at that level is due
+// (inside the renewal window, or in grace) IS that renewal. Within a few
+// dollars is deliberately NOT matched — the pledge-instalment rule: a near
+// miss is a question, and a background path has nobody to ask.
+async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, actorId, actorName }) {
+  await MB_READY;
+  const cents = Math.round(Number(amount) * 100);
+  if (!(cents > 0)) return null;
+  const { renewalDays } = await membershipSettings(orgId);
+  const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+  const [m] = await query(
+    `SELECT m.id FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+      WHERE m.org_id=? AND m.donor_id=? AND m.status IN ('active','grace') AND m.expires_on IS NOT NULL
+        AND l.active IS NOT FALSE AND round(l.price::numeric * 100)::bigint = ?
+        AND (m.status='grace' OR m.expires_on <= ?)
+      LIMIT 1`, [orgId, donorId, cents, MB.addDaysCivil(today, renewalDays)]);
+  if (!m) return null;
+  return renewMembership({ orgId, membershipId: m.id, existingGiftId: giftId, source: "payment",
+                           who: { id: actorId || SYS_AUTO.id, name: actorName || SYS_AUTO.name } });
+}
+
+app.post("/memberships/:id/renew", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const idem = typeof req.body?.idempotencyKey === "string" && req.body.idempotencyKey.trim() ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+  try {
+    const r = await renewMembership({ orgId: req.user.orgId, membershipId: req.params.id, levelId: req.body?.levelId || null,
+      paymentMethod: req.body?.paymentMethod || null, idemKey: idem, who: actor(req) });
+    res.status(r.duplicate ? 200 : 201).json(r);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.code || e.message, message: e.message });
+    throw e;
+  }
+}));
+
+// The sweep. Two jobs, both idempotent by construction:
+//   1. write down each membership's status from its dates (active → grace →
+//      lapsed); the status is DERIVED, this only records it;
+//   2. open ONE renewal thread per membership whose expiry is inside the
+//      window, with the note already drafted in the org's voice. Recorded
+//      against that expiry (`renewal_thread_for`), so a second sweep over the
+//      same date opens nothing; `threads_one_open` means a person with a thread
+//      already open is left alone and tried again next time. It sends nothing.
+async function processMembershipRenewals(opts = {}) {
+  await MB_READY;
+  const out = { orgs: 0, toGrace: 0, toLapsed: 0, opened: 0, skipped: 0, rows: [] };
+  const orgs = opts.orgId
+    ? await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE id=?", [opts.orgId])
+    : await query(`SELECT DISTINCT o.id, o.name, o.timezone, o.voice_samples FROM orgs o JOIN memberships m ON m.org_id=o.id
+                    WHERE o.onboarding_complete=1 AND m.status IN ('active','grace')`, []);
+  const draftMod = await import("./shared/draftNote.js");
+  for (const org of orgs) {
+    out.orgs++;
+    const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
+    const { renewalDays, graceDays } = await membershipSettings(org.id);
+    const g = await query(`UPDATE memberships SET status='grace', status_changed_on=?, updated_at=NOW()
+                            WHERE org_id=? AND status='active' AND expires_on IS NOT NULL AND expires_on < ? RETURNING id`, [today, org.id, today]);
+    const l = await query(`UPDATE memberships SET status='lapsed', status_changed_on=?, updated_at=NOW()
+                            WHERE org_id=? AND status='grace' AND expires_on < ? RETURNING id`, [today, org.id, MB.addDaysCivil(today, -graceDays)]);
+    out.toGrace += g.length; out.toLapsed += l.length;
+    const due = await query(
+      `SELECT m.id, m.donor_id, m.expires_on, l.name AS level_name, l.price, d.name AS donor_name, d.kind,
+              d.assigned_to, d.assigned_to_name
+         FROM memberships m
+         JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+         JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+        WHERE m.org_id=? AND m.status='active' AND m.expires_on BETWEEN ? AND ?
+          AND m.renewal_thread_for IS DISTINCT FROM m.expires_on
+          AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+          AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE
+        ORDER BY m.expires_on`, [org.id, today, MB.addDaysCivil(today, renewalDays)]);
+    const samples = Array.isArray(org.voice_samples) ? org.voice_samples
+      : (typeof org.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+    const voice = draftMod.voiceFrom(samples);
+    const displayName = await donorFacingOrgName(org.id, org.name).catch(() => org.name);
+    for (const m of due) {
+      const isPerson = !m.kind || m.kind === "person";
+      const draft = draftMod.membershipRenewalDraft({ donorName: m.donor_name, levelName: m.level_name,
+        expiresOnLong: MB.civilLong(m.expires_on), priceCents: mbCents(m.price), orgName: displayName, voice });
+      const thread = await withTransaction(client => openThreadTx(client, {
+        orgId: org.id, donorId: m.donor_id,
+        step: { type: draftMod.MEMBERSHIP_RENEWAL_STEP.type,
+                label: MB.renewalLabel({ donorName: m.donor_name, levelName: m.level_name, expiresOn: m.expires_on, isPerson }),
+                due: today },
+        openedOn: today, ownerId: m.assigned_to || null, ownerName: m.assigned_to_name || null,
+        actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+      }));
+      if (!thread) { out.skipped++; continue; }
+      await run("UPDATE threads SET draft_note=? WHERE id=?", [draft.body, thread.id]);
+      await run("UPDATE memberships SET renewal_thread_id=?, renewal_thread_for=?, updated_at=NOW() WHERE id=? AND org_id=?",
+        [thread.id, m.expires_on, m.id, org.id]);
+      out.opened++;
+      out.rows.push({ orgId: org.id, membershipId: m.id, donorId: m.donor_id, threadId: thread.id, expiresOn: m.expires_on });
+    }
+  }
+  return out;
+}
+
+// Ops/test hook (the /pledges/run-reminders bar). A pinned {today} is honoured
+// only under TEST_MODE: production's tick passes no clock (the BUILD-94 rule).
+app.post("/memberships/run-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pinned = process.env.TEST_MODE && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.today || "")) ? String(req.body.today) : null;
+  res.json(await processMembershipRenewals({ orgId: req.user.orgId, today: pinned }));
+}));
+
+app.get("/org/membership-settings", requireAuth, wrap(async (req, res) => {
+  const st = await membershipSettings(req.user.orgId);
+  res.json({ ...st, sentence: `A renewal thread opens ${st.renewalDays} days before a membership expires, and an expired membership stays in grace for ${st.graceDays} days before it lapses.` });
+}));
+// Merged over the STORED values, never over the defaults: changing one number
+// must not quietly reset the other.
+app.put("/org/membership-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const cur = await membershipSettings(req.user.orgId);
+  const pick = (v, d) => {
+    if (v === undefined || v === null || v === "") return d;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 365) throw Object.assign(new Error("Days must be a whole number from 0 to 365."), { status: 400 });
+    return n;
+  };
+  try {
+    const renewalDays = pick(req.body?.renewalDays, cur.renewalDays), graceDays = pick(req.body?.graceDays, cur.graceDays);
+    await run("UPDATE orgs SET membership_renewal_days=?, membership_grace_days=? WHERE id=?", [renewalDays, graceDays, req.user.orgId]);
+    res.json({ renewalDays, graceDays });
+  } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); throw e; }
 }));
 
 // ── EVENT ROUTES (levels, registration, tables, attendance) ─────────────────
