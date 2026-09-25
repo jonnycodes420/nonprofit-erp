@@ -106,7 +106,7 @@ CORE=(
   date-seam donor-merge drift email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-messy import-reconciliation import-shape import-stage invitation landing-reveal
-  locked-features migc
+  locked-features migc fix1-people
   brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation tenant-matrix actor-stamp user-removal trial-end upgrade-checkout workflows workflows-e2e
