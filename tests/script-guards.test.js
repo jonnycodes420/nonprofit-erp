@@ -73,6 +73,12 @@ const SELF_REFUSING = [
   // BUILD-76 — the drift-vs-real-Stripe drill: same rig as build58's (scratch
   // server on :5621 + `stripe listen`), refuses any non-loopback BASE.
   "build76-drift-drill",
+  // BUILD-99 (major gifts) Part 4 — the prospect-brief drill. Calls the REAL
+  // model with rows taken off a real org through the real route (a hand-built
+  // fixture would be drilling the drill, not the product), and writes nothing of
+  // its own. Refuses a non-loopback BASE and refuses to run with NODE_ENV
+  // production; the one row it causes is the agent_run the route itself logs.
+  "build99-brief-drill",
   // BUILD-78 Part 0 — the cross-org field_id red-run reproduction. Runs
   // entirely through tests/helpers, whose api()/q() refuse any non-loopback
   // BASE or DATABASE_URL (tests/README.md); the refusal is inherited, and

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, API } from "../api";
 import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -783,4 +783,94 @@ export function PlansView({ isReadOnly }) {
       )}
     </div>
   );
+}
+
+// ── "BRIEF ME" ──────────────────────────────────────────────────────────────
+// The agent writes a one-page brief from this organisation's own rows. NOTHING
+// IT SAYS IS A GUESS ABOUT THE PERSON: the schema it answers in has no numeric
+// field at all (shared/briefShape.js says why), every sentence cites a row, and
+// a sentence that cannot be traced is DROPPED AND SAID — which is what the
+// "left out" line below is for. Steward has not estimated anybody's means.
+export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
+  const [brief, setBrief] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [showDropped, setShowDropped] = useState(false);
+
+  const write = async () => {
+    setBusy(true); setErr("");
+    try { setBrief(await apiFetch(`/donors/${donorId}/brief`, { method: "POST", body: "{}" })); }
+    catch (e) { setErr(errorMessage(e, "The brief could not be written just now.")); }
+    setBusy(false);
+  };
+
+  return (
+    <div data-testid="donor-brief-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Before you go</div>
+        {canWrite && !isReadOnly && (
+          <button onClick={write} disabled={busy}
+            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: busy ? "wait" : "pointer" }}>
+            {busy ? "Reading the file…" : brief ? "Write it again" : "Brief me"}
+          </button>
+        )}
+      </div>
+      {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 8 }}>{err}</div>}
+      {!brief && !err && (
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+          One page from {donorName ? donorName.split(" ")[0] + "'s" : "this"} own record — giving, who they are to you, the open ask,
+          the last five conversations, and what you wrote. Every line rests on a row you can open.
+        </div>
+      )}
+      {brief && (
+        <div data-testid="brief-body">
+          {brief.headline && (
+            <div style={{ fontSize: 15, color: T.ink, fontFamily: "'DM Serif Display',serif", marginBottom: 10 }}>{brief.headline}</div>
+          )}
+          {brief.sections.map(sec => (
+            <div key={sec.key} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.gold700, marginBottom: 4 }}>{sec.title}</div>
+              {sec.sentences.map((s, i) => (
+                <div key={i} style={{ fontSize: 13, color: T.ink, lineHeight: 1.65, marginBottom: 3 }}>
+                  {s.text} <span title={`From ${s.cites.join(", ")}`} style={{ fontSize: 10, color: T.ink3 }}>({s.cites.length} {s.cites.length === 1 ? "row" : "rows"})</span>
+                </div>
+              ))}
+            </div>
+          ))}
+          {brief.droppedSentence && (
+            <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>
+              {brief.droppedSentence}{" "}
+              <button onClick={() => setShowDropped(v => !v)}
+                style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontSize: 11, textDecoration: "underline", cursor: "pointer" }}>
+                {showDropped ? "hide them" : "show them"}
+              </button>
+            </div>
+          )}
+          {showDropped && (
+            <ul data-testid="brief-dropped" style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
+              {brief.dropped.map((d, i) => <li key={i}>“{d.text}” — {d.why}</li>)}
+            </ul>
+          )}
+          <div style={{ fontSize: 11, color: T.ink3, marginTop: 10, lineHeight: 1.55 }}>{brief.footer}</div>
+          <a href={`/briefs/${brief.runId}/pdf`} onClick={e => { e.preventDefault(); downloadBriefPdf(brief.runId, donorName); }}
+            style={{ display: "inline-block", marginTop: 8, fontSize: 12, color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>
+            Print it for the car
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The PDF needs the Authorization header, so it cannot be a bare link.
+async function downloadBriefPdf(runId, donorName) {
+  const r = await fetch(`${API}/briefs/${runId}/pdf`, { headers: { Authorization: "Bearer " + (localStorage.getItem("npe_token") || "") } });
+  if (!r.ok) return;
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `brief-${String(donorName || "prospect").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}.pdf`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }

@@ -265,8 +265,14 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,plan)
            VALUES ($1,$2,$3,'task','active','draft','{"steps":[]}'::jsonb)`,
     [`ai_${o}`, o, `Instruction belonging to ${o}`]).catch(() => {});
-  await q(`INSERT INTO agent_runs (id,org_id,instruction_id,status) VALUES ($1,$2,$3,'done')`,
-    [`arun_${o}`, o, `ai_${o}`]).catch(() => {});
+  // BUILD-99 (major gifts) Part 4 — the run carries a BRIEF, so /briefs/:runId
+  // 404s for the tenancy reason rather than for a missing payload.
+  await q(`INSERT INTO agent_runs (id,org_id,instruction_id,status,actions) VALUES ($1,$2,$3,'done',$4)`,
+    [`arun_${o}`, o, `ai_${o}`, JSON.stringify({
+      donorId: `d_${o}`,
+      brief: { headline: `${mark} brief`, dropped: [], sentenceCount: 1,
+               sections: [{ key: "notes", title: "What you wrote", sentences: [{ text: `${mark} line`, cites: [`note:d_${o}`] }] }] },
+    })]).catch(() => {});
   await q(`INSERT INTO agent_writes (id,org_id,run_id,instruction_id,tool,entity_table,entity_id,before_row,cites)
            VALUES ($1,$2,$3,$4,'set_stage','donors',$5,'{"stage":"prospect"}'::jsonb,'[]'::jsonb)`,
     [`aw_${o}`, o, `arun_${o}`, `ai_${o}`, `d_${o}`]).catch(() => {});
@@ -284,6 +290,9 @@ function bResolver(routePath, param) {
     // BUILD-99 (major gifts) Part 2 — a portfolio is READ by officer id, so the
     // cross-tenant probe is org B's own officer.
     officerId: `u_${B}_staff`,
+    // BUILD-99 (major gifts) Part 4 — a brief IS an agent run, so the probe is
+    // org B's own run id.
+    runId: `arun_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;

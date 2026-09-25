@@ -242,6 +242,13 @@ async function orgTzName(orgId) {
 function actor(req) {
   return { id: (req && req.user && req.user.userId) || null, name: (req && req.user && req.user.email) || null };
 }
+// MOVED UP HERE FROM THE AGENT SECTION (BUILD-99 Part 4). The prospect brief is
+// declared ~5,000 lines before the agent block and reads this, and `scripts/
+// tdz-scan.js --all` rightly flagged it as a read-above-declaration. It happens
+// to be legal (a route handler body runs long after module evaluation), and the
+// standing TDZ rule says to move it anyway: relying on call order is how the next
+// one of these gets written. ONE model name for everything the agent does.
+const AGENT_MODEL = "claude-opus-5";
 const SYS_STRIPE = { id: "system:stripe-webhook", name: "Stripe (online)" };
 const SYS_AUTO = { id: "system:auto", name: "Steward (automatic)" };
 const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward (workflow: ${recipe})` });
@@ -13448,6 +13455,312 @@ app.post("/plans/:id/stop", requireAuth, requirePlan("team"), checkWriteAccess, 
   res.json({ plan: await readPlan(orgId, p.id) });
 }));
 
+// ── BUILD-99 (major gifts) Part 4 — THE PROSPECT BRIEF ─────────────────────
+// "Brief me" on a person: one page an officer reads in the car, written from the
+// organisation's own rows, every sentence citing one.
+//
+// THE GUARANTEE IS THE SCHEMA, NOT THE PROMPT. shared/briefShape.js has no
+// numeric field anywhere in it, so a model that wanted to assert a capacity has
+// nowhere to put it; every figure on the finished page is rendered HERE from the
+// rows. A prompt is a request; this is the absence of a place to say it.
+async function briefShapeMod() { return import("./shared/briefShape.js"); }
+
+// WHAT THE MODEL IS HANDED, AND NOTHING ELSE. Each row goes over as a line with
+// a `kind:id` reference, and Steward keeps the same reference set to validate the
+// citations against — so a cited row it never saw cannot survive.
+async function briefRowsFor(orgId, donorId) {
+  const P = await proposalMod();
+  const V = await import("./shared/vocabulary.js");
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const t = V.makeT(org && org.vocabulary_json);
+  const [donor] = await query(
+    `SELECT id, name, email, kind, stage, suggested_stage, total_giving, gift_count, first_gift_date,
+            last_gift_date, last_gift_amount, notes, assigned_to_name, household_id, deceased, do_not_contact
+       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!donor) return null;
+
+  const refs = new Set([`person:${donor.id}`]);
+  const lines = [];
+  const money = require("./money");
+  const givingWord = t("giver_singular") || "donor";
+
+  lines.push(`person:${donor.id} — ${donor.name}${donor.kind === "organisation" ? " (an organisation)" : ""}, `
+    + `${money.formatCents(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
+    + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
+    + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organisation calls somebody like this a ${givingWord}.`);
+
+  // GIFTS — the last twelve, each its own row, with its fund and how it came in.
+  const gifts = await query(
+    `SELECT g.id, g.amount, g.date, g.type, g.payment_method, g.campaign, f.name AS fund_name
+       FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.org_id=? AND g.donor_id=? AND g.is_sample IS NOT TRUE
+      ORDER BY g.date DESC, g.id LIMIT 12`, [orgId, donorId]);
+  for (const g of gifts) {
+    refs.add(`gift:${g.id}`);
+    lines.push(`gift:${g.id} — ${money.formatCents(toCents(g.amount) || 0)} on ${g.date}`
+      + `${g.fund_name ? ` to ${t("fund_singular") || "fund"} "${g.fund_name}"` : ""}`
+      + `${g.campaign ? `, appeal "${g.campaign}"` : ""}${g.payment_method ? `, by ${g.payment_method}` : ""}.`);
+  }
+
+  // PLEDGES — a promise is not money, and the brief must not read it as one.
+  for (const p of await query(
+    `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC LIMIT 6`, [orgId, donorId])) {
+    refs.add(`pledge:${p.id}`);
+    lines.push(`pledge:${p.id} — a pledge of ${money.formatCents(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
+  }
+
+  // HOUSEHOLD AND RELATED PEOPLE.
+  if (donor.household_id) {
+    const [h] = await query("SELECT id, name FROM households WHERE id=? AND org_id=?", [donor.household_id, orgId]);
+    if (h) {
+      refs.add(`household:${h.id}`);
+      const members = await query("SELECT name FROM donors WHERE org_id=? AND household_id=? AND id<>? AND deleted_at IS NULL", [orgId, h.id, donorId]);
+      lines.push(`household:${h.id} — in the household "${h.name}"${members.length ? `, with ${members.map(m => m.name).join(" and ")}` : ""}.`);
+    }
+  }
+  // SOFT CREDITS (BUILD-98 Part 1) — gifts that were somebody else's money.
+  for (const sc of await query(
+    `SELECT sc.id, sc.role, g.id AS gift_id, g.amount, g.date, d.name AS giver
+       FROM gift_soft_credits sc
+       JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
+       JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 6`, [orgId, donorId]).catch(() => [])) {
+    refs.add(`softcredit:${sc.id}`);
+    lines.push(`softcredit:${sc.id} — soft-credited for ${money.formatCents(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
+      + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
+  }
+
+  // THE OPEN PROPOSAL.
+  for (const o of await query(
+    `SELECT o.id, o.name, o.target_amount, o.proposal_stage, o.probability, o.expected_close, o.notes, f.name AS fund_name
+       FROM opportunities o LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id
+      WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
+      ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
+    refs.add(`proposal:${o.id}`);
+    lines.push(`proposal:${o.id} — an open ask of ${money.formatCents(toCents(o.target_amount) || 0)} for "${o.name}"`
+      + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
+      + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
+      + `${o.expected_close ? `, expected to close ${civilDateOf(o.expected_close)}` : ""}`
+      + `${o.notes ? `. The officer's note on it: "${String(o.notes).slice(0, 400)}"` : "."}`);
+  }
+
+  // THE LAST FIVE CONVERSATIONS, QUOTED.
+  for (const i of await query(
+    `SELECT id, type, date, note, logged_by_name FROM interactions
+      WHERE org_id=? AND donor_id=? AND type = ANY(ARRAY['call','meeting','email','ask','note','stewardship'])
+        AND COALESCE(note,'') <> '' ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, donorId])) {
+    refs.add(`conversation:${i.id}`);
+    lines.push(`conversation:${i.id} — ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
+  }
+
+  // THE PLAN'S NEXT STEP.
+  const [plan] = await query("SELECT id, template_name FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donorId]);
+  if (plan) {
+    refs.add(`plan:${plan.id}`);
+    const [openStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='open'", [plan.id]);
+    const [nextStep] = await query("SELECT seq, label, due_date FROM cultivation_plan_steps WHERE plan_id=? AND status='pending' ORDER BY seq LIMIT 1", [plan.id]);
+    const s = openStep || nextStep;
+    lines.push(`plan:${plan.id} — on the cultivation plan "${plan.template_name}"`
+      + (s ? `; ${openStep ? "the open step" : "the next step"} is "${s.label}", due ${s.due_date}.` : "; every step is closed."));
+  }
+
+  // WHAT THE OFFICER WROTE.
+  if (String(donor.notes || "").trim()) {
+    refs.add(`note:${donor.id}`);
+    lines.push(`note:${donor.id} — the note on their record reads: "${String(donor.notes).slice(0, 1200)}"`);
+  }
+
+  // The grounded numeric set: every figure that genuinely appears in the rows,
+  // so `ungroundedClaims` can tell a fact from an invented rule.
+  const grounded = [];
+  for (const g of gifts) { grounded.push(Math.round(Number(g.amount) || 0)); }
+  grounded.push(Number(donor.gift_count) || 0, Math.round(Number(donor.total_giving) || 0));
+  for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
+
+  return { donor, org, t, refs, lines, grounded: [...new Set(grounded)], giftCount: gifts.length };
+}
+
+// GET /donors/:id/brief-rows — EXACTLY what the model would be handed, and
+// nothing else. This is not a test seam: the brief's promise is that every line
+// rests on a row you can open, and this is that list. It also means the row
+// gathering — which is Steward's code, not a model's — is provable with no key
+// configured at all.
+app.get("/donors/:id/brief-rows", requireAuth, requirePlan("team"), wrap(async (req, res) => {
+  const ctx = await briefRowsFor(req.user.orgId, req.params.id);
+  if (!ctx) return res.status(404).json({ error: "Donor not found" });
+  res.json({
+    donorId: ctx.donor.id, donorName: ctx.donor.name,
+    refs: [...ctx.refs], lines: ctx.lines, groundedValues: ctx.grounded,
+  });
+}));
+
+// POST /donors/:id/brief — write it, validate it, log it as an agent run.
+app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const B = await briefShapeMod();
+  const TH = await thresholdsMod();
+  const orgId = req.user.orgId;
+  // THE DONOR IS CHECKED FIRST, AND THAT ORDER IS THE POINT. The gate below
+  // answers 503 when no key is configured, and running it first meant a probe
+  // with ANOTHER ORG's donor id got 503 instead of 404 — breaking "404 is the one
+  // answer" for a cross-tenant read and telling the caller both that the route
+  // exists and what Steward's key state is. Found by tenant-matrix §3.
+  const ctx = await briefRowsFor(orgId, req.params.id);
+  if (!ctx) return res.status(404).json({ error: "Donor not found" });
+
+  const gate = await agentGate(orgId);
+  // THE ABSENCE HAS A NAME. No key configured is Steward's state, not the org's,
+  // and the honest answer is that the control is unavailable — never a 500 and
+  // never an invented brief.
+  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason });
+
+  const runId = "arun_" + uuid().slice(0, 10);
+  await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
+    [runId, orgId, "running", JSON.stringify({ kind: "prospect_brief", donorId: ctx.donor.id }),
+     `${ctx.refs.size} rows on ${ctx.donor.name}`]);
+
+  const system = [
+    "You are writing a one-page brief for a fundraiser who is about to go and see somebody.",
+    "",
+    "You are given ROWS from this organisation's own records. Each row starts with a reference of the form kind:id.",
+    "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
+    "",
+    "RULES, and the first one is the whole job:",
+    "- You may say NOTHING about this person that is not in the rows. No capacity, no wealth, no means, no guess about what they could give.",
+    "- Use no figure that is not in the rows you were handed. Never state a rule about how giving works (no 'donors who give twice usually…').",
+    "- A pledge is a promise, not money received. A soft credit is recognition, not their own giving. Say so if you mention them.",
+    "- Quote a conversation rather than summarising away the words the officer chose.",
+    "- Leave a section out if the rows say nothing about it. Do not pad.",
+    "- Use this organisation's own vocabulary where the rows give it.",
+    "- The headline names who this is and why she is reading it, and contains no figure.",
+  ].join("\n");
+  const user = [`The rows, on ${ctx.donor.name}:`, "", ...ctx.lines, "", "Write the brief."].join("\n");
+
+  let raw = null, err = null;
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: AGENT_MODEL, max_tokens: 2000, system,
+      tools: [{ name: "brief", description: "The one-page brief she reads in the car.", strict: true, input_schema: B.BRIEF_SCHEMA }],
+      tool_choice: { type: "tool", name: "brief" },
+      messages: [{ role: "user", content: user }],
+    });
+    raw = (msg.content || []).find(b => b.type === "tool_use" && b.name === "brief")?.input || null;
+  } catch (e) { err = e.message || String(e); }
+
+  if (!raw) {
+    await run("UPDATE agent_runs SET status='failed', finished_at=NOW(), error=? WHERE id=?", [err || "no brief returned", runId]);
+    return res.status(502).json({ error: "The brief could not be written just now.", runId });
+  }
+
+  const checked = B.validateBrief(raw, {
+    rows: ctx.refs,
+    ungrounded: (text, opts) => TH.ungroundedClaims(text, opts),
+    groundedValues: ctx.grounded,
+  });
+  await run(
+    `UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, declined=?, withheld=?, withheld_reason=? WHERE id=?`,
+    [JSON.stringify({ brief: checked, donorId: ctx.donor.id }), checked.dropped.length, checked.dropped.length,
+     checked.dropped.length ? B.droppedSentence(checked.dropped) : null, runId]);
+
+  res.json({
+    runId, donorId: ctx.donor.id, donorName: ctx.donor.name,
+    headline: checked.headline, sections: checked.sections,
+    dropped: checked.dropped, droppedSentence: B.droppedSentence(checked.dropped),
+    rowsRead: ctx.refs.size, footer: B.BRIEF_FOOTER,
+  });
+}));
+
+// GET /briefs/:runId — read one back. It is an agent run, so it is on the
+// Activity screen with everything else the agent did.
+app.get("/briefs/:runId", requireAuth, wrap(async (req, res) => {
+  const B = await briefShapeMod();
+  const [r] = await query("SELECT * FROM agent_runs WHERE id=? AND org_id=?", [req.params.runId, req.user.orgId]);
+  if (!r || !r.actions || !r.actions.brief) return res.status(404).json({ error: "Brief not found" });
+  const [d] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [r.actions.donorId, req.user.orgId]);
+  res.json({
+    runId: r.id, donorId: r.actions.donorId, donorName: d ? d.name : "",
+    ...r.actions.brief, droppedSentence: B.droppedSentence(r.actions.brief.dropped || []),
+    writtenAt: r.finished_at, rowsRead: r.read_summary, footer: B.BRIEF_FOOTER,
+  });
+}));
+
+// GET /briefs/:runId/pdf — the page she prints for the car, on the org's
+// letterhead, through the same renderer discipline the acknowledgment letters use.
+app.get("/briefs/:runId/pdf", requireAuth, wrap(async (req, res) => {
+  const B = await briefShapeMod();
+  const [r] = await query("SELECT * FROM agent_runs WHERE id=? AND org_id=?", [req.params.runId, req.user.orgId]);
+  if (!r || !r.actions || !r.actions.brief) return res.status(404).json({ error: "Brief not found" });
+  const [org] = await query("SELECT name, legal_name, receipt_address, brand_accent, logo_data FROM orgs WHERE id=?", [req.user.orgId]);
+  const [d] = await query("SELECT name FROM donors WHERE id=? AND org_id=?", [r.actions.donorId, req.user.orgId]);
+  const pdf = await renderBriefPdf({
+    org: { display: org.legal_name || org.name, receipt_address: org.receipt_address,
+           brand_accent: org.brand_accent, logo_data: org.logo_data },
+    donorName: d ? d.name : "",
+    brief: r.actions.brief,
+    footer: B.BRIEF_FOOTER,
+    droppedSentence: B.droppedSentence(r.actions.brief.dropped || []),
+    sectionTitle: B.sectionTitle,
+  });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="brief-${(d ? d.name : "prospect").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}.pdf"`);
+  res.send(pdf);
+}));
+
+// ONE page, the org's letterhead, and the footer that says what this is. The
+// letterhead block is deliberately the same shape as renderLettersPdf's (BUILD-98
+// Part 2) rather than a second idea about where an org's name goes.
+function renderBriefPdf({ org, donorName, brief, footer, droppedSentence, sectionTitle }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", margins: { top: 50, bottom: 46, left: 72, right: 72 }, autoFirstPage: false });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    const INK = "#0f1a12", SUB = "#5a554f";
+    const accent = org.brand_accent || "#0d5c3a";
+    let logo = null;
+    if (org.logo_data && /^data:image\/(png|jpe?g);base64,/.test(org.logo_data)) {
+      try { logo = Buffer.from(org.logo_data.split(",")[1], "base64"); } catch { logo = null; }
+    }
+    doc.addPage();
+    const PW = doc.page.width;
+    doc.rect(0, 0, PW, 6).fill(accent);
+    if (logo) { try { doc.image(logo, PW - 72 - 60, 22, { fit: [60, 44] }); } catch { /* a logo that will not draw costs the logo, not the page */ } }
+    doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(org.display || "", 72, 26, { width: PW - 220, lineBreak: false });
+    if (org.receipt_address) doc.font("Helvetica").fontSize(8.5).fillColor(SUB).text(org.receipt_address, 72, 44, { width: PW - 220 });
+
+    let y = 92;
+    doc.font("Times-Bold").fontSize(19).fillColor(INK).text(donorName || "Prospect brief", 72, y, { width: PW - 144 });
+    y = doc.y + 4;
+    if (brief.headline) {
+      doc.font("Times-Italic").fontSize(11.5).fillColor(SUB).text(brief.headline, 72, y, { width: PW - 144 });
+      y = doc.y + 10;
+    }
+    const bottom = doc.page.height - 84;
+    for (const sec of (brief.sections || [])) {
+      if (y > bottom - 40) break;                 // held to ONE page, never spilled
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(accent)
+        .text(String(sectionTitle(sec.key) || sec.key).toUpperCase(), 72, y, { width: PW - 144, characterSpacing: 0.8 });
+      y = doc.y + 4;
+      for (const s of sec.sentences) {
+        if (y > bottom - 14) break;
+        doc.font("Times-Roman").fontSize(10.5).fillColor(INK)
+          .text(s.text, 72, y, { width: PW - 144, lineGap: 2, height: bottom - y, ellipsis: true });
+        y = doc.y + 3;
+      }
+      y += 7;
+    }
+    let fy = doc.page.height - 74;
+    if (droppedSentence) {
+      doc.font("Helvetica").fontSize(8).fillColor(SUB).text(droppedSentence, 72, fy, { width: PW - 144, height: 12 });
+      fy += 12;
+    }
+    doc.font("Helvetica").fontSize(8).fillColor(SUB).text(footer, 72, fy, { width: PW - 144, height: 26 });
+    doc.end();
+  });
+}
+
 // GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
@@ -17979,7 +18292,6 @@ app.post("/admin/observability/run-checks", requireAuth, requireSuperAdmin, wrap
 async function agentShapeMod() { return import("./shared/agentShape.js"); }
 async function thresholdsMod() { return import("./shared/thresholds.js"); }
 
-const AGENT_MODEL = "claude-opus-5";
 const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
 
 // ── BUILD-96 Part 3 — THE ONE GATE IN FRONT OF ANTHROPIC ───────────────────
