@@ -91,11 +91,15 @@ const EXPECTED = {
   // sentence has to name counts only the server knows ("from 9 proposals at the
   // probabilities you set"). The screen renders what the server sends and holds
   // no copy, which is the property that matters.
-  // Part 2 adds four: the three portfolio tiles and the open-ask cell on a row.
-  "components/MajorGifts.jsx": 9,
+  // Part 2 adds four (the three portfolio tiles and a row's open-ask cell);
+  // Part 5 adds five (the major-gifts dashboard's five headline tiles). Every
+  // one of them renders its DEFINITION from shared/majorGiftsDash.js — one
+  // sentence, one place — and tests/build99-dashboard.test.js §2c asserts the
+  // screen holds no copy of one.
+  "components/MajorGifts.jsx": 14,
 };
-const EXPECTED_TOTAL = 403;
-const EXPECTED_CLAIMS = 114;
+const EXPECTED_TOTAL = 408;
+const EXPECTED_CLAIMS = 119;
 
 (async () => {
   console.log("build97-numbers");

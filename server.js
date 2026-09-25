@@ -13761,6 +13761,127 @@ function renderBriefPdf({ org, donorName, brief, footer, droppedSentence, sectio
   });
 }
 
+// ── BUILD-99 (major gifts) Part 5 — THE MAJOR-GIFTS DASHBOARD ──────────────
+// Five things a development director asks. shared/majorGiftsDash.js holds the
+// definitions, ONE STRING each, and nothing on this screen may appear without
+// one — the BUILD-86 C.3 rule, applied again because the reason has not changed.
+//
+// NO GOAL IS INVENTED. The only target here is the one she typed in Part 2.
+async function mgDashMod() { return import("./shared/majorGiftsDash.js"); }
+
+app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
+  const MG = await mgDashMod();
+  const P = await proposalMod();
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const fy = orgPeriodBounds(org, "fiscal_year", 0);
+  const fyYear = Number(String(fy.key).replace("fy:", ""));
+  const qtr = orgPeriodBounds(org, "quarter", 0);
+  const mon = orgPeriodBounds(org, "month", 0);
+  const today = orgToday(org);
+
+  // ONE BATCH OF READS, not a query per tile (the BUILD-54 §1 pattern). Every
+  // figure below is summed in the database over exactly the rows it names.
+  const [pipeline, dueQ, askedY, committedY, convs, backlog, officers, counts] = await Promise.all([
+    // Pipeline by stage, over the whole org's open proposals.
+    query(`SELECT o.proposal_stage AS stage, COUNT(*)::int AS n, COALESCE(SUM(o.target_amount),0) AS amt,
+                  COALESCE(SUM(CASE WHEN o.probability IS NOT NULL
+                                    THEN round(o.target_amount::numeric * 100) * o.probability / 100 END),0) AS weighted_cents,
+                  COUNT(o.probability)::int AS with_prob
+             FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL
+            GROUP BY o.proposal_stage`, [orgId]),
+    query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(o.target_amount),0) AS amt
+             FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL AND o.proposal_stage = ANY(?::text[])
+              AND o.expected_close >= ?::date AND o.expected_close <= ?::date`,
+      [orgId, P.OPEN_STAGE_KEYS, qtr.start, qtr.end]),
+    // ASKED THIS YEAR is about reaching the stage, so it reads the stage-change
+    // line the proposal routes write — `created_at` would count a proposal
+    // opened in July as an ask made in July, which it is not.
+    query(`SELECT COUNT(DISTINCT o.id)::int AS n, COALESCE(SUM(o.target_amount),0) AS amt
+             FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL
+              AND o.proposal_stage IN ('asked','committed','declined','stewarding')
+              AND COALESCE(o.updated_at, o.created_at) >= ?::date
+              AND COALESCE(o.updated_at, o.created_at) < (?::date + 1)`, [orgId, fy.start, fy.end]),
+    query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(COALESCE(o.gift_amount, o.target_amount)),0) AS amt
+             FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL AND o.status='won'
+              AND o.closed_at >= ?::date AND o.closed_at < (?::date + 1)`, [orgId, fy.start, fy.end]),
+    // Conversations logged THIS MONTH, per officer, from who logged them.
+    query(`SELECT COALESCE(NULLIF(i.logged_by_name,''),'(not recorded)') AS who, COUNT(*)::int AS n
+             FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+            WHERE i.org_id=? AND d.deleted_at IS NULL AND i.is_sample IS NOT TRUE
+              AND i.type = ANY(ARRAY['call','meeting','email','ask','stewardship'])
+              AND i.date >= ? AND i.date <= ?
+            GROUP BY 1 ORDER BY 2 DESC`, [orgId, mon.start, mon.end]),
+    // Thread backlog per officer — open follow-ups on their own people, with the
+    // overdue ones counted separately. A snoozed thread is not backlog.
+    query(`SELECT COALESCE(NULLIF(t.owner_name,''), COALESCE(NULLIF(d.assigned_to_name,''),'(nobody)')) AS who,
+                  COUNT(*)::int AS open_n,
+                  COUNT(*) FILTER (WHERE t.due_date < ?)::int AS overdue_n
+             FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+            WHERE t.org_id=? AND t.closed_at IS NULL AND d.deleted_at IS NULL
+              AND (t.snoozed_until IS NULL OR t.snoozed_until <= ?)
+            GROUP BY 1 ORDER BY 2 DESC`, [today, orgId, today]),
+    query("SELECT COUNT(*)::int AS n FROM users WHERE org_id=?", [orgId]),
+    query(`SELECT COUNT(*)::int AS n FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+            WHERE o.org_id=? AND d.deleted_at IS NULL`, [orgId]),
+  ]);
+
+  const byStage = P.PROPOSAL_STAGES.map(s => {
+    const r = pipeline.find(x => x.stage === s.key);
+    const askCents = r ? (toCents(r.amt) || 0) : 0;
+    return { stage: s.key, label: s.label, kind: s.kind, count: r ? r.n : 0,
+             askCents, amount: toDollars(askCents),
+             sentence: P.stageTileSentence({ stage: s.key, label: s.label, count: r ? r.n : 0, askCents }, money.formatCents) };
+  });
+  const openRows = pipeline.filter(r => P.OPEN_STAGE_KEYS.includes(r.stage));
+  const openCents = openRows.reduce((s, r) => s + (toCents(r.amt) || 0), 0);
+  const weightedCents = openRows.reduce((s, r) => s + Math.round(Number(r.weighted_cents) || 0), 0);
+  const withProb = openRows.reduce((s, r) => s + (Number(r.with_prob) || 0), 0);
+  const openCount = openRows.reduce((s, r) => s + (Number(r.n) || 0), 0);
+
+  const askedCents = toCents(askedY[0].amt) || 0;
+  const committedCents = toCents(committedY[0].amt) || 0;
+
+  const tile = (id, value) => ({
+    id, label: MG.metric(id).label, value,
+    definition: MG.definitionFor(id),
+    sentence: MG.tileSentence(id, value, money.formatCents),
+  });
+
+  res.json({
+    fiscalYear: fyYear, fiscalLabel: `FY ${fyYear}–${String(fyYear + 1).slice(2)}`,
+    quarter: { start: qtr.start, end: qtr.end },
+    month: { start: mon.start, end: mon.end },
+    proposalCount: counts[0].n,
+    empty: MG.emptySentence({ proposalCount: counts[0].n, officerCount: officers[0].n }),
+    byStage,
+    tiles: {
+      pipeline: { ...tile("pipeline", openCents), amount: toDollars(openCents), count: openCount },
+      weighted: { ...tile("weighted", weightedCents), amount: toDollars(weightedCents), counted: withProb,
+                  unset: openCount - withProb,
+                  sentence: P.weightedSentence({ cents: weightedCents, counted: withProb, unset: openCount - withProb,
+                                                 openCount, askCents: openCents }, money.formatCents) },
+      dueThisQuarter: { ...tile("dueThisQuarter", dueQ[0].n), amount: toDollars(toCents(dueQ[0].amt) || 0) },
+      askedThisYear: { ...tile("askedThisYear", askedCents), amount: toDollars(askedCents), count: askedY[0].n },
+      committedThisYear: { ...tile("committedThisYear", committedCents), amount: toDollars(committedCents), count: committedY[0].n },
+    },
+    askedVsCommitted: MG.askedVsCommitted({ askedCents, committedCents }, money.formatCents),
+    officerActivity: {
+      definition: MG.definitionFor("conversationsThisMonth"),
+      rows: convs.map(r => ({ officerName: r.who, conversations: r.n })),
+    },
+    threadBacklog: {
+      definition: MG.definitionFor("threadBacklog"),
+      rows: backlog.map(r => ({ officerName: r.who, open: r.open_n, overdue: r.overdue_n })),
+    },
+    metrics: MG.METRICS,
+  });
+}));
+
 // GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {

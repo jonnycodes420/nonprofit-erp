@@ -874,3 +874,91 @@ async function downloadBriefPdf(runId, donorName) {
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
+
+// ── THE MAJOR-GIFTS DASHBOARD (Fundraising → Major gifts) ──────────────────
+// Five things a development director asks. EVERY TILE CARRIES ITS DEFINITION ON
+// HOVER, and the definition is the server's own string from
+// shared/majorGiftsDash.js — one sentence, one place. NO GOAL IS INVENTED: the
+// only target in this build is the one she typed on her portfolio.
+export function MajorGiftsDashboard({ onNavigate }) {
+  const [d, setD] = useState(null);
+  useEffect(() => { apiFetch("/major-gifts/dashboard").then(setD).catch(e => console.error("[major-gifts]", e)); }, []);
+  if (!d) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}><Spin /></div>;
+
+  const T5 = d.tiles;
+  const row = { display: "grid", gridTemplateColumns: "1fr 90px 90px", gap: 10, alignItems: "center",
+                padding: "9px 12px", borderTop: "1px solid " + T.bg3, fontSize: 13 };
+
+  return (
+    <div data-testid="major-gifts-dashboard">
+      <div style={{ fontSize: 12, color: T.ink3, marginBottom: 14 }}>
+        {d.fiscalLabel} · quarter to {niceDate(d.quarter.end)}
+      </div>
+
+      {d.empty && (
+        <div data-testid="mg-empty" style={{ background: T.gold100, border: "1px solid " + T.gold300, borderRadius: 12,
+                                             padding: "14px 16px", fontSize: 13, color: T.ink2, marginBottom: 16, lineHeight: 1.6 }}>
+          {d.empty}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12, marginBottom: 20 }}>
+        <Tile testid="mg-pipeline" label={T5.pipeline.label} value={fmtFull(T5.pipeline.amount)} sentence={T5.pipeline.definition} />
+        <Tile testid="mg-weighted" label={T5.weighted.label} value={fmtFull(T5.weighted.amount)} sentence={T5.weighted.sentence} />
+        <Tile testid="mg-duequarter" label={T5.dueThisQuarter.label} value={String(T5.dueThisQuarter.value)} sentence={T5.dueThisQuarter.definition}
+          onClick={onNavigate ? () => onNavigate("fundraising", { frSection: "proposals" }) : undefined} />
+        <Tile testid="mg-asked" label={T5.askedThisYear.label} value={fmtFull(T5.askedThisYear.amount)} sentence={T5.askedThisYear.definition} />
+        <Tile testid="mg-committed" label={T5.committedThisYear.label} value={fmtFull(T5.committedThisYear.amount)} sentence={T5.committedThisYear.definition} />
+      </div>
+
+      <div style={{ fontSize: 13, color: T.ink2, marginBottom: 20, maxWidth: 640, lineHeight: 1.6 }}>{d.askedVsCommitted}</div>
+
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 8 }}>Pipeline by stage</div>
+      <div data-testid="mg-stages" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10, marginBottom: 22 }}>
+        {d.byStage.map(r => (
+          <Tile key={r.stage} testid={"mg-stage-" + r.stage} label={r.label} value={`${fmtFull(r.amount)} · ${r.count}`} sentence={r.sentence} />
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 16 }}>
+        <div data-testid="mg-activity">
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Conversations logged this month</div>
+          <div style={{ fontSize: 11, color: T.ink3, marginBottom: 8, lineHeight: 1.5 }}>{d.officerActivity.definition}</div>
+          {d.officerActivity.rows.length === 0 ? (
+            <div style={{ fontSize: 13, color: T.ink3 }}>Nobody has logged a conversation this month.</div>
+          ) : (
+            <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
+              {d.officerActivity.rows.map(r => (
+                <div key={r.officerName} style={{ ...row, gridTemplateColumns: "1fr 70px" }}>
+                  <div style={{ color: T.ink }}>{r.officerName}</div>
+                  <div style={{ fontWeight: 700, color: T.ink, textAlign: "right" }}>{r.conversations}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div data-testid="mg-backlog">
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>Follow-ups open</div>
+          <div style={{ fontSize: 11, color: T.ink3, marginBottom: 8, lineHeight: 1.5 }}>{d.threadBacklog.definition}</div>
+          {d.threadBacklog.rows.length === 0 ? (
+            <div style={{ fontSize: 13, color: T.ink3 }}>Nothing open.</div>
+          ) : (
+            <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ ...row, borderTop: "none", background: T.bg2, fontSize: 10, fontWeight: 800,
+                            letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+                <div>Officer</div><div style={{ textAlign: "right" }}>Open</div><div style={{ textAlign: "right" }}>Overdue</div>
+              </div>
+              {d.threadBacklog.rows.map(r => (
+                <div key={r.officerName} style={row}>
+                  <div style={{ color: T.ink }}>{r.officerName}</div>
+                  <div style={{ fontWeight: 700, color: T.ink, textAlign: "right" }}>{r.open}</div>
+                  <div style={{ fontWeight: 700, color: r.overdue ? T.gold700 : T.ink3, textAlign: "right" }}>{r.overdue}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
