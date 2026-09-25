@@ -141,9 +141,13 @@ export function matchOne(fileName, index) {
   if (byId.length > 1)  return { status: "ambiguous", rule: "legacyId", candidates: byId };
 
   // 3 · exact full name
-  const byName = index.byName.get(normalizeName(trimmed)) || [];
-  if (byName.length === 1) return { status: "matched", rule: "fullName", person: byName[0] };
-  if (byName.length > 1)  return { status: "ambiguous", rule: "fullName", candidates: byName };
+  // `nameHits`, not `byName`: buildIndex has its own `byName` and two different
+  // bindings with one spelling in one small module is how the TDZ class gets
+  // written. tdz-scan flagged it, and it was right to even though the scopes
+  // do not actually overlap.
+  const nameHits = index.byName.get(normalizeName(trimmed)) || [];
+  if (nameHits.length === 1) return { status: "matched", rule: "fullName", person: nameHits[0] };
+  if (nameHits.length > 1)  return { status: "ambiguous", rule: "fullName", candidates: nameHits };
 
   return { status: "unmatched" };
 }
