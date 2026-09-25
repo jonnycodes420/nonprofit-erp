@@ -11,6 +11,7 @@ import { PageRenderer } from "../components/PortalWidgets";
 // byte-for-byte what it always did (the BUILD-95 §5B rule), which is what makes
 // this safe to ship to every org that already has giving pages.
 import GiveSteps from "./GiveSteps";
+import { thankYouText } from "../../../shared/formConfig.js";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -350,6 +351,24 @@ export default function Donate() {
   // and a `const` read above its declaration takes the whole screen to its error
   // boundary at runtime while every unit test passes.
   const giveSpec = givingPage?.form || null;
+  // BUILD-102 Part 5 — the thank-you, from the ONE shared function so the editor's
+  // preview and the screen a donor actually reaches cannot say different things.
+  const thanks = thankYouText(giveSpec ? { thankYou: giveSpec.thankYou } : {}, { orgName: org?.name || "" });
+
+  // BUILD-102 Part 5 — an optional redirect to the org's own page. THREE SECONDS
+  // rather than instantly: a redirect that fires on load means the thank-you is
+  // never read and the donor arrives somewhere unexplained. The link is shown too,
+  // so a blocked or slow redirect is never a dead end.
+  //
+  // DECLARED HERE, above every early return, because a hook after one throws
+  // "Rendered more hooks than during the previous render" on the loading→loaded
+  // transition — the BUILD-30 defect, and the `rules-of-hooks` gate caught this
+  // exact line before it could reach a browser.
+  useEffect(() => {
+    if (!donated || !thanks.redirectUrl) return;
+    const t = setTimeout(() => { window.location.href = thanks.redirectUrl; }, 3000);
+    return () => clearTimeout(t);
+  }, [donated, thanks.redirectUrl]);
 
   const activeLadder = frequency === "monthly" ? th.monthlyAmounts : th.onetimeAmounts;
 
@@ -549,12 +568,30 @@ export default function Donate() {
       <div style={{ fontSize: 28, fontWeight: 800, color: T.ink, marginBottom: 10, fontFamily: th.serif }}>
         Thank you!
       </div>
-      <div style={{ fontSize: 16, color: T.ink2, marginBottom: 6 }}>
-        Your gift to <strong>{org.name}</strong> has been received.
-      </div>
-      <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
-        A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
-      </div>
+      {/* BUILD-102 Part 5 — THE ORG'S OWN WORDS WHEN THEY WROTE ANY. A form's
+          thank-you message is the one place a donor hears the organisation rather
+          than the software, so it replaces Steward's sentence rather than sitting
+          under it. With nothing written, the fallback says the one thing a donor
+          wants to know next: that a receipt is coming. */}
+      {thanks.fromTheOrg ? (
+        <div className="thanks-own-words" style={{ fontSize: 16, color: T.ink2, maxWidth: 420, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {thanks.message}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 16, color: T.ink2, marginBottom: 6 }}>
+            Your gift to <strong>{org.name}</strong> has been received.
+          </div>
+          <div className="thanks-fallback" style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
+            A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
+          </div>
+        </>
+      )}
+      {thanks.redirectUrl ? (
+        <div className="thanks-redirect" style={{ marginTop: 18, fontSize: 13, color: T.ink3 }}>
+          Taking you back to <a href={thanks.redirectUrl} style={{ color: T.greenDk }}>{new URL(thanks.redirectUrl).hostname}</a> in a moment.
+        </div>
+      ) : null}
       {org.givingAccount && (
         <div style={{ marginTop: 28, padding: "16px 22px", background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 12, maxWidth: 400 }}>
           <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>

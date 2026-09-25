@@ -195,7 +195,11 @@ const cents = v => Math.round(Number(v) * 100);
   // volunteer-to-donor conversion report) makes thirteen. BUILD-101 Part 5
   // adds the five membership reports (by level, expiring in 60 days, lapsed,
   // new and renewed by month, membership beside donation revenue): eighteen.
-  ok("§7 there are eighteen standard reports", (list.body.standard || []).length === 18);
+  // BUILD-102 (Steward Give) Part 5 adds "Gifts by link source" — which email or
+  // ad brought this money in — making NINETEEN. The count stays a literal on
+  // purpose: a report added without a thought about this list fails here.
+  ok("§7 there are nineteen standard reports", (list.body.standard || []).length === 19,
+     (list.body.standard || []).map(r => r.id));
   const broken = [];
   for (const s of list.body.standard || []) {
     const r = await api("GET", `/saved-reports/${encodeURIComponent(s.id)}/run`, tok);

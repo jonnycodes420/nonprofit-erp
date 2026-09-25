@@ -790,6 +790,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 campaign: evRow.name,
               } : {}),
               orgId, donorId, giftId, amount, date: today,
+              // BUILD-102 Part 5 — stored ON THE GIFT, so "which email brought
+              // this in" is answered by the report builder over the same rows
+              // every money figure comes from.
+              utmSource: pi.metadata?.utm_source || null,
+              utmMedium: pi.metadata?.utm_medium || null,
+              utmCampaign: pi.metadata?.utm_campaign || null,
               type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
@@ -2319,7 +2325,13 @@ async function recordGift(o) {
                 // gala ticket) carries what it bought and what that was worth,
                 // so the receipt states the deductible part. Absent means
                 // nothing was received in exchange, which is every other gift.
-                "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value"];
+                "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value",
+                // BUILD-102 Part 5 — which email brought this gift in. In THIS
+                // insert for the same reason as every column above it: a second
+                // UPDATE after the fact is a second write path, and the one thing
+                // that must never happen to an attribution is that it lands on
+                // some gifts and not others depending on which door they came in.
+                "utm_source", "utm_medium", "utm_campaign"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -2329,7 +2341,8 @@ async function recordGift(o) {
                 o.chequeAssetId || null,
                 o.quidProQuoValue != null ? round2(Math.max(0, amount - Number(o.quidProQuoValue))) : null,
                 o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
-                o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null];
+                o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
+                o.utmSource || null, o.utmMedium || null, o.utmCampaign || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -21581,6 +21594,15 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // These are only carried for a gift arriving through a CONFIGURED form: the
   // form is what asked the questions, and a field nobody was asked must not
   // arrive from a hand-rolled request. `formAsks` is set by the Part 2 block.
+  // BUILD-102 Part 5 — the UTM tags, carried for EVERY gift through a giving
+  // page, not only a configured form: a tagged link to an unconfigured page is
+  // still a link somebody sent, and the question "which email brought this in" is
+  // the same question. Read through the ONE shared cleaner.
+  {
+    const F = await formConfigMod();
+    const utm = F.utmFrom(req.body.utm && typeof req.body.utm === "object" ? req.body.utm : req.body);
+    for (const [k, v] of Object.entries(utm)) metadata[k] = v;
+  }
   if (formAsks) {
     if (formAsks.tributeType) {
       metadata.tribute_type = formAsks.tributeType;

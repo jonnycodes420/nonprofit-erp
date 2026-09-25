@@ -2551,6 +2551,20 @@ async function initSchema() {
   // is a third of the gift rounded to a whole dollar, which is arithmetic rather
   // than a setting and lives in shared/formConfig.js.
   await run(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS form_upsell_threshold_cents INTEGER`).catch(() => {});
+  // BUILD-102 Part 5 — WHICH EMAIL BROUGHT THIS GIFT IN. The three UTM parameters
+  // every mail tool and ad platform already writes, captured on the page, carried
+  // through Checkout metadata and stored on the GIFT — so the question is answered
+  // by the report builder over the gifts entity rather than by a separate
+  // analytics product nobody reconciles against the money.
+  //
+  // Three columns rather than one JSONB, because these are the three a report
+  // GROUPS BY, and grouping by a JSON key is how a figure stops being checkable.
+  // TEXT and kept as the sender wrote them: a campaign name is the marketer's own
+  // string and normalising it would silently merge two campaigns.
+  await run(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS utm_source TEXT`).catch(() => {});
+  await run(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS utm_medium TEXT`).catch(() => {});
+  await run(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS utm_campaign TEXT`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_utm ON gifts (org_id, utm_source)`).catch(() => {});
   // pledges.campaign_id — a pledge attributes at pledge time; payments against
   // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
   // pledged (committed-but-unpaid) is a separate figure, never summed in.

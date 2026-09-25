@@ -454,3 +454,52 @@ export function upsellSentence(u, fm) {
   if (!u || !u.offer) return "";
   return `${f(u.monthlyCents)} a month comes to ${f(u.annualCents)} over a year, and it lets them plan.`;
 }
+
+// ── BUILD-102 Part 5 — UTM, AND WHAT MAY BE KEPT OF IT ─────────────────────
+// Three parameters, because these are the three every mail tool and ad platform
+// already writes and the three a report GROUPS BY. `utm_term` and `utm_content`
+// are deliberately NOT stored: they are per-keyword and per-variant strings that
+// would make the grouping unusable, and nothing in this product asks a question
+// they answer.
+export const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign"];
+export const UTM_MAX = 120;
+
+// A UTM value arrives from a URL somebody else composed, so it is treated as
+// hostile text: capped, control characters stripped, and KEPT AS WRITTEN
+// otherwise. Case is NOT folded — "Spring" and "spring" may genuinely be two
+// campaigns in a marketer's own records, and merging them is a decision Steward
+// does not get to make.
+export function cleanUtm(raw) {
+  const v = String(raw == null ? "" : raw)
+    .replace(/[\x00-\x1f\x7f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, UTM_MAX);
+  return v || null;
+}
+
+// Reads the three from anything shaped like a query bag. Returns only the ones
+// that were actually present, so a gift with no tags stores NULL rather than an
+// empty string — the difference between "arrived with no tags" and "arrived
+// tagged as nothing", which a report has to be able to tell apart.
+export function utmFrom(bag = {}) {
+  const out = {};
+  for (const k of UTM_KEYS) {
+    const v = cleanUtm(bag[k] === undefined ? bag[k.replace("utm_", "")] : bag[k]);
+    if (v) out[k] = v;
+  }
+  return out;
+}
+
+// The sentence the thank-you screen shows. `message` is the org's own words when
+// they wrote any; the fallback is plain and says the one thing a donor wants to
+// know next, which is that a receipt is coming.
+export function thankYouText(config, { orgName = "" } = {}) {
+  const c = normalizeFormConfig(config, { orgFundIds: [] });
+  const own = String(c.thankYou.message || "").trim();
+  return {
+    message: own || `Thank you. ${orgName || "The organisation"} has your gift, and a receipt is on its way to your email.`,
+    fromTheOrg: !!own,
+    redirectUrl: c.thankYou.redirectUrl || "",
+  };
+}

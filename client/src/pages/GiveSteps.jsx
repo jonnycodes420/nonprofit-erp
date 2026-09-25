@@ -28,7 +28,7 @@
 // request cannot buy anything this screen would not have offered.
 
 import { useState, useMemo } from "react";
-import { upsellFor, upsellSentence } from "../../../shared/formConfig.js";
+import { upsellFor, upsellSentence, utmFrom } from "../../../shared/formConfig.js";
 // The PUBLIC page's own tokens (BUILD-60: this page is the org's, and the tokens
 // are the audited public set). No raw hex here — the palette census RATCHETS DOWN
 // and it caught eleven literals in the first cut of this file.
@@ -152,7 +152,13 @@ export default function GiveSteps({
 
   function submit() {
     setStepErr("");
+    // BUILD-102 Part 5 — the UTM tags off THIS page's own URL, read through the
+    // one shared cleaner so the page and the server agree on what may be kept.
+    // The server re-reads and re-cleans them; this is a carrier, not a decision.
+    let utm = {};
+    try { utm = utmFrom(Object.fromEntries(new URLSearchParams(window.location.search))); } catch { utm = {}; }
     onSubmit({
+      utm,
       amount: chosenCents / 100,
       frequency: frequency === "monthly" ? "monthly" : "once",
       fundId: fundId || "",

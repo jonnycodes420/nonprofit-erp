@@ -50,8 +50,30 @@
   var origin;
   try { origin = new URL(tag.src, window.location.href).origin; } catch (e) { return; }
 
+  // THE ONE THING THIS SCRIPT READS OFF THE HOST PAGE, and it is the LOCATION
+  // only — never the DOM, never cookies, never storage. A donor who clicked a
+  // tagged link lands on the org's own page, and the tags are in that page's URL
+  // rather than the frame's; without forwarding them, every embedded gift would
+  // report as untagged and the whole attribution would be quietly useless on the
+  // surface it matters most.
+  //
+  // Only the three UTM keys, copied verbatim and capped. Nothing else from the
+  // query string travels, so a host page carrying a session token or an email
+  // address in its URL cannot leak it into Steward.
+  var tags = "";
+  try {
+    var hostParams = new URLSearchParams(window.location.search);
+    var keep = ["utm_source", "utm_medium", "utm_campaign"];
+    var out = [];
+    for (var i = 0; i < keep.length; i++) {
+      var v = hostParams.get(keep[i]);
+      if (v) out.push(encodeURIComponent(keep[i]) + "=" + encodeURIComponent(String(v).slice(0, 120)));
+    }
+    if (out.length) tags = "?" + out.join("&");
+  } catch (e) { tags = ""; }
+
   var frame = document.createElement("iframe");
-  frame.src = origin + "/embed/" + encodeURIComponent(formId);
+  frame.src = origin + "/embed/" + encodeURIComponent(formId) + tags;
   frame.title = "Donation form";
   frame.loading = "lazy";
   frame.setAttribute("scrolling", "no");
