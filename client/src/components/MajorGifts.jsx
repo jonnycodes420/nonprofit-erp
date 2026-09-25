@@ -404,3 +404,165 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite }) {
     </div>
   );
 }
+
+// ── THE PORTFOLIO SCREEN (Fundraising → Portfolios) ────────────────────────
+// Her people in the order the server ranked them — the ORDER is the product, so
+// the screen never re-sorts (a second sort here would be a second truth about
+// which relationship is going quiet). The target and the cap are the two numbers
+// she typed; when she has not typed one, the tile says so rather than showing a
+// percentage of nothing.
+// The signed-in user comes from the ONE place the app already keeps it
+// (`npe_user` in localStorage, written by the login path) rather than from a
+// prop, because `data` on this tab is the shared donor/org payload and does not
+// carry the caller. A read that throws here must not take the screen with it.
+function signedInUser() {
+  try { return JSON.parse(localStorage.getItem("npe_user") || "{}") || {}; } catch { return {}; }
+}
+
+export function PortfolioView({ isReadOnly, onNavigate }) {
+  const me = signedInUser();
+  const isAdmin = String(me.role || "") === "admin";
+  const [officers, setOfficers] = useState([]);
+  const [who, setWho] = useState(me.id || "me");
+  const [d, setD] = useState(null);
+  const [un, setUn] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [tVal, setTVal] = useState(""); const [cVal, setCVal] = useState("");
+  const [err, setErr] = useState("");
+
+  useEffect(() => { apiFetch("/portfolio/officers").then(r => setOfficers(r.officers || [])).catch(() => {}); }, []);
+  const load = useCallback(() => {
+    apiFetch(`/portfolio/${encodeURIComponent(who || "me")}`).then(r => {
+      setD(r);
+      setTVal(r.target.amount == null ? "" : String(r.target.amount));
+      setCVal(r.cap.cap == null ? "" : String(r.cap.cap));
+    }).catch(e => console.error("[portfolio]", e));
+    apiFetch("/portfolio/unassigned-prospects").then(setUn).catch(() => {});
+  }, [who]);
+  useEffect(() => { load(); }, [load]);
+  if (!d) return <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}><Spin /></div>;
+
+  const saveTarget = async () => {
+    setErr("");
+    try {
+      await apiFetch(`/portfolio/${encodeURIComponent(d.officer.id)}/target`,
+        { method: "PUT", body: JSON.stringify({ target: tVal, countCap: cVal }) });
+      setEditing(false); load();
+    } catch (e) { setErr(errorMessage(e, "That could not be saved.")); }
+  };
+  const assignTo = async (donorId) => {
+    setErr("");
+    try {
+      await apiFetch(`/donors/${donorId}/assign`, { method: "PATCH", body: JSON.stringify({ assignedTo: d.officer.id }) });
+      load();
+    } catch (e) { setErr(errorMessage(e, "That person could not be assigned.")); }
+  };
+
+  const sel = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 12, background: T.white, color: T.ink };
+  const inp = { padding: "7px 10px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 13, background: T.white, color: T.ink, width: 130 };
+
+  return (
+    <div data-testid="portfolio-view">
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+        {isAdmin && officers.length > 1 && (
+          <select style={sel} value={who} onChange={e => setWho(e.target.value)}>
+            {officers.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+        )}
+        <span style={{ fontSize: 13, color: T.ink2 }}>{d.officer.name} · {d.fiscalLabel}</span>
+        {d.downgraded && <span style={{ fontSize: 11, color: T.ink3 }}>Showing your own portfolio.</span>}
+        {err && <span style={{ fontSize: 11, color: T.terra700 }}>{err}</span>}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginBottom: 18 }}>
+        <Tile testid="portfolio-count" label="People assigned" value={String(d.count.value)} sentence={d.count.sentence} />
+        <Tile testid="portfolio-target" label={`Committed · ${d.fiscalLabel}`}
+          value={d.target.set ? `${fmtFull(d.target.committedAmount)} of ${fmtFull(d.target.amount)}` : fmtFull(d.target.committedAmount)}
+          sentence={d.target.sentence} />
+        <Tile testid="portfolio-cap" label="Against your cap"
+          value={d.cap.set ? `${d.cap.count} / ${d.cap.cap}` : String(d.cap.count)} sentence={d.cap.sentence} />
+      </div>
+
+      {!isReadOnly && (
+        <div style={{ marginBottom: 18 }}>
+          {editing ? (
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ fontSize: 12, color: T.ink2 }}>Target for {d.fiscalLabel}
+                <input style={{ ...inp, marginLeft: 8 }} value={tVal} onChange={e => setTVal(e.target.value)} placeholder="150,000" /></label>
+              <label style={{ fontSize: 12, color: T.ink2 }}>Count cap
+                <input style={{ ...inp, marginLeft: 8, width: 90 }} value={cVal} onChange={e => setCVal(e.target.value)} placeholder="120" /></label>
+              <button onClick={saveTarget} style={{ background: T.gold, border: "none", borderRadius: 9, padding: "8px 16px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Save</button>
+              <button onClick={() => setEditing(false)} style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", fontSize: 13, color: T.ink2, cursor: "pointer" }}>Cancel</button>
+              <span style={{ fontSize: 11, color: T.ink3 }}>Leave either blank to say you have not decided.</span>
+            </div>
+          ) : (
+            <button onClick={() => setEditing(true)}
+              style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 14px", fontSize: 12, color: T.ink2, cursor: "pointer" }}>
+              {d.target.set || d.cap.set ? "Change your target or cap" : "Set your target for the year"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {d.people.length === 0 ? (
+        <EmptyState title="Nobody assigned yet"
+          message="Assigning somebody to an officer is what puts them in that officer's portfolio and on their board — one act, not two." />
+      ) : (
+        <div data-testid="portfolio-table" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.5fr 110px 1.6fr 1.4fr", gap: 12, padding: "10px 14px", background: T.bg2,
+                        fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>
+            <div>Person</div><div>Open ask</div><div>Last conversation</div><div>Next step</div>
+          </div>
+          {d.people.map(p => (
+            <div key={p.donorId} style={{ display: "grid", gridTemplateColumns: "1.5fr 110px 1.6fr 1.4fr", gap: 12, alignItems: "center",
+                                          padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 60,
+                                          borderLeft: "3px solid " + (p.quiet ? T.gold500 : "transparent") }}>
+              <div style={{ minWidth: 0 }}>
+                <a href={`/donors/${p.donorId}`} onClick={e => { if (onNavigate) { e.preventDefault(); onNavigate("donors", { selectDonorId: p.donorId }); } }}
+                  style={{ fontSize: 14, fontWeight: 600, color: T.ink, textDecoration: "none", overflowWrap: "anywhere" }}>{p.name}</a>
+                <div style={{ fontSize: 11, color: T.ink3 }}>{fmtFull(p.lifetime)} lifetime{p.stage ? " · " + p.stage : ""}</div>
+              </div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: p.openAskCents ? T.ink : T.ink3, fontFamily: "'DM Serif Display',serif" }}>
+                {p.openAskCents ? fmtFull(p.openAskAmount) : "—"}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: p.quiet ? T.gold700 : T.ink2, fontWeight: p.quiet ? 700 : 400 }}>{p.contactPhrase}</div>
+                {p.lastConversation && <div style={{ fontSize: 11, color: T.ink3, overflowWrap: "anywhere" }}>{p.lastConversation.note}</div>}
+              </div>
+              <div style={{ fontSize: 12, color: T.ink2, minWidth: 0, overflowWrap: "anywhere" }}>
+                {p.nextStep ? `${p.nextStep.label} · due ${niceDate(p.nextStep.due)}` : <span style={{ color: T.ink3 }}>No open step</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {un && (
+        <div data-testid="portfolio-unassigned" style={{ marginTop: 22 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 4 }}>Nobody owns these relationships</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginBottom: 10 }}>{un.sentence}</div>
+          {un.prospects.length > 0 && (
+            <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden" }}>
+              {un.prospects.map(p => (
+                <div key={p.donorId} style={{ display: "grid", gridTemplateColumns: "1.6fr 120px 120px 140px", gap: 12, alignItems: "center",
+                                              padding: "11px 14px", borderTop: "1px solid " + T.bg3 }}>
+                  <div style={{ fontSize: 14, color: T.ink, overflowWrap: "anywhere" }}>{p.name}</div>
+                  <div style={{ fontSize: 13, color: T.ink2 }}>{fmtFull(p.lifetime)}</div>
+                  <div style={{ fontSize: 12, color: T.ink3 }}>{p.giftCount} {p.giftCount === 1 ? "gift" : "gifts"}</div>
+                  <div style={{ textAlign: "right" }}>
+                    {!isReadOnly && isAdmin && (
+                      <button onClick={() => assignTo(p.donorId)}
+                        style={{ background: T.gold, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 11, fontWeight: 700, color: T.ink, cursor: "pointer" }}>
+                        Assign to {d.officer.name.split(" ")[0]}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

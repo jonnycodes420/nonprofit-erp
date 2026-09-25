@@ -91,10 +91,11 @@ const EXPECTED = {
   // sentence has to name counts only the server knows ("from 9 proposals at the
   // probabilities you set"). The screen renders what the server sends and holds
   // no copy, which is the property that matters.
-  "components/MajorGifts.jsx": 5,
+  // Part 2 adds four: the three portfolio tiles and the open-ask cell on a row.
+  "components/MajorGifts.jsx": 9,
 };
-const EXPECTED_TOTAL = 399;
-const EXPECTED_CLAIMS = 111;
+const EXPECTED_TOTAL = 403;
+const EXPECTED_CLAIMS = 114;
 
 (async () => {
   console.log("build97-numbers");

@@ -4,7 +4,7 @@ import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartH
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { EventsDesk } from "./EventsDesk";
-import { ProposalsView } from "./MajorGifts";
+import { ProposalsView, PortfolioView } from "./MajorGifts";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -114,6 +114,9 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     // `opportunities`, so this screen and the pipeline board's ask totals are
     // one set of rows (shared/proposalShape.js says why there is no second table).
     { id: "proposals", label: "Proposals" },
+    // BUILD-99 Part 2 — a portfolio is the assignment list she already has
+    // (BUILD-30), plus the target and cap she typed.
+    { id: "portfolios", label: "Portfolios" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -152,6 +155,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
           unmounts the view and takes the confirmation with it. It reloads itself. */}
       {!loading && subtab === "proposals" && (
         <ProposalsView isReadOnly={isReadOnly} onNavigate={onNavigate} />
+      )}
+
+      {!loading && subtab === "portfolios" && (
+        <PortfolioView isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "events" && (
