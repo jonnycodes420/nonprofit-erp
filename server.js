@@ -23258,60 +23258,10 @@ app.get("/finance/summary", requireAuth, wrap(async (req, res) => {
   });
 }));
 
-// ── Finance: Stripe summary (connected-account money in) ────────────────────
-// Live balance + recent payouts for the org's OWN connected Stripe account —
-// never Steward's platform billing (that's /billing/*). Org-scoped strictly by
-// the caller's orgs.stripe_account_id, never from client input. Cached 5 min
-// per org so a Home-adjacent load can't hammer Stripe. Degrades to
-// {connected:false} on no account / no Stripe key / any Stripe error — the
-// Finance Overview shows a warm connect prompt in that case, never an error.
-const STRIPE_SUMMARY_TTL = 5 * 60 * 1000;
-const stripeSummaryCache = new Map(); // orgId -> { at, data }
-app.get("/finance/stripe-summary", requireAuth, wrap(async (req, res) => {
-  const { orgId } = req.user;
-  const cached = stripeSummaryCache.get(orgId);
-  if (cached && Date.now() - cached.at < STRIPE_SUMMARY_TTL) return res.json(cached.data);
-
-  const [org] = await query("SELECT stripe_account_id FROM orgs WHERE id=?", [orgId]);
-  const acct = org?.stripe_account_id;
-  if (!acct || !stripe) {
-    const data = { connected: false };
-    stripeSummaryCache.set(orgId, { at: Date.now(), data });
-    return res.json(data);
-  }
-  try {
-    // stripeAccount must ride the OPTIONS argument (second position), never
-    // params — stripe-node v22 sends a params-object key as a request field
-    // and Stripe rejects it ("Received unknown parameter: stripeAccount"),
-    // which silently broke the Money-in strip in prod (found 2026-08-12).
-    const [balance, payouts] = await Promise.all([
-      stripe.balance.retrieve({}, { stripeAccount: acct }),
-      stripe.payouts.list({ limit: 5 }, { stripeAccount: acct }),
-    ]);
-    const sumCents = arr => (arr || []).reduce((s, b) => s + (b.amount || 0), 0);
-    const data = {
-      connected: true,
-      balance: {
-        available: sumCents(balance.available) / 100,
-        pending: sumCents(balance.pending) / 100,
-      },
-      payouts: (payouts.data || []).map(p => ({
-        id: p.id,
-        amount: (p.amount || 0) / 100,
-        status: p.status,
-        arrival_date: p.arrival_date ? new Date(p.arrival_date * 1000).toISOString() : null,
-      })),
-    };
-    stripeSummaryCache.set(orgId, { at: Date.now(), data });
-    res.json(data);
-  } catch (e) {
-    console.error("[finance] stripe-summary failed:", e.message);
-    // Don't 500 the Finance tab over a Stripe hiccup — treat as not-connected.
-    const data = { connected: false, error: "stripe_unavailable" };
-    stripeSummaryCache.set(orgId, { at: Date.now(), data });
-    res.json(data);
-  }
-}));
+// ── Finance: Stripe summary + payouts — FIX-1 E moved them to routes/finance.js ─
+// Mounted HERE so route order is exactly what it was. The module gets the ONE
+// donation `stripe` client (and its STRIPE_API_BASE test seam) by injection.
+require("./routes/finance").mount(app, { stripe, query, requireAuth, wrap });
 
 // ── Finance: Audit Log ─────────────────────────────────────────────────────
 app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
