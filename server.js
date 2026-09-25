@@ -5651,6 +5651,25 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   // Donor-covers-fees switch — only touched when the request includes it
   // (Settings' Giving section sends it; no other PATCH caller does).
+  // BUILD-102 Part 2 — the upsell threshold, in CENTS. What counts as a gift
+  // worth asking about differs by an order of magnitude between a food pantry and
+  // a university, so it is the org's number. A value below $5 is refused rather
+  // than stored: below that the monthly suggestion is not worth the question, and
+  // a threshold of zero would ask every single donor.
+  if (req.body.upsellThresholdCents !== undefined) {
+    const F = await formConfigMod();
+    const raw = req.body.upsellThresholdCents;
+    if (raw === null || raw === "") {
+      await run(`UPDATE orgs SET form_upsell_threshold_cents=NULL WHERE id=?`, [req.params.id]);
+    } else {
+      const c = Number(raw);
+      if (!Number.isInteger(c) || c < F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION) {
+        return res.status(400).json({ code: "bad_upsell_threshold",
+          error: `The threshold is a whole number of cents, at least ${F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION} — below that the monthly suggestion is too small to be worth asking about.` });
+      }
+      await run(`UPDATE orgs SET form_upsell_threshold_cents=? WHERE id=?`, [c, req.params.id]);
+    }
+  }
   if (req.body.coverFeesEnabled !== undefined) {
     await run(`UPDATE orgs SET cover_fees_enabled=? WHERE id=?`, [!!req.body.coverFeesEnabled, req.params.id]);
   }
@@ -20348,7 +20367,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // the org's white-label display name (portal_settings.display_name) when
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(
-    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS}
+    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
     [req.params.orgSlug]
   );
@@ -20757,7 +20776,7 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
 }));
 
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -20832,6 +20851,12 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
         funds: funds.map(f => ({ id: f.id, name: f.name })),
         orgName: org.donor_facing_name,
       }),
+      // BUILD-102 Part 2 — the org's threshold, so the page can ask the shared
+      // rule rather than carry a copy of it. The RULE stays in
+      // shared/formConfig.js; this is only the org's number.
+      upsellThresholdCents: org.form_upsell_threshold_cents != null
+        ? Number(org.form_upsell_threshold_cents)
+        : (await formConfigMod()).UPSELL_DEFAULT_THRESHOLD_CENTS,
     },
     funds,
     peerFundraisers: {
@@ -20988,7 +21013,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -21131,8 +21156,10 @@ function coverFeesGrossUpCents(netCents) {
 
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { fundId, firstName, lastName, email, campaignId } = req.body;
-  let { amount, frequency, coverFees } = req.body;
+  const { firstName, lastName, email, campaignId } = req.body;
+  // BUILD-102 Part 2 — `fundId` is a `let` because the FORM's designation
+  // replaces whatever the request carried (a fixed form was never asking).
+  let { amount, frequency, coverFees, fundId } = req.body;
   let { givingPageId, peerFundraiserId } = req.body;
   // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
   // never by the amount the page sent. One-time only, and no fee gross-up: the
@@ -21204,11 +21231,6 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const isRecurring = frequency === "monthly" || frequency === "annual";
   const frontendUrl = publicAppUrl();
 
-  let fundName = "";
-  if (fundId) {
-    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
-    if (fundRow.length) fundName = fundRow[0].name;
-  }
 
   // Peer-fundraiser donations always resolve givingPageId from the
   // fundraiser row itself, not whatever the client sent — the fundraiser
@@ -21247,6 +21269,50 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     givingPageSlug = pageRow[0].slug;
     pageTitle = pageRow[0].title;
     pageCampaignId = pageRow[0].campaign_id || null;
+  }
+
+  // ── BUILD-102 Part 2 — THE FORM'S CONFIG CONSTRAINS THE CHARGE ───────────
+  // The server has always priced the charge; this is the narrower rule the form
+  // adds. A form offering four amounts and no box to type in may not be charged
+  // $3.17 because somebody edited the request, and the designation is the FORM's
+  // rather than the request's (the BUILD-88a rule — which fund is the default is
+  // the server's to say — applied to a page a stranger opens from a flyer).
+  //
+  // It runs ONLY for a gift arriving through a giving page, and only for a plain
+  // donation: a ticket and a membership are already priced from their own level
+  // above, and running this over them would be a second opinion about a price
+  // the server itself just set.
+  if (givingPageId && !eventLevelId && !membershipLevelId) {
+    const F = await formConfigMod();
+    const [pageCfgRow] = await query("SELECT form_config FROM giving_pages WHERE id=? AND org_id=?", [givingPageId, org.id]);
+    const cfg = pageCfgRow ? pageCfgRow.form_config : null;
+    const orgFunds = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [org.id]);
+    const amountCheck = F.checkRequestedAmount(cfg, baseCents, { funds: orgFunds });
+    if (!amountCheck.ok) {
+      return res.status(400).json({ error: amountCheck.message, code: amountCheck.code,
+                                    amountsCents: amountCheck.amountsCents });
+    }
+    const des = F.resolveDesignation(cfg, fundId, { funds: orgFunds });
+    if (des.from === "refused") return res.status(400).json({ error: des.message, code: des.code });
+    // The form's answer REPLACES whatever the request carried, and `fundName` is
+    // re-read from it below rather than from the request's id.
+    fundId = des.fundId || null;
+    // A FREQUENCY THE FORM DOES NOT OFFER IS REFUSED. A form with monthly
+    // switched off must not be able to mint a subscription through a hand-rolled
+    // request — that is a recurring charge the org never agreed to take.
+    const spec = F.formSpec(cfg, { funds: orgFunds, orgName: "" });
+    const wanted = frequency === "monthly" || frequency === "annual" ? "monthly" : "once";
+    if (!spec.amount.frequencies.includes(wanted)) {
+      return res.status(400).json({ error: "This form does not offer monthly giving.", code: "frequency_not_offered" });
+    }
+  }
+
+  // Resolved AFTER the form has had its say, so a fixed designation cannot
+  // charge one fund and label the gift with the one the request asked for.
+  let fundName = "";
+  if (fundId) {
+    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
+    if (fundRow.length) fundName = fundRow[0].name;
   }
 
   // Attribution FIX — a page configured to count toward a campaign stamps that

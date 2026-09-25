@@ -310,6 +310,13 @@ export function formSpec(storedConfig, { funds = [], orgName = "", currency = "U
 
   return {
     currency, orgName: String(orgName || ""),
+    // WHETHER ANYBODY HAS CONFIGURED THIS FORM. `formSpec` always returns a
+    // working form, which is what makes a NULL config safe — but the PAGE needs
+    // to know the difference, because an unconfigured giving page must render
+    // byte-for-byte what it always did (the BUILD-95 §5B rule: an unbuilt page is
+    // unchanged). The three-step flow is the Steward Give product; it does not
+    // retro-fit itself onto every giving page that already exists.
+    configured: !!(storedConfig && typeof storedConfig === "object" && Object.keys(storedConfig).length),
     headline: c.headline,
     steps: STEPS.map(s => ({ ...s })),
     amount: {
@@ -348,4 +355,102 @@ export function specFingerprint(spec) {
 export function designationBlurb(mode) {
   const m = DESIGNATION_MODES.find(x => x.key === mode);
   return m ? m.blurb : "";
+}
+
+// ── BUILD-102 Part 2 — THE FORM'S CONFIG CONSTRAINS THE CHARGE ─────────────
+// The server already prices every charge; this is the narrower rule the config
+// adds: a form that offers four amounts and no box to type in may not be charged
+// $3.17 because somebody edited the request. `checkRequestedAmount` is the ONE
+// place that decides, and the donate route calls it — so the rule cannot live on
+// the page, where it is a suggestion.
+export function checkRequestedAmount(config, requestedCents, { funds = [] } = {}) {
+  const c = normalizeFormConfig(config, { orgFundIds: (funds || []).map(f => String(f.id)) });
+  const cents = Number(requestedCents);
+  if (!Number.isInteger(cents) || cents <= 0) {
+    return { ok: false, code: "bad_amount", message: "Choose an amount." };
+  }
+  if (!c.allowOther && !c.amountsCents.includes(cents)) {
+    // THE MESSAGE NAMES WHAT IS ON OFFER, because a donor who typed a number and
+    // was refused needs to know what to press instead.
+    return { ok: false, code: "amount_not_offered",
+      message: "Choose one of the amounts on the form.", amountsCents: [...c.amountsCents] };
+  }
+  return { ok: true, amountCents: cents };
+}
+
+// THE DESIGNATION IS THE FORM'S, NOT THE REQUEST'S. A fixed form ignores whatever
+// fund the request carried; a choice form accepts only from its own list; an
+// undesignated form lands undesignated, which is a real answer rather than a
+// guess. This is the BUILD-88a rule ("which fund is the default is the SERVER's
+// to say") applied to a public page.
+export function resolveDesignation(config, requestedFundId, { funds = [] } = {}) {
+  const ids = (funds || []).map(f => String(f.id));
+  const c = normalizeFormConfig(config, { orgFundIds: ids });
+  const asked = requestedFundId ? String(requestedFundId) : null;
+  if (c.designation.mode === "fixed") {
+    // Silently, and deliberately: the donor was never asked, so there is nothing
+    // to report to them. The form said where this money goes.
+    return { fundId: c.designation.fundId, from: "form_fixed", ignoredRequest: !!asked && asked !== c.designation.fundId };
+  }
+  if (c.designation.mode === "choice") {
+    const allowed = c.designation.fundIds.filter(id => ids.includes(id));
+    if (!asked) return { fundId: null, from: "donor_chose_nothing" };
+    if (!allowed.includes(asked)) {
+      return { fundId: null, from: "refused", code: "fund_not_offered",
+        message: "That fund is not one this form offers." };
+    }
+    return { fundId: asked, from: "donor_choice" };
+  }
+  // `none`: an amount arriving with a fund nobody was offered is refused rather
+  // than honoured — the form did not ask, so the request cannot answer.
+  if (asked) {
+    return { fundId: null, from: "refused", code: "fund_not_offered",
+      message: "This form does not ask which fund a gift goes to." };
+  }
+  return { fundId: null, from: "undesignated" };
+}
+
+// ── THE UPSELL ─────────────────────────────────────────────────────────────
+// A one-time gift at or above the org's threshold is asked ONCE whether it could
+// be monthly. The suggestion is a THIRD of the gift, rounded to a whole dollar,
+// because a third of $150 is $50 and "$50 a month" is a sentence somebody can
+// picture — $12.50 a month is a decimal nobody chooses.
+//
+// It is asked ONCE. A decline is final for that session, and the reason is not
+// politeness: a second ask is the pattern every donor recognises as a trick, and
+// it costs the one-time gift that was already in hand.
+export const UPSELL_DEFAULT_THRESHOLD_CENTS = 10000;   // $100
+export const UPSELL_FRACTION = 3;                      // a third
+export const UPSELL_MIN_MONTHLY_CENTS = 500;           // $5 — below that it is not worth asking
+
+export function monthlySuggestionCents(oneTimeCents) {
+  const c = Number(oneTimeCents);
+  if (!Number.isInteger(c) || c <= 0) return null;
+  // Whole dollars, rounded to the NEAREST — a third of $100 is $33, not $33.33
+  // and not $34.
+  const dollars = Math.round(c / UPSELL_FRACTION / 100);
+  return dollars * 100;
+}
+
+export function upsellFor(oneTimeCents, { thresholdCents = UPSELL_DEFAULT_THRESHOLD_CENTS,
+                                          offerMonthly = true, frequency = "once" } = {}) {
+  const c = Number(oneTimeCents);
+  const threshold = Number.isInteger(Number(thresholdCents)) ? Number(thresholdCents) : UPSELL_DEFAULT_THRESHOLD_CENTS;
+  // A MONTHLY GIFT IS NEVER UPSOLD. It is already the thing being asked for, and
+  // asking a monthly donor to go monthly is the software not reading its own page.
+  if (frequency !== "once") return { offer: false, why: "already_recurring" };
+  if (!offerMonthly) return { offer: false, why: "monthly_not_offered" };
+  if (!Number.isInteger(c) || c < threshold) return { offer: false, why: "below_threshold" };
+  const monthlyCents = monthlySuggestionCents(c);
+  if (!monthlyCents || monthlyCents < UPSELL_MIN_MONTHLY_CENTS) return { offer: false, why: "suggestion_too_small" };
+  return { offer: true, monthlyCents, annualCents: monthlyCents * 12, why: null };
+}
+
+// The sentence, which states the arithmetic rather than selling it. `fm` takes
+// cents. No exclamation mark, no "just" — a monthly gift is a commitment and
+// pretending otherwise is how it gets cancelled in March.
+export function upsellSentence(u, fm) {
+  const f = typeof fm === "function" ? fm : (c => String(c));
+  if (!u || !u.offer) return "";
+  return `${f(u.monthlyCents)} a month comes to ${f(u.annualCents)} over a year, and it lets them plan.`;
 }

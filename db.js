@@ -2545,6 +2545,12 @@ async function initSchema() {
   // page that already exists is a working form the moment this ships, and
   // `shared/formConfig.js` is the one validator that decides what may be in here.
   await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS form_config JSONB`).catch(() => {});
+  // BUILD-102 Part 2 — the upsell threshold is the ORG's, because what counts as
+  // a gift worth asking about differs by an order of magnitude between a food
+  // pantry and a university. Default $100 (10000 cents); the monthly suggestion
+  // is a third of the gift rounded to a whole dollar, which is arithmetic rather
+  // than a setting and lives in shared/formConfig.js.
+  await run(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS form_upsell_threshold_cents INTEGER`).catch(() => {});
   // pledges.campaign_id — a pledge attributes at pledge time; payments against
   // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
   // pledged (committed-but-unpaid) is a separate figure, never summed in.
