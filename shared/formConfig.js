@@ -503,3 +503,137 @@ export function thankYouText(config, { orgName = "" } = {}) {
     redirectUrl: c.thankYou.redirectUrl || "",
   };
 }
+
+// ── BUILD-102 Part 6 — THE FUNNEL, AND WHAT MAY BE CALLED A WINNER ─────────
+// Five figures, each with its one-sentence definition, because nothing reaches a
+// screen in this product without one (the BUILD-86 C.3 rule) and a funnel is
+// exactly where a number without a definition gets over-read.
+export const FUNNEL_METRICS = [
+  { key: "views", label: "Views",
+    definition: "How many times the form was loaded. Not people — one person opening it twice is two." },
+  { key: "starts", label: "Starts",
+    definition: "How many of those got as far as choosing an amount and moving on to their details." },
+  { key: "completions", label: "Gifts",
+    definition: "How many finished and paid. This is counted from the gift itself, not from the form." },
+  { key: "completionRate", label: "Completion rate",
+    definition: "Gifts divided by views, as a percentage. It is low on every donation form ever built." },
+  { key: "averageGift", label: "Average gift",
+    definition: "The money that came through this form divided by the number of gifts." },
+];
+export const FUNNEL_METRIC_KEYS = FUNNEL_METRICS.map(m => m.key);
+export function funnelDefinition(key) {
+  const m = FUNNEL_METRICS.find(x => x.key === key);
+  return m ? m.definition : null;
+}
+// The registry's teeth: a metric added without a definition cannot reach a screen.
+export function funnelDefinitionProblems() {
+  const out = [];
+  for (const m of FUNNEL_METRICS) {
+    if (!m.definition || m.definition.length < 25) out.push(`${m.key}: definition too short to mean anything`);
+    else if (!/\.$/.test(m.definition)) out.push(`${m.key}: definition is not a sentence`);
+    if (!m.label) out.push(`${m.key}: no label`);
+  }
+  return out;
+}
+
+// THE FUNNEL CANNOT GO BACKWARDS. Starts may not exceed views and completions may
+// not exceed starts — not because the counters are trusted, but because they are
+// NOT: a view that failed to record while its completion did would otherwise show
+// a 300% completion rate on somebody's screen. The figures are clamped and the
+// clamping is SAID, so a reader knows they are looking at a floor.
+export function funnelFor({ views = 0, starts = 0, completions = 0, completedCents = 0 } = {}) {
+  const v = Math.max(0, Math.trunc(Number(views) || 0));
+  const s = Math.min(Math.max(0, Math.trunc(Number(starts) || 0)), v);
+  const c = Math.min(Math.max(0, Math.trunc(Number(completions) || 0)), s);
+  const cents = Math.max(0, Math.trunc(Number(completedCents) || 0));
+  const clamped = s !== Math.trunc(Number(starts) || 0) || c !== Math.trunc(Number(completions) || 0);
+  return {
+    views: v, starts: s, completions: c, completedCents: cents,
+    completionRate: v > 0 ? Math.round((c / v) * 1000) / 10 : null,
+    averageGiftCents: c > 0 ? Math.round(cents / c) : null,
+    clamped,
+  };
+}
+
+// ── THE A/B ────────────────────────────────────────────────────────────────
+// TWO VARIANTS OF ONE FORM, differing in the suggested amounts or the headline
+// ONLY. A test that could change the designation, the questions or the frequency
+// would be two different forms sharing one set of numbers, and every conclusion
+// drawn from it would be wrong about which change did what.
+export const AB_FIELDS = ["amountsCents", "headline"];
+export const AB_VARIANTS = ["a", "b"];
+// A HUNDRED VIEWS PER VARIANT before anything may be called a winner. It is not a
+// statistical test and does not pretend to be one: it is the floor below which the
+// difference between two numbers is noise, and below it the screen says so in a
+// sentence rather than showing a percentage somebody will act on.
+export const AB_MIN_VIEWS = 100;
+
+export function validateAbTest(raw, { orgFundIds = [] } = {}) {
+  const errors = [];
+  if (raw === null || raw === undefined) return { ok: true, test: null, errors };
+  const t = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+  if (!t) return { ok: false, test: null, errors: [{ field: "abTest", message: "A test is a setting with a variant B." }] };
+  if (t.running !== undefined && typeof t.running !== "boolean") {
+    errors.push({ field: "abTest.running", message: "Whether the test is running is yes or no." });
+  }
+  const b = t.b && typeof t.b === "object" && !Array.isArray(t.b) ? t.b : null;
+  if (!b) errors.push({ field: "abTest.b", message: "Variant B is what differs from the form as it stands." });
+  else {
+    const keys = Object.keys(b);
+    const stray = keys.filter(k => !AB_FIELDS.includes(k));
+    if (stray.length) {
+      errors.push({ field: "abTest.b",
+        message: `A test may change only the suggested amounts or the headline. ${stray.join(", ")} would make it two different forms sharing one set of numbers.` });
+    }
+    if (!keys.length) errors.push({ field: "abTest.b", message: "Variant B has to differ from variant A in something." });
+    // Whatever B changes still has to be a legal form on its own.
+    const v = validateFormConfig(b, { orgFundIds });
+    if (!v.ok) errors.push(...v.errors.map(e => ({ ...e, field: "abTest.b." + e.field })));
+  }
+  if (errors.length) return { ok: false, test: null, errors };
+  const clean = {};
+  for (const k of AB_FIELDS) if (b[k] !== undefined) clean[k] = validateFormConfig({ [k]: b[k] }, { orgFundIds }).config[k];
+  return { ok: true, errors: [], test: { running: t.running !== false, b: clean } };
+}
+
+// The spec for one variant: A is the form as it stands, B is A with the test's
+// overrides on top. ONE function, so the two variants cannot drift.
+export function specForVariant(storedConfig, abTest, variant, opts = {}) {
+  const wantB = variant === "b" && abTest && abTest.running && abTest.b;
+  const merged = wantB ? { ...(storedConfig || {}), ...abTest.b } : storedConfig;
+  const spec = formSpec(merged, opts);
+  spec.variant = wantB ? "b" : "a";
+  return spec;
+}
+
+// WHAT MAY BE SAID ABOUT TWO NUMBERS. Below the floor, nothing — and the sentence
+// says how many more views each variant needs, because "not yet" is only useful
+// with a number attached.
+export function abVerdict(aFunnel, bFunnel, { minViews = AB_MIN_VIEWS } = {}) {
+  const a = aFunnel || funnelFor({}), b = bFunnel || funnelFor({});
+  const shortfall = Math.max(0, minViews - a.views) + Math.max(0, minViews - b.views);
+  if (a.views < minViews || b.views < minViews) {
+    const needA = Math.max(0, minViews - a.views), needB = Math.max(0, minViews - b.views);
+    const parts = [];
+    if (needA) parts.push(`${needA} more on A`);
+    if (needB) parts.push(`${needB} more on B`);
+    return {
+      winner: null, callable: false, shortfall,
+      sentence: `Too early to tell. Each version needs ${minViews} views before the difference between them means anything — ${parts.join(" and ")}.`,
+    };
+  }
+  // ABOVE THE FLOOR IT STILL REPORTS COUNTS, and names the leader as leading
+  // rather than as winning. Steward is not running a significance test and must
+  // not imply that it is.
+  if (a.completionRate === b.completionRate) {
+    return { winner: null, callable: true, shortfall: 0,
+      sentence: `Both versions are completing at ${a.completionRate}%. Nothing to choose between them yet.` };
+  }
+  const lead = a.completionRate > b.completionRate ? "a" : "b";
+  const hi = lead === "a" ? a : b, lo = lead === "a" ? b : a;
+  return {
+    winner: lead, callable: true, shortfall: 0,
+    sentence: `Version ${lead.toUpperCase()} is ahead: ${hi.completions} gifts from ${hi.views} views `
+      + `(${hi.completionRate}%) against ${lo.completions} from ${lo.views} (${lo.completionRate}%).`,
+  };
+}

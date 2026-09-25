@@ -85,7 +85,10 @@ async function reset() {
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
-      "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      // BUILD-102 (Steward Give) Part 6 — the form funnel. Cascades from giving_pages,
+    // but it is listed explicitly and BEFORE it: the cascade covers a page delete and
+    // this list has to survive an org delete too.
+    "form_events", "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`

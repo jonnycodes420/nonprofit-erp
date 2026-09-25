@@ -24,6 +24,7 @@ import { T } from "./publicTheme";
 import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
 import GiveSteps from "./GiveSteps";
+import { assignVariant } from "../lib/abVariant";
 
 function grossUpCents(baseCents) {
   return Math.ceil((baseCents + 30) / (1 - 0.029));
@@ -51,7 +52,12 @@ export default function EmbeddedForm() {
 
   useEffect(() => {
     let alive = true;
-    fetch(`${API}/forms/${encodeURIComponent(formId)}/public`)
+    // BUILD-102 Part 6 — an A/B is served from `?v=`, so the side has to be known
+    // before the fetch. `assignVariant` returns null and sets no cookie unless a
+    // test is actually running, which is checked on the first read below.
+    const v = new URLSearchParams(window.location.search).get("v");
+    const q = v === "a" || v === "b" ? `?v=${v}` : "";
+    fetch(`${API}/forms/${encodeURIComponent(formId)}/public${q}`)
       .then(r => r.json().then(b => ({ ok: r.ok, b })))
       .then(({ ok, b }) => {
         if (!alive) return;
@@ -143,6 +149,7 @@ export default function EmbeddedForm() {
         submitting={submitting}
         submitErr={submitErr}
         onSubmit={postDonation}
+        apiBase={API}
         styles={{
           card,
           inp: { width: "100%", padding: "11px 12px", borderRadius: 8, border: "1px solid " + T.bg3,

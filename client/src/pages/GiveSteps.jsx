@@ -27,7 +27,7 @@
 // re-checks every one of those rules (Part 2's donate-route block), so a tampered
 // request cannot buy anything this screen would not have offered.
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { upsellFor, upsellSentence, utmFrom } from "../../../shared/formConfig.js";
 // The PUBLIC page's own tokens (BUILD-60: this page is the org's, and the tokens
 // are the audited public set). No raw hex here — the palette census RATCHETS DOWN
@@ -61,9 +61,28 @@ function rememberDecline(formId) {
   try { window.sessionStorage.setItem(declineKey(formId), "1"); } catch { /* a private window is still allowed to give */ }
 }
 
+// ── BUILD-102 Part 6 — TWO BEACONS, AND NOTHING ELSE ───────────────────────
+// A view when the form is opened and a start when the donor gets past choosing an
+// amount. No identifier travels: the server's `form_events` table has nowhere to
+// put one, and this sends nothing it could. The COMPLETION is counted from the
+// gift in the webhook, because a page cannot be trusted to know whether money
+// moved.
+//
+// `keepalive` so a start still lands if the donor navigates immediately, and every
+// failure is swallowed: a blocked beacon must never cost somebody their gift.
+function countFormEvent(apiBase, formId, kind, variant) {
+  if (!formId) return;
+  try {
+    fetch(`${apiBase}/forms/${encodeURIComponent(formId)}/event`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+      body: JSON.stringify({ kind, variant: variant || undefined }),
+    }).catch(() => {});
+  } catch { /* nothing here may ever cost a gift */ }
+}
+
 export default function GiveSteps({
   spec, formId, theme: th, coverFeesEnabled, upsellThresholdCents,
-  onSubmit, submitting, submitErr, grossUpCents, styles,
+  onSubmit, submitting, submitErr, grossUpCents, styles, apiBase,
 }) {
   const { card, inp, btn, quiet } = styles;
   const [step, setStep] = useState(0);
@@ -87,6 +106,14 @@ export default function GiveSteps({
   // tree; the session flag is what makes it true across a reload.
   const [upsellAsked, setUpsellAsked] = useState(() => alreadyDeclined(formId));
   const [upsellOpen, setUpsellOpen] = useState(false);
+  // One view per mount, and one start per form — a donor who goes Back and
+  // forward again has not started twice.
+  const startedRef = useRef(false);
+
+  useEffect(() => {
+    if (!apiBase || !formId) return;
+    countFormEvent(apiBase, formId, "view", spec.variant);
+  }, [apiBase, formId, spec.variant]);
 
   const chosenCents = isCustom ? Math.round((parseFloat(customAmt) || 0) * 100) : (amountCents || 0);
   const feeCents = chosenCents >= 100 && typeof grossUpCents === "function" ? grossUpCents(chosenCents) - chosenCents : 0;
@@ -120,6 +147,12 @@ export default function GiveSteps({
     }
     if (spec.designation.mode === "choice" && !fundId) {
       setStepErr("Choose where your gift should go."); return;
+    }
+    // A START is the moment the donor commits to an amount and moves on, counted
+    // ONCE per form: going Back and forward again is not a second start.
+    if (!startedRef.current) {
+      startedRef.current = true;
+      if (apiBase) countFormEvent(apiBase, formId, "start", spec.variant);
     }
     // ASK ONCE, HERE — between choosing an amount and typing a name, which is
     // the only moment the question is not an interruption.
@@ -159,6 +192,7 @@ export default function GiveSteps({
     try { utm = utmFrom(Object.fromEntries(new URLSearchParams(window.location.search))); } catch { utm = {}; }
     onSubmit({
       utm,
+      variant: spec.variant === "b" ? "b" : undefined,
       amount: chosenCents / 100,
       frequency: frequency === "monthly" ? "monthly" : "once",
       fundId: fundId || "",

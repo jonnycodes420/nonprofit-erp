@@ -820,6 +820,16 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               await applyFormAsks(orgId, written.gift, formMeta, SYS_STRIPE)
                 .catch(e => console.error("[form] applying what the form asked:", e.message));
             }
+            // BUILD-102 Part 6 — the COMPLETION, counted here and nowhere else. A
+            // page reports a view and a start; only the webhook knows money moved,
+            // and it runs inside the duplicate guard, so a redelivered event cannot
+            // count a second gift. The money is the CHARGED amount, which is what
+            // "average gift through this form" honestly means.
+            if (givingPageId) {
+              await bumpFormEvent(orgId, givingPageId, "completions",
+                { variant: formMeta.variant || null, cents: Math.round(amount * 100) })
+                .catch(e => console.error("[forms] counting a completion:", e.message));
+            }
             if (evLevel) {
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
                 who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
@@ -20682,6 +20692,119 @@ const givingPageOr404 = async (id, orgId) => {
   return p || null;
 };
 
+// ── BUILD-102 (Steward Give) Part 6 — THE FUNNEL, COUNTED NOT TRACKED ──────
+// Views, starts and completions per form per day. NOTHING about who: no person id,
+// no session id, no IP, no user agent, no cookie id — and the SHAPE is the
+// guarantee rather than a promise in a policy, because `form_events` has nowhere to
+// put one.
+//
+// Every counter is an ATOMIC UPSERT on (form, day, variant). A read-modify-write
+// would lose counts the moment two people opened the form in the same second, and
+// the first thing anybody would notice is a completion rate over 100%.
+async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, today = null } = {}) {
+  if (!["views", "starts", "completions"].includes(field)) return;
+  const org = await orgTz(orgId);
+  const day = today || orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const v = variant === "a" || variant === "b" ? variant : null;
+  await run(
+    `INSERT INTO form_events (id,org_id,form_id,day,variant,${field},completed_cents)
+     VALUES (?,?,?,?,?,1,?)
+     ON CONFLICT (form_id, day, COALESCE(variant,''))
+     DO UPDATE SET ${field} = form_events.${field} + 1,
+                   completed_cents = form_events.completed_cents + ?,
+                   updated_at = NOW()`,
+    ["fe_" + uuid().slice(0, 10), orgId, formId, day, v, Math.max(0, Math.trunc(cents) || 0),
+     Math.max(0, Math.trunc(cents) || 0)]);
+}
+
+// POST /forms/:id/event — the public counter. A view and a start are the only two
+// things the PAGE may report; a COMPLETION is counted from the gift itself in the
+// webhook, because a page cannot be trusted to know whether money actually moved
+// and a completion nobody paid for is the one number that would matter.
+app.post("/forms/:id/event", donateLimiter, wrap(async (req, res) => {
+  const kind = String(req.body && req.body.kind || "");
+  if (!["view", "start"].includes(kind)) {
+    return res.status(400).json({ error: "bad_event", code: "bad_event" });
+  }
+  const [page] = await query("SELECT id, org_id, status FROM giving_pages WHERE id=?", [req.params.id]);
+  // An unknown or archived form counts nothing, and answers 204 either way: this is
+  // called from a public page and must never leak whether an id exists.
+  if (!page || page.status !== "active") return res.status(204).end();
+  const variant = req.body && (req.body.variant === "b" ? "b" : req.body.variant === "a" ? "a" : null);
+  await bumpFormEvent(page.org_id, page.id, kind === "view" ? "views" : "starts", { variant })
+    .catch(e => console.error("[forms] counting a " + kind + ":", e.message));
+  // NO BODY, EVER. There is nothing to tell the page, and a response with content
+  // is a response somebody will eventually read something into.
+  res.status(204).end();
+}));
+
+// GET /giving-pages/:id/funnel — the numbers, each with its definition.
+app.get("/giving-pages/:id/funnel", requireAuth, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const days = Math.max(1, Math.min(365, Number(req.query.days) || 90));
+  const org = await orgTz(req.user.orgId);
+  const today = orgToday(org);                                         // ORG_TZ_SEAM_OK
+  const from = orgTime.addDays(today, -(days - 1));
+  const rows = await query(
+    `SELECT variant, COALESCE(SUM(views),0)::int AS views, COALESCE(SUM(starts),0)::int AS starts,
+            COALESCE(SUM(completions),0)::int AS completions, COALESCE(SUM(completed_cents),0)::bigint AS cents
+       FROM form_events WHERE org_id=? AND form_id=? AND day >= ? AND day <= ?
+      GROUP BY variant`, [req.user.orgId, pg.id, from, today]);
+  const pick = v => {
+    const r = rows.find(x => (x.variant || null) === v) || {};
+    return F.funnelFor({ views: r.views, starts: r.starts, completions: r.completions,
+                         completedCents: Number(r.cents || 0) });
+  };
+  // The whole form is every variant together — an A/B splits the SAME traffic, so
+  // the total is what the org actually received.
+  const all = F.funnelFor(rows.reduce((acc, r) => ({
+    views: acc.views + Number(r.views || 0), starts: acc.starts + Number(r.starts || 0),
+    completions: acc.completions + Number(r.completions || 0),
+    completedCents: acc.completedCents + Number(r.cents || 0),
+  }), { views: 0, starts: 0, completions: 0, completedCents: 0 }));
+  const ab = pg.ab_test && typeof pg.ab_test === "object" ? pg.ab_test : null;
+  const a = pick("a"), b = pick("b");
+  res.json({
+    formId: pg.id, formTitle: pg.title, from, to: today, days,
+    funnel: all,
+    money: { completed: toDollars(all.completedCents),
+             averageGift: all.averageGiftCents == null ? null : toDollars(all.averageGiftCents) },
+    // EVERY FIGURE CARRIES ITS DEFINITION, one string from the registry to the
+    // hover — never a copy (BUILD-86 C.3).
+    metrics: F.FUNNEL_METRICS,
+    definitions: Object.fromEntries(F.FUNNEL_METRICS.map(m => [m.key, m.definition])),
+    // A clamped figure is SAID, so a reader knows they are looking at a floor.
+    note: all.clamped
+      ? "Some counts arrived out of order, so these are a floor rather than an exact figure."
+      : null,
+    abTest: ab ? {
+      running: ab.running !== false, b: ab.b || null,
+      minViews: F.AB_MIN_VIEWS,
+      a, bFunnel: b,
+      verdict: F.abVerdict(a, b),
+    } : null,
+    // NOTHING ABOUT WHO, and the screen says so rather than leaving somebody to
+    // wonder what Steward knows about their donors' browsing.
+    privacyNote: "Steward counts how many times this form was opened and finished. "
+      + "It records nothing about who opened it — no names, no addresses, no cookies.",
+  });
+}));
+
+// PUT /giving-pages/:id/ab-test — start, change or stop a test.
+app.put("/giving-pages/:id/ab-test", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const orgFundIds = await orgFundIdsFor(req.user.orgId);
+  const v = F.validateAbTest(req.body && req.body.abTest === undefined ? null : req.body.abTest, { orgFundIds });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_ab_test", errors: v.errors });
+  await run("UPDATE giving_pages SET ab_test=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [v.test ? JSON.stringify(v.test) : null, pg.id, req.user.orgId]);
+  res.json({ formId: pg.id, abTest: v.test, fields: F.AB_FIELDS, minViews: F.AB_MIN_VIEWS });
+}));
+
 // ── BUILD-102 (Steward Give) Part 4 — THE EMBED ────────────────────────────
 // One public read, by FORM ID, so `embed.js` needs nothing but the id the org
 // pasted into its own page. It is the same payload shape the giving page's own
@@ -20719,7 +20842,12 @@ app.get("/forms/:id/public", wrap(async (req, res) => {
            coverFeesEnabled: page.cover_fees_enabled !== false, theme: giveThemePayload(page) },
     form: {
       id: page.id, slug: page.slug, title: page.title,
-      spec: F.formSpec(page.form_config, { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+      // BUILD-102 Part 6 — the variant the caller was assigned. The SPLIT is the
+      // page's (a cookie it sets itself); the SPEC for each side comes from here,
+      // through one function, so A and B cannot drift into two forms.
+      spec: F.specForVariant(page.form_config, page.ab_test, req.query.v,
+        { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+      abRunning: !!(page.ab_test && page.ab_test.running !== false && page.ab_test.b),
       upsellThresholdCents: page.form_upsell_threshold_cents != null
         ? Number(page.form_upsell_threshold_cents)
         : F.UPSELL_DEFAULT_THRESHOLD_CENTS,
@@ -20780,8 +20908,16 @@ app.get("/giving-pages/:id/form", requireAuth, requireAdmin, wrap(async (req, re
   res.json({
     pageId: pg.id, pageTitle: pg.title, pageSlug: pg.slug, status: pg.status,
     config: F.normalizeFormConfig(pg.form_config, { orgFundIds: funds.map(f => f.id) }),
-    // THE SAME SPEC THE DONOR GETS. The editor's phone preview renders this.
-    spec: F.formSpec(pg.form_config, { funds, orgName }),
+    // THE SAME SPEC THE DONOR GETS, through the SAME function — including the
+    // A/B, so an admin running a test can preview either side with `?v=b` and the
+    // preview is still the donor's own form rather than a near-copy of it.
+    //
+    // Part 6 broke this for one commit: the public read moved to `specForVariant`
+    // (which stamps `variant`) while this one stayed on `formSpec`, and the
+    // byte-identical guard in build102-form-config §5 caught the divergence
+    // immediately. That is the guard doing exactly what it was written for.
+    spec: F.specForVariant(pg.form_config, pg.ab_test, req.query.v, { funds, orgName }),
+    abTest: pg.ab_test || null,
     funds: funds.map(f => ({ id: f.id, name: f.name })),
     // The registry, so the editor's copy is ONE string from here to the screen.
     designationModes: F.DESIGNATION_MODES,
@@ -21037,10 +21173,14 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       // BUILD-102 Part 1 — THE FORM THE DONOR IS OFFERED, from the same
       // `formSpec` the editor's preview renders. Not a second shape derived from
       // the same row: the same function, so the two cannot drift.
-      form: (await formConfigMod()).formSpec(page.form_config, {
+      form: (await formConfigMod()).specForVariant(page.form_config, page.ab_test, req.query.v, {
         funds: funds.map(f => ({ id: f.id, name: f.name })),
         orgName: org.donor_facing_name,
       }),
+      // BUILD-102 Part 6 — whether a test is running, so a first-time visitor can
+      // be assigned a side WITHOUT a cookie being set on every form that has none.
+      // A cookie nobody needs is a cookie somebody has to explain in a policy.
+      abRunning: !!(page.ab_test && page.ab_test.running !== false && page.ab_test.b),
       // BUILD-102 Part 2 — the org's threshold, so the page can ask the shared
       // rule rather than carry a copy of it. The RULE stays in
       // shared/formConfig.js; this is only the org's number.
@@ -21602,6 +21742,11 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     const F = await formConfigMod();
     const utm = F.utmFrom(req.body.utm && typeof req.body.utm === "object" ? req.body.utm : req.body);
     for (const [k, v] of Object.entries(utm)) metadata[k] = v;
+    // BUILD-102 Part 6 — which side of an A/B this gift came through, so the
+    // completion lands on the right variant. The page tells us; it has nothing to
+    // gain by lying and the only consequence of a wrong value is a wrong count on
+    // one side of a test the org is running on itself.
+    if (req.body.variant === "a" || req.body.variant === "b") metadata.variant = req.body.variant;
   }
   if (formAsks) {
     if (formAsks.tributeType) {

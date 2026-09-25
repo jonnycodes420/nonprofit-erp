@@ -12,6 +12,9 @@ import { PageRenderer } from "../components/PortalWidgets";
 // this safe to ship to every org that already has giving pages.
 import GiveSteps from "./GiveSteps";
 import { thankYouText } from "../../../shared/formConfig.js";
+// BUILD-102 Part 6 — which side of an A/B this visitor is on, decided before the
+// page's own fetch so the server can serve the right variant in one round trip.
+import { assignVariant, currentVariant } from "../lib/abVariant";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -408,9 +411,25 @@ export default function Donate() {
       : pageSlug
         ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/public`
         : `${API}/org/${orgSlug}/public`;
-    fetch(url)
+    // BUILD-102 Part 6 — a visitor who already has a side keeps it, and the server
+    // serves that variant in ONE round trip. Somebody arriving for the first time
+    // fetches without a side, and only if a test is actually running do we assign
+    // one and fetch again — so a form with no test never sets a cookie at all.
+    const had = currentVariant();
+    const withV = v => (v ? url + (url.includes("?") ? "&" : "?") + "v=" + v : url);
+    fetch(withV(had))
       .then(r => r.json())
-      .then(d => {
+      .then(async d => {
+        if (!d.error && d.givingPage && d.givingPage.abRunning && !had) {
+          const v = assignVariant(true);
+          if (v === "b") {
+            // Only B needs a second fetch: A is what the first one already returned.
+            try {
+              const again = await fetch(withV("b")).then(r => r.json());
+              if (!again.error) d = again;
+            } catch { /* keep A rather than showing nothing */ }
+          }
+        }
         if (d.error) { setPageError(d.error); }
         else {
           setOrg(d.org);
@@ -851,6 +870,7 @@ export default function Donate() {
             submitting={submitting}
             submitErr={submitErr}
             onSubmit={postDonation}
+            apiBase={API}
             styles={{
               card,
               inp,

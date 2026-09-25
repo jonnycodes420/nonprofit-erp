@@ -2565,6 +2565,46 @@ async function initSchema() {
   await run(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS utm_medium TEXT`).catch(() => {});
   await run(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS utm_campaign TEXT`).catch(() => {});
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_utm ON gifts (org_id, utm_source)`).catch(() => {});
+
+  // ── BUILD-102 (Steward Give) Part 6 — THE FUNNEL, COUNTED AND NOT TRACKED ──
+  // Views, starts and completions per form per day, and NOTHING about who. There
+  // is no person id, no session id, no IP, no user agent and no cookie id in this
+  // table — by design, and the shape is the guarantee rather than a promise in a
+  // policy: there is nowhere to put one.
+  //
+  // COUNTED PER DAY, not per event, so the table stays small at scale and cannot
+  // become a behavioural log by accident. A form with ten thousand views a day is
+  // one row, and "who looked at this" is a question its own schema cannot answer.
+  //
+  // `variant` is BUILD-102 Part 6's A/B: NULL for a form with no test running, "a"
+  // or "b" while one is. The same three counts per variant, from the same rows, so
+  // the A/B is a lens on the funnel rather than a second measurement system.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS form_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      form_id TEXT REFERENCES giving_pages(id) ON DELETE CASCADE,
+      day TEXT NOT NULL,
+      variant TEXT,
+      views INTEGER NOT NULL DEFAULT 0,
+      starts INTEGER NOT NULL DEFAULT 0,
+      completions INTEGER NOT NULL DEFAULT 0,
+      completed_cents BIGINT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // ONE ROW PER FORM PER DAY PER VARIANT is the whole storage contract, and the
+  // unique index is what makes every counter an atomic upsert rather than a
+  // read-modify-write that loses counts under concurrency.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS form_events_one_per_day
+                      ON form_events (form_id, day, COALESCE(variant,''))`).catch(e =>
+    console.error("[forms] form_events_one_per_day:", e.message));
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_form_events_org ON form_events (org_id, day)`);
+
+  // BUILD-102 Part 6 — the A/B, on the giving page's own row. Two variants of ONE
+  // form differing in the suggested amounts or the headline only: a test that can
+  // change the designation or the questions is not an A/B, it is two forms with one
+  // set of numbers.
+  await run(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS ab_test JSONB`).catch(() => {});
   // pledges.campaign_id — a pledge attributes at pledge time; payments against
   // it inherit the campaign. Campaign "raised" NEVER counts an open pledge —
   // pledged (committed-but-unpaid) is a separate figure, never summed in.
