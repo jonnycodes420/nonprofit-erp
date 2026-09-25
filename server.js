@@ -14423,6 +14423,356 @@ app.put("/grants/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
 // (funder name in vendor/description, or the exact grant amount)? Read-only,
 // org-scoped (foreign grant → 404); the human decides via the prompt whether
 // to link (PUT adoptTxnId) or book separately. 180-day window, newest first.
+
+// ── BUILD-100 (grants) Part 1 — FUNDERS AND GRANTS ─────────────────────────
+// A funder is an ORGANISATION on file (BUILD-80's `kind`), not a string in a
+// column, and a grant is one request to one of them. shared/grantShape.js holds
+// every rule; these routes are its writers. The existing `grants` table gains
+// the columns rather than being replaced — db.js says why.
+async function grantShapeMod() { return import("./shared/grantShape.js"); }
+
+// The wire shape. Money leaves as dollars AND as integer cents, because the
+// pipeline is summed in cents and a screen that re-derives cents from a float is
+// how a total ends up a penny out.
+function grantRow(r, { funds, officers } = {}) {
+  const reqC = toCents(r.amount_requested != null ? r.amount_requested : r.amount) || 0;
+  const awdC = toCents(r.amount_awarded) || 0;
+  const recC = toCents(r.received) || 0;
+  return {
+    id: r.id,
+    funderId: r.funder_donor_id || null,
+    funderName: r.funder_name || r.funder || "",
+    funderType: r.funder_type || null,
+    program: r.program || "",
+    amountRequested: toDollars(reqC), amountRequestedCents: reqC,
+    amountAwarded: awdC ? toDollars(awdC) : null, amountAwardedCents: awdC,
+    received: toDollars(recC), receivedCents: recC,
+    status: r.status_canonical || r.status,
+    restriction: r.restriction || null,
+    restrictedFrom: r.restricted_from || null,
+    restrictedUntil: r.restricted_until || null,
+    fundId: r.fund_id || null,
+    fundName: r.fund_id && funds ? (funds.get(r.fund_id) || null) : null,
+    cycleName: r.cycle_name || null,
+    officerId: r.officer_id || null,
+    officerName: r.officer_id && officers ? (officers.get(r.officer_id) || null) : (r.officer || ""),
+    awardPledgeId: r.award_pledge_id || null,
+    declineReason: r.decline_reason || null,
+    declinedOn: r.declined_on || null,
+    reapply: r.reapply === null || r.reapply === undefined ? null : !!r.reapply,
+    deadline: r.deadline || null,
+    reportDue: r.report_due || null,
+    notes: r.notes || "",
+    createdByName: r.created_by_name || "",
+    awardedAt: r.awarded_at || null,
+  };
+}
+
+async function orgFundNamesG(orgId) {
+  const rows = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+  return new Map(rows.map(r => [r.id, r.name]));
+}
+async function orgOfficerNames(orgId) {
+  const rows = await query("SELECT id, name FROM users WHERE org_id=?", [orgId]);
+  return new Map(rows.map(r => [r.id, r.name]));
+}
+
+// THE ONE PLACE A FUNDER IS RESOLVED, and the one place a person is refused.
+// A grant is an institutional relationship; a cheque from a private individual
+// is a GIFT. Calling it a grant puts it in the wrong half of every report an
+// auditor reads, which is why this is a refusal and not a warning.
+async function resolveFunder(orgId, funderDonorId) {
+  const G = await grantShapeMod();
+  const [d] = await query(
+    "SELECT id, name, kind, funder_type FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    [funderDonorId, orgId]);
+  const problem = G.funderProblem(d);
+  if (problem) return { ok: false, problem };
+  return { ok: true, funder: d };
+}
+
+// GET /funders — the organisations this org has asked, with what they have
+// given and what is open. A funder with no grants yet is still a funder.
+app.get("/funders", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT d.id, d.name, d.funder_type, d.email, d.city, d.state, d.total_giving,
+            COUNT(g.id)::int AS grant_count,
+            COALESCE(SUM(CASE WHEN g.status = ANY(?::text[]) THEN COALESCE(g.amount_requested, g.amount) END),0) AS open_requested,
+            COALESCE(SUM(CASE WHEN g.status='awarded' THEN COALESCE(g.amount_awarded, g.amount) END),0) AS awarded_total
+       FROM donors d
+       LEFT JOIN grants g ON g.funder_donor_id = d.id AND g.org_id = d.org_id AND g.is_sample IS NOT TRUE
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND LOWER(COALESCE(d.kind,'person')) IN ('organisation','organization')
+        AND (d.funder_type IS NOT NULL OR g.id IS NOT NULL)
+      GROUP BY d.id, d.name, d.funder_type, d.email, d.city, d.state, d.total_giving
+      ORDER BY d.name`,
+    [G.OPEN_STATUS_KEYS.concat(Object.keys(G.STATUS_ALIASES).filter(a => G.STATUS_ALIASES[a] && G.OPEN_STATUS_KEYS.includes(G.STATUS_ALIASES[a]))), orgId]);
+  res.json({
+    funders: rows.map(r => ({
+      funderId: r.id, name: r.name, funderType: r.funder_type || null,
+      funderTypeLabel: G.funderTypeLabel(r.funder_type), email: r.email || null,
+      city: r.city || null, state: r.state || null,
+      grantCount: r.grant_count,
+      openRequested: toDollars(toCents(r.open_requested) || 0),
+      awardedTotal: toDollars(toCents(r.awarded_total) || 0),
+      lifetimeGiving: toDollars(toCents(r.total_giving) || 0),
+    })),
+    funderTypes: G.FUNDER_TYPES,
+  });
+}));
+
+// PUT /funders/:donorId — say what kind of funder an organisation is. It lives
+// on the FUNDER because the Sunrise Foundation is a private foundation across
+// every grant it ever makes; per-grant storage would let two rows disagree.
+app.put("/funders/:donorId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const r = await resolveFunder(req.user.orgId, req.params.donorId);
+  if (!r.ok) {
+    const code = r.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: r.problem.message, code: r.problem.code });
+  }
+  const t = req.body.funderType === null || req.body.funderType === "" ? null : String(req.body.funderType || "");
+  if (t !== null && !G.FUNDER_TYPE_KEYS.includes(t)) {
+    return res.status(400).json({ error: `Funder type must be one of: ${G.FUNDER_TYPES.map(x => x.label).join(", ")}.`, code: "bad_funder_type" });
+  }
+  await run("UPDATE donors SET funder_type=?, updated_at=NOW() WHERE id=? AND org_id=?", [t, r.funder.id, req.user.orgId]);
+  res.json({ funderId: r.funder.id, name: r.funder.name, funderType: t, funderTypeLabel: G.funderTypeLabel(t) });
+}));
+
+// GET /funders/:donorId/grants — a funder's own record: every grant, in order.
+app.get("/funders/:donorId/grants", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const r = await resolveFunder(req.user.orgId, req.params.donorId);
+  if (!r.ok) {
+    const code = r.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: r.problem.message, code: r.problem.code });
+  }
+  const funds = await orgFundNamesG(req.user.orgId);
+  const officers = await orgOfficerNames(req.user.orgId);
+  const rows = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type
+       FROM grants g JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=? AND g.funder_donor_id=? ORDER BY g.created_at DESC`,
+    [req.user.orgId, r.funder.id]);
+  const grants = rows.map(x => grantRow({ ...x, status_canonical: G.normalizeStatus(x.status) }, { funds, officers }));
+  res.json({
+    funder: { funderId: r.funder.id, name: r.funder.name, funderType: r.funder.funder_type || null,
+              funderTypeLabel: G.funderTypeLabel(r.funder.funder_type) },
+    grants,
+    statuses: G.GRANT_STATUSES, restrictions: G.RESTRICTIONS, declineReasons: G.DECLINE_REASONS,
+  });
+}));
+
+// POST /funders/:donorId/grants — one request to one funder.
+app.post("/funders/:donorId/grants", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const fr = await resolveFunder(orgId, req.params.donorId);
+  if (!fr.ok) {
+    const code = fr.problem.code === "funder_not_found" ? 404 : 400;
+    return res.status(code).json({ error: fr.problem.message, code: fr.problem.code });
+  }
+  let reqCents;
+  try { reqCents = parseMoneyOrThrow(req.body.amountRequested, "amountRequested"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+
+  const status = G.normalizeStatus(req.body.status || "researching") || String(req.body.status || "");
+  const v = G.validateGrant({
+    program: req.body.program, amountRequestedCents: reqCents, status,
+    restriction: req.body.restriction, restrictedFrom: req.body.restrictedFrom,
+    restrictedUntil: req.body.restrictedUntil,
+  }, { mode: "create" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+
+  const fund = await checkGrantFund(orgId, req.body.fundId || null);
+  if (!fund.ok) return res.status(404).json({ error: "Fund not found" });
+  const officer = await checkGrantOfficer(orgId, req.body.officerId || null);
+  if (!officer.ok) return res.status(404).json({ error: "Officer not found" });
+
+  const id = "gr_" + uuid().slice(0, 8);
+  await run(
+    `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,status,
+                         restriction,restricted_from,restricted_until,fund_id,cycle_name,officer_id,officer,
+                         notes,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, fr.funder.name, fr.funder.id, G.sanitizeProgram(req.body.program),
+     toDollars(reqCents), toDollars(reqCents), status,
+     req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
+     fund.fundId, G.sanitizeCycle(req.body.cycleName), officer.officerId, officer.officerName || "",
+     G.sanitizeNotes(req.body.notes), actor(req).id, actor(req).name]);
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [id]);
+  res.status(201).json(grantRow({ ...row, status_canonical: G.normalizeStatus(row.status) },
+    { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }));
+}));
+
+async function checkGrantFund(orgId, fundId) {
+  if (!fundId) return { ok: true, fundId: null };
+  const [f] = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+  return f ? { ok: true, fundId: f.id } : { ok: false };
+}
+async function checkGrantOfficer(orgId, officerId) {
+  if (!officerId) return { ok: true, officerId: null, officerName: null };
+  const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [officerId, orgId]);
+  return u ? { ok: true, officerId: u.id, officerName: u.name } : { ok: false };
+}
+
+// PUT /grants/:id/award — AWARDED WRITES THE AWARD AS A PLEDGE ON THE FUNDER.
+//
+// Not a gift: a foundation saying yes in March and paying in two instalments
+// across the year is a COMMITMENT, and Steward already has exactly the right
+// object for that (88b's pledge path, with instalments that close themselves
+// when the money arrives through any door). Writing a gift here would book money
+// that has not arrived; writing nothing would lose the schedule.
+//
+// It is its own route rather than a branch inside the general PUT because the
+// general PUT already carries the ledger stamp, the campaign attribution and the
+// adopt-an-existing-row guard, and threading a pledge writer through all of that
+// is how one of those stops working.
+app.put("/grants/:id/award", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const [g] = await query(
+    `SELECT g.*, d.name AS funder_name FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.id=? AND g.org_id=?`, [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  if (!g.funder_donor_id) {
+    return res.status(400).json({ code: "funder_not_linked",
+      error: "Link this grant to the funder's organisation record before awarding it — the pledge has to belong to somebody." });
+  }
+  let awardedCents;
+  try { awardedCents = parseMoneyOrThrow(req.body.amountAwarded, "amountAwarded"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  const v = G.validateGrant({ status: "awarded", amountAwardedCents: awardedCents,
+                              restriction: req.body.restriction !== undefined ? req.body.restriction : g.restriction,
+                              restrictedFrom: req.body.restrictedFrom !== undefined ? req.body.restrictedFrom : g.restricted_from,
+                              restrictedUntil: req.body.restrictedUntil !== undefined ? req.body.restrictedUntil : g.restricted_until },
+                            { mode: "patch" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  // ALREADY AWARDED WRITES NOTHING NEW. A second press must not produce a second
+  // pledge — the commitment exists, and a duplicate would double it in every
+  // total the funder appears in.
+  let pledgeId = g.award_pledge_id || null;
+  if (!pledgeId) {
+    pledgeId = "pl_" + uuid().slice(0, 8);
+    const due = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body.firstDue || "")) ? String(req.body.firstDue) : today;
+    await run(
+      `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
+       VALUES (?,?,?,?,?,'open',?,?,?)`,
+      [pledgeId, orgId, g.funder_donor_id, toDollars(awardedCents), due,
+       `Grant award: ${g.program || "grant"}`, actor(req).id, actor(req).name]);
+    // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give the
+    // funder's real payment schedule; neither given leaves one instalment for
+    // the whole award, so recordGift applies their cheque to it to the cent from
+    // whichever door it arrives through.
+    await writePledgeInstallments(orgId, pledgeId, {
+      amountCents: awardedCents, schedule: req.body.installments,
+      frequency: req.body.frequency, count: req.body.installmentCount, firstDue: due,
+    }).catch(e => console.error("[grant] instalments:", e.message));
+    const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
+    if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
+      ["pli_" + uuid().slice(0, 10), orgId, pledgeId, due, toDollars(awardedCents)]);
+  }
+
+  await run(
+    `UPDATE grants SET status='awarded', amount_awarded=?, award_pledge_id=?,
+       restriction=COALESCE(?, restriction), restricted_from=COALESCE(?, restricted_from),
+       restricted_until=COALESCE(?, restricted_until),
+       awarded_at=COALESCE(awarded_at, NOW()), updated_at=NOW()
+     WHERE id=? AND org_id=?`,
+    [toDollars(awardedCents), pledgeId,
+     req.body.restriction || null, req.body.restrictedFrom || null, req.body.restrictedUntil || null,
+     g.id, orgId]);
+
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
+  const [inst] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pledgeId]);
+  res.json({ ...grantRow({ ...row, status_canonical: "awarded" },
+                         { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }),
+             pledgeId, installments: inst.c });
+}));
+
+// PUT /grants/:id/decline — a no, with its reason, its date, and whether to try
+// again. Declining does NOT touch the award pledge if one somehow exists: money
+// already committed is a fact, and a status is not a reason to delete it.
+app.put("/grants/:id/decline", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const v = G.validateGrant({ status: "declined", declineReason: req.body.declineReason,
+                              declinedOn: req.body.declinedOn, reapply: req.body.reapply }, { mode: "patch" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_grant", errors: v.errors });
+  const org = await orgTz(orgId);
+  await run(
+    `UPDATE grants SET status='declined', decline_reason=?, declined_on=?, reapply=?, updated_at=NOW()
+      WHERE id=? AND org_id=?`,
+    [req.body.declineReason, req.body.declinedOn || orgToday(org),    // ORG_TZ_SEAM_OK
+     req.body.reapply === undefined ? null : !!req.body.reapply, g.id, orgId]);
+  const [row] = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id WHERE g.id=?`, [g.id]);
+  res.json(grantRow({ ...row, status_canonical: "declined" },
+    { funds: await orgFundNamesG(orgId), officers: await orgOfficerNames(orgId) }));
+}));
+
+// GET /grants/pipeline — the Grants screen under Fundraising. By status in
+// dollars and count, filtered by program, officer and cycle, sorted by the next
+// deadline. EVERY FIGURE CARRIES ITS SENTENCE.
+app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
+  const G = await grantShapeMod();
+  const orgId = req.user.orgId;
+  const where = ["g.org_id = ?", "g.is_sample IS NOT TRUE"], args = [orgId];
+  if (req.query.officerId) { where.push("g.officer_id = ?"); args.push(String(req.query.officerId)); }
+  if (req.query.cycle) { where.push("LOWER(COALESCE(g.cycle_name,'')) = LOWER(?)"); args.push(String(req.query.cycle)); }
+  if (req.query.program) { where.push("LOWER(COALESCE(g.program,'')) LIKE LOWER(?)"); args.push("%" + String(req.query.program) + "%"); }
+  if (req.query.status) {
+    const want = String(req.query.status).split(",").map(x => G.normalizeStatus(x)).filter(Boolean);
+    if (!want.length) return res.status(400).json({ error: "Unknown status" });
+    // Match the canonical status AND every legacy spelling of it, so a filter
+    // does not silently hide rows written before this build.
+    const spellings = [...want];
+    for (const [alias, canon] of Object.entries(G.STATUS_ALIASES)) if (want.includes(canon)) spellings.push(alias);
+    where.push("LOWER(g.status) = ANY(?::text[])"); args.push(spellings);
+  }
+  const rows = await query(
+    `SELECT g.*, d.name AS funder_name, d.funder_type FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE ${where.join(" AND ")}`, args);
+  const funds = await orgFundNamesG(orgId), officers = await orgOfficerNames(orgId);
+  const all = rows.map(r => ({
+    ...grantRow({ ...r, status_canonical: G.normalizeStatus(r.status) }, { funds, officers }),
+    // The next dated thing on this grant, whichever it is. Part 2 replaces this
+    // with the milestone table; until then the two dates the row already has are
+    // the honest answer rather than a blank column.
+    nextDeadline: [r.deadline, r.report_due].filter(x => /^\d{4}-\d{2}-\d{2}$/.test(String(x || ""))).sort()[0] || null,
+  }));
+  const sort = ["deadline", "amount", "funder", "status"].includes(String(req.query.sort)) ? String(req.query.sort) : "deadline";
+  const grants = G.sortGrants(all, sort);
+  const byStatus = G.pipelineByStatus(all).map(r => ({
+    ...r, amount: toDollars(r.cents), sentence: G.statusTileSentence(r, money.formatCentsPlain),
+  }));
+  const open = all.filter(x => G.isOpenStatus(x.status));
+  const openCents = open.reduce((s, x) => s + G.pipelineCentsFor(x), 0);
+  const cycles = [...new Set(all.map(x => x.cycleName).filter(Boolean))].sort();
+  res.json({
+    grants, byStatus, sort,
+    openPipeline: { cents: openCents, amount: toDollars(openCents), count: open.length,
+                    sentence: G.openPipelineSentence({ cents: openCents, count: open.length }, money.formatCentsPlain) },
+    statuses: G.GRANT_STATUSES, restrictions: G.RESTRICTIONS, declineReasons: G.DECLINE_REASONS,
+    funderTypes: G.FUNDER_TYPES, cycles,
+    funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
+    officers: [...officers.entries()].map(([id, name]) => ({ id, name })),
+  });
+}));
+
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT id, funder, program, amount, status FROM grants WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });

@@ -1165,6 +1165,23 @@ async function initSchema() {
     END $$;`);
   }
 
+  // BUILD-100 (grants) Part 1 — A GRANT'S MONEY COULD NOT HOLD CENTS.
+  // `grants.amount` and `grants.received` have been INTEGER since the original
+  // schema, exactly as the gift columns above were until BUILD-08 Phase B found
+  // it live. A foundation awards $10,000 far more often than $10,000.37, which
+  // is why this survived — but an award applied from a real payment schedule, or
+  // a currency-converted one, is a number this column would have thrown on. The
+  // brief asks for the pipeline total IN CENTS, which this made impossible.
+  // Same guarded shape: only run the rewrite while the column is still integer.
+  for (const [tbl, col] of [["grants", "amount"], ["grants", "received"]]) {
+    await pool.query(`DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+                 WHERE table_schema='public' AND table_name='${tbl}' AND column_name='${col}' AND data_type='integer') THEN
+        ALTER TABLE ${tbl} ALTER COLUMN ${col} TYPE NUMERIC USING ${col}::numeric;
+      END IF;
+    END $$;`);
+  }
+
   // BUILD-73 Part 2 — CENTS, AT THE DATABASE. The migration above stopped these
   // columns being INTEGER, which is what made cents storable; it left them
   // unconstrained NUMERIC, which stores $33.333 just as happily as $33.33.
@@ -1184,6 +1201,8 @@ async function initSchema() {
     ["donors", "total_giving"], ["donors", "last_gift_amount"],
     ["pledges", "amount"], ["fin_transactions", "amount"],
     ["recurring_subscriptions", "amount"],
+    // BUILD-100 (grants) Part 1 — a grant's money joins the same discipline.
+    ["grants", "amount"], ["grants", "received"],
   ]) {
     await pool.query(`DO $$ BEGIN
       IF EXISTS (SELECT 1 FROM information_schema.columns
@@ -2549,6 +2568,52 @@ async function initSchema() {
   // campaign thermometer never drops just because a won grant's status moved on.
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS awarded_at TIMESTAMPTZ`);
+
+  // ── BUILD-100 (grants) Part 1 — A FUNDER IS A RECORD, NOT A STRING ────────
+  // `grants.funder` has been free TEXT since the original schema, so "Sunrise
+  // Foundation", "The Sunrise Foundation" and "Sunrise Fdn" were three funders
+  // that could never be counted together, and none of them had a program
+  // officer, an address or a giving history. BUILD-80 already settled what an
+  // institution is — a `donors` row with `kind='organisation'` — and a funder is
+  // one of those. So the grant points AT that record.
+  //
+  // `funder` (the text) STAYS and is kept in step, for the same reason
+  // `opportunities` kept its name in BUILD-99: every existing read, report and
+  // Kanban card uses it, and rewriting twenty call sites to chase a join is how
+  // one of them gets missed. The text is the label; the id is the truth.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS funder_donor_id TEXT REFERENCES donors(id) ON DELETE SET NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grants_org_funder ON grants (org_id, funder_donor_id)`);
+
+  // WHAT KIND OF FUNDER IT IS lives on the FUNDER, not on the grant — the
+  // Sunrise Foundation is a private foundation across every grant it ever makes,
+  // and storing it per grant would let two rows disagree about one organisation.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_type TEXT`);
+
+  // The request, the award, and where the money is allowed to go.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS amount_requested NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS amount_awarded NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restriction TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restricted_from TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS restricted_until TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS cycle_name TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS officer_id TEXT`);
+  // The award IS a pledge from the funder (88b's path), and this is the link
+  // back to it, so "what did they actually commit to" is one row away.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS award_pledge_id TEXT`);
+  // A no, with its reason and whether to try again — the same discipline
+  // BUILD-99 gave a declined proposal.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS decline_reason TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS declined_on TEXT`);
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS reapply BOOLEAN`);
+
+  // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
+  // meant on a grant that has not been awarded, and on an awarded one it is what
+  // was asked for. Never guessed — a row with no amount stays null.
+  await pool.query(`UPDATE grants SET amount_requested = amount
+                     WHERE amount_requested IS NULL AND amount IS NOT NULL AND amount > 0`);
+  await pool.query(`UPDATE grants SET amount_awarded = amount
+                     WHERE amount_awarded IS NULL AND status = 'awarded' AND amount IS NOT NULL AND amount > 0`);
   // gifts.cover_fee_amount — the donor-covers-fees portion of a grossed-up
   // online gift (charged − intended). The gift row / receipt / ledger keep the
   // FULL charged amount (what actually moved, what the IRS acknowledgment must
