@@ -113,6 +113,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [draft, setDraft] = useState(null); // new level form
   const [msg, setMsg] = useState("");
   const [settings, setSettings] = useState(null);
+  const [lapsed, setLapsed] = useState(null);
   const loadLevels = () => apiFetch("/membership-levels").then(r => setLevels(r.levels || [])).catch(() => setLevels([]));
   const loadList = () => {
     const qs = new URLSearchParams(); if (status) qs.set("status", status); if (sort === "expiry_desc") qs.set("sort", "expiry_desc");
@@ -125,6 +126,9 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
     catch (e) { setMsg(errorMessage(e, "That setting did not save.")); }
   };
   useEffect(() => { loadList(); }, [status, sort]);
+  // Lapsed members are their own list (Part 3): who, which level, when, how
+  // many years, and whether they still give. Never a filter on the donor list.
+  useEffect(() => { if (status === "lapsed") apiFetch("/memberships/lapsed").then(setLapsed).catch(() => setLapsed({ members: [], sentence: "" })); }, [status]);
   const saveLevel = async () => {
     setMsg("");
     try {
@@ -207,9 +211,33 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
             <option value="expiry_asc">Expiring soonest</option><option value="expiry_desc">Expiring latest</option>
           </select>
         </div>
-        {!list.members.length && <div style={{ fontSize: 13, color: T.ink3 }}>No members{status ? ` who are ${STATUS_LABEL[status].toLowerCase()}` : " yet"}. Add a membership from a person's record.</div>}
+        {status === "lapsed" && lapsed && (
+          <div data-testid="lapsed-members" title={lapsed.sentence} style={{ overflowX: "auto" }}>
+            {!lapsed.members.length && <div style={{ fontSize: 13, color: T.ink3 }}>No lapsed members. When a membership passes its grace period, the person appears here.</div>}
+            {lapsed.members.length > 0 && (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <thead><tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
+                  <th style={{ padding: "6px 8px" }}>Member</th><th style={{ padding: "6px 8px" }}>Level</th>
+                  <th style={{ padding: "6px 8px" }}>Lapsed</th>
+                  <th style={{ padding: "6px 8px" }} title="The membership terms they held.">Years as a member</th>
+                  <th style={{ padding: "6px 8px" }} title="A gift that was not a membership payment.">Still gives</th>
+                </tr></thead>
+                <tbody>{lapsed.members.map(m => (
+                  <tr key={m.id} data-testid="lapsed-row" style={{ borderTop: "1px solid " + T.bg3 }}>
+                    <td style={{ padding: "8px" }}>
+                      <a href={`/donors/${m.donor_id}`} onClick={e => { if (onNavigate && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onNavigate("donors", { selectDonorId: m.donor_id }); } }}
+                        style={{ color: T.ink, fontWeight: 600, textDecoration: "none" }}>{m.donor_name}</a>
+                    </td>
+                    <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>
+                    <td style={{ padding: "8px", color: T.ink3 }}>{m.lapsed_on}</td>
+                    <td style={{ padding: "8px", color: T.ink }}>{m.membership_years}</td>
+                    <td style={{ padding: "8px", color: T.ink3 }}>{m.lastGiftDate ? `Yes, last gift ${m.lastGiftDate}` : "No"}</td>
+                  </tr>))}</tbody>
+              </table>)}
+          </div>)}
+        {status !== "lapsed" && !list.members.length && <div style={{ fontSize: 13, color: T.ink3 }}>No members{status ? ` who are ${STATUS_LABEL[status].toLowerCase()}` : " yet"}. Add a membership from a person's record.</div>}
         <div style={{ overflowX: "auto" }}>
-          {list.members.length > 0 && (
+          {status !== "lapsed" && list.members.length > 0 && (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead><tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
                 <th style={{ padding: "6px 8px" }}>Member</th><th style={{ padding: "6px 8px" }}>Level</th>

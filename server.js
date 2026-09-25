@@ -31579,10 +31579,45 @@ app.get("/donors/:id/memberships", requireAuth, wrap(async (req, res) => {
 
 // The Members screen: every membership, counts by level and status, sortable
 // by expiry (soonest first by default — that is the list someone works from).
+// ── BUILD-101 Part 3 — LAPSED MEMBERS ARE THEIR OWN LIST ──────────────────
+// A lapsed member and a lapsed donor are different people with different
+// asks. This list reads ONLY the memberships table (and, to say whether they
+// still give, the gifts that were not membership payments). Nothing here is
+// read by Drift, LYBUNT or SYBUNT, and nothing those compute is read here —
+// the suite proves both directions byte for byte. A person who lapsed as a
+// member and still gives is shown as both.
+const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id
+                                     ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
+    AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
+
+app.get("/memberships/lapsed", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT m.id, m.donor_id, d.name AS donor_name, l.name AS level_name, m.expires_on,
+            COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on,
+            (SELECT COUNT(*)::int FROM memberships t WHERE t.org_id=m.org_id AND t.donor_id=m.donor_id
+               AND t.status IN ('active','grace','lapsed','renewed')) AS membership_years,
+            (SELECT MAX(g.date) FROM gifts g WHERE g.org_id=m.org_id AND g.donor_id=m.donor_id
+               AND NOT EXISTS (SELECT 1 FROM memberships x WHERE x.org_id=g.org_id AND x.gift_id=g.id)) AS last_gift_date
+       FROM memberships m
+       JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}
+      ORDER BY lapsed_on DESC, d.name LIMIT 1000`, [orgId]);
+  res.json({
+    members: rows.map(r => ({ ...r, lastGiftDate: r.last_gift_date ? String(r.last_gift_date).slice(0, 10) : null })),
+    sentence: "People whose most recent membership has lapsed and who hold none now. Membership years counts the terms they held. A gift here means a gift that was not a membership payment, so someone can be a lapsed member and a current donor at once.",
+  });
+}));
+
 app.get("/memberships", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const where = ["m.org_id=?"], args = [orgId];
   if (req.query.status && ["active", "grace", "lapsed", "cancelled"].includes(String(req.query.status))) { where.push("m.status=?"); args.push(String(req.query.status)); }
+  // "Lapsed" means a PERSON who lapsed, once: their latest membership lapsed
+  // and they hold none now (BUILD-101 Part 3 — the same predicate as the
+  // Lapsed list, so the count and the list cannot disagree).
+  if (req.query.status === "lapsed") where.push(LAPSED_MEMBER_SQL);
   if (req.query.levelId) { where.push("m.level_id=?"); args.push(String(req.query.levelId)); }
   const dir = req.query.sort === "expiry_desc" ? "DESC" : "ASC";
   const rows = await query(
@@ -31590,9 +31625,11 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
             l.id AS level_id, l.name AS level_name, l.term
        FROM memberships m JOIN membership_levels l ON l.id=m.level_id JOIN donors d ON d.id=m.donor_id
       WHERE ${where.join(" AND ")} ORDER BY m.expires_on ${dir} NULLS LAST, d.name LIMIT 1000`, args);
-  const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? GROUP BY 1`, [orgId]);
+  const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status <> 'lapsed' GROUP BY 1`, [orgId]);
   const byStatus = { active: 0, grace: 0, lapsed: 0, cancelled: 0 };
-  for (const c of counts) byStatus[c.status] = c.n;
+  for (const c of counts) if (c.status in byStatus) byStatus[c.status] = c.n;
+  const [lp] = await query(`SELECT COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}`, [orgId]);
+  byStatus.lapsed = lp?.n || 0;
   res.json({ members: rows, byStatus,
     sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period." });
 }));
