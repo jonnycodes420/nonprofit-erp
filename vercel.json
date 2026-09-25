@@ -39,6 +39,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/person-photos/:path*"
     },
     {
+      "source": "/grant-documents/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/grant-documents/:path*"
+    },
+    {
       "source": "/unsubscribe",
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },

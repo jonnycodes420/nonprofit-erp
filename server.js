@@ -14665,7 +14665,7 @@ async function orgOfficerNames(orgId) {
 async function resolveFunder(orgId, funderDonorId) {
   const G = await grantShapeMod();
   const [d] = await query(
-    "SELECT id, name, kind, funder_type FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    "SELECT id, name, kind, funder_type, funder_ein FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
     [funderDonorId, orgId]);
   const problem = G.funderProblem(d);
   if (problem) return { ok: false, problem };
@@ -14778,7 +14778,7 @@ app.get("/funders/:donorId/grants", requireAuth, wrap(async (req, res) => {
   const grants = rows.map(x => grantRow({ ...x, status_canonical: G.normalizeStatus(x.status) }, { funds, officers }));
   res.json({
     funder: { funderId: r.funder.id, name: r.funder.name, funderType: r.funder.funder_type || null,
-              funderTypeLabel: G.funderTypeLabel(r.funder.funder_type) },
+              funderTypeLabel: G.funderTypeLabel(r.funder.funder_type), ein: r.funder.funder_ein || null },
     grants,
     statuses: G.GRANT_STATUSES, restrictions: G.RESTRICTIONS, declineReasons: G.DECLINE_REASONS,
   });
@@ -16963,9 +16963,18 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
     `SELECT COUNT(*)::int AS n FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
       WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ? AND d.deleted_at IS NULL`,
     [orgId, monthStart, monthEnd]);
+  // BUILD-100 (grants) Part 7 — grant deadlines inside Home's window, counted
+  // through grantMilestones' ONE window so this and the Deadlines screen's line
+  // cannot disagree. Open milestones only; a sample grant never counts.
+  const GM = await grantMsMod();
+  const openMs = await query(
+    `SELECT m.due_date FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+      WHERE m.org_id=? AND m.state NOT IN ('done','skipped') AND g.is_sample IS NOT TRUE`, [orgId]);
+  const grantDeadlinesSoon = GM.deadlinesInWindow(openMs.map(r => ({ dueDate: r.due_date })), pledgeToday).length;
   res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
              latePledgeInstallments: lateRow?.late || 0,
              membershipsExpiringThisMonth: expRow?.n || 0,
+             grantDeadlinesSoon, grantDeadlineWindowDays: GM.HOME_WINDOW_DAYS,
              pledgesNeedingSchedule: shellRow?.n || 0 });
 }));
 

@@ -138,10 +138,32 @@ ok(spaRw > unsubRw && spaRw > cardRw, "backend proxies come BEFORE the SPA catch
 // is silent: nothing errors, a feature just quietly does nothing. A new bare
 // backend path added to the client has to be added HERE, and this line is
 // where somebody finds out.
-for (const [path, why] of [
+// BUILD-100 (grants) Part 7 — and the hand-kept list MISSED ONE. A grant
+// document's signed link is "/grant-documents/<id>?e=…&s=…", built by
+// grantDocs.js; BUILD-100 wrote no client, so nobody reached this line, and on
+// production every document would have downloaded index.html. So the list is
+// now ALSO DERIVED: every unauthenticated GET route whose first segment the
+// server builds into a URL string (a literal beginning "/<segment>/") is a
+// bare path somebody's browser will fetch, and it must be proxied.
+const bareFromServer = (() => {
+  const src = ["server.js", ...fs.readdirSync(root).filter(f => f.endsWith(".js") && f !== "server.js")]
+    .map(f => { try { return read(f); } catch { return ""; } }).join("\n");
+  const unauthGet = new Set();
+  for (const m of server.matchAll(/app\.get\(\s*"\/([a-z0-9-]+)\/:[A-Za-z]+"\s*,\s*(?!requireAuth|requireSuperAdmin|requireDonorAccount|requirePortal)/g))
+    unauthGet.add(m[1]);
+  const built = new Set();
+  for (const m of src.matchAll(/["'`]\/([a-z0-9-]+)\/["'`]?\s*\+|`\/([a-z0-9-]+)\/\$\{/g)) built.add(m[1] || m[2]);
+  return [...unauthGet].filter(seg => built.has(seg)).map(seg => "/" + seg);
+})();
+ok(bareFromServer.includes("/grant-documents") && bareFromServer.includes("/person-photos"),
+  "the derived list finds the bare paths the server builds (grant documents and person photos at least)", bareFromServer);
+const handKept = [
   ["/portal-assets", "theme images on the portal and give pages"],
   ["/person-photos", "donor photographs, rendered as a bare <img src>"],
-]) {
+  ["/grant-documents", "a grant's signed documents, opened as a bare link"],
+];
+for (const d of bareFromServer) if (!handKept.some(([p]) => p === d)) handKept.push([d, "found by derivation: an unauthenticated GET the server builds a URL for"]);
+for (const [path, why] of handKept) {
   const i = rw.findIndex(r => (r.source || "").startsWith(path));
   ok(i >= 0 && new RegExp(`nonprofit-erp-production\\.up\\.railway\\.app${path.replace(/\//g, "\\/")}`).test(rw[i]?.destination || ""),
     `vercel.json proxies ${path}/* to the backend (${why})`);

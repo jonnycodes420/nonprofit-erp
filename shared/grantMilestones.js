@@ -160,13 +160,19 @@ export function milestoneTiming(m, today) {
 // a source with nothing contributes no clause — "0 grant deadlines" is the
 // product filling a screen with its own scaffolding).
 export const HOME_WINDOW_DAYS = 14;
-export function homeDeadlineLine(milestones = [], today, { windowDays = HOME_WINDOW_DAYS } = {}) {
-  if (!isCivilDate(today)) return null;
-  const inWindow = milestones.filter(m => {
+// THE ONE WINDOW. The Deadlines screen's line and Home's sentence both count
+// through this, so the two can never disagree about what "soon" is.
+export function deadlinesInWindow(milestones = [], today, { windowDays = HOME_WINDOW_DAYS } = {}) {
+  if (!isCivilDate(today)) return [];
+  return milestones.filter(m => {
     if (!isCivilDate(m.dueDate)) return false;
     const d = daysBetween(today, m.dueDate);
     return d !== null && d <= windowDays;      // overdue counts — it is still owed
   });
+}
+export function homeDeadlineLine(milestones = [], today, { windowDays = HOME_WINDOW_DAYS } = {}) {
+  if (!isCivilDate(today)) return null;
+  const inWindow = deadlinesInWindow(milestones, today, { windowDays });
   if (!inWindow.length) return null;
   const n = inWindow.length;
   return `${n} grant ${n === 1 ? "deadline" : "deadlines"} in the next ${windowDays} days`;

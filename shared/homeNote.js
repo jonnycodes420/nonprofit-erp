@@ -230,7 +230,20 @@ export function membershipSentence(expiringThisMonth) {
   return n === 1 ? "One membership expires this month." : `${cap(spell(n))} memberships expire this month.`;
 }
 
-export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membershipsExpiringThisMonth, vocabulary } = {}, todayMs = Date.now()) {
+// ── BUILD-100 (grants) Part 7 — grant deadlines coming up ────────────────
+// The count is the server's, through grantMilestones' ONE window
+// (`deadlinesInWindow`); this only says it in Home's voice. A fortnight is
+// said as "the next two weeks", any other window in spelled days. Overdue
+// deadlines count, because they are still owed.
+export function grantDeadlineSentence(count, windowDays = 14) {
+  const n = Number(count) || 0;
+  if (n < 1) return null;
+  const w = Number(windowDays) === 14 ? "the next two weeks" : `the next ${spell(Number(windowDays) || 14)} days`;
+  return n === 1 ? `One grant deadline falls in ${w}.` : `${cap(spell(n))} grant deadlines fall in ${w}.`;
+}
+
+export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membershipsExpiringThisMonth,
+                           grantDeadlinesSoon, grantDeadlineWindowDays, vocabulary } = {}, todayMs = Date.now()) {
   const t = makeT(vocabulary);
   const sentences = [];
 
@@ -246,6 +259,9 @@ export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membe
 
   const members = membershipSentence(membershipsExpiringThisMonth);
   if (members) sentences.push(members);
+
+  const grants = grantDeadlineSentence(grantDeadlinesSoon, grantDeadlineWindowDays);
+  if (grants) sentences.push(grants);
 
   if (sentences.length === 0) return NOTHING_WAITING;
   return sentences.join(" ");

@@ -1870,6 +1870,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,
                                latePledgeInstallments:homeData?.latePledgeInstallments,
                                membershipsExpiringThisMonth:homeData?.membershipsExpiringThisMonth,
+                               grantDeadlinesSoon:homeData?.grantDeadlinesSoon,
+                               grantDeadlineWindowDays:homeData?.grantDeadlineWindowDays,
                                vocabulary:data.org?.vocabulary})}
                   </span>
                 )}

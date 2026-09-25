@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useContext, Component } from "react";
+import { FunderPanel } from "./FunderPanel";
+import { GrantImport } from "./GrantImport";
 import Papa from "papaparse";
 import { VolunteerPanel, HoursImportModal } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
@@ -5368,6 +5370,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             )}
 
+            {/* BUILD-100 Part 7 — A FUNDER IS AN ORGANISATION ON FILE, so its
+                type, its EIN, its grants and every document signed with it
+                live on its own record rather than a second one. */}
+            {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
+              onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
+
             {/* BUILD-99 Part 1 — PROPOSALS SIT ABOVE GIVING HISTORY, because an
                 open ask is what an officer came to this record to look at and the
                 history is the evidence behind it. Team-locked for Core along with
@@ -7517,7 +7525,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -7839,6 +7847,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
+      {showGrantImport&&<GrantImport onClose={()=>setShowGrantImport(false)} parseFile={parseFileToSheets} onDone={reloadDonors}/>}
       {showHours&&<HoursImportModal onClose={()=>setShowHours(false)} onDone={reloadDonors} Modal={Modal} Papa={Papa} presets={HOURS_PRESETS_MOD}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
           MAGICAL import (DonorImport withHistory: shape detection + the
@@ -7916,6 +7925,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 {label:"Add giving history",hint:"Attach a gift export to donors already here",act:()=>setShowGiftImport(true)},
                 {divider:true},
                 {label:"Import volunteer hours",hint:"A Wranglr or VolunteerHub hours export",act:()=>setShowHours(true)},
+                {label:"Import grants",hint:"A grants spreadsheet from another system, or your own",act:()=>setShowGrantImport(true)},
                 {label:"Merge duplicates",hint:"Fold repeated records into one",act:()=>setShowMerge(true)},
               ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:(
                 <button key={i} role="menuitem" onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>
