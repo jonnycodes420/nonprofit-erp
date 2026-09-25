@@ -145,7 +145,7 @@ CORE=(
   build99-grant-timeline
   build100-score-names
   build97-part0 build97-npsp build97-numbers build97-agent build97-observability
-  build98-credit build98-letters build98-reports build98-events
+  build98-credit build98-letters build98-reports build98-events build98-volunteers
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

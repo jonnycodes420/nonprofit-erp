@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useContext, Component } from "react";
 import Papa from "papaparse";
+import { VolunteerPanel, HoursImportModal } from "./VolunteerPanel";
+import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { apiFetch, API, getToken, adaptDonor } from "../api";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
 import { useAuth } from "../main";
@@ -5232,6 +5234,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>
             )}
 
+            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
+            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
+
             {/* Household & planned giving (BUILD-14) */}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -7330,7 +7335,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
-  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);
+  const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
   const[newDonor,setNewDonor]=useState({name:"",email:"",phone:"",lastAmount:"",stage:"prospect"});
   const[filtersOpen,setFiltersOpen]=useState(false);
@@ -7535,8 +7540,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
     };
-    await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));
-    setLoadingKey(null);
+    // A failed stream is said in the panel and the spinner stops. It used to
+    // throw out of an async handler: an unhandled rejection on every profile
+    // open (this fires on mount) and a spinner that never ended.
+    try{await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));}
+    catch(e){setAiMap(p=>({...p,[key]:errorMessage(e,"No suggestion is available right now.")}));}
+    finally{setLoadingKey(null);}
   };
 
   const reloadCfValues=async()=>{
@@ -7648,6 +7657,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}
       {showMerge&&<MergeDuplicatesModal onClose={()=>setShowMerge(false)} onMerged={reloadDonors} isReadOnly={isReadOnly}/>}
+      {showHours&&<HoursImportModal onClose={()=>setShowHours(false)} onDone={reloadDonors} Modal={Modal} Papa={Papa} presets={HOURS_PRESETS_MOD}/>}
       {/* BUILD-58 Part 2 — the RECOMMENDED "Import + History" entry now opens the
           MAGICAL import (DonorImport withHistory: shape detection + the
           "Import both" two-sheet CTA). The legacy CombinedImport, whose
@@ -7723,6 +7733,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                 {label:"Import donors only",hint:"A contact list with no gift rows",act:()=>setShowImport(true)},
                 {label:"Add giving history",hint:"Attach a gift export to donors already here",act:()=>setShowGiftImport(true)},
                 {divider:true},
+                {label:"Import volunteer hours",hint:"A Wranglr or VolunteerHub hours export",act:()=>setShowHours(true)},
                 {label:"Merge duplicates",hint:"Fold repeated records into one",act:()=>setShowMerge(true)},
               ].map((it,i)=>it.divider?<div key={i} style={{height:1,background:T.bg3,margin:"4px 8px"}}/>:(
                 <button key={i} role="menuitem" onClick={()=>{setToolsOpen(false);it.act();}} className="click-card" style={{background:"none",border:"none",borderRadius:8,padding:"9px 10px",textAlign:"left",cursor:"pointer",display:"block",width:"100%"}}>

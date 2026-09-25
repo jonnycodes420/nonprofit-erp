@@ -3727,6 +3727,26 @@ async function initSchema() {
   // When this attendee's attendance reached their timeline — once, ever.
   await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS attendance_logged_at TIMESTAMPTZ`);
 
+  // ── BUILD-98 (switch) Part 5 — VOLUNTEERS AND HOURS ─────────────────────
+  // One row per shift, on the PERSON (donors row, BUILD-94 person types).
+  // import_key makes re-importing the same export a no-op.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_shifts (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      hours NUMERIC(6,2) NOT NULL CHECK (hours > 0 AND hours <= 24),
+      role TEXT,
+      note TEXT,
+      via TEXT NOT NULL DEFAULT 'staff',       -- staff | self | import
+      import_key TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_person ON volunteer_shifts (org_id, person_id, date DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_shifts_import ON volunteer_shifts (org_id, import_key) WHERE import_key IS NOT NULL`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

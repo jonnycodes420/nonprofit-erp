@@ -48,6 +48,8 @@ export const ENTITIES = {
       person_type:     { label: "Person type", sql: "COALESCE(d.person_types,'[\"donor\"]'::jsonb)", type: "types" },
       deceased:        { label: "Deceased", sql: "COALESCE(d.deceased,false)", type: "bool" },
       do_not_contact:  { label: "Do not contact", sql: "COALESCE(d.do_not_contact,false)", type: "bool" },
+      // BUILD-98 (switch) Part 5 — hours, summed from the shifts.
+      volunteer_hours: { label: "Volunteer hours", sql: "(SELECT COALESCE(SUM(vs.hours),0) FROM volunteer_shifts vs WHERE vs.person_id = d.id AND vs.org_id = d.org_id)", type: "number" },
     },
     custom: { entity: "donor", sql: key => `d.custom_fields->>'${key}'` },
   },
@@ -287,6 +289,9 @@ export const STANDARD_REPORTS = [
     def: { entity: "people", columns: ["name", "last_gift_date", "last_gift_amount", "lifetime", "email"], filter: { op: "and", rules: [{ field: "last_gift_date", cmp: "before", value: "{{twoYearsAgo}}" }, { field: "deceased", cmp: "eq", value: false }] }, sort: { field: "lifetime", dir: "desc" } } },
   { key: "ack-backlog", name: "Acknowledgment backlog", question: "Which gifts has nobody thanked yet?", kind: "builder",
     def: { entity: "gifts", columns: ["donor", "date", "amount", "fund"], filter: { op: "and", rules: [{ field: "acknowledged", cmp: "eq", value: false }] }, sort: { field: "date", dir: "asc" } } },
+  // BUILD-98 (switch) Part 5 — volunteer-to-donor conversion.
+  { key: "volunteers-who-give", name: "Volunteers who give", question: "Which of our volunteers also give?", kind: "builder",
+    def: { entity: "people", columns: ["name", "volunteer_hours", "lifetime", "last_gift_date"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "volunteer" }, { field: "lifetime", cmp: "gt", value: 0 }] }, sort: { field: "name", dir: "asc" } } },
   { key: "board-giving", name: "Board giving", question: "What has each board member given?", kind: "builder",
     def: { entity: "people", columns: ["name", "lifetime", "last_gift_date", "last_gift_amount"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "staff_board" }] }, sort: { field: "lifetime", dir: "desc" } } },
 ];
