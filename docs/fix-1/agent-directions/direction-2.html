@@ -1,0 +1,84 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Agent — Direction 2: The run sheet</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* FIX-1 Agent, Direction 2 — "The run sheet".
+   An ink desk with a cream sheet laid on it. Left: every instruction she has
+   given, newest first, each with its run's state. Right: the open plan as a
+   checklist a person could tick — what it read, each step, its state — with
+   the confirm at the foot of the sheet. Brass = the agent working;
+   emerald = the one yes. */
+:root{--ink:#0F1A12;--cream:#F0EDE6;--hair:#E8E4DB;--white:#FFFFFF;--em:#0D5C3A;--brass:#C9A84C;--grey:#5A554F;
+  --c70:rgba(240,237,230,.70);--c45:rgba(240,237,230,.45);--c12:rgba(240,237,230,.12);--c06:rgba(240,237,230,.06)}
+*{box-sizing:border-box}body{margin:0;background:var(--ink);color:var(--cream);font:15px/1.5 "DM Sans",system-ui,sans-serif}
+.serif{font-family:"DM Serif Display",Georgia,serif;font-weight:400}
+.top{height:52px;border-bottom:1px solid var(--c12);display:flex;align-items:center;padding:0 20px;gap:24px}
+.word{font-family:"DM Serif Display",Georgia,serif;font-size:22px;width:200px}
+.search{flex:0 1 520px;height:32px;border-radius:8px;background:var(--c06);border:1px solid var(--c12);color:var(--c45);font-size:13px;display:flex;align-items:center;padding:0 12px}
+.shell{display:flex;min-height:calc(100vh - 52px)}
+.side{width:240px;border-right:1px solid var(--c12);padding:18px 0;flex:none}
+.side a{display:block;padding:8px 20px;color:var(--c70);font-size:14px;border-left:3px solid transparent}
+.side a.on{color:var(--cream);border-left-color:var(--brass);background:var(--c06)}
+.room{flex:1;padding:26px 32px 60px;min-width:0}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+h1{font-size:32px;margin:0}
+.seg{display:flex;border:1px solid var(--c12);border-radius:10px;overflow:hidden}
+.seg span{padding:8px 14px;font-size:13px;color:var(--c70);border-right:1px solid var(--c12);white-space:nowrap}
+.seg span:last-child{border-right:0}.seg span.on{background:var(--brass);color:var(--ink);font-weight:700}
+.ask{display:flex;gap:10px;margin-bottom:24px}
+.ask div{flex:1;border:1px solid var(--c12);background:var(--c06);border-radius:12px;padding:14px 16px;color:var(--c45);font-size:15px}
+.grid{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start}
+.list{border-top:1px solid var(--c12)}
+.it{padding:14px 4px 14px 14px;border-bottom:1px solid var(--c12);border-left:3px solid transparent}
+.it.on{border-left-color:var(--brass);background:var(--c06)}
+.it .t{font-size:14px;color:var(--cream)}.it .m{font-size:12px;color:var(--c45);margin-top:4px}
+.it .m b{color:var(--brass);font-weight:700}
+.sheet{background:var(--cream);color:var(--ink);border-radius:14px;padding:28px 30px}
+.eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--grey)}
+.sheet h2{font-size:26px;margin:6px 0 4px}.sheet .said{color:var(--grey);margin:0 0 18px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);font-weight:700;padding:8px 10px;border-bottom:1px solid var(--hair)}
+td{padding:14px 10px;border-bottom:1px solid var(--hair);vertical-align:top}
+.chk{width:18px;height:18px;border:1.5px solid var(--grey);border-radius:4px;display:inline-block}
+.chk.read{background:var(--ink);border-color:var(--ink)}
+.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;white-space:nowrap}
+.p-b{background:var(--brass);color:var(--ink)}.p-g{border:1px solid var(--grey);color:var(--grey)}.p-i{background:var(--ink);color:var(--cream)}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:22px;flex-wrap:wrap}
+.foot .sum{font-size:14px;color:var(--grey);max-width:44ch}
+.yes{background:var(--em);color:var(--white);border:0;border-radius:10px;padding:12px 20px;font:700 15px "DM Sans",sans-serif}
+@media (max-width:760px){.top{padding:0 16px}.search,.side{display:none}.word{width:auto}.room{padding:18px 16px 50px}
+  .grid{grid-template-columns:1fr}.list{display:none}h1{font-size:26px}.seg{overflow-x:auto;max-width:100%}
+  .sheet{padding:20px 16px}tr:first-child,td:nth-child(3){display:none}tr{display:grid;grid-template-columns:30px 1fr;border-bottom:1px solid var(--hair)}td{border:0;padding:12px 6px}td:nth-child(4){grid-column:2;padding-top:0}.yes{width:100%}}
+</style></head><body>
+<div class="top"><div class="word">Steward</div><div class="search">Search donors, grants… ⌘K</div></div>
+<div class="shell">
+  <nav class="side"><a>Home</a><a>Dashboards</a><a>Donors</a><a>Volunteers</a><a>Fundraising</a><a>Reports</a><a class="on">Agent</a></nav>
+  <main class="room">
+    <div class="head"><h1 class="serif">Agent</h1>
+      <div class="seg"><span class="on">Plans</span><span>Ask</span><span>Workflows</span><span>Waiting for you · 3</span><span>Guardrails</span></div></div>
+    <div class="ask"><div>Tell Steward what to do, in your own words…</div></div>
+    <div class="grid">
+      <div class="list">
+        <div class="it on"><div class="t">Just got a gift from the Sunrise Foundation, 5,000 dollars</div><div class="m"><b>Waiting for you</b> · today, 10:42</div></div>
+        <div class="it"><div class="t">Draft a thank-you to everyone who gave at the gala</div><div class="m">Done · 14 drafts · yesterday</div></div>
+        <div class="it"><div class="t">When a first-time donor gives, open a welcome call</div><div class="m">Standing · on since 12 September</div></div>
+        <div class="it"><div class="t">Tag everyone who gave to Youth Arts twice</div><div class="m">Done · 9 tagged · 20 September</div></div>
+      </div>
+      <section class="sheet">
+        <div class="eyebrow">Plan · read one record</div>
+        <h2 class="serif">Record Sunrise's $5,000, then thank them.</h2>
+        <p class="said">“Just got a gift from the Sunrise Foundation, 5,000 dollars.”</p>
+        <table>
+          <tr><th></th><th>Step</th><th>Detail</th><th>State</th></tr>
+          <tr><td><span class="chk read"></span></td><td>Read the Sunrise Foundation's record</td><td>Last gift $1,500, 2 March</td><td><span class="pill p-i">Done</span></td></tr>
+          <tr><td><span class="chk"></span></td><td>Record a gift of $5,000</td><td>General Operating · cheque · 25 September</td><td><span class="pill p-b">Prepared for you to confirm</span></td></tr>
+          <tr><td><span class="chk"></span></td><td>Open a follow-up: thank the Sunrise Foundation</td><td>Due 29 September · you</td><td><span class="pill p-g">After you confirm</span></td></tr>
+        </table>
+        <div class="foot"><div class="sum">The gift is recorded in your name when you press the button. The follow-up can be undone for thirty days.</div>
+          <button class="yes">Record $5,000 and run</button></div>
+      </section>
+    </div>
+  </main>
+</div>
+</body></html>
