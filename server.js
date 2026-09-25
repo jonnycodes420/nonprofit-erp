@@ -22768,8 +22768,12 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     if (!g.deadline || g.status === "closed") return false;
     const d = new Date(g.deadline); return d >= now && d <= thirty;
   });
-  const pipelineValue = pipelineGrants.reduce((s, g) => s + (g.amount || 0), 0);
-  const awardedYTD    = activeGrants.reduce((s, g) => s + (g.received || 0), 0);
+  // BUILD-100 Part 1 migrated these columns INTEGER → NUMERIC(12,2), and pg
+  // serialises NUMERIC as a STRING, so `0 + "5000.00"` CONCATENATED: the board
+  // report's pipeline value read "05000.003000.00". Summed in integer cents
+  // through the one money seam, which is the rule for a figure a board reads.
+  const pipelineValue = toDollars(pipelineGrants.reduce((s, g) => s + (toCents(g.amount) || 0), 0));
+  const awardedYTD    = toDollars(activeGrants.reduce((s, g) => s + (toCents(g.received) || 0), 0));
 
   // Communications
   const sentQ        = allCampaigns.filter(c => c.status === "sent" && toDs(c.sent_at) >= qMs && toDs(c.sent_at) <= qMe);
