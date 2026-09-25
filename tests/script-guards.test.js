@@ -104,7 +104,10 @@ const SELF_REFUSING = [
   // BUILD-89 — the demo file. WRITES 1,000 donors and their giving through the
   // API; loopback by default, and a non-loopback BASE needs
   // --i-know-this-is-prod, because seeding the demo org IS a prod write.
-  "build89-demo-seed"];
+  "build89-demo-seed",
+  // BUILD-101 — the memberships demo. WRITES its own org (never org_creo) and
+  // a signed test webhook; refuses any non-loopback API or database outright.
+  "build101-demo-seed"];
 
 // Loopback is HARDCODED (no BASE env at all) — cannot reach a remote host.
 const LOOPBACK_HARDCODED = [
