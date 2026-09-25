@@ -14773,6 +14773,293 @@ app.get("/grants/pipeline", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+
+// ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ───────────
+// A milestone, when its lead time arrives, IS a BUILD-81 thread on the
+// officer. shared/grantMilestones.js holds every rule and the reason the
+// middle state exists; these routes are its writers and the sweep.
+async function grantMsMod() { return import("./shared/grantMilestones.js"); }
+
+async function orgLeadDays(orgId) {
+  const M = await grantMsMod();
+  const [o] = await query("SELECT grant_lead_days FROM orgs WHERE id=?", [orgId]);
+  return M.normalizeLeadDays(o && o.grant_lead_days);
+}
+
+function milestoneRow(r, M, today, leadDays) {
+  const m = {
+    id: r.id, grantId: r.grant_id, kind: r.kind, kindLabel: M.milestoneLabel(r.kind),
+    dueDate: r.due_date, state: r.state, threadId: r.thread_id || null,
+    funderName: r.funder_name || r.funder || "", program: r.program || "",
+    grantStatus: r.status || null, notes: r.notes || "",
+    completedAt: r.completed_at || null, completedByName: r.completed_by_name || null,
+  };
+  const t = M.milestoneTiming(m, today);
+  m.band = t.band; m.overdueDays = t.overdueDays; m.daysUntil = t.days; m.sentence = t.sentence;
+  m.leadDays = M.leadDaysFor(r.kind, leadDays);
+  if (r.state === "waiting") m.waitingSentence = M.waitingSentence(m);
+  return m;
+}
+
+// THE ONE PLACE A MILESTONE BECOMES A THREAD.
+// Returns "raised" | "waiting" | null, and the WAITING answer is not a
+// failure — it is the `threads_one_open` index doing its job, recorded so the
+// screen can say why and the next close can advance it.
+async function raiseGrantMilestone(orgId, ms, { today }) {
+  const M = await grantMsMod();
+  try {
+    // The funder must still be an organisation on file. A milestone whose
+    // funder record was deleted has nobody to hang a thread on; it stays
+    // pending and is reported rather than silently dropped.
+    const [g] = await query(
+      `SELECT g.id, g.funder_donor_id, g.program, g.officer_id, g.status,
+              d.name AS funder_name, d.assigned_to, d.assigned_to_name
+         FROM grants g
+         LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+                           AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+        WHERE g.id = ? AND g.org_id = ?`, [ms.grant_id, orgId]);
+    if (!g || !g.funder_donor_id || !g.funder_name) return null;
+    if (!M.grantWantsMilestones(g.status)) return null;
+
+    const { sanitizeStepLabel } = await threadShapeMod();
+    const label = sanitizeStepLabel(M.milestoneStepLabel({
+      kind: ms.kind, funderName: g.funder_name, program: g.program,
+    })) || "Follow up on the grant";
+
+    // The officer who owns the GRANT owns the deadline; otherwise whoever owns
+    // the funder record. A deadline is one person's commitment.
+    let ownerId = g.officer_id || g.assigned_to || null, ownerName = g.assigned_to_name || null;
+    if (ownerId) {
+      const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [ownerId, orgId]);
+      if (u) ownerName = u.name; else { ownerId = null; ownerName = null; }
+    }
+
+    const thread = await withTransaction(client => openThreadTx(client, {
+      orgId, donorId: g.funder_donor_id,
+      // DUE ON THE MILESTONE'S OWN DATE, not today + the lead. The lead decides
+      // WHEN the officer is told; the deadline is still the deadline.
+      step: { type: "follow_up", label, due: ms.due_date },
+      openedOn: today, ownerId, ownerName,
+      actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+    }));
+
+    if (thread && thread.id) {
+      await run(`UPDATE grant_milestones SET state='raised', thread_id=?, raised_at=NOW(), updated_at=NOW()
+                  WHERE id=? AND org_id=?`, [thread.id, ms.id, orgId]);
+      return "raised";
+    }
+    // openThreadTx declines when the donor already holds an open thread. That
+    // is the constraint, not an error: the milestone waits its turn.
+    await run(`UPDATE grant_milestones SET state='waiting', updated_at=NOW()
+                WHERE id=? AND org_id=? AND state <> 'raised'`, [ms.id, orgId]);
+    return "waiting";
+  } catch (e) {
+    console.error("[grant-milestone] raise:", e.message);
+    return null;
+  }
+}
+
+// THE SWEEP. Idempotent and self-healing, in the BUILD-99 shape: it re-reads
+// `pending` AND `waiting` every pass, so a funder whose thread closed today
+// gets their next deadline raised with no second mechanism, and a pass that
+// was missed yesterday loses nothing (`dueWithinLead` stays true once true).
+async function processGrantMilestones(onlyOrgId = null, { today: pinnedToday = null } = {}) {
+  const M = await grantMsMod();
+  const orgs = onlyOrgId
+    ? await query("SELECT id FROM orgs WHERE id=?", [onlyOrgId])
+    : await query(`SELECT DISTINCT org_id AS id FROM grant_milestones
+                    WHERE state IN ('pending','waiting') AND org_id IS NOT NULL`);
+  const summary = { raised: 0, waiting: 0, checked: 0 };
+  for (const o of orgs) {
+    try {
+      const org = await orgTz(o.id);
+      const today = pinnedToday && testMode() ? pinnedToday : orgToday(org);   // ORG_TZ_SEAM_OK
+      const leadDays = await orgLeadDays(o.id);
+      const rows = await query(
+        `SELECT m.* FROM grant_milestones m
+           JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+          WHERE m.org_id=? AND m.state IN ('pending','waiting')
+            AND g.is_sample IS NOT TRUE
+          ORDER BY m.due_date ASC`, [o.id]);
+      for (const ms of rows) {
+        summary.checked++;
+        if (!M.dueWithinLead({ kind: ms.kind, dueDate: ms.due_date }, today, leadDays)) continue;
+        const r = await raiseGrantMilestone(o.id, ms, { today });
+        if (r === "raised") summary.raised++;
+        else if (r === "waiting") summary.waiting++;
+      }
+    } catch (e) { console.error(`[grant-milestone] sweep org=${o.id}:`, e.message); }
+  }
+  return summary;
+}
+
+// POST /grants/:id/milestones — add a dated thing owed on this grant.
+app.post("/grants/:id/milestones", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, status FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  const kind = String(req.body.kind || "");
+  if (!M.MILESTONE_KEYS.includes(kind)) {
+    return res.status(400).json({ code: "bad_milestone_kind",
+      error: `A milestone is one of: ${M.MILESTONE_TYPES.map(t => t.label).join(", ")}.` });
+  }
+  const due = String(req.body.dueDate || "");
+  if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
+  const type = M.milestoneType(kind);
+  if (!type.repeatable) {
+    const [dupe] = await query(
+      "SELECT id, due_date FROM grant_milestones WHERE grant_id=? AND kind=? AND state <> 'skipped'",
+      [g.id, kind]);
+    if (dupe) {
+      return res.status(400).json({ code: "milestone_exists",
+        error: `This grant already has a ${type.label} on ${dupe.due_date}. Move that date rather than adding a second one.` });
+    }
+  }
+  const id = "gms_" + uuid().slice(0, 10);
+  await run(`INSERT INTO grant_milestones (id,org_id,grant_id,kind,due_date,state,notes,created_by,created_by_name)
+             VALUES (?,?,?,?,?, 'pending', ?,?,?)`,
+    [id, orgId, g.id, kind, due, String(req.body.notes || "").slice(0, 2000),
+     actor(req).id, actor(req).name]);
+
+  // Raise it NOW if its lead time has already arrived — a report due next week
+  // typed in today must not wait for a sweep to notice.
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+  if (M.dueWithinLead({ kind, dueDate: due }, today, leadDays)) {
+    await raiseGrantMilestone(orgId, { id, grant_id: g.id, kind, due_date: due }, { today });
+  }
+  const [row] = await query(
+    `SELECT m.*, g.program, g.status, g.funder, d.name AS funder_name
+       FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+       LEFT JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id
+      WHERE m.id=?`, [id]);
+  res.status(201).json(milestoneRow(row, M, today, leadDays));
+}));
+
+// PUT /grants/milestones/:msId — MOVING THE DATE MOVES THE THREAD.
+// A date that moves and leaves a thread pointing at the old one is how an
+// officer ends up chasing a deadline that no longer exists.
+app.put("/grants/milestones/:msId", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  const due = req.body.dueDate === undefined ? ms.due_date : String(req.body.dueDate || "");
+  if (!M.isCivilDate(due)) return res.status(400).json({ code: "bad_due_date", error: "The date must be YYYY-MM-DD." });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+
+  await run(`UPDATE grant_milestones SET due_date=?, notes=COALESCE(?, notes), updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [due, req.body.notes === undefined ? null : String(req.body.notes).slice(0, 2000), ms.id, orgId]);
+
+  if (due !== ms.due_date && ms.thread_id) {
+    // The thread's own due date follows, through the threads table the Thread
+    // engine reads — the label is unchanged because the work is unchanged.
+    // `original_due_date` is preserved the way BUILD-81's snooze preserves it
+    // (COALESCE, so the FIRST date survives every later move): "we said the
+    // 14th" is a fact about the relationship, not a stale value.
+    // NB `threads` has no `updated_at` column — naming one 500'd this route
+    // and left the thread pointing at a deadline that had moved.
+    await run(`UPDATE threads
+                  SET due_date = ?,
+                      original_due_date = COALESCE(original_due_date, due_date)
+                WHERE id=? AND org_id=? AND closed_at IS NULL`, [due, ms.thread_id, orgId]);
+  }
+  // A date moved OUT beyond its lead time with no thread yet goes back to
+  // pending, so a waiting milestone that is no longer urgent stops queueing.
+  if (!ms.thread_id && ms.state === "waiting"
+      && !M.dueWithinLead({ kind: ms.kind, dueDate: due }, today, leadDays)) {
+    await run("UPDATE grant_milestones SET state='pending', updated_at=NOW() WHERE id=? AND org_id=?", [ms.id, orgId]);
+  }
+  if (!ms.thread_id && M.dueWithinLead({ kind: ms.kind, dueDate: due }, today, leadDays)) {
+    await raiseGrantMilestone(orgId, { ...ms, due_date: due }, { today });
+  }
+  const [row] = await query(
+    `SELECT m.*, g.program, g.status, g.funder, d.name AS funder_name
+       FROM grant_milestones m JOIN grants g ON g.id=m.grant_id AND g.org_id=m.org_id
+       LEFT JOIN donors d ON d.id=g.funder_donor_id AND d.org_id=g.org_id
+      WHERE m.id=?`, [ms.id]);
+  res.json(milestoneRow(row, M, today, leadDays));
+}));
+
+// POST /grants/milestones/:msId/done — somebody did it.
+// It does NOT close the thread: the Thread engine's own close is honest
+// (BUILD-81's CHECK), and closing it from here would write a close with no
+// interaction behind it. The milestone is marked and the thread is the
+// officer's to log a line against.
+app.post("/grants/milestones/:msId/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const [ms] = await query("SELECT * FROM grant_milestones WHERE id=? AND org_id=?", [req.params.msId, orgId]);
+  if (!ms) return res.status(404).json({ error: "Milestone not found" });
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
+  await run(`UPDATE grant_milestones SET state='done', completed_at=NOW(),
+               completed_by=?, completed_by_name=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`,
+    [actor(req).id, (u && u.name) || actor(req).name, ms.id, orgId]);
+  const org = await orgTz(orgId);
+  res.json({ ok: true, id: ms.id, state: "done",
+    nextDeadlineSentence: M.milestoneTiming({ kind: ms.kind, dueDate: ms.due_date }, orgToday(org)).sentence });  // ORG_TZ_SEAM_OK
+}));
+
+// GET /grants/deadlines — the calendar, the list, and the Home line.
+app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  const orgId = req.user.orgId;
+  const org = await orgTz(orgId);
+  const today = req.query.today && testMode() && M.isCivilDate(String(req.query.today))
+    ? String(req.query.today) : orgToday(org);                   // ORG_TZ_SEAM_OK
+  const leadDays = await orgLeadDays(orgId);
+  const rows = await query(
+    `SELECT m.*, g.program, g.status, g.funder, g.officer_id, d.name AS funder_name
+       FROM grant_milestones m
+       JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE m.org_id=? AND g.is_sample IS NOT TRUE AND m.state <> 'skipped'
+      ORDER BY m.due_date ASC`, [orgId]);
+  const all = rows.map(r => milestoneRow(r, M, today, leadDays));
+  const open = all.filter(m => m.state !== "done");
+  res.json({
+    today,
+    milestones: M.sortMilestones(open),
+    done: all.filter(m => m.state === "done").length,
+    overdue: open.filter(m => m.band === "overdue").length,
+    calendar: M.calendarFromMilestones(open, today),
+    homeLine: M.homeDeadlineLine(open, today),
+    leadDays,
+    milestoneTypes: M.MILESTONE_TYPES,
+  });
+}));
+
+// PUT /org/grant-lead-days — the org's own lead times (admins).
+app.put("/org/grant-lead-days", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const M = await grantMsMod();
+  // MERGE OVER WHAT THE ORG ALREADY CHOSE, never over the defaults. Sending
+  // one key used to reset the other four to their defaults — an org that set
+  // the report lead to 45 in September lost it the moment it touched the
+  // decision lead in October, and nothing on the screen would have said so.
+  const stored = await orgLeadDays(req.user.orgId);
+  // pickLeadDays, NOT normalizeLeadDays: the latter fills from the DEFAULTS, so
+  // merging an invalid value in took the key back to its default instead of
+  // leaving the org's own choice standing. The patch contributes only the keys
+  // it actually got right.
+  const clean = M.normalizeLeadDays({ ...stored, ...M.pickLeadDays(req.body && req.body.leadDays) });
+  await run("UPDATE orgs SET grant_lead_days=?::jsonb WHERE id=?", [JSON.stringify(clean), req.user.orgId]);
+  res.json({ leadDays: clean, defaults: M.DEFAULT_LEAD_DAYS });
+}));
+
+// POST /grants/milestones/run — the ops/test door onto the sweep (the
+// /photos/run, /nudges/run convention). Caller's org only.
+app.post("/grants/milestones/run", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const summary = await processGrantMilestones(req.user.orgId, { today: req.body && req.body.today });
+  res.json(summary);
+}));
+
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT id, funder, program, amount, status FROM grants WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
@@ -24110,6 +24397,15 @@ if (!backgroundTicksDisabled()) {
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 70000);
   setInterval(() => processPhotoQueue().catch(e => console.error("[person-photo]", e.message)), 5 * 60 * 1000);
+}
+
+// BUILD-100 (grants) Part 2 — the milestone sweep rides the EXISTING five-minute
+// tick rather than a second scheduler (the standing rule since BUILD-13). It is
+// offset from the photo queue so the two do not start in the same second, and it
+// is idempotent: a pass that raised nothing is a pass that found nothing due.
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 95000);
+  setInterval(() => recordTick("processGrantMilestones", () => processGrantMilestones()).catch(console.error), 5 * 60 * 1000);
 }
 
 // BUILD-94 Part 3 — the tracked-sequence engine. Every fifteen minutes is

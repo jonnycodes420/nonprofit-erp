@@ -2607,6 +2607,51 @@ async function initSchema() {
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS declined_on TEXT`);
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS reapply BOOLEAN`);
 
+  // ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ─────────
+  // A milestone is a dated thing owed on a grant. It is its own table rather
+  // than more columns because `report_due` REPEATS (a two-year grant reports
+  // twice) and a repeating thing cannot be a column.
+  //
+  // `thread_id` is the link to the BUILD-81 thread that carries it, and
+  // `state` is what the screen reads. The state `waiting` is the honest
+  // middle: `threads_one_open` allows exactly one open thread per donor, and
+  // a funder with three grants can have three milestones inside their lead
+  // windows at once, so the second WAITS and the next close advances it
+  // (BUILD-99's cultivation-plan answer to the same index).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_milestones (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      state TEXT NOT NULL DEFAULT 'pending',
+      thread_id TEXT,
+      raised_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      completed_by TEXT,
+      completed_by_name TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_ms_org_due ON grant_milestones (org_id, due_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_ms_grant ON grant_milestones (grant_id)`);
+  // A milestone that is not repeatable exists at most ONCE per grant per kind.
+  // `report_due` is deliberately absent from the index's reach because the
+  // index keys on (grant, kind, due_date) — two reports on different dates are
+  // two milestones, two reports on the SAME date are one thing typed twice.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_ms_one_per_date
+                      ON grant_milestones (grant_id, kind, due_date)`);
+
+  // THE ORG'S OWN LEAD TIMES, one JSONB rather than five columns: the set is
+  // fixed by shared/grantMilestones.js and always read whole. NULL means
+  // "nobody has chosen", which is what makes the defaults still reachable if
+  // they ever change.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS grant_lead_days JSONB`);
+
   // ONE BACKFILL, applied once: `amount_requested` is what `amount` has always
   // meant on a grant that has not been awarded, and on an awarded one it is what
   // was asked for. Never guessed — a row with no amount stays null.
