@@ -192,8 +192,10 @@ const cents = v => Math.round(Number(v) * 100);
   // ── §7 the twelve ────────────────────────────────────────────────────────
   const list = await api("GET", "/saved-reports", tok);
   // Twelve from Part 3, and Part 5's "Volunteers who give" (the brief's
-  // volunteer-to-donor conversion report) makes thirteen.
-  ok("§7 there are thirteen standard reports", (list.body.standard || []).length === 13);
+  // volunteer-to-donor conversion report) makes thirteen. BUILD-101 Part 5
+  // adds the five membership reports (by level, expiring in 60 days, lapsed,
+  // new and renewed by month, membership beside donation revenue): eighteen.
+  ok("§7 there are eighteen standard reports", (list.body.standard || []).length === 18);
   const broken = [];
   for (const s of list.body.standard || []) {
     const r = await api("GET", `/saved-reports/${encodeURIComponent(s.id)}/run`, tok);

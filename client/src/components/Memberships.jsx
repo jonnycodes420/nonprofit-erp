@@ -11,7 +11,7 @@
 // Every count carries its sentence on hover, from the server.
 
 import { useState, useEffect } from "react";
-import { apiFetch } from "../api";
+import { apiFetch, API, getToken } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -22,6 +22,17 @@ const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 10px"
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
 const primaryBtn = { background: T.gold500, border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
 const newKey = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : String(Date.now()) + Math.random());
+
+// A file behind the login: fetched with the token, handed to the browser as
+// a blob (a plain link cannot carry the Authorization header).
+async function openAuthed(path, filename, { download = false } = {}) {
+  const r = await fetch(API + path, { headers: { Authorization: "Bearer " + getToken() } });
+  if (!r.ok) throw new Error("That file could not be made.");
+  const url = URL.createObjectURL(await r.blob());
+  if (download) { const a = document.createElement("a"); a.href = url; a.download = filename; a.click(); }
+  else window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
 
 function StatusPill({ status }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[status] || T.ink3 }}>{STATUS_LABEL[status] || status}</span>;
@@ -78,6 +89,10 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
       {!isReadOnly && !cur && levels.length > 0 && !form && (
         <button style={{ ...quietBtn, alignSelf: "flex-start" }} data-testid="membership-add"
           onClick={() => setForm({ levelId: levels[0].id, paymentMethod: "", key: newKey() })}>Add a membership</button>)}
+      {cur && !form && (
+        <button style={{ background: "transparent", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer", alignSelf: "flex-start", padding: 0 }}
+          data-testid="membership-card"
+          onClick={() => openAuthed(`/memberships/${cur.id}/card.pdf`, "member-card.pdf").catch(e => setMsg(errorMessage(e, "The card could not be made.")))}>Member card (PDF)</button>)}
       {!isReadOnly && cur && cur.expires_on && levels.length > 0 && !form && (
         <button style={{ ...quietBtn, alignSelf: "flex-start" }} data-testid="membership-renew"
           onClick={() => setForm({ renew: true, levelId: levels.some(l => l.id === cur.level_id) ? cur.level_id : levels[0].id, paymentMethod: "", key: newKey() })}>Renew</button>)}
@@ -211,7 +226,10 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
       <section>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: T.ink }}>Members{status ? ` · ${STATUS_LABEL[status]}` : ""}</h3>
-          <select value={sort} onChange={e => setSort(e.target.value)} style={{ ...inp, marginLeft: "auto" }} aria-label="Sort by expiry">
+          <button style={{ ...quietBtn, marginLeft: "auto" }} data-testid="directory-csv"
+            onClick={() => openAuthed("/reports/members-directory?format=csv", "members-directory.csv", { download: true }).catch(e => setMsg(errorMessage(e, "The directory could not be made.")))}>Directory CSV</button>
+          <button style={quietBtn} onClick={() => window.print()}>Print</button>
+          <select value={sort} onChange={e => setSort(e.target.value)} style={inp} aria-label="Sort by expiry">
             <option value="expiry_asc">Expiring soonest</option><option value="expiry_desc">Expiring latest</option>
           </select>
         </div>

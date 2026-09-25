@@ -22925,6 +22925,28 @@ function reportToCsv(key, data) {
       rows.push(fundTotal);
       return { headers, rows };
     }
+    case "members-directory":
+      return { headers: ["Name", "Email", "Phone", "Level", "Status", "Member since", "Expires"],
+               rows: data.rows.map(r => [r.name, r.email, r.phone, r.level, r.status, r.joined_on, r.expires_on || "Lifetime"]) };
+    case "members-by-level": {
+      const rows = data.rows.map(r => [r.name, r.price, r.current, r.lapsed, c2d(r.revenueCents)]);
+      rows.push(["TOTAL", "", data.totals.current, data.totals.lapsed, c2d(data.totals.revenueCents)]);
+      return { headers: ["Level", "Price", "Current members", "Lapsed members", "Membership revenue this year"], rows };
+    }
+    case "members-expiring":
+      return { headers: ["Name", "Email", "Level", "Status", "Expires"], rows: data.rows.map(r => [r.name, r.email, r.level, r.status, r.expires_on]) };
+    case "members-lapsed":
+      return { headers: ["Name", "Email", "Last level", "Lapsed", "Years as a member"], rows: data.rows.map(r => [r.name, r.email, r.level, r.lapsed_on, r.years]) };
+    case "members-new-renewed": {
+      const rows = data.rows.map(r => [r.month, r.new_members, r.renewed]);
+      rows.push(["TOTAL", data.totals.newMembers, data.totals.renewed]);
+      return { headers: ["Month", "New members", "Renewed"], rows };
+    }
+    case "membership-revenue": {
+      const rows = data.rows.map(r => [r.month, c2d(r.membershipCents), c2d(r.donationCents)]);
+      rows.push(["TOTAL", c2d(data.totals.membershipCents), c2d(data.totals.donationCents)]);
+      return { headers: ["Month", "Membership revenue", "Donation revenue"], rows };
+    }
     case "solicitations": {
       const rows = [
         ["FORECAST — open asks", data.forecast.open], ["FORECAST — stage-weighted", data.forecast.weighted],
@@ -22937,6 +22959,95 @@ function reportToCsv(key, data) {
     }
   }
 }
+
+// ── BUILD-101 Part 5 — MEMBERSHIP REPORTS ─────────────────────────────────
+// Read paths like every other report, on the one CSV layer. Money is summed
+// in the database in integer CENTS; membership money and donation money are
+// two columns and never one "revenue" total. A membership payment is a gift
+// some membership points at (memberships.gift_id); everything else is a
+// donation.
+const MB_GIFT_SQL = `EXISTS (SELECT 1 FROM memberships x WHERE x.org_id=g.org_id AND x.gift_id=g.id)`;
+async function mbReportToday(orgId) { return orgToday(await orgTz(orgId)); }   // ORG_TZ_SEAM_OK
+
+async function reportMembersDirectory(orgId) {
+  const rows = await query(
+    `SELECT d.name, d.email, d.phone, l.name AS level, m.status, m.joined_on, m.expires_on
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status IN ('active','grace') ORDER BY d.name`, [orgId]);
+  return { rows, sentence: "Everyone who holds a membership now, active or in grace." };
+}
+async function reportMembersByLevel(orgId) {
+  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT l.id, l.name, l.price,
+            (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status IN ('active','grace')) AS current,
+            (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}) AS lapsed,
+            (SELECT COALESCE(SUM(round(g.amount::numeric*100)),0)::bigint FROM gifts g JOIN memberships m ON m.gift_id=g.id AND m.org_id=g.org_id
+              WHERE g.org_id=l.org_id AND m.level_id=l.id AND g.date BETWEEN ? AND ?) AS revenue_cents
+       FROM membership_levels l WHERE l.org_id=? ORDER BY l.position, l.price`, [fy.from, fy.to, orgId]);
+  return { from: fy.from, to: fy.to,
+    rows: rows.map(r => ({ name: r.name, price: Number(r.price), current: r.current, lapsed: r.lapsed, revenueCents: Number(r.revenue_cents) })),
+    totals: { current: rows.reduce((a, r) => a + r.current, 0), lapsed: rows.reduce((a, r) => a + r.lapsed, 0),
+              revenueCents: rows.reduce((a, r) => a + Number(r.revenue_cents), 0) },
+    sentence: "Current counts active and in-grace members; lapsed counts people, once. Revenue is membership payments this fiscal year." };
+}
+async function reportMembersExpiring(orgId) {
+  const today = await mbReportToday(orgId);
+  const rows = await query(
+    `SELECT d.name, d.email, l.name AS level, m.status, m.expires_on
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ?
+      ORDER BY m.expires_on, d.name`, [orgId, today, orgTime.addDays(today, 60)]);
+  return { from: today, to: orgTime.addDays(today, 60), rows, sentence: "Memberships held now that expire in the next 60 days." };
+}
+async function reportMembersLapsed(orgId) {
+  const rows = await query(
+    `SELECT d.name, d.email, l.name AS level, COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on,
+            (SELECT COUNT(*)::int FROM memberships t WHERE t.org_id=m.org_id AND t.donor_id=m.donor_id AND t.status IN ('active','grace','lapsed','renewed')) AS years
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}
+      ORDER BY lapsed_on DESC, d.name`, [orgId]);
+  return { rows, sentence: "People whose most recent membership lapsed and who hold none now." };
+}
+// New vs renewed, by month, the last twelve months. A membership's month is
+// the date of the payment that bought it; one given without a payment
+// (complimentary, imported) counts in the month it starts.
+async function reportMembersNewRenewed(orgId) {
+  const today = await mbReportToday(orgId);
+  // The first day of the month eleven months back: twelve calendar months.
+  const [ty, tm] = today.split("-").map(Number);
+  const back = ty * 12 + (tm - 1) - 11;
+  const start = `${Math.floor(back / 12)}-${String(back % 12 + 1).padStart(2, "0")}-01`;
+  const rows = await query(
+    `SELECT LEFT(COALESCE(g.date, m.starts_on), 7) AS month,
+            COUNT(*) FILTER (WHERE m.renewed_from IS NULL)::int AS new_members,
+            COUNT(*) FILTER (WHERE m.renewed_from IS NOT NULL)::int AS renewed
+       FROM memberships m LEFT JOIN gifts g ON g.id=m.gift_id AND g.org_id=m.org_id
+      WHERE m.org_id=? AND COALESCE(g.date, m.starts_on) BETWEEN ? AND ?
+      GROUP BY 1 ORDER BY 1`, [orgId, start, today]);
+  return { from: start, to: today, rows,
+    totals: { newMembers: rows.reduce((a, r) => a + r.new_members, 0), renewed: rows.reduce((a, r) => a + r.renewed, 0) },
+    sentence: "A membership counts in the month of the payment that bought it; one given without a payment counts in the month it starts." };
+}
+// Membership revenue BESIDE donation revenue: two columns, this fiscal year
+// by month, and never summed into one figure.
+async function reportMembershipRevenue(orgId) {
+  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT LEFT(g.date, 7) AS month,
+            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE ${MB_GIFT_SQL}),0)::bigint AS membership_cents,
+            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE NOT ${MB_GIFT_SQL}),0)::bigint AS donation_cents
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND g.date BETWEEN ? AND ? GROUP BY 1 ORDER BY 1`, [orgId, fy.from, fy.to]);
+  const out = rows.map(r => ({ month: r.month, membershipCents: Number(r.membership_cents), donationCents: Number(r.donation_cents) }));
+  return { from: fy.from, to: fy.to, rows: out,
+    totals: { membershipCents: out.reduce((a, r) => a + r.membershipCents, 0), donationCents: out.reduce((a, r) => a + r.donationCents, 0) },
+    sentence: "Membership payments and donations this fiscal year, side by side. They are two lines and are never added into one revenue figure." };
+}
+const c2d = c => (Number(c) / 100).toFixed(2);
 
 const REPORT_HANDLERS = {
   "giving-summary": reportGivingSummary,
@@ -22951,6 +23062,13 @@ const REPORT_HANDLERS = {
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other
   // report, on the BUILD-79 file layer; there is no second export path.
   "bookkeeper": reportBookkeeper,
+  // BUILD-101 Part 5 — memberships.
+  "members-directory": reportMembersDirectory,
+  "members-by-level": reportMembersByLevel,
+  "members-expiring": reportMembersExpiring,
+  "members-lapsed": reportMembersLapsed,
+  "members-new-renewed": reportMembersNewRenewed,
+  "membership-revenue": reportMembershipRevenue,
 };
 // [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
 // org gets 403 plan_required (the client renders an upgrade state).
@@ -31657,6 +31775,49 @@ app.get("/donors/:id/memberships", requireAuth, wrap(async (req, res) => {
 const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id
                                      ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
     AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
+
+// BUILD-101 Part 5 — THE MEMBER CARD. One page: the org's letterhead, the
+// member's name, the level and the date it runs through. The pdfkit pattern
+// the acknowledgment letters use; held to one page by construction.
+function renderMemberCardPdf({ orgName, accent, logo, memberName, levelName, expiresOn, memberSince }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: false });
+  return new Promise((resolve, reject) => {
+    const chunks = []; doc.on("data", c => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject);
+    doc.addPage();
+    const INK = "#0f1a12", SUB = "#5a554f";
+    // A wallet-card-sized panel (3.375 x 2.125 in) near the top, to cut out.
+    const X = 72, Y = 72, W = 243, H = 153;
+    doc.roundedRect(X, Y, W, H, 10).lineWidth(1).strokeColor("#e8e4db").stroke();
+    doc.rect(X, Y, W, 8).fill(accent || "#0d5c3a");
+    if (logo) { try { doc.image(logo, X + W - 58, Y + 16, { fit: [44, 32] }); } catch { /* a logo that will not draw costs the logo, not the card */ } }
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(orgName, X + 14, Y + 20, { width: W - 80, height: 26, ellipsis: true });
+    doc.font("Helvetica").fontSize(8).fillColor(SUB).text("MEMBER", X + 14, Y + 58, { characterSpacing: 1.5 });
+    doc.font("Helvetica-Bold").fontSize(15).fillColor(INK).text(memberName, X + 14, Y + 70, { width: W - 28, height: 20, ellipsis: true });
+    doc.font("Helvetica").fontSize(10).fillColor(INK).text(`${levelName} membership`, X + 14, Y + 96, { width: W - 28, height: 14, ellipsis: true });
+    doc.font("Helvetica").fontSize(9).fillColor(SUB)
+      .text(expiresOn ? `Valid through ${expiresOn}` : "Lifetime member", X + 14, Y + 118, { width: W - 28, height: 12 })
+      .text(`Member since ${memberSince}`, X + 14, Y + 131, { width: W - 28, height: 12 });
+    doc.end();
+  });
+}
+
+app.get("/memberships/:id/card.pdf", requireAuth, wrap(async (req, res) => {
+  const [m] = await query(
+    `SELECT m.*, l.name AS level_name, d.name AS donor_name FROM memberships m
+       JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+      WHERE m.id=? AND m.org_id=?`, [req.params.id, req.user.orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const theme = await resolveOrgBrandTheme(req.user.orgId).catch(() => null);
+  let logo = null;
+  if (theme?.logoDataUri && /^data:image\/(png|jpe?g);base64,/.test(theme.logoDataUri)) { try { logo = Buffer.from(theme.logoDataUri.split(",")[1], "base64"); } catch { logo = null; } }
+  const pdf = await renderMemberCardPdf({ orgName: theme?.displayName || "", accent: theme?.band, logo,
+    memberName: m.donor_name, levelName: m.level_name, expiresOn: m.expires_on, memberSince: m.joined_on });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="member-card-${m.id}.pdf"`);
+  res.send(pdf);
+}));
 
 app.get("/memberships/lapsed", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
