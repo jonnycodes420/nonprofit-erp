@@ -15427,6 +15427,295 @@ app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ── BUILD-100 (grants) Part 5 — THE AGENT DRAFTS A REPORT OUTLINE ───────────
+// "Draft the report outline for the Sunrise grant." What comes back is built
+// ONLY from that grant's own rows: what was promised, what the funder paid, what
+// was spent, and the programme's giving and people in the period.
+//
+// shared/grantOutline.js is the guarantee — no numeric field anywhere in the
+// schema, so every figure a reader sees is rendered HERE from the rows. And the
+// rule this part adds: an OUTCOME claim with no citation is dropped and counted,
+// because Steward holds no programme outcomes and a grant report is precisely
+// where a fluent model will invent one.
+async function grantOutlineMod() { return import("./shared/grantOutline.js"); }
+
+// WHAT THE MODEL IS HANDED, AND NOTHING ELSE — the same shape as the prospect
+// brief's row gathering, so there is one idea in this product about how a model
+// is grounded rather than two.
+async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = {}) {
+  const R = await restrictedMod();
+  const M = await grantMsMod();
+  const V = await import("./shared/vocabulary.js");
+  const org = await orgTz(orgId);
+  const [orgRow] = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
+  const t = V.makeT(orgRow && orgRow.vocabulary_json);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+
+  const rows = await grantMoneyRows(orgId, "AND g.id = ?", [grantId]);
+  if (!rows.length) return null;
+  const [g] = await query(
+    `SELECT g.*, d.name AS funder_name, u.name AS officer_name, f.name AS fund_name
+       FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.id=? AND g.org_id=?`, [grantId, orgId]);
+  const balance = grantBalanceFrom(R, rows[0], today);
+
+  // THE PERIOD. Default is the whole life of the award — from the day it was
+  // awarded (else the day the grant was opened) to today. A report period the
+  // caller states wins, because a funder names its own.
+  const CIVIL = /^\d{4}-\d{2}-\d{2}$/;
+  const start = CIVIL.test(String(from || "")) ? String(from)
+    : (g.awarded_at ? orgToday(org, g.awarded_at)                       // ORG_TZ_SEAM_OK
+       : (g.created_at ? orgToday(org, g.created_at) : today));         // ORG_TZ_SEAM_OK
+  const end = CIVIL.test(String(to || "")) ? String(to) : today;
+
+  const refs = new Set([`grant:${g.id}`]);
+  const lines = [];
+  const fundWord = t("fund_singular") || "fund";
+
+  // 1 — THE GRANT ITSELF: what was promised, in the proposal's own fields.
+  lines.push(`grant:${g.id} — a grant from ${g.funder_name || "a funder"} for "${g.program || "no programme named"}", `
+    + `requested ${money.formatCentsPlain(toCents(g.amount_requested) || 0)}, `
+    + `awarded ${money.formatCentsPlain(balance.awardedCents)}, currently ${g.status}`
+    + `${g.fund_name ? `, designated to the ${fundWord} "${g.fund_name}"` : ""}`
+    + `${g.restriction ? `, restriction "${g.restriction}"` : ""}`
+    + `${g.officer_name ? `, on ${g.officer_name}'s desk` : ""}`
+    + `${g.cycle_name ? `, cycle "${g.cycle_name}"` : ""}. `
+    + `The reporting period here is ${start} to ${end}.`
+    + (g.notes ? ` The note on the grant reads: "${String(g.notes).slice(0, 800)}"` : ""));
+
+  // 2 — THE DOCUMENTS. NOTHING IS PARSED: Steward stores a file, types it and
+  // dates it, so the row says a proposal EXISTS — never what it said. A model
+  // handed a filename must not be able to quote a document nobody read.
+  for (const d of await query(
+    `SELECT id, doc_type, file_name, uploaded_at FROM grant_documents
+      WHERE org_id=? AND grant_id=? ORDER BY uploaded_at ASC`, [orgId, g.id])) {
+    refs.add(`document:${d.id}`);
+    lines.push(`document:${d.id} — a ${grantDocs.docTypeLabel(d.doc_type).toLowerCase()} on file, "${d.file_name}", `
+      + `stored ${d.uploaded_at instanceof Date ? d.uploaded_at.toISOString().slice(0, 10) : String(d.uploaded_at).slice(0, 10)}. `
+      + `Steward has NOT read this file; only that it exists is known.`);
+  }
+
+  // 3 — WHAT THE FUNDER PAID: payments applied to the award, each its own row.
+  for (const p of g.award_pledge_id ? await query(
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    [orgId, g.award_pledge_id]) : []) {
+    refs.add(`payment:${p.id}`);
+    lines.push(`payment:${p.id} — ${money.formatCentsPlain(toCents(p.amount) || 0)} received on ${p.date}, applied to this award.`);
+  }
+  lines.push(`grant:${g.id} — of the award, ${money.formatCentsPlain(balance.receivedCents)} has been received and `
+    + `${money.formatCentsPlain(balance.outstandingCents)} is still owed by the funder.`);
+
+  // 4 — WHAT WAS SPENT AGAINST IT. Entered by hand; the row says so, because a
+  // report that implies a bank feed is a report claiming more than it can.
+  for (const s of await query(
+    `SELECT id, amount, spent_on, description FROM grant_spend
+      WHERE org_id=? AND grant_id=? ORDER BY spent_on ASC`, [orgId, g.id])) {
+    refs.add(`spend:${s.id}`);
+    lines.push(`spend:${s.id} — ${money.formatCentsPlain(toCents(s.amount) || 0)} spent on ${s.spent_on}: "${s.description}". Entered by hand, not read from a bank.`);
+  }
+  lines.push(`grant:${g.id} — ${money.formatCentsPlain(balance.spentCents)} has been recorded as spent against this award, `
+    + `leaving ${money.formatCentsPlain(balance.remainingCents)} of the money received still to spend.`);
+
+  // 5 — THE PROGRAMME'S OWN GIVING IN THE PERIOD. Only gifts to THIS grant's
+  // fund: a gift to another fund is not evidence about this programme.
+  let fundGifts = [], givers = [];
+  if (g.fund_id) {
+    fundGifts = await query(
+      `SELECT gi.id, gi.amount, gi.date, gi.donor_id, d.name AS donor_name
+         FROM gifts gi LEFT JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+          AND gi.date >= ? AND gi.date <= ?
+        ORDER BY gi.amount DESC NULLS LAST, gi.id LIMIT 25`, [orgId, g.fund_id, start, end]);
+    for (const gi of fundGifts) {
+      refs.add(`gift:${gi.id}`);
+      lines.push(`gift:${gi.id} — ${money.formatCentsPlain(toCents(gi.amount) || 0)} to the ${fundWord} "${g.fund_name}" on ${gi.date}`
+        + `${gi.donor_name ? ` from ${gi.donor_name}` : ""}.`);
+    }
+    givers = await query(
+      `SELECT d.id, d.name, COUNT(gi.id) AS gifts, SUM(gi.amount) AS total
+         FROM gifts gi JOIN donors d ON d.id = gi.donor_id AND d.org_id = gi.org_id
+        WHERE gi.org_id=? AND gi.fund_id=? AND gi.is_sample IS NOT TRUE
+          AND gi.date >= ? AND gi.date <= ? AND d.deleted_at IS NULL
+        GROUP BY d.id, d.name ORDER BY SUM(gi.amount) DESC NULLS LAST, d.id LIMIT 12`,
+      [orgId, g.fund_id, start, end]);
+    for (const p of givers) {
+      refs.add(`person:${p.id}`);
+      lines.push(`person:${p.id} — ${p.name} gave ${Number(p.gifts)} ${Number(p.gifts) === 1 ? "gift" : "gifts"} `
+        + `totalling ${money.formatCentsPlain(toCents(p.total) || 0)} to this ${fundWord} in the period.`);
+    }
+  }
+
+  // 6 — THE DEADLINES ON IT, so the outline can say what is due and when.
+  for (const ms of await query(
+    `SELECT id, kind, due_date, state, notes FROM grant_milestones
+      WHERE org_id=? AND grant_id=? ORDER BY due_date ASC`, [orgId, g.id])) {
+    refs.add(`milestone:${ms.id}`);
+    lines.push(`milestone:${ms.id} — ${M.milestoneStepLabel({ kind: ms.kind, funderName: g.funder_name, program: g.program })}, `
+      + `due ${ms.due_date}, currently ${ms.state}`
+      + `${String(ms.notes || "").trim() ? `. The note on it: "${String(ms.notes).slice(0, 300)}"` : "."}`);
+  }
+
+  // 7 — CONVERSATIONS WITH THE FUNDER, quoted rather than summarised away.
+  if (g.funder_donor_id) {
+    for (const i of await query(
+      `SELECT id, type, date, note, logged_by_name FROM interactions
+        WHERE org_id=? AND donor_id=? AND COALESCE(note,'') <> ''
+        ORDER BY date DESC, created_at DESC LIMIT 5`, [orgId, g.funder_donor_id])) {
+      refs.add(`conversation:${i.id}`);
+      lines.push(`conversation:${i.id} — ${i.type} on ${i.date}${i.logged_by_name ? ` logged by ${i.logged_by_name}` : ""}: "${String(i.note).slice(0, 500)}"`);
+    }
+  }
+
+  // THE GROUNDED NUMERIC SET, through the money seam (never a bare Math.round on
+  // a dollars value — `tests/money-cents.test.js` is right about that shape
+  // wherever it appears, and a text check is not an exemption).
+  const grounded = [];
+  const push = v => { const c = toCents(v); if (c != null) { grounded.push(toDollars(c), c); } };
+  push(g.amount_requested); push(g.amount_awarded);
+  for (const k of ["awardedCents", "receivedCents", "spentCents", "outstandingCents", "remainingCents"]) {
+    grounded.push(balance[k], toDollars(balance[k]));
+  }
+  for (const gi of fundGifts) push(gi.amount);
+  for (const p of givers) { push(p.total); grounded.push(Number(p.gifts) || 0); }
+  grounded.push(fundGifts.length, givers.length);
+  for (const l of lines) for (const m of String(l).matchAll(/\d+(?:\.\d+)?/g)) grounded.push(Number(m[0]));
+
+  return {
+    grant: g, org: orgRow, t, balance, refs, lines,
+    grounded: [...new Set(grounded.filter(Number.isFinite))],
+    period: { from: start, to: end },
+    counts: { documents: refs.size, fundGifts: fundGifts.length, people: givers.length },
+  };
+}
+
+// GET /grants/:id/outline-rows — EXACTLY what the model would be handed. Like
+// the brief's, this is not a test seam: the outline's promise is that every
+// sentence rests on a row you can open, and this is that list — provable with no
+// API key configured at all.
+app.get("/grants/:id/outline-rows", requireAuth, wrap(async (req, res) => {
+  const ctx = await grantOutlineRowsFor(req.user.orgId, req.params.id,
+    { from: req.query.from, to: req.query.to });
+  if (!ctx) return res.status(404).json({ error: "Grant not found" });
+  res.json({
+    grantId: ctx.grant.id, funderName: ctx.grant.funder_name || "", program: ctx.grant.program || "",
+    period: ctx.period, refs: [...ctx.refs], lines: ctx.lines, groundedValues: ctx.grounded,
+  });
+}));
+
+// POST /grants/:id/report-outline — draft it, validate it, log it as an agent run.
+app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const O = await grantOutlineMod();
+  const TH = await thresholdsMod();
+  const orgId = req.user.orgId;
+  // THE GRANT IS CHECKED FIRST, and that order is the point — the same defect
+  // the prospect brief paid for (BUILD-99): running the key gate first answers
+  // 503 to a cross-tenant probe instead of 404, telling the caller both that the
+  // route exists and what Steward's key state is.
+  const ctx = await grantOutlineRowsFor(orgId, req.params.id, { from: req.body.from, to: req.body.to });
+  if (!ctx) return res.status(404).json({ error: "Grant not found" });
+
+  const gate = await agentGate(orgId);
+  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason });
+
+  const runId = "arun_" + uuid().slice(0, 10);
+  await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
+    [runId, orgId, "running", JSON.stringify({ kind: "grant_report_outline", grantId: ctx.grant.id }),
+     `${ctx.refs.size} rows on the ${ctx.grant.funder_name || "funder"} grant`]);
+
+  const system = [
+    "You are drafting the OUTLINE of a report to a funder about a grant. A human will write the report from it and send it.",
+    "",
+    "You are given ROWS from this organisation's own records. Each row starts with a reference of the form kind:id.",
+    "Write short, plain sentences about what those rows say. Every sentence must cite the references it rests on, exactly as given.",
+    "",
+    "RULES, and the first one is the whole job:",
+    "- YOU MAY NOT STATE AN OUTCOME. This organisation's records hold money, dates, documents and people — they do not hold",
+    "  attendance, results, or what changed for anybody. Do not write that anyone was served, reached, helped or improved.",
+    "  The outcomes section is a PROMPT to the human who knows; say plainly that the records cannot supply it.",
+    "- Use no figure that is not in the rows you were handed, and state no rule about how grants or giving work.",
+    "- A document row means a file EXISTS. You have not read it. Never say what a proposal or report said.",
+    "- Money still owed by the funder is not money received, and money received is not money spent. Keep them apart.",
+    "- Quote a conversation rather than summarising away the words the officer chose.",
+    "- Leave a section out if the rows say nothing about it. Do not pad.",
+    "- The headline names the grant and the period, and contains no figure.",
+    "",
+    "The sections you may use, and what each rests on:",
+    ...O.OUTLINE_SECTIONS.map(s => `- ${s.heading} — ${s.source || "NOTHING IN THE RECORDS. Say so; do not invent it."}`),
+  ].join("\n");
+  const user = [
+    `The rows, on the ${ctx.grant.funder_name || "funder"} grant for "${ctx.grant.program || "no programme named"}", `
+      + `period ${ctx.period.from} to ${ctx.period.to}:`,
+    "", ...ctx.lines, "", "Draft the outline.",
+  ].join("\n");
+
+  let raw = null, err = null;
+  try {
+    const client = new Anthropic();
+    const msg = await client.messages.create({
+      model: AGENT_MODEL, max_tokens: 2000, system,
+      tools: [{ name: "outline", description: "The report outline a human writes the report from.", strict: true, input_schema: O.OUTLINE_SCHEMA }],
+      tool_choice: { type: "tool", name: "outline" },
+      messages: [{ role: "user", content: user }],
+    });
+    raw = (msg.content || []).find(b => b.type === "tool_use" && b.name === "outline")?.input || null;
+  } catch (e) { err = e.message || String(e); }
+
+  if (!raw) {
+    await run("UPDATE agent_runs SET status='failed', finished_at=NOW(), error=? WHERE id=?", [err || "no outline returned", runId]);
+    return res.status(502).json({ error: "The outline could not be drafted just now.", runId });
+  }
+
+  const checked = O.validateOutline(raw, {
+    rows: ctx.refs,
+    ungrounded: text => TH.ungroundedClaims(text, { groundedValues: ctx.grounded }).map(c => c.raw),
+  });
+  const payload = grantOutlinePayload(ctx, checked);
+  // THE FIGURES ARE STORED, NOT RECOMPUTED (the BUILD-87 Part 1 rule). A payment
+  // arriving next week must not silently change what an outline drafted today
+  // says the funder had paid — a draft somebody is working from is evidence of a
+  // moment, and one that edits itself is worth less than none.
+  await run(
+    `UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, declined=?, withheld=?, withheld_reason=? WHERE id=?`,
+    [JSON.stringify({ outline: checked, grantId: ctx.grant.id, period: ctx.period, payload }),
+     checked.droppedCount, checked.droppedCount, checked.droppedSentence, runId]);
+
+  res.json({ runId, ...payload });
+}));
+
+// ONE shape for the outline, read by the POST and by the read-back — a second
+// assembly is a second place for the figures to disagree with the rows.
+function grantOutlinePayload(ctx, checked) {
+  return {
+    grantId: ctx.grant.id, funderName: ctx.grant.funder_name || "", program: ctx.grant.program || "",
+    period: ctx.period,
+    headline: checked.headline, sections: checked.sections,
+    // EVERY FIGURE IS STEWARD'S, rendered from the rows the model was handed.
+    figures: {
+      awarded: ctx.balance.awarded, received: ctx.balance.received,
+      spent: ctx.balance.spent, outstanding: ctx.balance.outstanding, remaining: ctx.balance.remaining,
+      awardedCents: ctx.balance.awardedCents, receivedCents: ctx.balance.receivedCents,
+      spentCents: ctx.balance.spentCents, outstandingCents: ctx.balance.outstandingCents,
+      remainingCents: ctx.balance.remainingCents,
+      programmeGifts: ctx.counts.fundGifts, programmePeople: ctx.counts.people,
+    },
+    balanceSentence: ctx.balance.sentence,
+    dropped: checked.dropped, droppedSentence: checked.droppedSentence,
+    outcomesPrompt: checked.outcomesPrompt,
+    rowsRead: ctx.refs.size, footer: checked.footer,
+  };
+}
+
+// GET /grant-outlines/:runId — read one back. It is an agent run, so it is on
+// the Activity screen with everything else the agent did.
+app.get("/grant-outlines/:runId", requireAuth, wrap(async (req, res) => {
+  const [r] = await query("SELECT * FROM agent_runs WHERE id=? AND org_id=?", [req.params.runId, req.user.orgId]);
+  if (!r || !r.actions || !r.actions.payload) return res.status(404).json({ error: "Outline not found" });
+  res.json({ runId: r.id, writtenAt: r.finished_at, ...r.actions.payload });
+}));
+
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {
   const rows = await query("SELECT id, funder, program, amount, status FROM grants WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!rows.length) return res.status(404).json({ error: "Grant not found" });
@@ -23737,6 +24026,30 @@ function reportToCsv(key, data) {
       ];
       return { headers: ["Metric", "Value"], rows };
     }
+    // BUILD-100 (grants) Part 5 — the two computed grant reports export through
+    // the ONE `sendReportCsv` like every other, so the injection guard and the
+    // BOM come for free rather than being re-remembered.
+    case "grant-deadlines": {
+      const headers = ["Funder", "Programme", "Deadline", "Due", "Officer", "State", "Days overdue", "Note"];
+      const rows = data.rows.map(r => [r.funder, r.program, r.deadline, r.dueDate, r.officer,
+                                       r.state, r.overdueDays || "", r.note]);
+      return { headers, rows };
+    }
+    case "grant-restricted": {
+      const headers = ["Funder", "Programme", "Fund", "Restriction", "Awarded", "Received",
+                       "Spent", "Still owed", "Remaining to spend", "Restricted until"];
+      const rows = data.rows.map(r => [r.funder, r.program, r.fund, r.restriction,
+                                       r.awarded, r.received, r.spent, r.outstanding,
+                                       r.remaining, r.releaseDate || ""]);
+      // The TOTAL row is the org position, blank-separated so a spreadsheet
+      // never reads it as another grant.
+      rows.push(new Array(headers.length).fill(""));
+      const t = new Array(headers.length).fill("");
+      t[0] = "TOTAL"; t[4] = data.totals.awarded; t[5] = data.totals.received;
+      t[6] = data.totals.spent; t[7] = data.totals.outstanding; t[8] = data.totals.remaining;
+      rows.push(t);
+      return { headers, rows };
+    }
     case "bookkeeper": {
       // The fixed columns, then a totals row, then the SAME data a second way
       // as a trailing section. One file, two views, one set of cents.
@@ -23774,6 +24087,81 @@ function reportToCsv(key, data) {
   }
 }
 
+// ── BUILD-100 (grants) Part 5 — the two computed grant reports ─────────────
+// Both read the functions Parts 2 and 4 already own. A report that recomputed
+// a restricted balance its own way would eventually disagree with the screen,
+// and the screen is what an officer trusts.
+async function reportGrantDeadlines(orgId, p = {}) {
+  const M = await grantMsMod();
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                       // ORG_TZ_SEAM_OK
+  const days = Number.isFinite(Number(p.days)) ? Math.max(1, Math.min(730, Number(p.days))) : 90;
+  const leadDays = await orgLeadDays(orgId);
+  const rows = await query(
+    `SELECT m.*, g.program, g.status, g.funder, g.officer_id, d.name AS funder_name, u.name AS officer_name
+       FROM grant_milestones m
+       JOIN grants g ON g.id = m.grant_id AND g.org_id = m.org_id
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN users u ON u.id = g.officer_id AND u.org_id = g.org_id
+      WHERE m.org_id = ? AND g.is_sample IS NOT TRUE
+        AND m.state NOT IN ('done','skipped')
+      ORDER BY m.due_date ASC`, [orgId]);
+  const all = rows.map(r => ({ ...milestoneRow(r, M, today, leadDays), officerName: r.officer_name || "(nobody)" }));
+  // OVERDUE COUNTS. A deadline three days past is more owed than one three days
+  // out, and a window that excluded it would answer the wrong question.
+  const within = all.filter(m => {
+    const d = M.daysBetween(today, m.dueDate);
+    return d !== null && d <= days;
+  });
+  return {
+    today, windowDays: days,
+    rows: within.map(m => ({
+      funder: m.funderName || "(not named)", program: m.program || "(not stated)",
+      deadline: m.kindLabel, dueDate: m.dueDate, officer: m.officerName,
+      state: m.state, overdueDays: m.overdueDays, note: m.sentence,
+    })),
+    total: within.length,
+    overdue: within.filter(m => m.band === "overdue").length,
+    waiting: within.filter(m => m.state === "waiting").length,
+  };
+}
+
+async function reportGrantRestricted(orgId) {
+  const R = await restrictedMod();
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                       // ORG_TZ_SEAM_OK
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const balances = rows.map(r => grantBalanceFrom(R, r, today));
+  const restricted = balances.filter(b => b.restricted);
+  const totals = R.restrictedTotals(balances);
+  return {
+    today,
+    rows: restricted
+      .sort((a, b) => b.remainingCents - a.remainingCents)
+      .map(b => ({
+        funder: b.funderName || "(not named)", program: b.program || "(not stated)",
+        fund: b.fundName || "(no fund)", restriction: b.restriction,
+        awarded: b.awarded, received: b.received, spent: b.spent,
+        outstanding: b.outstanding, remaining: b.remaining,
+        releaseDate: b.releaseDate, overspent: b.overspent, note: b.sentence,
+      })),
+    totals: {
+      grants: totals.grants,
+      awarded: toDollars(totals.awardedCents), received: toDollars(totals.receivedCents),
+      spent: toDollars(totals.spentCents), outstanding: toDollars(totals.outstandingCents),
+      remaining: toDollars(totals.remainingCents), overspentGrants: totals.overspentGrants,
+    },
+    // Summed in cents and exposed so a reader can reconcile the total against
+    // the rows without trusting the dollars.
+    totalsCents: {
+      awarded: totals.awardedCents, received: totals.receivedCents, spent: totals.spentCents,
+      outstanding: totals.outstandingCents, remaining: totals.remainingCents,
+    },
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  };
+}
+
 const REPORT_HANDLERS = {
   "giving-summary": reportGivingSummary,
   "by-group": reportByGroup,
@@ -23787,6 +24175,12 @@ const REPORT_HANDLERS = {
   // BUILD-87 Part 4 — the bookkeeper's export. A read path like every other
   // report, on the BUILD-79 file layer; there is no second export path.
   "bookkeeper": reportBookkeeper,
+  // BUILD-100 (grants) Part 5 — the two grant reports that are COMPUTED rather
+  // than queried. They call the SAME functions the screens do, so a saved
+  // report and the screen can never show different figures (BUILD-98 Part 3's
+  // rule). Expressing either as a second query would be a second computation.
+  "grant-deadlines": reportGrantDeadlines,
+  "grant-restricted": reportGrantRestricted,
 };
 // [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
 // org gets 403 plan_required (the client renders an upgrade state).

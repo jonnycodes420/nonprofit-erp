@@ -111,6 +111,51 @@ export const ENTITIES = {
   // the same rows — and `status` is deliberately NOT a field here: it is DERIVED
   // from the stage, and offering both would let somebody build a report whose
   // two columns could look like they disagreed.
+  // BUILD-100 (grants) Part 5 — grants in the builder's own vocabulary. Every
+  // field is a NAME whose SQL is written here (the Part 3 rule: a field is
+  // never a string of SQL a definition supplied), so a saved grant report is
+  // as safe to store, share and schedule as any other.
+  //
+  // `received` and `spent` are SUBQUERIES on the award pledge and the spend
+  // table rather than columns, because that is where the truth is — a
+  // `grants.received` column would be a second place for the same number to
+  // live and the two would drift. Part 4's route reads it the same way.
+  grants: {
+    label: "Grants",
+    from: `grants gr
+             LEFT JOIN donors fd ON fd.id = gr.funder_donor_id AND fd.org_id = gr.org_id
+             LEFT JOIN fin_funds gf ON gf.id = gr.fund_id AND gf.org_id = gr.org_id
+             LEFT JOIN users go ON go.id = gr.officer_id AND go.org_id = gr.org_id`,
+    base: ["gr.is_sample IS NOT TRUE"],
+    orgCol: "gr.org_id",
+    fields: {
+      funder:       { label: "Funder", sql: "COALESCE(fd.name, gr.funder, '(not named)')", type: "text" },
+      program:      { label: "Programme", sql: "COALESCE(NULLIF(gr.program,''),'(not stated)')", type: "text" },
+      status:       { label: "Status", sql: "gr.status", type: "text" },
+      requested:    { label: "Requested", sql: "COALESCE(gr.amount_requested, gr.amount)", type: "money", sum: true },
+      awarded:      { label: "Awarded", sql: "COALESCE(gr.amount_awarded, 0)", type: "money", sum: true },
+      received:     { label: "Received",
+        sql: `COALESCE((SELECT SUM(gi.amount) FROM gifts gi
+                         WHERE gi.org_id = gr.org_id AND gi.pledge_id = gr.award_pledge_id), 0)`,
+        type: "money", sum: true },
+      spent:        { label: "Spent",
+        sql: `COALESCE((SELECT SUM(sp.amount) FROM grant_spend sp
+                         WHERE sp.org_id = gr.org_id AND sp.grant_id = gr.id), 0)`,
+        type: "money", sum: true },
+      restriction:  { label: "Restriction", sql: "COALESCE(gr.restriction,'(not set)')", type: "text" },
+      fund:         { label: "Fund", sql: "COALESCE(gf.name,'(no fund)')", type: "text" },
+      officer:      { label: "Officer", sql: "COALESCE(go.name,'(nobody)')", type: "text" },
+      cycle:        { label: "Cycle", sql: "COALESCE(NULLIF(gr.cycle_name,''),'(none)')", type: "text" },
+      deadline:     { label: "Next deadline", sql: "gr.deadline", type: "date" },
+      report_due:   { label: "Report due", sql: "gr.report_due", type: "date" },
+      decline_reason: { label: "Why declined", sql: "COALESCE(gr.decline_reason,'')", type: "text" },
+      // The YEAR a grant was AWARDED, which is the axis "awarded vs requested
+      // by year" turns on. A grant requested in 2026 and awarded in 2027
+      // belongs to 2027 for this purpose, and the label says so.
+      awarded_year: { label: "Year awarded", sql: "LEFT(COALESCE(gr.awarded_at::text,''),4)", type: "text", groupOnly: true },
+      released_on:  { label: "Restricted until", sql: "gr.restricted_until", type: "date" },
+    },
+  },
   proposals: {
     label: "Proposals",
     from: "opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id",
@@ -322,6 +367,26 @@ export const STANDARD_REPORTS = [
   // BUILD-98 (switch) Part 5 — volunteer-to-donor conversion.
   { key: "volunteers-who-give", name: "Volunteers who give", question: "Which of our volunteers also give?", kind: "builder",
     def: { entity: "people", columns: ["name", "volunteer_hours", "lifetime", "last_gift_date"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "volunteer" }, { field: "lifetime", cmp: "gt", value: 0 }] }, sort: { field: "name", dir: "asc" } } },
+  // ── BUILD-100 (grants) Part 5 — the five grant reports ───────────────────
+  // Three are builder definitions over the `grants` entity above. TWO are
+  // HANDLERS, deliberately: a restricted balance and a deadline list are
+  // COMPUTED (Part 4's four figures, Part 2's lead times and waiting state),
+  // and expressing them as a second query would be a second computation that
+  // could disagree with the screen. BUILD-98 Part 3's rule — the standard
+  // reports read the SAME functions the screens do.
+  { key: "grants-pipeline", name: "Grants pipeline", question: "What have we asked for, and where is each ask?", kind: "builder",
+    def: { entity: "grants", columns: ["funder", "program", "status", "requested", "awarded", "deadline", "officer"],
+           filter: { op: "and", rules: [{ field: "status", cmp: "in", value: ["researching", "loi", "submitted"] }] },
+           sort: { field: "deadline", dir: "asc" } } },
+  { key: "grants-by-funder", name: "Grants by funder", question: "How much has each funder been asked for, and given?", kind: "builder",
+    def: { entity: "grants", columns: [], groupBy: "funder" } },
+  { key: "grants-awarded-vs-requested", name: "Awarded vs requested by year", question: "Of what we asked for each year, how much came?", kind: "builder",
+    def: { entity: "grants", columns: [], groupBy: "awarded_year",
+           filter: { op: "and", rules: [{ field: "status", cmp: "in", value: ["awarded", "closed"] }] } } },
+  { key: "grant-deadlines-90", name: "Grant deadlines, next 90 days", question: "What is owed to a funder in the next three months?",
+    kind: "handler", handler: "grant-deadlines", params: { days: 90 } },
+  { key: "grant-restricted-balances", name: "Restricted balances by grant", question: "How much restricted money are we holding, and against which grant?",
+    kind: "handler", handler: "grant-restricted" },
   { key: "board-giving", name: "Board giving", question: "What has each board member given?", kind: "builder",
     def: { entity: "people", columns: ["name", "lifetime", "last_gift_date", "last_gift_amount"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "staff_board" }] }, sort: { field: "lifetime", dir: "desc" } } },
 ];

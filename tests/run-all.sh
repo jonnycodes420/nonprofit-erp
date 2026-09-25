@@ -148,6 +148,7 @@ CORE=(
   build98-credit build98-letters build98-reports build98-events build98-volunteers build98-api mail-block
   build99-proposals build99-portfolios build99-plans build99-brief build99-dashboard build99-import
   build100-funders build100-deadlines build100-documents build100-restricted
+  build100-reports
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
