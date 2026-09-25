@@ -150,14 +150,21 @@ async function fixture() {
   // and then while it read as two pages glued together. These four are what
   // LOOKING at it found, and no server assertion could have.
   const path = require("path");
+  // BUILD-96 Part 6 — DEFAULT TO ~/steward-qa, like the other 22 browser
+  // suites. With no default, an unset PLAYWRIGHT_DIR resolved to
+  // `node_modules/playwright` relative to nothing, so this leg SKIPPED in every
+  // plain `bash tests/run-all.sh` — a silent skip inside a green suite inside a
+  // green battery, which is the shape that makes a battery worth nothing. The
+  // four things this leg checks are the ones the brief says only LOOKING found.
+  const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
   let chromium = null;
-  try { chromium = require(path.join(process.env.PLAYWRIGHT_DIR || "", "node_modules/playwright")).chromium; } catch { /* not installed */ }
+  try { chromium = require(path.join(PW_DIR, "node_modules/playwright")).chromium; } catch { /* not installed */ }
   const PREVIEW = "http://localhost:4173";
   let previewUp = false;
   try { previewUp = (await fetch(PREVIEW + "/give/gpb/sponsor")).ok; } catch { /* not served */ }
 
   if (!chromium || !previewUp) {
-    console.log("— browser leg SKIPPED (needs PLAYWRIGHT_DIR and the preview on :4173) —");
+    console.log(`— browser leg SKIPPED (playwright at ${PW_DIR}: ${chromium ? "found" : "MISSING"}; preview on :4173: ${previewUp ? "up" : "DOWN"}) —`);
   } else {
     console.log("— and it reads as ONE page in a browser —");
     await api("PUT", `/giving-pages/${PAGE}/page/draft`, tok, { widgets, formPosition: "bottom" });
