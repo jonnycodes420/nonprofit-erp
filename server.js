@@ -11879,8 +11879,19 @@ async function importProposals(orgId, rows, who, donorIdByIndex) {
     try { askCents = parseMoneyOrThrow(r.askAmount, "askAmount"); } catch { askCents = 0; }
     if (!(askCents > 0)) { out.unresolved.push({ purpose: String(r.purpose || "").slice(0, 80), why: "no ask amount that could be read" }); continue; }
 
+    // THE STAGE WORD MAY BE THE FILE'S, NOT STEWARD'S. A Salesforce export says
+    // "Prospecting"; a Bloomerang or DonorPerfect one says "Submitted" or
+    // "Negotiation". Steward's own key is tried first, then NPSP's documented
+    // ladder (which those words overlap), and only then does it default — so a
+    // real export's vocabulary is READ rather than flattened to Identified and
+    // counted as a failure.
     let stage = String(r.stage || "").trim().toLowerCase();
-    if (!P.stageFor(stage)) { stage = "identified"; out.stageDefaulted++; }
+    if (!P.stageFor(stage)) {
+      const NP = await import("./shared/npspPreset.js");
+      const mapped = NP.npspProposalStage(r.stage);
+      if (mapped) stage = mapped;
+      else { stage = "identified"; out.stageDefaulted++; }
+    }
     const prob = P.normalizeProbability(r.probability);
     if (prob === undefined) out.probabilityDropped++;
 

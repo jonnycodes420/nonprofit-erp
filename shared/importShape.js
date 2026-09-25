@@ -2046,6 +2046,63 @@ export function giftCreditFromRow(row, txMap) {
   return out;
 }
 
+// ── BUILD-99 (major gifts) Part 6 — THE PROPOSAL ROWS ──────────────────────
+// A row with an ask amount mapped is an OPEN ASK, not a gift, and it leaves this
+// builder on its own list so nothing downstream can mistake it for money. It is
+// a SECOND read of the same rows rather than a branch inside
+// `buildTransactionRows`, and that is deliberate: a file can legitimately carry
+// both (a gift last year and an open ask this year, same person, same row set),
+// and folding them into one pass would make one of them win.
+//
+// A row leaves with a `donorIndex` when the caller can supply one (the API can,
+// and tests/build99-import.test.js drives that path) and with a `donorName`
+// otherwise. The CSV mapper sends names: `buildTransactionRows` keeps BUILD-80's
+// identity pass and its key→index map internal, and widening that builder's
+// contract for this one caller would be the larger change. A name resolves
+// server-side to the oldest matching record, which is the rule `importGiftExtras`
+// already uses for an imported soft credit.
+export function buildProposalRows(parsed, txMap, opts = {}) {
+  const out = { proposals: [], rowsSeen: 0, rowsSkipped: 0, reasons: {} };
+  if (!txMap || !txMap.proposalAmount) return out;      // nothing mapped, nothing to read
+  const rows = (parsed && parsed.rows) || [];
+  const indexFor = typeof opts.donorIndexForRow === "function" ? opts.donorIndexForRow : (() => null);
+  const note = (why) => { out.rowsSkipped++; out.reasons[why] = (out.reasons[why] || 0) + 1; };
+  const cell = (row, k) => (txMap[k] ? String(row[txMap[k]] ?? "").trim() : "");
+
+  rows.forEach((row, i) => {
+    const rawAmount = cell(row, "proposalAmount");
+    if (!rawAmount) return;                              // not a proposal row at all
+    out.rowsSeen++;
+    const money = normalizeMoney(rawAmount, { convention: opts.amountConvention });
+    if (money.blank || !(Number(money.value) > 0)) { note("no ask amount that could be read"); return; }
+    const donorIndex = indexFor(i);
+    const donorName = cell(row, "donorName") || null;
+    if (donorIndex == null && !donorName) { note("no person to put it on"); return; }
+    // The stage word is CLASSIFIED, never trusted: a file says "Negotiation" or
+    // "Ask Made" or nothing at all, and the server defaults an unreadable one to
+    // Identified and counts that it did.
+    const stageRaw = cell(row, "proposalStage");
+    const probRaw = cell(row, "proposalProbability").replace(/[%\s]/g, "");
+    const prob = probRaw === "" ? null : Number(probRaw);
+    const closeRaw = cell(row, "proposalCloseDate");
+    // `normalizeDate` returns `{value, warn}`, not a string — reading it as one
+    // silently dropped every expected close date on the builder's first run.
+    const close = closeRaw ? (normalizeDate(closeRaw, { dayFirst: opts.dateConvention === "dmy" }).value || null) : null;
+    out.proposals.push({
+      ...(donorIndex != null ? { donorIndex } : { donorName }),
+      purpose: cell(row, "proposalPurpose") || "Ask",
+      askAmount: money.value,
+      stage: stageRaw || null,
+      expectedClose: close && /^\d{4}-\d{2}-\d{2}$/.test(close) ? close : null,
+      probability: prob != null && Number.isFinite(prob) ? prob : null,
+      fund: cell(row, "fund") || null,
+      owner: cell(row, "owner") || null,
+      notes: cell(row, "notes") || null,
+    });
+  });
+  return out;
+}
+
 export function buildTransactionRows(parsed, txMap, opts = {}) {
   // FIX (2026-09-10) — `new Date().toISOString()` is a UTC CALENDAR DATE, and
   // this comparison decides whether a gift is refused as future-dated or a

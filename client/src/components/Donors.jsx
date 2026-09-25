@@ -38,7 +38,7 @@ import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./Lo
 // profile button, and modal render below, and add `VoiceMemoModal` back to
 // the import above).
 import { DonorMap } from "./DonorMap";
-import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
+import { detectImportShape, groupTransactions, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytes, decodeSpreadsheetBytesDetailed, analyzeCsvText, analyzeSheetRows, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, tokenizeText, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, columnTypeEvidence, buildGiftItemsFromLedger, buildTransactionRows, buildProposalRows, detectNoteMarkers, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { PlanFollowUpModal } from "./PlanFollowUp";
@@ -628,11 +628,22 @@ function buildWidePayload(parsed, donorMapping, yearCols, rowLines) {
 // email dedup is handled server-side (chunk N sees chunk N-1's committed rows).
 async function submitImportChunked(donors, gifts, onProgress, extras) {
   const CHUNK = 500;
+  // BUILD-99 Part 6 — the open asks ride the same chunked submit and are
+  // RE-INDEXED to each chunk's local donor positions exactly as the gifts are.
+  // A proposal whose donorIndex still pointed at the whole file's numbering would
+  // land on whoever happened to sit at that position in chunk two.
+  const proposals = (extras && Array.isArray(extras.proposals)) ? extras.proposals : [];
   const hasGifts = gifts.length > 0;
   const giftsByDonor = new Map();
   for (const g of gifts) {
     if (!giftsByDonor.has(g.donorIndex)) giftsByDonor.set(g.donorIndex, []);
     giftsByDonor.get(g.donorIndex).push(g);
+  }
+  const propsByDonor = new Map();
+  for (const p of proposals) {
+    if (p.donorIndex == null) continue;
+    if (!propsByDonor.has(p.donorIndex)) propsByDonor.set(p.donorIndex, []);
+    propsByDonor.get(p.donorIndex).push(p);
   }
   const totals = { created: 0, giftsInserted: 0, duplicates: 0, duplicatesOnFile: 0, duplicatesInFile: 0, donorsUpdated: 0, financeSynced: 0, batchErrors: [], twinCandidates: 0,
     // BUILD-72 Part 1 — the file-level reconciliation, summed across chunks.
@@ -641,19 +652,28 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     reconciliation: { rows: { inFile: 0, created: 0, skipped: 0, errored: 0 },
                       dollars: { inFile: 0, created: 0, skipped: 0, errored: 0 },
                       skippedReasons: {}, erroredReasons: {}, balanced: true },
+    // BUILD-99 Part 6 — the open asks, counted like everything else so the
+    // receipt can say what became of them.
+    proposals: { written: 0, skippedDuplicate: 0, stageDefaulted: 0, probabilityDropped: 0, unresolved: [] },
     duplicateGroups: [] };
   const total = donors.length;
   if (!total) return totals;
   for (let start = 0; start < total; start += CHUNK) {
     const slice = donors.slice(start, start + CHUNK);
     let res;
-    if (hasGifts) {
+    const chunkProposals = [];
+    slice.forEach((_, localIdx) => {
+      const pp = propsByDonor.get(start + localIdx);
+      if (pp) pp.forEach(p => { const { donorIndex, ...rest } = p; chunkProposals.push({ ...rest, donorIndex: localIdx }); });
+    });
+    if (hasGifts || chunkProposals.length) {
       const chunkGifts = [];
       slice.forEach((_, localIdx) => {
         const gg = giftsByDonor.get(start + localIdx);
         if (gg) gg.forEach(g => { const { donorIndex, ...rest } = g; chunkGifts.push({ ...rest, donorIndex: localIdx }); });
       });
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
+        ...(chunkProposals.length ? { proposals: chunkProposals } : {}),
         // BUILD-78 — the column ledger + saved mappings ride every chunk
         // (idempotent server-side); the ledger is validated per request.
         ...(extras ? { columns: extras.columns, fieldMappings: extras.fieldMappings, customFieldDelimiters: extras.customFieldDelimiters,
@@ -673,6 +693,13 @@ async function submitImportChunked(donors, gifts, onProgress, extras) {
     totals.matchesExistingCount += res.matchesExistingCount || 0;
     totals.roundingAdjustment += res.roundingAdjustment || 0;
     totals.fundsCreated  += res.fundsCreated  || 0;   // BUILD-88a A.7
+    if (res.proposals) {                              // BUILD-99 Part 6
+      totals.proposals.written += res.proposals.written || 0;
+      totals.proposals.skippedDuplicate += res.proposals.skippedDuplicate || 0;
+      totals.proposals.stageDefaulted += res.proposals.stageDefaulted || 0;
+      totals.proposals.probabilityDropped += res.proposals.probabilityDropped || 0;
+      if (res.proposals.unresolved?.length) totals.proposals.unresolved.push(...res.proposals.unresolved);
+    }
     if (res.duplicateGroups?.length) totals.duplicateGroups.push(...res.duplicateGroups);
     // Sum the per-request equations into one file-level equation. If ANY chunk
     // failed to balance the whole file is reported unbalanced — a file is only
@@ -1240,6 +1267,26 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           // Kane" and "Marilyn Kane" back on one record — a household of two
           // arriving as one merged person.
           identityResolved: true,
+          // BUILD-99 (major gifts) Part 6 — THE OPEN ASKS ON THE SAME ROWS. Read
+          // as a second pass over the same rows rather than a branch inside the
+          // gift builder: a file can legitimately carry a gift last year and an
+          // open ask this year for the same person, and folding the two into one
+          // pass would make one of them win.
+          //
+          // THE CLIENT SENDS A NAME, NOT AN INDEX, AND THAT IS A DECISION. The
+          // gift builder's row→donor resolution is internal to it (BUILD-80's
+          // identity pass runs inside `buildTransactionRows` and its key→index
+          // map does not leave), so threading an index out would mean widening
+          // that builder's contract for this one caller. A name resolves
+          // server-side to the oldest matching record — the SAME rule
+          // `importGiftExtras` already uses for an imported soft credit
+          // (BUILD-98 Part 1), so this carries a decision that was already made
+          // and reviewed rather than inventing a second one. The index path stays
+          // available to the API (tests/build99-import.test.js drives it) for a
+          // caller that genuinely has one.
+          proposals: txMap.proposalAmount
+            ? buildProposalRows(parsed, txMap, { dateConvention: dateConventionChoice || undefined }).proposals
+            : [],
         };
       }
     } catch (e) {
@@ -2216,7 +2263,19 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     ["softCreditName","Soft credit to"],["softCreditAmount","Soft credit amount"],
     ["tributeName","In honour or memory of"],["tributeType","Tribute type"],["tributeNotify","Tribute: who to tell"],
     ["matchEmployer","Matching employer"],
-    ...(isTeam ? [["owner","Assigned officer"]] : []),
+    // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, so the mapper has
+    // to be able to say which one a column is. Team only, because the whole
+    // major-gifts layer is (the 2026-07-19 split); a Core org importing a file
+    // with an ask column maps it to a custom field as before rather than being
+    // shown a target it cannot use.
+    ...(isTeam ? [
+      ["owner","Assigned officer (portfolio owner)"],
+      ["proposalPurpose","Proposal: what the ask is for"],
+      ["proposalAmount","Proposal: ask amount (NOT a gift)"],
+      ["proposalStage","Proposal: stage"],
+      ["proposalCloseDate","Proposal: expected close date"],
+      ["proposalProbability","Proposal: probability"],
+    ] : []),
   ];
 
   return (
