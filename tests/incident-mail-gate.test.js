@@ -162,7 +162,7 @@ const mkDonor = async (id, org, email, isSample) =>
 
   // ── §4 · …BUT A REAL SIGNUP IS UNTOUCHED ─────────────────────────────────
   // The guard must not have bought safety by breaking the ordinary path.
-  console.log("\n— §4 · a real signup still gets its welcome —");
+  console.log("\n— §4 · a real signup starts with mail OFF (opt-in, 2026-09-24) —");
   const realEmail = "inc-prov-b@example.org";
   const real = await api("POST", "/auth/register-org", null, {
     orgName: "Incident Provision B", userName: "Ordinary", email: realEmail,
@@ -171,16 +171,21 @@ const mkDonor = async (id, org, email, isSample) =>
   ok("an ordinary signup succeeds", real.status === 201, { s: real.status, b: real.body });
   const realOrgId = real.body?.org?.id;
   const [realOrg] = await q(`SELECT emails_enabled, is_demo_org FROM orgs WHERE id=$1`, [realOrgId]);
-  ok("…with mail ON", realOrg && realOrg.emails_enabled === true, realOrg);
+  // CONTRACT CHANGE 2026-09-24 (Jonathan): mail is opt-in per org, by a
+  // super-admin only. An ordinary signup used to start ON; it now starts OFF.
+  ok("…with mail OFF until a super-admin opts it in", realOrg && realOrg.emails_enabled === false, realOrg);
   ok("…and not marked as fiction", realOrg && realOrg.is_demo_org === false, realOrg);
 
   // The drip is created asynchronously (fire-and-forget after the response).
   let realSeq = [];
-  for (let i = 0; i < 30 && realSeq.length === 0; i++) {
+  for (let i = 0; i < 10 && realSeq.length === 0; i++) {
     realSeq = await q(`SELECT id FROM sequences WHERE org_id=$1 AND trigger='onboarding'`, [realOrgId]);
     if (!realSeq.length) await new Promise(r => setTimeout(r, 200));
   }
-  ok("the onboarding drip IS created for a genuine signup", realSeq.length === 1, realSeq);
+  // …and so, by the rule sendOnboardingSequence already carries (a drip is
+  // not merely unsent for a gated org, it is not CREATED), no drip exists
+  // until a super-admin opts the org in.
+  ok("no onboarding drip is created while the new org's mail is off", realSeq.length === 0, realSeq);
 
   // ── §5 · THE SWITCH, AND THE DISAGREEMENT IT REFUSES ─────────────────────
   console.log("\n— §5 · the org-level switch —");

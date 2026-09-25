@@ -73,8 +73,8 @@ async function reset() {
   const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const server = strip(fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8"));
   const migc = strip(fs.readFileSync(path.join(__dirname, "..", "routes", "migc.js"), "utf8"));
-  const proxy = server.slice(server.indexOf("const resend = new Proxy(_rawResend"), server.indexOf("const resend = new Proxy(_rawResend") + 2500);
-  ok("§3 the client proxy refuses before calling the provider", /blockedRecipientIn\(opts\)[\s\S]*?return \{ data: null, error:[\s\S]*?eTarget\.send\(opts\)/.test(proxy));
+  const proxy = server.slice(server.indexOf("const resend = new Proxy(_rawResend"), server.indexOf("const resend = new Proxy(_rawResend") + 5000);
+  ok("§3 the client proxy refuses before calling the provider", /blockedRecipientIn\(opts\)[\s\S]*?return \{ data: null, error:[\s\S]*?eTarget\.send\((opts|wire)\)/.test(proxy));
   ok("§3 the raw client is used exactly once (the ops alert)", (server.match(/_rawResend\.emails\.send\(/g) || []).length === 1);
   const ops = server.slice(server.indexOf("async function opsAlert"), server.indexOf("_rawResend.emails.send("));
   ok("§3 …and the ops alert checks the block first", /isBlockedAddress\(to\)/.test(ops));

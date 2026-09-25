@@ -67,6 +67,13 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
     body: JSON.stringify({ orgName: "W4 Mailworks " + uniq(), userName: "W4 Admin", email, password: "loadtest1234" }),
   }).then(r => r.json());
   const tok = reg.token, orgId = reg.org.id;
+  // Mail is opt-in per org, by a super-admin (2026-09-24): a new org starts
+  // OFF. This suite is about what a mail-ON org does, so it opts in first,
+  // standing in for POST /admin/orgs/:id/email-switch.
+  await q("UPDATE orgs SET emails_enabled=true WHERE id=$1", [orgId]);
+  // …and waits out the 5s mail-gate cache the signup's own gate check filled
+  // (the real switch route clears it; SQL can't).
+  await new Promise(r => setTimeout(r, 5100));
   await api("POST", "/onboarding/complete", tok, {});
 
   const donorEmail = `wren-w4-${uniq()}@test.local`;

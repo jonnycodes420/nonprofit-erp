@@ -131,9 +131,24 @@ const resend = new Proxy(_rawResend, {
             try { _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
             return { data: null, error: { name: "blocked_address", message: why } };
           }
+          // An org-tagged send (donorSendOpts tags it) whose org has mail OFF
+          // is refused here too — the second lock behind donorMailDecision.
+          const orgId = opts && opts._stewardOrgId;
+          if (orgId) {
+            const gate = await orgMaySendEmail(orgId);
+            if (!gate.send) {
+              const why = "org_mail_off: " + gate.reason;
+              console.warn(`[mail-gate] REFUSED at the client: org ${orgId} (${gate.reason}), kind=${opts._stewardKind || "?"}`);
+              try { _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
+              return { data: null, error: { name: "org_mail_off", message: why } };
+            }
+          }
+          // Steward's own tags never reach the provider.
+          const wire = {};
+          for (const k of Object.keys(opts || {})) if (!k.startsWith("_steward")) wire[k] = opts[k];
           let out, thrown = null;
           try {
-            out = await eTarget.send(opts);
+            out = await eTarget.send(wire);
           } catch (e) { thrown = e; }
           // The log must never break a send, and never swallow a provider
           // failure the caller is already handling.
@@ -4591,7 +4606,10 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   // re-derived and shown never to have moved.
   const signedAt = new Date();
   const trialEndsAt = computeTrialEnd(signedAt).toISOString();
-  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at) VALUES (?,?,?,?,0,?,'trial','trialing',?,?)",
+  // 2026-09-24 — MAIL IS OPT-IN PER ORG, BY A SUPER-ADMIN ONLY. Every org the
+  // product creates starts with emails_enabled=false; POST /admin/orgs/:id/
+  // email-switch is the one way on.
+  await run("INSERT INTO orgs (id, name, mission, ein, onboarding_complete, org_slug, plan, subscription_status, signed_at, trial_ends_at, emails_enabled) VALUES (?,?,?,?,0,?,'trial','trialing',?,?,false)",
     [orgId, orgName, orgMission || "", ein || "", orgSlug, signedAt.toISOString(), trialEndsAt]);
   // BUILD-58 W-3: every org is born with a usable ledger (chart of accounts +
   // General Operating fund) — gift stamps must never no-op on a fresh org.
@@ -4762,8 +4780,10 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
                        signed_at, trial_ends_at, emails_enabled, is_demo_org)
      VALUES (?,?,0,?,'trial','trialing',?,?,?,?)`,
+    // 2026-09-24 — mail OFF for every new org (opt-in, super-admin only);
+    // `provisioned` still marks the org as fiction.
     [orgId, orgName, orgSlug, signedAt.toISOString(), trialEndsAt,
-     !isProvisioned, isProvisioned]
+     false, isProvisioned]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -15802,6 +15822,9 @@ async function donorSendOpts(orgId, donorEmail, source = "campaign") {
     from: identity.from,
     ...(identity.replyTo ? { replyTo: identity.replyTo } : {}),
     headers: unsubscribeHeaders(donorEmail, orgId, source, identity),
+    // Read by the client proxy (logged per org, refused if the org's mail is
+    // off) and stripped before the provider sees the payload.
+    _stewardOrgId: orgId, _stewardKind: source,
   };
 }
 
@@ -28368,8 +28391,8 @@ async function provisionOrgFromCloseLink(session) {
 
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
-                       signed_at, trial_ends_at, stripe_subscription_id, close_link_id, ${billingCustomerColumn()})
-     VALUES (?,?,0,?,?,'trialing',?,?,?,?,?)`,
+                       signed_at, trial_ends_at, stripe_subscription_id, close_link_id, ${billingCustomerColumn()}, emails_enabled)
+     VALUES (?,?,0,?,?,'trialing',?,?,?,?,?,false)`,
     [orgId, link.org_name, orgSlug, plan.id, signedAt.toISOString(), trialEndsAt.toISOString(), subId, closeLinkId, customerId]
   );
   await ensureOrgLedger(orgId).catch(e => console.error("[close-link] ledger provisioning:", e.message));
@@ -33419,8 +33442,8 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
   const slugBase = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "org";
   const orgSlug = `${slugBase}-${uuid().slice(0, 4)}`;
   await run(
-    `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein)
-     VALUES (?,?,?,?,?,1,?)`,
+    `INSERT INTO orgs (id, name, org_slug, plan, subscription_status, onboarding_complete, ein, emails_enabled)
+     VALUES (?,?,?,?,?,1,?,false)`,
     [orgId, name, orgSlug, "portal", "active", ein]);
   // BUILD-58 W-3: /network/signup mints onboarding_complete=1 and never runs
   // the onboarding step that used to (incidentally) provision the chart of
