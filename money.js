@@ -131,6 +131,28 @@ function formatCents(cents, { symbol = "$" } = {}) {
   return neg ? `-${s}` : s;
 }
 
+// BUILD-99 (major gifts) — THE SAME AMOUNT MUST NOT APPEAR TWICE IN TWO SHAPES.
+// `formatCents` always prints two decimals, which is right for a receipt, a
+// ledger line and anywhere a figure has to be exact to the penny. It is WRONG
+// in a sentence sitting under a tile the client rendered with `fmtFull`, which
+// drops a trailing `.00`: the Major gifts screen read "$50,000" in the tile and
+// "$50,000.00" in the line beneath it, and two shapes of one number read as two
+// numbers. Found by looking at a screenshot, not by an assertion.
+//
+// This is `fmtFull`'s rule stated once on the server: cents when there are
+// cents, nothing when there are none. It is a SIBLING of `formatCents`, never a
+// change to it — a receipt still says $50,000.00 and should.
+function formatCentsPlain(cents, { symbol = "$" } = {}) {
+  const c = Math.trunc(Number(cents) || 0);
+  const neg = c < 0;
+  const abs = Math.abs(c);
+  const whole = abs % 100 === 0;
+  const s = `${symbol}${(abs / 100).toLocaleString("en-US",
+    whole ? { minimumFractionDigits: 0, maximumFractionDigits: 0 }
+          : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return neg ? `-${s}` : s;
+}
+
 // True when a dollars-shaped value carries a non-zero cents component. Used by
 // the import invariant and by the audit script.
 function hasCents(value) {
@@ -153,6 +175,7 @@ function parseMoneyOrThrow(input, field = "amount") {
 }
 
 module.exports = {
+  formatCentsPlain,
   MAX_CENTS,
   toCents, toDollars, fromDollars, sumDollars,
   formatCents, hasCents, parseMoneyOrThrow,

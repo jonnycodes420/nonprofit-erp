@@ -12849,7 +12849,7 @@ app.get("/donors/:id/proposals", requireAuth, wrap(async (req, res) => {
   res.json({
     proposals,
     weighted: { cents: w.cents, amount: toDollars(w.cents), counted: w.counted, unset: w.unset, openCount: w.openCount,
-                sentence: P.weightedSentence(w, money.formatCents) },
+                sentence: P.weightedSentence(w, money.formatCentsPlain) },
     stages: P.PROPOSAL_STAGES, probabilities: P.PROBABILITIES, declineReasons: P.DECLINE_REASONS,
     // The profile's own form needs the pickers too, or it can only ever offer
     // "no fund" and "the relationship owner" — found by the walk.
@@ -12927,7 +12927,7 @@ app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAc
     const clash = await openProposalConflict(orgId, donor.id, fund.fundId, null);
     return res.status(409).json(clash || { code: "proposal_already_open", error: "There is already an open proposal for that fund." });
   }
-  await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} — ${money.formatCents(askCents)}, ${P.stageLabel(stage)}`);
+  await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} — ${money.formatCentsPlain(askCents)}, ${P.stageLabel(stage)}`);
   const funds = await orgFundNames(orgId);
   const [row] = await query("SELECT * FROM opportunities WHERE id=?", [id]);
   res.status(201).json(proposalRow(row, funds));
@@ -13119,7 +13119,7 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
   const sort = ["expected", "amount", "stage"].includes(String(req.query.sort)) ? String(req.query.sort) : "expected";
   const proposals = P.sortProposals(all, sort);
   const byStage = P.pipelineByStage(all).map(r => ({
-    ...r, amount: toDollars(r.askCents), sentence: P.stageTileSentence(r, money.formatCents),
+    ...r, amount: toDollars(r.askCents), sentence: P.stageTileSentence(r, money.formatCentsPlain),
   }));
   const w = P.weightedTotal(all);
   const officers = await query(
@@ -13127,10 +13127,10 @@ app.get("/proposals", requireAuth, wrap(async (req, res) => {
   res.json({
     proposals, byStage, sort,
     weighted: { cents: w.cents, amount: toDollars(w.cents), counted: w.counted, unset: w.unset,
-                openCount: w.openCount, sentence: P.weightedSentence(w, money.formatCents) },
+                openCount: w.openCount, sentence: P.weightedSentence(w, money.formatCentsPlain) },
     openAsk: { cents: w.askCents, amount: toDollars(w.askCents),
                sentence: w.openCount === 0 ? "No open proposals yet."
-                 : `${money.formatCents(w.askCents)} asked for across ${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"} — the ask amounts, not what anybody expects to land.` },
+                 : `${money.formatCentsPlain(w.askCents)} asked for across ${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"} — the ask amounts, not what anybody expects to land.` },
     stages: P.PROPOSAL_STAGES, probabilities: P.PROBABILITIES, declineReasons: P.DECLINE_REASONS,
     funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
     officers: officers.map(o => ({ id: o.id, name: o.name })),
@@ -13195,7 +13195,7 @@ app.get("/portfolio/unassigned-prospects", requireAuth, wrap(async (req, res) =>
   res.json({
     thresholdCents, thresholdAmount: toDollars(thresholdCents),
     count: c.n, shown: rows.length,
-    sentence: PF.unassignedSentence({ count: c.n, thresholdCents }, money.formatCents),
+    sentence: PF.unassignedSentence({ count: c.n, thresholdCents }, money.formatCentsPlain),
     prospects: rows.map(r => ({
       donorId: r.id, name: r.name, email: r.email, kind: r.kind || "person",
       lifetime: toDollars(toCents(r.total_giving) || 0), giftCount: Number(r.gift_count) || 0,
@@ -13290,7 +13290,7 @@ app.get("/portfolio/:officerId", requireAuth, wrap(async (req, res) => {
     count: { value: ranked.length, sentence: PF.portfolioCountSentence(ranked.length, officer.name) },
     target: { ...prog, amount: prog.targetCents == null ? null : toDollars(prog.targetCents),
               committedAmount: toDollars(prog.committedCents), committedCount: won.n,
-              sentence: PF.targetSentence(prog, money.formatCents) },
+              sentence: PF.targetSentence(prog, money.formatCentsPlain) },
     cap: { ...cap, sentence: PF.capSentence(cap) },
   });
 }));
@@ -13625,7 +13625,7 @@ async function briefRowsFor(orgId, donorId) {
   const givingWord = t("giver_singular") || "donor";
 
   lines.push(`person:${donor.id} — ${donor.name}${donor.kind === "organisation" ? " (an organisation)" : ""}, `
-    + `${money.formatCents(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
+    + `${money.formatCentsPlain(toCents(donor.total_giving) || 0)} given in total across ${Number(donor.gift_count) || 0} gifts, `
     + `first on ${donor.first_gift_date || "no recorded date"}, most recently on ${donor.last_gift_date || "no recorded date"}`
     + `${donor.stage ? `, at the stage "${donor.stage}"` : ""}. This organisation calls somebody like this a ${givingWord}.`);
 
@@ -13637,7 +13637,7 @@ async function briefRowsFor(orgId, donorId) {
       ORDER BY g.date DESC, g.id LIMIT 12`, [orgId, donorId]);
   for (const g of gifts) {
     refs.add(`gift:${g.id}`);
-    lines.push(`gift:${g.id} — ${money.formatCents(toCents(g.amount) || 0)} on ${g.date}`
+    lines.push(`gift:${g.id} — ${money.formatCentsPlain(toCents(g.amount) || 0)} on ${g.date}`
       + `${g.fund_name ? ` to ${t("fund_singular") || "fund"} "${g.fund_name}"` : ""}`
       + `${g.campaign ? `, appeal "${g.campaign}"` : ""}${g.payment_method ? `, by ${g.payment_method}` : ""}.`);
   }
@@ -13646,7 +13646,7 @@ async function briefRowsFor(orgId, donorId) {
   for (const p of await query(
     `SELECT id, amount, due_date, status FROM pledges WHERE org_id=? AND donor_id=? ORDER BY due_date DESC LIMIT 6`, [orgId, donorId])) {
     refs.add(`pledge:${p.id}`);
-    lines.push(`pledge:${p.id} — a pledge of ${money.formatCents(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
+    lines.push(`pledge:${p.id} — a pledge of ${money.formatCentsPlain(toCents(p.amount) || 0)} due ${p.due_date}, currently ${p.status}. A pledge is a promise, not money received.`);
   }
 
   // HOUSEHOLD AND RELATED PEOPLE.
@@ -13666,7 +13666,7 @@ async function briefRowsFor(orgId, donorId) {
        JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 6`, [orgId, donorId]).catch(() => [])) {
     refs.add(`softcredit:${sc.id}`);
-    lines.push(`softcredit:${sc.id} — soft-credited for ${money.formatCents(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
+    lines.push(`softcredit:${sc.id} — soft-credited for ${money.formatCentsPlain(toCents(sc.amount) || 0)} given by ${sc.giver} on ${sc.date}`
       + `${sc.role ? ` as ${sc.role}` : ""}. The money was ${sc.giver}'s; this is recognition, not their own giving.`);
   }
 
@@ -13677,7 +13677,7 @@ async function briefRowsFor(orgId, donorId) {
       WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
       ORDER BY o.expected_close NULLS LAST LIMIT 3`, [orgId, donorId, P.OPEN_STAGE_KEYS])) {
     refs.add(`proposal:${o.id}`);
-    lines.push(`proposal:${o.id} — an open ask of ${money.formatCents(toCents(o.target_amount) || 0)} for "${o.name}"`
+    lines.push(`proposal:${o.id} — an open ask of ${money.formatCentsPlain(toCents(o.target_amount) || 0)} for "${o.name}"`
       + `${o.fund_name ? ` (${o.fund_name})` : ""}, at stage "${P.stageLabel(o.proposal_stage)}"`
       + `${o.probability != null ? `, which the officer put at ${o.probability} per cent` : ", with no probability set"}`
       + `${o.expected_close ? `, expected to close ${civilDateOf(o.expected_close)}` : ""}`
@@ -13975,7 +13975,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
     const askCents = r ? (toCents(r.amt) || 0) : 0;
     return { stage: s.key, label: s.label, kind: s.kind, count: r ? r.n : 0,
              askCents, amount: toDollars(askCents),
-             sentence: P.stageTileSentence({ stage: s.key, label: s.label, count: r ? r.n : 0, askCents }, money.formatCents) };
+             sentence: P.stageTileSentence({ stage: s.key, label: s.label, count: r ? r.n : 0, askCents }, money.formatCentsPlain) };
   });
   const openRows = pipeline.filter(r => P.OPEN_STAGE_KEYS.includes(r.stage));
   const openCents = openRows.reduce((s, r) => s + (toCents(r.amt) || 0), 0);
@@ -13989,7 +13989,7 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
   const tile = (id, value) => ({
     id, label: MG.metric(id).label, value,
     definition: MG.definitionFor(id),
-    sentence: MG.tileSentence(id, value, money.formatCents),
+    sentence: MG.tileSentence(id, value, money.formatCentsPlain),
   });
 
   res.json({
@@ -14004,12 +14004,12 @@ app.get("/major-gifts/dashboard", requireAuth, wrap(async (req, res) => {
       weighted: { ...tile("weighted", weightedCents), amount: toDollars(weightedCents), counted: withProb,
                   unset: openCount - withProb,
                   sentence: P.weightedSentence({ cents: weightedCents, counted: withProb, unset: openCount - withProb,
-                                                 openCount, askCents: openCents }, money.formatCents) },
+                                                 openCount, askCents: openCents }, money.formatCentsPlain) },
       dueThisQuarter: { ...tile("dueThisQuarter", dueQ[0].n), amount: toDollars(toCents(dueQ[0].amt) || 0) },
       askedThisYear: { ...tile("askedThisYear", askedCents), amount: toDollars(askedCents), count: askedY[0].n },
       committedThisYear: { ...tile("committedThisYear", committedCents), amount: toDollars(committedCents), count: committedY[0].n },
     },
-    askedVsCommitted: MG.askedVsCommitted({ askedCents, committedCents }, money.formatCents),
+    askedVsCommitted: MG.askedVsCommitted({ askedCents, committedCents }, money.formatCentsPlain),
     officerActivity: {
       definition: MG.definitionFor("conversationsThisMonth"),
       rows: convs.map(r => ({ officerName: r.who, conversations: r.n })),

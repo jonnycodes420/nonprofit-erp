@@ -264,6 +264,11 @@ const cents = v => Math.round(Number(v) * 100);
     ok(`§5b ${r.label} reconciles to a hand count (${h.c})`, r.count === h.c && r.askCents === cents(h.amt), { tile: r, hand: h });
   }
   ok("§5b the weighted total carries its sentence", String(scr.body.weighted?.sentence || "").length > 20, scr.body.weighted);
+  // ONE AMOUNT, ONE SHAPE — see build99-dashboard §2. A whole amount in a
+  // sentence must not carry a trailing .00 while the tile above it does not.
+  const sentences = [scr.body.weighted.sentence, scr.body.openAsk.sentence, ...scr.body.byStage.map(r => r.sentence)];
+  ok("§5b no sentence prints a whole amount with a trailing .00",
+     sentences.every(x => !/\$[\d,]+\.00\b/.test(String(x || ""))), sentences.filter(x => /\$[\d,]+\.00\b/.test(String(x || ""))));
   const dates = rows.map(r => r.expectedClose || "9999-12-31");
   ok("§5b sorted by expected date by default", dates.slice().sort().join("|") === dates.join("|"), dates);
   const byOfficer = await api("GET", "/proposals?officerId=u_b99p", tok);

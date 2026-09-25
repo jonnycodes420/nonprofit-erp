@@ -150,9 +150,26 @@ const plus = n => { const d = new Date(); d.setDate(d.getDate() + n); return civ
      d.body.tiles.askedThisYear.value === cents(handA.amt) && d.body.tiles.askedThisYear.count === handA.n,
      { api: d.body.tiles.askedThisYear, hand: handA });
   ok("§2 the asked-vs-committed line names both figures and the fraction",
-     /\$30,000(\.00)? committed against \$59,000(\.00)? asked for this year/.test(d.body.askedVsCommitted)
+     /\$30,000 committed against \$59,000 asked for this year/.test(d.body.askedVsCommitted)
      && /51% of what you asked for/.test(d.body.askedVsCommitted),
      d.body.askedVsCommitted);
+  // ONE AMOUNT, ONE SHAPE. The screen renders a tile with `fmtFull`, which drops
+  // a trailing `.00`; the sentence under it used `formatCents`, which never does
+  // — so the Major gifts screen read "$50,000" in the tile and "$50,000.00" in
+  // the line beneath it, and two shapes of one number read as two numbers. Found
+  // by LOOKING at a screenshot, not by an assertion, which is why there is one
+  // now. (A receipt still says $50,000.00, and should — `formatCents` is
+  // unchanged and `formatCentsPlain` is its sibling.)
+  const moneySentences = [
+    d.body.askedVsCommitted,
+    d.body.tiles.pipeline.definition && d.body.tiles.weighted.sentence,
+    ...d.body.byStage.map(r => r.sentence),
+  ].filter(x => typeof x === "string");
+  const trailing = moneySentences.filter(x => /\$[\d,]+\.00\b/.test(x));
+  ok("§2 no sentence on this screen prints a whole amount with a trailing .00",
+     trailing.length === 0, trailing.slice(0, 3));
+  ok("§2 …and a figure WITH real cents still shows them",
+     /\$1,234\.56/.test(require("../money").formatCentsPlain(123456)), require("../money").formatCentsPlain(123456));
 
   console.log("\n— §2b · officer activity and the follow-up backlog —");
   const [handConv] = await q(
