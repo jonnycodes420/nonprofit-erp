@@ -303,6 +303,12 @@ function bResolver(routePath, param) {
     // BUILD-99 (major gifts) Part 4 — a brief IS an agent run, so the probe is
     // org B's own run id.
     runId: `arun_${B}`,
+    // BUILD-100 (grants) Parts 2, 3 and 4 — a deadline Steward watches, a file a
+    // grant carries and a line of restricted spending are each org B's business,
+    // and each route must answer 404 to org A rather than acting on the row.
+    msId: `gms_${B}`,
+    docId: `gdoc_${B}`,
+    spendId: `gsp_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;
