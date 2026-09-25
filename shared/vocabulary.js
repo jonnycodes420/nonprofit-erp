@@ -175,3 +175,40 @@ export function seasonDaysAway(vocabulary, today) {
   const days = Math.round((b - a) / 86400000);
   return days >= 0 && days <= SEASON_HORIZON_DAYS ? days : null;
 }
+
+// ── FIX-1: AN ORGANISATION IS NEVER A "SPONSOR" ─────────────────────────────
+// The walk found the Sunrise Foundation called a "sponsor", because the org's
+// word for a GIVER was applied to an organisation. The org's word describes the
+// people who give to it. An organisation is called what it is — foundation,
+// church, business — from `donors.kind`, the funder type (BUILD-100), the
+// imported donor type, and last its own name. Nothing matched: "organisation".
+const ORG_WORD_BY_FUNDER_TYPE = {
+  private_foundation: "foundation", community_foundation: "foundation", foundation: "foundation",
+  church: "church", corporate: "business", business: "business",
+  government: "government agency", daf_sponsor: "donor-advised fund",
+};
+// Whole words only, never substrings: "Churchill Ltd" is a business name, not
+// a church, and it would be one if this read letters instead of words.
+const ORG_WORD_BY_TOKEN = [
+  [["foundation", "trust", "endowment"], "foundation"],
+  [["church", "parish", "ministries", "ministry", "chapel", "congregation", "umc", "diocese", "synagogue", "temple", "mosque"], "church"],
+  [["inc", "llc", "ltd", "corp", "corporation", "company", "co", "business", "bank"], "business"],
+];
+const tokensOf = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+
+export function orgWordFor(donor) {
+  const ft = String((donor && (donor.funder_type || donor.funderType)) || "").toLowerCase();
+  if (ORG_WORD_BY_FUNDER_TYPE[ft]) return ORG_WORD_BY_FUNDER_TYPE[ft];
+  for (const src of [donor && (donor.donor_type || donor.donorType), donor && donor.name]) {
+    const toks = new Set(tokensOf(src));
+    for (const [words, label] of ORG_WORD_BY_TOKEN) if (words.some(w => toks.has(w))) return label;
+  }
+  return "organisation";
+}
+
+// giverWordFor(donor, vocabulary) — the word for THIS giver.
+export function giverWordFor(donor, vocabulary, { plural = false } = {}) {
+  if (donor && donor.kind === "organisation") return orgWordFor(donor);
+  const v = normalizeVocabulary(vocabulary);
+  return plural ? v.giver_plural : v.giver_singular;
+}
