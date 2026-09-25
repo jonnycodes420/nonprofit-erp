@@ -4,6 +4,7 @@ import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartH
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { EventsDesk } from "./EventsDesk";
+import { ProposalsView } from "./MajorGifts";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -109,6 +110,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     { id: "acknowledgments", label: "Acknowledgments" },
     // BUILD-98 (switch) Part 4 — the donor side of an event.
     { id: "events", label: "Events" },
+    // BUILD-99 Part 1 — one ask to one person. The rows are BUILD-15's
+    // `opportunities`, so this screen and the pipeline board's ask totals are
+    // one set of rows (shared/proposalShape.js says why there is no second table).
+    { id: "proposals", label: "Proposals" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -140,6 +145,13 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
           itself. */}
       {!loading && subtab === "deposits" && (
         <DepositsView isReadOnly={isReadOnly} roTip={roTip} />
+      )}
+
+      {/* BUILD-99 Part 1 — deliberately NOT wired to Fundraising's own `load`,
+          for the reason the deposit sheet is not (above): a parent reload
+          unmounts the view and takes the confirmation with it. It reloads itself. */}
+      {!loading && subtab === "proposals" && (
+        <ProposalsView isReadOnly={isReadOnly} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "events" && (

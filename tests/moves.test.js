@@ -169,7 +169,14 @@ async function seedDesignation(o, donorId, kind) {
   r = await api("PUT", `/opportunities/${opp2}`, off2, { status: "open" });
   ok("reopen restores open ask", r.status === 200 && r.body.status === "open" && r.body.closed_at === null, r.body);
 
-  // won-by-amount (no gift row) path
+  // won-by-amount (no gift row) path.
+  // BUILD-99 Part 1 NARROWED THIS: an ask is a proposal, and one person may have
+  // only ONE OPEN proposal per fund. mv_d2's first ask was just reopened, so it
+  // is closed again here before a second one is written — under BUILD-15 both
+  // could be open at once, and that is precisely the double-ask BUILD-99
+  // refuses. The refusal itself is asserted in tests/build99-proposals.test.js §5.
+  r = await api("PUT", `/opportunities/${opp2}`, off2, { status: "lost" });
+  ok("BUILD-99: the first ask is closed before a second one on the same person", r.status === 200, r.body);
   r = await api("POST", "/donors/mv_d2/opportunities", off2, { name: "Quick close", targetAmount: 8000 });
   const opp3 = r.body.id;
   r = await api("PUT", `/opportunities/${opp3}`, off2, { status: "won", giftAmount: 7500 });

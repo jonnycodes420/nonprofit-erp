@@ -12494,10 +12494,21 @@ app.post("/donors/:id/opportunities", requireAuth, requirePlan("team"), checkWri
   // Officer = the donor's relationship owner; falls back to the creating user.
   let officerId = d[0].assigned_to, officerName = d[0].assigned_to_name;
   if (!officerId) { officerId = req.user.userId; const u = await query("SELECT name FROM users WHERE id=?", [req.user.userId]); officerName = u[0]?.name || ""; }
+  // BUILD-99 Part 1 — THIS DOOR AND THE PROPOSALS DOOR ARE ONE OBJECT, so they
+  // obey one rule. An ask written here is a proposal at stage `asked` (BUILD-15's
+  // own word for what target_amount is), its status is DERIVED from that stage by
+  // the one derivation, and "one open at a time per fund" applies — because two
+  // doors with two rules over the same rows is how a double-ask gets in. This
+  // NARROWS BUILD-15, which allowed several open asks on one prospect; the
+  // narrowing is the brief's, and `tests/moves.test.js` was updated to match.
+  const P99 = await proposalMod();
+  const clash = await openProposalConflict(req.user.orgId, req.params.id, null, null);
+  if (clash) return res.status(409).json(clash);
   const id = "opp_" + uuid().slice(0, 8);
   await run(
-    "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,expected_close,created_by,created_by_name) VALUES (?,?,?,?,?,'open',?,?,?,?,?)",
-    [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt, officerId, officerName || "", expectedClose || null, actor(req).id, actor(req).name]);
+    "INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,proposal_stage,officer_id,officer_name,expected_close,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    [id, req.user.orgId, req.params.id, (name || "").trim() || "Ask", amt,
+     P99.statusForStage("asked"), "asked", officerId, officerName || "", expectedClose || null, actor(req).id, actor(req).name]);
   const rows = await query("SELECT * FROM opportunities WHERE id=?", [id]);
   res.status(201).json({ ...rows[0], target_amount: parseFloat(rows[0].target_amount) || 0 });
 }));
@@ -12515,6 +12526,13 @@ app.put("/opportunities/:id", requireAuth, requirePlan("team"), checkWriteAccess
   if (status !== undefined) {
     if (!["open", "won", "lost"].includes(status)) return res.status(400).json({ error: "Invalid status" });
     sets.push("status=?"); params.push(status);
+    // BUILD-99 Part 1 — THE STAGE MOVES WITH THE STATUS, ALWAYS. A status
+    // written here without its stage would leave the Proposals screen showing
+    // "Asked" on a row the board calls won: one object, two truths, and the way
+    // they disagree is a board report that is wrong. `stageFromLegacyStatus` is
+    // the same mapping the migration used, so this door and that one agree.
+    const P99 = await proposalMod();
+    sets.push("proposal_stage=?"); params.push(P99.stageFromLegacyStatus(status));
     if (status === "won") {
       let amt = giftAmount != null ? parseFloat(giftAmount) : null;
       let gId = giftId || null;
@@ -12541,6 +12559,403 @@ app.delete("/opportunities/:id", requireAuth, wrap(async (req, res) => {
   const { changes } = await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   if (!changes) return res.status(404).json({ error: "Not found" }); // BUILD-75 B: a foreign/unknown id answers 404, never a false success — one answer everywhere
   res.json({ success: true });
+}));
+
+// ── BUILD-99 Part 1 — PROPOSALS ────────────────────────────────────────────
+// A proposal is one ask to one person or household: purpose, ask amount,
+// expected close, stage, a probability SHE set, the fund it lands in, the
+// officer who owns it, notes. shared/proposalShape.js holds every rule; these
+// routes are its only writers. Nothing here infers a capacity, a probability or
+// an amount — see that module's header for why the probability list is closed.
+//
+// The rows live in `opportunities` (BUILD-15's table, extended — db.js says
+// why), so the pipeline board's ask totals, wonThisPeriod and officer activity
+// keep reading THE SAME ROWS. One ask, one place.
+async function proposalMod() { return import("./shared/proposalShape.js"); }
+
+// A `DATE` column comes back from pg as a JS Date at LOCAL midnight, and
+// `String(thatDate).slice(0,10)` is "Sun Nov 15" — which is what the screen
+// showed on this suite's first run, and what every sort and filter downstream
+// would then have been comparing. `toISOString()` is not the fix either: local
+// midnight east of UTC is the PREVIOUS day in UTC, so an expected close date
+// would move by one. The local calendar parts are the only reading that is
+// right in every timezone, because a DATE has no timezone to begin with.
+function civilDateOf(v) {
+  if (!v) return null;
+  if (v instanceof Date) {
+    const y = v.getFullYear(), m = String(v.getMonth() + 1).padStart(2, "0"), d = String(v.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
+// The wire shape. Money leaves as dollars (every other money route does) AND as
+// integer cents, because the weighted total is computed in cents and a screen
+// that re-derives cents from a float is how a total ends up a penny out.
+function proposalRow(r, funds) {
+  const askCents = toCents(r.target_amount) || 0;
+  return {
+    id: r.id, donorId: r.donor_id, donorName: r.donor_name || undefined,
+    purpose: r.name || "", askAmount: toDollars(askCents), askCents,
+    stage: r.proposal_stage, status: r.status,
+    probability: r.probability == null ? null : Number(r.probability),
+    expectedClose: civilDateOf(r.expected_close),
+    fundId: r.fund_id || null,
+    fundName: r.fund_id ? (funds?.get(r.fund_id) || null) : null,
+    officerId: r.officer_id || null, officerName: r.officer_name || "",
+    notes: r.notes || "",
+    declineReason: r.decline_reason || null, declinedOn: r.declined_on || null,
+    commitKind: r.commit_kind || null,
+    giftId: r.gift_id || null, pledgeId: r.pledge_id || null,
+    giftAmount: r.gift_amount == null ? null : toDollars(toCents(r.gift_amount) || 0),
+    createdAt: r.created_at, closedAt: r.closed_at,
+    createdByName: r.created_by_name || "",
+  };
+}
+
+async function orgFundNames(orgId) {
+  const rows = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]);
+  return new Map(rows.map(r => [r.id, r.name]));
+}
+
+// A fund id a caller names is checked against THIS org before anything is
+// written — never trusted off a payload (the recordGift rule, same reason).
+async function checkProposalFund(orgId, fundId) {
+  if (!fundId) return { ok: true, fundId: null };
+  const rows = await query("SELECT id, name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
+  if (!rows.length) return { ok: false };
+  return { ok: true, fundId: rows[0].id, fundName: rows[0].name };
+}
+
+// THE HOUSEHOLD HALF OF "ONE OPEN AT A TIME PER FUND". The per-person half is a
+// unique index (db.js); this is the half a partial index cannot express, and it
+// is the half that matters most — asking a husband and a wife separately for
+// the capital campaign is exactly the double-ask the rule exists to stop.
+async function openProposalConflict(orgId, donorId, fundId, excludeId) {
+  const [me] = await query("SELECT id, household_id FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
+  if (!me) return null;
+  const P = await proposalMod();
+  const rows = await query(
+    `SELECT o.id, o.donor_id, d.name AS donor_name, d.household_id
+       FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+      WHERE o.org_id = ? AND o.proposal_stage = ANY(?::text[]) AND COALESCE(o.fund_id,'') = ?
+        AND (d.id = ? OR (?::text IS NOT NULL AND d.household_id = ?))
+        AND d.deleted_at IS NULL`,
+    [orgId, P.OPEN_STAGE_KEYS, fundId || "", donorId, me.household_id, me.household_id]);
+  const hit = rows.find(r => r.id !== excludeId);
+  if (!hit) return null;
+  const fundLabel = fundId ? (await orgFundNames(orgId)).get(fundId) || "fund" : "no particular fund";
+  return {
+    code: "proposal_already_open",
+    error: hit.donor_id === donorId
+      ? `There is already an open proposal for ${fundLabel}. Close or move that one first.`
+      : `${hit.donor_name} in the same household already has an open proposal for ${fundLabel}. Close or move that one first.`,
+    conflictId: hit.id,
+  };
+}
+
+// GET /donors/:id/proposals — the proposals on one person, newest ask first with
+// the open ones on top. The profile panel sits ABOVE giving history.
+app.get("/donors/:id/proposals", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const P = await proposalMod();
+  const funds = await orgFundNames(req.user.orgId);
+  const rows = await query(
+    `SELECT * FROM opportunities WHERE org_id=? AND donor_id=?
+      ORDER BY (proposal_stage = ANY(?::text[])) DESC, expected_close NULLS LAST, created_at DESC`,
+    [req.user.orgId, req.params.id, P.OPEN_STAGE_KEYS]);
+  const proposals = rows.map(r => proposalRow(r, funds));
+  const w = P.weightedTotal(proposals);
+  res.json({
+    proposals,
+    weighted: { cents: w.cents, amount: toDollars(w.cents), counted: w.counted, unset: w.unset, openCount: w.openCount,
+                sentence: P.weightedSentence(w, money.formatCents) },
+    stages: P.PROPOSAL_STAGES, probabilities: P.PROBABILITIES, declineReasons: P.DECLINE_REASONS,
+    // The profile's own form needs the pickers too, or it can only ever offer
+    // "no fund" and "the relationship owner" — found by the walk.
+    funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
+    officers: (await query("SELECT id, name FROM users WHERE org_id=? ORDER BY name", [req.user.orgId]).catch(() => []))
+      .map(o => ({ id: o.id, name: o.name })),
+  });
+}));
+
+// POST /donors/:id/proposals — one ask. Team, because the whole major-gifts
+// layer is (the BUILD-19/BUILD-20 split; a Core org sees the panel behind glass).
+app.post("/donors/:id/proposals", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const P = await proposalMod();
+  const orgId = req.user.orgId;
+  const [donor] = await query("SELECT id, name, assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+
+  // The money seam, never Number(): "$25,000.00" is how a person writes it.
+  let askCents;
+  try { askCents = parseMoneyOrThrow(req.body.askAmount !== undefined ? req.body.askAmount : req.body.targetAmount, "askAmount"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+
+  const stage = String(req.body.stage || "identified").toLowerCase();
+  const v = P.validateProposal({
+    purpose: req.body.purpose !== undefined ? req.body.purpose : req.body.name,
+    askCents, expectedClose: req.body.expectedClose, stage,
+    probability: req.body.probability, declineReason: req.body.declineReason,
+    declinedOn: req.body.declinedOn,
+  }, { mode: "create" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_proposal", errors: v.errors });
+
+  const fund = await checkProposalFund(orgId, req.body.fundId || null);
+  if (!fund.ok) return res.status(404).json({ error: "Fund not found" });
+
+  // Officer = the relationship owner (BUILD-30: assignment IS the portfolio),
+  // falling back to whoever is typing. An officer id a caller names must belong
+  // to this org.
+  let officerId = donor.assigned_to, officerName = donor.assigned_to_name;
+  if (req.body.officerId) {
+    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [req.body.officerId, orgId]);
+    if (!u) return res.status(404).json({ error: "Officer not found" });
+    officerId = u.id; officerName = u.name;
+  }
+  if (!officerId) { officerId = req.user.userId; officerName = (await query("SELECT name FROM users WHERE id=?", [req.user.userId]))[0]?.name || ""; }
+
+  if (P.isOpenStage(stage)) {
+    const clash = await openProposalConflict(orgId, donor.id, fund.fundId, null);
+    if (clash) return res.status(409).json(clash);
+  }
+
+  const id = "opp_" + uuid().slice(0, 8);
+  const status = P.statusForStage(stage);
+  const prob = P.normalizeProbability(req.body.probability);
+  // ONE statement, and the WHERE NOT EXISTS is the race guarantee: two officers
+  // saving the same ask at the same second cannot both land. The unique index
+  // would catch it too where it exists, but it does not exist on every org
+  // (db.js says why), so the rule lives here.
+  const ins = await query(
+    `INSERT INTO opportunities
+       (id,org_id,donor_id,name,target_amount,status,proposal_stage,probability,fund_id,notes,
+        officer_id,officer_name,expected_close,created_by,created_by_name,updated_at)
+     SELECT ?::text,?::text,?::text,?::text,?::numeric,?::text,?::text,?::integer,?::text,?::text,
+            ?::text,?::text,?::date,?::text,?::text,NOW()
+      WHERE NOT EXISTS (
+        SELECT 1 FROM opportunities x WHERE x.org_id=?::text AND x.donor_id=?::text
+          AND COALESCE(x.fund_id,'') = ?::text AND x.proposal_stage = ANY(?::text[]))
+     RETURNING id`,
+    [id, orgId, donor.id, P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name),
+     toDollars(askCents), status, stage, prob == null ? null : prob, fund.fundId,
+     P.sanitizeNotes(req.body.notes), officerId, officerName || "", req.body.expectedClose,
+     actor(req).id, actor(req).name,
+     orgId, donor.id, fund.fundId || "", P.isOpenStage(stage) ? P.OPEN_STAGE_KEYS : []]);
+  if (!ins.length) {
+    const clash = await openProposalConflict(orgId, donor.id, fund.fundId, null);
+    return res.status(409).json(clash || { code: "proposal_already_open", error: "There is already an open proposal for that fund." });
+  }
+  await logProposalLine(orgId, donor.id, req, `Proposal opened: ${P.sanitizePurpose(req.body.purpose !== undefined ? req.body.purpose : req.body.name)} — ${money.formatCents(askCents)}, ${P.stageLabel(stage)}`);
+  const funds = await orgFundNames(orgId);
+  const [row] = await query("SELECT * FROM opportunities WHERE id=?", [id]);
+  res.status(201).json(proposalRow(row, funds));
+}));
+
+// Every stage change is a line on the person's timeline, because "when did we
+// ask, and what happened" has to be answerable from the record and not from
+// somebody's memory of a screen.
+async function logProposalLine(orgId, donorId, req, note) {
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+     VALUES (?,?,?,'proposal',?,?,?,?)`,
+    ["int_" + uuid().slice(0, 10), orgId, donorId, new Date().toISOString().slice(0, 10), note,
+     actor(req).id, actor(req).name]).catch(e => console.error("[proposal] timeline:", e.message));
+}
+
+// PUT /proposals/:id — move it, edit it, or close it.
+//
+// THE THREE THINGS THIS ROUTE IS FOR:
+//   · Committed writes a PLEDGE or a GIFT, never both. Whichever it writes is
+//     linked on the row so the money is traceable to the ask, and the other
+//     column stays null — a commitment counted twice is the BUILD-98 rule
+//     ("a gift is counted once") wearing a different hat.
+//   · Declined stores a reason from the list and the date, and does NOT reopen
+//     silently: moving it back to an open stage needs `acknowledgeReopen`.
+//   · `status` is never sent by a caller. It is derived from the stage, once,
+//     by statusForStage — so the twenty BUILD-15/17/85/86 reads that filter on
+//     it cannot disagree with what the screen shows.
+app.put("/proposals/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const P = await proposalMod();
+  const orgId = req.user.orgId;
+  const [existing] = await query("SELECT * FROM opportunities WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!existing) return res.status(404).json({ error: "Proposal not found" });
+
+  const patch = {}, sets = [], params = [];
+  const put = (col, val) => { sets.push(`${col}=?`); params.push(val); };
+
+  if (req.body.purpose !== undefined) { patch.purpose = req.body.purpose; }
+  if (req.body.askAmount !== undefined || req.body.targetAmount !== undefined) {
+    try { patch.askCents = parseMoneyOrThrow(req.body.askAmount !== undefined ? req.body.askAmount : req.body.targetAmount, "askAmount"); }
+    catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  }
+  if (req.body.expectedClose !== undefined) patch.expectedClose = req.body.expectedClose;
+  if (req.body.probability !== undefined) patch.probability = req.body.probability;
+  if (req.body.stage !== undefined) patch.stage = String(req.body.stage || "").toLowerCase();
+  if (req.body.declineReason !== undefined) patch.declineReason = req.body.declineReason;
+  if (req.body.declinedOn !== undefined) patch.declinedOn = req.body.declinedOn;
+  if (req.body.commitKind !== undefined) patch.commitKind = req.body.commitKind;
+  if (Object.keys(patch).length === 0 && req.body.notes === undefined && req.body.fundId === undefined
+      && req.body.officerId === undefined) {
+    return res.status(400).json({ error: "Nothing to update" });
+  }
+
+  const v = P.validateProposal(patch, { mode: "patch" });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_proposal", errors: v.errors });
+
+  const toStage = patch.stage || existing.proposal_stage;
+  const reopen = P.declineReopenRefusal(existing.proposal_stage, toStage, { acknowledged: req.body.acknowledgeReopen === true });
+  if (reopen) return res.status(409).json({ code: reopen.code, error: reopen.message });
+
+  let fundId = existing.fund_id;
+  if (req.body.fundId !== undefined) {
+    const f = await checkProposalFund(orgId, req.body.fundId || null);
+    if (!f.ok) return res.status(404).json({ error: "Fund not found" });
+    fundId = f.fundId;
+  }
+  // Moving INTO an open stage, or onto a different fund while open, re-runs the
+  // one-open-per-fund rule. Staying put does not — that would refuse a row
+  // because of itself.
+  if (P.isOpenStage(toStage)) {
+    const clash = await openProposalConflict(orgId, existing.donor_id, fundId, existing.id);
+    if (clash) return res.status(409).json(clash);
+  }
+
+  if (patch.purpose !== undefined) put("name", P.sanitizePurpose(patch.purpose));
+  if (patch.askCents !== undefined) put("target_amount", toDollars(patch.askCents));
+  if (patch.expectedClose !== undefined) put("expected_close", patch.expectedClose);
+  if (patch.probability !== undefined) put("probability", P.normalizeProbability(patch.probability));
+  if (req.body.notes !== undefined) put("notes", P.sanitizeNotes(req.body.notes));
+  if (req.body.fundId !== undefined) put("fund_id", fundId);
+  if (req.body.officerId !== undefined) {
+    const [u] = await query("SELECT id, name FROM users WHERE id=? AND org_id=?", [req.body.officerId, orgId]);
+    if (!u) return res.status(404).json({ error: "Officer not found" });
+    put("officer_id", u.id); put("officer_name", u.name);
+  }
+
+  let wrote = null;
+  if (patch.stage !== undefined && patch.stage !== existing.proposal_stage) {
+    put("proposal_stage", patch.stage);
+    put("status", P.statusForStage(patch.stage));          // DERIVED, never sent
+    const askCents = patch.askCents !== undefined ? patch.askCents : (toCents(existing.target_amount) || 0);
+
+    if (patch.stage === "declined") {
+      put("decline_reason", req.body.declineReason);
+      put("declined_on", req.body.declinedOn || new Date().toISOString().slice(0, 10));
+      sets.push("closed_at=NOW()");
+      put("gift_id", null); put("pledge_id", null); put("commit_kind", null);
+    } else if (patch.stage === "committed" || patch.stage === "stewarding") {
+      // EXACTLY ONE of the two doors, and the caller says which. A commitment
+      // with no door named is a pledge: "they said yes" without money in hand
+      // is a promise, which is what a pledge is for.
+      const kind = P.COMMIT_KINDS.includes(String(req.body.commitKind)) ? String(req.body.commitKind) : P.COMMIT_PLEDGE;
+      const already = existing.pledge_id || existing.gift_id;
+      if (!already) {
+        if (kind === P.COMMIT_GIFT) {
+          if (!req.body.giftId) return res.status(400).json({ error: "Name the gift this proposal closed with, or record it as a pledge.", code: "gift_required" });
+          const [g] = await query("SELECT id, amount FROM gifts WHERE id=? AND org_id=?", [req.body.giftId, orgId]);
+          if (!g) return res.status(404).json({ error: "Gift not found" });
+          put("gift_id", g.id); put("gift_amount", g.amount); put("pledge_id", null);
+          put("commit_kind", P.COMMIT_GIFT);
+          wrote = { kind: P.COMMIT_GIFT, id: g.id };
+        } else {
+          const committedCents = req.body.committedAmount !== undefined
+            ? (() => { try { return parseMoneyOrThrow(req.body.committedAmount, "committedAmount"); } catch { return null; } })()
+            : askCents;
+          if (!(committedCents > 0)) return res.status(400).json({ error: "A positive committed amount is required." });
+          const due = req.body.pledgeDueDate || civilDateOf(existing.expected_close) || new Date().toISOString().slice(0, 10);
+          const pid = "pl_" + uuid().slice(0, 8);
+          await run(
+            `INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
+             VALUES (?,?,?,?,?,'open',?,?,?)`,
+            [pid, orgId, existing.donor_id, toDollars(committedCents), String(due).slice(0, 10),
+             `Committed from the proposal: ${existing.name || "Ask"}`, actor(req).id, actor(req).name]);
+          // THE ONE SCHEDULE WRITER (BUILD-88b). A frequency and a count give a
+          // real schedule; neither given leaves one instalment for the whole
+          // commitment, so the existing rule in recordGift applies her cheque to
+          // it from any door, to the cent.
+          await writePledgeInstallments(orgId, pid, {
+            amountCents: committedCents, schedule: req.body.installments,
+            frequency: req.body.frequency, count: req.body.installmentCount,
+            firstDue: String(due).slice(0, 10),
+          }).catch(e => console.error("[proposal] instalments:", e.message));
+          const [n] = await query("SELECT COUNT(*)::int AS c FROM pledge_installments WHERE pledge_id=?", [pid]);
+          if (!n.c) await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
+            ["pli_" + uuid().slice(0, 10), orgId, pid, String(due).slice(0, 10), toDollars(committedCents)]);
+          put("pledge_id", pid); put("commit_kind", P.COMMIT_PLEDGE); put("gift_id", null); put("gift_amount", null);
+          wrote = { kind: P.COMMIT_PLEDGE, id: pid };
+        }
+      }
+      sets.push("closed_at=COALESCE(closed_at, NOW())");
+    } else {
+      // Back to an open stage: the close is undone, and whatever was written
+      // stays written. A pledge is a commitment somebody made; reopening the
+      // ask does not un-make it, and deleting it here would lose money.
+      sets.push("closed_at=NULL");
+    }
+    await logProposalLine(orgId, existing.donor_id, req,
+      `Proposal ${P.stageLabel(existing.proposal_stage)} → ${P.stageLabel(patch.stage)}: ${existing.name || "Ask"}`
+      + (patch.stage === "declined" ? ` — ${P.declineReasonLabel(req.body.declineReason)}` : "")
+      + (wrote ? ` — recorded as a ${wrote.kind}` : ""));
+  }
+
+  sets.push("updated_at=NOW()");
+  params.push(req.params.id, orgId);
+  await run(`UPDATE opportunities SET ${sets.join(",")} WHERE id=? AND org_id=?`, params);
+  const funds = await orgFundNames(orgId);
+  const [row] = await query("SELECT * FROM opportunities WHERE id=?", [req.params.id]);
+  res.json({ ...proposalRow(row, funds), wrote });
+}));
+
+app.delete("/proposals/:id", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run("DELETE FROM opportunities WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ success: true });
+}));
+
+// GET /proposals — the Proposals screen under Fundraising. Pipeline by stage in
+// dollars and count, filter by officer and fund, sort by expected date.
+// EVERY FIGURE CARRIES ITS SENTENCE, including the weighted total, which may
+// not be rendered without one (shared/proposalShape.js says why).
+app.get("/proposals", requireAuth, wrap(async (req, res) => {
+  const P = await proposalMod();
+  const orgId = req.user.orgId;
+  const where = ["o.org_id = ?", "d.deleted_at IS NULL"], args = [orgId];
+  if (req.query.officerId) { where.push("o.officer_id = ?"); args.push(String(req.query.officerId)); }
+  if (req.query.fundId) { where.push("o.fund_id = ?"); args.push(String(req.query.fundId)); }
+  if (req.query.stage) {
+    const st = String(req.query.stage).split(",").map(s => s.trim().toLowerCase()).filter(s => P.STAGE_KEYS.includes(s));
+    if (!st.length) return res.status(400).json({ error: "Unknown stage" });
+    where.push("o.proposal_stage = ANY(?::text[])"); args.push(st);
+  }
+  if (req.query.open === "1") { where.push("o.proposal_stage = ANY(?::text[])"); args.push(P.OPEN_STAGE_KEYS); }
+  const rows = await query(
+    `SELECT o.*, d.name AS donor_name FROM opportunities o
+       JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+      WHERE ${where.join(" AND ")}`, args);
+  const funds = await orgFundNames(orgId);
+  const all = rows.map(r => proposalRow(r, funds));
+  const sort = ["expected", "amount", "stage"].includes(String(req.query.sort)) ? String(req.query.sort) : "expected";
+  const proposals = P.sortProposals(all, sort);
+  const byStage = P.pipelineByStage(all).map(r => ({
+    ...r, amount: toDollars(r.askCents), sentence: P.stageTileSentence(r, money.formatCents),
+  }));
+  const w = P.weightedTotal(all);
+  const officers = await query(
+    `SELECT id, name FROM users WHERE org_id=? ORDER BY name`, [orgId]).catch(() => []);
+  res.json({
+    proposals, byStage, sort,
+    weighted: { cents: w.cents, amount: toDollars(w.cents), counted: w.counted, unset: w.unset,
+                openCount: w.openCount, sentence: P.weightedSentence(w, money.formatCents) },
+    openAsk: { cents: w.askCents, amount: toDollars(w.askCents),
+               sentence: w.openCount === 0 ? "No open proposals yet."
+                 : `${money.formatCents(w.askCents)} asked for across ${w.openCount} open ${w.openCount === 1 ? "proposal" : "proposals"} — the ask amounts, not what anybody expects to land.` },
+    stages: P.PROPOSAL_STAGES, probabilities: P.PROBABILITIES, declineReasons: P.DECLINE_REASONS,
+    funds: [...funds.entries()].map(([id, name]) => ({ id, name })),
+    officers: officers.map(o => ({ id: o.id, name: o.name })),
+  });
 }));
 
 // GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.
@@ -15189,6 +15604,15 @@ app.get("/dashboard", requireAuth, wrap(async (req, res) => {
 app.post("/ai/stream", requireAuth, wrap(async (req, res) => {
   const { systemPrompt, userMessage } = req.body;
   if (!userMessage) return res.status(400).json({ error: "Message required" });
+
+  // FOUND BY BUILD-99 Part 1's WALK, on a route BUILD-99 does not otherwise
+  // touch: with no ANTHROPIC_API_KEY, `new Anthropic()` THROWS and this route
+  // answered a 500 — a broken screen where the repo's own gate already has the
+  // honest word for it (`aiGate` → `ai_no_key`: the control is ABSENT, which is
+  // Steward's state, not the org's). It is the same non-200 the client already
+  // handles, so nothing downstream changes; with a key set, this is a no-op.
+  { const g = await aiGate(req.user.orgId);
+    if (!g.ok) return res.status(503).json({ error: "ai_unavailable", reason: g.reason }); }
 
   await run(
     "INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary) VALUES (?,?,?,?,?)",

@@ -84,9 +84,17 @@ const EXPECTED = {
   "components/MetricBreakdownPanel.jsx": 1,
   "components/Uploader.jsx": 1,
   "components/EventsDesk.jsx": 3,   // BUILD-98 Part 4: price, value received and deductible per level — cells, not claims
+  // BUILD-99 Part 1: the two headline tiles (asked-for-still-open, weighted),
+  // the per-stage tile's figure, and the ask + probability cells on a row.
+  // THEIR SENTENCES COME FROM shared/proposalShape.js, on the server — one
+  // string, one source, the registry's own rule, living server-side because the
+  // sentence has to name counts only the server knows ("from 9 proposals at the
+  // probabilities you set"). The screen renders what the server sends and holds
+  // no copy, which is the property that matters.
+  "components/MajorGifts.jsx": 5,
 };
-const EXPECTED_TOTAL = 394;
-const EXPECTED_CLAIMS = 107;
+const EXPECTED_TOTAL = 399;
+const EXPECTED_CLAIMS = 111;
 
 (async () => {
   console.log("build97-numbers");

@@ -2267,6 +2267,72 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_donor ON opportunities (org_id, donor_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_status ON opportunities (org_id, status)`);
 
+  // ── BUILD-99 Part 1 — A PROPOSAL IS THIS TABLE WITH THE COLUMNS IT WAS
+  // ALWAYS MISSING. See shared/proposalShape.js for why there is no second
+  // `proposals` table: two ask amounts on one prospect is how a board report
+  // goes wrong, and BUILD-30 is the write-up of the last time it did.
+  //
+  // `status` STAYS. Twenty BUILD-15/17/85/86 reads filter on it (the board's
+  // ask totals, wonThisPeriod, officer activity, the four dashboards), and
+  // `statusForStage` is the ONE derivation that keeps it honest — there is no
+  // write path that sets a stage without setting the status from it.
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS proposal_stage TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS probability INTEGER`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS fund_id TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS notes TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS decline_reason TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS declined_on TEXT`);
+  // Committed writes a pledge OR a gift, NEVER both — `gift_id` was already
+  // here, so this is its counterpart plus the word for which door was used.
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS pledge_id TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS commit_kind TEXT`);
+  await pool.query(`ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+  // ONE backfill, applied once, reasoned in stageFromLegacyStatus: BUILD-15's
+  // own column comment calls target_amount "the ASK" and its UI is ask → gift
+  // with Won/Lost buttons, so an open one is an ask that was made.
+  await pool.query(
+    `UPDATE opportunities SET proposal_stage =
+       CASE status WHEN 'won' THEN 'committed' WHEN 'lost' THEN 'declined' ELSE 'asked' END
+     WHERE proposal_stage IS NULL`);
+  // THE STRUCTURAL FLOOR UNDER "ONE OPEN AT A TIME PER FUND", and the reason
+  // it is attempted rather than asserted.
+  //
+  // BUILD-15 deliberately ALLOWED several open asks on one prospect. Those rows
+  // exist, they were legitimate under the rule they were written under, and
+  // every one of them now reads as an open proposal with no fund — so a bare
+  // CREATE UNIQUE INDEX would throw on any org that has two, and the server
+  // would never boot. Refusing to start over data somebody entered correctly
+  // last month is not a guarantee, it is an outage.
+  //
+  // So: the WRITE PATH is where the rule actually lives, and it is atomic there
+  // (an INSERT … WHERE NOT EXISTS in one statement, not a read-then-write). This
+  // index is belt-and-braces on top, created when the org's existing rows
+  // permit it, and when they do not the colliding donors are NAMED in the boot
+  // log so somebody can close one — never silently skipped.
+  //
+  // COALESCE because a Postgres unique index treats NULLs as distinct, so "no
+  // fund" — the most common case of all — would otherwise be unconstrained.
+  // The stage list is spelled out rather than imported: db.js is CommonJS and
+  // proposalShape.js is ESM, and a stale copy here fails the suite by name
+  // (tests/build99-proposals.test.js asserts the two lists match).
+  try {
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS opportunities_one_open_per_fund
+         ON opportunities (org_id, donor_id, COALESCE(fund_id,''))
+       WHERE proposal_stage IN ('identified','cultivating','asked')`);
+  } catch (e) {
+    const dupes = await pool.query(
+      `SELECT org_id, donor_id, COUNT(*)::int AS n FROM opportunities
+        WHERE proposal_stage IN ('identified','cultivating','asked')
+        GROUP BY org_id, donor_id, COALESCE(fund_id,'') HAVING COUNT(*) > 1
+        ORDER BY n DESC LIMIT 20`).catch(() => ({ rows: [] }));
+    console.error("[proposals] one-open-per-fund index not created: " + e.message);
+    for (const r of dupes.rows) console.error(`[proposals]   ${r.org_id} / ${r.donor_id}: ${r.n} open proposals on one fund`);
+  }
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_stage ON opportunities (org_id, proposal_stage)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_officer ON opportunities (org_id, officer_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_opportunities_org_close ON opportunities (org_id, expected_close)`);
+
   // ── Development reporting cadence (BUILD-17) ─────────────────────────────
   // Append-only log of every digest email actually sent. The UNIQUE index on
   // (org_id, digest_type, period_key, recipient_user_id) is the idempotency
