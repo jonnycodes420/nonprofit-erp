@@ -34,10 +34,11 @@ if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(API)) {
   console.error(`REFUSED: API=${API} is not loopback. This is a LOCAL preview only.`);
   process.exit(1);
 }
-if (!fs.existsSync(path.join(DIST, "index.html"))) {
-  console.error(`No build at ${DIST}. Run: cd client && VITE_API_URL=${API} npx vite build`);
-  process.exit(1);
-}
+// A missing build stops the PREVIEW, not a caller that only wants the rewrite
+// table. deploy-shape requires this file for loadRewrites, and CI runs the
+// battery before any client build exists — a module-level exit here killed
+// that suite in CI while passing on every machine that had a dist lying
+// around. So the check lives with the server start, below.
 
 // ── THE REWRITE TABLE IS DERIVED FROM vercel.json, NEVER COPIED ────────────
 // This used to be a hand-kept transcription of vercel.json's rewrites, which
@@ -149,6 +150,10 @@ const srv = http.createServer(async (req, res) => {
 // So the server starts only under `node scripts/local-preview.js`. Requiring
 // the file gets the functions and binds no port.
 if (require.main === module) {
+  if (!fs.existsSync(path.join(DIST, "index.html"))) {
+    console.error(`No build at ${DIST}. Run: cd client && VITE_API_URL=${API} npx vite build`);
+    process.exit(1);
+  }
   srv.listen(PORT, () => {
     console.log(`[local-preview] http://localhost:${PORT} → dist ${DIST}`);
     console.log(`[local-preview] proxying ${PROXY.length} vercel.json rewrites to ${API}`);
