@@ -765,14 +765,32 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (!evRow) evLevel = null;
             }
             const EVm = evLevel ? await EV_READY : null;
+            // BUILD-101 Part 4 — a membership bought online, or a renewal charge
+            // on an auto-renewing one (its level rides the subscription row).
+            // Re-read org-scoped; the metadata's word is never the price.
+            let memLevel = null;
+            if (!evLevel) {
+              let memLevelId = pi.metadata?.membership_level_id || null;
+              if (!memLevelId && recurringSubDbId) {
+                const [rsm] = await query("SELECT membership_level_id FROM recurring_subscriptions WHERE id=$1 AND org_id=$2", [recurringSubDbId, orgId]);
+                memLevelId = rsm?.membership_level_id || null;
+              }
+              if (memLevelId) [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=?", [memLevelId, orgId]);
+            }
+            const MBm = memLevel ? await MB_READY : null;
             const written = await recordGift({
+              ...(memLevel ? {
+                quidProQuoValue: Math.min(Number(memLevel.fmv), amount),
+                quidProQuoDesc: MBm.quidProQuoDescription({ levelName: memLevel.name, benefits: memLevel.benefits || [] }),
+                membershipRenewal: false,
+              } : {}),
               ...(evLevel ? {
                 quidProQuoValue: Math.min(Number(evLevel.fmv) * evQty, amount),
                 quidProQuoDesc: EVm.quidProQuoDescription({ eventName: evRow.name, levelName: evLevel.name, qty: evQty, kind: evLevel.kind }),
                 campaign: evRow.name,
               } : {}),
               orgId, donorId, giftId, amount, date: today,
-              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : "Online payment via Stripe",
+              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
               stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
@@ -790,6 +808,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (evLevel) {
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
                 who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
+            }
+            if (memLevel) {
+              await attachOnlineMembership({ orgId, donorId, levelId: memLevel.id, giftId })
+                .catch(e => console.error("[membership] webhook attach:", e.message));
             }
             // Stage promotion is a decision ABOUT the gift, not the gift.
             await run(
@@ -954,6 +976,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (Number.isFinite(base) && base > 0 && recurAmount > base / 100) subCoverFee = recurAmount - base / 100;
             }
             const subInterval = frequency === "annual" ? "year" : "month";
+            // BUILD-101 Part 4 — an auto-renewing membership's level, validated org-owned.
+            let subMemLevel = session.metadata?.membership_level_id || null;
+            if (subMemLevel) {
+              const lOk = await query("SELECT id FROM membership_levels WHERE id=$1 AND org_id=$2", [subMemLevel, orgId]);
+              if (!lOk.length) subMemLevel = null;
+            }
             const insertedSub = await query(
               `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount, fund_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)
@@ -987,6 +1015,26 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  WHERE stripe_subscription_id = ? AND org_id = ?`,
                 [subCampaignId, subGivingPageId, subFundId, subCoverFee, session.customer || null, session.subscription, orgId]
               ).catch(() => {});
+            }
+            if (subMemLevel) {
+              await run(`UPDATE recurring_subscriptions SET membership_level_id=COALESCE(membership_level_id, ?) WHERE stripe_subscription_id=? AND org_id=?`,
+                [subMemLevel, session.subscription, orgId]);
+              // The first charge's payment event may have arrived FIRST, before
+              // this row existed to say it was a membership. That gift is the
+              // most recent card gift of exactly this amount from this person
+              // with no membership yet; attach is keyed on it, so it happens once.
+              const [sub] = await query("SELECT id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2", [session.subscription, orgId]);
+              const [first] = await query(
+                `SELECT g.id FROM gifts g WHERE g.org_id=$1 AND g.donor_id=$2 AND g.stripe_payment_id IS NOT NULL
+                    AND round(g.amount::numeric * 100)::bigint = $3
+                    AND (g.recurring_subscription_id IS NULL OR g.recurring_subscription_id=$4)
+                    AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.org_id=g.org_id AND m.gift_id=g.id)
+                  ORDER BY g.created_at DESC LIMIT 1`, [orgId, donorId, Math.round((recurAmount || 0) * 100), sub?.id || null]);
+              if (first) {
+                if (sub) await run("UPDATE gifts SET recurring_subscription_id=COALESCE(recurring_subscription_id, $1) WHERE id=$2", [sub.id, first.id]);
+                await attachOnlineMembership({ orgId, donorId, levelId: subMemLevel, giftId: first.id })
+                  .catch(e => console.error("[membership] checkout attach:", e.message));
+              }
             }
             // BUILD-57 — a staff proposal completed by the donor on Stripe.
             // The proposal id rode our own checkout metadata; mark it done so
@@ -20968,6 +21016,13 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     if (!Number.isInteger(eventQty) || eventQty < 1 || eventQty > 50) return res.status(400).json({ error: "Choose between 1 and 50 tickets." });
     frequency = "once"; coverFees = false; amount = amount || "1";
   }
+  // BUILD-101 Part 4 — a MEMBERSHIP, priced by the SERVER from the level (the
+  // page's amount is ignored). One-time, or auto-renewing yearly through the
+  // existing recurring path — only a 12-month level can auto-renew.
+  const membershipLevelId = !eventLevelId && req.body.membershipLevelId ? String(req.body.membershipLevelId) : null;
+  if (membershipLevelId) {
+    frequency = frequency === "annual" ? "annual" : "once"; coverFees = false; amount = amount || "1";
+  }
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
@@ -21001,6 +21056,13 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
       if ((t?.n || 0) + eventQty > eventLevel.capacity) return res.status(409).json({ error: `${eventLevel.name} is sold out.` });
     }
     baseCents = Math.round(Number(eventLevel.price) * 100) * eventQty;
+  }
+  let memLevel = null;
+  if (membershipLevelId) {
+    [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [membershipLevelId, org.id]);
+    if (!memLevel) return res.status(400).json({ error: "This membership is no longer available." });
+    if (frequency === "annual" && memLevel.term !== "12_months") return res.status(400).json({ error: "This membership cannot renew automatically." });
+    baseCents = Math.round(Number(memLevel.price) * 100);
   }
   if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
   if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
@@ -21069,7 +21131,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // POST/PUT /giving-pages validation, never trusted raw from this request.
   const effectiveCampaignId = pageCampaignId || campaignId || "";
 
-  const productName = eventLevel
+  const productName = memLevel
+    ? `${memLevel.name} membership — ${org.name}`
+    : eventLevel
     ? `${eventQty} × ${eventLevel.name} — ${eventRow.name}`
     : peerFundraiserId
     ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
@@ -21092,6 +21156,8 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // split and the guest-list row from these, re-reading the level itself.
     event_level_id: eventLevel ? eventLevel.id : "",
     event_qty: eventLevel ? String(eventQty) : "",
+    // BUILD-101 Part 4 — the webhook re-reads the level from this id.
+    membership_level_id: memLevel ? memLevel.id : "",
   };
   // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
   // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
@@ -31500,7 +31566,7 @@ app.delete("/membership-levels/:id", requireAuth, requireAdmin, wrap(async (req,
 // one-current-membership index — not an if-statement — refuses a second one
 // before any money is written; if the gift then fails, the claim is released.
 async function enrollMembership({ orgId, donorId, level, startsOn = null, paid = true, paymentMethod = null,
-                                  idemKey = null, source = "staff", who }) {
+                                  idemKey = null, source = "staff", who, existingGiftId = null }) {
   await MB_READY;
   const [donor] = await query(`SELECT id, name, household_id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!donor) throw Object.assign(new Error("Donor not found"), { status: 404 });
@@ -31524,8 +31590,10 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
     throw Object.assign(new Error(`${donor.name} already holds a ${cur ? cur.name : "current"} membership${cur && cur.expires_on ? ", through " + cur.expires_on : ""}. Renew it rather than adding a second.`),
       { status: 409, code: "membership_current" });
   }
-  let giftId = null;
-  if (paid) {
+  let giftId = existingGiftId;
+  if (existingGiftId) {
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [existingGiftId, id, orgId]);
+  } else if (paid) {
     try {
       const written = await recordGift({
         orgId, donorId, amount: mbCents(level.price) / 100, date: today, type: "cash",
@@ -31641,6 +31709,50 @@ app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
                           WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
   if (!r.length) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
+}));
+
+// ── BUILD-101 Part 4 — A MEMBERSHIP BOUGHT ONLINE ─────────────────────────
+// The ONE step that turns an online membership payment into a membership. It
+// is keyed on the GIFT: the payment event and the checkout event for a new
+// auto-renewing membership arrive in either order, and whichever gets here
+// second finds the gift already carries its membership and does nothing. A
+// person who already holds a membership is RENEWED (from the old expiry);
+// anyone else joins.
+async function attachOnlineMembership({ orgId, donorId, levelId, giftId }) {
+  await MB_READY;
+  if (!giftId || !levelId) return null;
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [levelId, orgId]);
+  if (!level) return null;
+  return withAdvisoryLock(`membership-gift:${orgId}:${giftId}`, async () => {
+    const [done] = await query(`SELECT id FROM memberships WHERE org_id=? AND gift_id=?`, [orgId, giftId]);
+    if (done) return { membershipId: done.id, duplicate: true };
+    // The benefits split rides the gift (the webhook set it from the level it
+    // re-read; this makes sure of it for a gift written before the level was known).
+    const fmv = mbCents(level.fmv) / 100;
+    await run(`UPDATE gifts SET quid_pro_quo_value=LEAST(amount, ?), quid_pro_quo_desc=?, deductible_amount=GREATEST(0, amount - ?)
+                WHERE id=? AND org_id=? AND quid_pro_quo_value IS NULL`,
+      [fmv, MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] }), fmv, giftId, orgId]);
+    const [cur] = await query(`SELECT id FROM memberships WHERE org_id=? AND donor_id=? AND status IN ('active','grace')`, [orgId, donorId]);
+    const r = cur
+      ? await renewMembership({ orgId, membershipId: cur.id, levelId: level.id, existingGiftId: giftId, paymentMethod: "Card",
+                                source: "online", who: SYS_STRIPE })
+      : await enrollMembership({ orgId, donorId, level, existingGiftId: giftId, paymentMethod: "Card", source: "online", who: SYS_STRIPE });
+    return { membershipId: r.membership.id };
+  });
+}
+
+// Public by slug, like the event tickets read: what a flyer would show, and
+// what the receipt will call deductible, before she pays.
+app.get("/org/:orgSlug/membership/:levelId/public", wrap(async (req, res) => {
+  await MB_READY;
+  const [org] = await query("SELECT id, name FROM orgs WHERE org_slug=?", [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const [l] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [req.params.levelId, org.id]);
+  if (!l) return res.status(404).json({ error: "Not found" });
+  const p = membershipLevelPayload(l);
+  res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
+    level: { id: p.id, name: p.name, price: p.price, fmv: p.fmv, deductible: p.deductible, term: p.term, termLabel: p.termLabel,
+             scope: p.scope, benefits: p.benefits, autoRenew: l.term === "12_months" } });
 }));
 
 // ── BUILD-101 Part 2 — RENEWALS THAT COME AROUND ──────────────────────────

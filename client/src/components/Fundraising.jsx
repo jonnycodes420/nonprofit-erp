@@ -201,7 +201,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
       )}
 
       {!loading && subtab === "members" && (
-        <MembersView isReadOnly={isReadOnly} onNavigate={onNavigate} />
+        <MembersView isReadOnly={isReadOnly} onNavigate={onNavigate} orgSlug={orgSlug} />
       )}
 
       {!loading && subtab === "funds" && (

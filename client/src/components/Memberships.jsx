@@ -105,7 +105,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
 }
 
 // ── Fundraising → Members ───────────────────────────────────────────────────
-export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
+export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = "" }) {
   const [levels, setLevels] = useState(null);
   const [list, setList] = useState(null);
   const [status, setStatus] = useState("");
@@ -175,6 +175,10 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate }) {
               <span style={{ fontWeight: 700, color: T.ink, minWidth: 140 }}>{l.name}{!l.active ? " (retired)" : ""}</span>
               <span style={{ fontSize: 13, color: T.ink }} title={l.fmvSentence} aria-label={l.fmvSentence} tabIndex={0}>{usd(l.price)} · {l.termLabel}</span>
               <span style={{ fontSize: 12, color: T.ink3 }}>{l.scope === "household" ? "Household" : "Individual"}</span>
+              {orgSlug && l.active && <button style={{ background: "transparent", border: "none", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                data-testid="level-link"
+                onClick={async () => { const url = `${window.location.origin}/give/${orgSlug}?membership=${l.id}`;
+                  try { await navigator.clipboard.writeText(url); setMsg(`Link copied: ${url}`); } catch { setMsg(url); } }}>Copy join link</button>}
               <span style={{ fontSize: 12, color: T.ink3, marginLeft: "auto" }}
                 title="People holding this level now, and people whose membership at this level has lapsed.">
                 {c.active + c.grace} current · {c.lapsed} lapsed

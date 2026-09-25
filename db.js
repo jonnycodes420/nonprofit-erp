@@ -4026,6 +4026,10 @@ async function initSchema() {
   // how long an expired membership is held in grace before it lapses.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_renewal_days INTEGER DEFAULT 30`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_grace_days INTEGER DEFAULT 30`);
+  // BUILD-101 Part 4 — an auto-renewing membership IS a recurring
+  // subscription (the existing dunning and card-expiry machinery, unchanged);
+  // this column is what makes each renewal charge extend a membership.
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS membership_level_id TEXT`);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
