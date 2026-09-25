@@ -38,8 +38,8 @@ the suite reads the registry and finds each sentence in a real browser.
 
 ## What was counted
 
-**391 numeric render sites** across the active surfaces, of which **107 are
-claim-shaped**. *(388/106 at BUILD-97; BUILD-98 Part 1 added the soft-credit pair on the donor profile — `profile.creditHard` and `profile.creditWithSoft` in `shared/numberCensus.js`; Part 2 added one table cell, a gift amount in the acknowledgment backlog.)*
+**394 numeric render sites** across the active surfaces, of which **107 are
+claim-shaped**. *(388/106 at BUILD-97; BUILD-98 Part 1 added the soft-credit pair on the donor profile — `profile.creditHard` and `profile.creditWithSoft` in `shared/numberCensus.js`; Part 2 added one table cell, a gift amount in the acknowledgment backlog; Part 4 added `EventsDesk.jsx` with three cells per ticket level — price, value received, deductible.)*
 
 *(The first run of the scanner reported 390. Three of those were **dates** —
 `new Date(x).toLocaleString()` — which this document's own rules exclude and the

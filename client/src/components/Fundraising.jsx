@@ -3,6 +3,7 @@ import { apiFetch, API } from "../api";
 import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
+import { EventsDesk } from "./EventsDesk";
 import { QrCodeBlock, EmbedCodeBlock } from "./ShareBlocks";
 import Uploader, { IMAGE_ACCEPT, IMAGE_ACCEPT_LABEL, IMAGE_MAX_BYTES } from "./Uploader";
 import { textToStory, storyToText } from "../lib/storyBlocks";
@@ -106,6 +107,8 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
     { id: "deposits", label: "Deposits" },
     // BUILD-98 (switch) Part 2 — the gifts nobody has thanked, and the letters.
     { id: "acknowledgments", label: "Acknowledgments" },
+    // BUILD-98 (switch) Part 4 — the donor side of an event.
+    { id: "events", label: "Events" },
     { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
     { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
     { id: "recurring", label: "Recurring Giving" },
@@ -137,6 +140,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
           itself. */}
       {!loading && subtab === "deposits" && (
         <DepositsView isReadOnly={isReadOnly} roTip={roTip} />
+      )}
+
+      {!loading && subtab === "events" && (
+        <EventsDesk orgSlug={orgSlug} donors={data?.donors || []} isReadOnly={isReadOnly} />
       )}
 
       {!loading && subtab === "acknowledgments" && (

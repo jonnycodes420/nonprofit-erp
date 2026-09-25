@@ -85,7 +85,7 @@ async function reset() {
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
-      "peer_fundraisers", "giving_pages", "event_attendees", "events", "volunteers", "board_members",
+      "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       "invites", "portal_settings", "annual_fund_goals", "fundraising_goals", "metric_snapshots", "campaigns", "users"])
@@ -150,6 +150,9 @@ async function seedOrg(o, tag) {
     [`ev_${o}`, o, `${mark} Event`, TODAY]);
   await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'invited')`,
     [`ea_${o}`, `ev_${o}`, o, `d_${o}`, `${mark} Attendee`]);
+  // BUILD-98 (switch) Part 4 — a ticket level, so /event-levels/:id is probed.
+  await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv) VALUES ($1,$2,$3,'ticket',$4,150,60)`,
+    [`evl_${o}`, o, `ev_${o}`, `${mark} Level`]);
   await q(`INSERT INTO volunteers (id,org_id,donor_id,name) VALUES ($1,$2,$3,$4)`, [`v_${o}`, o, `d_${o}`, `${mark} Volunteer`]);
   await q(`INSERT INTO board_members (id,org_id,name,role) VALUES ($1,$2,$3,'Member')`, [`bd_${o}`, o, `${mark} Board`]);
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id) VALUES ($1,$2,$3,$4)`, [`h_${o}`, o, `${mark} Household`, `d_${o}`]);
@@ -284,6 +287,7 @@ function bResolver(routePath, param) {
     "tribute-notices": `tn_${B}`,    // BUILD-98 Part 1 — a notice to a family is org B's business
     acknowledgments: `alt_${B}`,     // BUILD-98 Part 2 — a letter template is org B's business
     "saved-reports": `rpt_${B}`,     // BUILD-98 Part 3 — a saved report is org B's business
+    "event-levels": `evl_${B}`,      // BUILD-98 Part 4 — a ticket level is org B's business
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404

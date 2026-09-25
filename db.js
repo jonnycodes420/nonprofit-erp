@@ -3697,6 +3697,36 @@ async function initSchema() {
       UNIQUE (report_id, period_key)
     )`);
 
+  // ── BUILD-98 (switch) Part 4 — THE DONOR SIDE OF A GALA ─────────────────
+  // Ticket and sponsorship levels. A ticket is a gift that bought something
+  // (shared/eventShape.js): price and fair-market value in the level, and the
+  // split written onto the gift so the receipt states the deductible part.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_levels (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'ticket',       -- ticket | sponsor
+      name TEXT NOT NULL,
+      price NUMERIC(12,2) NOT NULL CHECK (price > 0),
+      fmv NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (fmv >= 0),
+      capacity INTEGER,
+      recognition TEXT,
+      position INTEGER DEFAULT 0,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (fmv <= price)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_levels_event ON event_levels (event_id)`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS level_id TEXT`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 1`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS table_label TEXT`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS registration_gift_id TEXT`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS sponsor_pledge_id TEXT`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS recognition TEXT`);
+  // When this attendee's attendance reached their timeline — once, ever.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS attendance_logged_at TIMESTAMPTZ`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

@@ -156,8 +156,81 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
   );
 }
 
+
+// BUILD-98 (switch) Part 4 — TICKETS. `/give/:orgSlug?event=<id>`. The page
+// sends a LEVEL and a QUANTITY; the server prices them, so what is charged is
+// the level's price and nothing the page computed. The deductible part is
+// stated before she pays, because a receipt that surprises somebody afterwards
+// is a receipt that gets a phone call.
+function TicketsPage({ orgSlug, eventId, th, BASE, card }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [levelId, setLevelId] = useState("");
+  const [qty, setQty] = useState(1);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch(`${API}/org/${orgSlug}/event/${encodeURIComponent(eventId)}/public`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("This event is not open for tickets.")))
+      .then(d => { setData(d); const first = (d.levels || []).find(l => l.remaining !== 0); if (first) setLevelId(first.id); })
+      .catch(e => setErr(errorMessage(e, "This event is not open for tickets.")));
+  }, [orgSlug, eventId]);
+  if (err) return <div style={BASE}><div style={{ ...card, padding: 28, color: T.ink }}>{err}</div></div>;
+  if (!data) return <div style={BASE}><div style={{ color: T.ink3, fontSize: 14 }}>Loading…</div></div>;
+  const lvl = (data.levels || []).find(l => l.id === levelId);
+  const total = lvl ? lvl.price * qty : 0, deductible = lvl ? lvl.deductible * qty : 0;
+  const buy = async e => {
+    e.preventDefault();
+    if (!lvl || !firstName.trim() || !lastName.trim() || !email.trim()) { setErr(""); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API}/donate/${orgSlug}`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventLevelId: lvl.id, quantity: qty, firstName, lastName, email, frequency: "once" }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Something went wrong.");
+      window.location.href = j.url;
+    } catch (e2) { setErr(errorMessage(e2, "Something went wrong. Please try again.")); setBusy(false); }
+  };
+  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: "#fff" };
+  return (
+    <div style={BASE}>
+      <form onSubmit={buy} style={{ ...card, width: "100%", maxWidth: 520, padding: 28, display: "flex", flexDirection: "column", gap: 14 }} data-testid="tickets-page">
+        <div style={{ fontSize: 13, color: T.ink3 }}>{data.orgName}</div>
+        <div style={{ fontSize: 26, color: T.ink, fontFamily: th.serif }}>{data.event.name}</div>
+        <div style={{ fontSize: 14, color: T.ink3 }}>{data.event.date}{data.event.location ? ` · ${data.event.location}` : ""}</div>
+        {data.event.description && <div style={{ fontSize: 15, color: T.ink, lineHeight: 1.6 }}>{data.event.description}</div>}
+        {(data.levels || []).map(l => (
+          <label key={l.id} style={{ display: "flex", gap: 10, alignItems: "center", border: `1px solid ${levelId === l.id ? th.primary : T.bg3}`, borderRadius: 10, padding: "10px 12px", cursor: l.remaining === 0 ? "not-allowed" : "pointer", opacity: l.remaining === 0 ? 0.5 : 1 }}>
+            <input type="radio" name="level" checked={levelId === l.id} disabled={l.remaining === 0} onChange={() => setLevelId(l.id)} />
+            <span style={{ flex: 1, fontSize: 15, color: T.ink }}>{l.name}</span>
+            <span style={{ fontSize: 15, color: T.ink, fontWeight: 700 }}>{l.remaining === 0 ? "Sold out" : fmtMoney(l.price)}</span>
+          </label>))}
+        <label style={{ fontSize: 14, color: T.ink, display: "flex", gap: 8, alignItems: "center" }}>How many
+          <input type="number" min={1} max={50} value={qty} onChange={e => setQty(Math.max(1, Math.min(50, Number(e.target.value) || 1)))} style={{ ...inp, width: 80 }} /></label>
+        {lvl && <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.6 }} data-testid="tickets-deductible">
+          {fmtMoney(total)} in all. {lvl.deductible < lvl.price
+            ? `${fmtMoney(total - deductible)} of that is the value of what you receive, so ${fmtMoney(deductible)} is tax-deductible.`
+            : "All of it is tax-deductible."}
+        </div>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} style={inp} />
+          <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} />
+        </div>
+        <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} />
+        <button type="submit" disabled={busy || !lvl} style={{ background: th.primary, color: th.onPrimary || "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+          {busy ? "One moment…" : lvl ? `Buy ${qty === 1 ? "ticket" : qty + " tickets"}` : "Choose a ticket"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Donate() {
   const { orgSlug, pageSlug, fundraiserSlug } = useParams();
+  // BUILD-98 (switch) Part 4 — ?event=<id> turns this page into its tickets.
+  const ticketEventId = useMemo(() => new URLSearchParams(window.location.search).get("event"), []);
   const [org, setOrg] = useState(null);
   const [givingPage, setGivingPage] = useState(null);
   const [peerFundraiser, setPeerFundraiser] = useState(null);
@@ -426,6 +499,8 @@ export default function Donate() {
       ${amt.toLocaleString()}{frequency === "monthly" ? <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.8 }}>/mo</span> : ""}
     </button>
   );
+
+  if (ticketEventId) return <TicketsPage orgSlug={orgSlug} eventId={ticketEventId} th={th} BASE={BASE} card={card} />;
 
   return (
     <div style={BASE}>

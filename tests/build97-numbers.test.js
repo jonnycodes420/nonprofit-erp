@@ -83,8 +83,9 @@ const EXPECTED = {
   "components/Workflows.jsx": 1,
   "components/MetricBreakdownPanel.jsx": 1,
   "components/Uploader.jsx": 1,
+  "components/EventsDesk.jsx": 3,   // BUILD-98 Part 4: price, value received and deductible per level — cells, not claims
 };
-const EXPECTED_TOTAL = 391;
+const EXPECTED_TOTAL = 394;
 const EXPECTED_CLAIMS = 107;
 
 (async () => {

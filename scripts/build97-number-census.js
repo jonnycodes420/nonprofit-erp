@@ -83,6 +83,7 @@ const SURFACES = [
   "components/PortalBanner.jsx",
   "components/shared.jsx",
   "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
+  "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather

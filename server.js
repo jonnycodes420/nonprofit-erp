@@ -718,9 +718,26 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             // statements here; the conflict key is still Stripe's payment
             // intent, which is what makes a redelivery a no-op. A card gift
             // knows its payment method, and used to write none.
+            // BUILD-98 (switch) Part 4 — a ticket bought online. The level is
+            // re-read here (org-scoped), never trusted from the metadata's
+            // amounts, and the fair-market split rides on the gift so the
+            // auto-issued receipt states the deductible part.
+            let evLevel = null, evRow = null;
+            const evQty = Math.max(1, parseInt(pi.metadata?.event_qty || "1", 10) || 1);
+            if (pi.metadata?.event_level_id) {
+              [evLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=?", [pi.metadata.event_level_id, orgId]);
+              if (evLevel) [evRow] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [evLevel.event_id, orgId]);
+              if (!evRow) evLevel = null;
+            }
+            const EVm = evLevel ? await EV_READY : null;
             const written = await recordGift({
+              ...(evLevel ? {
+                quidProQuoValue: Math.min(Number(evLevel.fmv) * evQty, amount),
+                quidProQuoDesc: EVm.quidProQuoDescription({ eventName: evRow.name, levelName: evLevel.name, qty: evQty, kind: evLevel.kind }),
+                campaign: evRow.name,
+              } : {}),
               orgId, donorId, giftId, amount, date: today,
-              type: "cash", notes: "Online payment via Stripe",
+              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : "Online payment via Stripe",
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
               stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
@@ -734,6 +751,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (written.duplicate) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
               return res.json({ received: true, duplicate: true });
+            }
+            if (evLevel) {
+              await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
+                who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
             }
             // Stage promotion is a decision ABOUT the gift, not the gift.
             await run(
@@ -2201,14 +2222,22 @@ async function recordGift(o) {
                 // BUILD-95 — the photograph of the cheque this gift came on.
                 // In THIS insert for the same reason as the source columns
                 // above: a second UPDATE after the fact is a second write path.
-                "cheque_asset_id"];
+                "cheque_asset_id",
+                // BUILD-98 (switch) Part 4 — a gift that bought something (a
+                // gala ticket) carries what it bought and what that was worth,
+                // so the receipt states the deductible part. Absent means
+                // nothing was received in exchange, which is every other gift.
+                "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
                 o.givingPageId || null, o.peerFundraiserId || null, o.coverFeeAmount || 0,
                 o.recurringSubscriptionId || null, actorId, actorName,
                 o.givingSourceId || null, round2(Number(o.processorFeeAmount) || 0), o.providerRecurringRef || null,
-                o.chequeAssetId || null];
+                o.chequeAssetId || null,
+                o.quidProQuoValue != null ? round2(Math.max(0, amount - Number(o.quidProQuoValue))) : null,
+                o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
+                o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -18602,6 +18631,22 @@ app.delete("/giving-pages/:id", requireAuth, requireAdmin, wrap(async (req, res)
 // Public — org info + giving page + real live progress. Same shape as
 // GET /org/:orgSlug/public, plus the page's own title/story/image/goal and
 // the real computed raised total (never a manually-set counter).
+// BUILD-98 (switch) Part 4 — an event's tickets, for the public giving page.
+// Public by slug like every /org/:orgSlug/…/public read: it shows what a
+// flyer would, and nothing about who has registered beyond places left.
+app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
+  const [org] = await query("SELECT id, name FROM orgs WHERE org_slug=?", [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const [ev] = await query("SELECT id, name, date, location, description FROM events WHERE id=? AND org_id=? AND status <> 'cancelled' AND is_sample IS NOT TRUE", [req.params.eventId, org.id]);
+  if (!ev) return res.status(404).json({ error: "Not found" });
+  const levels = await query("SELECT * FROM event_levels WHERE event_id=? AND org_id=? ORDER BY kind DESC, position, price", [ev.id, org.id]);
+  const out = [];
+  for (const l of levels) out.push(eventLevelPayload(l, await levelTaken(l.id)));
+  res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
+    event: { id: ev.id, name: ev.name, date: String(ev.date).slice(0, 10), location: ev.location, description: ev.description },
+    levels: out });
+}));
+
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
@@ -18970,8 +19015,18 @@ function coverFeesGrossUpCents(netCents) {
 
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { amount, fundId, frequency, firstName, lastName, email, campaignId, coverFees } = req.body;
+  const { fundId, firstName, lastName, email, campaignId } = req.body;
+  let { amount, frequency, coverFees } = req.body;
   let { givingPageId, peerFundraiserId } = req.body;
+  // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
+  // never by the amount the page sent. One-time only, and no fee gross-up: the
+  // receipt's deductible split is computed on exactly what the level costs.
+  const eventLevelId = req.body.eventLevelId ? String(req.body.eventLevelId) : null;
+  const eventQty = eventLevelId ? Number(req.body.quantity || 1) : 1;
+  if (eventLevelId) {
+    if (!Number.isInteger(eventQty) || eventQty < 1 || eventQty > 50) return res.status(400).json({ error: "Choose between 1 and 50 tickets." });
+    frequency = "once"; coverFees = false; amount = amount || "1";
+  }
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
@@ -18994,7 +19049,18 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     }
   }
 
-  const baseCents = toCents(amount);                     // BUILD-73: the money seam
+  let baseCents = toCents(amount);                       // BUILD-73: the money seam
+  let eventLevel = null, eventRow = null;
+  if (eventLevelId) {
+    [eventLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=?", [eventLevelId, org.id]);
+    if (eventLevel) [eventRow] = await query("SELECT * FROM events WHERE id=? AND org_id=? AND status <> 'cancelled'", [eventLevel.event_id, org.id]);
+    if (!eventLevel || !eventRow) return res.status(400).json({ error: "This ticket is no longer available." });
+    if (eventLevel.capacity != null) {
+      const [t] = await query("SELECT COALESCE(SUM(quantity),0)::int AS n FROM event_attendees WHERE level_id=? AND status <> 'cancelled'", [eventLevel.id]);
+      if ((t?.n || 0) + eventQty > eventLevel.capacity) return res.status(409).json({ error: `${eventLevel.name} is sold out.` });
+    }
+    baseCents = Math.round(Number(eventLevel.price) * 100) * eventQty;
+  }
   if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
   if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
 
@@ -19062,7 +19128,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // POST/PUT /giving-pages validation, never trusted raw from this request.
   const effectiveCampaignId = pageCampaignId || campaignId || "";
 
-  const productName = peerFundraiserId
+  const productName = eventLevel
+    ? `${eventQty} × ${eventLevel.name} — ${eventRow.name}`
+    : peerFundraiserId
     ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
     : givingPageId
       ? `Donation to ${org.name} — ${pageTitle}`
@@ -19079,6 +19147,10 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // Reference only — the gift/receipt record the full charged amount.
     cover_fees: feesCovered ? "true" : "",
     base_amount_cents: feesCovered ? String(baseCents) : "",
+    // BUILD-98 (switch) Part 4 — the webhook writes the ticket's fair-market
+    // split and the guest-list row from these, re-reading the level itself.
+    event_level_id: eventLevel ? eventLevel.id : "",
+    event_qty: eventLevel ? String(eventQty) : "",
   };
   // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
   // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
@@ -29315,6 +29387,230 @@ app.get("/gmail/thread/:donorId", requireAuth, wrap(async (req, res) => {
 
 // ── Events ────────────────────────────────────────────────────────────────────
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// BUILD-98 (switch) Part 4 — THE DONOR SIDE OF A GALA
+// ════════════════════════════════════════════════════════════════════════════
+// shared/eventShape.js holds the rule: a ticket is a gift that bought
+// something, and the receipt says so. Levels carry price and fair-market
+// value; registration writes the gift through recordGift with the split on it,
+// so the EXISTING receipt path states "$90 deductible" with no second receipt
+// renderer. A sponsor who has not paid yet is a PLEDGE, not money.
+let EV = null;
+const EV_READY = import("./shared/eventShape.js").then(m => { EV = m; return m; });
+
+function eventLevelPayload(l, taken = 0) {
+  return { id: l.id, kind: l.kind, name: l.name, price: Number(l.price), fmv: Number(l.fmv),
+    deductible: (rbCentsEv(l.price) - rbCentsEv(l.fmv)) / 100, capacity: l.capacity, taken,
+    remaining: l.capacity == null ? null : Math.max(0, l.capacity - taken), recognition: l.recognition };
+}
+const rbCentsEv = v => Math.round(Number(v) * 100);
+
+async function levelTaken(levelId) {
+  const [r] = await query("SELECT COALESCE(SUM(quantity),0)::int AS n FROM event_attendees WHERE level_id=? AND status <> 'cancelled'", [levelId]);
+  return r?.n || 0;
+}
+
+// The one registration writer. `giftId` is passed when the money already
+// exists (the Stripe webhook wrote it); otherwise this writes the gift, or the
+// sponsor's pledge, itself. Returns the attendee row.
+async function registerForEvent({ orgId, event, level, donorId, qty, paid = true, giftId = null,
+                                  paymentMethod = null, date = null, idemKey = null, who }) {
+  await EV_READY;
+  const split = EV.ticketSplit({ priceCents: rbCentsEv(level.price), fmvCents: rbCentsEv(level.fmv), qty });
+  const [donor] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
+  if (!donor) throw Object.assign(new Error("Donor not found"), { status: 404 });
+  if (level.capacity != null && !giftId) {
+    const taken = await levelTaken(level.id);
+    if (taken + split.qty > level.capacity)
+      throw Object.assign(new Error(`${level.name} has ${Math.max(0, level.capacity - taken)} places left.`), { status: 409 });
+  }
+  const day = date || orgToday(await orgTz(orgId));           // ORG_TZ_SEAM_OK
+  let pledgeId = null;
+  if (!giftId && (paid || level.kind === "ticket")) {
+    // A ticket is always money (it cannot be pledged); a sponsorship may be.
+    const written = await recordGift({
+      orgId, donorId, amount: split.totalCents / 100, date: day, type: "cash",
+      campaign: event.name, notes: `${split.qty} × ${level.name}, ${event.name}`,
+      paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
+      quidProQuoValue: split.fmvCents / 100,
+      quidProQuoDesc: EV.quidProQuoDescription({ eventName: event.name, levelName: level.name, qty: split.qty, kind: level.kind }),
+      actorId: who.id, actorName: who.name, source: "event",
+      ledgerDescription: `${level.name}, ${event.name}`,
+      timelineNote: `${level.kind === "sponsor" ? "Sponsored" : "Bought " + (split.qty === 1 ? "a ticket" : split.qty + " tickets")} for ${event.name}`,
+    });
+    if (written.duplicate) {
+      const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, idemKey]);
+      giftId = g?.id || null;
+    } else giftId = written.gift.id;
+  } else if (!giftId) {
+    // An unpaid sponsorship is a promise: a pledge due on the event day,
+    // attributed to nothing but itself. It is NOT money until it arrives.
+    pledgeId = "pl_" + uuid().slice(0, 8);
+    await run(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status,notes,created_by,created_by_name)
+               VALUES (?,?,?,?,?,'open',?,?,?)`,
+      [pledgeId, orgId, donorId, split.totalCents / 100, String(event.date).slice(0, 10) > day ? String(event.date).slice(0, 10) : day,
+       `Sponsorship: ${level.name}, ${event.name}`, who.id, who.name]);
+    await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
+      ["pi_" + uuid().slice(0, 8), orgId, pledgeId, String(event.date).slice(0, 10) > day ? String(event.date).slice(0, 10) : day, split.totalCents / 100]);
+  }
+  const recognition = level.kind === "sponsor" ? EV.recognitionLine({ donorName: donor.name, levelName: level.name, recognition: level.recognition }) : null;
+  const id = "att_" + uuid().slice(0, 8);
+  const rows = await query(
+    `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,registration_gift_id,sponsor_pledge_id,recognition,gift_amount)
+     VALUES (?,?,?,?,?,?,'registered',?,?,?,?,?,?)
+     ON CONFLICT (event_id, donor_id) DO UPDATE SET
+       level_id=EXCLUDED.level_id, quantity=event_attendees.quantity + EXCLUDED.quantity,
+       registration_gift_id=COALESCE(EXCLUDED.registration_gift_id, event_attendees.registration_gift_id),
+       sponsor_pledge_id=COALESCE(EXCLUDED.sponsor_pledge_id, event_attendees.sponsor_pledge_id),
+       recognition=COALESCE(EXCLUDED.recognition, event_attendees.recognition),
+       status=CASE WHEN event_attendees.status='cancelled' THEN 'registered' ELSE event_attendees.status END
+     RETURNING *`,
+    [id, event.id, orgId, donorId, donor.name, donor.email || "", level.id, split.qty, giftId, pledgeId, recognition, split.totalCents / 100]);
+  return { attendee: rows[0], giftId, pledgeId, split };
+}
+
+// Find the person by id, or by email, or create them — the same shape a
+// staff member registering a walk-up guest needs.
+async function eventDonorFor(orgId, body, who) {
+  if (body?.donorId) {
+    const [d] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [String(body.donorId), orgId]);
+    return d ? d.id : null;
+  }
+  const name = String(body?.name || "").trim().slice(0, 200);
+  const email = String(body?.email || "").trim().toLowerCase().slice(0, 200);
+  if (!name && !email) return null;
+  if (email) {
+    const found = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [orgId, email]);
+    if (found.length === 1) return found[0].id;
+  }
+  const id = "d_" + uuid().slice(0, 10);
+  await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name) VALUES (?,?,?,?,'prospect','active','[]',?,?)`,
+    [id, orgId, name || email, email || null, who.id, who.name]);
+  return id;
+}
+
+// ── EVENT ROUTES (levels, registration, tables, attendance) ─────────────────
+app.get("/events/:id/levels", requireAuth, wrap(async (req, res) => {
+  const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const levels = await query("SELECT * FROM event_levels WHERE event_id=? AND org_id=? ORDER BY kind DESC, position, price", [ev.id, req.user.orgId]);
+  const out = [];
+  for (const l of levels) out.push(eventLevelPayload(l, await levelTaken(l.id)));
+  res.json({ levels: out });
+}));
+
+app.post("/events/:id/levels", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const v = EV.validateLevel(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level, id = "evl_" + uuid().slice(0, 8);
+  await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,capacity,recognition,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, ev.id, L.kind, L.name, L.priceCents / 100, L.fmvCents / 100, L.capacity, L.recognition, actor(req).id, actor(req).name]);
+  res.status(201).json({ id });
+}));
+
+app.put("/event-levels/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const [l] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!l) return res.status(404).json({ error: "Not found" });
+  const v = EV.validateLevel({ ...eventLevelPayload(l), ...req.body });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level;
+  await run("UPDATE event_levels SET kind=?, name=?, price=?, fmv=?, capacity=?, recognition=? WHERE id=? AND org_id=?",
+    [L.kind, L.name, L.priceCents / 100, L.fmvCents / 100, L.capacity, L.recognition, l.id, req.user.orgId]);
+  res.json({ ok: true });
+}));
+
+app.delete("/event-levels/:id", requireAuth, wrap(async (req, res) => {
+  // A level somebody bought cannot vanish from under their receipt.
+  const [used] = await query("SELECT COUNT(*)::int AS n FROM event_attendees WHERE level_id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (used?.n) return res.status(409).json({ error: "level_in_use", message: "People have registered at this level. It can be edited, not removed." });
+  const { changes } = await run("DELETE FROM event_levels WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// Staff-side registration: a person, a level, how many, and whether it is paid.
+app.post("/events/:id/register", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const [level] = await query("SELECT * FROM event_levels WHERE id=? AND event_id=? AND org_id=?", [String(req.body?.levelId || ""), event.id, orgId]);
+  if (!level) return res.status(404).json({ error: "Level not found" });
+  const qty = Number(req.body?.quantity || 1);
+  if (!Number.isInteger(qty) || qty < 1 || qty > EV.MAX_QTY) return res.status(400).json({ error: `quantity is 1 to ${EV.MAX_QTY}` });
+  const who = actor(req);
+  const donorId = await eventDonorFor(orgId, req.body, who);
+  if (!donorId) return res.status(req.body?.donorId ? 404 : 400).json({ error: req.body?.donorId ? "Donor not found" : "Who is registering? A person on file, or a name and email." });
+  const idem = typeof req.body?.idempotencyKey === "string" && req.body.idempotencyKey.trim() ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+  try {
+    const r = await registerForEvent({ orgId, event, level, donorId, qty, paid: req.body?.paid !== false,
+      paymentMethod: req.body?.paymentMethod || null, idemKey: idem, who });
+    res.status(201).json(r);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    throw e;
+  }
+}));
+
+// The guest list: who, what level, which table, whether they came.
+app.get("/events/:id/guests", requireAuth, wrap(async (req, res) => {
+  const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const guests = await query(
+    `SELECT a.id, a.donor_id, a.name, a.email, a.status, a.quantity, a.table_label, a.recognition,
+            a.registration_gift_id, a.sponsor_pledge_id, l.name AS level_name, l.kind AS level_kind
+       FROM event_attendees a LEFT JOIN event_levels l ON l.id = a.level_id
+      WHERE a.event_id=? AND a.org_id=? ORDER BY a.table_label NULLS LAST, a.name`, [event.id, req.user.orgId]);
+  const tables = {};
+  for (const g of guests) if (g.table_label) (tables[g.table_label] ||= []).push(g.name);
+  res.json({ event, guests, tables,
+    recognition: guests.filter(g => g.recognition && g.status !== "cancelled").map(g => g.recognition) });
+}));
+
+app.put("/events/:id/attendees/:attendeeId/table", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const { changes } = await run("UPDATE event_attendees SET table_label=? WHERE id=? AND event_id=? AND org_id=?",
+    [EV.tableLabel(req.body?.table), req.params.attendeeId, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, table: EV.tableLabel(req.body?.table) });
+}));
+
+// After the event: who came and who did not. Each person's timeline gets ONE
+// line for this event, however many times the list is saved.
+app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const came = new Set((Array.isArray(req.body?.attended) ? req.body.attended : []).map(String));
+  const missed = new Set((Array.isArray(req.body?.noShow) ? req.body.noShow : []).map(String));
+  const ids = [...came, ...missed];
+  if (!ids.length) return res.status(400).json({ error: "Mark who came and who did not." });
+  const rows = await query("SELECT * FROM event_attendees WHERE event_id=? AND org_id=? AND id = ANY(?)", [event.id, orgId, ids]);
+  const who = actor(req);
+  const [u] = await query("SELECT name FROM users WHERE id=?", [req.user.userId]);
+  const day = String(event.date).slice(0, 10) || orgToday(await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  let logged = 0;
+  for (const a of rows) {
+    const status = came.has(a.id) ? "attended" : "no_show";
+    await run("UPDATE event_attendees SET status=? WHERE id=? AND org_id=?", [status, a.id, orgId]);
+    if (!a.donor_id) continue;
+    // Claim the timeline line first: a second save finds it taken.
+    const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=? AND attendance_logged_at IS NULL RETURNING id", [a.id]);
+    if (!claimed.length) continue;
+    await run(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata) VALUES (?,?,?,'event',?,?,?,?,?)`,
+      ["i_" + uuid().slice(0, 10), orgId, a.donor_id,
+       status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
+       day, who.id, u?.name || who.name, JSON.stringify({ via: "event_attendance", event_id: event.id, attendee_id: a.id, status })]);
+    logged++;
+  }
+  res.json({ updated: rows.length, timelineLines: logged });
+}));
+
 app.get("/events", requireAuth, async (req, res) => {
   try {
     const orgId = req.user.orgId;
@@ -29489,8 +29785,12 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
       const evtName = evtInfoRows[0]?.name || "event";
       const today = new Date().toISOString().slice(0, 10);
       await run(`UPDATE donors SET wealth_score = LEAST(COALESCE(wealth_score,0)+5, 99) WHERE id=$1 AND org_id=$2`, [att.donor_id, orgId]).catch(() => {});
-      await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'event',$4,$5)",
-        ["i_"+uuid().slice(0,8), orgId, att.donor_id, `Attended: ${evtName}`, today]).catch(() => {});
+      // BUILD-98 (switch) Part 4 — ONE attendance line per guest per event,
+      // whichever door marked them: this PATCH and POST /events/:id/attendance
+      // claim the same stamp, so saving the list twice writes one line.
+      const claimed = await query("UPDATE event_attendees SET attendance_logged_at=NOW() WHERE id=$1 AND attendance_logged_at IS NULL RETURNING id", [att.id]).catch(() => []);
+      if (claimed.length) await run("INSERT INTO interactions (id,org_id,donor_id,type,note,date) VALUES ($1,$2,$3,'event',$4,$5)",
+        ["i_"+uuid().slice(0,8), orgId, att.donor_id, `Came to ${evtName}.`, today]).catch(() => {});
       await run(`UPDATE donors SET stage = CASE WHEN stage='prospect' THEN 'qualify' WHEN stage='qualify' THEN 'cultivate' ELSE stage END WHERE id=$1 AND org_id=$2 AND stage IN ('prospect','qualify')`,
         [att.donor_id, orgId]).catch(() => {});
     }

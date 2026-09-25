@@ -84,3 +84,26 @@ saved copy away; say if the twelve should default to calendar instead.
 ### 3.3 · Scheduling is weekly only
 The brief says "schedule as a weekly email". Monthly is one more period key and
 one more line in `SCHEDULES`, added when somebody asks for it.
+
+---
+
+## Part 4 · events
+
+### 4.1 · Tickets sell from the giving page as a mode, not a builder widget
+The brief says "registration through the giving-page builder". What shipped is
+`/give/:orgSlug?event=<id>` — the giving page's own look, a level picker, the
+deductible part stated before payment, and the existing donate route. A
+drag-in "tickets" WIDGET for the page builder (`shared/pageWidgets.js`) is the
+fuller version; it touches the registry, the renderer and the editor, and is
+worth doing once an org actually sells tickets this way.
+
+### 4.2 · Fair-market value is the org's number
+Steward records what the org says a dinner is worth; it does not estimate it.
+The field's hint says what it means. An org that leaves it at $0 gets receipts
+that say the whole ticket is deductible, which is wrong for a dinner — the
+accountant's call, surfaced on every level as "worth $X, so $Y deductible".
+
+### 4.3 · Out of scope, as the brief says
+Seat maps, check-in scanning, ticket transfers, waitlists and refunds of
+tickets are ticketing, not the donor side of an event. A ticket refund today is
+a gift refund (the Stripe `charge.refunded` path reverses it like any gift).
