@@ -78,6 +78,8 @@ export default function GiveSteps({
   const [coverFees, setCoverFees] = useState(false);   // always opt-in, never pre-checked
   const [tributeType, setTributeType] = useState("");
   const [tributeName, setTributeName] = useState("");
+  const [notifyName, setNotifyName] = useState("");
+  const [notifyEmail, setNotifyEmail] = useState("");
   const [employer, setEmployer] = useState("");
   const [answers, setAnswers] = useState({});
   const [stepErr, setStepErr] = useState("");
@@ -158,6 +160,8 @@ export default function GiveSteps({
       coverFees: showCoverFees && coverFees,
       tributeType: tributeType || undefined,
       tributeName: tributeName || undefined,
+      notifyName: notifyName || undefined,
+      notifyEmail: notifyEmail || undefined,
       employer: employer || undefined,
       answers,
     });
@@ -299,10 +303,28 @@ export default function GiveSteps({
                 </select>
               </label>
               {tributeType ? (
-                <label style={{ display: "block", marginTop: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>Their name</span>
-                  <input className="give-tribute-name" value={tributeName} onChange={e => setTributeName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-                </label>
+                <>
+                  <label style={{ display: "block", marginTop: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Their name</span>
+                    <input className="give-tribute-name" value={tributeName} onChange={e => setTributeName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                  </label>
+                  {/* OPTIONAL, and it stays optional: a donor may dedicate a gift
+                      without telling a family about it, and Steward never sends
+                      this — it writes a draft somebody at the org reads first. */}
+                  <label style={{ display: "block", marginTop: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Should we let someone know? (optional)</span>
+                    <input className="give-notify-name" value={notifyName} placeholder="Their name"
+                      onChange={e => setNotifyName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                  </label>
+                  {notifyName ? (
+                    <label style={{ display: "block", marginTop: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>Their email</span>
+                      <input className="give-notify-email" type="email" value={notifyEmail}
+                        onChange={e => setNotifyEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                      <span style={{ fontSize: 12, color: MUTED }}>Someone at the organisation writes to them; this is never sent automatically.</span>
+                    </label>
+                  ) : null}
+                </>
               ) : null}
             </div>
           ) : null}

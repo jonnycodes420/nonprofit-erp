@@ -805,6 +805,15 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
               return res.json({ received: true, duplicate: true });
             }
+            // BUILD-102 Part 3 — the form's tribute, employer and answers. Runs
+            // only for a gift the duplicate guard just let through, so a
+            // redelivered webhook writes no second tribute draft and no second
+            // match pledge. Its failure is logged and costs the donation nothing.
+            const formMeta = pi.metadata || {};
+            if (formMeta.tribute_type || formMeta.employer || Object.keys(formMeta).some(k => k.startsWith("q_"))) {
+              await applyFormAsks(orgId, written.gift, formMeta, SYS_STRIPE)
+                .catch(e => console.error("[form] applying what the form asked:", e.message));
+            }
             if (evLevel) {
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
                 who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
@@ -12141,24 +12150,123 @@ async function importProposals(orgId, rows, who, donorIdByIndex) {
   return out;
 }
 
+// ── ONE RESOLVE-OR-CREATE BY NAME ──────────────────────────────────────────
+// Extracted from importGiftExtras in BUILD-102 Part 3 so the donation form and
+// the importer cannot drift apart about what an employer is. A second copy would
+// eventually mean a form creating a PERSON called "Acme Corp" while the importer
+// creates an organisation, and the two would never merge.
+//
+// `made` is an out-parameter the caller counts, because "how many people did this
+// create" is a figure both callers report and neither may guess at.
+async function donorByNameOrCreate(orgId, name, { create = false, kind = null, who = null, cache = null, made = null } = {}) {
+  const nm = String(name || "").trim();
+  if (!nm) return null;
+  const key = (kind || "p") + ":" + nm.toLowerCase();
+  if (cache && cache.has(key)) return cache.get(key);
+  const rows = await query(
+    "SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 2",
+    [orgId, nm]);
+  let id = rows.length ? rows[0].id : null;
+  if (!id && create) {
+    id = "d_" + uuid().slice(0, 10);
+    await run(
+      `INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+      [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]',
+       (who && who.id) || null, (who && who.name) || null]);
+    if (made) made.count++;
+  }
+  if (cache) cache.set(key, id);
+  return id;
+}
+
+// ── BUILD-102 (Steward Give) Part 3 — WHAT THE FORM ASKED, APPLIED ─────────
+// A tribute rides BUILD-98 Part 1's `writeGiftExtras`, so a tribute notice is a
+// DRAFT and Steward never sends it; the employer opens BUILD-98's match pledge on
+// the employer's own record; an answer lands in the BUILD-78 custom-field value
+// the report builder already reads. Three existing seams, no fourth.
+//
+// NOTHING HERE IS A SECOND GIFT PATH. The gift already exists when this runs, and
+// this only hangs the answers off it — so a failure costs the tribute draft, never
+// the donation.
+async function applyFormAsks(orgId, gift, meta, who) {
+  await GC_READY;
+  const out = { tribute: false, tributeNotice: false, matchPledgeId: null, answers: 0, created: 0, unresolved: [] };
+  const md = meta || {};
+  const cache = new Map(), made = { count: 0 };
+  const raw = {};
+
+  const tributeType = GC.normaliseTributeType(md.tribute_type || "");
+  const tributeName = String(md.tribute_name || "").trim();
+  if (tributeType && tributeName) {
+    // THE HONOUREE IS A RECORD WHEN THERE IS ONE AND A NAME WHEN THERE IS NOT —
+    // the BUILD-98 rule. A form never invents a record for a memorial: somebody
+    // who has died is not a prospect, and creating one would put them on a
+    // mailing list.
+    const hid = await donorByNameOrCreate(orgId, tributeName, { create: false, cache });
+    raw.tribute = { type: tributeType, donorId: hid, name: tributeName,
+                    notifyName: String(md.notify_name || "").trim() || null,
+                    notifyEmail: String(md.notify_email || "").trim() || null };
+  }
+
+  const employer = String(md.employer || "").trim();
+  if (employer) {
+    // AN EMPLOYER IS AN ORGANISATION, found or created as one — the same call the
+    // importer makes, so a form and a spreadsheet cannot disagree about it.
+    const eid = await donorByNameOrCreate(orgId, employer, { create: true, kind: "organisation", who, cache, made });
+    if (eid && eid !== gift.donor_id) raw.match = { employerId: eid };
+    out.created = made.count;
+  }
+
+  if (raw.tribute || raw.match) {
+    const cents = money.toCents(gift.amount) ?? 0;
+    const ck = await checkGiftExtras(orgId, gift.donor_id, cents, raw);
+    if (ck.errors || ck.notFound) {
+      out.unresolved.push({ kind: "extras", why: (ck.errors || ["not found"]).join("; ") });
+    } else {
+      const r = await writeGiftExtras(orgId, gift, ck.extras, { actorId: who.id, actorName: who.name });
+      out.tribute = !!ck.extras.tribute;
+      out.tributeNotice = !!r.tributeNotice;
+      out.matchPledgeId = r.matchPledgeId || null;
+    }
+  }
+
+  // THE ANSWERS. `custom_field_defs` + `donors.custom_fields` is the pair the
+  // report builder reads (`d.custom_fields->>'key'`), which is what makes an
+  // answer filterable in a saved report like any other field. An answer to a
+  // question whose definition has since been archived is DROPPED rather than
+  // written somewhere nothing can see it.
+  const answers = Object.entries(md).filter(([k]) => k.startsWith("q_"))
+    .map(([k, v]) => [k.slice(2), v]).filter(([k]) => k);
+  if (answers.length) {
+    const defs = await query(
+      "SELECT key, type FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL", [orgId]);
+    const known = new Map(defs.map(d => [d.key, d.type]));
+    const patch = {};
+    for (const [k, v] of answers) {
+      const t = known.get(k);
+      if (!t) { out.unresolved.push({ kind: "answer", name: k, why: "no field on file" }); continue; }
+      patch[k] = t === "checkbox" ? (String(v) === "yes") : String(v);
+    }
+    if (Object.keys(patch).length) {
+      // Merged, never replaced: a donor who answered a different form last year
+      // keeps that answer.
+      await run(
+        `UPDATE donors SET custom_fields = COALESCE(custom_fields,'{}'::jsonb) || ?::jsonb, updated_at=NOW()
+          WHERE id=? AND org_id=?`, [JSON.stringify(patch), gift.donor_id, orgId]);
+      out.answers = Object.keys(patch).length;
+    }
+  }
+  return out;
+}
+
 async function importGiftExtras(orgId, pending, who) {
   await GC_READY;
   const out = { softCredits: 0, tributes: 0, tributeNotices: 0, matches: 0, peopleCreated: 0, unresolved: [] };
   const cache = new Map();
-  const byName = async (name, { create = false, kind = null } = {}) => {
-    const nm = String(name || "").trim();
-    if (!nm) return null;
-    const key = (kind || "p") + ":" + nm.toLowerCase();
-    if (cache.has(key)) return cache.get(key);
-    const rows = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 2", [orgId, nm]);
-    let id = rows.length ? rows[0].id : null;
-    if (!id && create) {
-      id = "d_" + uuid().slice(0, 10);
-      await run(`INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
-        [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]', who.id, who.name]);
-      out.peopleCreated++;
-    }
-    cache.set(key, id);
+  const made = { count: 0 };
+  const byName = async (name, opts = {}) => {
+    const id = await donorByNameOrCreate(orgId, name, { ...opts, who, cache, made });
+    out.peopleCreated = made.count;
     return id;
   };
   for (const { giftId, g } of pending) {
@@ -21160,6 +21268,10 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // BUILD-102 Part 2 — `fundId` is a `let` because the FORM's designation
   // replaces whatever the request carried (a fixed form was never asking).
   let { amount, frequency, coverFees, fundId } = req.body;
+  // BUILD-102 Part 3 — what the FORM asked, filled in below once its config has
+  // been read. Declared here, above every line that reads it: the TDZ class has
+  // cost this repo five builds and now fails the pre-push hook.
+  let formAsks = null;
   let { givingPageId, peerFundraiserId } = req.body;
   // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
   // never by the amount the page sent. One-time only, and no fee gross-up: the
@@ -21305,6 +21417,45 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     if (!spec.amount.frequencies.includes(wanted)) {
       return res.status(400).json({ error: "This form does not offer monthly giving.", code: "frequency_not_offered" });
     }
+    // ── BUILD-102 Part 3 — ONLY WHAT THE FORM ASKED IS KEPT ────────────────
+    // A tribute from a form that does not show tribute fields, an employer from
+    // a form that does not ask where you work, an answer to a question that is
+    // not on the form: each is a field nobody was asked, arriving from a request
+    // somebody wrote by hand. Dropped silently rather than refused — the donor
+    // did nothing wrong and their gift must still go through — but never stored,
+    // because a tribute nobody was asked for becomes a draft letter to a family.
+    formAsks = { tributeType: null, tributeName: null, employer: null, answers: {} };
+    if (spec.details.tribute && req.body.tributeType) {
+      const t = String(req.body.tributeType) === "memory" ? "memory"
+        : String(req.body.tributeType) === "honor" ? "honor" : null;
+      if (t) {
+        formAsks.tributeType = t;
+        formAsks.tributeName = String(req.body.tributeName || "").trim().slice(0, 200);
+        // WHO SHOULD HEAR ABOUT IT. BUILD-98 writes a tribute notice only when
+        // somebody is named to receive one, which is right — a notice with nobody
+        // to send it to is a draft nobody will ever open. Optional: a donor may
+        // dedicate a gift without telling a family about it.
+        formAsks.notifyName = String(req.body.notifyName || "").trim().slice(0, 200);
+        formAsks.notifyEmail = String(req.body.notifyEmail || "").trim().slice(0, 200);
+      }
+    }
+    if (spec.details.employerMatch && req.body.employer) {
+      formAsks.employer = String(req.body.employer).trim().slice(0, 200);
+    }
+    const asked = new Map(spec.details.questions.map(q => [q.key, q]));
+    const given = req.body.answers && typeof req.body.answers === "object" ? req.body.answers : {};
+    for (const [k, v] of Object.entries(given)) {
+      const q = asked.get(k);
+      if (!q) continue;                               // not on this form
+      if (q.type === "yesno") { formAsks.answers[k] = v === true || v === "yes"; continue; }
+      const val = String(v == null ? "" : v).trim().slice(0, 480);
+      if (!val) continue;
+      // A CHOICE MAY ONLY BE ONE OF ITS OWN OPTIONS. Otherwise a hand-rolled
+      // answer writes free text into a field the report builder groups by, and
+      // the grouping quietly stops meaning anything.
+      if (q.type === "choice" && !q.options.includes(val)) continue;
+      formAsks.answers[k] = val;
+    }
   }
 
   // Resolved AFTER the form has had its say, so a fixed designation cannot
@@ -21352,6 +21503,27 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
   };
+  // ── BUILD-102 Part 3 — WHAT THE FORM ASKED, carried to the webhook ────────
+  // One metadata key per thing rather than a JSON blob, because Stripe's own
+  // dashboard is where a support question actually gets answered, and a blob is
+  // unreadable there. Stripe allows 50 keys of 500 characters; five questions
+  // plus a tribute plus an employer fits with room to spare.
+  //
+  // These are only carried for a gift arriving through a CONFIGURED form: the
+  // form is what asked the questions, and a field nobody was asked must not
+  // arrive from a hand-rolled request. `formAsks` is set by the Part 2 block.
+  if (formAsks) {
+    if (formAsks.tributeType) {
+      metadata.tribute_type = formAsks.tributeType;
+      metadata.tribute_name = formAsks.tributeName || "";
+      if (formAsks.notifyName) metadata.notify_name = formAsks.notifyName;
+      if (formAsks.notifyEmail) metadata.notify_email = formAsks.notifyEmail;
+    }
+    if (formAsks.employer) metadata.employer = formAsks.employer;
+    for (const [k, v] of Object.entries(formAsks.answers || {})) {
+      metadata["q_" + k] = typeof v === "boolean" ? (v ? "yes" : "no") : String(v).slice(0, 480);
+    }
+  }
   // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
   // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
   const reconnectDecoded = req.body.reconnectToken ? verifyReconnectToken(req.body.reconnectToken) : null;
