@@ -14557,12 +14557,51 @@ app.put("/funders/:donorId", requireAuth, requirePlan("team"), checkWriteAccess,
     const code = r.problem.code === "funder_not_found" ? 404 : 400;
     return res.status(code).json({ error: r.problem.message, code: r.problem.code });
   }
-  const t = req.body.funderType === null || req.body.funderType === "" ? null : String(req.body.funderType || "");
-  if (t !== null && !G.FUNDER_TYPE_KEYS.includes(t)) {
+  // BUILD-100 Part 6 FIX — an ABSENT funderType leaves it alone. The first cut
+  // read `String(req.body.funderType || "")` whether the key was there or not,
+  // so a body carrying only an EIN was refused for a bad funder type: a route
+  // that cannot be called with one field is not a route somebody can use.
+  const hasType = Object.prototype.hasOwnProperty.call(req.body, "funderType");
+  const t = !hasType ? undefined
+    : (req.body.funderType === null || req.body.funderType === "" ? null : String(req.body.funderType));
+  if (t !== undefined && t !== null && !G.FUNDER_TYPE_KEYS.includes(t)) {
     return res.status(400).json({ error: `Funder type must be one of: ${G.FUNDER_TYPES.map(x => x.label).join(", ")}.`, code: "bad_funder_type" });
   }
-  await run("UPDATE donors SET funder_type=?, updated_at=NOW() WHERE id=? AND org_id=?", [t, r.funder.id, req.user.orgId]);
-  res.json({ funderId: r.funder.id, name: r.funder.name, funderType: t, funderTypeLabel: G.funderTypeLabel(t) });
+  // BUILD-100 Part 6 — the EIN, if they have it. Nine digits or nothing: a
+  // half-typed tax id that still matched on a prefix would be worse than none.
+  const I = await grantImportMod();
+  let ein;
+  if (Object.prototype.hasOwnProperty.call(req.body, "ein")) {
+    const raw = req.body.ein;
+    if (raw === null || String(raw).trim() === "") ein = null;
+    else {
+      ein = I.normalizeEin(raw);
+      if (!ein) return res.status(400).json({ code: "bad_ein",
+        error: "An EIN is nine digits, written 12-3456789. Leave it blank if you do not have it." });
+    }
+  }
+  if (t !== undefined) {
+    await run("UPDATE donors SET funder_type=?, updated_at=NOW() WHERE id=? AND org_id=?", [t, r.funder.id, req.user.orgId]);
+  }
+  if (ein !== undefined) {
+    // The partial unique index is the arbiter: two records claiming one EIN is a
+    // duplicate to merge, and the route says so rather than swallowing 23505.
+    try {
+      await run("UPDATE donors SET funder_ein=?, updated_at=NOW() WHERE id=? AND org_id=?", [ein, r.funder.id, req.user.orgId]);
+    } catch (e) {
+      if (String(e.code) === "23505") {
+        const [dup] = await query("SELECT name FROM donors WHERE org_id=? AND funder_ein=? AND deleted_at IS NULL",
+          [req.user.orgId, ein]);
+        return res.status(409).json({ code: "ein_already_on_file",
+          error: `${(dup && dup.name) || "Another record"} already carries that EIN. If they are the same funder, merge the two records.` });
+      }
+      throw e;
+    }
+  }
+  const [after] = await query("SELECT funder_type, funder_ein FROM donors WHERE id=? AND org_id=?", [r.funder.id, req.user.orgId]);
+  const type = (after && after.funder_type) || null;
+  res.json({ funderId: r.funder.id, name: r.funder.name, funderType: type, funderTypeLabel: G.funderTypeLabel(type),
+             ein: (after && after.funder_ein) || null });
 }));
 
 // GET /funders/:donorId/grants — a funder's own record: every grant, in order.
@@ -15427,6 +15466,241 @@ app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ── BUILD-100 (grants) Part 6 — READING SOMEBODY ELSE'S GRANT SPREADSHEET ───
+// shared/grantImport.js is the preset — a preset on the mapper, never a second
+// importer (the 89d rule, fourth application). This is the ONE write path it
+// lands through, and it writes grants and funders and NOTHING ELSE: no gift, no
+// pledge, no milestone, no thread. An imported file is history (BUILD-83), and a
+// report that was due last March is not a follow-up somebody has to close this
+// morning.
+async function grantImportMod() { return import("./shared/grantImport.js"); }
+
+// GET /grants/import/preview — what Steward makes of a file, before it writes
+// anything. It reads and returns; it changes nothing, which is what makes the
+// four-state deposit-sheet discipline available here too.
+app.post("/grants/import/preview", requireAuth, wrap(async (req, res) => {
+  const out = await planGrantImport(req.user.orgId, req.body || {});
+  if (out.error) return res.status(400).json(out);
+  res.json({ ...out, wrote: false });
+}));
+
+// THE PLAN, shared by the preview and the commit, so the screen can never be
+// shown one thing and the database given another (the BUILD-95 rule: the commit
+// RE-PLANS server-side and writes from the plan, never from the client's copy).
+async function planGrantImport(orgId, body) {
+  const I = await grantImportMod();
+  const G = await grantShapeMod();
+  const headers = Array.isArray(body.headers) ? body.headers.map(h => String(h == null ? "" : h)) : [];
+  const rawRows = Array.isArray(body.rows) ? body.rows : [];
+  if (!headers.length) return { error: "That file has no header row.", code: "no_headers" };
+  if (!rawRows.length) return { error: "That file has no rows.", code: "no_rows" };
+  if (rawRows.length > 5000) {
+    return { error: "That file has more than 5,000 rows. Split it and import in two passes.", code: "too_many_rows" };
+  }
+
+  const detected = I.detectGrantSource(headers);
+  // A SOURCE THE PERSON STATES WINS over what Steward detected — they have the
+  // file open and Steward has a header row.
+  const source = I.GRANT_SOURCE_KEYS.includes(String(body.source || "")) ? String(body.source) : detected.source;
+  const { mapping, spellings, unrecognised } = I.grantMapping(headers);
+  // A MAPPING THE PERSON CORRECTED wins too, field by field, and only for a
+  // field this module knows — an unknown key cannot smuggle a column in.
+  if (body.mapping && typeof body.mapping === "object") {
+    for (const [f, h] of Object.entries(body.mapping)) {
+      if (I.GRANT_FIELD_KEYS.includes(f) && (h === null || headers.includes(String(h)))) {
+        if (h === null) delete mapping[f]; else mapping[f] = String(h);
+      }
+    }
+  }
+  if (!mapping.funderName && !mapping.funderEin) {
+    return { error: "Steward could not find the funder's name in that file. Point it at the column that holds it.",
+             code: "no_funder_column", headers, mapping, unrecognised, source, detected };
+  }
+
+  const built = I.buildGrantRows(rawRows, {
+    mapping, spellings, source, money,
+    cell: (row, header) => Array.isArray(row) ? row[headers.indexOf(header)] : (row || {})[header],
+  });
+
+  // ── RESOLVING THE FUNDERS ────────────────────────────────────────────────
+  // Every candidate the file could be talking about, read ONCE. A per-row query
+  // would be forty round trips on a forty-row file and 25,000 on a real one.
+  const candidates = (await query(
+    `SELECT id, name, kind, funder_ein FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]))
+    .map(d => ({ id: d.id, name: d.name, kind: d.kind, funderEin: d.funder_ein }));
+
+  const byKey = new Map();               // one decision per distinct funder in the file
+  for (const g of built.grants) {
+    const key = (I.normalizeEin(g.funderEin) ? "e:" + I.normalizeEin(g.funderEin) : "n:" + I.funderNameKey(g.funderName));
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, name: g.funderName, ein: I.normalizeEin(g.funderEin), lines: [],
+                       ...I.matchFunder({ name: g.funderName, ein: g.funderEin }, candidates) });
+    }
+    byKey.get(key).lines.push(g.line);
+  }
+
+  // Already on file, by the same key the write path will use.
+  const existingKeys = new Set();
+  for (const r of await query(
+    `SELECT g.id, g.program, g.deadline, g.external_id, d.name AS funder_name
+       FROM grants g LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=?`, [orgId])) {
+    existingKeys.add(I.grantDedupeKey({ externalId: r.external_id, funderName: r.funder_name || "",
+                                        program: r.program || "", deadline: r.deadline || null }));
+  }
+
+  const refused = [...built.refused];
+  const plan = [], seen = new Set();
+  let skipped = 0;
+  for (const g of built.grants) {
+    const key = (I.normalizeEin(g.funderEin) ? "e:" + I.normalizeEin(g.funderEin) : "n:" + I.funderNameKey(g.funderName));
+    const f = byKey.get(key);
+    if (f.refused === "funder_is_a_person") {
+      refused.push({ line: g.line, funderName: g.funderName, program: g.program,
+                     why: I.FUNDER_IS_A_PERSON, code: "funder_is_a_person", person: f.person });
+      continue;
+    }
+    if (f.refused === "funder_not_named") {
+      refused.push({ line: g.line, why: "no funder named", code: "funder_not_named" });
+      continue;
+    }
+    const dk = I.grantDedupeKey(g);
+    // THE SAME FILE TWICE ADDS NOTHING, and the same row twice INSIDE one file
+    // is the same thing — both are skipped and counted, never silently folded.
+    if (existingKeys.has(dk) || seen.has(dk)) { skipped++; continue; }
+    seen.add(dk);
+    plan.push({ ...g, funderKey: key, dedupeKey: dk });
+  }
+
+  const pipelineCents = plan.reduce((sum, g) =>
+    sum + (G.isOpenStatus(g.status) ? (g.amountRequestedCents || 0) : 0), 0);
+  const funders = [...byKey.values()].filter(f => !f.refused);
+  return {
+    source, detected, mapping, unrecognised,
+    grants: plan.map(g => ({ ...g, amountRequested: toDollars(g.amountRequestedCents),
+                             amountAwarded: g.amountAwardedCents == null ? null : toDollars(g.amountAwardedCents) })),
+    funders: funders.map(f => ({ name: f.name, ein: f.ein, donorId: f.donorId || null,
+                                 how: f.how || null, willCreate: !!f.create, grants: f.lines.length })),
+    counts: {
+      rows: rawRows.length, grants: plan.length, funders: funders.length,
+      willCreateFunders: funders.filter(f => f.create).length,
+      matchedByEin: funders.filter(f => f.how === "ein").length,
+      matchedByName: funders.filter(f => f.how === "name").length,
+      skipped, refused: refused.length, ...built.counted,
+    },
+    refused,
+    pipelineCents, pipeline: toDollars(pipelineCents),
+    // NOTHING IS INVENTED HERE AND THE PLAN SAYS SO, so nobody has to read the
+    // route to know what an import will and will not touch.
+    writes: ["grants", "funder organisations that were not on file"],
+    doesNotWrite: ["gifts", "pledges", "deadlines Steward watches", "follow-ups"],
+    plan_: plan,
+  };
+}
+
+// POST /grants/import — the ONE write path. Everything lands inside one
+// transaction, so a file that fails halfway leaves no half-imported pipeline.
+app.post("/grants/import", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const I = await grantImportMod();
+  const orgId = req.user.orgId;
+  const plan = await planGrantImport(orgId, req.body || {});
+  if (plan.error) return res.status(400).json(plan);
+
+  const who = actor(req);
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [who.id, orgId]);
+  const byName = (u && u.name) || who.name;
+  const created = [], written = [];
+
+  await withTransaction(async (client) => {
+    const trun = (sql, args) => runTx(client, sql, args);
+    const tquery = (sql, args) => queryTx(client, sql, args);
+    // 1 — THE FUNDERS FIRST, and every one created as an ORGANISATION. A funder
+    // created as a person would be refused by Part 1's own door the next time
+    // anybody touched it, which is the shape of a bug that looks like data.
+    const resolved = new Map();
+    for (const f of plan.funders) {
+      if (f.donorId) { resolved.set(f.name, f.donorId); continue; }
+      const id = "dn_" + uuid().slice(0, 10);
+      await trun(
+        `INSERT INTO donors (id,org_id,name,kind,stage,status,total_giving,gift_count,funder_ein,
+                             person_types,created_by,created_by_name)
+         VALUES (?,?,?,'organisation','prospect','new',0,0,?,?,?,?)`,
+        [id, orgId, f.name, f.ein || null, JSON.stringify(["donor"]), who.id, byName]);
+      resolved.set(f.name, id);
+      created.push({ id, name: f.name, ein: f.ein || null });
+    }
+    // An EIN we now hold for a funder already on file is worth keeping, but it
+    // NEVER overwrites one somebody already typed.
+    for (const f of plan.funders) {
+      if (f.donorId && f.ein) {
+        await trun("UPDATE donors SET funder_ein=COALESCE(funder_ein, ?) WHERE id=? AND org_id=?",
+          [f.ein, f.donorId, orgId]).catch(() => {});
+      }
+    }
+
+    // 2 — THE FUND AND THE OFFICER, matched by name to what the org already has.
+    // NOTHING IS CREATED on either: a fund is a board decision (BUILD-88a's rule)
+    // and a user is a login. An unmatched name is carried into the notes so it is
+    // not lost, and counted.
+    const funds = new Map((await tquery("SELECT id, name FROM fin_funds WHERE org_id=?", [orgId]))
+      .map(f => [String(f.name).trim().toLowerCase(), f.id]));
+    const officers = new Map((await tquery("SELECT id, name FROM users WHERE org_id=?", [orgId]))
+      .map(o => [String(o.name || "").trim().toLowerCase(), o.id]));
+
+    for (const g of plan.plan_) {
+      const funderId = resolved.get(g.funderName);
+      const fundId = g.fundName ? funds.get(String(g.fundName).trim().toLowerCase()) || null : null;
+      const officerId = g.officerName ? officers.get(String(g.officerName).trim().toLowerCase()) || null : null;
+      const unmatched = [
+        g.fundName && !fundId ? `The file named the fund "${g.fundName}", which is not on the chart of accounts.` : null,
+        g.officerName && !officerId ? `The file named "${g.officerName}" as the officer, who is not a user here.` : null,
+      ].filter(Boolean);
+      const notes = [g.notes, ...unmatched].filter(Boolean).join(" ").slice(0, 4000) || null;
+      const id = "gr_" + uuid().slice(0, 10);
+      await trun(
+        `INSERT INTO grants (id,org_id,funder,funder_donor_id,program,amount,amount_requested,amount_awarded,
+                             status,deadline,restriction,fund_id,officer_id,cycle_name,decline_reason,declined_on,
+                             external_id,notes,is_sample,created_by,created_by_name)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,FALSE,?,?)`,
+        [id, orgId, g.funderName, funderId, g.program,
+         toDollars(g.amountAwardedCents || g.amountRequestedCents),
+         toDollars(g.amountRequestedCents),
+         g.amountAwardedCents == null ? null : toDollars(g.amountAwardedCents),
+         g.status, g.deadline, g.restriction, fundId, officerId, g.cycleName,
+         g.declineReason, g.declinedOn, g.externalId, notes, who.id, byName]);
+      // AN AWARDED GRANT IMPORTED FROM A FILE GETS NO PLEDGE. Part 1's award door
+      // writes one because a live award is money now promised; a historical award
+      // in a spreadsheet already had its cheques, and minting instalments for it
+      // would put money on the books twice — once as the file's history and once
+      // as a promise nobody is waiting for.
+      if (g.status === "awarded") {
+        await trun("UPDATE grants SET awarded_at=COALESCE(awarded_at, NOW()) WHERE id=? AND org_id=?", [id, orgId]);
+      }
+      written.push({ id, line: g.line, funderName: g.funderName, program: g.program, status: g.status });
+    }
+  });
+
+  const pipelineCents = plan.pipelineCents;
+  res.status(201).json({
+    source: plan.source, mapping: plan.mapping, unrecognised: plan.unrecognised,
+    counts: { ...plan.counts, created: created.length },
+    created, grants: written, refused: plan.refused,
+    pipelineCents, pipeline: toDollars(pipelineCents),
+    sentence: I.importSentence({ grants: written.length, funders: plan.counts.funders,
+      created: created.length, skipped: plan.counts.skipped, refused: plan.refused.length,
+      pipelineCents }, money.formatCentsPlain),
+    writes: plan.writes, doesNotWrite: plan.doesNotWrite,
+    wrote: true,
+  });
+}));
+
+// GET /grants/import/sources — what Steward can read, and how sure it is of each.
+app.get("/grants/import/sources", requireAuth, wrap(async (req, res) => {
+  const I = await grantImportMod();
+  res.json({ sources: I.GRANT_SOURCES, fields: I.GRANT_FIELD_KEYS,
+             columns: I.GRANT_COLUMNS, statusVocabulary: I.SOURCE_STATUS });
+}));
+
 // ── BUILD-100 (grants) Part 5 — THE AGENT DRAFTS A REPORT OUTLINE ───────────
 // "Draft the report outline for the Sunrise grant." What comes back is built
 // ONLY from that grant's own rows: what was promised, what the funder paid, what
@@ -15493,8 +15767,12 @@ async function grantOutlineRowsFor(orgId, grantId, { from = null, to = null } = 
     `SELECT id, doc_type, file_name, uploaded_at FROM grant_documents
       WHERE org_id=? AND grant_id=? ORDER BY uploaded_at ASC`, [orgId, g.id])) {
     refs.add(`document:${d.id}`);
+    // THE ORG'S OWN CALENDAR, not UTC. `toISOString().slice(0,10)` on a
+    // timestamptz is a day out for every org west of Greenwich after 7pm, and
+    // `date-seam` is right to count it as an unrouted site (BUILD-89S's gotcha).
+    const storedOn = d.uploaded_at ? orgToday(org, d.uploaded_at) : null;     // ORG_TZ_SEAM_OK
     lines.push(`document:${d.id} — a ${grantDocs.docTypeLabel(d.doc_type).toLowerCase()} on file, "${d.file_name}", `
-      + `stored ${d.uploaded_at instanceof Date ? d.uploaded_at.toISOString().slice(0, 10) : String(d.uploaded_at).slice(0, 10)}. `
+      + `stored ${storedOn || "on a date the record does not carry"}. `
       + `Steward has NOT read this file; only that it exists is known.`);
   }
 

@@ -2588,6 +2588,30 @@ async function initSchema() {
   // Sunrise Foundation is a private foundation across every grant it ever makes,
   // and storing it per grant would let two rows disagree about one organisation.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_type TEXT`);
+  // BUILD-100 (grants) Part 6 — A FUNDER'S EIN IS THE ONLY IDENTIFIER IN THIS
+  // DOMAIN THAT IS ACTUALLY UNIQUE, and an imported grant spreadsheet often
+  // carries it. Nine digits, no punctuation, stored only for an ORGANISATION.
+  // The partial unique index is what makes "match on EIN" a fact rather than a
+  // hope — two records claiming one EIN in one org is a duplicate to merge, not
+  // a state to reconcile at read time.
+  //
+  // NB the repo-wide rule from FIX-legal-entity stands: an EIN is not public
+  // and none is written down in this repository. This column holds a customer's
+  // own data, entered by a customer.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS funder_ein TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS donors_one_funder_ein
+                      ON donors (org_id, funder_ein)
+                    WHERE funder_ein IS NOT NULL AND deleted_at IS NULL`).catch(e =>
+    console.error("[grants] donors_one_funder_ein:", e.message));
+
+  // BUILD-100 (grants) Part 6 — the source's OWN record id, when the file
+  // carried one. It is what makes importing the same export twice add nothing,
+  // and the partial unique index is what makes that a guarantee rather than a
+  // check-then-insert that loses a race.
+  await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS external_id TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grants_one_external_id
+                      ON grants (org_id, external_id) WHERE external_id IS NOT NULL`).catch(e =>
+    console.error("[grants] grants_one_external_id:", e.message));
 
   // The request, the award, and where the money is allowed to go.
   await pool.query(`ALTER TABLE grants ADD COLUMN IF NOT EXISTS amount_requested NUMERIC(12,2)`);
