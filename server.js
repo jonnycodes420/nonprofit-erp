@@ -48,6 +48,8 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const Anthropic = require("@anthropic-ai/sdk");
 const { Resend } = require("resend");
+// 2026-09-24 — addresses Steward must never email, from any org (mailBlock.js).
+const { blockedRecipientIn, isBlockedAddress } = require("./mailBlock");
 // ── BUILD-97 Part 5 — THE CHOKE POINT THAT DID NOT EXIST ───────────────────
 // The incident write-up's last open item, verbatim: "server.js still has ~20
 // separate resend.emails.send( call sites. The two gates cover every one that
@@ -78,7 +80,7 @@ const EMAIL_LOG_RETENTION_DAYS = 30;
 // honest — some sends (a password reset, the MIGC contact form) genuinely have
 // no tenant — and it is better than a guess, because the whole point of this
 // table is telling the truth about what left the building.
-function _logOutboundEmail(opts, result, err) {
+function _logOutboundEmail(opts, result, err, statusOverride) {
   const to = Array.isArray(opts && opts.to) ? opts.to[0] : (opts && opts.to);
   const domain = String(to || "").split("@")[1] || "";
   const row = [
@@ -87,7 +89,7 @@ function _logOutboundEmail(opts, result, err) {
     domain.toLowerCase().slice(0, 120),
     String((opts && opts._stewardKind) || "").slice(0, 60) || null,
     String((opts && opts.subject) || "").slice(0, 200),
-    err ? "failed" : "sent",
+    statusOverride || (err ? "failed" : "sent"),
     err ? String(err.message || err).slice(0, 300) : null,
   ];
   // Never let logging break a send, and never let it throw into a caller that
@@ -118,6 +120,17 @@ const resend = new Proxy(_rawResend, {
           return typeof v === "function" ? v.bind(eTarget) : v;
         }
         return async function send(opts) {
+          // THE PERMANENT BLOCK (mailBlock.js). Checked HERE because every send
+          // in this file passes through here, including ones written later.
+          // Refused as an ERROR, not a throw: callers already treat a provider
+          // error as "not delivered" and log it, which is exactly the truth.
+          const blocked = blockedRecipientIn(opts);
+          if (blocked) {
+            const why = "blocked_address: recipient is on Steward's permanent block list";
+            console.warn(`[mail-block] REFUSED a send to a blocked address (kind=${(opts && opts._stewardKind) || "?"}, org=${(opts && opts._stewardOrgId) || "none"})`);
+            try { _logOutboundEmail(opts, null, { message: why }, "blocked"); } catch (_) { /* ignore */ }
+            return { data: null, error: { name: "blocked_address", message: why } };
+          }
           let out, thrown = null;
           try {
             out = await eTarget.send(opts);
@@ -15946,6 +15959,12 @@ async function donorMailDecision(kind, email, orgId) {
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
   if (!email) return { send: false, reason: "no_email" };
+  // The permanent block (mailBlock.js) outranks everything, the org switch
+  // included: it is not a fact about an org or a person's preference.
+  if (isBlockedAddress(email)) {
+    console.warn(`[mail-block] donorMailDecision refused a blocked address (kind=${kind}, org=${orgId || "none"})`);
+    return { send: false, reason: "blocked_address" };
+  }
   // The org-level switch outranks every per-person consideration below it:
   // if this organisation is not sending mail, who the person is does not
   // arise. Checked FIRST so a disabled org costs one query, not five.
@@ -17198,6 +17217,8 @@ const _opsAlertSent = new Map();
 async function opsAlert(kind, subject, body) {
   const to = process.env.FOUNDER_EMAIL;
   if (!to) return { skipped: "no_founder_email" };
+  // This one send uses the raw client, so the permanent block is checked here too.
+  if (isBlockedAddress(to)) { console.warn("[mail-block] REFUSED an ops alert to a blocked address"); return { skipped: "blocked_address" }; }
   const hourKey = kind + ":" + new Date().toISOString().slice(0, 13);
   if (_opsAlertSent.has(hourKey)) return { skipped: "already_alerted_this_hour" };
   _opsAlertSent.set(hourKey, true);
