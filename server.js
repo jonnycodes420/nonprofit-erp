@@ -13210,6 +13210,244 @@ app.put("/orgs/major-prospect-threshold", requireAuth, requireAdmin, checkWriteA
   res.json({ thresholdCents: cents, thresholdAmount: toDollars(cents) });
 }));
 
+// ── BUILD-99 (major gifts) Part 3 — CULTIVATION PLANS ──────────────────────
+// A plan is a sequence of BUILD-81 threads for one person, authored by the
+// officer. It does NOT fork the Thread engine: each step, when its turn comes,
+// is a thread, opened through `openThreadTx` like every other, and it closes
+// through the paths that already exist. shared/planShape.js holds the rules.
+//
+// NOTHING IN A PLAN SENDS ANYTHING. There is no email field and no schedule that
+// fires; every step is a human action that ends in a logged line. That is what
+// keeps a four-step cultivation of a major donor from being a sequence.
+async function planMod() { return import("./shared/planShape.js"); }
+
+// THE CHAINING, IN ONE FUNCTION, CALLED FROM EVERY PLACE A THREAD CLOSES.
+//
+// It is idempotent and it SELF-HEALS, which is the property that matters here
+// because production runs with background ticks off (NEEDS-JONATHAN §1) and
+// there is no sweep to fall back on. If the next step cannot open — because the
+// donor already has an open thread, which the conversation route legitimately
+// creates from the officer's own next step — the step stays PENDING and the next
+// close calls this again. So a plan can never be stalled by a race; it is only
+// ever waiting, and `planSentence` says so out loud.
+async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, today } = {}) {
+  const PL = await planMod();
+  const [plan] = await query(
+    "SELECT * FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donorId]);
+  if (!plan) return null;
+  const steps = await query("SELECT * FROM cultivation_plan_steps WHERE plan_id=? ORDER BY seq", [plan.id]);
+
+  // A step whose thread has closed is DONE. The thread's own close is the fact;
+  // this only reads it back, so the two can never disagree about whether the
+  // officer did the thing.
+  const open = steps.find(s => s.status === "open");
+  if (open && open.thread_id) {
+    const [th] = await query("SELECT id, closed_at, close_kind FROM threads WHERE id=? AND org_id=?", [open.thread_id, orgId]);
+    if (!th || th.closed_at) {
+      await run("UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND status='open'",
+        [actorId || null, actorName || null, open.id]);
+      open.status = "done";
+    }
+  }
+  if (steps.some(s => s.status === "open")) return plan.id;   // still working on one
+
+  const nextSeq = PL.nextPendingSeq(steps);
+  if (nextSeq == null) {
+    // Every step is done or skipped — the plan is finished, and that is a fact
+    // about the plan rather than an outcome anybody has to record.
+    await run("UPDATE cultivation_plans SET status='done', closed_at=NOW() WHERE id=? AND status='active'", [plan.id]);
+    return plan.id;
+  }
+  const step = steps.find(s => Number(s.seq) === Number(nextSeq));
+  const opened = await withTransaction(async client => openThreadTx(client, {
+    orgId, donorId,
+    step: { type: step.step_type, label: step.label, due: step.due_date },
+    openedOn: today || step.due_date,
+    ownerId: plan.owner_id, ownerName: plan.owner_name,
+    actorId: actorId || plan.created_by, actorName: actorName || plan.created_by_name,
+  }));
+  // `openThreadTx` returns null when the donor already has an open thread (the
+  // ON CONFLICT is the arbiter, never a check-then-insert). The step waits.
+  if (!opened) return plan.id;
+  await run("UPDATE cultivation_plan_steps SET status='open', thread_id=? WHERE id=? AND status='pending'", [opened.id, step.id]);
+  return plan.id;
+}
+
+// GET /cultivation-templates — the plans the organisation keeps.
+app.get("/cultivation-templates", requireAuth, wrap(async (req, res) => {
+  const PL = await planMod();
+  const rows = await query(
+    "SELECT * FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY name", [req.user.orgId]);
+  res.json({
+    templates: rows.map(r => ({
+      id: r.id, name: r.name, steps: Array.isArray(r.steps) ? r.steps : [],
+      createdByName: r.created_by_name || "",
+    })),
+    stepTypes: PL.PLAN_STEP_TYPES, maxSteps: PL.MAX_STEPS,
+  });
+}));
+
+app.post("/cultivation-templates", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const PL = await planMod();
+  const v = PL.validateTemplate({ name: req.body.name, steps: req.body.steps });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_template", errors: v.errors });
+  const id = "ct_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO cultivation_templates (id,org_id,name,steps,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
+    [id, req.user.orgId, v.name, JSON.stringify(v.steps), actor(req).id, actor(req).name]);
+  const [row] = await query("SELECT * FROM cultivation_templates WHERE id=?", [id]);
+  res.status(201).json({ id: row.id, name: row.name, steps: row.steps });
+}));
+
+app.put("/cultivation-templates/:id", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const PL = await planMod();
+  const [ex] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  if (!ex) return res.status(404).json({ error: "Template not found" });
+  const v = PL.validateTemplate({
+    name: req.body.name !== undefined ? req.body.name : ex.name,
+    steps: req.body.steps !== undefined ? req.body.steps : ex.steps,
+  });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_template", errors: v.errors });
+  await run("UPDATE cultivation_templates SET name=?, steps=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [v.name, JSON.stringify(v.steps), req.params.id, req.user.orgId]);
+  // EDITING A TEMPLATE DOES NOT REWRITE AN APPLIED PLAN. A plan copied its name
+  // and its steps at apply time precisely so that what an officer is working
+  // through cannot change under her.
+  res.json({ id: req.params.id, name: v.name, steps: v.steps });
+}));
+
+app.delete("/cultivation-templates/:id", requireAuth, wrap(async (req, res) => {
+  // ARCHIVED, not deleted: applied plans point at this id, and a plan whose
+  // origin vanished is a record with a hole in it.
+  const { changes } = await run("UPDATE cultivation_templates SET archived_at=NOW() WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ success: true, archived: true });
+}));
+
+// POST /donors/:id/plan — apply a template, dates offset from today.
+app.post("/donors/:id/plan", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const PL = await planMod();
+  const orgId = req.user.orgId;
+  const [donor] = await query("SELECT id, name, assigned_to, assigned_to_name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+  const [tpl] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.body.templateId, orgId]);
+  if (!tpl) return res.status(404).json({ error: "Template not found" });
+  const v = PL.validateTemplate({ name: tpl.name, steps: tpl.steps });
+  if (!v.ok) return res.status(400).json({ error: "That template is no longer valid: " + v.errors[0].message, code: "invalid_template" });
+
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                // ORG_TZ_SEAM_OK
+  const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
+
+  const planId = "cp_" + uuid().slice(0, 10);
+  // ONE ACTIVE PLAN PER PERSON, decided by the partial unique index rather than
+  // by a read-then-write — two officers applying a plan in the same second
+  // cannot both land.
+  const ins = await query(
+    `INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,owner_id,owner_name,created_by,created_by_name)
+     SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text
+      WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text AND x.status='active')
+     RETURNING id`,
+    [planId, orgId, donor.id, tpl.id, tpl.name, today,
+     donor.assigned_to || req.user.userId, donor.assigned_to_name || actor(req).name,
+     actor(req).id, actor(req).name, orgId, donor.id]);
+  if (!ins.length) {
+    const [cur] = await query("SELECT id, template_name FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donor.id]);
+    return res.status(409).json({ code: "plan_already_active", planId: cur?.id || null,
+      error: `${donor.name} is already working through "${cur?.template_name || "a plan"}". Finish or stop that one first.` });
+  }
+  for (const s of steps) {
+    await run(
+      `INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status)
+       VALUES (?,?,?,?,?,?,?,'pending')`,
+      ["cs_" + uuid().slice(0, 10), orgId, planId, s.seq, s.type, s.label, s.dueDate]);
+  }
+  // The first step opens now — or waits, if this person already has an open
+  // follow-up of their own. Both are correct; the sentence says which.
+  await advanceCultivationPlan(orgId, donor.id, { actorId: actor(req).id, actorName: actor(req).name, today });
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+     VALUES (?,?,?,'note',?,?,?,?)`,
+    ["int_" + uuid().slice(0, 10), orgId, donor.id, today,
+     `Cultivation plan applied: ${tpl.name} (${steps.length} ${steps.length === 1 ? "step" : "steps"})`,
+     actor(req).id, actor(req).name]).catch(e => console.error("[plan] timeline:", e.message));
+  res.status(201).json(await readPlan(orgId, planId));
+}));
+
+// The one reader, so the screen and the suite see the same shape.
+async function readPlan(orgId, planId) {
+  const PL = await planMod();
+  const [plan] = await query("SELECT * FROM cultivation_plans WHERE id=? AND org_id=?", [planId, orgId]);
+  if (!plan) return null;
+  const steps = await query("SELECT * FROM cultivation_plan_steps WHERE plan_id=? ORDER BY seq", [planId]);
+  const shaped = steps.map(s => ({
+    id: s.id, seq: Number(s.seq), type: s.step_type, label: s.label,
+    dueDate: s.due_date, status: s.status, threadId: s.thread_id || null,
+    closedByName: s.closed_by_name || null, closedAt: s.closed_at || null,
+  }));
+  const prog = PL.planProgress(shaped);
+  return {
+    id: plan.id, donorId: plan.donor_id, templateId: plan.template_id, templateName: plan.template_name,
+    appliedOn: plan.applied_on, status: plan.status,
+    ownerName: plan.owner_name || "", appliedByName: plan.created_by_name || "",
+    steps: shaped, progress: prog, sentence: PL.planSentence(prog, plan.template_name),
+  };
+}
+
+// GET /donors/:id/plan — the plan on this person, active or the last one.
+app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
+  if (!(await orgOwns("donors", req.params.id, req.user.orgId))) return res.status(404).json({ error: "Donor not found" });
+  const [p] = await query(
+    `SELECT id FROM cultivation_plans WHERE org_id=? AND donor_id=?
+      ORDER BY (status='active') DESC, created_at DESC LIMIT 1`, [req.user.orgId, req.params.id]);
+  if (!p) return res.json({ plan: null });
+  res.json({ plan: await readPlan(req.user.orgId, p.id) });
+}));
+
+// POST /plan-steps/:id/skip — skipping is RECORDED as skipped, never deleted and
+// never quietly marked done. "We decided not to do that" is the fact.
+app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query(
+    `SELECT st.*, p.donor_id, p.status AS plan_status FROM cultivation_plan_steps st
+       JOIN cultivation_plans p ON p.id = st.plan_id
+      WHERE st.id=? AND st.org_id=?`, [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Step not found" });
+  if (s.status === "done" || s.status === "skipped") return res.status(409).json({ error: "That step is already closed." });
+  // Skipping the OPEN step dismisses its thread with a reason — a thread may
+  // not close without one (the BUILD-81 CHECK constraint), and "we decided not
+  // to" is exactly the kind of reason that rule exists to preserve.
+  if (s.status === "open" && s.thread_id) {
+    await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE id=? AND org_id=? AND closed_at IS NULL",
+      [s.thread_id, orgId]);
+  }
+  await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND org_id=?",
+    [actor(req).id, actor(req).name, req.params.id, orgId]);
+  await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name });
+  const out = await readPlan(orgId, s.plan_id);
+  res.json({ plan: out, skipped: req.params.id });
+}));
+
+// POST /plans/:id/stop — the officer decides the plan is over. The steps keep
+// what they were, so "we got three steps in and stopped" stays readable.
+app.post("/plans/:id/stop", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [p] = await query("SELECT * FROM cultivation_plans WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!p) return res.status(404).json({ error: "Plan not found" });
+  if (p.status !== "active") return res.status(409).json({ error: "That plan is not active." });
+  const [open] = await query("SELECT id, thread_id FROM cultivation_plan_steps WHERE plan_id=? AND status='open'", [p.id]);
+  if (open && open.thread_id) {
+    await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE id=? AND org_id=? AND closed_at IS NULL",
+      [open.thread_id, orgId]);
+    await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=?",
+      [actor(req).id, actor(req).name, open.id]);
+  }
+  await run("UPDATE cultivation_plans SET status='abandoned', closed_at=NOW() WHERE id=? AND org_id=?", [p.id, orgId]);
+  res.json({ plan: await readPlan(orgId, p.id) });
+}));
+
 // GET /pipeline/officer-activity — per-officer moves/asks/gifts over a period.
 // The raw data BUILD-17's per-officer reports read; just recorded cleanly here.
 app.get("/pipeline/officer-activity", requireAuth, wrap(async (req, res) => {
@@ -15382,6 +15620,15 @@ app.post("/donors/:id/conversations", requireAuth, wrap(async (req, res) => {
   });
 
   calcWealthScore(req.params.id, orgId).catch(e => console.error("score recalc:", e.message));
+  // BUILD-99 Part 3 — A PLAN STEP IS DONE WHEN ITS THREAD CLOSES, and the next
+  // one opens. Called AFTER the transaction, so the plan reads the thread rows
+  // this conversation actually committed. It is idempotent and self-healing: if
+  // the officer's own next step already took the donor's one open thread slot,
+  // the plan's next step stays PENDING and the next close advances it — which is
+  // what makes this work with no background tick (production has none).
+  await advanceCultivationPlan(orgId, req.params.id, {
+    actorId: actor(req).id, actorName: actor(req).name, today: date,
+  }).catch(e => console.error("[plan] advance:", e.message));
   // A.1 — the gift the conversation carried, named in the response so the
   // screen can say what it recorded instead of the user going to look.
   const giftOut = giftWritten && giftWritten.gift
@@ -15424,6 +15671,12 @@ app.post("/threads/:id/dismiss", requireAuth, wrap(async (req, res) => {
   await run(
     "UPDATE threads SET closed_at = NOW(), close_kind = 'dismissed', close_reason = ? WHERE id = ?",
     [reason, req.params.id]);
+  // BUILD-99 Part 3 — a dismissal closes a plan step too. Deciding not to do
+  // something is still deciding; the plan moves on rather than sitting on a
+  // thread nobody is going to act on.
+  await advanceCultivationPlan(orgId, t.donor_id, {
+    actorId: actor(req).id, actorName: actor(req).name,
+  }).catch(e => console.error("[plan] advance:", e.message));
   res.json({ ok: true, dismissed: reason });
 }));
 

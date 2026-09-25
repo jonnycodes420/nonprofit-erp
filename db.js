@@ -2372,6 +2372,78 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS major_prospect_cents INTEGER DEFAULT 100000`);
   await pool.query(`ALTER TABLE orgs ALTER COLUMN major_prospect_cents SET DEFAULT 100000`);
 
+  // ── BUILD-99 (major gifts) Part 3 — CULTIVATION PLANS ─────────────────────
+  // A plan is a SEQUENCE OF THREADS for one person, authored by the officer.
+  // It does not fork the Thread engine: each step, when its turn comes, IS a
+  // BUILD-81 thread, and the chaining rides the existing close paths.
+  //
+  // WHY THE STEPS ARE THEIR OWN TABLE AND NOT FOUR THREADS. `threads_one_open`
+  // is a partial unique index: one open thread per donor, which is the promise
+  // the whole surface rests on. Four threads would violate it on the second
+  // step, and relaxing it would be a much larger change to a much older
+  // guarantee. So a plan holds its steps, exactly one of them is OPEN and
+  // carries a thread id, and the rest are PENDING — which is what the brief
+  // asks for in its own words ("one open Thread and three pending").
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cultivation_templates (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      -- [{ type, label, offsetDays }] — validated by shared/planShape.js before
+      -- anything is stored, so a template cannot hold a step the Thread engine
+      -- would refuse when its turn came.
+      steps JSONB NOT NULL DEFAULT '[]'::jsonb,
+      archived_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_templates_org ON cultivation_templates (org_id) WHERE archived_at IS NULL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cultivation_plans (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      template_id TEXT,
+      -- The template's NAME is copied, not joined: renaming or archiving a
+      -- template must not rewrite what an applied plan says it was.
+      template_name TEXT NOT NULL,
+      applied_on TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',        -- active | done | abandoned
+      owner_id TEXT, owner_name TEXT,
+      created_by TEXT, created_by_name TEXT,
+      closed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // ONE ACTIVE PLAN PER PERSON. Two plans would each be trying to hold the
+  // donor's single open thread, and whichever lost would sit pending forever
+  // looking like a bug.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cultivation_plans_one_active ON cultivation_plans (org_id, donor_id) WHERE status = 'active'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_plans_org ON cultivation_plans (org_id, status)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cultivation_plan_steps (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      plan_id TEXT NOT NULL REFERENCES cultivation_plans(id) ON DELETE CASCADE,
+      seq INTEGER NOT NULL,
+      step_type TEXT NOT NULL,
+      label TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',       -- pending | open | done | skipped
+      thread_id TEXT,
+      closed_at TIMESTAMPTZ,
+      closed_by TEXT, closed_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT cult_step_status CHECK (status IN ('pending','open','done','skipped'))
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_cult_step_seq ON cultivation_plan_steps (plan_id, seq)`);
+  // The OPEN step is the one holding the thread, and there may be only one per
+  // plan — the structural half of "one open Thread and three pending".
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cult_step_one_open ON cultivation_plan_steps (plan_id) WHERE status = 'open'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_steps_thread ON cultivation_plan_steps (thread_id) WHERE thread_id IS NOT NULL`);
+
   // ── Development reporting cadence (BUILD-17) ─────────────────────────────
   // Append-only log of every digest email actually sent. The UNIQUE index on
   // (org_id, digest_type, period_key, recipient_user_id) is the idempotency

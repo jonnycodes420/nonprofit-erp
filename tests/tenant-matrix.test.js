@@ -93,7 +93,7 @@ async function reset() {
       // un-re-runnable after any crashed run — the exact class the file's own
       // note names. A leftover api_keys row for org_mxa blocked the reset with
       // an FK violation that reads as a product bug and is fixture hygiene.
-      "portfolio_targets", "api_keys",
+      "portfolio_targets", "cultivation_plan_steps", "cultivation_plans", "cultivation_templates", "api_keys",
       "invites", "portal_settings", "annual_fund_goals", "fundraising_goals", "metric_snapshots", "campaigns", "users"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [org]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [org]);
@@ -164,6 +164,17 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id) VALUES ($1,$2,$3,$4)`, [`h_${o}`, o, `${mark} Household`, `d_${o}`]);
   await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status) VALUES ($1,$2,$3,$4,5000,'open')`,
     [`op_${o}`, o, `d_${o}`, `${mark} Ask`]);
+  // BUILD-99 (major gifts) Part 3 — a cultivation template, an applied plan and
+  // one of its steps, so the cross-tenant probe has real rows to fail against.
+  await q(`INSERT INTO cultivation_templates (id,org_id,name,steps)
+           VALUES ($1,$2,$3,'[{"type":"send","label":"Send it","offsetDays":7}]'::jsonb)`,
+    [`ct_${o}`, o, `${mark} Plan`]);
+  await q(`INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status)
+           VALUES ($1,$2,$3,$4,$5,$6,'active')`,
+    [`cp_${o}`, o, `d_${o}`, `ct_${o}`, `${mark} Plan`, TODAY]);
+  await q(`INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status)
+           VALUES ($1,$2,$3,1,'send',$4,$5,'pending')`,
+    [`cs_${o}`, o, `cp_${o}`, `${mark} Step`, TODAY]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,status) VALUES ($1,$2,$3,500,$4,'open')`,
     [`pl_${o}`, o, `d_${o}`, TODAY]);
   await q(`INSERT INTO planned_gifts (id,org_id,donor_id,type,estimated_value) VALUES ($1,$2,$3,'bequest',10000)`,
@@ -308,6 +319,11 @@ function bResolver(routePath, param) {
   // (shared/proposalShape.js says why there is no second table), so the
   // cross-tenant probe is org B's own opportunity id.
   if (routePath.startsWith("/proposals/")) return `op_${B}`;
+  // BUILD-99 (major gifts) Part 3 — the plan's three shapes, resolved by PATH
+  // because all three use `:id` and their first segments differ.
+  if (routePath.startsWith("/cultivation-templates/")) return `ct_${B}`;
+  if (routePath.startsWith("/plan-steps/")) return `cs_${B}`;
+  if (routePath.startsWith("/plans/")) return `cp_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;
   if (routePath.startsWith("/agent/writes/")) return `aw_${B}`;
   if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;
