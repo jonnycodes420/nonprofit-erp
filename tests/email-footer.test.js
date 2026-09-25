@@ -69,11 +69,14 @@ async function sendCampaign(reg, donorEmail) {
     /Footer Addressed Organization Inc\. · 123 Steward Lane, Springfield, IL 62704/.test(htmlA), htmlA.slice(-400));
   ok("unsubscribe link still present", /Unsubscribe<\/a> from these emails/.test(htmlA));
 
+  // CHANGED 2026-09-25: BUILD-94 Part 4 made "no address, no send" a
+  // REFUSAL (a CAN-SPAM footer without a postal address is not a footer).
+  // This leg used to expect an unsubscribe-only footer and had been stale
+  // since then, unnoticed, because the suite was not in run-all. It is now.
   console.log("\nOrg without receipt_address:");
   const orgB = await makeOrg("Footer Bare Org", `footer-b-${stamp}@example.com`);
-  const htmlB = (await sendCampaign(orgB, `footer-donor-b-${stamp}@example.com`))?.html || "";
-  ok("send not blocked, unsubscribe-only footer", /Unsubscribe<\/a> from these emails/.test(htmlB), htmlB.slice(-300));
-  ok("no address separator in footer", !/·/.test(htmlB.slice(htmlB.indexOf("margin-top:32px"))));
+  const sentB = await sendCampaign(orgB, `footer-donor-b-${stamp}@example.com`);
+  ok("no postal address, no send: nothing reaches the provider", !sentB, sentB && sentB.html && sentB.html.slice(-200));
 
   console.log("\nHTML-escaping of address fields:");
   const orgC = await makeOrg("Footer Escape Org", `footer-c-${stamp}@example.com`);

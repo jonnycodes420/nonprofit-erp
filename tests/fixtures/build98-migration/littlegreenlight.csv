@@ -1,0 +1,6 @@
+LGL Constituent ID,Constituent Name,Email,LGL Gift ID,Gift Date,Gift Amount,Gift Type,Fund,Campaign,Appeal,Payment Type
+77,Ann Rivers,ann.rivers@example.org,G900,2026-01-15,$100.00,Gift,General,Annual Fund 2026,Spring Letter,Check
+78,Ann Rivers,ann.rivers@example.org,G901,2026-03-02,$250.50,Gift,General,Annual Fund 2026,Spring Letter,Check
+79,Ben Ortiz,ben.ortiz@example.org,G902,2026-02-10,$75.25,Gift,General,Annual Fund 2026,Spring Letter,Check
+80,Dan Lee,dan.lee@example.org,G903,2026-04-20,$40.00,Gift,General,Annual Fund 2026,Spring Letter,Check
+81,Carla Diaz,carla.diaz@example.org,G904,2026-05-05,"$1,000.00",Pledge,General,Annual Fund 2026,Spring Letter,Check

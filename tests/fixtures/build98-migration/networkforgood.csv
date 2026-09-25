@@ -1,0 +1,6 @@
+Donor First Name,Donor Last Name,Donor Email,Donation ID,Donation Date,Donation Amount,Designation,Campaign,Payment Method,Status
+Ann,Rivers,ann.rivers@example.org,N300,01/15/2026,100.00,General,Annual Fund 2026,Credit Card,Completed
+Ann,Rivers,ann.rivers@example.org,N301,03/02/2026,250.50,General,Annual Fund 2026,Credit Card,Completed
+Ben,Ortiz,ben.ortiz@example.org,N302,02/10/2026,75.25,General,Annual Fund 2026,Credit Card,Completed
+Dan,Lee,dan.lee@example.org,N303,04/20/2026,40.00,General,Annual Fund 2026,Credit Card,Completed
+Carla,Diaz,carla.diaz@example.org,N304,05/05/2026,1000.00,General,Annual Fund 2026,Credit Card,Refunded

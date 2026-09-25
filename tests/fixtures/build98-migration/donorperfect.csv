@@ -1,0 +1,6 @@
+donor_id,first_name,last_name,email,gift_id,gift_date,amount,gl_code,solicit_code,gift_type
+3000,Ann,Rivers,ann.rivers@example.org,8000,01/15/2026,100.00,GEN,AF26,CK
+3001,Ann,Rivers,ann.rivers@example.org,8001,03/02/2026,250.50,GEN,AF26,CK
+3002,Ben,Ortiz,ben.ortiz@example.org,8002,02/10/2026,75.25,GEN,AF26,CK
+3003,Dan,Lee,dan.lee@example.org,8003,04/20/2026,40.00,GEN,AF26,CK
+3004,Carla,Diaz,carla.diaz@example.org,8004,05/05/2026,1000.00,GEN,AF26,CK

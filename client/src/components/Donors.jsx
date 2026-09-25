@@ -12,6 +12,7 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { detectMailchimpAudience, typeSuggestionForTags, rowIsUnsubscribed, fileStatusFromName } from "../../../shared/mailchimpPreset.js";
 import { detectNpsp, npspMapping, npspOrganizationName, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from "../../../shared/npspPreset.js";
+import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue, coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, countPhysicalColumns, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
 
@@ -959,8 +960,13 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         setTxMap(autoTx);
       }
     } else {
+      // BUILD-98 (switch) Part 7 — another CRM's gift export. Same rule as
+      // NPSP: the preset's answers win where it has one, the generic guess
+      // keeps the rest, and the person can change any of it.
+      const mig = detectMigrationPreset(headers);
+      const migMap = mig && mig.key ? migrationMapping(headers, mig.key) : null;
       setMapping(autoDonor);
-      setTxMap(autoTx);
+      setTxMap(migMap ? { ...autoTx, ...migMap.txMap } : autoTx);
     }
     const cfg = autoDetectWideConfig(headers, rows);
     setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
@@ -1141,6 +1147,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     () => (parsed?.headers ? npspMapping(parsed.headers) : null),
     [parsed]);
   const npspIs = !!(npsp && npsp.detected && npsp.detected.isNpsp);
+  // BUILD-98 (switch) Part 7 — the other CRMs' gift exports.
+  const migDetected = useMemo(
+    () => (parsed?.headers && !npspIs ? detectMigrationPreset(parsed.headers) : null),
+    [parsed, npspIs]);
+  const mig = migDetected && migDetected.key ? migrationMapping(parsed.headers, migDetected.key) : null;
   const [mcFileStatus, setMcFileStatus] = useState(null);
   const [mcApplyTagTypes, setMcApplyTagTypes] = useState(false);
   useEffect(() => {
@@ -2599,6 +2610,28 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {headersUnrecognized && (
                 <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
+                </div>
+              )}
+              {/* BUILD-98 (switch) Part 7 — another CRM's gift export. */}
+              {mig && (
+                <div data-testid="migration-preset" style={{background:T.green100,border:`1px solid ${T.green200||T.bg3}`,borderRadius:10,padding:"10px 13px",marginBottom:8,fontSize:12.5,color:T.ink,lineHeight:1.55}}>
+                  <div style={{fontWeight:800,marginBottom:5}}>This looks like a {mig.label} gift export.</div>
+                  <div style={{color:T.ink2,marginBottom:6}}>
+                    The columns are mapped from {mig.label}'s documented export; check them below before you import.
+                    {mig.txMap.stage?" A refunded or failed payment is set aside and listed, never counted.":""}
+                  </div>
+                  <details data-testid="migration-checklist">
+                    <summary style={{cursor:"pointer",color:T.ink3,fontSize:12}}>Moving from {mig.label}: what to run, and what does not come across</summary>
+                    <ol style={{margin:"6px 0 4px 0",paddingLeft:18,color:T.ink2}}>
+                      {MIGRATION_PRESETS[mig.key].checklist.map((c,i)=><li key={i} style={{marginBottom:3}}>{c}</li>)}
+                    </ol>
+                    <div style={{color:T.ink2}}>Does not come across: {MIGRATION_PRESETS[mig.key].loses.join("; ")}.</div>
+                  </details>
+                  {mig.ignored.length>0 && (
+                    <div style={{color:T.ink3,fontSize:12,marginTop:4}}>
+                      Set aside: {mig.ignored.map(ig=>`${ig.header} (${ig.reason})`).join("; ")}.
+                    </div>
+                  )}
                 </div>
               )}
               {/* BUILD-97 Part 1 — this file looks like a Salesforce NPSP export. */}

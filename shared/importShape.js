@@ -1962,12 +1962,17 @@ export function fundNameFromCell(raw) {
 // "no" understates it. It is set aside BY NAME so a human answers.
 //
 // `known:false` is the flag the review step reads to ask that question.
-const GIFT_STAGE_RECEIVED = new Set(["closed won", "closed-won", "won", "received", "posted", "paid"]);
+// BUILD-98 (switch) Part 7 — the payment-status words gift platforms export
+// (Givebutter, Zeffy, Network for Good). A refunded or failed payment is money
+// that did not stay, so it is set aside by name, never counted.
+const GIFT_STAGE_RECEIVED = new Set(["closed won", "closed-won", "won", "received", "posted", "paid",
+  "succeeded", "successful", "completed", "complete", "processed", "settled", "captured"]);
 const GIFT_STAGE_PLEDGE = new Set(["pledged", "promised", "granted", "committed", "awarded"]);
 const GIFT_STAGE_NOT_RECEIVED = new Set([
   "closed lost", "closed-lost", "lost", "prospecting", "qualification",
   "proposal", "proposal/price quote", "negotiation", "negotiation/review",
   "submitted", "in progress", "cultivation", "identification", "declined", "withdrawn",
+  "refunded", "failed", "pending", "cancelled", "canceled", "disputed", "voided", "void", "chargeback",
 ]);
 
 export function classifyGiftStage(raw) {
