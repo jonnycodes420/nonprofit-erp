@@ -2217,6 +2217,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     ["softCreditName","Soft credit to"],["softCreditAmount","Soft credit amount"],
     ["tributeName","In honour or memory of"],["tributeType","Tribute type"],["tributeNotify","Tribute: who to tell"],
     ["matchEmployer","Matching employer"],
+    ["wealthRating","Wealth screen rating"],["wealthCapacity","Wealth screen capacity"],["wealthDate","Wealth screen date"],
     ...(isTeam ? [["owner","Assigned officer"]] : []),
   ];
 

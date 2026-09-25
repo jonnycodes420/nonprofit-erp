@@ -85,6 +85,7 @@ const SURFACES = [
   "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
   "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
   "components/VolunteerPanel.jsx", // BUILD-98 (switch) Part 5 — hours on the profile, and the hours import
+  "components/ApiKeysPanel.jsx",   // BUILD-98 (switch) Part 6 — API keys (dates and a prefix; no figures)
 ];
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather

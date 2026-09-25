@@ -7358,6 +7358,14 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     ));
     if (r.ok) {
       created += batch.length;
+      // BUILD-98 (switch) Part 6 — a wealth screen the old CRM carried lands on
+      // its own four columns, as the vendor wrote it, inside the same savepointed
+      // transaction as the person it belongs to.
+      for (const d of batch) {
+        const w = wealthScreenParams(d);
+        if (w) await runTx(txc, `UPDATE donors SET wealth_screen_source=?, wealth_screen_rating=?, wealth_screen_capacity=?, wealth_screen_date=?
+                                   WHERE id=? AND org_id=?`, [w.source, w.rating, w.capacity, w.date, d._id, orgId]);
+      }
     } else {
       console.error(`[combined-import] donor batch ${bi}–${bi+batch.length} failed:`, r.error.message);
       batchErrors.push({ rows:`${bi+1}–${bi+batch.length}`, error:r.error.message });
@@ -13130,6 +13138,122 @@ app.post("/volunteer-hours/import", requireAuth, checkWriteAccess, wrap(async (r
   }
   res.json(out);
 }));
+
+// ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
+// Read scopes first. The rules:
+//   1. A key is shown ONCE, stored as its SHA-256, and names its org on the
+//      STORED ROW — nothing the caller sends can pick the org (BUILD-37 B9).
+//   2. A key opens /api/v1 and NOTHING ELSE. requireAuth never accepts one,
+//      and requireApiKey never accepts a staff JWT — two doors, two locks.
+//   3. Revoked is a 401 that reads exactly like a key that never existed.
+//   4. The list endpoints are newest-first with an id, which is what a Zapier
+//      POLLING trigger needs ("new person", "new gift"): Zapier dedupes by id.
+const API_KEY_PREFIX = "stw_";
+// The vendor's wealth-screen figures off an import row, trimmed and capped.
+// Hoisted (a function declaration) because the import route above calls it.
+function wealthScreenParams(d) {
+  const w = d && d.wealthScreen;
+  if (!w || typeof w !== "object") return null;
+  const t = (v, n) => (v == null ? null : (String(v).trim().slice(0, n) || null));
+  const o = { source: t(w.source, 40) || "Wealth screening", rating: t(w.rating, 64), capacity: t(w.capacity, 64), date: t(w.date, 32) };
+  return o.rating || o.capacity || o.date ? o : null;
+}
+const hashApiKey = k => crypto.createHash("sha256").update(String(k)).digest("hex");
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: rateLimitDisabled,
+  keyGenerator: req => {
+    const k = String(req.headers["x-api-key"] || (req.headers.authorization || "").replace(/^Bearer\s+/i, ""));
+    return k.startsWith(API_KEY_PREFIX) ? "key:" + hashApiKey(k).slice(0, 16) : ipKeyGenerator(req.ip);
+  },
+});
+async function requireApiKey(req, res, next) {
+  try {
+    const raw = String(req.headers["x-api-key"] || (req.headers.authorization || "").replace(/^Bearer\s+/i, "")).trim();
+    const refuse = () => res.status(401).json({ error: "invalid_api_key", message: "That API key is not valid." });
+    if (!raw.startsWith(API_KEY_PREFIX) || raw.length < 20) return refuse();
+    const [k] = await query(`SELECT id, org_id, name, scopes, last_used_at FROM api_keys WHERE key_hash=? AND revoked_at IS NULL`, [hashApiKey(raw)]);
+    if (!k) return refuse();
+    req.apiKey = { id: k.id, orgId: k.org_id, name: k.name, scopes: Array.isArray(k.scopes) ? k.scopes : ["read"] };
+    // Stamp use at most once a minute — a busy integration must not turn
+    // every read into a write.
+    if (!k.last_used_at || Date.now() - new Date(k.last_used_at).getTime() > 60000)
+      run(`UPDATE api_keys SET last_used_at=NOW() WHERE id=?`, [k.id]).catch(() => {});
+    next();
+  } catch (e) { next(e); }
+}
+
+// ── Staff side: make, list and revoke keys (admin only) ────────────────────
+app.get("/api-keys", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const rows = await query(`SELECT id, name, prefix, scopes, created_by_name, created_at, last_used_at, revoked_at
+                              FROM api_keys WHERE org_id=? ORDER BY created_at DESC`, [req.user.orgId]);
+  res.json({ keys: rows.map(r => ({ id: r.id, name: r.name, prefix: r.prefix, scopes: r.scopes, createdBy: r.created_by_name,
+    createdAt: r.created_at, lastUsedAt: r.last_used_at, revokedAt: r.revoked_at })) });
+}));
+app.post("/api-keys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const name = String(req.body?.name || "").trim().slice(0, 80);
+  if (!name) return res.status(400).json({ error: "Give the key a name, so you can tell it apart later (for example, Zapier)." });
+  const secret = API_KEY_PREFIX + crypto.randomBytes(24).toString("base64url");
+  const prefix = secret.slice(0, 10);
+  const who = actor(req);
+  const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  const id = "ak_" + uuid().slice(0, 12);
+  await run(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash,scopes,created_by,created_by_name) VALUES (?,?,?,?,?,'["read"]'::jsonb,?,?)`,
+    [id, req.user.orgId, name, prefix, hashApiKey(secret), who.id, me?.name || who.name]);
+  res.json({ id, name, prefix, scopes: ["read"], key: secret,
+    sentence: "This is the only time the whole key is shown. Copy it now; Steward keeps only a fingerprint of it." });
+}));
+// Revoking is never write-gated: a lapsed org must always be able to shut a door.
+app.delete("/api-keys/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const r = await query(`UPDATE api_keys SET revoked_at=COALESCE(revoked_at, NOW()) WHERE id=? AND org_id=? RETURNING id`, [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// ── Key side: /api/v1, read only ───────────────────────────────────────────
+const apiPage = q => ({ limit: Math.max(1, Math.min(100, parseInt(q.limit, 10) || 50)), offset: Math.max(0, parseInt(q.offset, 10) || 0) });
+const apiPerson = d => ({
+  id: d.id, name: d.name, email: d.email || null, phone: d.phone || null,
+  city: d.city || null, state: d.state || null, zip: d.zip || null,
+  types: Array.isArray(d.person_types) ? d.person_types : ["donor"],
+  lifetimeGiving: Number(d.total_giving || 0), giftCount: Number(d.gift_count || 0),
+  lastGiftDate: d.last_gift_date || null, stage: d.stage || null,
+  wealthScreen: d.wealth_screen_source ? { source: d.wealth_screen_source, rating: d.wealth_screen_rating || null,
+    capacity: d.wealth_screen_capacity || null, date: d.wealth_screen_date || null } : null,
+  sample: !!d.is_sample, createdAt: d.created_at,
+});
+const API_PERSON_COLS = `id,name,email,phone,city,state,zip,person_types,total_giving,gift_count,last_gift_date,stage,
+  wealth_screen_source,wealth_screen_rating,wealth_screen_capacity,wealth_screen_date,is_sample,created_at`;
+app.get("/api/v1/me", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const [o] = await query(`SELECT name FROM orgs WHERE id=?`, [req.apiKey.orgId]);
+  res.json({ organization: o?.name || null, key: req.apiKey.name, scopes: req.apiKey.scopes });
+}));
+app.get("/api/v1/people", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const { limit, offset } = apiPage(req.query);
+  const rows = await query(`SELECT ${API_PERSON_COLS} FROM donors WHERE org_id=? AND deleted_at IS NULL
+                             ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, [req.apiKey.orgId, limit, offset]);
+  res.json({ data: rows.map(apiPerson), limit, offset });
+}));
+app.get("/api/v1/people/:id", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const [d] = await query(`SELECT ${API_PERSON_COLS} FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.params.id, req.apiKey.orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  res.json({ data: apiPerson(d) });
+}));
+app.get("/api/v1/gifts", apiLimiter, requireApiKey, wrap(async (req, res) => {
+  const { limit, offset } = apiPage(req.query);
+  const rows = await query(
+    `SELECT g.id, g.donor_id, g.amount, g.date, g.type, g.payment_method, g.created_at, g.is_sample,
+            f.name AS fund_name, COALESCE(c.name, g.campaign) AS campaign_name
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.deleted_at IS NULL
+       LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
+       LEFT JOIN campaigns c ON c.id=g.campaign_id AND c.org_id=g.org_id
+      WHERE g.org_id=? ORDER BY g.created_at DESC, g.id DESC LIMIT ? OFFSET ?`, [req.apiKey.orgId, limit, offset]);
+  res.json({ data: rows.map(g => ({ id: g.id, personId: g.donor_id, amount: Number(g.amount), date: g.date, type: g.type || null,
+    paymentMethod: g.payment_method || null, fund: g.fund_name || null, campaign: g.campaign_name || null,
+    sample: !!g.is_sample, createdAt: g.created_at })), limit, offset });
+}));
+// Anything else under /api/v1 — including a write — falls through to the
+// app's one 404 handler: a plain not-found, not a hint.
 
 app.get("/volunteers", requireAuth, wrap(async (req, res) => {
   const vols = await query(
