@@ -91,7 +91,7 @@ async function reset() {
       // nullable, so a row without one would survive and block the org delete
       // with an FK violation that reads as a product bug. Named explicitly and
       // ordered BEFORE `grants`, which is the rule this list exists for.
-      "grant_milestones", "grant_documents",
+      "grant_spend", "grant_milestones", "grant_documents",
       "opportunities", "moves", "program_grants", "programs", "tasks", "threads", "interactions", "gifts", "grants",
       "households", "donors", "fin_audit_log", "fin_transactions", "budgets", "accounts", "fin_funds",
       // BUILD-99 (major gifts): `portfolio_targets` is this build's; `api_keys`

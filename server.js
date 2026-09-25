@@ -2251,6 +2251,21 @@ async function recordGift(o) {
     const okFund = await query("SELECT id FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]);
     if (!okFund.length) { fundId = null; fundRefused = true; console.error(`[gift] refused a fund id that is not this org's: ${o.fundId}`); }
   }
+  // BUILD-100 (grants) Part 4 — A PAYMENT AGAINST A RESTRICTED AWARD MAY NOT
+  // FALL BACK TO THE UNRESTRICTED FUND. The award is a pledge on the funder
+  // (Part 1), so a payment carries `pledgeId`; if that pledge is a grant award
+  // and the grant names a fund, THAT is the fund. Without this wire a $10,000
+  // program-restricted award's payments post to General Operating and the
+  // restriction is lost at the ledger — silently, since every other figure
+  // still adds up.
+  if (!fundId && !fundRefused && o.pledgeId) {
+    const [gf] = await query(
+      `SELECT g.fund_id FROM grants g
+        WHERE g.org_id = ? AND g.award_pledge_id = ? AND g.fund_id IS NOT NULL
+          AND g.restriction IN ('program_restricted','capital','time_restricted')`,
+      [orgId, o.pledgeId]);
+    if (gf && gf.fund_id) fundId = gf.fund_id;
+  }
   if (!fundId && !fundRefused && o.defaultFund !== false) fundId = await orgUnrestrictedFundId(orgId);
   const paymentMethod = String(o.paymentMethod || "").trim() || GIFT_METHOD_UNKNOWN;
 
@@ -15034,6 +15049,24 @@ app.get("/grants/deadlines", requireAuth, wrap(async (req, res) => {
       ORDER BY m.due_date ASC`, [orgId]);
   const all = rows.map(r => milestoneRow(r, M, today, leadDays));
   const open = all.filter(m => m.state !== "done");
+
+  // BUILD-100 Part 4 — A REPORT-DUE MILESTONE CARRIES ITS GRANT'S BALANCE,
+  // because the balance is what the report is about. Only for `report_due`: the
+  // figure is not relevant to an LOI deadline and a number on a row that does
+  // not need it is a number somebody has to decide to ignore. One batched read,
+  // never a query per row.
+  const reportGrantIds = [...new Set(open.filter(m => m.kind === "report_due").map(m => m.grantId))];
+  if (reportGrantIds.length) {
+    const R = await restrictedMod();
+    const moneyRows = await grantMoneyRows(orgId, `AND g.id = ANY(?::text[])`, [reportGrantIds]);
+    const byGrant = new Map(moneyRows.map(r => [r.id, grantBalanceFrom(R, r, today)]));
+    for (const m of open) {
+      if (m.kind !== "report_due") continue;
+      const b = byGrant.get(m.grantId);
+      if (b) m.balance = { restricted: b.restricted, remaining: b.remaining, remainingCents: b.remainingCents,
+                           spent: b.spent, received: b.received, sentence: b.sentence };
+    }
+  }
   res.json({
     today,
     milestones: M.sortMilestones(open),
@@ -15253,6 +15286,145 @@ app.get("/grant-documents/:id", wrap(async (req, res) => {
   res.set("Cache-Control", `private, max-age=${Math.max(0, Math.floor((v.expiresAt - Date.now()) / 1000))}`);
   res.set("ETag", `"${asset.id}"`);
   res.send(asset.buffer);
+}));
+
+
+// ── BUILD-100 (grants) Part 4 — WHERE RESTRICTED MONEY ACTUALLY IS ─────────
+// shared/restrictedMoney.js holds the four figures, their definitions, and the
+// reason "remaining" excludes what the funder still owes.
+async function restrictedMod() { return import("./shared/restrictedMoney.js"); }
+
+// ONE query for a grant's money, so the balance can never be assembled two
+// ways. `received` is the payments APPLIED TO THE AWARD PLEDGE — not every gift
+// the funder ever sent, which would fold an unrelated donation into a
+// restricted balance.
+async function grantMoneyRows(orgId, where = "", args = []) {
+  return query(
+    `SELECT g.id, g.restriction, g.restricted_until, g.fund_id, g.status, g.program,
+            g.amount_awarded, g.award_pledge_id,
+            d.name AS funder_name, f.name AS fund_name, f.restricted AS fund_restricted,
+            COALESCE((SELECT SUM(gi.amount) FROM gifts gi
+                       WHERE gi.org_id = g.org_id AND gi.pledge_id = g.award_pledge_id), 0) AS received,
+            COALESCE((SELECT SUM(s.amount) FROM grant_spend s
+                       WHERE s.org_id = g.org_id AND s.grant_id = g.id), 0) AS spent
+       FROM grants g
+       LEFT JOIN donors d ON d.id = g.funder_donor_id AND d.org_id = g.org_id
+       LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.org_id = ? AND g.is_sample IS NOT TRUE ${where}`, [orgId, ...args]);
+}
+
+function grantBalanceFrom(R, r, today) {
+  const b = R.grantBalance({
+    awardedCents: toCents(r.amount_awarded) || 0,
+    receivedCents: toCents(r.received) || 0,
+    spentCents: toCents(r.spent) || 0,
+    restriction: r.restriction, restrictedUntil: r.restricted_until, today,
+  });
+  return {
+    grantId: r.id, funderName: r.funder_name || "", program: r.program || "",
+    grantStatus: r.status, fundId: r.fund_id || null, fundName: r.fund_name || null,
+    fundIsRestricted: r.fund_restricted === true,
+    ...b,
+    awarded: toDollars(b.awardedCents), received: toDollars(b.receivedCents),
+    spent: toDollars(b.spentCents), outstanding: toDollars(b.outstandingCents),
+    remaining: toDollars(b.remainingCents),
+    sentence: R.balanceSentence(b, money.formatCentsPlain),
+  };
+}
+
+// POST /grants/:id/spend — one line of spending against a restricted award.
+app.post("/grants/:id/spend", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, restriction FROM grants WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Grant not found" });
+  let cents;
+  try { cents = parseMoneyOrThrow(req.body.amount, "amount"); }
+  catch (e) { return res.status(400).json({ error: e.message, code: e.code }); }
+  const v = R.validateSpend({ amountCents: cents, spentOn: req.body.spentOn, description: req.body.description });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "invalid_spend", errors: v.errors });
+  const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [actor(req).id, orgId]);
+  const id = "gsp_" + uuid().slice(0, 10);
+  await run(`INSERT INTO grant_spend (id,org_id,grant_id,amount,spent_on,description,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?)`,
+    [id, orgId, g.id, toDollars(cents), String(req.body.spentOn),
+     String(req.body.description).trim().slice(0, 500), actor(req).id, (u && u.name) || actor(req).name]);
+  const [row] = (await grantMoneyRows(orgId, "AND g.id = ?", [g.id]));
+  const org = await orgTz(orgId);
+  res.status(201).json({
+    id, grantId: g.id, amount: toDollars(cents), amountCents: cents,
+    balance: grantBalanceFrom(R, row, orgToday(org)),                   // ORG_TZ_SEAM_OK
+    note: R.SPEND_SOURCE_NOTE,
+  });
+}));
+
+app.delete("/grants/spend/:spendId", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT id FROM grant_spend WHERE id=? AND org_id=?", [req.params.spendId, orgId]);
+  if (!s) return res.status(404).json({ error: "Not found" });
+  await run("DELETE FROM grant_spend WHERE id=? AND org_id=?", [s.id, orgId]);
+  res.json({ ok: true, id: s.id });
+}));
+
+// GET /grants/:id/restricted — one grant's restricted position, with the
+// spending lines behind it so a figure can always be taken apart.
+app.get("/grants/:id/restricted", requireAuth, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const rows = await grantMoneyRows(orgId, "AND g.id = ?", [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: "Grant not found" });
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+  const balance = grantBalanceFrom(R, rows[0], today);
+  const spend = await query(
+    `SELECT id, amount, spent_on, description, created_by_name, created_at
+       FROM grant_spend WHERE org_id=? AND grant_id=? ORDER BY spent_on DESC, created_at DESC`,
+    [orgId, req.params.id]);
+  const payments = rows[0].award_pledge_id ? await query(
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND pledge_id=? ORDER BY date ASC`,
+    [orgId, rows[0].award_pledge_id]) : [];
+  res.json({
+    balance,
+    // EVERY FIGURE CARRIES ITS DEFINITION, one string from the registry.
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    metrics: R.RESTRICTED_METRICS,
+    spend: spend.map(s => ({
+      id: s.id, amount: toDollars(toCents(s.amount) || 0), amountCents: toCents(s.amount) || 0,
+      spentOn: s.spent_on, description: s.description, byName: s.created_by_name || "",
+    })),
+    payments: payments.map(p => ({
+      id: p.id, amount: toDollars(toCents(p.amount) || 0), amountCents: toCents(p.amount) || 0, date: p.date,
+    })),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  });
+}));
+
+// GET /finance/restricted — the org's restricted position, by grant.
+app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
+  const R = await restrictedMod();
+  const orgId = req.user.orgId;
+  const org = await orgTz(orgId);
+  const today = orgToday(org);                                          // ORG_TZ_SEAM_OK
+  // Only AWARDED or CLOSED grants hold money. A submitted grant's restriction
+  // is a proposal, not a balance.
+  const rows = await grantMoneyRows(orgId, "AND g.status IN ('awarded','closed')");
+  const balances = rows.map(r => grantBalanceFrom(R, r, today));
+  const restricted = balances.filter(b => b.restricted);
+  const totals = R.restrictedTotals(balances);
+  res.json({
+    today,
+    grants: restricted.sort((a, b) => b.remainingCents - a.remainingCents),
+    unrestricted: balances.filter(b => !b.restricted).map(b => ({
+      grantId: b.grantId, funderName: b.funderName, program: b.program,
+      awarded: b.awarded, awardedCents: b.awardedCents, sentence: b.sentence,
+    })),
+    totals: { ...totals, awarded: toDollars(totals.awardedCents), received: toDollars(totals.receivedCents),
+              spent: toDollars(totals.spentCents), outstanding: toDollars(totals.outstandingCents),
+              remaining: toDollars(totals.remainingCents) },
+    sentence: R.totalsSentence(totals, money.formatCentsPlain),
+    definitions: Object.fromEntries(R.RESTRICTED_METRICS.map(m => [m.key, m.definition])),
+    spendSourceNote: R.SPEND_SOURCE_NOTE,
+  });
 }));
 
 app.get("/grants/:id/manual-match", requireAuth, wrap(async (req, res) => {

@@ -2681,6 +2681,29 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS grant_docs_one_per_type
                       ON grant_documents (grant_id, doc_type, asset_id)`);
 
+  // ── BUILD-100 (grants) Part 4 — SPENDING AGAINST A RESTRICTED AWARD ──────
+  // Entered BY HAND in this build. QuickBooks spend against a grant waits on
+  // 91f and the Intuit keys (the brief's own line), and the screen says so
+  // rather than implying a bank feed nobody connected.
+  //
+  // Amount is NUMERIC(12,2) like every other money column in this product, and
+  // every figure derived from it is summed in integer cents — a restricted
+  // balance is what an auditor reconciles.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS grant_spend (
+      id TEXT PRIMARY KEY,
+      org_id TEXT REFERENCES orgs(id),
+      grant_id TEXT REFERENCES grants(id) ON DELETE CASCADE,
+      amount NUMERIC(12,2) NOT NULL,
+      spent_on TEXT NOT NULL,
+      description TEXT NOT NULL,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_spend_grant ON grant_spend (grant_id, spent_on)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_grant_spend_org ON grant_spend (org_id)`);
+
   // THE ORG'S OWN LEAD TIMES, one JSONB rather than five columns: the set is
   // fixed by shared/grantMilestones.js and always read whole. NULL means
   // "nobody has chosen", which is what makes the defaults still reachable if
