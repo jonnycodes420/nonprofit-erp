@@ -1,0 +1,24 @@
+old CLAUDE.md: 1855 lines, 633184 bytes, 1555 non-blank lines (1554 distinct)
+new files (19):
+  CLAUDE.md                                      117 lines     8997 bytes
+  docs/HISTORY.md                               1198 lines   452313 bytes
+  docs/decisions/accounts-and-billing.md         168 lines    21410 bytes
+  docs/decisions/agent-and-ai.md                  89 lines     7453 bytes
+  docs/decisions/architecture.md                 292 lines    79804 bytes
+  docs/decisions/design-system.md                119 lines    23060 bytes
+  docs/decisions/forms.md                         84 lines    12237 bytes
+  docs/decisions/grants.md                       116 lines    10222 bytes
+  docs/decisions/home-and-reports.md             116 lines    14476 bytes
+  docs/decisions/imports.md                      119 lines    15224 bytes
+  docs/decisions/mail-and-notifications.md       178 lines    16559 bytes
+  docs/decisions/major-gifts.md                  145 lines    13961 bytes
+  docs/decisions/memberships.md                   92 lines     7257 bytes
+  docs/decisions/money-and-gifts.md              163 lines    27329 bytes
+  docs/decisions/people-and-records.md           156 lines    18227 bytes
+  docs/decisions/portal-and-donor-network.md      85 lines     6448 bytes
+  docs/decisions/receipts-and-tax.md              85 lines    13347 bytes
+  docs/decisions/recurring-and-stripe.md         148 lines    18811 bytes
+  docs/decisions/tests-and-ci.md                 219 lines    20448 bytes
+old lines present in more than one new file: 0
+
+PASS: every non-blank line of the old CLAUDE.md is present in the new files.
