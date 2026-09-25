@@ -106,3 +106,16 @@ export function pledgeReminderDraft({ donorName, installmentCents, dueDate, pled
 // and the test all read the same words.
 export const PLEDGE_REMINDER_STEP = { type: "pledge_reminder", label: "Pledge instalment reminder" };
 export const PLEDGE_LATE_DAYS = 30;
+
+// ── BUILD-101 Part 2 — the renewal note ────────────────────────────────────
+// A renewal is the easiest ask an org makes: the member already chose them.
+// So the note states the date and the price and asks once. It says nothing
+// about what the membership "makes possible" — Steward does not know, and a
+// sentence that claims it is the org's promise made in its absence. It never
+// goes out by itself.
+export const MEMBERSHIP_RENEWAL_STEP = { type: "membership_renewal", label: "Renew membership" };
+export function membershipRenewalDraft({ donorName, levelName, expiresOnLong, priceCents, orgName, voice = { ready: false } } = {}) {
+  const amt = money(priceCents);
+  const middle = `Your ${levelName} membership runs through ${expiresOnLong}. Renewing is ${amt} for another year, and your new year starts the day this one ends, so renewing early costs you nothing. We would love to have you with us again.`;
+  return { body: wrap(voice, donorName, middle, orgName), voice: voice.ready ? "org_samples" : "default", amount: amt };
+}

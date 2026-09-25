@@ -35,6 +35,11 @@ export default function LoginPage() {
   const [error, setError]       = useState("");
   const [notice, setNotice]     = useState(popAuthNotice);
   const [loading, setLoading]   = useState(false);
+  // BUILD-98 (switch) Part 8 — two-step sign-in.
+  const [needCode, setNeedCode] = useState(false);
+  const [code, setCode]         = useState("");
+  const [setup, setSetup]       = useState(null);   // {token, secret, otpauthUrl}
+  const [setupCode, setSetupCode] = useState("");
 
   const submit = async (e) => {
     e.preventDefault();
@@ -46,7 +51,7 @@ export default function LoginPage() {
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(needCode ? { email, password, code } : { email, password }),
       });
       // Prefer the server's SENTENCE over its code. A deactivated account now
       // answers {error:"account_deactivated", message:"This account has been
@@ -54,8 +59,19 @@ export default function LoginPage() {
       // would put the machine word on the screen. The older paths send only
       // `error` (already a sentence: "Invalid credentials"), so it stays the
       // fallback.
-      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || d.error || "Login failed"); }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        if (d.error === "mfa_required") { setNeedCode(true); setNotice(d.message); setLoading(false); return; }
+        throw new Error(d.message || d.error || "Login failed");
+      }
       const data = await res.json();
+      if (data.mfaSetupRequired) {
+        const s0 = await fetch(`${API}/me/mfa/setup`, { method: "POST", headers: { Authorization: "Bearer " + data.token } });
+        const sd = await s0.json().catch(() => ({}));
+        if (!s0.ok) throw new Error(sd.error || "Two-step setup is not available right now.");
+        setSetup({ token: data.token, secret: sd.secret, otpauthUrl: sd.otpauthUrl });
+        setNotice(data.message); setLoading(false); return;
+      }
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
@@ -63,6 +79,23 @@ export default function LoginPage() {
     } catch (err) {
       setError(err.message);
     }
+    setLoading(false);
+  };
+
+  const finishSetup = async (e) => {
+    e.preventDefault();
+    setLoading(true); setError("");
+    try {
+      const r = await fetch(`${API}/me/mfa/enable`, { method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + setup.token },
+        body: JSON.stringify({ code: setupCode }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || d.error || "That code did not match.");
+      localStorage.setItem("npe_token", d.token);
+      localStorage.setItem("npe_user", JSON.stringify(d.user));
+      localStorage.setItem("npe_org",  JSON.stringify(d.org));
+      window.location.href = d.user.isSuperAdmin ? "/admin" : "/dashboard";
+    } catch (err) { setError(err.message); }
     setLoading(false);
   };
 
@@ -129,7 +162,20 @@ export default function LoginPage() {
                 {notice}
               </div>
             )}
-            <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {setup && (
+              <form data-testid="mfa-setup" onSubmit={finishSetup} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>
+                  Add Steward to your authenticator app with this key, then type the six-digit code it shows.
+                </div>
+                <code style={{ fontSize: 13, wordBreak: "break-all", color: T.ink }}>{setup.secret}</code>
+                <a href={setup.otpauthUrl} style={{ fontSize: 12, color: T.forest }}>Open in an authenticator app on this device</a>
+                <input value={setupCode} onChange={e => setSetupCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code"
+                  placeholder="123456" aria-label="Six-digit code" required style={inputStyle} />
+                {error && <div role="alert" style={{ fontSize: 13, color: T.red }}>{error}</div>}
+                <button type="submit" disabled={loading} style={{ ...inputStyle, cursor: "pointer", fontWeight: 700 }}>Turn on two-step sign-in</button>
+              </form>
+            )}
+            {!setup && <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <Field label="Email address">
                 <input
                   type="email"
@@ -156,6 +202,13 @@ export default function LoginPage() {
                   </Link>
                 </div>
               </Field>
+
+              {needCode && (
+                <Field label="Six-digit code">
+                  <input value={code} onChange={e => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code"
+                    placeholder="123456" required autoFocus style={inputStyle} />
+                </Field>
+              )}
 
               {error && (
                 <div style={{
@@ -189,7 +242,7 @@ export default function LoginPage() {
               >
                 {loading ? "Signing in…" : "Sign In →"}
               </button>
-            </form>
+            </form>}
           </div>
 
           {/* Demo hint — LOCAL DEV ONLY. This is the public front door; beta

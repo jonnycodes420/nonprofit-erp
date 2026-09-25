@@ -389,6 +389,13 @@ export const STANDARD_REPORTS = [
     kind: "handler", handler: "grant-restricted" },
   { key: "board-giving", name: "Board giving", question: "What has each board member given?", kind: "builder",
     def: { entity: "people", columns: ["name", "lifetime", "last_gift_date", "last_gift_amount"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "staff_board" }] }, sort: { field: "lifetime", dir: "desc" } } },
+  // BUILD-101 Part 5 — memberships. Handler reports: the same functions the
+  // Members screen and the Reports CSV read.
+  { key: "members-by-level", name: "Members by level", question: "How many members does each level have, and what did they pay this year?", kind: "handler", handler: "members-by-level", params: {} },
+  { key: "members-expiring", name: "Memberships expiring in 60 days", question: "Whose membership runs out soon?", kind: "handler", handler: "members-expiring", params: {} },
+  { key: "members-lapsed", name: "Lapsed members", question: "Who let their membership lapse?", kind: "handler", handler: "members-lapsed", params: {} },
+  { key: "members-new-renewed", name: "New and renewed members by month", question: "How many joined, and how many renewed, each month?", kind: "handler", handler: "members-new-renewed", params: {} },
+  { key: "membership-revenue", name: "Membership and donation revenue", question: "What came in from memberships, beside what came in as donations?", kind: "handler", handler: "membership-revenue", params: {} },
 ];
 export const STANDARD_KEYS = STANDARD_REPORTS.map(r => r.key);
 

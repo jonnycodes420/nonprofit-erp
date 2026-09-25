@@ -81,7 +81,6 @@
 #
 # NOT included here (need extra setup — run individually, see tests/README.md):
 #   donors-pagination, reports  → need `node scripts/seed-loadtest.js` first
-#   email-footer                → needs a mock Resend on :5602 (RESEND_BASE_URL)
 #   export-zip                  → needs the `unzip` binary + the loadtest org
 #   cover-fees                  → needs real Stripe test creds (STRIPE_TEST_KEY)
 
@@ -149,6 +148,7 @@ CORE=(
   build99-proposals build99-portfolios build99-plans build99-brief build99-dashboard build99-import
   build100-funders build100-deadlines build100-documents build100-restricted
   build100-reports build100-import
+  build98-migration email-footer build98-security build101-memberships build101-renewals build101-lapsed build101-online build101-reports build101-import
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

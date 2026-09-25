@@ -227,10 +227,73 @@ function TicketsPage({ orgSlug, eventId, th, BASE, card }) {
   );
 }
 
+// BUILD-101 Part 4 — MEMBERSHIP. `/give/:orgSlug?membership=<levelId>`. Like
+// tickets: the page sends a LEVEL, the server prices it, and the deductible
+// part is stated before she pays. A 12-month level may renew itself each
+// year; that is her choice, said plainly, and cancelling is hers too.
+function MembershipPage({ orgSlug, levelId, th, BASE, card }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState("");
+  const [autoRenew, setAutoRenew] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    fetch(`${API}/org/${orgSlug}/membership/${encodeURIComponent(levelId)}/public`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("This membership is not available.")))
+      .then(setData)
+      .catch(e => setErr(errorMessage(e, "This membership is not available.")));
+  }, [orgSlug, levelId]);
+  if (err && !data) return <div style={BASE}><div style={{ ...card, padding: 28, color: T.ink }}>{err}</div></div>;
+  if (!data) return <div style={BASE}><div style={{ color: T.ink3, fontSize: 14 }}>Loading…</div></div>;
+  const l = data.level;
+  const join = async e => {
+    e.preventDefault();
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(`${API}/donate/${orgSlug}`, { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ membershipLevelId: l.id, firstName, lastName, email, frequency: autoRenew ? "annual" : "once" }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Something went wrong.");
+      window.location.href = j.url;
+    } catch (e2) { setErr(errorMessage(e2, "Something went wrong. Please try again.")); setBusy(false); }
+  };
+  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: "#fff" };
+  return (
+    <div style={BASE}>
+      <form onSubmit={join} style={{ ...card, width: "100%", maxWidth: 520, padding: 28, display: "flex", flexDirection: "column", gap: 14 }} data-testid="membership-page">
+        <div style={{ fontSize: 13, color: T.ink3 }}>{data.orgName}</div>
+        <div style={{ fontSize: 26, color: T.ink, fontFamily: th.serif }}>{l.name} membership</div>
+        <div style={{ fontSize: 15, color: T.ink }}>{fmtMoney(l.price)} · {l.termLabel}{l.scope === "household" ? " · for your household" : ""}</div>
+        {l.benefits.length > 0 && <ul style={{ margin: 0, paddingLeft: 20, fontSize: 15, color: T.ink, lineHeight: 1.6 }}>{l.benefits.map((b, i) => <li key={i}>{b}</li>)}</ul>}
+        <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.6 }} data-testid="membership-deductible">
+          {l.fmv > 0 ? `${fmtMoney(l.fmv)} of that is the value of what you receive, so ${fmtMoney(l.deductible)} is tax-deductible.` : "All of it is tax-deductible."}
+        </div>
+        {l.autoRenew && <label style={{ fontSize: 14, color: T.ink, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={autoRenew} onChange={e => setAutoRenew(e.target.checked)} />
+          <span>Renew automatically each year at {fmtMoney(l.price)}. You can cancel any time.</span></label>}
+        <div style={{ display: "flex", gap: 10 }}>
+          <input placeholder="First name" value={firstName} onChange={e => setFirstName(e.target.value)} style={inp} />
+          <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} />
+        </div>
+        <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} />
+        {err && <div role="status" style={{ fontSize: 14, color: T.ink }}>{err}</div>}
+        <button type="submit" disabled={busy} style={{ background: th.primary, color: th.onPrimary || "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+          {busy ? "One moment…" : `Join for ${fmtMoney(l.price)}`}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function Donate() {
   const { orgSlug, pageSlug, fundraiserSlug } = useParams();
   // BUILD-98 (switch) Part 4 — ?event=<id> turns this page into its tickets.
   const ticketEventId = useMemo(() => new URLSearchParams(window.location.search).get("event"), []);
+  // BUILD-101 Part 4 — ?membership=<levelId> turns this page into that level.
+  const membershipLevelId = useMemo(() => new URLSearchParams(window.location.search).get("membership"), []);
   const [org, setOrg] = useState(null);
   const [givingPage, setGivingPage] = useState(null);
   const [peerFundraiser, setPeerFundraiser] = useState(null);
@@ -501,6 +564,7 @@ export default function Donate() {
   );
 
   if (ticketEventId) return <TicketsPage orgSlug={orgSlug} eventId={ticketEventId} th={th} BASE={BASE} card={card} />;
+  if (membershipLevelId) return <MembershipPage orgSlug={orgSlug} levelId={membershipLevelId} th={th} BASE={BASE} card={card} />;
 
   return (
     <div style={BASE}>

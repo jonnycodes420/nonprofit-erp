@@ -4142,6 +4142,87 @@ async function initSchema() {
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_capacity TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS wealth_screen_date TEXT`);
 
+  // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN FOR STAFF ──────────────
+  // The secret is SEALED (shared/secretBox, AAD = the org id), never stored
+  // readable. `mfa_last_counter` makes every code single-use. The org rule
+  // is off by default: turning it on is an admin's act, and only an admin
+  // who already has two-step on may do it.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret_sealed TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_pending_sealed TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_last_counter BIGINT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
+
+  // ── BUILD-101 — MEMBERSHIPS ────────────────────────────────────────────
+  // A level: a price, the org's stated fair-market value of its benefits
+  // (never more than the price — the BUILD-98 event-level CHECK), a term.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS membership_levels (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      price NUMERIC(12,2) NOT NULL CHECK (price > 0),
+      fmv NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (fmv >= 0),
+      term TEXT NOT NULL CHECK (term IN ('12_months','calendar_year','lifetime')),
+      scope TEXT NOT NULL DEFAULT 'individual' CHECK (scope IN ('individual','household')),
+      benefits JSONB NOT NULL DEFAULT '[]'::jsonb,
+      active BOOLEAN NOT NULL DEFAULT true,
+      position INTEGER DEFAULT 0,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      CHECK (fmv <= price)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_membership_levels_org ON membership_levels (org_id, position)`);
+  // A membership: one person on one level. The payment is a GIFT (recordGift,
+  // quid-pro-quo = the level's FMV); gift_id points at it. Dates are civil.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS memberships (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      donor_id TEXT NOT NULL REFERENCES donors(id),
+      household_id TEXT,
+      level_id TEXT NOT NULL REFERENCES membership_levels(id),
+      joined_on TEXT NOT NULL,
+      starts_on TEXT NOT NULL,
+      expires_on TEXT,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','grace','lapsed','cancelled')),
+      payment_method TEXT,
+      gift_id TEXT,
+      source TEXT NOT NULL DEFAULT 'staff',
+      cancelled_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // ONE CURRENT MEMBERSHIP PER PERSON PER ORG — the database decides, never
+  // an if-statement. A member in their grace period still holds it.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_memberships_current
+                      ON memberships (org_id, donor_id) WHERE status IN ('active','grace')`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_memberships_org_expiry ON memberships (org_id, status, expires_on)`);
+  // BUILD-101 Part 2 — renewals. A renewed membership keeps its row and says
+  // so ('renewed'), the new term is a new row pointing back at it, and the
+  // renewal thread raised for an expiry is recorded against THAT expiry, so a
+  // second sweep over the same date finds nothing to do.
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewed_from TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewal_thread_id TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS renewal_thread_for TEXT`);
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS status_changed_on TEXT`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='memberships_status_check'
+                       AND pg_get_constraintdef(oid) LIKE '%renewed%') THEN
+        ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_status_check;
+        ALTER TABLE memberships ADD CONSTRAINT memberships_status_check
+          CHECK (status IN ('active','grace','lapsed','cancelled','renewed'));
+      END IF; END $$`);
+  // The two numbers an org may change: how early the renewal thread opens, and
+  // how long an expired membership is held in grace before it lapses.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_renewal_days INTEGER DEFAULT 30`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS membership_grace_days INTEGER DEFAULT 30`);
+  // BUILD-101 Part 4 — an auto-renewing membership IS a recurring
+  // subscription (the existing dunning and card-expiry machinery, unchanged);
+  // this column is what makes each renewal charge extend a membership.
+  await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS membership_level_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

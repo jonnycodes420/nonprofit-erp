@@ -138,6 +138,10 @@ hand.
 
 ## 9 · Your other accounts
 
+- **Resend → Suppressions → Add:** `hello@justinsplaceky.com`. The code already
+  refuses it everywhere (`mailBlock.js`); this is the provider-side copy. The
+  production sending key is send-only (correctly), so the API refused the
+  add with `restricted_api_key` on 2026-09-24.
 - **Resend:** confirm inbound parsing is available on the current plan. Resend is
   the chosen inbound provider (already a subprocessor, so the disclosure does not
   grow by a name). Then add MX on a **third** subdomain — `log.stewardapp.dev` —

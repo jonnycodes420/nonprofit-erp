@@ -1,0 +1,6 @@
+Transaction ID,First Name,Last Name,Email,Amount,Transaction Date,Campaign Title,Fund Code,Method,Status,Fee
+gb_0,Ann,Rivers,ann.rivers@example.org,100.00,2026-01-15,Annual Fund 2026,GEN,card,Succeeded,3.20
+gb_1,Ann,Rivers,ann.rivers@example.org,250.50,2026-03-02,Annual Fund 2026,GEN,card,Succeeded,3.20
+gb_2,Ben,Ortiz,ben.ortiz@example.org,75.25,2026-02-10,Annual Fund 2026,GEN,card,Succeeded,3.20
+gb_3,Dan,Lee,dan.lee@example.org,40.00,2026-04-20,Annual Fund 2026,GEN,card,Succeeded,3.20
+gb_4,Carla,Diaz,carla.diaz@example.org,1000.00,2026-05-05,Annual Fund 2026,GEN,card,Refunded,3.20

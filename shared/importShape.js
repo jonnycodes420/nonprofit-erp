@@ -4,6 +4,7 @@
 // each other's functions at CALL time only (ESM live bindings), never at
 // module-evaluation time. tests/import-workbook-v3 + custom-fields pin both
 // load orders.
+import { membershipColumns } from "./membershipImport.js";
 import { parseExclusionValue } from "./customFieldShape.js";
 import { tokenizeText, containsTokenRun, eitherContainsTokenRun } from "./textMatch.js";
 // Pure, JSX/React-free import-shape detection + transaction grouping — kept in a
@@ -1172,6 +1173,7 @@ export function detectImportShape(headers = [], rows = []) {
   // shape is UNKNOWN and the mapper asks — it does not pick. "One row per
   // donor" was once chosen for a report export because a wrong header made
   // zero columns recognisable, and 1,111 donors landed with $0 of giving.
+  const memberCols = new Set(Object.values(membershipColumns(hs)));
   const recognized = [];
   for (const h of hs) {
     if (isDateHdr(h)) recognized.push({ header: h, as: "gift date" });
@@ -1182,6 +1184,9 @@ export function detectImportShape(headers = [], rows = []) {
     else if (yearCols.includes(h)) recognized.push({ header: h, as: "year column" });
     else if (/^(first|last)\s*name$/i.test(h.trim())) recognized.push({ header: h, as: h.trim().toLowerCase() });
     else if (/^phone(\s*(number|#))?$/i.test(h.trim())) recognized.push({ header: h, as: "phone" });
+    // BUILD-101 Part 6 — a membership file's level and dates are evidence of
+    // ONE ROW PER PERSON: each row is somebody's membership, not a gift.
+    else if (memberCols.has(h)) recognized.push({ header: h, as: "membership" });
   }
 
   let shape, reason;
@@ -1189,6 +1194,7 @@ export function detectImportShape(headers = [], rows = []) {
   else if (hasAmountCol && hasDateCol && !hasTotalCol) { shape = "transaction"; reason = "amount + gift-date columns, no lifetime-total column"; }
   else if (hasAmountCol && hasDateCol && donorRepeats) { shape = "transaction"; reason = "amount + gift-date columns and the same donor repeats across rows"; }
   else if (yearCols.length >= 2) { shape = "wide"; reason = `${yearCols.length} year columns`; }
+  else if (memberCols.size >= 2 && !hasAmountCol && (nameCol || emailCol)) { shape = "aggregate"; reason = "one row per member: a membership level and its dates, no gift amount"; }
   else if (recognized.length < 3) { shape = "unknown"; reason = `only ${recognized.length} column${recognized.length === 1 ? "" : "s"} recognised — not enough evidence to pick a shape`; }
   else { shape = "aggregate"; reason = "donor-identity and total-style columns, no per-gift date column"; }
 
@@ -1962,12 +1968,17 @@ export function fundNameFromCell(raw) {
 // "no" understates it. It is set aside BY NAME so a human answers.
 //
 // `known:false` is the flag the review step reads to ask that question.
-const GIFT_STAGE_RECEIVED = new Set(["closed won", "closed-won", "won", "received", "posted", "paid"]);
+// BUILD-98 (switch) Part 7 — the payment-status words gift platforms export
+// (Givebutter, Zeffy, Network for Good). A refunded or failed payment is money
+// that did not stay, so it is set aside by name, never counted.
+const GIFT_STAGE_RECEIVED = new Set(["closed won", "closed-won", "won", "received", "posted", "paid",
+  "succeeded", "successful", "completed", "complete", "processed", "settled", "captured"]);
 const GIFT_STAGE_PLEDGE = new Set(["pledged", "promised", "granted", "committed", "awarded"]);
 const GIFT_STAGE_NOT_RECEIVED = new Set([
   "closed lost", "closed-lost", "lost", "prospecting", "qualification",
   "proposal", "proposal/price quote", "negotiation", "negotiation/review",
   "submitted", "in progress", "cultivation", "identification", "declined", "withdrawn",
+  "refunded", "failed", "pending", "cancelled", "canceled", "disputed", "voided", "void", "chargeback",
 ]);
 
 export function classifyGiftStage(raw) {

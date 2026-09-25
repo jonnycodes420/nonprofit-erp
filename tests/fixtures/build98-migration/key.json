@@ -1,0 +1,117 @@
+{
+  "_how": "Hand-computed from the rows the generator wrote, never read back from Steward. 4 cash gifts = 100.00+250.50+75.25+40.00 = $465.75; the fifth row ($1,000.00) is a Pledge or a Refund where the file can say so, else cash ($1,465.75). Ann Rivers has two gifts, $350.50, the second on 2 March 2026.",
+  "files": {
+    "bloomerang": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "pledges",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "littlegreenlight": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "pledges",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "donorperfect": {
+      "rows": 5,
+      "gifts": 5,
+      "giftCents": 146575,
+      "setAside": null,
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "neon": {
+      "rows": 5,
+      "gifts": 5,
+      "giftCents": 146575,
+      "setAside": null,
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "kindful": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "pledges",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "networkforgood": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "notReceived",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "givebutter": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "notReceived",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    },
+    "zeffy": {
+      "rows": 5,
+      "gifts": 4,
+      "giftCents": 46575,
+      "setAside": {
+        "bucket": "notReceived",
+        "rows": 1,
+        "cents": 100000
+      },
+      "ann": {
+        "gifts": 2,
+        "cents": 35050,
+        "secondDate": "2026-03-02"
+      }
+    }
+  }
+}

@@ -765,14 +765,32 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (!evRow) evLevel = null;
             }
             const EVm = evLevel ? await EV_READY : null;
+            // BUILD-101 Part 4 — a membership bought online, or a renewal charge
+            // on an auto-renewing one (its level rides the subscription row).
+            // Re-read org-scoped; the metadata's word is never the price.
+            let memLevel = null;
+            if (!evLevel) {
+              let memLevelId = pi.metadata?.membership_level_id || null;
+              if (!memLevelId && recurringSubDbId) {
+                const [rsm] = await query("SELECT membership_level_id FROM recurring_subscriptions WHERE id=$1 AND org_id=$2", [recurringSubDbId, orgId]);
+                memLevelId = rsm?.membership_level_id || null;
+              }
+              if (memLevelId) [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=?", [memLevelId, orgId]);
+            }
+            const MBm = memLevel ? await MB_READY : null;
             const written = await recordGift({
+              ...(memLevel ? {
+                quidProQuoValue: Math.min(Number(memLevel.fmv), amount),
+                quidProQuoDesc: MBm.quidProQuoDescription({ levelName: memLevel.name, benefits: memLevel.benefits || [] }),
+                membershipRenewal: false,
+              } : {}),
               ...(evLevel ? {
                 quidProQuoValue: Math.min(Number(evLevel.fmv) * evQty, amount),
                 quidProQuoDesc: EVm.quidProQuoDescription({ eventName: evRow.name, levelName: evLevel.name, qty: evQty, kind: evLevel.kind }),
                 campaign: evRow.name,
               } : {}),
               orgId, donorId, giftId, amount, date: today,
-              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : "Online payment via Stripe",
+              type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
               stripePaymentId: pi.id || null, conflict: pi.id ? "stripe" : null,
@@ -790,6 +808,10 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (evLevel) {
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
                 who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
+            }
+            if (memLevel) {
+              await attachOnlineMembership({ orgId, donorId, levelId: memLevel.id, giftId })
+                .catch(e => console.error("[membership] webhook attach:", e.message));
             }
             // Stage promotion is a decision ABOUT the gift, not the gift.
             await run(
@@ -954,6 +976,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
               if (Number.isFinite(base) && base > 0 && recurAmount > base / 100) subCoverFee = recurAmount - base / 100;
             }
             const subInterval = frequency === "annual" ? "year" : "month";
+            // BUILD-101 Part 4 — an auto-renewing membership's level, validated org-owned.
+            let subMemLevel = session.metadata?.membership_level_id || null;
+            if (subMemLevel) {
+              const lOk = await query("SELECT id FROM membership_levels WHERE id=$1 AND org_id=$2", [subMemLevel, orgId]);
+              if (!lOk.length) subMemLevel = null;
+            }
             const insertedSub = await query(
               `INSERT INTO recurring_subscriptions (id, org_id, donor_id, stripe_subscription_id, stripe_customer_id, amount, interval, status, campaign_id, giving_page_id, cover_fee_amount, fund_id)
                VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)
@@ -987,6 +1015,26 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                  WHERE stripe_subscription_id = ? AND org_id = ?`,
                 [subCampaignId, subGivingPageId, subFundId, subCoverFee, session.customer || null, session.subscription, orgId]
               ).catch(() => {});
+            }
+            if (subMemLevel) {
+              await run(`UPDATE recurring_subscriptions SET membership_level_id=COALESCE(membership_level_id, ?) WHERE stripe_subscription_id=? AND org_id=?`,
+                [subMemLevel, session.subscription, orgId]);
+              // The first charge's payment event may have arrived FIRST, before
+              // this row existed to say it was a membership. That gift is the
+              // most recent card gift of exactly this amount from this person
+              // with no membership yet; attach is keyed on it, so it happens once.
+              const [sub] = await query("SELECT id FROM recurring_subscriptions WHERE stripe_subscription_id=$1 AND org_id=$2", [session.subscription, orgId]);
+              const [first] = await query(
+                `SELECT g.id FROM gifts g WHERE g.org_id=$1 AND g.donor_id=$2 AND g.stripe_payment_id IS NOT NULL
+                    AND round(g.amount::numeric * 100)::bigint = $3
+                    AND (g.recurring_subscription_id IS NULL OR g.recurring_subscription_id=$4)
+                    AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.org_id=g.org_id AND m.gift_id=g.id)
+                  ORDER BY g.created_at DESC LIMIT 1`, [orgId, donorId, Math.round((recurAmount || 0) * 100), sub?.id || null]);
+              if (first) {
+                if (sub) await run("UPDATE gifts SET recurring_subscription_id=COALESCE(recurring_subscription_id, $1) WHERE id=$2", [sub.id, first.id]);
+                await attachOnlineMembership({ orgId, donorId, levelId: subMemLevel, giftId: first.id })
+                  .catch(e => console.error("[membership] checkout attach:", e.message));
+              }
             }
             // BUILD-57 — a staff proposal completed by the donor on Stripe.
             // The proposal id rode our own checkout metadata; mark it done so
@@ -2410,6 +2458,18 @@ async function recordGift(o) {
     await onPledgeSettled(orgId, o.pledgeId).catch(e => console.error("[pledge] settle:", e.message));
   }
 
+  // ── BUILD-101 Part 2 — A PAYMENT THAT IS A MEMBERSHIP RENEWAL ─────────────
+  // From every door, for the same reason as the instalment above: a gift of
+  // exactly the level's price from someone whose membership is due IS the
+  // renewal. Not for a payment that already said what it bought (an explicit
+  // membership or ticket carries its own quid pro quo) or one that just paid
+  // an instalment.
+  let appliedMembership = null;
+  if (o.membershipRenewal !== false && !appliedInstallment && o.quidProQuoValue == null && !o.recurring) {
+    appliedMembership = await applyGiftAsMembershipRenewal({ orgId, donorId: o.donorId, giftId, amount, actorId, actorName })
+      .catch(e => { console.error("[membership] renewal auto-apply:", e.message); return null; });
+  }
+
   // ── BUILD-88b B.3 — THE THANK-YOU IS DRAFTED, NEVER SENT ──────────────────
   // Every gift through this path earns a draft in her queue. The exclusions are
   // the ones that would make a thank-you wrong rather than merely unnecessary.
@@ -2459,7 +2519,7 @@ async function recordGift(o) {
     catch (e) { console.error("[gift] extras:", e.message); }
   }
 
-  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, extras };
+  return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
 }
 
 // ── BUILD-98 Part 1 — SOFT CREDITS, TRIBUTES, MATCHES ──────────────────────
@@ -4612,8 +4672,94 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [user.org_id]);
   const org = orgs[0];
   const isSuperAdmin = !!user.is_super_admin;
+
+  // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN ──────────────────────────
+  // Someone with two-step on must send the code with the password. The two
+  // refusals are distinct because the screen asks two different things.
+  if (user.mfa_enabled_at) {
+    if (!req.body.code) return res.status(401).json({ error: "mfa_required", message: "Enter the six-digit code from your authenticator app." });
+    const ctr = await mfaVerifyForUser(user, req.body.code);
+    if (ctr === null) return res.status(401).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
+  } else if (user.role === "admin" && org && org.require_admin_mfa) {
+    // An admin in an org that requires two-step, who has not set it up,
+    // gets a session that opens ONLY the setup routes (auth.js enforces it).
+    const setupToken = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin, mfaSetup: true });
+    return res.json({ mfaSetupRequired: true, token: setupToken,
+      message: "Your organisation requires two-step sign-in for administrators. Set it up to continue." });
+  }
+
   const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+}));
+
+// ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN: THE ROUTES ─────────────────
+const TOTP = require("./totp");
+async function mfaVerifyForUser(user, code) {
+  if (!user.mfa_secret_sealed) return null;
+  const { open } = await import("./shared/secretBox.js");
+  let secret;
+  try { secret = open(user.mfa_secret_sealed, { aad: "mfa:" + user.org_id + ":" + user.id }); }
+  catch (e) { console.error("[mfa] could not open the sealed secret for", user.id, e.message); return null; }
+  const ctr = TOTP.verify(secret, code, { lastCounter: user.mfa_last_counter == null ? -1 : Number(user.mfa_last_counter) });
+  if (ctr === null) return null;
+  // Single use: a code accepted once is dead, by the counter, atomically.
+  const r = await query(`UPDATE users SET mfa_last_counter=? WHERE id=? AND (mfa_last_counter IS NULL OR mfa_last_counter < ?) RETURNING id`, [ctr, user.id, ctr]);
+  return r.length ? ctr : null;
+}
+app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
+  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
+  res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, orgRequiresForAdmins: !!(o && o.require_admin_mfa) });
+}));
+// Start setup: a new secret, sealed as PENDING until a code proves the app has it.
+app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
+  const { seal, credentialsConfigured } = await import("./shared/secretBox.js");
+  if (!credentialsConfigured()) return res.status(503).json({ error: "Two-step sign-in is not available on this server yet (STEWARD_CREDENTIAL_KEY is not set)." });
+  const secret = TOTP.newSecret();
+  await run(`UPDATE users SET mfa_pending_sealed=? WHERE id=?`, [seal(secret, { aad: "mfa:" + req.user.orgId + ":" + req.user.userId }), req.user.userId]);
+  res.json({ secret, otpauthUrl: TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId }),
+    sentence: "Add this to your authenticator app, then type the code it shows to finish." });
+}));
+// Finish setup with one good code. Returns a FULL session: a setup-only
+// session becomes a real one here, and nowhere else.
+app.post("/me/mfa/enable", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
+  if (!u || !u.mfa_pending_sealed) return res.status(400).json({ error: "Start setup first." });
+  const { open } = await import("./shared/secretBox.js");
+  const secret = open(u.mfa_pending_sealed, { aad: "mfa:" + u.org_id + ":" + u.id });
+  const ctr = TOTP.verify(secret, req.body && req.body.code);
+  if (ctr === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
+  await run(`UPDATE users SET mfa_secret_sealed=mfa_pending_sealed, mfa_pending_sealed=NULL, mfa_enabled_at=NOW(), mfa_last_counter=? WHERE id=?`, [ctr, u.id]);
+  const isSuperAdmin = !!u.is_super_admin;
+  const token = signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin });
+  const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [u.org_id]);
+  res.json({ enabled: true, token,
+    user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperAdmin, mfaEnabled: true },
+    org: org ? { ...org, onboarding_complete: org.onboarding_complete ?? 1 } : null });
+}));
+// Turning it off takes a current code — and an admin cannot turn it off while
+// the org requires it.
+app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
+  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
+  if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
+  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [u.org_id]);
+  if (u.role === "admin" && o && o.require_admin_mfa) return res.status(409).json({ error: "Your organisation requires two-step sign-in for administrators." });
+  if ((await mfaVerifyForUser(u, req.body && req.body.code)) === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
+  await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL WHERE id=?`, [u.id]);
+  res.json({ enabled: false });
+}));
+// The org rule. Only an admin who already has two-step on may switch it on —
+// nobody can lock themselves out of their own organisation by clicking a box.
+app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const want = req.body && req.body.requireAdminMfa;
+  if (typeof want !== "boolean") return res.status(400).json({ error: "requireAdminMfa must be true or false" });
+  if (want) {
+    const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
+    if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-step sign-in for yourself first." });
+  }
+  await run(`UPDATE orgs SET require_admin_mfa=? WHERE id=?`, [want, req.user.orgId]);
+  console.log(`[mfa] ${req.user.orgId} require_admin_mfa=${want} by ${req.user.email || req.user.userId}`);
+  res.json({ requireAdminMfa: want });
 }));
 
 app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
@@ -7948,7 +8094,17 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     } catch (e) { console.error("[combined-import] proposals failed:", e.message); proposalsImported = { error: e.message }; }
   }
 
+  // BUILD-101 Part 6 — memberships named in the file, written after the
+  // people exist (the client sends them with the LAST chunk). History only:
+  // no gift, no ledger row, and a level the org does not have is HELD.
+  let membershipsImported = null;
+  if (Array.isArray(req.body.memberships) && req.body.memberships.length) {
+    try { membershipsImported = await importMemberships(orgId, req.body.memberships, actor(req)); }
+    catch (e) { console.error("[combined-import] memberships failed:", e.message); membershipsImported = { error: e.message }; }
+  }
+
   res.json({ created, giftsInserted, duplicates, donorsUpdated: affectedDonorIds.size, financeSynced, batchErrors, geocodeQueued,
+             memberships: membershipsImported, // BUILD-101 Part 6
              written: writtenReadback,   // BUILD-83 Part 2.1 — read from the DB after commit
              giftCredit,                 // BUILD-98 Part 1 — soft credits / tributes / matches written
              proposals: proposalsImported, // BUILD-99 Part 6 — open asks, routed off the cash total
@@ -16800,8 +16956,16 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
              OR NOT EXISTS (SELECT 1 FROM pledge_installments i WHERE i.pledge_id = p.id))`,
     [orgId]);
 
+  // BUILD-101 Part 2 — memberships that expire this calendar month and are
+  // still held. Home says it in one line, and only when it is not zero.
+  const monthStart = pledgeToday.slice(0, 7) + "-01", monthEnd = pledgeToday.slice(0, 7) + "-31";
+  const [expRow] = await query(
+    `SELECT COUNT(*)::int AS n FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+      WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ? AND d.deleted_at IS NULL`,
+    [orgId, monthStart, monthEnd]);
   res.json({ tier, scope, portfolio, tasks, pipeline, multiOfficer, today: pledgeToday,
              latePledgeInstallments: lateRow?.late || 0,
+             membershipsExpiringThisMonth: expRow?.n || 0,
              pledgesNeedingSchedule: shellRow?.n || 0 });
 }));
 
@@ -22433,6 +22597,13 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     if (!Number.isInteger(eventQty) || eventQty < 1 || eventQty > 50) return res.status(400).json({ error: "Choose between 1 and 50 tickets." });
     frequency = "once"; coverFees = false; amount = amount || "1";
   }
+  // BUILD-101 Part 4 — a MEMBERSHIP, priced by the SERVER from the level (the
+  // page's amount is ignored). One-time, or auto-renewing yearly through the
+  // existing recurring path — only a 12-month level can auto-renew.
+  const membershipLevelId = !eventLevelId && req.body.membershipLevelId ? String(req.body.membershipLevelId) : null;
+  if (membershipLevelId) {
+    frequency = frequency === "annual" ? "annual" : "once"; coverFees = false; amount = amount || "1";
+  }
   if (!amount || !firstName || !lastName || !email) return res.status(400).json({ error: "All fields required" });
 
   const orgs = await query(
@@ -22466,6 +22637,13 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
       if ((t?.n || 0) + eventQty > eventLevel.capacity) return res.status(409).json({ error: `${eventLevel.name} is sold out.` });
     }
     baseCents = Math.round(Number(eventLevel.price) * 100) * eventQty;
+  }
+  let memLevel = null;
+  if (membershipLevelId) {
+    [memLevel] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [membershipLevelId, org.id]);
+    if (!memLevel) return res.status(400).json({ error: "This membership is no longer available." });
+    if (frequency === "annual" && memLevel.term !== "12_months") return res.status(400).json({ error: "This membership cannot renew automatically." });
+    baseCents = Math.round(Number(memLevel.price) * 100);
   }
   if (baseCents === null) return res.status(400).json({ error: "Invalid donation amount" });
   if (baseCents < 100) return res.status(400).json({ error: "Minimum donation is $1" });
@@ -22534,7 +22712,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   // POST/PUT /giving-pages validation, never trusted raw from this request.
   const effectiveCampaignId = pageCampaignId || campaignId || "";
 
-  const productName = eventLevel
+  const productName = memLevel
+    ? `${memLevel.name} membership — ${org.name}`
+    : eventLevel
     ? `${eventQty} × ${eventLevel.name} — ${eventRow.name}`
     : peerFundraiserId
     ? `Donation to ${org.name} — ${pageTitle} (via ${fundraiserName}'s fundraiser)`
@@ -22557,6 +22737,8 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // split and the guest-list row from these, re-reading the level itself.
     event_level_id: eventLevel ? eventLevel.id : "",
     event_qty: eventLevel ? String(eventQty) : "",
+    // BUILD-101 Part 4 — the webhook re-reads the level from this id.
+    membership_level_id: memLevel ? memLevel.id : "",
   };
   // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
   // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
@@ -24352,6 +24534,28 @@ function reportToCsv(key, data) {
       rows.push(fundTotal);
       return { headers, rows };
     }
+    case "members-directory":
+      return { headers: ["Name", "Email", "Phone", "Level", "Status", "Member since", "Expires"],
+               rows: data.rows.map(r => [r.name, r.email, r.phone, r.level, r.status, r.joined_on, r.expires_on || "Lifetime"]) };
+    case "members-by-level": {
+      const rows = data.rows.map(r => [r.name, r.price, r.current, r.lapsed, c2d(r.revenueCents)]);
+      rows.push(["TOTAL", "", data.totals.current, data.totals.lapsed, c2d(data.totals.revenueCents)]);
+      return { headers: ["Level", "Price", "Current members", "Lapsed members", "Membership revenue this year"], rows };
+    }
+    case "members-expiring":
+      return { headers: ["Name", "Email", "Level", "Status", "Expires"], rows: data.rows.map(r => [r.name, r.email, r.level, r.status, r.expires_on]) };
+    case "members-lapsed":
+      return { headers: ["Name", "Email", "Last level", "Lapsed", "Years as a member"], rows: data.rows.map(r => [r.name, r.email, r.level, r.lapsed_on, r.years]) };
+    case "members-new-renewed": {
+      const rows = data.rows.map(r => [r.month, r.new_members, r.renewed]);
+      rows.push(["TOTAL", data.totals.newMembers, data.totals.renewed]);
+      return { headers: ["Month", "New members", "Renewed"], rows };
+    }
+    case "membership-revenue": {
+      const rows = data.rows.map(r => [r.month, c2d(r.membershipCents), c2d(r.donationCents)]);
+      rows.push(["TOTAL", c2d(data.totals.membershipCents), c2d(data.totals.donationCents)]);
+      return { headers: ["Month", "Membership revenue", "Donation revenue"], rows };
+    }
     case "solicitations": {
       const rows = [
         ["FORECAST — open asks", data.forecast.open], ["FORECAST — stage-weighted", data.forecast.weighted],
@@ -24439,6 +24643,94 @@ async function reportGrantRestricted(orgId) {
     spendSourceNote: R.SPEND_SOURCE_NOTE,
   };
 }
+// ── BUILD-101 Part 5 — MEMBERSHIP REPORTS ─────────────────────────────────
+// Read paths like every other report, on the one CSV layer. Money is summed
+// in the database in integer CENTS; membership money and donation money are
+// two columns and never one "revenue" total. A membership payment is a gift
+// some membership points at (memberships.gift_id); everything else is a
+// donation.
+const MB_GIFT_SQL = `EXISTS (SELECT 1 FROM memberships x WHERE x.org_id=g.org_id AND x.gift_id=g.id)`;
+async function mbReportToday(orgId) { return orgToday(await orgTz(orgId)); }   // ORG_TZ_SEAM_OK
+
+async function reportMembersDirectory(orgId) {
+  const rows = await query(
+    `SELECT d.name, d.email, d.phone, l.name AS level, m.status, m.joined_on, m.expires_on
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status IN ('active','grace') ORDER BY d.name`, [orgId]);
+  return { rows, sentence: "Everyone who holds a membership now, active or in grace." };
+}
+async function reportMembersByLevel(orgId) {
+  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT l.id, l.name, l.price,
+            (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status IN ('active','grace')) AS current,
+            (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}) AS lapsed,
+            (SELECT COALESCE(SUM(round(g.amount::numeric*100)),0)::bigint FROM gifts g JOIN memberships m ON m.gift_id=g.id AND m.org_id=g.org_id
+              WHERE g.org_id=l.org_id AND m.level_id=l.id AND g.date BETWEEN ? AND ?) AS revenue_cents
+       FROM membership_levels l WHERE l.org_id=? ORDER BY l.position, l.price`, [fy.from, fy.to, orgId]);
+  return { from: fy.from, to: fy.to,
+    rows: rows.map(r => ({ name: r.name, price: Number(r.price), current: r.current, lapsed: r.lapsed, revenueCents: Number(r.revenue_cents) })),
+    totals: { current: rows.reduce((a, r) => a + r.current, 0), lapsed: rows.reduce((a, r) => a + r.lapsed, 0),
+              revenueCents: rows.reduce((a, r) => a + Number(r.revenue_cents), 0) },
+    sentence: "Current counts active and in-grace members; lapsed counts people, once. Revenue is membership payments this fiscal year." };
+}
+async function reportMembersExpiring(orgId) {
+  const today = await mbReportToday(orgId);
+  const rows = await query(
+    `SELECT d.name, d.email, l.name AS level, m.status, m.expires_on
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ?
+      ORDER BY m.expires_on, d.name`, [orgId, today, orgTime.addDays(today, 60)]);
+  return { from: today, to: orgTime.addDays(today, 60), rows, sentence: "Memberships held now that expire in the next 60 days." };
+}
+async function reportMembersLapsed(orgId) {
+  const rows = await query(
+    `SELECT d.name, d.email, l.name AS level, COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on,
+            (SELECT COUNT(*)::int FROM memberships t WHERE t.org_id=m.org_id AND t.donor_id=m.donor_id AND t.status IN ('active','grace','lapsed','renewed')) AS years
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}
+      ORDER BY lapsed_on DESC, d.name`, [orgId]);
+  return { rows, sentence: "People whose most recent membership lapsed and who hold none now." };
+}
+// New vs renewed, by month, the last twelve months. A membership's month is
+// the date of the payment that bought it; one given without a payment
+// (complimentary, imported) counts in the month it starts.
+async function reportMembersNewRenewed(orgId) {
+  const today = await mbReportToday(orgId);
+  // The first day of the month eleven months back: twelve calendar months.
+  const [ty, tm] = today.split("-").map(Number);
+  const back = ty * 12 + (tm - 1) - 11;
+  const start = `${Math.floor(back / 12)}-${String(back % 12 + 1).padStart(2, "0")}-01`;
+  const rows = await query(
+    `SELECT LEFT(COALESCE(g.date, m.starts_on), 7) AS month,
+            COUNT(*) FILTER (WHERE m.renewed_from IS NULL)::int AS new_members,
+            COUNT(*) FILTER (WHERE m.renewed_from IS NOT NULL)::int AS renewed
+       FROM memberships m LEFT JOIN gifts g ON g.id=m.gift_id AND g.org_id=m.org_id
+      WHERE m.org_id=? AND COALESCE(g.date, m.starts_on) BETWEEN ? AND ?
+      GROUP BY 1 ORDER BY 1`, [orgId, start, today]);
+  return { from: start, to: today, rows,
+    totals: { newMembers: rows.reduce((a, r) => a + r.new_members, 0), renewed: rows.reduce((a, r) => a + r.renewed, 0) },
+    sentence: "A membership counts in the month of the payment that bought it; one given without a payment counts in the month it starts." };
+}
+// Membership revenue BESIDE donation revenue: two columns, this fiscal year
+// by month, and never summed into one figure.
+async function reportMembershipRevenue(orgId) {
+  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT LEFT(g.date, 7) AS month,
+            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE ${MB_GIFT_SQL}),0)::bigint AS membership_cents,
+            COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE NOT ${MB_GIFT_SQL}),0)::bigint AS donation_cents
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND g.date BETWEEN ? AND ? GROUP BY 1 ORDER BY 1`, [orgId, fy.from, fy.to]);
+  const out = rows.map(r => ({ month: r.month, membershipCents: Number(r.membership_cents), donationCents: Number(r.donation_cents) }));
+  return { from: fy.from, to: fy.to, rows: out,
+    totals: { membershipCents: out.reduce((a, r) => a + r.membershipCents, 0), donationCents: out.reduce((a, r) => a + r.donationCents, 0) },
+    sentence: "Membership payments and donations this fiscal year, side by side. They are two lines and are never added into one revenue figure." };
+}
+const c2d = c => (Number(c) / 100).toFixed(2);
 
 const REPORT_HANDLERS = {
   "giving-summary": reportGivingSummary,
@@ -24459,6 +24751,13 @@ const REPORT_HANDLERS = {
   // rule). Expressing either as a second query would be a second computation.
   "grant-deadlines": reportGrantDeadlines,
   "grant-restricted": reportGrantRestricted,
+  // BUILD-101 Part 5 — memberships.
+  "members-directory": reportMembersDirectory,
+  "members-by-level": reportMembersByLevel,
+  "members-expiring": reportMembersExpiring,
+  "members-lapsed": reportMembersLapsed,
+  "members-new-renewed": reportMembersNewRenewed,
+  "membership-revenue": reportMembershipRevenue,
 };
 // [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
 // org gets 403 plan_required (the client renders an upgrade state).
@@ -25884,6 +26183,9 @@ if (!backgroundTicksDisabled()) {
   // `reminder_thread_id` makes it a no-op per instalment too.
   setTimeout(() => processPledgeInstallmentReminders().then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 70000);
   setInterval(() => recordTick("processPledgeInstallmentReminders", processPledgeInstallmentReminders).then(o => o.opened && console.log(`[pledge] ${o.opened} late-instalment thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
+  // BUILD-101 Part 2 — memberships ride the same family. Opens threads, sends nothing.
+  setTimeout(() => processMembershipRenewals().catch(console.error), 80000);
+  setInterval(() => recordTick("processMembershipRenewals", processMembershipRenewals).then(o => o.opened && console.log(`[membership] ${o.opened} renewal thread(s) opened`)).catch(console.error), 60 * 60 * 1000);
 }
 
 // POST /nudges/run (requireAuth + requireAdmin) — drive the thread nudge for
@@ -33014,6 +33316,567 @@ async function eventDonorFor(orgId, body, who) {
   return id;
 }
 
+// ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────
+// A membership is one person on one level. Its payment is a GIFT through
+// recordGift with the level's fair-market value as the quid-pro-quo, so the
+// existing receipt states the deductible split and the ledger posts once:
+// membership money and donation money are the same rows, and the split is a
+// fact on the gift, never a second total.
+let MB = null;
+const MB_READY = import("./shared/membership.js").then(m => { MB = m; return m; });
+const mbCents = v => Math.round(Number(v) * 100);
+function membershipLevelPayload(l, counts = null) {
+  const priceCents = mbCents(l.price), fmvCents = mbCents(l.fmv);
+  return { id: l.id, name: l.name, price: priceCents / 100, fmv: fmvCents / 100, deductible: (priceCents - fmvCents) / 100,
+    term: l.term, termLabel: MB ? MB.TERM_LABEL[l.term] : l.term, scope: l.scope,
+    benefits: Array.isArray(l.benefits) ? l.benefits : [], active: l.active !== false,
+    fmvSentence: MB ? MB.fmvSentence({ priceCents, fmvCents }) : null, counts };
+}
+
+app.get("/membership-levels", requireAuth, wrap(async (req, res) => {
+  await MB_READY;
+  const levels = await query(`SELECT * FROM membership_levels WHERE org_id=? ORDER BY active DESC, position, price`, [req.user.orgId]);
+  const counts = await query(`SELECT level_id, status, COUNT(*)::int n FROM memberships WHERE org_id=? GROUP BY 1,2`, [req.user.orgId]);
+  const by = {};
+  for (const c of counts) (by[c.level_id] ||= { active: 0, grace: 0, lapsed: 0, cancelled: 0 })[c.status] = c.n;
+  res.json({ levels: levels.map(l => membershipLevelPayload(l, by[l.id] || { active: 0, grace: 0, lapsed: 0, cancelled: 0 })) });
+}));
+
+// Prices and the value of benefits are the org's policy: admins set them.
+app.post("/membership-levels", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await MB_READY;
+  const v = MB.validateLevel(req.body || {});
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level, id = "mbl_" + uuid().slice(0, 8), who = actor(req);
+  await run(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+    [id, req.user.orgId, L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), who.id, who.name]);
+  res.status(201).json({ id, sentence: MB.fmvSentence(L) });
+}));
+
+app.put("/membership-levels/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  await MB_READY;
+  const [l] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!l) return res.status(404).json({ error: "Not found" });
+  const cur = membershipLevelPayload(l);
+  const v = MB.validateLevel({ ...cur, ...req.body });
+  if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+  const L = v.level;
+  const active = typeof req.body?.active === "boolean" ? req.body.active : l.active !== false;
+  await run(`UPDATE membership_levels SET name=?, price=?, fmv=?, term=?, scope=?, benefits=?::jsonb, active=? WHERE id=? AND org_id=?`,
+    [L.name, L.priceCents / 100, L.fmvCents / 100, L.term, L.scope, JSON.stringify(L.benefits), active, l.id, req.user.orgId]);
+  res.json({ ok: true, sentence: MB.fmvSentence(L) });
+}));
+
+// A level somebody has held cannot vanish from under their receipt; retire it
+// (active=false) instead.
+app.delete("/membership-levels/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const [used] = await query(`SELECT COUNT(*)::int n FROM memberships WHERE level_id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (used?.n) return res.status(409).json({ error: "level_in_use", message: "People have held this level. It can be retired, not removed." });
+  const { changes } = await run(`DELETE FROM membership_levels WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// Put a person on a level. The membership row is CLAIMED FIRST, so the
+// one-current-membership index — not an if-statement — refuses a second one
+// before any money is written; if the gift then fails, the claim is released.
+async function enrollMembership({ orgId, donorId, level, startsOn = null, paid = true, paymentMethod = null,
+                                  idemKey = null, source = "staff", who, existingGiftId = null }) {
+  await MB_READY;
+  const [donor] = await query(`SELECT id, name, household_id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!donor) throw Object.assign(new Error("Donor not found"), { status: 404 });
+  if (idemKey) {
+    const [prior] = await query(`SELECT m.* FROM memberships m JOIN gifts g ON g.id=m.gift_id WHERE m.org_id=? AND g.idempotency_key=?`, [orgId, idemKey]);
+    if (prior) return { membership: prior, duplicate: true };
+  }
+  const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK
+  const start = startsOn || today;
+  const expires = MB.expiryFor({ term: level.term, startsOn: start });
+  const id = "mb_" + uuid().slice(0, 10);
+  try {
+    await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,created_by,created_by_name)
+               VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?)`,
+      [id, orgId, donorId, level.scope === "household" ? donor.household_id || null : null, level.id, start, start, expires,
+       paid ? paymentMethod : "complimentary", source, who.id, who.name]);
+  } catch (e) {
+    if (e.code !== "23505") throw e;
+    const [cur] = await query(`SELECT m.expires_on, l.name FROM memberships m JOIN membership_levels l ON l.id=m.level_id
+                                WHERE m.org_id=? AND m.donor_id=? AND m.status IN ('active','grace')`, [orgId, donorId]);
+    throw Object.assign(new Error(`${donor.name} already holds a ${cur ? cur.name : "current"} membership${cur && cur.expires_on ? ", through " + cur.expires_on : ""}. Renew it rather than adding a second.`),
+      { status: 409, code: "membership_current" });
+  }
+  let giftId = existingGiftId;
+  if (existingGiftId) {
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [existingGiftId, id, orgId]);
+  } else if (paid) {
+    try {
+      const written = await recordGift({
+        orgId, donorId, amount: mbCents(level.price) / 100, date: today, type: "cash",
+        notes: `${level.name} membership`, paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
+        quidProQuoValue: mbCents(level.fmv) / 100, membershipRenewal: false,
+        quidProQuoDesc: MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] }),
+        actorId: who.id, actorName: who.name, source: "membership",
+        ledgerDescription: `${level.name} membership`,
+        timelineNote: `Joined as a ${level.name} member${expires ? ", through " + expires : ""}`,
+      });
+      giftId = written.duplicate ? (await query(`SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?`, [orgId, idemKey]))[0]?.id || null
+                                 : written.gift.id;
+    } catch (e) {
+      await run(`DELETE FROM memberships WHERE id=? AND org_id=?`, [id, orgId]).catch(() => {});
+      throw e;
+    }
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
+  }
+  const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+  return { membership: m, giftId };
+}
+
+app.post("/donors/:id/memberships", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [String(req.body?.levelId || ""), orgId]);
+  if (!level) return res.status(404).json({ error: "Level not found" });
+  if (level.active === false) return res.status(400).json({ error: `${level.name} is retired. Choose a current level.` });
+  const startsOn = req.body?.startsOn && /^\d{4}-\d{2}-\d{2}$/.test(req.body.startsOn) ? req.body.startsOn : null;
+  const idem = typeof req.body?.idempotencyKey === "string" && req.body.idempotencyKey.trim() ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+  try {
+    const r = await enrollMembership({ orgId, donorId: req.params.id, level, startsOn, paid: req.body?.paid !== false,
+      paymentMethod: req.body?.paymentMethod || null, idemKey: idem, who: actor(req) });
+    res.status(r.duplicate ? 200 : 201).json(r);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.code || e.message, message: e.message });
+    throw e;
+  }
+}));
+
+app.get("/donors/:id/memberships", requireAuth, wrap(async (req, res) => {
+  const [d] = await query(`SELECT id FROM donors WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!d) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT m.id, m.status, m.joined_on, m.starts_on, m.expires_on, m.gift_id, m.payment_method, m.source,
+            l.id AS level_id, l.name AS level_name, l.term, l.scope
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id
+      WHERE m.donor_id=? AND m.org_id=? ORDER BY m.starts_on DESC, m.created_at DESC`, [d.id, req.user.orgId]);
+  res.json({ memberships: rows, current: rows.find(r => r.status === "active" || r.status === "grace") || null,
+    sentence: "Memberships are counted apart from giving: the payment is a gift, and the part that bought benefits is not deductible." });
+}));
+
+// The Members screen: every membership, counts by level and status, sortable
+// by expiry (soonest first by default — that is the list someone works from).
+// ── BUILD-101 Part 3 — LAPSED MEMBERS ARE THEIR OWN LIST ──────────────────
+// A lapsed member and a lapsed donor are different people with different
+// asks. This list reads ONLY the memberships table (and, to say whether they
+// still give, the gifts that were not membership payments). Nothing here is
+// read by Drift, LYBUNT or SYBUNT, and nothing those compute is read here —
+// the suite proves both directions byte for byte. A person who lapsed as a
+// member and still gives is shown as both.
+const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org_id=m.org_id AND m2.donor_id=m.donor_id
+                                     ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
+    AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
+
+// BUILD-101 Part 5 — THE MEMBER CARD. One page: the org's letterhead, the
+// member's name, the level and the date it runs through. The pdfkit pattern
+// the acknowledgment letters use; held to one page by construction.
+function renderMemberCardPdf({ orgName, accent, logo, memberName, levelName, expiresOn, memberSince }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: false });
+  return new Promise((resolve, reject) => {
+    const chunks = []; doc.on("data", c => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject);
+    doc.addPage();
+    const INK = "#0f1a12", SUB = "#5a554f";
+    // A wallet-card-sized panel (3.375 x 2.125 in) near the top, to cut out.
+    const X = 72, Y = 72, W = 243, H = 153;
+    doc.roundedRect(X, Y, W, H, 10).lineWidth(1).strokeColor("#e8e4db").stroke();
+    doc.rect(X, Y, W, 8).fill(accent || "#0d5c3a");
+    if (logo) { try { doc.image(logo, X + W - 58, Y + 16, { fit: [44, 32] }); } catch { /* a logo that will not draw costs the logo, not the card */ } }
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(orgName, X + 14, Y + 20, { width: W - 80, height: 26, ellipsis: true });
+    doc.font("Helvetica").fontSize(8).fillColor(SUB).text("MEMBER", X + 14, Y + 58, { characterSpacing: 1.5 });
+    doc.font("Helvetica-Bold").fontSize(15).fillColor(INK).text(memberName, X + 14, Y + 70, { width: W - 28, height: 20, ellipsis: true });
+    doc.font("Helvetica").fontSize(10).fillColor(INK).text(`${levelName} membership`, X + 14, Y + 96, { width: W - 28, height: 14, ellipsis: true });
+    doc.font("Helvetica").fontSize(9).fillColor(SUB)
+      .text(expiresOn ? `Valid through ${expiresOn}` : "Lifetime member", X + 14, Y + 118, { width: W - 28, height: 12 })
+      .text(`Member since ${memberSince}`, X + 14, Y + 131, { width: W - 28, height: 12 });
+    doc.end();
+  });
+}
+
+app.get("/memberships/:id/card.pdf", requireAuth, wrap(async (req, res) => {
+  const [m] = await query(
+    `SELECT m.*, l.name AS level_name, d.name AS donor_name FROM memberships m
+       JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+      WHERE m.id=? AND m.org_id=?`, [req.params.id, req.user.orgId]);
+  if (!m) return res.status(404).json({ error: "Not found" });
+  const theme = await resolveOrgBrandTheme(req.user.orgId).catch(() => null);
+  let logo = null;
+  if (theme?.logoDataUri && /^data:image\/(png|jpe?g);base64,/.test(theme.logoDataUri)) { try { logo = Buffer.from(theme.logoDataUri.split(",")[1], "base64"); } catch { logo = null; } }
+  const pdf = await renderMemberCardPdf({ orgName: theme?.displayName || "", accent: theme?.band, logo,
+    memberName: m.donor_name, levelName: m.level_name, expiresOn: m.expires_on, memberSince: m.joined_on });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="member-card-${m.id}.pdf"`);
+  res.send(pdf);
+}));
+
+app.get("/memberships/lapsed", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT m.id, m.donor_id, d.name AS donor_name, l.name AS level_name, m.expires_on,
+            COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on,
+            (SELECT COUNT(*)::int FROM memberships t WHERE t.org_id=m.org_id AND t.donor_id=m.donor_id
+               AND t.status IN ('active','grace','lapsed','renewed')) AS membership_years,
+            (SELECT MAX(g.date) FROM gifts g WHERE g.org_id=m.org_id AND g.donor_id=m.donor_id
+               AND NOT EXISTS (SELECT 1 FROM memberships x WHERE x.org_id=g.org_id AND x.gift_id=g.id)) AS last_gift_date
+       FROM memberships m
+       JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}
+      ORDER BY lapsed_on DESC, d.name LIMIT 1000`, [orgId]);
+  res.json({
+    members: rows.map(r => ({ ...r, lastGiftDate: r.last_gift_date ? String(r.last_gift_date).slice(0, 10) : null })),
+    sentence: "People whose most recent membership has lapsed and who hold none now. Membership years counts the terms they held. A gift here means a gift that was not a membership payment, so someone can be a lapsed member and a current donor at once.",
+  });
+}));
+
+app.get("/memberships", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const where = ["m.org_id=?"], args = [orgId];
+  if (req.query.status && ["active", "grace", "lapsed", "cancelled"].includes(String(req.query.status))) { where.push("m.status=?"); args.push(String(req.query.status)); }
+  // "Lapsed" means a PERSON who lapsed, once: their latest membership lapsed
+  // and they hold none now (BUILD-101 Part 3 — the same predicate as the
+  // Lapsed list, so the count and the list cannot disagree).
+  if (req.query.status === "lapsed") where.push(LAPSED_MEMBER_SQL);
+  if (req.query.levelId) { where.push("m.level_id=?"); args.push(String(req.query.levelId)); }
+  const dir = req.query.sort === "expiry_desc" ? "DESC" : "ASC";
+  const rows = await query(
+    `SELECT m.id, m.donor_id, d.name AS donor_name, m.status, m.joined_on, m.starts_on, m.expires_on, m.gift_id,
+            l.id AS level_id, l.name AS level_name, l.term
+       FROM memberships m JOIN membership_levels l ON l.id=m.level_id JOIN donors d ON d.id=m.donor_id
+      WHERE ${where.join(" AND ")} ORDER BY m.expires_on ${dir} NULLS LAST, d.name LIMIT 1000`, args);
+  const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status <> 'lapsed' GROUP BY 1`, [orgId]);
+  const byStatus = { active: 0, grace: 0, lapsed: 0, cancelled: 0 };
+  for (const c of counts) if (c.status in byStatus) byStatus[c.status] = c.n;
+  const [lp] = await query(`SELECT COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}`, [orgId]);
+  byStatus.lapsed = lp?.n || 0;
+  res.json({ members: rows, byStatus,
+    sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period." });
+}));
+
+// Cancelling stops a membership; it does not refund the gift (a refund is its
+// own act on the gift). Never write-gated: a lapsed org can always stop one.
+app.post("/memberships/:id/cancel", requireAuth, wrap(async (req, res) => {
+  const r = await query(`UPDATE memberships SET status='cancelled', cancelled_at=NOW(), updated_at=NOW()
+                          WHERE id=? AND org_id=? AND status IN ('active','grace') RETURNING id`, [req.params.id, req.user.orgId]);
+  if (!r.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// ── BUILD-101 Part 6 — MEMBERSHIPS FROM A FILE ────────────────────────────
+// Rows arrive already read by shared/membershipImport.js. Each is placed on a
+// person — by EMAIL, exactly, or by NAME when the row has no email (the oldest
+// matching record, the proposals/soft-credit rule) — and on one of the org's
+// OWN levels, matched case-insensitively. Everything that cannot be placed is
+// HELD with its line number and the reason; nothing is created to make a row
+// fit. An imported membership is history: it carries no payment (no gift, no
+// ledger row), its status comes from its dates, and a re-run adds nothing.
+async function importMemberships(orgId, rows, who) {
+  await MB_READY;
+  const MI = await import("./shared/membershipImport.js");
+  const out = { written: 0, skippedDuplicate: 0, held: [] };
+  const levels = await query("SELECT * FROM membership_levels WHERE org_id=?", [orgId]);
+  const today = orgToday(await orgTz(orgId));                  // ORG_TZ_SEAM_OK
+  const { graceDays } = await membershipSettings(orgId);
+  const hold = (r, why) => out.held.push({ line: Number.isInteger(r.line) ? r.line : null, name: r.name || r.email || null, level: r.level || null, why });
+  for (const r of rows.slice(0, 50000)) {
+    const level = MI.matchLevel(levels, r.level);
+    if (!level) { hold(r, `no level called "${String(r.level || "").slice(0, 60)}" — add it in Members, or fix the file`); continue; }
+    const iso = v => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const starts = iso(r.starts) || iso(r.joined);
+    if (!starts) { hold(r, "no start date that could be read"); continue; }
+    let donor = null;
+    if (r.email) [donor] = await query("SELECT id FROM donors WHERE org_id=? AND LOWER(email)=LOWER(?) AND deleted_at IS NULL ORDER BY created_at LIMIT 1", [orgId, r.email]);
+    if (!donor && r.name) [donor] = await query("SELECT id FROM donors WHERE org_id=? AND LOWER(name)=LOWER(?) AND deleted_at IS NULL ORDER BY created_at LIMIT 1", [orgId, String(r.name).trim()]);
+    if (!donor) { hold(r, "no one on file with that email or name"); continue; }
+    const expires = iso(r.expires) || MB.expiryFor({ term: level.term, startsOn: starts });
+    const [dup] = await query("SELECT id FROM memberships WHERE org_id=? AND donor_id=? AND level_id=? AND starts_on=?", [orgId, donor.id, level.id, starts]);
+    if (dup) { out.skippedDuplicate++; continue; }
+    const status = MB.statusOn({ expiresOn: expires, today, graceDays });
+    try {
+      await run(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status,status_changed_on,source,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,?,?,?,'import',?,?)`,
+        ["mb_" + uuid().slice(0, 10), orgId, donor.id, level.id, iso(r.joined) || starts, starts, expires, status,
+         status === "lapsed" ? MB.addDaysCivil(expires, graceDays + 1) : null, who.id, who.name]);
+      out.written++;
+    } catch (e) {
+      if (e.code !== "23505") throw e;
+      hold(r, "this person already holds a current membership");
+    }
+  }
+  return out;
+}
+
+// ── BUILD-101 Part 4 — A MEMBERSHIP BOUGHT ONLINE ─────────────────────────
+// The ONE step that turns an online membership payment into a membership. It
+// is keyed on the GIFT: the payment event and the checkout event for a new
+// auto-renewing membership arrive in either order, and whichever gets here
+// second finds the gift already carries its membership and does nothing. A
+// person who already holds a membership is RENEWED (from the old expiry);
+// anyone else joins.
+async function attachOnlineMembership({ orgId, donorId, levelId, giftId }) {
+  await MB_READY;
+  if (!giftId || !levelId) return null;
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [levelId, orgId]);
+  if (!level) return null;
+  return withAdvisoryLock(`membership-gift:${orgId}:${giftId}`, async () => {
+    const [done] = await query(`SELECT id FROM memberships WHERE org_id=? AND gift_id=?`, [orgId, giftId]);
+    if (done) return { membershipId: done.id, duplicate: true };
+    // The benefits split rides the gift (the webhook set it from the level it
+    // re-read; this makes sure of it for a gift written before the level was known).
+    const fmv = mbCents(level.fmv) / 100;
+    await run(`UPDATE gifts SET quid_pro_quo_value=LEAST(amount, ?), quid_pro_quo_desc=?, deductible_amount=GREATEST(0, amount - ?)
+                WHERE id=? AND org_id=? AND quid_pro_quo_value IS NULL`,
+      [fmv, MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] }), fmv, giftId, orgId]);
+    const [cur] = await query(`SELECT id FROM memberships WHERE org_id=? AND donor_id=? AND status IN ('active','grace')`, [orgId, donorId]);
+    const r = cur
+      ? await renewMembership({ orgId, membershipId: cur.id, levelId: level.id, existingGiftId: giftId, paymentMethod: "Card",
+                                source: "online", who: SYS_STRIPE })
+      : await enrollMembership({ orgId, donorId, level, existingGiftId: giftId, paymentMethod: "Card", source: "online", who: SYS_STRIPE });
+    return { membershipId: r.membership.id };
+  });
+}
+
+// Public by slug, like the event tickets read: what a flyer would show, and
+// what the receipt will call deductible, before she pays.
+app.get("/org/:orgSlug/membership/:levelId/public", wrap(async (req, res) => {
+  await MB_READY;
+  const [org] = await query("SELECT id, name FROM orgs WHERE org_slug=?", [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const [l] = await query("SELECT * FROM membership_levels WHERE id=? AND org_id=? AND active IS NOT FALSE", [req.params.levelId, org.id]);
+  if (!l) return res.status(404).json({ error: "Not found" });
+  const p = membershipLevelPayload(l);
+  res.json({ orgName: await donorFacingOrgName(org.id, org.name).catch(() => org.name),
+    level: { id: p.id, name: p.name, price: p.price, fmv: p.fmv, deductible: p.deductible, term: p.term, termLabel: p.termLabel,
+             scope: p.scope, benefits: p.benefits, autoRenew: l.term === "12_months" } });
+}));
+
+// ── BUILD-101 Part 2 — RENEWALS THAT COME AROUND ──────────────────────────
+// Expiry drives everything. The org's two numbers (how early the renewal
+// thread opens, how long an expired membership sits in grace) are read here,
+// once, with their defaults.
+async function membershipSettings(orgId) {
+  await MB_READY;
+  const [o] = await query("SELECT membership_renewal_days, membership_grace_days FROM orgs WHERE id=?", [orgId]);
+  const n = (v, d) => (Number.isInteger(Number(v)) && Number(v) >= 0 && Number(v) <= 365 ? Number(v) : d);
+  return { renewalDays: n(o?.membership_renewal_days, MB.DEFAULT_RENEWAL_DAYS), graceDays: n(o?.membership_grace_days, MB.DEFAULT_GRACE_DAYS) };
+}
+
+// THE ONE PLACE A MEMBERSHIP IS RENEWED. The old row becomes 'renewed' and a
+// new term begins the day after the OLD expiry while it is still current or in
+// grace — so paying early never costs a member time — or today once it has
+// lapsed. Serialised per person, because two doors can take the same cheque.
+// `attachGift` is either an existing gift (a payment recordGift recognised as
+// this renewal) or null, in which case this writes the payment itself.
+async function renewMembership({ orgId, membershipId, levelId = null, paymentMethod = null, idemKey = null,
+                                 existingGiftId = null, who, source = "staff" }) {
+  await MB_READY;
+  const [old] = await query(`SELECT * FROM memberships WHERE id=? AND org_id=?`, [membershipId, orgId]);
+  if (!old) throw Object.assign(new Error("Not found"), { status: 404 });
+  const [level] = await query(`SELECT * FROM membership_levels WHERE id=? AND org_id=?`, [levelId || old.level_id, orgId]);
+  if (!level) throw Object.assign(new Error("Level not found"), { status: 404 });
+  if (level.active === false) throw Object.assign(new Error(`${level.name} is retired. Choose a current level.`), { status: 400 });
+  if (level.term === "lifetime" && old.status !== "lapsed")
+    throw Object.assign(new Error("A lifetime membership does not renew."), { status: 400 });
+  if (idemKey) {
+    const [prior] = await query(`SELECT m.* FROM memberships m JOIN gifts g ON g.id=m.gift_id WHERE m.org_id=? AND g.idempotency_key=?`, [orgId, idemKey]);
+    if (prior) return { membership: prior, duplicate: true };
+  }
+  return withAdvisoryLock(`membership:${orgId}:${old.donor_id}`, async () => {
+    const [cur] = await query(`SELECT status, expires_on FROM memberships WHERE id=? AND org_id=?`, [old.id, orgId]);
+    if (cur.status === "renewed" || cur.status === "cancelled")
+      throw Object.assign(new Error(`This membership was already ${cur.status}.`), { status: 409, code: "membership_" + cur.status });
+    const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+    const continuing = cur.status === "active" || cur.status === "grace";
+    const start = MB.renewalStart({ oldExpires: cur.expires_on, today, lapsed: !continuing });
+    const expires = MB.expiryFor({ term: level.term, startsOn: start });
+    const id = "mb_" + uuid().slice(0, 10);
+    if (continuing) await run(`UPDATE memberships SET status='renewed', status_changed_on=?, updated_at=NOW() WHERE id=? AND org_id=?`, [today, old.id, orgId]);
+    try {
+      await run(`INSERT INTO memberships (id,org_id,donor_id,household_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,renewed_from,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?,?)`,
+        [id, orgId, old.donor_id, old.household_id, level.id, continuing ? old.joined_on : start, start, expires,
+         paymentMethod, source, old.id, who.id, who.name]);
+    } catch (e) {
+      if (continuing) await run(`UPDATE memberships SET status=?, updated_at=NOW() WHERE id=? AND org_id=?`, [cur.status, old.id, orgId]);
+      if (e.code === "23505") throw Object.assign(new Error("This person already holds a current membership. Renew that one."), { status: 409, code: "membership_current" });
+      throw e;
+    }
+    const undo = async () => {
+      await run(`DELETE FROM memberships WHERE id=? AND org_id=?`, [id, orgId]).catch(() => {});
+      if (continuing) await run(`UPDATE memberships SET status=?, updated_at=NOW() WHERE id=? AND org_id=?`, [cur.status, old.id, orgId]).catch(() => {});
+    };
+    const fmv = mbCents(level.fmv) / 100;
+    const qpqDesc = MB.quidProQuoDescription({ levelName: level.name, benefits: level.benefits || [] });
+    let giftId = existingGiftId;
+    try {
+      if (existingGiftId) {
+        // A payment that arrived through another door and was recognised as
+        // this renewal. It bought the same benefits a renewal buys, so it
+        // carries the same split — and says so on the timeline.
+        await run(`UPDATE gifts SET quid_pro_quo_value=?, quid_pro_quo_desc=?, deductible_amount=GREATEST(0, amount - ?)
+                    WHERE id=? AND org_id=?`, [fmv, qpqDesc, fmv, existingGiftId, orgId]);
+      } else {
+        const written = await recordGift({
+          orgId, donorId: old.donor_id, amount: mbCents(level.price) / 100, date: today, type: "cash",
+          notes: `${level.name} membership renewal`, paymentMethod, idempotencyKey: idemKey, conflict: idemKey ? "idempotency" : null,
+          quidProQuoValue: fmv, quidProQuoDesc: qpqDesc, membershipRenewal: false,
+          actorId: who.id, actorName: who.name, source: "membership",
+          ledgerDescription: `${level.name} membership renewal`,
+          timelineNote: `Renewed the ${level.name} membership${expires ? ", through " + expires : ""}`,
+        });
+        giftId = written.duplicate ? (await query(`SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?`, [orgId, idemKey]))[0]?.id || null
+                                   : written.gift.id;
+      }
+    } catch (e) { await undo(); throw e; }
+    await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
+    // The renewal thread closes as an OUTCOME, on the payment's own timeline
+    // line — the honest close (threads_close_honest), because the thing the
+    // thread asked for happened.
+    if (old.renewal_thread_id && giftId) {
+      const [line] = await query(`SELECT id FROM interactions WHERE org_id=? AND gift_id=? ORDER BY created_at LIMIT 1`, [orgId, giftId]);
+      if (line) await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+                            WHERE id=? AND org_id=? AND closed_at IS NULL`, [line.id, old.renewal_thread_id, orgId]);
+    }
+    const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+    return { membership: m, giftId, startsOn: start, expiresOn: expires,
+             sentence: continuing ? `The new term starts the day after the old one ends (${start}), so renewing early cost no time.`
+                                  : `The membership had lapsed, so the new term starts today.` };
+  });
+}
+
+// Called from recordGift, the door every payment passes through: a gift of
+// EXACTLY a level's price from a person whose membership at that level is due
+// (inside the renewal window, or in grace) IS that renewal. Within a few
+// dollars is deliberately NOT matched — the pledge-instalment rule: a near
+// miss is a question, and a background path has nobody to ask.
+async function applyGiftAsMembershipRenewal({ orgId, donorId, giftId, amount, actorId, actorName }) {
+  await MB_READY;
+  const cents = Math.round(Number(amount) * 100);
+  if (!(cents > 0)) return null;
+  const { renewalDays } = await membershipSettings(orgId);
+  const today = orgToday(await orgTz(orgId));                   // ORG_TZ_SEAM_OK
+  const [m] = await query(
+    `SELECT m.id FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+      WHERE m.org_id=? AND m.donor_id=? AND m.status IN ('active','grace') AND m.expires_on IS NOT NULL
+        AND l.active IS NOT FALSE AND round(l.price::numeric * 100)::bigint = ?
+        AND (m.status='grace' OR m.expires_on <= ?)
+      LIMIT 1`, [orgId, donorId, cents, MB.addDaysCivil(today, renewalDays)]);
+  if (!m) return null;
+  return renewMembership({ orgId, membershipId: m.id, existingGiftId: giftId, source: "payment",
+                           who: { id: actorId || SYS_AUTO.id, name: actorName || SYS_AUTO.name } });
+}
+
+app.post("/memberships/:id/renew", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const idem = typeof req.body?.idempotencyKey === "string" && req.body.idempotencyKey.trim() ? req.body.idempotencyKey.trim().slice(0, 128) : null;
+  try {
+    const r = await renewMembership({ orgId: req.user.orgId, membershipId: req.params.id, levelId: req.body?.levelId || null,
+      paymentMethod: req.body?.paymentMethod || null, idemKey: idem, who: actor(req) });
+    res.status(r.duplicate ? 200 : 201).json(r);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.code || e.message, message: e.message });
+    throw e;
+  }
+}));
+
+// The sweep. Two jobs, both idempotent by construction:
+//   1. write down each membership's status from its dates (active → grace →
+//      lapsed); the status is DERIVED, this only records it;
+//   2. open ONE renewal thread per membership whose expiry is inside the
+//      window, with the note already drafted in the org's voice. Recorded
+//      against that expiry (`renewal_thread_for`), so a second sweep over the
+//      same date opens nothing; `threads_one_open` means a person with a thread
+//      already open is left alone and tried again next time. It sends nothing.
+async function processMembershipRenewals(opts = {}) {
+  await MB_READY;
+  const out = { orgs: 0, toGrace: 0, toLapsed: 0, opened: 0, skipped: 0, rows: [] };
+  const orgs = opts.orgId
+    ? await query("SELECT id, name, timezone, voice_samples FROM orgs WHERE id=?", [opts.orgId])
+    : await query(`SELECT DISTINCT o.id, o.name, o.timezone, o.voice_samples FROM orgs o JOIN memberships m ON m.org_id=o.id
+                    WHERE o.onboarding_complete=1 AND m.status IN ('active','grace')`, []);
+  const draftMod = await import("./shared/draftNote.js");
+  for (const org of orgs) {
+    out.orgs++;
+    const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
+    const { renewalDays, graceDays } = await membershipSettings(org.id);
+    const g = await query(`UPDATE memberships SET status='grace', status_changed_on=?, updated_at=NOW()
+                            WHERE org_id=? AND status='active' AND expires_on IS NOT NULL AND expires_on < ? RETURNING id`, [today, org.id, today]);
+    const l = await query(`UPDATE memberships SET status='lapsed', status_changed_on=?, updated_at=NOW()
+                            WHERE org_id=? AND status='grace' AND expires_on < ? RETURNING id`, [today, org.id, MB.addDaysCivil(today, -graceDays)]);
+    out.toGrace += g.length; out.toLapsed += l.length;
+    const due = await query(
+      `SELECT m.id, m.donor_id, m.expires_on, l.name AS level_name, l.price, d.name AS donor_name, d.kind,
+              d.assigned_to, d.assigned_to_name
+         FROM memberships m
+         JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+         JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+        WHERE m.org_id=? AND m.status='active' AND m.expires_on BETWEEN ? AND ?
+          AND m.renewal_thread_for IS DISTINCT FROM m.expires_on
+          AND d.deleted_at IS NULL AND d.is_sample IS NOT TRUE
+          AND d.deceased IS NOT TRUE AND d.do_not_contact IS NOT TRUE AND d.do_not_solicit IS NOT TRUE
+        ORDER BY m.expires_on`, [org.id, today, MB.addDaysCivil(today, renewalDays)]);
+    const samples = Array.isArray(org.voice_samples) ? org.voice_samples
+      : (typeof org.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+    const voice = draftMod.voiceFrom(samples);
+    const displayName = await donorFacingOrgName(org.id, org.name).catch(() => org.name);
+    for (const m of due) {
+      const isPerson = !m.kind || m.kind === "person";
+      const draft = draftMod.membershipRenewalDraft({ donorName: m.donor_name, levelName: m.level_name,
+        expiresOnLong: MB.civilLong(m.expires_on), priceCents: mbCents(m.price), orgName: displayName, voice });
+      const thread = await withTransaction(client => openThreadTx(client, {
+        orgId: org.id, donorId: m.donor_id,
+        step: { type: draftMod.MEMBERSHIP_RENEWAL_STEP.type,
+                label: MB.renewalLabel({ donorName: m.donor_name, levelName: m.level_name, expiresOn: m.expires_on, isPerson }),
+                due: today },
+        openedOn: today, ownerId: m.assigned_to || null, ownerName: m.assigned_to_name || null,
+        actorId: SYS_AUTO.id, actorName: SYS_AUTO.name,
+      }));
+      if (!thread) { out.skipped++; continue; }
+      await run("UPDATE threads SET draft_note=? WHERE id=?", [draft.body, thread.id]);
+      await run("UPDATE memberships SET renewal_thread_id=?, renewal_thread_for=?, updated_at=NOW() WHERE id=? AND org_id=?",
+        [thread.id, m.expires_on, m.id, org.id]);
+      out.opened++;
+      out.rows.push({ orgId: org.id, membershipId: m.id, donorId: m.donor_id, threadId: thread.id, expiresOn: m.expires_on });
+    }
+  }
+  return out;
+}
+
+// Ops/test hook (the /pledges/run-reminders bar). A pinned {today} is honoured
+// only under TEST_MODE: production's tick passes no clock (the BUILD-94 rule).
+app.post("/memberships/run-sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pinned = process.env.TEST_MODE && /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.today || "")) ? String(req.body.today) : null;
+  res.json(await processMembershipRenewals({ orgId: req.user.orgId, today: pinned }));
+}));
+
+app.get("/org/membership-settings", requireAuth, wrap(async (req, res) => {
+  const st = await membershipSettings(req.user.orgId);
+  res.json({ ...st, sentence: `A renewal thread opens ${st.renewalDays} days before a membership expires, and an expired membership stays in grace for ${st.graceDays} days before it lapses.` });
+}));
+// Merged over the STORED values, never over the defaults: changing one number
+// must not quietly reset the other.
+app.put("/org/membership-settings", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const cur = await membershipSettings(req.user.orgId);
+  const pick = (v, d) => {
+    if (v === undefined || v === null || v === "") return d;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0 || n > 365) throw Object.assign(new Error("Days must be a whole number from 0 to 365."), { status: 400 });
+    return n;
+  };
+  try {
+    const renewalDays = pick(req.body?.renewalDays, cur.renewalDays), graceDays = pick(req.body?.graceDays, cur.graceDays);
+    await run("UPDATE orgs SET membership_renewal_days=?, membership_grace_days=? WHERE id=?", [renewalDays, graceDays, req.user.orgId]);
+    res.json({ renewalDays, graceDays });
+  } catch (e) { if (e.status) return res.status(e.status).json({ error: e.message }); throw e; }
+}));
+
 // ── EVENT ROUTES (levels, registration, tables, attendance) ─────────────────
 app.get("/events/:id/levels", requireAuth, wrap(async (req, res) => {
   const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
@@ -33458,6 +34321,35 @@ function toCsv(columns, rows) {
 // Sample rows are INCLUDED, identified by an is_sample column where the
 // table has one — honest and reversible (filter the column in a spreadsheet)
 // beats silently dropping rows from "everything".
+// ── BUILD-98 (switch) Part 8 — EVERYTHING, ONE BUTTON ──────────────────────
+// Every table that carries this org's id, found by asking the database rather
+// than by a list somebody has to remember to extend: a table added next month
+// is in the export the day it exists. The org's own row comes first.
+// NEVER write-gated (a lapsed org must always be able to leave with its data).
+// Credentials, tokens and hashes are LEFT OUT by column name, and the ids of
+// other organisations cannot appear because every read is `WHERE org_id = ?`.
+const EXPORT_WITHHELD_COLUMN = /password|token|secret|sealed|(^|_)hash($|_)|api_key|credential|pdf_data/i;
+app.get("/org/export/full", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const tables = (await query(
+    `SELECT table_name FROM information_schema.columns
+      WHERE table_schema='public' AND column_name='org_id' GROUP BY table_name ORDER BY table_name`)).map(r => r.table_name);
+  const strip = row => { const o = {}; for (const [k, v] of Object.entries(row)) if (!EXPORT_WITHHELD_COLUMN.test(k)) o[k] = v; return o; };
+  const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [orgId]);
+  const stamp = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — filename carries the org's civil date
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="steward-everything-${(org && org.org_slug) || orgId}-${stamp}.json"`);
+  res.write(`{"exportedAt":${JSON.stringify(new Date().toISOString())},"organization":${JSON.stringify(strip(org || {}))},` +
+            `"withheld":${JSON.stringify("Passwords, sign-in secrets, tokens, key fingerprints and stored receipt PDFs are left out; the receipts themselves are in the tables.")},"tables":{`);
+  let first = true;
+  for (const t of tables) {
+    const rows = await query(`SELECT * FROM "${t.replace(/"/g, "")}" WHERE org_id=?`, [orgId]);
+    res.write(`${first ? "" : ","}${JSON.stringify(t)}:${JSON.stringify(rows.map(strip))}`);
+    first = false;
+  }
+  res.end("}}");
+}));
+
 app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { ZipArchive } = require("archiver"); // archiver v8 API — class export, not a factory function
   const orgId = req.user.orgId;

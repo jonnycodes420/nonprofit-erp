@@ -59,6 +59,15 @@ async function requireAuth(req, res, next) {
     // Overlay the LIVE role/org so requireAuth-derived context reflects the DB
     // within the TTL, not the (possibly stale) JWT claims.
     req.user = { ...payload, role: info.role, orgId: info.org_id };
+    // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
+    // requires two-step sign-in and who has not set it up) opens the setup
+    // routes and nothing else.
+    if (payload.mfaSetup) {
+      const p = String(req.originalUrl || "").split("?")[0];
+      if (!["/me/mfa", "/me/mfa/setup", "/me/mfa/enable"].includes(p)) {
+        return res.status(403).json({ error: "mfa_setup_required", message: "Set up two-step sign-in to continue." });
+      }
+    }
     next();
   } catch (err) {
     next(err);

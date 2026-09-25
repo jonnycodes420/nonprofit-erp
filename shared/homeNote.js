@@ -221,7 +221,16 @@ export function pledgeSentence(latePledgeInstallments) {
     : `${cap(spell(n))} pledge instalments are late.`;
 }
 
-export function homeNote({ threads, drift, atRisk, latePledgeInstallments, vocabulary } = {}, todayMs = Date.now()) {
+// ── BUILD-101 Part 2 — memberships expiring this month ───────────────────
+// One line, and only when it is not zero. A count, spelled under ten; the
+// renewal threads themselves are in the Thread, where she acts on them.
+export function membershipSentence(expiringThisMonth) {
+  const n = Number(expiringThisMonth) || 0;
+  if (n < 1) return null;
+  return n === 1 ? "One membership expires this month." : `${cap(spell(n))} memberships expire this month.`;
+}
+
+export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membershipsExpiringThisMonth, vocabulary } = {}, todayMs = Date.now()) {
   const t = makeT(vocabulary);
   const sentences = [];
 
@@ -234,6 +243,9 @@ export function homeNote({ threads, drift, atRisk, latePledgeInstallments, vocab
 
   const pledge = pledgeSentence(latePledgeInstallments);
   if (pledge) sentences.push(pledge);
+
+  const members = membershipSentence(membershipsExpiringThisMonth);
+  if (members) sentences.push(members);
 
   if (sentences.length === 0) return NOTHING_WAITING;
   return sentences.join(" ");

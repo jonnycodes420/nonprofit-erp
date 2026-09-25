@@ -12,6 +12,7 @@ import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
+import { SecurityPanel } from "./SecurityPanel";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -2916,7 +2917,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Account ───────────────────────────────────────────────────────── */}
       {section==="account"&&<>
-      <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+      <SecurityPanel isAdmin={isAdmin}/>
+      <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginTop:16}}>
         <SectionLabel>Billing</SectionLabel>
         {billing ? (
           <div style={{display:"flex",flexDirection:"column",gap:16}}>
