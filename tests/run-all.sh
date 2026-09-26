@@ -154,6 +154,7 @@ CORE=(
   build102-form-config build102-steps-upsell build102-extras build102-embed build102-attribution build102-funnel
   test-clock-seam
   fix1-fundraising
+  fix1-finance
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

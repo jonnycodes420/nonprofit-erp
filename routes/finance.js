@@ -27,6 +27,9 @@ const {
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
 } = ctx;
 let app = routers.r0;
+// FIX-1 E — the payout reconciliation and the money-in sentences (pure, ESM).
+let payoutReconcileMod = null;
+const payoutReconcile = () => payoutReconcileMod || (payoutReconcileMod = import("../shared/payoutReconcile.js"));
 
 // GET /finance/restricted — the org's restricted position, by grant.
 app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
@@ -538,12 +541,17 @@ app.get("/finance/stripe-summary", requireAuth, wrap(async (req, res) => {
       stripe.payouts.list({ limit: 5 }, { stripeAccount: acct }),
     ]);
     const sumCents = arr => (arr || []).reduce((s, b) => s + (b.amount || 0), 0);
+    // FIX-1 E — a $0 balance beside a large cash-on-hand figure reads as a
+    // discrepancy. It is not one, and the payload says why, in the one
+    // sentence shared/payoutReconcile.js holds for the screen as well.
+    const PR = await payoutReconcile();
     const data = {
       connected: true,
       balance: {
         available: sumCents(balance.available) / 100,
         pending: sumCents(balance.pending) / 100,
       },
+      balanceSentence: PR.stripeBalanceSentence({ availableCents: sumCents(balance.available), pendingCents: sumCents(balance.pending) }),
       payouts: (payouts.data || []).map(p => ({
         id: p.id,
         amount: (p.amount || 0) / 100,
@@ -560,6 +568,98 @@ app.get("/finance/stripe-summary", requireAuth, wrap(async (req, res) => {
     stripeSummaryCache.set(orgId, { at: Date.now(), data });
     res.json(data);
   }
+}));
+
+// ── FIX-1 E: which gifts made up this payout ───────────────────────────────
+// GET /finance/payout-lines?payout=po_…  — every charge, refund and fee Stripe
+// says made up one payout, each charge and refund linked to the Steward gift
+// (and donor) its payment intent belongs to, reconciled in INTEGER CENTS by
+// shared/payoutReconcile.js. A payout that does not add up says by how much.
+//
+// A READ path: never write-gated (a lapsed org can always see where its money
+// went). Org-scoped by the caller's OWN orgs.stripe_account_id, never an
+// account from the request: another org's payout id asked of this org's
+// account is simply not there, and Stripe's 404 is ours too. The id rides the
+// query string (not the path) so the route has no row-id param to cross.
+// Cached per org+payout for 5 minutes, like stripe-summary: a paid payout's
+// lines do not change.
+const PAYOUT_LINES_TTL = 5 * 60 * 1000;
+// A payout for the orgs this product serves has dozens of lines. The cap is a
+// guard against a runaway loop, and a payout that hits it SAYS so rather than
+// claiming a truncated list adds up.
+const MAX_PAYOUT_LINES = 2000;
+const payoutLinesCache = new Map(); // orgId:payoutId -> { at, data }
+app.get("/finance/payout-lines", requireAuth, wrap(async (req, res) => {
+  const { orgId } = req.user;
+  const payoutId = String(req.query.payout || "");
+  if (!/^po_[A-Za-z0-9_]{3,64}$/.test(payoutId)) return res.status(404).json({ error: "Payout not found" });
+
+  const key = orgId + ":" + payoutId;
+  const cached = payoutLinesCache.get(key);
+  if (cached && Date.now() - cached.at < PAYOUT_LINES_TTL) return res.json(cached.data);
+
+  const [org] = await query("SELECT stripe_account_id FROM orgs WHERE id=?", [orgId]);
+  const acct = org?.stripe_account_id;
+  if (!acct || !stripe) return res.status(404).json({ error: "Payout not found" });
+  const unavailable = () => res.status(503).json({ error: "stripe_unavailable",
+    sentence: "Stripe did not answer, so Steward cannot open this payout right now." });
+
+  let payout;
+  try {
+    // stripeAccount rides the OPTIONS argument, never params (stripe-node v22).
+    payout = await stripe.payouts.retrieve(payoutId, {}, { stripeAccount: acct });
+  } catch (e) {
+    if (e && (e.statusCode === 404 || e.code === "resource_missing")) return res.status(404).json({ error: "Payout not found" });
+    console.error("[finance] payout retrieve failed:", e && e.message);
+    return unavailable();
+  }
+
+  const txns = [];
+  let truncated = false;
+  try {
+    let starting_after;
+    for (;;) {
+      const page = await stripe.balanceTransactions.list(
+        { payout: payoutId, limit: 100, expand: ["data.source"], ...(starting_after ? { starting_after } : {}) },
+        { stripeAccount: acct });
+      const data = page.data || [];
+      txns.push(...data);
+      if (!page.has_more || !data.length) break;
+      if (txns.length >= MAX_PAYOUT_LINES) { truncated = true; break; }
+      starting_after = data[data.length - 1].id;
+    }
+  } catch (e) {
+    if (e && (e.statusCode === 404 || e.code === "resource_missing")) return res.status(404).json({ error: "Payout not found" });
+    console.error("[finance] payout balance transactions failed:", e && e.message);
+    return unavailable();
+  }
+
+  const PR = await payoutReconcile();
+  const pis = [...new Set(txns.map(PR.paymentIntentOf).filter(Boolean))];
+  const giftsByPi = {};
+  if (pis.length) {
+    // Org-scoped by the gift's own org_id: a payment intent id that happens to
+    // sit on another org's gift links to nothing here.
+    const rows = await query(
+      `SELECT g.id, g.stripe_payment_id, g.donor_id, g.amount, d.name AS donor_name
+         FROM gifts g LEFT JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+        WHERE g.org_id = ? AND g.stripe_payment_id = ANY(?::text[])`, [orgId, pis]);
+    for (const r of rows) giftsByPi[r.stripe_payment_id] = {
+      giftId: r.id, donorId: r.donor_id, donorName: r.donor_name,
+      amountCents: money.toCents(r.amount) ?? 0,
+    };
+  }
+
+  const rec = PR.reconcilePayout(payout, txns, giftsByPi);
+  const data = {
+    ...rec,
+    status: payout.status,
+    arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000).toISOString() : null,
+    truncated,
+    ...(truncated ? { reconciled: false, sentence: `This payout has more than ${MAX_PAYOUT_LINES} lines, so Steward shows the first ${txns.length} and will not claim the rest add up.` } : {}),
+  };
+  payoutLinesCache.set(key, { at: Date.now(), data });
+  res.json(data);
 }));
 
 // ── Finance: Audit Log ─────────────────────────────────────────────────────
