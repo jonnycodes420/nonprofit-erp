@@ -7,7 +7,7 @@ routes/ modules, `mount(ctx)`, readSource, the `../` rule — all still true).
 
 ## 1. Where fix-1 is
 
-`fix-1` at **`__HEAD__`**, pushed. Nothing is merged to main; that is
+`fix-1` pushed; the code is at **`32a0e4b`** and this handoff is the commit on top of it. Nothing is merged to main; that is
 Jonathan's call. On top of the split (`083d453`), first-parent:
 
 | Commit | What |
@@ -24,16 +24,21 @@ Jonathan's call. On top of the split (`083d453`), first-parent:
 | `02e7971` | two dates back through the seam (date-seam 68, test-clock-seam 76) |
 | `a023c3d` | build101-renewals §10 waits for the Renewed row (a battery-load flake) |
 | `f939b48` | the demo's failed card has the day it failed (found by the walk) |
+| `06c2d45` | Home's Thread rows read at 390 again (found by the walk; predates FIX-1) |
+| `32a0e4b` | PageTitle's underline no longer cuts its sentence at 390; Volunteers says its empty sentence once |
 
-**Evidence on `__HEAD__`** (local stack, fresh `steward_fix1`, demo seeded by
-run-all): full battery **__BATTERY__**; tenant-matrix 43/0 and
+**Evidence on `32a0e4b`** (local stack, fresh `steward_fix1`, demo seeded by
+run-all): full battery **244 suites green, 0 red** (239 + the five fix1-* suites; demo-shape runs, 33/0); tenant-matrix 43/0 and
 tenant-isolation 32/0 inside it; SKIP grep shows only assertion names
-("…SKIPPED…"), no skipped leg; client lint 0 errors / 563 warnings (was 673);
+("…SKIPPED…"), no skipped leg; client lint 0 errors / 562 warnings (was 673);
 TDZ 0 self-references; route inventory 635 routes (618 + D 3 + C 9 + A 4 + E 1).
 Part 0 (`tests/fix1-walk.test.js`, not in CORE): **79 green / 1 red** — the
-one red is §12 (below). The walk: 42 screens at 1440 and 390, zero page
-errors, zero sideways scroll, no NaN / undefined / `$-` / `**` on any screen,
-screenshots in `docs/fix-1/walk/` (+ `walk.json`).
+one red is §12 (below). The walk: 22 screens × 1440 and 390 (44 captures, logged in to the local
+demo, read-only), zero page errors, zero sideways scroll, no NaN / undefined / `$-` / `**` on any screen,
+screenshots in `docs/fix-1/walk/` (+ `walk.json`). Each was looked at: that
+looking found the two 390 layout defects fixed in `06c2d45` and `32a0e4b`,
+which no automated check saw. The profile's Suggested panel reads "Stream
+failed: 503" on the local stack only (no ANTHROPIC_API_KEY).
 
 CI does not run on `fix-1` (ci.yml: main and PRs to main).
 
@@ -130,8 +135,9 @@ three `waitFor` suites; build101-renewals' wait.
 - Home's failed-card clause counts a subscription with NO `first_failed_at`
   as this week; the rail tile does not. Two rules for one number; the demo no
   longer trips it, the product still can.
-- The donor profile still says "day 0" on an open step and draws "117d ago"
-  in red for last contact (both predate FIX-1).
+- The donor profile still says "day 0" on an open step, draws "117d ago"
+  in red for a stale last contact, and the Lapsed pill is red (all predate
+  FIX-1; overdue should be brass).
 - `fmt()` (compact) renders "$175.5" for sub-$1k amounts with cents.
 - The empty-org sweep no longer visits the Pipeline board (no sidebar
   button); fix1-fundraising covers it on a populated org.

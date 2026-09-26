@@ -104,6 +104,11 @@
     "bad": [],
     "errors": []
   },
+  "1440/donor-profile": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
   "390/home": {
     "overflow": 0,
     "bad": [],
@@ -205,6 +210,11 @@
     "errors": []
   },
   "390/settings": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/donor-profile": {
     "overflow": 0,
     "bad": [],
     "errors": []
