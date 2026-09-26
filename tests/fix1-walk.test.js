@@ -23,6 +23,21 @@
 //   §7  NO LECTURE.  (D)  the "Everyone is on one list" paragraph is gone.
 //   §8  A NEGATIVE AMOUNT IS SIGN-FIRST.  (E)  fmtFull(-1.33) === "-$1.33".
 //
+// Added 26 September (Jonathan, findings 9-13; the lead fixes 9, 10, 11 and 13
+// before the workstreams start, 12 is checked at the end of FIX-1):
+//   §9  EVERY THREAD FIGURE IS ONE COMPUTATION.  shared/threadFigures.js
+//       threadFigures(rows) gives each row's badge and the oldest row; the
+//       header, the sentence and the badges all read it.
+//   §10 A COUNT ON HOME HAS A SENTENCE, OR IS NOT THERE.  The Home note never
+//       counts the capped list ("12") beside the header's 24.
+//   §11 THE DEMO IS ITS OWN ORG.  scripts/seed-demo.js (exports ORG and
+//       ADMIN_EMAIL), no suite touches it, demo-shape never skips, CI seeds it.
+//   §12 THE SIDEBAR.  client/src/lib/tabRegistry.js PRIMARY_NAV is Home,
+//       Donors, Fundraising, Volunteers, Agent, Reports, Finance.
+//   §13 ON HOME TOO, NOT A "SPONSOR".  vocabulary giverCountWord(rows, words):
+//       people get the org's word, organisations are organisations, mixed is
+//       givers.
+//
 // A section that fails because its module does not exist yet is RED on
 // purpose. Nothing here may be loosened to go green; a workstream that needs a
 // different contract changes this file in a reviewed commit, with the reason.
@@ -187,6 +202,96 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
     .filter(f => /"\$-"|'\$-'|`\$-/.test(stripComments(fs.readFileSync(f, "utf8"))));
   ok("§8 no client source writes a literal \"$-\"", signAfter.length === 0,
     signAfter.map(f => path.relative(root, f)).join(", "));
+
+  // ── §9 EVERY THREAD FIGURE IS ONE COMPUTATION ────────────────────────────
+  // The walk: the header said "oldest 17 days" (the max of daysOpen) while
+  // Ada Petrossian's row said 23 days overdue and the sentence said "three
+  // weeks" (the max of overdueDays). One fact, two numbers, one screen.
+  const TF = await tryImport("shared/threadFigures.js");
+  ok("§9 shared/threadFigures.js exports threadFigures", has(TF, "threadFigures"), TF.__missing);
+  const ROWS = [
+    { id: "th_ada", donorName: "Ada Petrossian", overdue: true, overdueDays: 23, daysOpen: 17 },
+    { id: "th_bo", donorName: "Bo Lindqvist", overdue: true, overdueDays: 4, daysOpen: 9 },
+    { id: "th_cy", donorName: "Cy Mbeki", overdue: false, overdueDays: 0, daysOpen: 3 },
+  ];
+  if (has(TF, "threadFigures")) {
+    const f = TF.threadFigures(ROWS);
+    const badges = f && f.rowDays || {};
+    ok("§9 every row gets its badge figure from it", ROWS.every(r => Number.isFinite(badges[r.id])), JSON.stringify(badges));
+    ok("§9 Ada's badge is her 23 days overdue", badges.th_ada === 23, JSON.stringify(badges));
+    ok("§9 'oldest' means the oldest row: Ada, 23 days",
+      !!f.oldest && f.oldest.id === "th_ada" && f.oldest.days === 23, JSON.stringify(f && f.oldest));
+    ok("§9 oldest is the largest badge, never a second measure",
+      !!f.oldest && f.oldest.days === Math.max(...Object.values(badges)), JSON.stringify(f));
+  }
+  ok("§9 the server's Thread header reads threadFigures", /threadFigures\(/.test(server));
+  ok("§9 ...and no longer takes 'oldest' from daysOpen on its own",
+    !/const oldestDays = list\.reduce\(\(m, t\) => Math\.max\(m, t\.daysOpen\), 0\);/.test(server));
+  const homeNoteSrc = fs.readFileSync(path.join(root, "shared/homeNote.js"), "utf8");
+  ok("§9 the Home sentence reads the same computation", /threadFigures/.test(stripComments(homeNoteSrc)));
+
+  // ── §10 A COUNT ON HOME HAS A SENTENCE, OR IS NOT THERE ──────────────────
+  // The walk: "12 people are waiting on you" beside "27 open · 24 overdue".
+  // 12 was the overdue rows in the CAPPED ranked list; nothing said so.
+  const HN = await import(path.join(root, "shared/homeNote.js"));
+  const late12 = Array.from({ length: 12 }, (_, i) => ({
+    id: "th_" + i, donorName: i === 0 ? "Ada Petrossian" : "Person " + i, overdue: true, overdueDays: 23 - i, daysOpen: 5,
+    nextStep: { label: "Call" },
+  }));
+  const note10 = HN.homeNote({ threads: { list: late12, stat: { open: 27, overdue: 24, oldestDays: 23 } } });
+  ok("§10 the sentence never says 12 when the header says 24 overdue", !/\btwelve\b|\b12\b/i.test(note10), note10);
+  const counted = note10.match(/^(\S+) people are waiting on you/i);
+  ok("§10 ...and if it counts people, the count is the header's 24",
+    !counted || /^(twenty-four|24)$/i.test(counted[1]), note10);
+
+  // ── §11 THE DEMO IS ITS OWN ORG, NEVER A TEST FIXTURE ────────────────────
+  // The walk: the demo read "She asked for the import report" — a line the
+  // walk scripts and suites write, landing in the org the pitch is given on.
+  const demoSeedPath = path.join(root, "scripts/seed-demo.js");
+  const demoSeedExists = fs.existsSync(demoSeedPath);
+  ok("§11 the demo org has its own seed, scripts/seed-demo.js", demoSeedExists);
+  const demoSeedSrc = demoSeedExists ? fs.readFileSync(demoSeedPath, "utf8") : "";
+  ok("§11 the demo seed says nothing the test fixtures say", demoSeedExists && !/import report/i.test(demoSeedSrc));
+  let demoIds = ["admin@creoarts.org"];
+  if (demoSeedExists) {
+    try { const S = require(demoSeedPath); demoIds = [S.ORG, S.ADMIN_EMAIL].filter(Boolean); } catch (e) { demoIds = ["<seed-demo.js did not load: " + e.message + ">"]; }
+  }
+  const sharing = fs.readdirSync(path.join(root, "tests")).filter(f => f.endsWith(".js") && f !== "demo-shape.test.js" && f !== "fix1-walk.test.js")
+    .filter(f => { const s = fs.readFileSync(path.join(root, "tests", f), "utf8"); return demoIds.some(id => s.includes(id)); });
+  ok("§11 no suite logs in to or writes the demo org", demoIds.length > 0 && sharing.length === 0, sharing.slice(0, 12).join(", "));
+  const demoShapeSrc = fs.readFileSync(path.join(root, "tests/demo-shape.test.js"), "utf8");
+  ok("§11 demo-shape has no skip path (the demo is always seeded where it runs)", !/suite skipped/.test(demoShapeSrc));
+  const ciSrc = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
+  ok("§11 CI seeds the demo before the battery", /seed-demo\.js/.test(ciSrc));
+
+  // ── §12 THE SIDEBAR AFTER FIX-1 ──────────────────────────────────────────
+  // Checked at the end of FIX-1; red until B, C and A land their tabs.
+  const TR = await tryImport("client/src/lib/tabRegistry.js");
+  ok("§12 the sidebar is Home, Donors, Fundraising, Volunteers, Agent, Reports, Finance",
+    Array.isArray(TR.PRIMARY_NAV) && TR.PRIMARY_NAV.join() === "dashboard,donors,fundraising,volunteers,agent,reports,finance",
+    TR.__missing || JSON.stringify(TR.PRIMARY_NAV));
+  ok("§12 ...and everything else is under More",
+    Array.isArray(TR.MORE_NAV) && Array.isArray(TR.PRIMARY_NAV) && TR.MORE_NAV.every(id => !TR.PRIMARY_NAV.includes(id)),
+    TR.__missing || JSON.stringify(TR.MORE_NAV));
+
+  // ── §13 ON HOME TOO, AN ORGANISATION IS NOT A "SPONSOR" ──────────────────
+  // The walk: "11 sponsors have gone quiet", "Sponsors whose card failed".
+  ok("§13 vocabulary exports giverCountWord", has(V, "giverCountWord"));
+  if (has(V, "giverCountWord")) {
+    const words = { giver_singular: "sponsor", giver_plural: "sponsors" };
+    const ppl = [{ kind: "person" }, { kind: null }];
+    const orgs = [{ kind: "organisation", funder_type: "foundation" }, { kind: "organisation", funder_type: "church" }];
+    ok("§13 a count of people is the org's word", V.giverCountWord(ppl, words) === "sponsors");
+    ok("§13 a count of organisations is organisations", V.giverCountWord(orgs, words) === "organisations");
+    ok("§13 a mixed count says givers", V.giverCountWord([...ppl, ...orgs], words) === "givers");
+  }
+  const quiet = [...Array.from({ length: 8 }, (_, i) => ({ donorName: "Person " + i, kind: "person" })),
+    ...["Sunrise Foundation", "Grace Chapel", "Hale Trust"].map(n => ({ donorName: n, kind: "organisation" }))];
+  const note13 = HN.homeNote({ drift: { list: quiet }, vocabulary: { giver_singular: "sponsor", giver_plural: "sponsors" } });
+  ok("§13 eleven quiet givers, three of them organisations, are not 'sponsors'", !/sponsors? have gone quiet/i.test(note13), note13);
+  const dashSrc = fs.readFileSync(path.join(root, "client/src/components/Dashboard.jsx"), "utf8");
+  ok("§13 the failed-card tile names its rows by what they are, not by the bare word",
+    !/t\("monthly_giver",2\)\)\} whose card failed/.test(dashSrc));
 
   summary();
 })().catch(e => { console.error(e); process.exit(1); });
