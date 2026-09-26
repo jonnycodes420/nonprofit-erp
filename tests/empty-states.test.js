@@ -115,7 +115,8 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
     const tabs = width >= 1000
       // BUILD-86 — "Dashboard" is the board surface, a real screen of its own
       // and therefore in the empty-org sweep like every other tab.
-      ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
+      // FIX-1 §A — Workflows moved into Agent (Agent → Workflows); Agent is the rail item.
+      ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Agent", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
     // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,

@@ -1938,171 +1938,12 @@ const SETTINGS_TABS=[
   // BUILD-87 Part 1 — every import run, newest first, with the receipt it
   // showed when it committed. Read only: this build does not undo an import.
   {id:"imports",label:"Imports"},
-  // BUILD-97 Part 3 — ONE screen where everything the agent did is visible:
-  // every instruction, every run, every write with its undo. "Nothing the
-  // agent does is hidden from the person who asked for it" is not a claim a
-  // product gets to make without a screen behind it.
-  {id:"agent",label:"Steward's activity"},
+  // FIX-1 §A — "Steward's activity" (every instruction, every run, every write
+  // with its thirty-day undo) moved to Agent → Guardrails. A deep link to the
+  // old section lands there (App.jsx navigateTo).
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
 ];
-
-// ── BUILD-97 Part 3 — THE ACTIVITY SCREEN ──────────────────────────────────
-// Every instruction (who gave it, when, on or paused), every run (what it
-// read, what it did, what it drafted, what it sent, what it declined and why),
-// and every write with an undo. Oversight is most of this build, and a screen
-// is what makes it real.
-function AgentActivity({isReadOnly}) {
-  const [data,setData]=useState(null);
-  const [instr,setInstr]=useState(null);
-  const [busy,setBusy]=useState("");
-  const [err,setErr]=useState("");
-  const load=()=>{
-    apiFetch("/agent/activity").then(setData).catch(()=>setData(null));
-    apiFetch("/agent/instructions").then(setInstr).catch(()=>setInstr(null));
-  };
-  useEffect(load,[]);
-
-  async function act(path,key){
-    if(busy)return;
-    setBusy(key);setErr("");
-    try{ await apiFetch(path,{method:"POST",body:"{}"}); load(); }
-    catch(e){ setErr(errorMessage(e,"That did not work.")); }
-    setBusy("");
-  }
-
-  const pausedAll=!!(instr&&instr.pausedAll);
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      {/* PAUSE ALL. One switch on the org, at the top, where somebody looking
-          for it in a hurry will find it. */}
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+(pausedAll?T.terracotta:T.greenDk),
-                   borderRadius:16,padding:"18px 22px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-        <div style={{flex:1,minWidth:240}}>
-          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}} data-testid="agent-pause-state">
-            {pausedAll?"Steward is paused.":"Steward is running."}
-          </div>
-          <div style={{fontSize:13,color:T.ink3,lineHeight:1.55}}>
-            {pausedAll
-              ? "No instruction will run and nothing will be drafted until you turn it back on."
-              : "Instructions you have turned on will run. Nothing reaches a donor without you."}
-          </div>
-        </div>
-        <button data-testid="agent-pause-all" disabled={isReadOnly||!!busy}
-          onClick={()=>act(pausedAll?"/agent/resume-all":"/agent/pause-all","all")}
-          style={{background:pausedAll?T.greenDk:"transparent",border:pausedAll?"none":"1px solid "+T.terracotta,
-                  borderRadius:8,padding:"9px 18px",color:pausedAll?"#fff":T.terra700,fontSize:13,fontWeight:700,
-                  cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
-          {pausedAll?"Turn Steward back on":"Pause everything"}
-        </button>
-      </div>
-
-      {err&&<div style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:10,
-              padding:"10px 12px",fontSize:13,color:T.terra700}}>{err}</div>}
-
-      {/* THE INSTRUCTIONS. Who gave it, when, on or paused. */}
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px"}}>
-        <SectionLabel>What you have told Steward to do</SectionLabel>
-        {!instr||!instr.instructions.length?(
-          <div style={{fontSize:13,color:T.ink3,lineHeight:1.6}}>
-            Nothing yet. Tell Steward what to do from your home screen.
-          </div>
-        ):(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {instr.instructions.map(i=>(
-              <div key={i.id} data-testid="agent-instruction"
-                style={{border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                {/* HER WORDS, VERBATIM — never a tidied paraphrase. */}
-                <div style={{fontSize:13.5,color:T.ink,lineHeight:1.55,marginBottom:6}}>“{i.text}”</div>
-                <div style={{fontSize:12,color:T.ink3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                  <span>{i.kind==="standing"?"Standing":"One-off"}</span>
-                  <span>·</span>
-                  <span data-testid="agent-instruction-status">{i.status}</span>
-                  {i.turned_on_by_name&&<><span>·</span><span>turned on by {i.turned_on_by_name}</span></>}
-                  <span>·</span>
-                  {/* THE DEFAULT IS ALWAYS "DRAFT IT AND I'LL SEND". */}
-                  <span data-testid="agent-instruction-auth" style={{color:i.send_authorization==="send"?T.gold700:T.ink3}}>
-                    {i.send_authorization==="send"?"signed for sending":"drafts only"}
-                  </span>
-                  {i.status!=="done"&&(
-                    <button disabled={isReadOnly||!!busy}
-                      onClick={()=>act(`/agent/instructions/${i.id}/${i.status==="paused"?"resume":"pause"}`,i.id)}
-                      style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,
-                              padding:"4px 10px",color:T.ink2,fontSize:12,fontWeight:700,
-                              cursor:isReadOnly?"not-allowed":"pointer"}}>
-                      {i.status==="paused"?"Resume":"Pause"}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* THE RUNS. What it read, did, drafted, sent, declined and withheld. */}
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px"}}>
-        <SectionLabel>Every run</SectionLabel>
-        {!data||!data.runs.length?(
-          <div style={{fontSize:13,color:T.ink3}}>Steward has not run anything yet.</div>
-        ):(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {data.runs.map(r=>(
-              <div key={r.id} data-testid="agent-run" style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                <div style={{fontSize:13,color:T.ink,lineHeight:1.55}}>{r.instruction_text||"(instruction removed)"}</div>
-                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>
-                  {new Date(r.started_at).toLocaleString()} · read {r.read_summary||"nothing"} ·
-                  {" "}drafted {r.drafted} · sent {r.sent} · declined {r.declined} · withheld {r.withheld}
-                </div>
-                {/* WHAT IT DECLINED AND WHY — the half a product usually hides. */}
-                {r.withheld_reason&&(
-                  <div data-testid="agent-run-withheld" style={{fontSize:12,color:T.gold700,marginTop:4,lineHeight:1.5}}>
-                    {r.withheld_reason}
-                  </div>
-                )}
-                {r.error&&<div style={{fontSize:12,color:T.terra700,marginTop:4}}>{r.error}</div>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* EVERY WRITE, WITH AN UNDO. */}
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"20px 24px"}}>
-        <SectionLabel>Everything Steward changed</SectionLabel>
-        <div style={{fontSize:12.5,color:T.ink3,marginBottom:12,lineHeight:1.55}}>
-          Anything here can be undone for {data?data.undoDays:30} days.
-        </div>
-        {!data||!data.writes.length?(
-          <div style={{fontSize:13,color:T.ink3}}>Steward has not changed anything.</div>
-        ):(
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {data.writes.slice(0,60).map(w=>(
-              <div key={w.id} data-testid="agent-write"
-                style={{display:"flex",alignItems:"center",gap:10,fontSize:12.5,color:T.ink2,
-                        borderTop:"1px solid "+T.bg3,paddingTop:8,flexWrap:"wrap"}}>
-                <span style={{color:T.ink,fontWeight:600}}>{w.tool.replace(/_/g," ")}</span>
-                <span>·</span><span>{w.entity_table}</span>
-                <span>·</span><span>{new Date(w.created_at).toLocaleDateString()}</span>
-                {w.undone_at
-                  ?<span data-testid="agent-write-undone" style={{marginLeft:"auto",color:T.ink3}}>
-                     undone{w.undone_by_name?` by ${w.undone_by_name}`:""}
-                   </span>
-                  :w.undoable
-                    ?<button data-testid="agent-undo" disabled={isReadOnly||!!busy}
-                       onClick={()=>act(`/agent/writes/${w.id}/undo`,w.id)}
-                       style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,
-                               padding:"4px 10px",color:T.greenDk,fontSize:12,fontWeight:700,
-                               cursor:isReadOnly?"not-allowed":"pointer"}}>Undo</button>
-                    :<span style={{marginLeft:"auto",color:T.ink3}}>past the undo window</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const isPortalTier=auth?.org?.plan==="portal";
@@ -2965,7 +2806,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {section==="imports"&&<><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
 
-      {section==="agent"&&<AgentActivity isReadOnly={isReadOnly}/>}
       {section==="data"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>

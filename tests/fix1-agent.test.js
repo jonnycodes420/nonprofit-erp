@@ -366,9 +366,9 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
 
     // 390: the same room on a phone, and it never scrolls sideways.
     const phone = await open(390, 844);
-    await phone.evaluate(() => { const b = [...document.querySelectorAll("button")].find(x => /^\s*More\s*$/.test(x.innerText)); if (b) b.click(); });
+    await phone.locator('.mobile-bottom-tab:has-text("More")').first().click();
     await phone.waitForTimeout(500);
-    const agentBtn = phone.locator('button:has-text("Agent")').first();
+    const agentBtn = phone.locator('.mobile-more-row:has-text("Agent")').first();
     if (await agentBtn.count()) { await agentBtn.click(); await phone.waitForTimeout(1200); }
     ok("on a phone Agent is reachable", await phone.locator('[data-testid="agent-room"]').count() === 1);
     for (const v of VIEWS) {

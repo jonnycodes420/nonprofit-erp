@@ -144,6 +144,7 @@ CORE=(
   build99-grant-timeline
   build100-score-names
   build97-part0 build97-npsp build97-numbers build97-agent build97-observability
+  fix1-agent
   build98-credit build98-letters build98-reports build98-events build98-volunteers build98-api mail-block
   build99-proposals build99-portfolios build99-plans build99-brief build99-dashboard build99-import
   build100-funders build100-deadlines build100-documents build100-restricted
