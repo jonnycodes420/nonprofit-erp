@@ -8670,7 +8670,7 @@ require("./routes/finance").mount({
 require("./routes/volunteer").mount({
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap,
+  volunteerSummary, wrap, markVolunteer, publicAppUrl,
 });
 require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,

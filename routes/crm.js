@@ -4169,6 +4169,8 @@ app.post("/donors/merge", requireAuth, checkWriteAccess, wrap(async (req, res) =
     // so the generic list above cannot move them; a merged volunteer keeps
     // every hour they gave.
     await runTx(client, "UPDATE volunteer_shifts SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
+    // FIX-1 C — the coordinator's notes follow the person the same way.
+    await runTx(client, "UPDATE volunteer_notes SET person_id=? WHERE org_id=? AND person_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET tribute_donor_id=? WHERE org_id=? AND tribute_donor_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client, "UPDATE gifts SET match_employer_id=? WHERE org_id=? AND match_employer_id=?", [primaryId, orgId, secondaryId]);
     await runTx(client,

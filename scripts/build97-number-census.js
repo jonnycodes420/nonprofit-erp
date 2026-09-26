@@ -86,6 +86,7 @@ const SURFACES = [
   "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
   "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
   "components/VolunteerPanel.jsx", // BUILD-98 (switch) Part 5 — hours on the profile, and the hours import
+  "components/VolunteersHub.jsx",  // FIX-1 C — the Volunteers hub (hours as plain hundredths, each defined; no money drawn)
   "components/ApiKeysPanel.jsx",   // BUILD-98 (switch) Part 6 — API keys (dates and a prefix; no figures)
   "components/Memberships.jsx",    // BUILD-101 Part 1 — Fundraising → Members, and the profile panel
   "components/MajorGifts.jsx",     // BUILD-99 (major gifts) — Fundraising → Major gifts / Proposals / Portfolios / Plans, and three profile panels
