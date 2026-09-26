@@ -21,7 +21,7 @@
 
 const fs = require("fs"), path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, leaks, civilToday } = require("./helpers");
 const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_fx1c", OTHER = "org_fx1c2";
@@ -60,7 +60,7 @@ async function reset() {
   await q(`INSERT INTO donors (id,org_id,name,stage,person_types) VALUES ('c_x',$1,'Xander Elsewhere','prospect','["volunteer"]'::jsonb)`, [OTHER]);
   const tok = await login("fx1c@example.org"), tok2 = await login("fx1c-o@example.org");
 
-  const year = new Date().getFullYear();
+  const year = Number(civilToday().slice(0, 4));   // the org's calendar year, never the machine's
   const shifts = [["c_vol", `${year}-01-10`, 3.25], ["c_vol", `${year}-02-11`, 2.5], ["c_vol", `${year - 1}-11-02`, 4],
                   ["c_both", `${year}-03-01`, 1.75]];
   for (const [id, date, hours] of shifts) {

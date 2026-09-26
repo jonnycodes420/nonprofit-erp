@@ -403,9 +403,11 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
 function agentCivil(ymd, addDays = 0) {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ""));
   if (!m) return { ymd: null, long: "" };
-  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + addDays));
-  return { ymd: t.toISOString().slice(0, 10),
-           long: t.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }) };
+  // The civil arithmetic goes through the seam (orgTime.addDays); the Date
+  // below only spells the already-civil day, pinned to UTC so it cannot move.
+  const day = orgTime.addDays(m[0], addDays);
+  const [y, mo, d] = day.split("-").map(Number);
+  return { ymd: day, long: new Date(Date.UTC(y, mo - 1, d)).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }) };
 }
 async function agentPreparedGiftPlan(orgId, text, donor) {
   const A = await agentShapeMod();
