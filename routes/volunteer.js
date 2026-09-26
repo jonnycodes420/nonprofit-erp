@@ -24,7 +24,7 @@ function mount(ctx) {
 const {
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap,
+  volunteerSummary, wrap, markVolunteer, publicAppUrl,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -199,6 +199,213 @@ app.get("/volunteers/donor-prospects", requireAuth, wrap(async (req, res) => {
     return { ...v, skills: JSON.parse(v.skills || "[]"), hasDonorRecord: donor.length > 0 };
   }));
   res.json(result.filter(v => !v.hasDonorRecord));
+}));
+
+// ════════════════════════════════════════════════════════════════════════════
+// FIX-1 C — THE VOLUNTEER COORDINATOR'S HUB
+// ════════════════════════════════════════════════════════════════════════════
+// Volunteers lived under Donors with a paragraph explaining why. The model was
+// right and does not move: one person, one record, and the VOLUNTEER ROLE is
+// BUILD-94's person_types. What changed is that the coordinator has a place.
+//   · ROSTER — everyone with the volunteer role, and nobody else. Workstream
+//     D's role chip writes person_types; the roster reads it, no second record.
+//   · HOURS are hundredths summed as integers — the same round(hours*100) sum
+//     volunteerSummary gives the person's own record, so the two are one number.
+//   · NOTES are the coordinator's own (volunteer_notes) and never touch
+//     interactions: the donor timeline, Drift, thank-you drafts and the agent
+//     all read interactions, and this table is not it.
+//   · "ALSO GIVES" means a gift row exists — the fact, not a stage.
+//   · SIGN-UP LINK — one signed link per org that anyone can use to join the
+//     roster. Steward never sends it; the coordinator copies it.
+// The old `volunteers` table and routes above are left exactly as they were.
+const VOLUNTEER_ROLE = `d.person_types @> '["volunteer"]'::jsonb`;
+const NOTE_KINDS = ["training", "background_check", "availability", "note"];
+const HOURS_DEFINITION = "Every shift logged for this person, by staff, by the volunteer from their own link, or from an import, summed to the hundredth of an hour.";
+
+async function rosterRows(orgId, { onlyGivers = false } = {}) {
+  const today = orgToday(await orgTz(orgId)); // ORG_TZ_SEAM_OK — "this year" is the org's civil year
+  const yearStart = String(today).slice(0, 4) + "-01-01";
+  const rows = await query(
+    `SELECT d.id, d.name, d.email, d.total_giving, d.last_gift_date,
+            COALESCE(s.h, 0)::bigint AS h, COALESCE(s.hy, 0)::bigint AS hy, COALESCE(s.n, 0)::int AS n, s.last,
+            EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id = d.id AND g.org_id = d.org_id) AS gives
+       FROM donors d
+       LEFT JOIN (SELECT person_id, SUM(round(hours*100)) AS h,
+                         SUM(CASE WHEN date >= ? THEN round(hours*100) ELSE 0 END) AS hy,
+                         COUNT(*) AS n, MAX(date) AS last
+                    FROM volunteer_shifts WHERE org_id = ? GROUP BY person_id) s ON s.person_id = d.id
+      WHERE d.org_id = ? AND d.deleted_at IS NULL AND ${VOLUNTEER_ROLE}
+      ORDER BY COALESCE(s.hy, 0) DESC, lower(d.name), d.id`, [yearStart, orgId, orgId]);
+  const people = rows.map(r => ({
+    id: r.id, name: r.name, email: r.email || null,
+    hundredths: Number(r.h), hundredthsThisYear: Number(r.hy), shiftCount: r.n,
+    lastShift: r.last || null, alsoGives: !!r.gives,
+    lifetimeGiving: Number(r.total_giving || 0), lastGiftDate: r.last_gift_date || null,
+  }));
+  return { people: onlyGivers ? people.filter(p => p.alsoGives) : people, year: yearStart.slice(0, 4) };
+}
+
+const spell = n => ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] || String(n);
+const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
+const hoursWords = h => { const v = h / 100; return `${Number.isInteger(v) ? v : String(v)} hour${h === 100 ? "" : "s"}`; };
+
+app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
+  const { people, year } = await rosterRows(req.user.orgId);
+  const total = people.reduce((a, p) => a + p.hundredthsThisYear, 0);
+  const givers = people.filter(p => p.alsoGives).length;
+  const parts = [`${cap(spell(people.length))} ${people.length === 1 ? "volunteer" : "volunteers"} on the roster`];
+  if (total) parts.push(`${hoursWords(total)} given so far in ${year}`);
+  if (givers) parts.push(`${spell(givers)} of them also ${givers === 1 ? "gives" : "give"}`);
+  res.json({ people, year, hundredthsThisYear: total,
+    sentence: people.length ? parts.join(", ") + "."
+      : "Nobody is marked as a volunteer yet. Tag someone Volunteer on their record, log a shift, import hours, or share the sign-up link, and they join the roster.",
+    definitions: {
+      roster: "Everyone whose record carries the Volunteer role, and nobody else.",
+      hoursThisYear: `Hours from shifts dated ${year}-01-01 or later, in your organization's time zone.`,
+      hours: HOURS_DEFINITION,
+      lastShift: "The date of the most recent shift logged for this person.",
+      alsoGives: "Yes when at least one gift is on this person's record.",
+    } });
+}));
+
+app.get("/volunteer-hub/givers", requireAuth, wrap(async (req, res) => {
+  const { people } = await rosterRows(req.user.orgId, { onlyGivers: true });
+  people.sort((a, b) => b.lifetimeGiving - a.lifetimeGiving || String(a.name).localeCompare(String(b.name)));
+  res.json({ people,
+    sentence: people.length
+      ? `${cap(spell(people.length))} ${people.length === 1 ? "volunteer also gives" : "volunteers also give"}. Each one is one record: their hours and their giving sit on the same person.`
+      : "No volunteer has given yet. When one does, the gift adds the Donor role to the same record and they appear here.",
+    definitions: { lifetimeGiving: "Every gift on this person's record, the same total their giving history shows." } });
+}));
+
+app.get("/volunteer-hub/shifts", requireAuth, wrap(async (req, res) => {
+  const limit = Math.max(1, Math.min(200, parseInt(req.query.limit, 10) || 50));
+  const rows = await query(
+    `SELECT s.id, s.person_id, d.name AS person_name, s.date, s.hours, s.role, s.via,
+            COALESCE(NULLIF(u.name, ''), s.created_by_name) AS created_by_name
+       FROM volunteer_shifts s JOIN donors d ON d.id = s.person_id AND d.org_id = s.org_id AND d.deleted_at IS NULL
+       LEFT JOIN users u ON u.id = s.created_by AND u.org_id = s.org_id
+      WHERE s.org_id = ? ORDER BY s.date DESC, s.created_at DESC, s.id LIMIT ?`, [req.user.orgId, limit]);
+  res.json({ shifts: rows.map(r => ({ ...r, hours: Number(r.hours) })),
+    sentence: `The ${limit} most recent shifts, newest first. "Logged by" is staff, the volunteer from their own link, or an import.` });
+}));
+
+async function hubPerson(orgId, personId) {
+  const [p] = await query(`SELECT d.id, d.name, (${VOLUNTEER_ROLE}) AS is_volunteer FROM donors d
+                            WHERE d.id = ? AND d.org_id = ? AND d.deleted_at IS NULL`, [String(personId || ""), orgId]);
+  return p || null;
+}
+
+app.get("/volunteer-hub/notes", requireAuth, wrap(async (req, res) => {
+  const p = await hubPerson(req.user.orgId, req.query.personId);
+  if (!p) return res.status(404).json({ error: "Not found" });
+  const notes = await query(`SELECT id, kind, body, note_date, created_by_name, created_at FROM volunteer_notes
+                              WHERE org_id = ? AND person_id = ? ORDER BY created_at DESC, id LIMIT 200`, [req.user.orgId, p.id]);
+  res.json({ notes, sentence: "Notes about volunteering. They stay here: they never appear on the giving record, in Drift, or in anything drafted to this person." });
+}));
+
+app.post("/volunteer-hub/notes", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const p = await hubPerson(req.user.orgId, req.body?.personId);
+  if (!p) return res.status(404).json({ error: "Not found" });
+  if (!p.is_volunteer) return res.status(400).json({ error: "not_a_volunteer", message: `${p.name} is not marked as a volunteer, so there is nowhere on the roster for this note.` });
+  const kind = String(req.body?.kind || "");
+  if (!NOTE_KINDS.includes(kind)) return res.status(400).json({ error: "bad_kind", message: "Pick training, background check, availability or note." });
+  const body = String(req.body?.body || "").trim().slice(0, 2000);
+  if (!body) return res.status(400).json({ error: "empty", message: "A note needs words." });
+  const nd = String(req.body?.noteDate || "").slice(0, 10);
+  const noteDate = /^\d{4}-\d{2}-\d{2}$/.test(nd) ? nd : null;
+  const who = actor(req);
+  const [me] = await query(`SELECT name FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+  const id = "vn_" + uuid().slice(0, 12);
+  await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, p.id, kind, body, noteDate, who.id, (me && me.name) || who.name]);
+  res.status(201).json({ id });
+}));
+
+// Removal takes the id in the BODY and, like every delete here, is never
+// write-gated (a lapsed org can always take something down).
+app.post("/volunteer-hub/notes/delete", requireAuth, wrap(async (req, res) => {
+  const { changes } = await run(`DELETE FROM volunteer_notes WHERE id=? AND org_id=?`, [String(req.body?.id || ""), req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true });
+}));
+
+// ── The sign-up link ───────────────────────────────────────────────────────
+// ONE standing link per org: an HMAC over the org id, so the link names its org
+// and nobody can point it at another one, and nobody can reach a form for an org
+// whose coordinator has not handed the link out. A GET renders and CHANGES
+// NOTHING; the form POSTs. Somebody who signs up with an email already on a
+// record gains the Volunteer role on THAT record (one person, one record) and
+// nothing else on it changes; otherwise a new person is created as a Volunteer.
+function signupToken(orgId) {
+  const sig = crypto.createHmac("sha256", process.env.JWT_SECRET || "").update("volunteer-signup:" + orgId).digest("base64url");
+  return Buffer.from(orgId).toString("base64url") + "." + sig;
+}
+function verifySignupToken(token) {
+  const [b, sig] = String(token || "").split(".");
+  if (!b || !sig) return null;
+  let orgId; try { orgId = Buffer.from(b, "base64url").toString(); } catch { return null; }
+  const want = signupToken(orgId).split(".")[1];
+  if (want.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(want), Buffer.from(sig))) return null;
+  return orgId || null;
+}
+const SIGNUP_ACTOR = { id: "system:volunteer-signup", name: "The volunteer, from the sign-up link" };
+
+app.get("/volunteer-hub/signup-link", requireAuth, wrap(async (req, res) => {
+  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(req.user.orgId)}`,
+    sentence: "Anyone with this link can add themselves to your roster as a Volunteer. Steward does not send it; you share it where your volunteers will see it." });
+}));
+
+app.get("/volunteer/join", donateLimiter, wrap(async (req, res) => {
+  const orgId = verifySignupToken(req.query.token);
+  const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
+  if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid. Ask the organisation for its current link.</p>"));
+  const orgName = await donorFacingOrgName(o.id, o.name).catch(() => o.name);
+  const inp = "width:100%;box-sizing:border-box;border:1px solid #e8e4db;border-radius:8px;padding:10px;font-size:15px;margin:4px 0 12px";
+  res.setHeader("Cache-Control", "no-store");
+  res.send(volunteerPage(`Volunteer with ${orgName}`, `
+    <div style="font-size:13px;color:#5a554f">${escapeHtml(orgName)}</div>
+    <h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px;margin:6px 0 16px">Volunteer with us</h1>
+    <form method="post" action="/volunteer/join">
+      <input type="hidden" name="token" value="${escapeHtml(String(req.query.token))}">
+      <div style="position:absolute;left:-9999px" aria-hidden="true"><label>Leave this empty<input name="website" tabindex="-1" autocomplete="off"></label></div>
+      <label>Your name<input name="name" required maxlength="200" style="${inp}"></label>
+      <label>Email<input name="email" type="email" required maxlength="200" style="${inp}"></label>
+      <label>Phone (optional)<input name="phone" maxlength="40" style="${inp}"></label>
+      <label>When you can help, and what you would like to do (optional)<textarea name="availability" maxlength="1000" rows="3" style="${inp}"></textarea></label>
+      <button type="submit" style="background:#0d5c3a;color:#fff;border:none;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:700">Sign me up</button>
+    </form>`));
+}));
+
+app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  const orgId = verifySignupToken(req.body?.token);
+  const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
+  if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid.</p>"));
+  const thanks = volunteerPage("Thank you", `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px">Thank you.</h1><p>You are on the volunteer roster. Someone from the organisation will be in touch.</p>`);
+  if (String(req.body?.website || "").trim()) return res.send(thanks); // the honeypot: a bot is thanked and nothing is written
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 200);
+  const phone = String(req.body?.phone || "").trim().slice(0, 40);
+  const availability = String(req.body?.availability || "").trim().slice(0, 1000);
+  if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return res.status(400).send(volunteerPage("Check the form", `<p>Please give your name and an email address.</p><p><a href="/volunteer/join?token=${encodeURIComponent(req.body.token)}">Go back</a></p>`));
+  const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [o.id, email]);
+  let pid;
+  if (m.length === 1) {
+    pid = m[0].id;
+    await markVolunteer(o.id, pid);
+  } else {
+    pid = "d_" + uuid().slice(0, 10);
+    await run(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
+               VALUES (?,?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
+      [pid, o.id, name, email, phone || null, SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]);
+  }
+  // What they said about when and how they can help is for the coordinator:
+  // an internal availability note, never an interaction.
+  if (availability)
+    await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name) VALUES (?,?,?,'availability',?,?,?,?)`,
+      ["vn_" + uuid().slice(0, 12), o.id, pid, availability, orgToday(await orgTz(o.id)), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]); // ORG_TZ_SEAM_OK
+  res.send(thanks);
 }));
 }
 

@@ -22,6 +22,7 @@
 const fs = require("fs"), path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, leaks } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_fx1c", OTHER = "org_fx1c2";
 const PW = "loadtest1234";
@@ -136,13 +137,48 @@ async function reset() {
   ok("§6 org B cannot read org A's notes", crossRead.status === 404, crossRead.status);
 
   // ── §7 THE HUB IS IN THE NAV ─────────────────────────────────────────────
-  const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");
+  const app = readSource("client/src/App.jsx");
   ok("§7 the hub component exists", fs.existsSync(path.join(root, "client/src/components/VolunteersHub.jsx")));
   ok("§7 Volunteers is a live tab", /\{id:"volunteers",label:"Volunteers"/.test(app.split("const BOTTOM_TABS")[0].split("// DEPRIORITIZED")[0]));
   ok("§7 ...on the desktop rail", /const PRIMARY_NAV=\[[^\]]*"volunteers"/.test(app) || /const MORE_NAV=\[[^\]]*"volunteers"/.test(app));
   const moreTabs = (app.split("const MORE_TABS")[1] || "").split("// DEPRIORITIZED")[0];
   ok("§7 ...and in the mobile More drawer", /\{id:"volunteers"/.test(moreTabs));
   ok("§7 the tab renders the new hub, not the old Volunteers.jsx", /tab==="volunteers"&&<VolunteersHub/.test(app));
+
+  // ── §8 THE SIGN-UP LINK ──────────────────────────────────────────────────
+  // One signed link per org. A GET renders and writes nothing; a POST puts the
+  // person on the roster — on the record their email already has, if any.
+  const BASE = process.env.BASE || "http://localhost:5601";
+  const count = async () => (await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]))[0].n;
+  const link = await api("GET", "/volunteer-hub/signup-link", tok);
+  const token = link.body && link.body.url ? new URL(link.body.url).searchParams.get("token") : "";
+  ok("§8 staff get the org's sign-up link, with its sentence", link.status === 200 && /\/volunteer\/join\?token=/.test(link.body.url) && /does not send/.test(link.body.sentence || ""), link.body);
+  const before = await count();
+  const page = await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(token)}`);
+  const html = await page.text();
+  ok("§8 the page renders with the org's name", page.status === 200 && /Hayloft Riding/.test(html));
+  ok("§8 ...and a GET wrote nothing", (await count()) === before);
+  const forged = Buffer.from(OTHER).toString("base64url") + "." + token.split(".")[1];
+  ok("§8 the link cannot be pointed at another org", (await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(forged)}`)).status === 404);
+  const post = body => fetch(`${BASE}/volunteer/join`, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token, ...body }).toString() });
+  const [{ n: intBefore8 }] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1`, [ORG]);
+  const joined = await post({ name: "Nell Newcomer", email: "nell@example.org", availability: "Quillfeather Saturdays only" });
+  const [nell] = await q(`SELECT id, person_types, created_by FROM donors WHERE org_id=$1 AND email='nell@example.org'`, [ORG]);
+  ok("§8 a new person joins as a Volunteer, stamped with the link as the actor",
+    joined.status === 200 && nell && JSON.stringify(nell.person_types) === '["volunteer"]' && nell.created_by === "system:volunteer-signup", nell);
+  const roster8 = await api("GET", "/volunteer-hub/roster", tok);
+  ok("§8 ...and is on the roster that moment", ((roster8.body && roster8.body.people) || []).some(p => p.email === "nell@example.org"));
+  const [{ n: availNotes }] = await q(`SELECT COUNT(*)::int AS n FROM volunteer_notes WHERE org_id=$1 AND kind='availability' AND body ILIKE '%Quillfeather%'`, [ORG]);
+  const [{ n: intAfter8 }] = await q(`SELECT COUNT(*)::int AS n FROM interactions WHERE org_id=$1`, [ORG]);
+  ok("§8 what they said about availability is an internal note, not an interaction", availNotes === 1 && intAfter8 === intBefore8, `${availNotes} ${intBefore8}→${intAfter8}`);
+  const n0 = await count();
+  await post({ name: "Daniel D.", email: "C_DON@example.org" });
+  const [dan] = await q(`SELECT name, person_types FROM donors WHERE id='c_don'`);
+  ok("§8 an email already on a record adds the role to THAT record — no second person",
+    (await count()) === n0 && dan.person_types.includes("volunteer") && dan.person_types.includes("donor") && dan.name === "Dan Donor", dan);
+  const n1 = await count();
+  await post({ name: "Bot", email: "bot@example.org", website: "http://spam.example" });
+  ok("§8 the honeypot writes nothing", (await count()) === n1);
 
   await reset();
   await closeDb();

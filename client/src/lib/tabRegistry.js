@@ -24,6 +24,7 @@ const TABS=[
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"workflows",label:"Workflows",icon:"◧"},
+  {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
@@ -46,6 +47,7 @@ const MORE_TABS=[
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"workflows",label:"Workflows",icon:"◧"},
+  {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
@@ -65,7 +67,7 @@ const MORE_TABS=[
 //
 // MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
 // and four slots is a different constraint from a 220px rail.
-const PRIMARY_NAV=["dashboard","board","donors","fundraising","reports"];
+const PRIMARY_NAV=["dashboard","board","donors","fundraising","volunteers","reports"];
 const MORE_NAV=["pipeline","grants","communications","tasks","workflows","finance","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 const TEAM_GATED=new Set(["pipeline"]);

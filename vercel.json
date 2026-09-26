@@ -51,6 +51,10 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/log"
     },
     {
+      "source": "/volunteer/join",
+      "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/join"
+    },
+    {
       "source": "/billing/cancel/:token",
       "destination": "https://nonprofit-erp-production.up.railway.app/billing/cancel/:token"
     },

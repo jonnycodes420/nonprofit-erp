@@ -12,7 +12,7 @@ import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
 import { Reports } from "./components/Reports";
-import { Volunteers } from "./components/Volunteers";
+import { VolunteersHub } from "./components/VolunteersHub";
 import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
@@ -617,7 +617,10 @@ function AppShell() {
       {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
-      {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
+          volunteer_shifts. The old Volunteers.jsx (its own table) is not
+          revived: the file stays, unimported, like Events and Board. */}
+      {tab==="volunteers"&&<VolunteersHub key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {/* BUILD-86 C.3 — BOARD MANAGEMENT IS REMOVED. It was deprioritised out of
           the nav in 2026-07-12 but its render stayed, keyed on the tab id
           `board` — which C.3 reused for Dashboards, so BOTH drew on the same
