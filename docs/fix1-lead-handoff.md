@@ -1,233 +1,197 @@
-# FIX-1 — lead handoff (25 September 2026)
+# FIX-1 — lead handoff (26 September 2026, after the split)
 
-Written by the FIX-1 lead session before it was cleared. The brief, with
-Jonathan's amendment, is `claude/FIX-1.md` on this branch. This file is the
-state of play; read it and the brief before touching anything.
+The FIX-1 lead's state of play. The brief, with Jonathan's amendment, is
+`claude/FIX-1.md` on this branch; this file supersedes the 25 September
+handoff (see git history of this file for the pre-split plan). Read both
+before touching anything.
 
-## 1. Branches and worktrees
+## 1. Where fix-1 is
 
-| Branch | Last SHA | Worktree | State |
+`fix-1` at **`0c341a5`**, pushed (a forced update: the branch was rebased onto
+main `c82eeaa` — CHORE-1 + ci-fix-297 — as Jonathan asked; the old tip was
+`7c1c875`). Nothing is merged to main; that is Jonathan's call.
+
+On top of main, in order:
+
+| Commit | What |
+|---|---|
+| `a0aea43` | Part 0 (25 Sep): 22 red assertions, `tests/fix1-walk.test.js` |
+| `f365df0` `ba541c4` `fc638c1` | the brief + amendment, the two Agent directions (Direction 2 chosen), the 25 Sep handoff |
+| `2b2a224` | Part 0 findings 9–13 (26 Sep): 16 more red assertions, `audit/fix1-part0-9-13-red.txt` |
+| `092b189` | split step 0: `readSource()` — every source-reading suite reads through it (option (a); the commit message names every suite) |
+| `f204f8e` … `490b4aa` | nine commits: `routes/webhooks.js`, `billing`, `finance`, `volunteer`, `agent`, `give`, `crm`, `jobs`, `email` |
+| `509b183` | `client/src/lib/tabRegistry.js` — App.jsx's ten tab lists |
+| `0c341a5` | Donors.jsx → `DonorImport.jsx`, `DonorProfile.jsx`, `DonorDirectory.jsx`, `donorShared.jsx` |
+
+**Evidence on `0c341a5`** (local stack, fresh `steward_fix1`): full battery
+**239 suites green, 0 red** (11,068 assertions; tenant-matrix 43/0,
+tenant-isolation 32/0 run inside it); the only skip is demo-shape, the known
+FIX-1 item. The baseline on the unsplit base was also 239/0. A browser walk of
+all twelve tabs plus a donor profile and the import screen at 1440 and 390:
+no page error, console error or error boundary. **Zero assertion edits.**
+CI does not run on `fix-1` (ci.yml: main and PRs to main only), so the local
+battery is the evidence until a PR.
+
+Part 0 now: **4 green / 37 red** (§12's "everything else is under More" went
+green when tabRegistry.js appeared; it was already true).
+
+## 2. What the split produced
+
+`server.js` 38,854 → **8,761 lines**: boot, middleware, the shared helpers,
+`/health`, and the wiring. Every route moved except `/health`.
+
+| File | Lines | Routes | What |
 |---|---|---|---|
-| `fix-1` (lead) | `1ba724a` before this file | `~/steward-fix1` | Part 0 committed RED (381d4d7). Brief + amendment (`claude/FIX-1.md`). Two Agent directions + decision (`docs/fix-1/agent-directions/`). **No product code changed.** `server.js`, `App.jsx` and `Donors.jsx` untouched, per the amendment. |
-| `fix-1-a` | `98b9f93` | none (removed) | Stopped mid-way. `shared/suggestionGuard.js` new (the §4 validator; §4 green by its own report); `shared/agentShape.js` + `shared/vocabulary.js` modified (compilePlan/scope/runIsLive/giverWordFor work in progress). Server side not started. No design mockups on it (the lead made those on `fix-1`). |
-| `fix-1-c` | `5af62c6` | none (removed) | Stopped mid-way. Red suite committed (7755ccb, 27 assertions); `routes/volunteers.js` started; `db.js` + `server.js` modified (volunteer_notes table, route mounting). Was widening the actor-stamp guard to `routes/*.js`. |
-| `fix-1-d` | `31ae106` | none (removed) | Stopped mid-way. Red suite committed (2e3159a, 10 pass / 25 fail); `routes/people.js`, `server.js`, `scripts/lib/routeInventory.js` modified. Server side green by its own report; client (Directory filter, chips, Settings list, search labels, paragraph removal) NOT started. |
-| `fix-1-e` | `a688b84` | none (removed) | Stopped mid-way. `routes/finance.js` + `shared/payoutReconcile.js` new; `money.js` (fmtFull sign-first), `Finance.jsx`, `RestrictedView.jsx`, `server.js`, `tests/finance-funds.test.js` modified. Was fixing `data-testid`s that `Card` drops. |
+| `routes/webhooks.js` | 2,298 | 10 | Stripe/Resend/billing/inbound-email webhooks, unsubscribe, Stripe Connect |
+| `routes/billing.js` | 1,850 | 38 | auth, platform billing, super-admin |
+| `routes/finance.js` | 582 | 18 | finance, financials |
+| `routes/volunteer.js` | 205 | 8 | volunteer, volunteers, shifts, hours |
+| `routes/agent.js` | 1,255 | 40 | agent, ai, workflows, sequences |
+| `routes/give.js` | 5,105 | 115 | giving pages, forms, portal, accounts, network, recurring, giving sources |
+| `routes/crm.js` | 18,323 | 388 | everything else signed-in (people, gifts, Thread, pipeline, grants, reports, settings, …) |
+| `routes/jobs.js` | 370 | 0 | the top-level timer blocks + the functions only they call |
+| `routes/email.js` | 646 | 0 | the mail helpers two or more products use (a helper module) |
+| `client/src/lib/tabRegistry.js` | 106 | | App.jsx's tab lists, verbatim (App.jsx 803 → 708) |
+| `client/src/components/Donors*.jsx`, `donorShared.jsx` | 562 / 3,737 / 2,857 / 835 / 96 | | Donors.jsx 8,013 → 562 |
 
-All four workstream branches are based on `fix-1` at 381d4d7 (Part 0 only), are
-pushed, unfinished and **not reviewed**. Their commits are titled "PARKED:
-FIX-1 workstream x, stopped before the split". After the split, each workstream
-resumes from its own branch and moves its changes into the new files. Anything
-it put in `server.js` must move into the split's `routes/` modules, not
-alongside them.
+How a routes module is wired (read its header before editing one):
+- Each module holds Express Routers (`r0`, `r1`, …). server.js mounts each with
+  `app.use(require("./routes/x").routers.rN)` **where its first route used to
+  be**, so it keeps its place relative to the body parsers, the DB-ready guard
+  and the portal-tier gate. webhooks' `r0` (raw-body routes) sits before the
+  parsers and the DB-ready guard; crm's, give's and billing's `r0` sit after
+  the guard and before the portal-tier gate, exactly where those routes were
+  (`/campaigns/templates` etc. stay reachable on the Portal tier).
+- The moved code sits **verbatim inside `mount(ctx)`**, called once at the end
+  of boot (`// ── FIX-1 split: register the moved routes`), when every binding
+  exists; `app` inside it is the current router. `ctx` is the list of
+  server.js bindings the code reads.
+- A **relative `require("../x")` / `import("../x")`** in `routes/` is the
+  moved `"./x"` (it resolves against its own file). **A new route added to a
+  module writes `"../x"` too.**
+- Lazy ESM bindings (`let ACK = null` + `ACK_READY.then(...)` in server.js)
+  are mirrored inside the module from the same promise.
+- Kept in server.js because they read a `let` that changes after boot:
+  `/health`, `reconciliationHealth`, `guardsOk`, `webhookSubHealth`,
+  `refreshReconcileDenominator`, `sendDonorLifecycleEmail`.
+- The split tool proved, per module: no two routes that can match one request
+  changed order, and no route crossed a positional middleware.
 
-**Part 0** (`tests/fix1-walk.test.js`, pure, no server): 22 red / 3 green at
-381d4d7, output in `audit/fix1-verify-first-red.txt`. NOT in `run-all.sh`
-CORE yet; the lead adds it when it goes green after the merges. It fixes the
-contract names the workstreams build to.
+`crm.js` is 18k lines: the amendment's product names are the floor. D or the
+lead may cut it further (people / money / grants / reports) the same way.
 
-## 2. Decisions made
+## 3. readSource — how suites read split code
 
-- **The split comes first** (Jonathan's amendment). No workstream starts until
-  the lead has split the monolith alone, with zero behaviour change.
-- **Agent = Direction 2, "the run sheet"**: the cream/white sheet on ink.
-  Content lives on the sheet; ink is the room around it. Mockups and README in
-  `docs/fix-1/agent-directions/`. Jonathan: "I always love the white/cream."
-  A is HELD until the split is done, then builds this way.
-- **Merge order into `fix-1`: D, C, B, A, E.** Affected suites after each
-  merge, full battery + tenant battery + the walk at the end. **No merge to
-  main without Jonathan's word.**
-- **Finance cut** (Accounts tab, AI "6-Month Forecast" + "Risk Analysis"):
-  E removes the screens only, routes/tables stay. Jonathan has not objected
-  yet; confirm with him before the merge.
-- **Members and Funds** (Fundraising has 14 tabs, not 12): proposed Members
-  under "Campaigns & pages" and Funds folded into Finance with a cross-link.
-  Not yet confirmed by Jonathan. Part 0 §6 requires all 14 ids + `pipeline` to
-  land on one of the four sections.
-- The lecture paragraph ("Everyone is on one list") is in
-  `Communications.jsx`'s audience hub, not Donors (Part 0 §7).
+`scripts/lib/readSource.js`. `readSource(rel)` rebuilds `server.js`,
+`client/src/App.jsx` or `client/src/components/Donors.jsx` **from the live
+files, in the order they had before the split** (a hash + name per statement in
+`scripts/lib/splitOrder.json`; an order, never a copy). On `0c341a5` all three
+come back **byte-identical** to the pre-split files. A statement edited later
+is placed by its name; one added later lands after the statement above it.
+The parser is espree from `client/node_modules` (CI installs it before tests).
 
-## 3. What we are waiting on, in order
+- **Source readers switched: 53 suites + 3 audit scripts** (build72-date-audit,
+  build73-money-audit, build97-number-census) + `scripts/lib/routeInventory.js`.
+  The 53 are listed in `092b189`'s message. The count the 25 Sep handoff
+  measured was 52/17/9 files for server/Donors/App.
+- Deliberately NOT switched: directory walkers that already see new files
+  (brand-allowlist, build84 ROOTS, no-emoji, incident-mail-gate), deploy-shape
+  (follows require() itself), build89s-stripe-givebutter (only names the file).
+- `splitParts()` lists the files that are pieces of a split file; asset-
+  retention uses it to skip them in its per-file scan.
+- **Workstreams:** add a route to its module and it just works; a suite that
+  greps server.js for it finds it through readSource. Don't move code out of
+  a split file without adding the new file to `FILES` in readSource.js.
 
-1. **BUILD-102 on main.** `origin/build-102` at `f9b422d`: battery 230/0 and
-   walk 62/0 by the 102 session's report. **It does not merge cleanly.** It
-   branched at e744fff; main has 12 commits since (the rest of BUILD-100).
-   `git merge-tree` shows conflicts in `shared/reportBuilder.js`,
-   `tests/build98-reports.test.js` (both builds added standard reports; the
-   count is the sum), `tests/giving-page-builder.test.js`,
-   `tests/tenant-matrix.test.js` (reset list, both added tables) and
-   `audit/route-inventory.json` (regenerate, don't hand-merge). The lead
-   recommended the 102 session merge main into build-102 and re-run the
-   battery; Jonathan has NOT yet said go. Jonathan merges 102 himself.
-   `dacbef8` on that branch (tdz-scan as a pre-push/CI gate) is independent
-   of 102's scope.
-2. **CHORE-1 on main** (Jonathan's ordering; its content is not described in
-   this session).
-3. **Then the split**, on `fix-1` rebased onto that main.
+## 4. Surprising things (each cost a red run)
 
-The lead session had a background watcher polling `origin/main` for
-"BUILD-102"; it dies with the session. The next lead re-checks by hand:
-`git fetch && git log origin/main --oneline | grep -E "BUILD-102|CHORE-1"`.
+1. **`import()` resolves against the file it is written in**, not the
+   `require` a module is handed: the first split battery was 89 red (missing
+   `routes/shared/*.js`). Fixed by rewriting moved relative specifiers to
+   `../`. deploy-shape caught the same for `require("./money")`.
+2. **Order is read, not just content.** mail-block strips comments with one
+   regex across server.js; with moved code read back in a different order, a
+   `"/*"` inside a string paired with a later `*/` and swallowed `opsAlert`.
+   Hence the byte-identical, order-exact readSource.
+3. **Nine App.jsx suites pin the tab lists' literal text** (`const
+   PRIMARY_NAV=["dashboard","board"`, `CORE_HIDDEN_TABS=new Set(["finance"])`,
+   the `const TABS=[…];` block). The single-array registry (lists derived from
+   one entry per tab) would change ~12 assertions — **Jonathan's call**; the
+   split moved the lists verbatim into tabRegistry.js instead.
+4. **Donors.jsx keeps its original import lines** (so readSource can rebuild it
+   byte for byte); ~50 names are now used only by a part, so client lint
+   warns 673 (was 552, 0 errors). Prune when D next edits Donors.jsx.
+5. build97-numbers requires every screen file to be named in the census:
+   `SCANNED_AS_DONORS` in `scripts/build97-number-census.js` names the four
+   new files (they are scanned as Donors.jsx).
+6. The route inventory's per-route **param annotations** come from slicing
+   source text between registrations, so they shift for routes that now sit
+   at a router boundary (6 routes; e.g. `/recurring/:donorId/resend` gains a
+   spurious `orgSlug`). The live router is identical (618 routes, same auth
+   chains and layers); tenant-matrix compares sets, so the committed
+   `audit/route-inventory.json` was left as it was.
+7. macOS has no `timeout`; a script "run" under it silently did nothing once.
 
-## 4. The split plan (lead alone, before any workstream)
+## 5. Next, in order (Jonathan said: stop after this handoff)
 
-Rules: change no behaviour. **The full battery passes with ZERO test edits; if
-any assertion must change, STOP and tell Jonathan.** `node scripts/tdz-scan.js`
-before every commit. A new root module is invisible to `deploy-shape` until
-`git add`ed (BUILD-79/84 class). Re-run `scripts/build75-route-inventory.js`
-(routes move, paths don't; the inventory should come out byte-identical).
+1. **Lead, before any workstream:** fix Part 0 findings **9, 10, 11, 13**
+   (`shared/threadFigures.js`; the Home note's count; `scripts/seed-demo.js`
+   + no suite touching the demo org + demo-shape never skipping + CI seeding
+   it — this is also "the demo-shape skip"; `giverCountWord`). 12 is checked
+   at the end.
+2. **Cut fresh workstream branches from `fix-1`** (not the parked
+   `fix-1-a/-c/-d/-e`, which stay as reference and are NOT rebased). Suggested
+   names `fix-1-a2` … `fix-1-e2`. Worth cherry-picking onto the fresh ones:
+   - C: `7755ccb` (27 red assertions for the volunteers hub)
+   - D: `2e3159a` (red assertions for people)
+   - E: the sign-first `fmtFull` change is inside the PARKED commit `a688b84`
+     (`client/src/lib/money.js` + the `tests/finance-funds.test.js` pin, a
+     reviewed contract change) — take those two files, not the commit (its
+     `routes/finance.js`/`server.js` changes predate the split).
+   - A's `98b9f93` (`shared/suggestionGuard.js`, vocabulary/agentShape WIP) is
+     unreviewed; A decides.
+3. Spawn C, D, E and B in parallel (own worktree, ports and DB below); A after,
+   building Direction 2. Merge order **D, C, B, A, E**, affected suites after
+   each, full battery + tenant battery + the walk at the end.
 
-### ⚠ The obstacle to raise with Jonathan BEFORE starting
-Measured at 1ba724a: **52 suites read `server.js` as text** (source
-assertions: actor-stamp, date-seam, deploy-shape, build97-agent, the money-tool
-absence proof, tdz and brand guards, fix1-walk §2/§3, ...), **17 read
-`Donors.jsx`** and **9 read `App.jsx`**. Moving code out of those files turns
-their source checks red with no behaviour change. So "zero test edits"
-is very likely not achievable as literally stated. Options to put to him:
-(a) one mechanical, reviewed test change: a `tests/helpers.js`
-`readSource("server")` that concatenates `server.js` + `routes/*.js` (and the
-same for the Donors/App splits), with every source-reading suite switched to
-it in one commit and nothing else changed; or (b) a smaller split that keeps
-source-asserted code in place. Per the amendment the lead does not choose. It
-stops and asks. Enumerate the exact suites first:
-`grep -lE 'server\.js|Donors\.jsx|App\.jsx' tests/*.js scripts/*.js`.
+**For later in FIX-1:**
+- Note the `recordGift` exceptions (the bulk writers: the two import routes,
+  sample data, one webhook branch) for a later FIX.
+- Swap the fixed `settle()` waits for `waitFor()` in theme-depth,
+  donor-dashboard and donor-accounts (the mail-sink race).
+- Finance cut (Accounts tab, AI "6-Month Forecast"/"Risk Analysis") and the
+  Members/Funds placement still want Jonathan's confirmation.
+- The single-array tab registry (§4.3) — Jonathan's call.
 
-### server.js (38,263 lines, 611 routes, 68 timers) → `routes/<product>.js`
-Each module exports `function mount(app, deps)`, like `routes/migc.js` shows;
-shared helpers (`query`, `run`, `requireAuth`, `checkWriteAccess`, `recordGift`,
-`orgOwns`, `actor`, `publicAppUrl`, the Stripe/Resend clients, ...) stay in
-`server.js` or move to `lib/` and are passed in `deps`, never re-implemented.
-Route order matters (Express first-match: e.g. `/donors/duplicates` and
-`/donors/summaries` before `/donors/:id`; `/sequences/process` before
-`/sequences/:id`; `/reports/board*` before `/reports/:key`); **mount order in
-server.js reproduces today's declaration order exactly.** Prefix counts below
-are today's.
+## 6. Databases and ports (all on :5544)
 
-- **`routes/crm.js`**: donors (64), gifts (9), pledges (7), households (5),
-  interactions, threads (6), tasks (5), step-reminders, nudges, drift (2),
-  pipeline (6), portfolio (5), opportunities (2), proposals (3), plans,
-  plan-steps, cultivation-templates (4), briefs (2), major-gifts, moves,
-  custom-fields (8), donor-relationships, people, person-photos, photos (3),
-  materials, planned-gifts (2), import-merges (2), imports (4),
-  import-field-mappings, statement-mappings (4), geocode (2), dashboard (11),
-  dashboards (3), reports (5), saved-reports (8), report-builder (2), metrics
-  (2), impact (1), impact-metrics (4), goals (2), grants (26), funders (5),
-  grant-documents, grant-outlines, programs (6), memberships (6),
-  membership-levels (4), events (15), event-levels (2), board (2),
-  annual-fund (2), settings (3), me (9), users, org (36), orgs (3),
-  onboarding, audiences (4), communications, campaigns (12), fundraising (5),
-  deposits (3), acknowledgments (10), thank-yous (5), tribute-notices (3),
-  milestone-drafts (4), note-reminders (3), voice-memos (2), digests (3),
-  inbound-email, api-keys (3), api (5, the v1 read API).
-  *(Large. If it proves unwieldy, split crm into crm-people / crm-money /
-  crm-grants / crm-reports within the same commit series; the product names
-  in the amendment are the floor, not the ceiling.)*
-- **`routes/give.js`**: the public giving surfaces: donate, giving-pages (10),
-  peer-fundraisers (3), portal (14), portal-page (5), portal-settings (2),
-  portal-assets, portal-engagement, portal-audit, impact-updates (4),
-  account (23), network (4), giving-sources (13), giving-recurring (4),
-  recurring (18), track, invitation-request, demo-request.
-- **`routes/volunteer.js`**: volunteer (2), volunteers (4), volunteer-shifts,
-  volunteer-hours.
-- **`routes/agent.js`**: agent (11), ai (2), workflows (5), sequences (22).
-- **`routes/finance.js`**: finance (16), financials (2).
-- **`routes/billing.js`**: billing (8, minus the webhook), auth (8), admin (23),
-  health.
-- **`routes/webhooks.js`**: `/stripe/webhook` + the rest of stripe (5),
-  `/billing/webhook`, resend (1), unsubscribe (2), inbound-email webhook.
-  **The raw-body parsers must still be registered before `express.json()`
-  for these paths**; check the current order and keep it.
-- **`routes/jobs.js`**: the 68 `setTimeout`/`setInterval` registrations +
-  the functions only they call (processSequences, processDunning,
-  processDigests, processThreadNudges, sweeps, purges, card-expiry, geocode
-  queue, photo queue, ...), started from one `startJobs(deps)` call in server.js
-  at the same point in boot as today.
-- **`routes/email.js`** (or `lib/email.js`): the Resend client proxy (mail
-  block, `donorMailDecision`), `brandEmailHeaderHtml`,
-  `unsubscribeEmailFooterHtml`, the donor-mail senders. **`tests/mail-block`
-  pins that EVERY send passes through the proxy; the proxy must stay the only
-  client.**
-- **gmail (7)** belongs with crm (it logs interactions); the webhook-less OAuth
-  callback stays public.
-- **`server.js` after the split**: Sentry init + process handlers, env/boot
-  checks, db init, app + middleware + parsers + CORS + rate limiters, the
-  shared helpers (or their `require`s), `mount()` calls in today's order,
-  the final 404 + error handler, `listen`, `startJobs`.
-
-### App.jsx (803 lines) → one tab registry
-Today the tab facts live in nine parallel structures: `TABS` (l.31),
-`BOTTOM_TABS` (55), `MORE_TABS` (61), `PRIMARY_NAV` (88), `MORE_NAV` (89),
-`TEAM_GATED` (91), `CORE_HIDDEN_TABS` (101), `PORTAL_TIER_TABS` (127),
-`CRM_HIDDEN_TABS` (142), plus ~22 `tab===` render branches. Replace with ONE
-array, `client/src/lib/tabRegistry.js` (JSX-free so Node can test it) or
-inside App.jsx, one entry per tab: `{id, label, icon, component, rail:
-"primary"|"more"|"hidden", mobile: "bottom"|"more"|null, teamGated,
-coreHidden, portalTier, crmHidden, intents}`. The old arrays become derived
-`const`s computed from it (same names, same order, same contents), so every
-consumer and every source-reading test sees what it saw. The render switch
-becomes a lookup. **Asserted by comparing each derived array to its literal
-from before the change, then deleting the literals.**
-
-### Donors.jsx (8,013 lines) → profile, import, directory
-Top-level components today (line numbers at 1ba724a):
-- **`DonorImport.jsx` (import)**: `CSV_FIELDS`…`IMPORT_REASON_LABELS`
-  (l.55–309, the import tables), `DonorImport` (816, exported and reused by
-  WelcomePage), `GiftHistoryImport` (3183), `MergeDuplicatesModal` (7385).
-- **`DonorProfile.jsx` (profile)**: `FollowUpTaskModal` (3768),
-  `LogTouchpointModal` (3822), `EditDonorModal` (4013), `GiftLinkModal`
-  (4085), `PhotoAdjuster` (4218), `DonorPhotoControl` (4345),
-  `PersonTypeChips` (4418), `DonorProfile` (4476), plus `GIVING_STRENGTH_*`,
-  `WEALTH_SCORE_*`, `DONOR_RELATIONSHIP_LABELS`, `DESIGNATION_OPTS`.
-- **`DonorDirectory.jsx` (directory)**: `ReEngageView` (6578), `AssignModal`
-  (6691), `DirectoryView` (6740), `TeamView` (7217), `TIER_META`,
-  `PATTERN_META`, `FilterBar` (7272), `ColDef` (152).
-- **`Donors.jsx`** keeps `export function Donors` (7510) and re-exports
-  `DonorImport` so `import { DonorImport } from "./Donors"` still works.
-  `STAGE_COLORS`, `STAGE_TOKEN_RULES`, `NEGATOR_PHRASES`, `inferStage`,
-  `normalizeStage` go to one shared place (`client/src/lib/donorStage.js`)
-  both import. **The TDZ rule applies**: every module-scope const moves
-  ABOVE its first reader in its new file. Run `scripts/tdz-scan.js --all` on
-  the four files after the move.
-
-### Order of work
-1. Rebase `fix-1` on the new main; confirm Part 0 is still 22 red for the same
-   reasons.
-2. Put the source-reading obstacle to Jonathan and get his answer.
-3. Split commits, each green on the battery before the next: jobs → email →
-   webhooks → billing → finance → volunteer → agent → give → crm (smallest to
-   largest, so a failure localises), then App.jsx, then Donors.jsx.
-4. Full battery + tenant battery + a browser walk of every tab at 1440 and 390
-   (the TDZ class only shows in a browser). Push `fix-1`.
-5. Recreate the five worktrees from the split `fix-1`; each workstream merges
-   `fix-1` into its own branch and moves its changes into the new files.
-   Spawn C, D, E and B; hold A until after the split, then A builds
-   Direction 2.
-
-## 5. Databases and ports (all on :5544, none currently exist)
-
-The four `steward_fix1_*` databases were DROPPED when the workstreams were
-stopped; recreate with `createdb -h localhost -p 5544 -U steward <name>`. The
-shared `steward_loadtest` DB is never used by FIX-1.
+`steward_fix1` exists (the lead's, fresh on the last battery). The workstream
+databases do not; create them with `createdb -h localhost -p 5544 -U steward
+<name>`. The shared `steward_loadtest` is never used by FIX-1.
 
 | Worktree | Branch | Database | API | Preview | SINK | STRIPE_MOCK | BILLING_MOCK |
 |---|---|---|---|---|---|---|---|
-| `~/steward-fix1` (lead, split + integration) | `fix-1` | `steward_fix1` | 5701 | 4301 | 5702 | 5703 | 5704 |
-| `~/steward-fix1-a` | `fix-1-a` | `steward_fix1_a` | 5711 | 4311 | 5712 | 5713 | 5714 |
-| `~/steward-fix1-b` | `fix-1-b` (new) | `steward_fix1_b` | 5721 | 4321 | 5722 | 5723 | 5724 |
-| `~/steward-fix1-c` | `fix-1-c` | `steward_fix1_c` | 5731 | 4331 | 5732 | 5733 | 5734 |
-| `~/steward-fix1-d` | `fix-1-d` | `steward_fix1_d` | 5741 | 4341 | 5742 | 5743 | 5744 |
-| `~/steward-fix1-e` | `fix-1-e` | `steward_fix1_e` | 5751 | 4351 | 5752 | 5753 | 5754 |
+| `~/steward-fix1` (lead) | `fix-1` | `steward_fix1` | 5701 | 4301 | 5702 | 5703 | 5704 |
+| `~/steward-fix1-a` | `fix-1-a2` | `steward_fix1_a` | 5711 | 4311 | 5712 | 5713 | 5714 |
+| `~/steward-fix1-b` | `fix-1-b2` | `steward_fix1_b` | 5721 | 4321 | 5722 | 5723 | 5724 |
+| `~/steward-fix1-c` | `fix-1-c2` | `steward_fix1_c` | 5731 | 4331 | 5732 | 5733 | 5734 |
+| `~/steward-fix1-d` | `fix-1-d2` | `steward_fix1_d` | 5741 | 4341 | 5742 | 5743 | 5744 |
+| `~/steward-fix1-e` | `fix-1-e2` | `steward_fix1_e` | 5751 | 4351 | 5752 | 5753 | 5754 |
 
-Worktree setup: `git -C ~/nonprofit-erp worktree add ~/steward-fix1-x fix-1-x`,
-then symlink `node_modules` and `client/node_modules` from `~/nonprofit-erp`
-(never commit the symlinks: `.gitignore`'s `node_modules/` has a trailing
-slash, so `git add -A` would pick up a symlink). The boot recipe is
-`tests/README.md` + `tests/run-all.sh` with these ports substituted. Browser
-suites need the preview on the API's CORS allowlist (`CORS_ORIGIN`).
+Worktree setup: `git -C ~/nonprofit-erp worktree add ~/steward-fix1-x -b
+fix-1-x2 fix-1`, then symlink `node_modules` and `client/node_modules` from
+`~/nonprofit-erp` (never commit the symlinks). Boot recipe: `tests/README.md`
++ the `tests/run-all.sh` header with these ports substituted. The battery on
+a non-default port block needs `BASE`, `APP_URL`, `SINK_PORT`,
+`STRIPE_MOCK_PORT`, `BILLING_MOCK_PORT`, `NODE_PATH=~/steward-qa/node_modules`
+and a client dist built with `VITE_*` pointing at the worktree's API (not
+`scripts/build-local-dist.sh`, which hardcodes :5601); the server's
+`CORS_ORIGIN` must be the worktree's preview.
 
-## 6. Loose ends
-- Tell the 102 session go/no-go on merging main into build-102 (Jonathan's
-  call).
-- Confirm the Finance cut and the Members/Funds placement with Jonathan.
-- CLAUDE.md gets its FIX-1 entry from the lead at the end; workstreams write
-  notes in `docs/fix-1/<X>-NOTES.md`, never CLAUDE.md.
+## 7. Other sessions' ports seen on this machine (26 Sep)
+
+`:4173` (a `local-preview.js` from `~/nonprofit-erp`, running since 24 Sep),
+`:4223` (steward-101), `:4233`, `:5691` (steward-102). None are FIX-1's.
+
+CLAUDE.md gets FIX-1's entry from the lead at the end; workstreams write notes
+in `docs/fix-1/<X>-NOTES.md`, never CLAUDE.md.
