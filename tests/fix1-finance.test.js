@@ -363,7 +363,11 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
       if (full) {
         await page.locator('[data-testid="payout-line"] [data-testid="payout-donor"]').first().click();
         await page.waitForTimeout(1500);
-        ok("§6 a donor on a payout line opens that donor", /Ada Park/.test(await body()) && page.url().includes(D.a), page.url());
+        ok("§6 a donor on a payout line opens that donor (Finance gives way to her record)",
+           await page.locator(".finance-tabbar").count() === 0 && /Ada Park/.test(await body()) && /\$100/.test(await body()),
+           (await body()).slice(0, 300));
+        await page.goto(`${APP}/dashboard`, { waitUntil: "networkidle" });
+        await page.waitForTimeout(1200);
         await goTab("Finance");
         await subTab("Payouts");
       } else {
