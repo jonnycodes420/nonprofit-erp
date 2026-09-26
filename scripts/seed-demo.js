@@ -488,9 +488,12 @@ async function main() {
   // anything that needs a non-drift state belongs on a donor whose story IS
   // that state).
   await q(`INSERT INTO recurring_subscriptions
-             (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,fund_id,created_at)
-           VALUES ('rs_b72demo',$1,$2,150,'month','past_due','sub_demo_b72','fund_b72demo_gen',NOW())`,
-          [ORG, recurDonor]).catch(async () => {
+             (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,fund_id,created_at,first_failed_at)
+           VALUES ('rs_b72demo',$1,$2,150,'month','past_due','sub_demo_b72','fund_b72demo_gen',NOW(),$3::date)`,
+          // FIX-1 walk: the day it failed, two months back as the story says.
+          // Without it Home's sentence called the failure recent (a NULL
+          // first_failed_at counts as this week there) while the tile said 0.
+          [ORG, recurDonor, orgTime.addDays(TODAY, -60)]).catch(async () => {
     await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,amount,status)
              VALUES ('rs_b72demo',$1,$2,150,'past_due')`, [ORG, recurDonor]).catch(() => {});
   });
