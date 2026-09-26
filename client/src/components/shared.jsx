@@ -976,7 +976,7 @@ export function PageTitle({main,accent,sub}) {
       <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,fontWeight:400,letterSpacing:"-0.02em",margin:0,lineHeight:1.15}}>
         <span style={{color:T.ink}}>{main}{" "}</span><span style={{color:T.ink,borderBottom:"3px solid "+T.gold500,paddingBottom:2}}>{accent}</span>
       </h1>
-      {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:6,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
+      {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:12,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
     </div>
   );
 }

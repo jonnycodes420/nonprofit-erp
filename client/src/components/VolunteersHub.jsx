@@ -94,7 +94,7 @@ export function VolunteersHub({ isReadOnly, onNavigate }) {
 
   return (
     <div data-testid="volunteers-hub" className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <PageTitle main="Your" accent="volunteers." sub={roster ? roster.sentence : " "} />
+      <PageTitle main="Your" accent="volunteers." sub={roster && roster.people.length ? roster.sentence : " "} />
       <SectionTabs tabs={VIEWS.map(v => v.id === "roster" && roster ? { ...v, badge: roster.people.length } : v)} active={view} onSelect={setView} />
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
       {view === "roster" && <RosterView roster={roster} narrow={narrow} onOpen={setOpen} />}
