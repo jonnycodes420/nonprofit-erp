@@ -32,7 +32,7 @@ const root = path.join(__dirname, "..");
 async function reset() {
   for (const o of [ORG, OTHER]) {
     for (const t of ["volunteer_shifts", "thank_you_drafts", "threads", "tasks", "workflow_runs", "fin_transactions",
-                     "interactions", "gifts", "sequence_enrollments", "donors", "users", "budgets", "accounts", "fin_funds"])
+                     "interactions", "gifts", "sequence_enrollments", "donors", "fin_audit_log", "users", "budgets", "accounts", "fin_funds"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {});
   }

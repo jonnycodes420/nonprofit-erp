@@ -2104,10 +2104,23 @@ const DONOR_SORTS = {
   last_gift_date: "last_gift_date DESC NULLS LAST",
   created_at:     "created_at DESC",
 };
+// FIX-1 D — the roles a person can carry that a chip or a list may name.
+// "other" is not a role, it is the absence of one: normalizeTypes floors an
+// empty list at it, and turning any role on replaces it.
+const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
+const UNKNOWN_ROLE = { error: "unknown_role", sentence: "A role is Donor, Volunteer, or Staff and board." };
 function buildDonorListFilter(req) {
   const where = ["org_id = ?", "deleted_at IS NULL"];
   const params = [req.user.orgId];
-  const { search, stage, status, assignedTo, designation, household } = req.query;
+  const { search, stage, status, assignedTo, designation, household, role } = req.query;
+  // FIX-1 D — DONORS SHOWS DONORS. The Directory asks for role=donor; search
+  // and every older caller leave it off and still see everyone. An unknown
+  // role is refused (400 at the route) rather than quietly ignored, because an
+  // ignored filter is a list that says "donors" and holds everybody.
+  if (role !== undefined && role !== "") {
+    if (!PEOPLE_ROLES.includes(String(role))) return { badRole: true };
+    where.push(PT.typeSql(String(role)));
+  }
   if (search && String(search).trim()) {
     const s = "%" + String(search).trim().toLowerCase() + "%";
     where.push("(lower(name) LIKE ? OR lower(email) LIKE ?)");
@@ -2138,7 +2151,9 @@ function buildDonorListFilter(req) {
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const filter = buildDonorListFilter(req);
+  if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  const { whereSql, params, orderBy } = filter;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
@@ -2308,7 +2323,9 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 // GET /donors, exports EVERY matching row. Staff-level (it's data staff
 // already see), never checkWriteAccess-gated (export-routes convention).
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
-  const { whereSql, params, orderBy } = buildDonorListFilter(req);
+  const filter = buildDonorListFilter(req);
+  if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  const { whereSql, params, orderBy } = filter;
   const donors = await query(`SELECT * FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
   // headed with the CURRENT label, rendered per the type table.
@@ -3806,6 +3823,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const { name, email, phone, status, stage, tags, notes, city, state, zip, employer } = req.body;
   if (!name) return res.status(400).json({ error: "Name required" });
+  // FIX-1 D — DONOR IS SET BY GIVING, on this door too. Checked BEFORE any
+  // write, so a refused change leaves the whole record untouched.
+  if (req.body.personTypes !== undefined) {
+    const refused = await donorRemovalProblem(req.user.orgId, req.params.id, req.body.personTypes);
+    if (refused) return res.status(409).json(refused);
+  }
 
   const affected = await run(
     `UPDATE donors SET name=?,email=?,phone=?,status=?,stage=?,tags=?,notes=?,city=?,state=?,zip=?,employer=?,updated_at=NOW()
@@ -18012,6 +18035,124 @@ app.get("/people/photos", requireAuth, wrap(async (req, res) => {
   // Past the cap the ROW surfaces fall back to initials; the profile header
   // always signs its own URL, so no record is ever without its face.
   res.json({ photos, capped: rows.length > PHOTO_MAP_CAP, cap: PHOTO_MAP_CAP });
+}));
+
+// ── FIX-1 D — PEOPLE, WITHOUT THE LECTURE ─────────────────────────────────
+// The model does not move: one person, one record, even when they are two
+// things (BUILD-94 Part 2, `donors.person_types`). These are the doors the
+// screen needs now that Donors shows donors:
+//
+//   GET /people?role=…      the people carrying one role (the volunteer roster,
+//                           the staff and board list under Settings)
+//   GET /people/:id         what a person is, and whether Donor may come off
+//   PUT /people/:id/roles   one chip, one write — turn a role on or off
+//
+// Registered AFTER /people/photos so `/people/:id` never shadows it.
+//
+// DONOR IS SET BY GIVING. Somebody with a gift on file is a donor because money
+// of theirs is on the ledger; taking the word off would drop real gifts out of
+// every total that reads donors (donorOnlySql) while the gifts stayed. So the
+// removal is REFUSED here and — through donorRemovalProblem — on the older
+// PUT /donors/:id personTypes path too. A guard with a side door is not a guard.
+
+// Whether Donor may come off this person, and the sentence when it may not.
+// Counted from the gifts table itself, or the rollup when an imported history
+// carried a count with no rows behind it — either one is money of theirs.
+async function donorLock(orgId, row) {
+  const [g] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id=? AND donor_id=?`, [orgId, row.id]);
+  const n = Math.max((g && g.n) || 0, Number(row.gift_count) || 0);
+  if (!n) return { locked: false, reason: null, giftCount: 0 };
+  const isOrg = row.kind === "organisation" || row.kind === "organization";
+  const who = isOrg ? (String(row.name || "").trim() || "This organisation")
+                    : (String(row.name || "").trim().split(/\s+/)[0] || "This person");
+  return {
+    locked: true, giftCount: n,
+    reason: `${who} has ${n === 1 ? "a gift" : n + " gifts"} on file, so ${isOrg ? "it stays" : "they stay"} a donor. Donor is set by giving.`,
+  };
+}
+
+// null when a personTypes change is fine, otherwise the refusal body. Only a
+// change that REMOVES donor from somebody with gifts can be refused.
+async function donorRemovalProblem(orgId, donorId, nextTypes) {
+  const [row] = await query(
+    `SELECT id, name, kind, person_types, gift_count FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!row) return null;                        // the caller's own 404 answers it
+  if (!PT.typesOf(row).includes("donor") || PT.normalizeTypes(nextTypes).includes("donor")) return null;
+  const lock = await donorLock(orgId, row);
+  return lock.locked ? { error: "donor_has_gifts", sentence: lock.reason, giftCount: lock.giftCount } : null;
+}
+
+const personOut = (row, lock) => ({
+  id: row.id, name: row.name, email: row.email || null, kind: row.kind || null,
+  person_types: PT.typesOf(row),
+  labels: PT.typeLabels(row),
+  donorLocked: !!(lock && lock.locked),
+  donorLockedReason: lock && lock.locked ? lock.reason : null,
+});
+
+app.get("/people", requireAuth, wrap(async (req, res) => {
+  const role = String(req.query.role || "");
+  if (!PEOPLE_ROLES.includes(role))
+    return res.status(400).json({ error: "role_required", sentence: "Ask for donors, volunteers, or staff and board." });
+  const rows = await query(
+    `SELECT d.id, d.name, d.email, d.phone, d.kind, d.person_types, d.gift_count, d.total_giving, d.last_gift_date
+       FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND ${PT.typeSql(role, "d")}
+      ORDER BY lower(d.name), d.id
+      LIMIT 5000`, [req.user.orgId]);
+  res.json({
+    role,
+    people: rows.map(r => ({
+      ...personOut(r, null),
+      phone: r.phone || null,
+      // Whether they also give is the DONOR ROLE, not a gift count: a
+      // volunteer marked donor with no gift yet is a prospect, and says so.
+      gives: PT.typesOf(r).includes("donor"),
+      giftCount: Number(r.gift_count) || 0,
+      totalGiving: Number(r.total_giving) || 0,
+      lastGiftDate: r.last_gift_date || null,
+    })),
+  });
+}));
+
+app.get("/people/:id", requireAuth, wrap(async (req, res) => {
+  const [row] = await query(
+    `SELECT id, name, email, kind, person_types, gift_count FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    [req.params.id, req.user.orgId]);
+  if (!row) return res.status(404).json({ error: "Person not found" });
+  res.json(personOut(row, await donorLock(req.user.orgId, row)));
+}));
+
+// One chip, one write: the person's own row, person_types, nothing else. Adding
+// Volunteer puts them on the roster (GET /people?role=volunteer) that moment.
+app.put("/people/:id/roles", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const role = String(req.body?.role || "");
+  const on = req.body?.on === true;
+  if (!PEOPLE_ROLES.includes(role)) return res.status(400).json(UNKNOWN_ROLE);
+  const [row] = await query(
+    `SELECT id, name, email, kind, person_types, gift_count FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    [req.params.id, req.user.orgId]);
+  if (!row) return res.status(404).json({ error: "Person not found" });
+
+  const was = PT.typesOf(row);
+  const next = PT.normalizeTypes(on ? [...was.filter(t => t !== "other"), role] : was.filter(t => t !== role));
+  if (role === "donor" && !on && was.includes("donor")) {
+    const lock = await donorLock(req.user.orgId, row);
+    if (lock.locked) return res.status(409).json({ error: "donor_has_gifts", sentence: lock.reason, giftCount: lock.giftCount });
+  }
+  if (JSON.stringify(next) !== JSON.stringify(was)) {
+    await run(`UPDATE donors SET person_types = ?::jsonb, updated_at = NOW() WHERE id=? AND org_id=?`,
+      [JSON.stringify(next), row.id, req.user.orgId]);
+    // Who changed it, in the audit log (the row has no updated_by).
+    writeAuditLog(req.user.orgId, req.user.userId, req.user.email, "updated", "person_roles", row.id, { from: was, to: next });
+    // BUILD-94 Part 3 — ADDED AS VOLUNTEER is a trigger, on the transition only.
+    if (!was.includes("volunteer") && next.includes("volunteer")) {
+      enrollInSequences(req.user.orgId, row.id, "added_volunteer", {}, actor(req))
+        .catch(e => console.error("[seq] volunteer trigger:", e.message));
+    }
+  }
+  const fresh = { ...row, person_types: next };
+  res.json(personOut(fresh, await donorLock(req.user.orgId, fresh)));
 }));
 
 // Store a photograph on a donor record. Type is checked by CONTENT (the magic
