@@ -13500,8 +13500,13 @@ async function audienceRoster(orgId) {
     count: filterBySegment(donors, { mode: a.mode }).length,
     // WHERE THESE PEOPLE LIVE. Allie should never have to wonder where her
     // volunteers are kept — an audience names the screen its people are on.
-    livesOn: a.mode === "everyone" ? { tab: "donors", filter: null, label: "Donors — every type" }
+    // FIX-1 D/C — Donors shows donors now, so volunteers live in the
+    // Volunteers hub and staff and board under Settings; nobody is on one
+    // list any more, so "everyone" names the three places.
+    livesOn: a.mode === "everyone" ? { tab: "donors", filter: null, label: "Donors, Volunteers, and Settings for staff and board" }
            : a.mode === "donors" ? { tab: "donors", filter: "donor", label: "Donors" }
+           : a.mode === "volunteers" ? { tab: "volunteers", filter: null, label: "Volunteers" }
+           : a.mode === "staff_board" ? { tab: "settings", filter: null, label: "Settings, under Organization" }
            : { tab: "donors", filter: a.mode, label: "Donors, filtered to " + a.name.toLowerCase() },
   }));
 
