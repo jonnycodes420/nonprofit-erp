@@ -113,8 +113,14 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
   const runs0 = await q(`SELECT COUNT(*)::int AS n FROM agent_runs WHERE org_id=$1`, [ORG]);
   ok("…and nothing has run", runs0[0].n === 0, runs0[0]);
 
+  // The lead's merge (FIX-1): a gift confirmed here does what the gift form
+  // does after a person records one, so a LAPSED giver is lapsed no longer.
+  await q(`UPDATE donors SET stage='lapsed' WHERE org_id=$1 AND id='d_fx1_sun'`, [ORG]);
   const confirmed = await api("POST", `/agent/instructions/${planned.body && planned.body.id}/confirm`, tok, {});
   ok("she confirms: the run answers", confirmed.status === 200 && !!confirmed.body.runId, confirmed.body);
+  const [sunAfter] = await q(`SELECT stage FROM donors WHERE org_id=$1 AND id='d_fx1_sun'`, [ORG]);
+  ok("…and a lapsed giver who just gave is not lapsed any more (the gift form's after-gift step)",
+     sunAfter && sunAfter.stage === "steward", sunAfter);
   const runId = confirmed.body && confirmed.body.runId;
   const gifts1 = await q(`SELECT amount::float AS amount, created_by, created_by_name, donor_id FROM gifts WHERE org_id=$1`, [ORG]);
   ok("the gift is PRESENT after, exactly once", gifts1.length === 1, gifts1);

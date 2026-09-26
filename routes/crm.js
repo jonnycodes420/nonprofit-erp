@@ -20,6 +20,7 @@ const routers = {
   r0: express.Router(),
   r1: express.Router(),
 };
+const giftHooks = {};
 
 function mount(ctx) {
 const {
@@ -18472,6 +18473,12 @@ app.post("/settings/inbound-email/discard", requireAuth, checkWriteAccess, wrap(
 // the record clears it from this predicate the moment the tag is removed.
 const namedOrGivingSql = (a = "d") =>
   `NOT (COALESCE(${a}.gift_count, 0) = 0 AND (COALESCE(${a}.tags, '[]')::text LIKE '%needs-name%' OR ${a}.name LIKE 'Unnamed donor%'))`;
+
+// FIX-1 — what a gift a PERSON recorded sets off after recordGift, for the
+// other doors that record one (Agent → confirm). Filled once, here, when the
+// functions exist; the gift form above calls them directly.
+giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
+giftHooks.calcWealthScore = calcWealthScore;
 }
 
-module.exports = { routers, mount };
+module.exports = { routers, mount, giftHooks };

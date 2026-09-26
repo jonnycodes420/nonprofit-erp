@@ -660,7 +660,7 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
   const today = orgToday(await orgTz(orgId));
   for (const [i, s] of ((plan && plan.steps) || []).entries()) {
     if (s.state !== A.STEP_CONFIRM || s.tool !== "record_gift") continue;
-    const [donor] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [s.donorId, orgId]);
+    const [donor] = await query("SELECT id, stage FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [s.donorId, orgId]);
     if (!donor || !(Number(s.amountCents) > 0)) { confirmed[i] = { reason: "the record is no longer there" }; continue; }
     const written = await recordGift({
       orgId, donorId: donor.id, amount: Number(s.amountCents) / 100, date: s.date || today,
@@ -670,6 +670,12 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
     });
     if (!written || written.duplicate || !written.gift) { confirmed[i] = { reason: "it was already recorded" }; continue; }
     confirmed[i] = { giftId: written.gift.id, by: actor(req).name };
+    // What the gift form does after a person records a gift (routes/crm.js
+    // giftHooks): the wealth score moves, and a lapsed donor who just gave is
+    // not lapsed any more.
+    const { giftHooks } = require("./crm");
+    giftHooks.calcWealthScore(donor.id, orgId).catch(e => console.error("score recalc:", e.message));
+    await giftHooks.autoUnlapseOnGift(orgId, donor.id, donor.stage).catch(e => console.error("[smart-move] unlapse:", e.message));
     // The same live event the gift form fires: a person just recorded a gift.
     const [after] = await query("SELECT gift_count FROM donors WHERE id=? AND org_id=?", [donor.id, orgId]);
     fireWorkflows(orgId, "gift_received", {
