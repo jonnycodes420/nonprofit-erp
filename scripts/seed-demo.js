@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-// BUILD-72 Part 5 — THE DEMO SEED.
+// THE DEMO SEED — Harborlight Youth Collective, the org the pitch is given on.
+//
+// FIX-1 §11: THE DEMO IS ITS OWN ORG, NEVER A TEST FIXTURE. The walk found the
+// demo repeating a line the walk scripts and suites write (a donor asking for
+// a report that only exists in the tests). So the demo has this one seed, in
+// the words a real development office would leave in its own file; NO SUITE
+// logs in to or writes this org (tests/fix1-walk.test.js §11 greps for ORG
+// and ADMIN_EMAIL); CI and tests/run-all.sh seed it before the battery, so
+// tests/demo-shape never skips. It was scripts/seed-build72-demo.js (BUILD-72
+// Part 5); the history below is that file's.
 //
 // The demo is the pitch, and the pitch is MID-LEVEL DRIFT: eleven quiet $2,000
 // donors who gave reliably for years and nothing this year. Never four hundred
@@ -25,7 +34,7 @@
 //            follow-up), which still touches only org_b72demo rows. Kingdom
 //            Builders names refuse unconditionally.
 //
-// Usage:  node scripts/seed-build72-demo.js
+// Usage:  node scripts/seed-demo.js
 //         (DATABASE_URL + BASE default to the scratch stack)
 
 const guard = require("./lib/prodGuard");
@@ -56,7 +65,9 @@ const TZ = process.env.DEMO_TZ || "America/New_York";
 // writerBase) AND the server-vs-connection identity match. Even then the
 // seed touches ONLY org_b72demo rows — every DELETE and INSERT is pinned to
 // that org id.
-const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+)$/;
+// FIX-1: the per-worktree scratch databases (steward_fix1_a, steward_chore1…)
+// are scratch too, and run-all.sh seeds the demo on whichever one it runs.
+const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+)$/;
 const KB_DB = /^(kb_|kingdom)/i;
 const PROD_DB = "postgres";
 
@@ -115,8 +126,12 @@ const DRIFTED = [
 // The gift dates for one of the eleven, RELATIVE TO TODAY — deterministic,
 // and always drifting/high under drift.js:
 //   seasonal    — one gift in the same calendar month for 7 straight years,
-//                 the last ~14 months back (the window closed ~2 months ago;
-//                 past the 30-day grace at any run date).
+//                 the last ~14.5 months back. FIX-1: it was 420 days, which
+//                 put late-month run dates INSIDE the engine's grace (drift
+//                 starts a month after the anchor month ENDS), so Margaret
+//                 Chen read "ok" on the 26th of September and the seed
+//                 refused. 440 was swept against every run date in a year;
+//                 all eleven drift/high on each (430–450 are all clean).
 //   semiannual  — every ~182 days for 4 years, silent ~9–10 months
 //                 (ratio ≈ 1.6× cadence; boundary 455d).
 //   quarterly   — every ~91 days for 2 years, silent ~6.5 months
@@ -126,7 +141,7 @@ function driftedGiftDates(pattern, i) {
   if (pattern === "seasonal") {
     // i*4 (not i%3*12) so no two seasonal members share an anchor — twin
     // sentences on adjacent rows read as synthetic data.
-    const anchor = orgTime.addDays(TODAY, -(420 + i * 4));          // ~14–15 months back
+    const anchor = orgTime.addDays(TODAY, -(440 + i * 4));          // ~14.5–16 months back
     const [ay, am] = [Number(anchor.slice(0, 4)), Number(anchor.slice(5, 7))];
     const dates = [];
     for (let y = ay - 6; y <= ay; y++) dates.push(dateIn(y, am, 10));
@@ -195,7 +210,7 @@ async function main() {
   // ── TEARDOWN — idempotent by dropping, never by importing over ──────────
   console.log("[teardown] removing any previous demo org…");
   await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [ORG]).catch(() => {});
-  for (const t of ["workflow_runs","workflows","digest_sends","moves","opportunities","tasks",
+  for (const t of ["threads","workflow_runs","workflows","digest_sends","moves","opportunities","tasks",
     "payment_recovery_events","recurring_subscriptions","receipts","pledges","fin_audit_log",
     "fin_transactions","interactions","gifts","milestone_drafts","note_reminders","donor_materials",
     "households","donors","campaigns","fin_funds","accounts","budgets","users"])
@@ -410,7 +425,27 @@ async function main() {
   for (let k = 17; k >= 2; k--)
     addGift(recurDonor, 150, orgTime.addDays(TODAY, -(k * 30 + 4)));
 
+  // ── FIX-1 §11/§13 — ORGANISATIONS GIVE TOO ──────────────────────────────
+  // A foundation, a church and a business, so the demo can show Steward
+  // calling an organisation what it is and never one of her "sponsors". Each
+  // gave this year, so none of them is a drift story (organisations are
+  // excluded from drift anyway; this keeps the seed's own shape check honest).
+  const ORGS = [
+    ["Tidewater Community Foundation", "grants@tidewatercf.example.demo", "community_foundation", [5000, 5000, 7500]],
+    ["Grace Chapel", "office@gracechapel.example.demo", "church", [1200, 1200, 1500]],
+    ["Saltbox Printing", "hello@saltboxprinting.example.demo", "corporate", [750, 1000, 1000]],
+  ];
+  const orgDonors = [];
+  for (const [name, email, funderType, amounts] of ORGS) {
+    const id = addDonor(name, email, { status: "mid", stage: "steward", pin: true, officer: "u_b72demo" });
+    orgDonors.push([id, funderType]);
+    amounts.forEach((amt, k) => addGift(id, amt, orgTime.addDays(TODAY, -(40 + (amounts.length - 1 - k) * 365)),
+                                        { campaign: "Annual Fund " + orgTime.addDays(TODAY, -(40 + (amounts.length - 1 - k) * 365)).slice(0, 4) }));
+  }
+
   await writeAll(client, donors, gifts);
+  for (const [id, funderType] of orgDonors)
+    await q(`UPDATE donors SET kind='organisation', funder_type=$3 WHERE id=$1 AND org_id=$2`, [id, ORG, funderType]);
 
   // ── Pledges: one PARTIALLY paid, one OVERPAID with a recorded surplus ────
   console.log("[seed] pledges (partial + overpaid surplus)…");
@@ -500,6 +535,46 @@ async function main() {
   await q(`INSERT INTO tasks (id,org_id,donor_id,title,due,done,priority,type)
            VALUES ('tk_b72_2',$1,$2,'Send the scholarship impact note',$3,0,'medium','email')`,
           [ORG, driftedIds[3], orgTime.addDays(TODAY, -3)]);
+
+  // ── FIX-1 §11 — THE THREAD, IN A DEVELOPMENT OFFICE'S OWN WORDS ─────────
+  // What Dana Reyes, the director, promised people and has not done yet: two
+  // late, one due today, the rest coming up. Every line is the kind a
+  // fundraiser leaves in her own file; none of them is a sentence a test or a
+  // walk script writes. On donors who are NOT the eleven: a meaningful contact
+  // inside thirty days would take one of the eleven off the drift list. No
+  // pronouns: the donors are chosen by a query, so "her" could land on anyone.
+  console.log("[seed] the Thread…");
+  const threadDonors = (await q(
+    `SELECT id FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND kind IS NULL
+        AND id <> ALL($2) AND total_giving > 0 AND stage = 'steward'
+      ORDER BY total_giving DESC, id LIMIT 6`,
+    [ORG, [...driftedIds, recurDonor, pledgeDonorA, pledgeDonorB]])).map(r => r.id);
+  const THREAD = [
+    // [touch, what was said, days ago, next step type, next step, due in days]
+    ["meeting", "Toured the studio after the spring showcase. Asked what this year's scholarship students went on to do.",
+     31, "send", "Send the scholarship outcomes letter", -23],
+    ["call", "Said the family board meets in July and decides its giving then. Asked us to call the first week of the month.",
+     12, "follow_up", "Call before the family board meets", -5],
+    ["note", "A check for the studio fund came in Monday's mail, with a handwritten card.",
+     2, "thank_you_note", "Write a thank-you for the studio fund gift", 0],
+    ["ask", "Asked for $5,000 toward the summer intensive. Wants to talk it over at home first.",
+     20, "check_in_ask", "Check in on the summer intensive ask", 3],
+    ["meeting", "Lunch downtown. Wants to bring two friends to the fall open studio.",
+     3, "send", "Send open studio invitations for the two friends", 6],
+    ["email", "Sent photos from the spring showcase, including one of the scholarship student the family funds.",
+     9, "follow_up_no_reply", "Follow up on the showcase photos", 8],
+  ];
+  for (const [k, did] of threadDonors.entries()) {
+    const [touch, note, ago, stepType, step, due] = THREAD[k];
+    const intId = `int_b72_th${k + 1}`;
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
+            [intId, ORG, did, touch, note, orgTime.addDays(TODAY, -ago)]);
+    await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+                                  opening_interaction_id,owner_id,owner_name,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'u_b72demo','Dana Reyes','u_b72demo','Dana Reyes')`,
+            [`th_b72_${k + 1}`, ORG, did, stepType, step, orgTime.addDays(TODAY, due), orgTime.addDays(TODAY, -ago), intId]);
+  }
 
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(

@@ -2809,7 +2809,7 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
     // cap, so Home can render a person to call instead of a figure to worry
     // about. Not a new metric: a count that finally says who.
     atRisk: await query(
-      `SELECT rs.id, rs.donor_id, d.name AS donor_name, rs.amount, rs.interval,
+      `SELECT rs.id, rs.donor_id, d.name AS donor_name, d.kind, rs.amount, rs.interval,
               rs.status, rs.first_failed_at
          FROM recurring_subscriptions rs
          JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id

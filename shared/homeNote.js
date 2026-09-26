@@ -28,7 +28,8 @@
 //
 // Pure: no clock, no fetch, no JSX. `today` is a civil date the caller passes.
 
-import { makeT } from "./vocabulary.js";
+import { makeT, giverCountWord } from "./vocabulary.js";
+import { threadFigures, rowFigure } from "./threadFigures.js";
 
 export const NOTHING_WAITING = "Nothing is waiting on you this morning.";
 
@@ -120,13 +121,27 @@ function threadSentence(threads, t) {
     return `${cap(spell(n))} ${n === 1 ? "conversation is" : "conversations are"} waiting to be picked back up.`;
   }
 
-  const worst = overdue.reduce((m, x) => (daysLate(x) > daysLate(m) ? x : m), overdue[0]);
+  // FIX-1 §10 — THE COUNT IS THE HEADER'S. The list is capped (threadRank's
+  // QUEUE_CAP); the header counts every overdue row. "12 people are waiting on
+  // you" beside "24 overdue" was the capped list counted, with nothing saying
+  // so. When the server sent its stat, the sentence says the stat's number.
+  const statN = Number(threads?.stat?.overdue);
+  const n = Number.isFinite(statN) && statN >= overdue.length ? statN : overdue.length;
+
+  // FIX-1 §9 — WHO HAS WAITED LONGEST, by the one figure the header and the
+  // badges read (shared/threadFigures.js). The server's stat.oldest covers the
+  // whole list, not the capped one; it is used when it is an overdue row.
+  const statOldest = threads?.stat?.oldest;
+  const useStat = !!(statOldest && statOldest.overdue);
+  const worst = useStat
+    ? (overdue.find(x => x.id != null && x.id === statOldest.id) || { donorName: statOldest.donorName })
+    : overdue[threadFigures(overdue).oldest.index];
   const full = String(worst.donorName || "Someone").trim();
-  const late = daysLate(worst);
+  const late = useStat ? statOldest.days : rowFigure(worst);
   const ago = agoPhrase(late);
 
   // ONE thing overdue: lead with the person.
-  if (overdue.length === 1) {
+  if (n === 1) {
     if (THANK_STEP.test(String(worst.nextStep?.label || ""))) {
       return `${full} gave ${ago} and still hasn't been thanked.`;
     }
@@ -139,20 +154,15 @@ function threadSentence(threads, t) {
   // A semicolon, because these are two halves of one thought; a colon would be
   // a machine introducing a list.
   const who = surname(full);
-  const n = overdue.length;
   return `${cap(spell(n))} people are waiting on you; ${who} has been waiting ${durationPhrase(late)}.`;
 }
 
-function daysLate(t) {
-  const n = Number(t?.overdueDays);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function driftClause(drift, t) {
+function driftClause(drift, vocabulary) {
   const list = Array.isArray(drift?.list) ? drift.list : [];
   if (list.length === 0) return null;
   if (list.length === 1) return `${surname(list[0].donorName || list[0].name)} has gone quiet`;
-  return `${spell(list.length)} ${t("giver", list.length)} have gone quiet`;
+  // FIX-1 §13 — her word is for people; organisations are organisations.
+  return `${spell(list.length)} ${giverCountWord(list, vocabulary)} have gone quiet`;
 }
 
 // The window is SEVEN DAYS. There is no last-login stamp on this path, and
@@ -250,7 +260,7 @@ export function homeNote({ threads, drift, atRisk, latePledgeInstallments, membe
   const thread = threadSentence(threads, t);
   if (thread) sentences.push(thread);
 
-  const second = [driftClause(drift, t), recurringClause(atRisk, todayMs, t)].filter(Boolean);
+  const second = [driftClause(drift, vocabulary), recurringClause(atRisk, todayMs, t)].filter(Boolean);
   if (second.length === 1) sentences.push(cap(second[0]) + ".");
   if (second.length === 2) sentences.push(`${cap(second[0])}, and ${second[1]}.`);
 

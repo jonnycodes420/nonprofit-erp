@@ -12126,11 +12126,17 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
   });
 
   const overdue = list.filter(t => t.overdue).length;
-  const oldestDays = list.reduce((m, t) => Math.max(m, t.daysOpen), 0);
+  // FIX-1 §9 — "oldest" is the oldest ROW, by the one figure its badge and the
+  // Home sentence also read (shared/threadFigures.js), over the whole list, not
+  // the capped one. It used to be max(daysOpen) while the badges said overdue.
+  const { threadFigures } = await import("../shared/threadFigures.js");
+  const figures = threadFigures(list);
+  const oldestDays = figures.oldest ? figures.oldest.days : 0;
+  const oldest = figures.oldest && figures.oldest.days > 0 ? figures.oldest : null;
   const [{ n: everCount } = { n: 0 }] = await query(`SELECT COUNT(*)::int AS n FROM threads WHERE org_id = ?`, [orgId]);
   return {
     list: ranked, bands: q.bands, more: q.more,
-    stat: { open: list.length, overdue, oldestDays, snoozed, unowned, shown: ranked.length },
+    stat: { open: list.length, overdue, oldestDays, oldest, snoozed, unowned, shown: ranked.length },
     scope: effScope, canViewAll: isAdmin, hasAny: everCount > 0, today,
   };
 }

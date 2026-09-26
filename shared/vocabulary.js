@@ -175,3 +175,19 @@ export function seasonDaysAway(vocabulary, today) {
   const days = Math.round((b - a) / 86400000);
   return days >= 0 && days <= SEASON_HORIZON_DAYS ? days : null;
 }
+
+// ── FIX-1 §13 — A COUNT OF GIVERS SAYS WHAT THEY ARE ───────────────────────
+// The walk: "11 sponsors have gone quiet", three of the eleven foundations and
+// churches. The org's word describes the PEOPLE who give to it; an
+// organisation is not a sponsor. A count of people gets her word, a count of
+// organisations says organisations, and a count that mixes them says givers,
+// the one word true of both. `pair` picks which of her words people get
+// ("giver" or "monthly_giver"). A legacy row with no kind is a person.
+export function giverCountWord(rows, vocabulary, { pair = "giver" } = {}) {
+  const list = Array.isArray(rows) ? rows : [];
+  const isOrg = r => /^organi[sz]ation$/.test(String(r?.kind || ""));
+  const orgs = list.filter(isOrg).length;
+  if (list.length > 0 && orgs === list.length) return "organisations";
+  if (orgs > 0) return "givers";
+  return makeT(vocabulary)(pair, 2);
+}

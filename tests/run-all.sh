@@ -185,6 +185,23 @@ rm -f "$LOGDIR"/*.log 2>/dev/null || true
 
 pass=0; fail=0; failed=()
 total_start=$(date +%s)
+
+# FIX-1 §11 — THE DEMO IS SEEDED BEFORE THE BATTERY, so demo-shape never skips.
+# scripts/seed-demo.js drops and recreates ONLY the demo org, against the
+# server at $BASE (default :5601) and $DATABASE_URL; it refuses any database
+# that is not an allowlisted scratch name. CI seeds it in its own step and
+# passes DEMO_SEEDED=1. A seed that fails is a red battery, never a skip.
+want_demo=0
+for name in "${RUN[@]}"; do [ "$name" = "demo-shape" ] && want_demo=1; done
+if [ "$want_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
+  if node scripts/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
+    echo "  seeded the demo org (scripts/seed-demo.js)"
+  else
+    echo "  FAIL  seed-demo: the demo did not seed ($LOGDIR/seed-demo.log)"
+    cat "$LOGDIR/seed-demo.log"
+    fail=$((fail+1)); failed+=("seed-demo")
+  fi
+fi
 for name in "${RUN[@]}"; do
   file="tests/${name}.test.js"
   [ -f "$file" ] || { echo "  SKIP  $name (missing)"; continue; }

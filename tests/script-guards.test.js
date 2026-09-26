@@ -34,14 +34,14 @@ const GUARDED_WRITERS = [
   // straight into the scratch DB (an org that ALREADY exists is the premise,
   // and no route creates one), then drives the console in Playwright.
   "build92-close-org-walk",
-  // BUILD-72 Part 5 — the demo seed. Loopback default via writerBase; any
-  // database name outside the scratch allowlist fails closed EXCEPT the one
-  // deliberate production path (prod db + prod BASE + --i-know-this-is-prod,
-  // BUILD-76 follow-up — puts the Harborlight demo fiction on prod, touching
-  // only org_b72demo rows); kb_*/kingdom refuse unconditionally, and the
-  // identity check (server's reported database == the one being written)
-  // always applies.
-  "seed-build72-demo",
+  // The demo seed (BUILD-72 Part 5; FIX-1 §11 renamed it seed-demo). Loopback
+  // default via writerBase; any database name outside the scratch allowlist
+  // fails closed EXCEPT the one deliberate production path (prod db + prod
+  // BASE + --i-know-this-is-prod, BUILD-76 follow-up — puts the Harborlight
+  // demo fiction on prod, touching only the demo org's rows); kb_*/kingdom
+  // refuse unconditionally, and the identity check (server's reported
+  // database == the one being written) always applies.
+  "seed-demo",
   "backfill-campaign-attribution", "build25-workflows-capture", "build35-capture",
   "build36-bulkassign-capture", "build36-notify-capture", "build47-capture",
   "build55-capture", "build57-capture", "build57-import-drill",
