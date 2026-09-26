@@ -18,7 +18,7 @@
 const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
 
 const ORG = "b99_pl", OTHER = "b99_pl2";
 const ME = "b99pl@example.org", THEM = "b99pl-other@example.org";
@@ -57,10 +57,13 @@ const FOUR = [
 // tomorrow's and every expected date was one out while the server was right.
 // Local calendar PARTS, never a UTC round-trip. (The fixture org is
 // America/New_York, which is this machine's zone.)
-const civilPlus = n => {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+// CI #297 — ANCHORED ON THE ORG'S CIVIL TODAY, not the machine's. The previous
+// helper read the runner's own calendar parts on the assumption that the runner
+// is America/New_York, which is true on a laptop and false on a UTC CI runner:
+// at 20:30 EDT the runner's day had already turned over and every expected date
+// was one out while the server was right. `civilPlusDays` in tests/helpers.js is
+// the one of these now.
+const civilPlus = (n) => civilPlusDays(n);
 
 (async () => {
   console.log("build99-plans");

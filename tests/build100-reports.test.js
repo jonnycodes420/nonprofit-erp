@@ -22,7 +22,7 @@
 // unset here on purpose, which is why §8's ordering assertion has teeth.
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
 
 const ORG = "b100_rep", OTHER = "b100_rep2";
 const ME = "b100rep@example.org", THEM = "b100rep-other@example.org";
@@ -53,10 +53,13 @@ const mkPerson = (id, org, name) => q(
    VALUES ($1,$2,$3,$4,'person','steward',0,0)`, [id, org, name, id + "@example.org"]);
 const cents = v => Math.round(Number(v) * 100);
 const money = v => cents(String(v).replace(/[$,]/g, ""));
-function plusDays(n) {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+// CI #297 — ANCHORED ON THE ORG'S CIVIL TODAY, not the machine's. The previous
+// helper read the runner's own calendar parts on the assumption that the runner
+// is America/New_York, which is true on a laptop and false on a UTC CI runner:
+// at 20:30 EDT the runner's day had already turned over and every expected date
+// was one out while the server was right. `civilPlusDays` in tests/helpers.js is
+// the one of these now.
+const plusDays = (n) => civilPlusDays(n);
 const PDF = Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(64, 0x20)]).toString("base64");
 
 (async () => {

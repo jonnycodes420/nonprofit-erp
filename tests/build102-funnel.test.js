@@ -22,7 +22,7 @@
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const http = require("http");
-const { ok, summary, login, api, q, closeDb, STRIPE_MOCK_PORT } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, STRIPE_MOCK_PORT, civilPlusDays } = require("./helpers");
 
 const ORG = "b102_fun", OTHER = "b102_fun2";
 const ME = "b102fun@example.org", THEM = "b102fun-other@example.org";
@@ -162,8 +162,14 @@ const count = (formId, kind, variant) => fetch(`${BASE}/forms/${formId}/event`, 
      F.funnelFor({}).completionRate === null && F.funnelFor({}).averageGiftCents === null, F.funnelFor({}));
   // Drive it through the real route: more completions than views.
   const odd = await api("POST", "/giving-pages", tok, { title: "Odd", slug: "odd" });
+  // CI #297 — THE ORG'S CIVIL DAY, not UTC's. `form_events.day` is written by
+  // `bumpFormEvent` from `orgToday`, and the funnel route reads a window of the
+  // org's own civil days — so a row stamped with the UTC date lands OUTSIDE that
+  // window every evening after 8pm Eastern, the route returns all zeros, and the
+  // clamping this section exists to check is never exercised. That is exactly how
+  // it failed on CI: not a wrong figure, a row the query could not see.
   await q(`INSERT INTO form_events (id,org_id,form_id,day,views,starts,completions,completed_cents)
-           VALUES ('fe_odd','${ORG}',$1,$2,1,9,9,900)`, [odd.body.id, new Date().toISOString().slice(0, 10)]);
+           VALUES ('fe_odd','${ORG}',$1,$2,1,9,9,900)`, [odd.body.id, civilPlusDays(0)]);
   const oddF = await api("GET", `/giving-pages/${odd.body.id}/funnel`, tok, null);
   ok("§3 the route clamps too, and names it",
      oddF.body.funnel.starts === 1 && oddF.body.funnel.completions === 1

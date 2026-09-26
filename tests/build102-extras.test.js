@@ -155,10 +155,40 @@ const pi = (orgAcct, meta, amountCents) => ({
   ok("§1 ONE draft notice", notices.length === 1, notices.length);
   // THE NOTICE CARRIES NO AMOUNT. BUILD-98's rule: the notice module is handed no
   // amount, so it cannot state one — a family should not be told what was given.
-  const noticeText = JSON.stringify(notices[0] || {});
-  ok("§1 …and NO amount appears anywhere in it",
-     !/100/.test(noticeText.replace(/"id":"[^"]*"/g, "").replace(/gift_id":"[^"]*"/g, "")),
-     noticeText.slice(0, 300));
+  //
+  // CHECKED TWO WAYS, AND NEITHER IS A SUBSTRING SEARCH OF A STRINGIFIED ROW.
+  // The first version of this assertion stripped `id` and `gift_id` and then
+  // searched the rest for "100", which a randomly generated `donor_id` of
+  // `d_1008e9fa` satisfied — so it failed while the notice was perfectly correct.
+  // That is the THIRD time this session I have written a substring search against
+  // a generated id (BUILD-100's `/7,?777/` was the same mistake, and BUILD-84
+  // named the class: a match must respect the boundaries of the unit being
+  // matched). Never JSON.stringify a row and grep it.
+  //
+  // (1) THE SCHEMA: there is nowhere to put an amount. That is the structural
+  //     guarantee, and unlike a text search it cannot be defeated by a lucky id.
+  const noticeCols = (await q(
+    `SELECT column_name FROM information_schema.columns WHERE table_name='tribute_notices'`))
+    .map(r => r.column_name);
+  ok("§1 …and the notice table has no amount column at all",
+     !noticeCols.some(c => /amount|cents|value|total|gift_amount/i.test(c)), noticeCols);
+  // (2) THE BODY, which is the text a family would actually read, matched as MONEY
+  //     rather than as a digit run: the gift was $100, so look for how money is
+  //     written and not for the characters "100" wherever they land.
+  const body = String(notices[0].body || "");
+  const moneyShapes = [/\$\s*\d/, /\b\d+\.\d{2}\b/, /\b\d{1,3}(,\d{3})+\b/];
+  const moneyHits = moneyShapes.filter(re => re.test(body)).map(String);
+  ok("§1 …and its body states no money at all", moneyHits.length === 0, { moneyHits, body: body.slice(0, 200) });
+  // AND THE MONEY TEST IS PROVEN ABLE TO FIRE, on the three ways an amount would
+  // actually be written — and proven NOT to fire on a generated id, which is the
+  // false alarm this replaced.
+  const wouldFlag = b => moneyShapes.some(re => re.test(b));
+  ok("§1 …and that test WOULD catch a real leak, three ways",
+     wouldFlag("Mabel gave $100 in memory of Arthur.")
+     && wouldFlag("Mabel gave 100.00 in memory of Arthur.")
+     && wouldFlag("Mabel gave 1,500 in memory of Arthur."));
+  ok("§1 …while ignoring an id that happens to contain the digits",
+     !wouldFlag("Reference d_1008e9fa, gift g_6221ff23."));
   ok("§1 …and it is a DRAFT, not something sent",
      (notices[0].status || "draft") !== "sent" && !notices[0].sent_at, notices[0].status);
 

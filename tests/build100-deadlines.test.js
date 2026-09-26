@@ -18,7 +18,7 @@
 // Standard scratch stack (tests/README.md).
 
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
 
 const ORG = "b100_dl", OTHER = "b100_dl2";
 const ME = "b100d@example.org", THEM = "b100d-other@example.org";
@@ -50,14 +50,14 @@ const mkFunder = (id, org, name) => q(
 // a helper that reused the module's own shiftDays could not catch it being
 // wrong. Local calendar parts, never toISOString (the BUILD-99 lesson: after
 // 8pm Eastern the UTC calendar has already turned over).
-function todayLocal() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function plusDays(n) {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+// CI #297 — ANCHORED ON THE ORG'S CIVIL TODAY, not the machine's. The previous
+// helper read the runner's own calendar parts on the assumption that the runner
+// is America/New_York, which is true on a laptop and false on a UTC CI runner:
+// at 20:30 EDT the runner's day had already turned over and every expected date
+// was one out while the server was right. `civilPlusDays` in tests/helpers.js is
+// the one of these now.
+const todayLocal = () => civilPlusDays(0);
+const plusDays = (n) => civilPlusDays(n);
 
 (async () => {
   console.log("build100-deadlines");
