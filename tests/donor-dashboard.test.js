@@ -10,7 +10,7 @@
 
 const bcrypt = require("bcryptjs");
 const http = require("http");
-const { BASE, ok, summary, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, waitFor } = require("./helpers");
 
 const ORG_M = "org_dd_m", SLUG_M = "dondash-m";
 const ORG_N = "org_dd_n", SLUG_N = "dondash-n";
@@ -45,7 +45,6 @@ function startStripeMock(port = STRIPE_MOCK_PORT) {
   });
 }
 const mailTo = (to) => mail.filter(m => m.to === to || (Array.isArray(m.to) && m.to.includes(to)));
-const settle = (ms = 600) => new Promise(r => setTimeout(r, ms));
 const tokenFrom = (m, kind) => (new RegExp(`${kind}#token=([A-Za-z0-9_-]+)`).exec(m?.html || "") || [])[1] || null;
 function cookieOf(res) {
   const m = (res.headers?.get("set-cookie") || "").match(/steward_portal=([^;]+)/);
@@ -109,7 +108,7 @@ async function fixture() {
   // account: signup + verify → links both orgs
   mail = [];
   await raw("POST", "/account/signup", { body: { email: EMAIL, password: "harperpw999", consent: true } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo(EMAIL)[0], "verify") } });
   const cookie = cookieOf(v);
   ok("account links both orgs on verify", v.body.linkedOrgs === 2, v.body);
@@ -159,7 +158,7 @@ async function fixture() {
   // ── §2.2 drill-down: the WRAPPED portal, not a fork ──────────────────────
   mail = [];
   await raw("POST", `/portal/${SLUG_M}/request-link`, { body: { email: EMAIL } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   const mlv = await raw("POST", `/portal/${SLUG_M}/verify`, { body: { token: tokenFrom(mailTo(EMAIL)[0], "verify") } });
   const mlMe = (await raw("GET", `/portal/${SLUG_M}/me`, { cookie: cookieOf(mlv) })).body;
   const acctMe = (await raw("GET", `/portal/${SLUG_M}/me`, { cookie })).body;
@@ -187,7 +186,7 @@ async function fixture() {
   // …but the standalone portal keeps working (magic link, BUILD-45 unchanged):
   mail = [];
   await raw("POST", `/portal/${SLUG_N}/request-link`, { body: { email: EMAIL } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   const nTok = tokenFrom(mailTo(EMAIL)[0], "verify");
   const nv = await raw("POST", `/portal/${SLUG_N}/verify`, { body: { token: nTok } });
   ok("the unlisted org's STANDALONE portal still works by magic link",

@@ -15,7 +15,7 @@
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const { spawn } = require("child_process");
-const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT } = require("./helpers");
+const { BASE, ok, summary, api, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, waitFor } = require("./helpers");
 
 const ORG_A = "org_da_a", SLUG_A = "donacct-a";
 const ORG_B = "org_da_b", SLUG_B = "donacct-b";
@@ -96,15 +96,15 @@ async function fixture() {
   ok("signup without consent → 400 consent_required (go-live legal posture)",
     (await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99" } })).body?.error === "consent_required");
   const s1 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "firstpass99", consent: true } });
-  await settle();
   ok("signup 200 with a neutral body", s1.status === 200 && s1.body.received === true, s1.body);
   // The signup send rides the fire-and-forget queued path behind a cost-12
-  // bcrypt hash — on a contended CI runner it can outlast one settle() (hit
-  // twice on 2026-08-16). Poll up to ~8s instead of racing a fixed wait.
-  for (let i = 0; i < 16 && mailTo(EMAIL).length === 0; i++) await settle();
+  // bcrypt hash — on a contended CI runner it can outlast a fixed wait (hit
+  // twice on 2026-08-16). FIX-1: every mail read below polls with waitFor
+  // (tests/helpers.js) for the mail it needs, never a fixed settle().
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   ok("verification email sent to the address", mailTo(EMAIL).length === 1, mailTo(EMAIL).length);
   const s2 = await raw("POST", "/account/signup", { body: { email: EMAIL, password: "differentpw1", consent: true } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 2);
   ok("second signup for the SAME email: byte-identical response (no enumeration)",
     JSON.stringify(s2.body) === JSON.stringify(s1.body) && s2.status === s1.status);
   ok("…but the email says 'you already have an account', not a second verify link",
@@ -131,11 +131,11 @@ async function fixture() {
   // unverified account failure is byte-identical too
   mail = [];
   await raw("POST", "/account/signup", { body: { email: "unverified@da46.test", password: "meantwell99", consent: true } });
-  await settle();
+  await waitFor(() => mailTo("unverified@da46.test").length >= 1);
   const unverified = await raw("POST", "/account/login", { body: { email: "unverified@da46.test", password: "meantwell99" } });
   ok("unverified-email login failure is byte-identical to the others",
     unverified.status === 401 && JSON.stringify(unverified.body) === JSON.stringify(wrongPw.body));
-  await settle();
+  await waitFor(() => mailTo("unverified@da46.test").length >= 2);
   ok("…and it quietly re-sent the verification email", mailTo("unverified@da46.test").length === 2, mailTo("unverified@da46.test").length);
 
   const login1 = await raw("POST", "/account/login", { body: { email: "CASEY@giver.test  ", password: "firstpass99" } });
@@ -156,13 +156,13 @@ async function fixture() {
   mail = [];
   const rr1 = await raw("POST", "/account/request-reset", { body: { email: EMAIL } });
   const rr2 = await raw("POST", "/account/request-reset", { body: { email: "ghost@giver.test" } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   ok("reset request: identical response for known and unknown email",
     JSON.stringify(rr1.body) === JSON.stringify(rr2.body) && rr1.status === rr2.status);
   ok("…and only the real account got an email", mailTo(EMAIL).length === 1 && mailTo("ghost@giver.test").length === 0);
   const rTok1 = tokenFrom(mailTo(EMAIL)[0], "reset");
   await raw("POST", "/account/request-reset", { body: { email: EMAIL } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 2);
   const rTok2 = tokenFrom(mailTo(EMAIL)[1], "reset");
   ok("a re-request SUPERSEDES the prior token", (await raw("POST", "/account/reset", { body: { token: rTok1, password: "should-not-work1" } })).status === 400);
   const rs = await raw("POST", "/account/reset", { body: { token: rTok2, password: "thirdpass999" } });
@@ -177,11 +177,11 @@ async function fixture() {
   // ── email change: confirmed at the OLD address; new address must verify ──
   mail = [];
   await raw("POST", "/account/change-email", { cookie: c3, body: { email: "casey-new@da46.test" } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   ok("the change-confirmation goes to the OLD address", mailTo(EMAIL).length === 1 && mailTo("casey-new@da46.test").length === 0, mail.map(m => m.to));
   const ecTok = tokenFrom(mailTo(EMAIL)[0], "confirm-email");
   const ec = await raw("POST", "/account/change-email/confirm", { body: { token: ecTok } });
-  await settle();
+  await waitFor(() => mailTo("casey-new@da46.test").length >= 1);
   ok("confirm at old address flips the email", ec.status === 200, ec.body);
   ok("…kills every session", (await raw("GET", "/account/me", { cookie: c3 })).status === 401);
   ok("…and the NEW address must verify from its own inbox before anything links",
@@ -197,7 +197,7 @@ async function fixture() {
   // ── magic link and password mint the SAME session (account-stamped) ──────
   mail = [];
   await raw("POST", `/portal/${SLUG_A}/request-link`, { body: { email: EMAIL } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   const mlTok = /verify#token=([A-Za-z0-9_-]+)/.exec(mailTo(EMAIL)[0]?.html || "")?.[1];
   ok("magic link still sends for the org portal (BUILD-45 unchanged)", !!mlTok);
   const mlv = await raw("POST", `/portal/${SLUG_A}/verify`, { body: { token: mlTok } });
@@ -225,7 +225,7 @@ async function fixture() {
   await q(`UPDATE donors SET email='casey-new@da46.test' WHERE id='d_daA_c'`);
   mail = [];
   await raw("POST", `/portal/${SLUG_A}/request-link`, { body: { email: "casey-new@da46.test" } });
-  await settle();
+  await waitFor(() => mailTo("casey-new@da46.test").length >= 1);
   const mlTok2 = /verify#token=([A-Za-z0-9_-]+)/.exec(mailTo("casey-new@da46.test")[0]?.html || "")?.[1];
   const mlv2 = await raw("POST", `/portal/${SLUG_A}/verify`, { body: { token: mlTok2 } });
   const mlCookie2 = cookieOf(mlv2);
@@ -237,7 +237,7 @@ async function fixture() {
   sinkServer.close(); await settle(300); // provider down
   const [{ c: failsBefore }] = await q(`SELECT COUNT(*)::int c FROM notification_failures WHERE org_id='donor-network'`);
   await raw("POST", "/account/request-reset", { body: { email: "casey-new@da46.test" } });
-  await settle(800);
+  await waitFor(async () => (await q(`SELECT COUNT(*)::int c FROM notification_failures WHERE org_id='donor-network'`))[0].c > failsBefore);
   const [{ c: failsAfter }] = await q(`SELECT COUNT(*)::int c FROM notification_failures WHERE org_id='donor-network'`);
   ok("a failed reset email is QUEUED, not lost (notification_failures row)", failsAfter === failsBefore + 1, { failsBefore, failsAfter });
   const health = await raw("GET", "/health");
@@ -245,7 +245,7 @@ async function fixture() {
   mail = []; sinkServer = await startSink(); // provider back
   const adminTok = (await api("POST", "/auth/login", null, { email: "da-admin@test.local", password: "loadtest1234" })).body.token;
   const retry = await api("POST", "/admin/notifications/retry", adminTok, { force: true });
-  await settle(500);
+  await waitFor(() => mailTo("casey-new@da46.test").length >= 1);
   ok("the retry sweep delivers the once-failed reset email", retry.status === 200 && mailTo("casey-new@da46.test").length >= 1, mail.map(m => m.subject));
   const [{ c: failsFinal }] = await q(`SELECT COUNT(*)::int c FROM notification_failures WHERE org_id='donor-network'`);
   ok("…and clears the failure row", failsFinal === failsBefore, { failsFinal, failsBefore });
@@ -314,7 +314,7 @@ async function fixture() {
     // magic-link session on the flag-off server carries NO account stamp
     mail = [];
     await raw("POST", `/portal/${SLUG_A}/request-link`, { base: "http://localhost:5611", body: { email: "casey-new@da46.test" } });
-    await settle(700);
+    await waitFor(() => mailTo("casey-new@da46.test").length >= 1);
     const offTok = /verify#token=([A-Za-z0-9_-]+)/.exec(mailTo("casey-new@da46.test")[0]?.html || "")?.[1];
     const offV = await raw("POST", `/portal/${SLUG_A}/verify`, { base: "http://localhost:5611", body: { token: offTok } });
     ok("flags off: magic-link verify still works (BUILD-45 path untouched)", offV.status === 200, offV.status);

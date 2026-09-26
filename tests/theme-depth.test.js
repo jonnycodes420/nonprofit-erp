@@ -17,7 +17,7 @@ const bcrypt = require("bcryptjs");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, waitFor } = require("./helpers");
 const { normalizeTint, tintPasses, normalizeAccent, contrast, INK, MUTED_TEXT } = require("../branding");
 const { readSource } = require("../scripts/lib/readSource");
 
@@ -39,7 +39,6 @@ function startSink(port = SINK_PORT) {
   });
 }
 const mailTo = (to) => mail.filter(m => m.to === to || (Array.isArray(m.to) && m.to.includes(to)));
-const settle = (ms = 600) => new Promise(r => setTimeout(r, ms));
 const tokenFrom = (m, kind) => (new RegExp(`${kind}#token=([A-Za-z0-9_-]+)`).exec(m?.html || "") || [])[1] || null;
 function cookieOf(res) {
   const m = (res.headers?.get("set-cookie") || "").match(/steward_portal=([^;]+)/);
@@ -164,7 +163,7 @@ async function fixture() {
   // ── 4) donor dashboard: per-org card themes, scoped by construction ──────
   mail = [];
   await raw("POST", "/account/signup", { body: { email: EMAIL, password: "rowanpw999", consent: true } });
-  await settle();
+  await waitFor(() => mailTo(EMAIL).length >= 1);
   const v = await raw("POST", "/account/verify", { body: { token: tokenFrom(mailTo(EMAIL)[0], "verify") } });
   const cookie = cookieOf(v);
   ok("account links the two donor-record orgs on verify", v.body.linkedOrgs === 2, v.body);
