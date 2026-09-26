@@ -14,8 +14,9 @@ const fs = require("fs");
 const path = require("path");
 const { ok, summary } = require("./helpers");
 const { DONATION_WEBHOOK_EVENTS, BILLING_WEBHOOK_EVENTS, webhookEventDiff } = require("../stripeEvents");
+const { readSource } = require("../scripts/lib/readSource");
 
-const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+const src = readSource("server.js");
 
 // The event.type literals the handler mounted at `route` dispatches on, taken
 // from the block between that app.post(...) and the NEXT app.post(...).

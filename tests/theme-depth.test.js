@@ -19,6 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 const { normalizeTint, tintPasses, normalizeAccent, contrast, INK, MUTED_TEXT } = require("../branding");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG_A = "org_td_a", SLUG_A = "themedepth-a";
 const ORG_B = "org_td_b", SLUG_B = "themedepth-b";
@@ -187,7 +188,7 @@ async function fixture() {
     && followC.ytd === undefined && followC.lifetime === undefined && followC.lastGiftDate === undefined, followC);
 
   // ── 5) client/server enum parity (the injection-surface seam) ────────────
-  const serverSrc = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const clientSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "lib", "portalTheme.js"), "utf8");
   const sPair = (serverSrc.match(/PORTAL_TYPE_PAIRINGS = \[([^\]]+)\]/) || [])[1];
   const sCard = (serverSrc.match(/PORTAL_CARD_STYLES = \[([^\]]+)\]/) || [])[1];

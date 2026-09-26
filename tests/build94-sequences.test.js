@@ -17,6 +17,7 @@ const path = require("path");
 const bcrypt = require("bcryptjs");
 const http = require("http");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 // The scratch stack DOES set RESEND_API_KEY, so the engine really calls the
 // provider. Without a sink on :5602 every send fails — correctly, and the
@@ -296,7 +297,7 @@ const advanceDays = (n, seqId) =>
   console.log("— Steward writes nothing to a donor —");
   const SEQSRC = fs.readFileSync(path.join(root, "shared/sequenceShape.js"), "utf8");
   ok("the sequence module calls no model", !/anthropic|claude|askClaude|generateDraft/i.test(SEQSRC));
-  const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const engine = serverSrc.slice(serverSrc.indexOf("async function processTrackedSequences"),
                                  serverSrc.indexOf("async function advanceEnrollment"));
   ok("the tracked send path calls no model either",

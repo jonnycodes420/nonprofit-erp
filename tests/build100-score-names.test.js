@@ -24,11 +24,12 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const haveDeps = () => { try { require(path.join(PW, "node_modules", "playwright")); } catch { return false; } return fs.existsSync(DIST); };
+const { readSource } = require("../scripts/lib/readSource");
 const SRC = path.join(__dirname, "..", "client", "src", "components");
 
 (async () => {
   console.log("build100-score-names");
-  const donors = fs.readFileSync(path.join(SRC, "Donors.jsx"), "utf8");
+  const donors = readSource(path.join(SRC, "Donors.jsx"));
 
   console.log("\n— §1 · the number says what it is —");
   ok('the figure is labelled "Giving strength"',
@@ -55,7 +56,7 @@ const SRC = path.join(__dirname, "..", "client", "src", "components");
   for (const f of ["Donors.jsx", "Dashboard.jsx", "Reports.jsx", "Pipeline.jsx"]) {
     const p = path.join(SRC, f);
     if (!fs.existsSync(p)) continue;
-    const src = fs.readFileSync(p, "utf8");
+    const src = readSource(p);
     // Rendered text only: a JSX text node or a string label, not an identifier
     // like WEALTH_SCORE_DEFINITION or an apiFetch("/donors/:id/wealth-score").
     const rendered = src.match(/>\s*Wealth Score\s*</gi) || [];

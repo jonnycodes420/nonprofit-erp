@@ -19,6 +19,7 @@ const { ok, summary, api, q, closeDb, BASE } = require("./helpers");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
 function signStripePayload(payload) {
@@ -165,7 +166,7 @@ async function ledgerReadiness(orgId) {
   // ── §3 totality — every org-creation site provisions, by construction ────
   console.log("\n§3 org-creation sites are classified (a new path fails until it provisions)");
   {
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    const src = readSource("server.js");
     const sites = [...src.matchAll(/INSERT INTO orgs/g)].length;
     // THE FOUR DOORS AN ORGANISATION CAN COME THROUGH, as of BUILD-90:
     //   1. POST /auth/register          — legacy self-serve

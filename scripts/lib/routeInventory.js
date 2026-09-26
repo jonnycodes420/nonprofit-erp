@@ -7,6 +7,7 @@
 // route list; the router is the authority, the source scan only annotates it.
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("./readSource");
 
 const ROOT = path.join(__dirname, "..", "..");
 
@@ -35,7 +36,13 @@ function walkRouter(app) {
   // Express 5 exposes the router as the `app.router` getter; Express 4 as
   // `app._router`. Take whichever exists — the layer shape is the same.
   const router = (app && app._router) || (app && app.router) || null;
-  const stack = (router && router.stack) || [];
+  // FIX-1: a product's routes live on a Router mounted at "/" (routes/<product>.js),
+  // which is the same as declaring them on the app at that place. Walk into those,
+  // in stack order. A router mounted on a PATH (/api/migc) stays out, as before.
+  const flatten = st => st.flatMap(l =>
+    !l.route && l.name === "router" && (l.slash === true || (l.regexp && l.regexp.fast_slash)) && l.handle && l.handle.stack
+      ? flatten(l.handle.stack) : [l]);
+  const stack = flatten((router && router.stack) || []);
   for (const layer of stack) {
     if (!layer.route) continue; // app.use middleware — recorded separately below
     const p = layer.route.path;
@@ -128,7 +135,7 @@ function loadClientFiles() {
 }
 
 function buildInventory(app) {
-  const serverSrc = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const routes = walkRouter(app);
   const paramMap = sourceParamMap(serverSrc);
   const clientFiles = loadClientFiles();

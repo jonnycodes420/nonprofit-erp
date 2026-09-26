@@ -25,6 +25,7 @@ const path = require("path");
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ACTOR_TABLES = ["gifts", "donors", "pledges", "tasks", "campaigns", "grants", "events",
   "households", "opportunities", "receipts", "giving_pages", "planned_gifts",
@@ -65,7 +66,7 @@ function scanActorStamps(src) {
 
   // ── §1 · source: total classification ──────────────────────────────────────
   console.log("\n— §1 · every INSERT into an actor table carries created_by —");
-  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   const missing = scanActorStamps(src);
   ok(`unstamped, unclassified inserts in server.js: ${missing.length}`, missing.length === 0, missing.slice(0, 8));
 

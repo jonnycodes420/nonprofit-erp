@@ -37,6 +37,7 @@ const path = require("path");
 const { execSync } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, textMatch, civilToday } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const iso = d => new Date(d).toISOString().slice(0, 10);
 // Anchored to the ORG'S civil today, not UTC's. `daysAgo(0)` used to be
@@ -105,7 +106,7 @@ function chunksOf(line) {
   const offenders = [];
   for (const rel of files) {
     let lines;
-    try { lines = fs.readFileSync(path.join(repoRoot, rel), "utf8").split("\n"); } catch { continue; }
+    try { lines = readSource(path.join(repoRoot, rel)).split("\n"); } catch { continue; }
     lines.forEach((raw, i) => {
       const line = raw.replace(/\/\/.*$/, "");                 // a comment may name the ban
       if (/^\s*(\*|\/\*)/.test(raw)) return;                    // block-comment body

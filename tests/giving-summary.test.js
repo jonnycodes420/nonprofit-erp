@@ -15,12 +15,13 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const CLIENT = path.join(__dirname, "..", "client", "src");
 const read = p => fs.readFileSync(path.join(CLIENT, p), "utf8");
 const PORTAL = read("pages/Portal.jsx");
 const DASH = read("pages/GivingDashboard.jsx");
-const SERVER = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+const SERVER = readSource("server.js");
 
 // Donor-facing date renders must never slice an ISO string to display it.
 // (A yyyy-only `.slice(0,4)` for "giving since 2019" is fine — different width.)

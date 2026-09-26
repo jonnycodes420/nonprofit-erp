@@ -24,6 +24,7 @@
 
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_sa93", OTHER = "org_sa93b";
 const SUPER = "sa93super@example.org";        // the only super-admin
@@ -132,7 +133,7 @@ const isActive = async (id) =>
   // tidy-up and a locked console. What IS asserted is that it exists and is
   // reachable in code, so a refactor cannot silently drop it.
   const fs = require("fs"), path = require("path");
-  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   const route = src.slice(src.indexOf('app.delete("/users/:id"'), src.indexOf('app.delete("/users/:id"') + 3000);
   ok("the last-super-admin rule is present in the route", /last_super_admin/.test(route));
   ok("...and counts only ACTIVE super-admins other than the target",

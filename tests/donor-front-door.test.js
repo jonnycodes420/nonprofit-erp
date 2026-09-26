@@ -25,6 +25,7 @@ const fs = require("fs");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const YEAR = new Date().getFullYear();
 const L = { id: "org_dfd_l", slug: "dfd-listed", name: "Front Door Listed" };
@@ -167,7 +168,7 @@ async function fixture() {
   // BUILD-65 Part 5: the renderer no longer prints an account CTA in the PDF
   // footer — the footer is the legal tax line only (source guard, since PDF
   // text streams are compressed).
-  const serverSrc = fs.readFileSync("server.js", "utf8");
+  const serverSrc = readSource("server.js");
   // pdfkit's `link:` option is the PDF-footer-specific marker (the EMAIL CTA,
   // which we keep, uses an <a href> — a different mechanism).
   ok("renderReceiptPdf footer no longer renders an account CTA link",

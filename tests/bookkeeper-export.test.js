@@ -35,6 +35,7 @@ const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const money = require("../money");
 const orgTime = require("../orgTime");
+const { readSource } = require("../scripts/lib/readSource");
 
 const A = "org_test_b87bk", B = "org_test_b87bk2";
 const TABLES = ["imports", "receipts", "pledges", "donor_relationships", "interactions", "gifts",
@@ -268,7 +269,7 @@ async function reset() {
   // becomes a 409, not a file. Driven through the real CSV path.
   const refusedRoute = await api("GET", `/reports/bookkeeper?${range}&format=csv&__unused=1`, tok);
   ok("a sound export still becomes a file", refusedRoute.status === 200 && /Gift date/.test(refusedRoute.text));
-  const srcServer = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const srcServer = readSource("server.js");
   ok("the CSV branch refuses BEFORE reportToCsv is called — no byte is written",
      srcServer.indexOf("export_unbalanced") < srcServer.indexOf("const { headers, rows } = reportToCsv(key, data);"),
      { refuse: srcServer.indexOf("export_unbalanced"), write: srcServer.indexOf("const { headers, rows } = reportToCsv(key, data);") });

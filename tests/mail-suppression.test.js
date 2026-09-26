@@ -28,6 +28,7 @@ const crypto = require("crypto");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -90,7 +91,7 @@ const settle = (ms = 700) => new Promise(r => setTimeout(r, ms));
 
   // ── §1 the policy is the ONE decision point (source) ─────────────────────
   console.log("\n§1 one suppressibility decision point, typed");
-  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   ok("DONOR_MAIL_POLICY classification table exists", /DONOR_MAIL_POLICY\s*=/.test(src), null);
   {
     // Raw suppression probe callable ONLY from the policy layer: definition +

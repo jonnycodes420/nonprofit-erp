@@ -33,6 +33,7 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_inc01";          // ordinary org, mail on
 const DEMO = "org_inc02";         // marked as fiction
@@ -98,7 +99,7 @@ const mkDonor = async (id, org, email, isSample) =>
   // the rule here: a test that reimplements the gate proves only that the
   // test agrees with itself.
   console.log("\n— §1 · a made-up person has no mailbox —");
-  const src = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
 
   ok("donorMailDecision reads is_sample off the donor row",
     /bool_or\(is_sample\)\s+AS\s+sample/.test(src), null);

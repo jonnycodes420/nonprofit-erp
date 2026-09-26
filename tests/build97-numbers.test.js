@@ -38,6 +38,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW_DIR = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const haveBrowser = () => { try { require(path.join(PW_DIR, "node_modules", "playwright")); } catch { return false; } return fs.existsSync(DIST); };
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
 
@@ -188,7 +189,7 @@ const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, t
   // The component must READ the registry, never hold a second copy. A grep for
   // the sentence text in the components would pass on a copy; a grep for the
   // registry CALL is what proves there is only one.
-  const donorsSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Donors.jsx"), "utf8");
+  const donorsSrc = readSource("client/src/components/Donors.jsx");
   const pipeSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Pipeline.jsx"), "utf8");
   const recSrc = fs.readFileSync(path.join(root, "client", "src", "components", "RecurringGiving.jsx"), "utf8");
   ok("the donor profile reads its sentences from the registry",
@@ -244,7 +245,7 @@ const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, t
   // real one moves and this table does not, the check starts refusing the
   // product's own sentences.
   const driftEngine = require("../drift.js");
-  const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const val = (name) => (TH.THRESHOLDS.find(t => t.name === name) || {}).value;
   ok("MIN_OVERDUE_DAYS still matches drift.js", val("MIN_OVERDUE_DAYS") === driftEngine.DRIFT.MIN_OVERDUE_DAYS,
      { table: val("MIN_OVERDUE_DAYS"), live: driftEngine.DRIFT.MIN_OVERDUE_DAYS });

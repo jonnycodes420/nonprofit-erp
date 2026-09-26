@@ -46,6 +46,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW_DIR = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const haveBrowser = () => { try { require(path.join(PW_DIR, "node_modules", "playwright")); } catch { return false; } return fs.existsSync(DIST); };
+const { readSource } = require("../scripts/lib/readSource");
 
 const CHILD = ["agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
   "interactions", "threads", "tasks", "gifts", "donors", "users",
@@ -72,7 +73,7 @@ const mkDonor = (id, org, name, opts = {}) => q(
 (async () => {
   console.log("build97-agent");
   const A = await import("../shared/agentShape.js");
-  const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
 
   await reset();
   await mkOrg(ORG, "Her Organisation"); await mkOrg(OTHER, "Somebody Else");

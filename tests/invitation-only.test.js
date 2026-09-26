@@ -29,6 +29,7 @@
 // the price on it is real.
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 const root = path.join(__dirname, "..");
 const FRONT = process.env.FRONT || "http://localhost:4173";
 
@@ -52,7 +53,7 @@ const PUBLIC = ["pages/Landing.jsx", "pages/Invitation.jsx", "pages/InvitePage.j
   .filter(p => fs.existsSync(path.join(root, "client/src", p)));
 const priced = PUBLIC.filter(p => /\$149|149\/month/.test(fs.readFileSync(path.join(root, "client/src", p), "utf8")));
 ok("no public page quotes $149 — the price does not exist", priced.length === 0, priced);
-const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const server = readSource("server.js");
 ok("…and neither does anything the server sends, nor any comment that would be copied from",
    (server.match(/\$149/g) || []).length === 0, (server.match(/.{60}\$149.{60}/g) || []).map(s => s.slice(0, 120)));
 
@@ -85,7 +86,7 @@ ok("sign-in's door is the invitation, not a self-serve signup",
 const DEC31_ALLOWED = {};
 const dec31 = [];
 for (const rel of [...PUBLIC.map(p => "client/src/" + p), "server.js"]) {
-  const src = fs.readFileSync(path.join(root, rel), "utf8");
+  const src = readSource(path.join(root, rel));
   if (/December 31, 2026/.test(src)) dec31.push(rel);
 }
 ok("no surface says \"December 31, 2026\" any more — the survivors list is empty",

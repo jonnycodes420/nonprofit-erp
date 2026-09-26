@@ -20,6 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b86", ORG2 = "org_b86two";
 const root = path.join(__dirname, "..");
@@ -218,7 +219,7 @@ const root = path.join(__dirname, "..");
      /className="thread-note"/.test(dash) && !/className="home-note"/.test(dash));
   ok("the board says what it is and as of when", /Numbers a board can read/.test(dash));
 
-  const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");
+  const app = readSource("client/src/App.jsx");
   ok("the board is a NEW tab id — `dashboard` keeps its route, its label and every deep link",
      /\{id:"board",label:"Dashboards"/.test(app) && /\{id:"dashboard",label:"Home"/.test(app));
   ok("Home renders the section surface; the board tab renders the four dashboards",

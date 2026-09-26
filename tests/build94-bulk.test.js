@@ -11,6 +11,7 @@ const crypto = require("crypto");
 const http = require("http");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b94b", ORG_OTHER = "org_b94b2";
 const captured = [];
@@ -226,7 +227,7 @@ const waitFor = async (fn, ms = 8000) => {
 
   // ── nothing reads the flag from a gift row (the messy-2500 lesson) ──────
   const fs = require("fs");
-  const src = fs.readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   ok("the unsubscribe flags are read from the PERSON, never off a gift",
     !/FROM gifts[\s\S]{0,400}?do_not_email/i.test(src) && !/g\.do_not_email|gifts\.do_not_email/i.test(src));
 

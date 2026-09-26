@@ -44,6 +44,7 @@
 
 const fs = require("fs"), path = require("path");
 const { ok, summary } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 const root = path.join(__dirname, "..");
 
 async function tryImport(rel) {
@@ -116,7 +117,7 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
   const broad = has(A, "scopeFromInstruction")
     ? A.scopeFromInstruction("Draft a note to everyone who gave last year", PEOPLE) : "missing";
   ok("§2 an instruction naming nobody is whole-org (null), not a guess", broad === null, JSON.stringify(broad));
-  const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const server = readSource("server.js");
   ok("§2 the run no longer reads the whole org unconditionally",
     !/const people = await agentReadPeople\(orgId\);/.test(server));
 

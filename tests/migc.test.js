@@ -15,6 +15,7 @@ const { ok, summary, q, closeDb, BASE, SINK_PORT } = require("./helpers");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const CONTACT_TO = process.env.MIGC_CONTACT_EMAIL || "migc-contact@example.org";
 const MARK = "migc-suite.example"; // every row this suite creates uses this email domain
@@ -141,7 +142,7 @@ async function post(pathname, body, headers = {}) {
   ok("both POST routes are rate-limited", /post\("\/contact", contactLimiter/.test(src) && /post\("\/subscribe", subscribeLimiter/.test(src));
   ok("no hardcoded notification address", !/@missionincrease\.org|@gmail\.com/.test(src));
   ok("notification target comes from env", src.includes("MIGC_CONTACT_EMAIL") && src.includes("MIGC_EMAIL_FROM"));
-  const serverSrc = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   ok("router mounted before the SaaS CORS stack", serverSrc.indexOf('app.use("/api/migc"') < serverSrc.indexOf("app.use(cors("), serverSrc.indexOf('app.use("/api/migc"'));
 
   // ── cleanup ──

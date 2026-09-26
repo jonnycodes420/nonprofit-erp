@@ -22,9 +22,10 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
-const read = p => fs.readFileSync(path.join(root, p), "utf8");
+const read = p => readSource(path.join(root, p));
 const ORG = "org_b92_src", ADMIN = "b92src@example.org";
 
 // The same error sentence on two different sources: the page must say it once.

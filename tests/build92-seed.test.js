@@ -41,6 +41,7 @@ const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
 const { ok, summary, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ROOT = path.join(__dirname, "..");
 const DB_URL = process.env.DATABASE_URL || "postgresql://steward@localhost:5544/steward_loadtest";
@@ -129,7 +130,7 @@ function readParens(src, openIdx) {
 // `program_grants`, and the orphaned three-column target resolves against
 // neither.
 function scanConflictTargets(file) {
-  const src = fs.readFileSync(path.join(ROOT, file), "utf8");
+  const src = readSource(path.join(ROOT, file));
   const inserts = [...src.matchAll(/INSERT\s+INTO\s+([a-z_][a-z0-9_]*)/gi)]
     .map(m => ({ idx: m.index, table: m[1].toLowerCase() }));
   const out = [];

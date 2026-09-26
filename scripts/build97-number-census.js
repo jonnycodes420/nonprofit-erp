@@ -36,6 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("./lib/readSource");
 
 const root = path.join(__dirname, "..");
 const SRC = path.join(root, "client", "src");
@@ -170,7 +171,7 @@ const isNoise = (line) => {
 function scanFile(rel) {
   const full = path.join(SRC, rel);
   if (!fs.existsSync(full)) return null;
-  const lines = fs.readFileSync(full, "utf8").split("\n");
+  const lines = readSource(full).split("\n");
   const sites = [];
   lines.forEach((line, i) => {
     if (isNoise(line)) return;

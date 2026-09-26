@@ -12,6 +12,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b94w";
 const root = path.join(__dirname, "..");
@@ -93,7 +94,7 @@ async function fixture() {
     /box: "0 0 \d+ \d+"/.test(block) && (block.match(/d: "M/g) || []).length === 1);
 
   console.log("— and the signup path is the one thing that opts IN —");
-  const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const srv = readSource("server.js");
   ok("register-org inserts welcomed_at NULL on purpose",
     /INSERT INTO users \(id, org_id, email, password_hash, name, role, welcomed_at\) VALUES \(\?,\?,\?,\?,\?,\?,NULL\)/.test(srv));
   const dbsrc = fs.readFileSync(path.join(root, "db.js"), "utf8");

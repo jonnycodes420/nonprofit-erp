@@ -17,6 +17,7 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "b100_doc", OTHER = "b100_doc2";
 const ME = "b100doc@example.org", THEM = "b100doc-other@example.org";
@@ -101,7 +102,7 @@ async function raw(url) {
      G.DOC_URL_TTL_MS === 30 * 60 * 1000, G.DOC_URL_TTL_MS);
   // THE CAP AND THE BODY PARSER ARE ONE DECISION. A guard that reads only one
   // of them cannot catch the BUILD-96 defect this comment names.
-  const serverSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const parserLine = /grants\\\/\[\^\/\]\+\\\/documents\$[\s\S]{0,200}?limit: "(\d+)mb"/.exec(serverSrc);
   ok("§1 the document route has its OWN body-parser limit", !!parserLine, parserLine && parserLine[1]);
   ok("§1 …and it clears the decoded cap plus base64 overhead",
