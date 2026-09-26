@@ -258,6 +258,7 @@ async function capture() {
     /t==="pipeline"\)\{[^}]*t="fundraising"/.test(app.replace(/\s+/g, "")) || /if\(t==="pipeline"\)\{/.test(app));
   ok("§2 the App renders no stand-alone Pipeline tab", !/tab==="pipeline"&&<Pipeline/.test(app));
   ok("§2 /dashboard?fr=<id> deep-links into Fundraising", /params\.get\("fr"\)/.test(app));
+  ok("§2 ?fr=pipeline goes through navigateTo(\"pipeline\"), the old sidebar's own call", /params\.get\("fr"\)==="pipeline"\)navigateTo\("pipeline"\)/.test(app));
   const fr = fs.readFileSync(path.join(root, "client/src/components/Fundraising.jsx"), "utf8");
   ok("§2 Fundraising reads its tabs from the one map", /from "\.\.\/lib\/fundraisingSections"/.test(fr) && /FR_SECTIONS/.test(fr));
   ok("§2 the Pipeline part carries the Team gate for Core", /TEAM_GATED\.has\("pipeline"\)/.test(fr) && /LockGlyph/.test(fr));
@@ -307,7 +308,7 @@ async function capture() {
   await page.locator('[data-fr-part="pipeline"]').first().click({ timeout: 3000 }).catch(() => {});
   await settle(page);
   ok("§3 the Pipeline part opens the one board inside Major gifts", (await selected()).view === "pipeline"
-    && /Open asks/.test(await page.locator(".app-content").innerText()));
+    && /Open asks/i.test(await page.locator(".app-content").innerText()));
   await page.locator('[data-fr-section="moneyin"]').first().click({ timeout: 3000 }).catch(() => {});
   await settle(page);
   ok("§3 the Money in tab opens on Deposits", (await selected()).view === "deposits", await selected());
@@ -323,6 +324,18 @@ async function capture() {
   await settle(page);
   const sidebarPipeline = await page.locator(".app-sidebar button", { hasText: /Pipeline$/ }).count();
   ok("§2 the sidebar has no Pipeline item", sidebarPipeline === 0, sidebarPipeline);
+  // The Team gate: on Core the Pipeline part carries the padlock the sidebar
+  // item used to; on Team it does not.
+  const lockOn = async () => {
+    await page.goto(`${APP}/dashboard?fr=majorgifts`, { waitUntil: "networkidle" });
+    await settle(page);
+    return page.locator('[data-fr-part="pipeline"] svg').count();
+  };
+  ok("§2 Team: no padlock on the Pipeline part", (await lockOn()) === 0);
+  await q(`UPDATE orgs SET plan='core' WHERE id=$1`, [ORG]);
+  ok("§2 Core: the padlock the sidebar's Pipeline carried is on the Pipeline part", (await lockOn()) === 1);
+  ok("§2 …and only there (no other part is Team-gated)", (await page.locator("[data-fr-part] svg").count()) === 1);
+  await q(`UPDATE orgs SET plan='team' WHERE id=$1`, [ORG]);
   ok("§3 no page errors on the way", errs.length === 0, errs);
   await page.close();
 

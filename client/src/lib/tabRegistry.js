@@ -17,7 +17,6 @@ const TABS=[
   // would have been ~40 call sites for no user-visible gain.
   {id:"board",label:"Dashboards",icon:"▤"},
   {id:"donors",label:"Donors",icon:"♦"},
-  {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
@@ -40,7 +39,6 @@ const BOTTOM_TABS=[
 ];
 const MORE_TABS=[
   {id:"board",label:"Dashboards",icon:"▤"},
-  {id:"pipeline",label:"Pipeline",icon:"◫"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
@@ -66,8 +64,12 @@ const MORE_TABS=[
 // MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
 // and four slots is a different constraint from a 220px rail.
 const PRIMARY_NAV=["dashboard","board","donors","fundraising","reports"];
-const MORE_NAV=["pipeline","grants","communications","tasks","workflows","finance","portal"];
+const MORE_NAV=["grants","communications","tasks","workflows","finance","portal"];
 const NAV_MORE_KEY="steward_nav_more";
+// FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →
+// Major gifts (App.jsx's navigateTo sends every "pipeline" there). The gate
+// did not move: the Pipeline part inside Major gifts reads this same Set, so
+// a Core org sees the lock where the board now lives.
 const TEAM_GATED=new Set(["pipeline"]);
 // BUILD-88a A.3 — FINANCE IS BEHIND THE TEAM FLAG. Cowork's recommendation,
 // and Jonathan's to overturn in one line by emptying this set: a ledger, a

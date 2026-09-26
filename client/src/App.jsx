@@ -18,7 +18,6 @@ import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
 import { Workflows } from "./components/Workflows";
-import { Pipeline } from "./components/Pipeline";
 import { Settings } from "./components/Settings";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
@@ -179,6 +178,10 @@ function AppShell() {
     // deep link to Finance from a Core org lands on Home, never on a screen
     // whose nav entry it cannot see.
     if(planTierOf(billing)==="core"&&CORE_HIDDEN_TABS.has(t))t="dashboard";
+    // FIX-1 §B — the Pipeline is no longer a tab: it folded into Fundraising →
+    // Major gifts. Every navigateTo("pipeline") (Home's portfolio card, an older
+    // link) lands on that part, carrying its scope.
+    if(t==="pipeline"){t="fundraising";opts={...(opts||{}),frSection:"pipeline"};}
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -190,7 +193,7 @@ function AppShell() {
     // then making the user hunt for the fix is half a fix.
     setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
-    setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
+    setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
@@ -216,6 +219,14 @@ function AppShell() {
     // that opens the report and changes nothing.
     if(params.get("report")){
       navigateTo("reports",{savedReport:params.get("report")});
+      window.history.replaceState({},"","/dashboard");
+    }
+    // FIX-1 §B — /dashboard?fr=<id> opens Fundraising on that section or part.
+    // Any old sub-tab id works, and `pipeline` goes through navigateTo("pipeline")
+    // exactly as the old sidebar item did. A GET that changes nothing.
+    if(params.get("fr")){
+      if(params.get("fr")==="pipeline")navigateTo("pipeline");
+      else navigateTo("fundraising",{frSection:params.get("fr")});
       window.history.replaceState({},"","/dashboard");
     }
     if(params.get("stripe_connected")==="true"){
@@ -614,8 +625,7 @@ function AppShell() {
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
-      {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
-      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section}/>}
+      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} isCoreTier={isCoreTier}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
       {/* BUILD-86 C.3 — BOARD MANAGEMENT IS REMOVED. It was deprioritised out of

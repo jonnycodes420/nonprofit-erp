@@ -115,7 +115,9 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
     const tabs = width >= 1000
       // BUILD-86 — "Dashboard" is the board surface, a real screen of its own
       // and therefore in the empty-org sweep like every other tab.
-      ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
+      // FIX-1 §B — "Pipeline" is no longer a sidebar item (it folded into
+      // Fundraising → Major gifts), so there is no nav button to sweep.
+      ? ["Home", "Dashboards", "Donors", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
     // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,
