@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
-import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal } from "./shared";
+import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal, LockGlyph } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { MembersView } from "./Memberships";
@@ -12,12 +12,18 @@ import { textToStory, storyToText } from "../lib/storyBlocks";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 import { errorMessage } from "../lib/domainError";
+import { Pipeline } from "./Pipeline";
+import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
+import { TEAM_GATED } from "../lib/tabRegistry";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
 // (/fundraising/*) — raised totals are always SUM(gifts), never a stored
 // counter, so a thermometer can't drift from reality. Five-color palette:
 // gold = on-track/primary, terracotta = behind, greens = neutral/positive.
+
+// The Team plan's padlock, the one the sidebar used for the Pipeline.
+const lockIcon = color => LockGlyph({ size: 10, color });
 
 const PACE_META = {
   met:      { label: "Goal reached",  color: T.gold,       bg: "#faf5e6" },
@@ -77,11 +83,18 @@ function daysLeftText(dl) {
   return `${dl} days left`;
 }
 
-export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
+export function Fundraising({ data, isReadOnly, onNavigate, initialSection, initialScope, isCoreTier }) {
   // BUILD-57 — deep-linkable (Home's Recurring tab lands on the recurring
   // section via navigateTo("fundraising",{frSection:"recurring"})); consumed
   // on mount only, navNonce remounts like the other intent tabs.
-  const [subtab, setSubtab] = useState(initialSection || "overview");
+  // FIX-1 §B — the id may be any OLD sub-tab id, the sidebar's `pipeline`, or
+  // one of the four section ids; resolveFr() turns it into the section and the
+  // part inside it (lib/fundraisingSections.js holds the one map).
+  const start = resolveFr(initialSection);
+  const [section, setSection] = useState(start.section);
+  // The part each section last had open, so switching tabs and back returns
+  // you to where you were rather than to the top of the section.
+  const [partOf, setPartOf] = useState({ [start.section]: start.part });
   const [overview, setOverview] = useState(null);
   const [campaigns, setCampaigns] = useState([]);
   const [pages, setPages] = useState([]);
@@ -101,36 +114,22 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
   };
   useEffect(() => { load(); }, []);
 
-  const SUBTABS = [
-    { id: "overview", label: "Overview" },
-    // BUILD-88b B.1 — the deposit sheet. The brief calls this surface "Gifts";
-    // no tab of that name exists, and Fundraising is where money-in lives
-    // (Overview, Campaigns, Giving Pages, Recurring, Funds), so it lives here.
-    { id: "deposits", label: "Deposits" },
-    // BUILD-98 (switch) Part 2 — the gifts nobody has thanked, and the letters.
-    { id: "acknowledgments", label: "Acknowledgments" },
-    // BUILD-98 (switch) Part 4 — the donor side of an event.
-    { id: "events", label: "Events" },
-    // BUILD-99 Part 5 — five things a development director asks, each with its
-    // definition on hover. First of the four because it is the one she opens.
-    { id: "majorgifts", label: "Major gifts" },
-    // BUILD-99 Part 1 — one ask to one person. The rows are BUILD-15's
-    // `opportunities`, so this screen and the pipeline board's ask totals are
-    // one set of rows (shared/proposalShape.js says why there is no second table).
-    { id: "proposals", label: "Proposals" },
-    // BUILD-99 Part 2 — a portfolio is the assignment list she already has
-    // (BUILD-30), plus the target and cap she typed.
-    { id: "portfolios", label: "Portfolios" },
-    // BUILD-99 Part 3 — the plans the organisation keeps. Nothing in one sends.
-    { id: "plans", label: "Plans" },
-    { id: "campaigns", label: "Campaigns", badge: campaigns.length || undefined },
-    { id: "pages", label: "Giving Pages", badge: pages.filter(p => p.status === "active").length || undefined },
-    { id: "recurring", label: "Recurring Giving" },
-    // BUILD-101 Part 1 — levels and the people on them. A membership payment
-    // is a gift, so this screen counts people, never a second money total.
-    { id: "members", label: "Members" },
-    { id: "funds", label: "Funds" },
-  ];
+  // Any id, old or new, opens its section on its part.
+  const goto = id => { const r = resolveFr(id); setSection(r.section); setPartOf(m => ({ ...m, [r.section]: r.part })); };
+  const sec = FR_SECTIONS.find(s => s.id === section) || FR_SECTIONS[0];
+  const subtab = partOf[sec.id] || sec.parts[0].id;   // the old view that is open
+  const setSubtab = goto;
+
+  // Counts on a part (never money — the figures live on the parts themselves).
+  const PART_BADGE = {
+    campaigns: campaigns.length || undefined,
+    pages: pages.filter(p => p.status === "active").length || undefined,
+  };
+  // The Team gate that marked the sidebar's Pipeline item (TEAM_GATED) marks
+  // the Pipeline part now; the board itself still renders the server's locked
+  // preview for Core, exactly as it did as a tab.
+  const lockedPart = p => !!(p.teamGated && TEAM_GATED.has("pipeline") && isCoreTier);
+
 
   const roTip = isReadOnly ? "Reactivate your subscription to make changes." : undefined;
   const primaryBtn = (label, onClick, disabled) => (
@@ -141,13 +140,53 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
   return (
     <div className="fade-in">
       <PageTitle main="Your" accent="fundraising." />
-      <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar" />
+      {/* FIX-1 §B — four tabs, each a question. The strip FITS at 1440 and
+          at 390 (.fr-tabbar tightens it on a phone); nothing scrolls sideways. */}
+      <SectionTabs tabs={FR_SECTIONS.map(s => ({ id: s.id, label: s.label }))} active={sec.id}
+        onSelect={id => setSection(id)} className="finance-tabbar fr-tabbar" dataKey="fr-section"
+        stripProps={{ "data-fr-strip": "", "aria-label": "Fundraising" }} style={{ marginBottom: sec.parts.length > 1 ? 12 : 18 }} />
+      <div style={{ fontSize: 13, color: T.ink3, margin: sec.parts.length > 1 ? "0 0 10px" : "-8px 0 16px" }}>{sec.question}</div>
+      {sec.parts.length > 1 && (
+        <div data-fr-parts="" role="navigation" aria-label={sec.label}
+          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+          {sec.parts.map(p => {
+            const on = subtab === p.id;
+            return (
+              <button key={p.id} data-fr-part={p.id} aria-current={on ? "true" : undefined}
+                onClick={() => setPartOf(m => ({ ...m, [sec.id]: p.id }))}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: on ? T.ink : "transparent", color: on ? T.white : T.ink2, border: "1px solid " + (on ? T.ink : T.bg3), borderRadius: 99, padding: "5px 12px", fontSize: 12.5, fontWeight: on ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                {p.label}
+                {PART_BADGE[p.id] != null && <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>{PART_BADGE[p.id]}</span>}
+                {lockedPart(p) && <span title="Team plan" style={{ display: "inline-flex" }}>{lockIcon(on ? T.white : T.ink3)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {loading && <div style={{ padding: 48, textAlign: "center", color: T.ink3, fontSize: 13 }}>Loading…</div>}
 
+      {/* The parts. Each is the component its old sub-tab rendered, with the
+          same props, so every figure is the one it was (tests/fix1-fundraising
+          §5 compares them in cents). BUILD-88b B.1 deposits · BUILD-98 Part 2
+          acknowledgments · BUILD-98 Part 4 events · BUILD-99 Parts 1/2/3/5
+          proposals, portfolios, plans, the major-gifts dashboard · BUILD-101
+          Part 1 members (a membership payment is a gift, so that screen counts
+          people, never a second money total). */}
+      <div data-fr-view={subtab}>
       {!loading && subtab === "overview" && (
-        <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
-          onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+        <>
+          <OverviewView overview={overview} campaigns={campaigns} isReadOnly={isReadOnly}
+            onNewCampaign={() => setSubtab("campaigns")} onGoto={setSubtab} onNavigate={onNavigate} primaryBtn={primaryBtn} />
+          {fundraisingIndex(setSubtab, isCoreTier)}
+        </>
+      )}
+
+      {/* FIX-1 §B — the sidebar's Pipeline, folded into Major gifts. The SAME
+          board (one GET /pipeline, one Team gate server-side, the Core locked
+          preview); `embedded` only drops its own page title under this one. */}
+      {!loading && subtab === "pipeline" && (
+        <Pipeline embedded isReadOnly={isReadOnly} onNavigate={onNavigate} initialScope={initialScope} />
       )}
 
       {/* BUILD-88b B.1 — DepositsView is deliberately NOT wired to Fundraising's
@@ -208,11 +247,39 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection }) {
         <FundsView data={data} onNavigate={onNavigate} />
       )}
 
+      </div>
+
       {modal && (
         <CampaignModal mode={modal.mode} campaign={modal.campaign} campaigns={campaigns}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); load(); }} />
       )}
+    </div>
+  );
+}
+
+// ── FIX-1 §B — everything in Fundraising, by its question ─────────────────
+// The four tabs replaced fourteen. Somebody who learned the old tabs can still
+// find each one by the name it had, one click from the Overview: every part of
+// every section, under the question it answers. Names and links, no figures.
+function fundraisingIndex(onGoto, isCoreTier) {
+  return (
+    <div data-fr-index="" style={{ marginTop: 26, borderTop: "1px solid " + T.bg3, paddingTop: 16 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 12 }}>Everything in Fundraising</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 14 }}>
+        {FR_SECTIONS.filter(s => s.id !== "overview").map(s => (
+          <div key={s.id} style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{s.label}</div>
+            <div style={{ fontSize: 12, color: T.ink3, margin: "2px 0 6px", lineHeight: 1.4 }}>{s.question}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {s.parts.map(p => (
+                <button key={p.id} onClick={() => onGoto(p.id)}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "none", border: "none", padding: "3px 8px 3px 0", fontSize: 12.5, fontWeight: 600, color: T.greenMid, cursor: "pointer" }}>{p.label}{p.teamGated && TEAM_GATED.has("pipeline") && isCoreTier && lockIcon(T.ink3)}</button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

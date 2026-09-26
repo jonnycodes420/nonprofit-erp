@@ -72,7 +72,9 @@ ok(/const PRIMARY_NAV=\[/.test(app) && /const MORE_NAV=\[/.test(app), "App split
 ok(/^"dashboard","board"/.test(primary), "Home leads the rail and Dashboards is the item under it");
 for (const id of ["donors", "fundraising", "reports"])
   ok(primary.includes(`"${id}"`), `${id} is a primary rail item`);
-for (const id of ["pipeline", "grants", "communications", "tasks", "workflows", "finance"])
+// FIX-1 §B — "pipeline" left this list: the sidebar's Pipeline folded into
+// Fundraising → Major gifts (tests/fix1-fundraising.test.js §2/§3 prove it lands).
+for (const id of ["grants", "communications", "tasks", "workflows", "finance"])
   ok(more.includes(`"${id}"`), `${id} folds into "More"`);
 // Nothing may be in both lists, and nothing that has a tab may be in neither —
 // a nav that loses a surface is the one failure this split could cause.
@@ -84,8 +86,11 @@ const tabIds = [...tabsBlock.matchAll(/\{id:"([a-z]+)"/g)].map(m => m[1])
   .filter(id => id !== "settings");   // Settings is pinned at the bottom, outside both lists
 ok(tabIds.every(id => navIds.includes(id)), "every tab in TABS is reachable from the rail or from More",
    tabIds.filter(id => !navIds.includes(id)));
-ok(!more.includes('"donors"') && more.includes('"pipeline"'),
-   "Pipeline is still its own item, not nested under Donors");
+// FIX-1 §B — the Pipeline is no longer a sidebar item at all; it is a part of
+// Fundraising → Major gifts. The property this guarded (it is never nested
+// under Donors) still holds, and it is asserted as that.
+ok(!more.includes('"donors"') && !more.includes('"pipeline"') && !primary.includes('"pipeline"'),
+   "Pipeline is not nested under Donors — it lives in Fundraising → Major gifts, not in the sidebar");
 ok(/setNavMoreOpen\(true\)/.test(app) && /MORE_NAV\.includes\(tab\)/.test(app),
    "More opens ITSELF when the surface you are on lives inside it — the nav can always show you where you are standing");
 ok(has(app, 'navigateTo("settings")'), "Settings stays pinned at the bottom (its own nav call)");

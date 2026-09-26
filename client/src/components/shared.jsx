@@ -638,6 +638,10 @@ export function GlobalStyles() {
       /* Finance now uses SectionTabs (.section-tabbar) which scrolls
          horizontally on its own — no finance-specific override needed. */
 
+      /* FIX-1 §B — Fundraising is four tabs and they FIT at 390: no sideways
+         scroll on the strip, the thing the walk found at 1440. */
+      .fr-tabbar>button{padding:10px 7px!important;font-size:12.5px!important;gap:5px!important;}
+
       /* Grants pipeline + profile */
       .grants-pipeline-grid{grid-template-columns:repeat(2,1fr)!important;}
       .grant-profile-body{display:flex!important;flex-direction:column!important;overflow-y:auto!important;overflow-x:hidden!important;}
@@ -825,11 +829,14 @@ export function Card({children,selected,accent,onClick,style={},variant}) {
 // in-section counterpart of the app sidebar (Communications, Reports,
 // Settings). tabs: [{id,label,icon?,badge?}]. Scrolls horizontally when it
 // doesn't fit (base style; no media query needed).
-export function SectionTabs({tabs,active,onSelect,className,style}) {
-  return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
+// FIX-1 §B — `dataKey` names a data attribute each tab carries (its id), and
+// `stripProps` go on the strip itself, so a suite can find a tab by id and
+// measure the strip; every tab says whether it is the selected one.
+export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripProps}) {
+  return <div role="tablist" {...(stripProps||{})} className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
-      return <button key={t.id} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
+      return <button key={t.id} role="tab" aria-selected={on} {...(dataKey?{["data-"+dataKey]:t.id}:{})} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
         background:"transparent",border:"none",
         borderBottom:`2px solid ${on?T.gold:"transparent"}`,
         borderRadius:on?"7px 7px 0 0":0,
