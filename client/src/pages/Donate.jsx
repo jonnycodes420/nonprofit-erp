@@ -6,6 +6,15 @@ import { resolvePairing, cardChrome, THEME_DEFAULTS } from "../lib/portalTheme";
 import { errorMessage } from "../lib/domainError";
 // BUILD-95 §5B — the ONE widget renderer, shared with the portal.
 import { PageRenderer } from "../components/PortalWidgets";
+// BUILD-102 (Steward Give) Part 2 — the three-step form, rendered ONLY for a
+// giving page whose form somebody configured. An unconfigured page renders
+// byte-for-byte what it always did (the BUILD-95 §5B rule), which is what makes
+// this safe to ship to every org that already has giving pages.
+import GiveSteps from "./GiveSteps";
+import { thankYouText } from "../../../shared/formConfig.js";
+// BUILD-102 Part 6 — which side of an A/B this visitor is on, decided before the
+// page's own fetch so the server can serve the right variant in one round trip.
+import { assignVariant, currentVariant } from "../lib/abVariant";
 
 // BUILD-60 — THE GIVING PAGE IS THE ORG'S PAGE.
 // Every control, color, logo, type pairing, banner and name on this page comes
@@ -340,6 +349,30 @@ export default function Donate() {
     );
   }, [givingPage, th, org]);
 
+  // BUILD-102 Part 2 — the form the server says this page offers. Declared HERE,
+  // above every line that reads it: the TDZ class has cost this repo four builds,
+  // and a `const` read above its declaration takes the whole screen to its error
+  // boundary at runtime while every unit test passes.
+  const giveSpec = givingPage?.form || null;
+  // BUILD-102 Part 5 — the thank-you, from the ONE shared function so the editor's
+  // preview and the screen a donor actually reaches cannot say different things.
+  const thanks = thankYouText(giveSpec ? { thankYou: giveSpec.thankYou } : {}, { orgName: org?.name || "" });
+
+  // BUILD-102 Part 5 — an optional redirect to the org's own page. THREE SECONDS
+  // rather than instantly: a redirect that fires on load means the thank-you is
+  // never read and the donor arrives somewhere unexplained. The link is shown too,
+  // so a blocked or slow redirect is never a dead end.
+  //
+  // DECLARED HERE, above every early return, because a hook after one throws
+  // "Rendered more hooks than during the previous render" on the loading→loaded
+  // transition — the BUILD-30 defect, and the `rules-of-hooks` gate caught this
+  // exact line before it could reach a browser.
+  useEffect(() => {
+    if (!donated || !thanks.redirectUrl) return;
+    const t = setTimeout(() => { window.location.href = thanks.redirectUrl; }, 3000);
+    return () => clearTimeout(t);
+  }, [donated, thanks.redirectUrl]);
+
   const activeLadder = frequency === "monthly" ? th.monthlyAmounts : th.onetimeAmounts;
 
   const basePath = fundraiserSlug ? `/give/${orgSlug}/${pageSlug}/${fundraiserSlug}`
@@ -378,9 +411,25 @@ export default function Donate() {
       : pageSlug
         ? `${API}/org/${orgSlug}/giving-page/${pageSlug}/public`
         : `${API}/org/${orgSlug}/public`;
-    fetch(url)
+    // BUILD-102 Part 6 — a visitor who already has a side keeps it, and the server
+    // serves that variant in ONE round trip. Somebody arriving for the first time
+    // fetches without a side, and only if a test is actually running do we assign
+    // one and fetch again — so a form with no test never sets a cookie at all.
+    const had = currentVariant();
+    const withV = v => (v ? url + (url.includes("?") ? "&" : "?") + "v=" + v : url);
+    fetch(withV(had))
       .then(r => r.json())
-      .then(d => {
+      .then(async d => {
+        if (!d.error && d.givingPage && d.givingPage.abRunning && !had) {
+          const v = assignVariant(true);
+          if (v === "b") {
+            // Only B needs a second fetch: A is what the first one already returned.
+            try {
+              const again = await fetch(withV("b")).then(r => r.json());
+              if (!again.error) d = again;
+            } catch { /* keep A rather than showing nothing */ }
+          }
+        }
         if (d.error) { setPageError(d.error); }
         else {
           setOrg(d.org);
@@ -446,6 +495,31 @@ export default function Donate() {
   const isRecurring = frequency !== "one-time";
   const perLabel = frequency === "monthly" ? "every month" : "every year";
   const annualTotal = frequency === "monthly" ? chargedAmount * 12 : chargedAmount;
+
+  // BUILD-102 Part 2 — ONE POST for both forms. The step form hands over what the
+  // donor chose; the existing form hands over its own state. Neither computes a
+  // total the server will trust: the server re-derives the charge, re-checks the
+  // amount against the form's own list, and decides the designation itself.
+  const postDonation = async (payload) => {
+    setSubmitting(true); setSubmitErr("");
+    try {
+      const r = await fetch(`${API}/donate/${orgSlug}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          reconnectToken: reconnectToken || undefined,
+          givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Something went wrong.");
+      window.location.href = data.url;
+    } catch (err) {
+      setSubmitErr(errorMessage(err, "That did not go through. Please try again."));
+      setSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -513,12 +587,30 @@ export default function Donate() {
       <div style={{ fontSize: 28, fontWeight: 800, color: T.ink, marginBottom: 10, fontFamily: th.serif }}>
         Thank you!
       </div>
-      <div style={{ fontSize: 16, color: T.ink2, marginBottom: 6 }}>
-        Your gift to <strong>{org.name}</strong> has been received.
-      </div>
-      <div style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
-        A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
-      </div>
+      {/* BUILD-102 Part 5 — THE ORG'S OWN WORDS WHEN THEY WROTE ANY. A form's
+          thank-you message is the one place a donor hears the organisation rather
+          than the software, so it replaces Steward's sentence rather than sitting
+          under it. With nothing written, the fallback says the one thing a donor
+          wants to know next: that a receipt is coming. */}
+      {thanks.fromTheOrg ? (
+        <div className="thanks-own-words" style={{ fontSize: 16, color: T.ink2, maxWidth: 420, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+          {thanks.message}
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 16, color: T.ink2, marginBottom: 6 }}>
+            Your gift to <strong>{org.name}</strong> has been received.
+          </div>
+          <div className="thanks-fallback" style={{ fontSize: 14, color: T.ink3, maxWidth: 360, lineHeight: 1.6 }}>
+            A receipt will be sent to your email. Thank you for your generosity — it makes a real difference.
+          </div>
+        </>
+      )}
+      {thanks.redirectUrl ? (
+        <div className="thanks-redirect" style={{ marginTop: 18, fontSize: 13, color: T.ink3 }}>
+          Taking you back to <a href={thanks.redirectUrl} style={{ color: T.greenDk }}>{new URL(thanks.redirectUrl).hostname}</a> in a moment.
+        </div>
+      ) : null}
       {org.givingAccount && (
         <div style={{ marginTop: 28, padding: "16px 22px", background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 12, maxWidth: 400 }}>
           <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>
@@ -761,10 +853,41 @@ export default function Donate() {
       {/* BUILD-95 §5B — THE BUILT PAGE, drawn by the SAME renderer as the
           portal. `builtPage` is null until she publishes one, and then this
           block is simply absent and the page reads exactly as it always did. */}
+      {/* BUILD-102 Part 2 — A CONFIGURED FORM IS THREE STEPS. An unconfigured
+          page falls through to the single form below, unchanged. `configured` is
+          the whole switch, and it is false for every giving page that existed
+          before this build. */}
+      {giveSpec && giveSpec.configured ? (
+        <div style={{ width: "100%", maxWidth: 480, order: formPosition === "top" ? 1 : 3,
+                      display: "flex", justifyContent: "center" }}>
+          <GiveSteps
+            spec={giveSpec}
+            formId={givingPage?.id}
+            theme={th}
+            coverFeesEnabled={org?.coverFeesEnabled}
+            upsellThresholdCents={givingPage?.upsellThresholdCents}
+            grossUpCents={grossUpCents}
+            submitting={submitting}
+            submitErr={submitErr}
+            onSubmit={postDonation}
+            apiBase={API}
+            styles={{
+              card,
+              inp,
+              btn: { width: "100%", padding: "14px 0", borderRadius: 10, border: "none", cursor: "pointer",
+                     background: th.primary, color: th.primaryFg, fontSize: 16, fontWeight: 700, fontFamily: th.sans },
+              quiet: { background: "none", border: "none", padding: 0, cursor: "pointer",
+                       color: th.primary, fontSize: 14, fontWeight: 600, textDecoration: "underline", fontFamily: th.sans },
+            }}
+          />
+        </div>
+      ) : null}
+
       {/* Form. FIXED — it is not a widget and cannot be removed, because a
           giving page that stopped taking gifts says nothing on screen. She
           chooses only whether it leads the page or follows the story. */}
-      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", gap: 20,
+      <form onSubmit={handleSubmit} style={{ width: "100%", maxWidth: 480, display: giveSpec && giveSpec.configured ? "none" : "flex",
+                                            flexDirection: "column", gap: 20,
                                             order: formPosition === "top" ? 1 : 3 }}>
 
         {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}

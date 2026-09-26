@@ -150,6 +150,7 @@ CORE=(
   build100-reports build100-import build100-screens
   claude-md
   build98-migration email-footer build98-security build101-memberships build101-renewals build101-lapsed build101-online build101-reports build101-import
+  build102-form-config build102-steps-upsell build102-extras build102-embed build102-attribution build102-funnel
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

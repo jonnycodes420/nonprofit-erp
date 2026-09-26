@@ -104,6 +104,22 @@ jobs:
       - name: Lint guards (no-undef, rules-of-hooks)
         run: npm run lint --prefix client
 
+      # ── TDZ self-references — the one class that reaches a browser past every
+      # ── other gate. `const INK = INK;` parses, type-checks, lints clean and
+      # passes every server suite, then throws ReferenceError at runtime and
+      # replaces a whole screen with its error boundary. Five builds have paid for
+      # it (BUILD-84, 89, 95, 96, 102), four of them via a blanket string replace
+      # that rewrote a declaration along with its uses.
+      #
+      # Only the SELF-REFERENCE half is gated: `--all` reports ~200 read-above
+      # candidates that are mostly parameters sharing a spelling with a later
+      # binding, and a gate with false positives is one people learn to bypass. A
+      # self-reference needs no judgement — it is always a bug. Runs BEFORE the
+      # battery because it is two seconds and it explains failures the battery
+      # would otherwise report as a dozen unrelated browser timeouts.
+      - name: TDZ self-reference guard
+        run: node scripts/tdz-scan.js
+
       # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
       # A new high/critical advisory fails the build unless it is listed in
       # audit/npm-audit-allowlist.json with a reason and a review-by date

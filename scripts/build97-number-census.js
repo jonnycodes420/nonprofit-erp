@@ -105,6 +105,24 @@ const OUT_OF_SCOPE = {
   "pages/Landing.jsx": "public marketing page; its own guards (scripts/landing-prod-verify.js)",
   "pages/Pricing.jsx": "public marketing page; prices are pinned by tests/one-date.test.js",
   "pages/Donate.jsx": "public white-label donation page on publicTheme.js",
+  // BUILD-102 (Steward Give) — the donation form and its embedded twin. OUT OF
+  // SCOPE for the same reason Donate.jsx is: these are PUBLIC, white-label
+  // surfaces on publicTheme.js, addressed to a donor rather than to staff, and
+  // the census exists to make sure a figure on a STAFF screen carries its
+  // definition. A donor choosing between $25 and $50 does not need a definition
+  // of $25.
+  //
+  // Their own figures are guarded where it matters instead, and more tightly than
+  // a census could: tests/build102-steps-upsell.test.js asserts the amounts are
+  // the FORM's own list and that the monthly suggestion is a third in whole
+  // dollars; tests/build102-embed.test.js asserts the same numbers render inside
+  // an iframe on another origin; and the SERVER refuses any amount the form does
+  // not offer, so a figure on these screens cannot disagree with what is charged.
+  // The staff-facing figures this build DOES add — the funnel — live in
+  // Settings.jsx, which IS scanned, and each carries its definition from the
+  // server's registry.
+  "pages/GiveSteps.jsx": "public donation form, white-label, addressed to a donor; its figures are pinned by build102-steps-upsell",
+  "pages/EmbeddedForm.jsx": "the same form inside an org's own site; pinned by build102-embed",
   "pages/Portal.jsx": "the donor's own portal, white-label, its own palette and guards",
   "pages/GivingDashboard.jsx": "the donor-side giving account, not a staff surface",
   "pages/AdminDashboard.jsx": "super-admin ops tool, its own palette and audience",

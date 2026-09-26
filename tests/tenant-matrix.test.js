@@ -85,6 +85,11 @@ async function reset() {
       "impact_updates", "recurring_change_log", "recurring_proposals", "recurring_subscriptions", "payment_recovery_events",
       "receipts", "pledges", "milestone_drafts", "note_reminders", "donor_materials", "planned_gifts",
       "custom_field_events", "custom_field_defs", "custom_field_values", "custom_fields", "impact_metrics", "sequence_enrollments", "sequence_steps", "sequences",
+      // BUILD-102 (Steward Give) Part 6 — the form funnel. It cascades from
+      // giving_pages, but it is named explicitly and ordered BEFORE it: the
+      // cascade covers a page delete, and this list has to survive an ORG delete
+      // too.
+      "form_events",
       "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
       // `grants` delete below would usually take them — but `grant_id` is

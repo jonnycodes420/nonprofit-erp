@@ -790,6 +790,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 campaign: evRow.name,
               } : {}),
               orgId, donorId, giftId, amount, date: today,
+              // BUILD-102 Part 5 — stored ON THE GIFT, so "which email brought
+              // this in" is answered by the report builder over the same rows
+              // every money figure comes from.
+              utmSource: pi.metadata?.utm_source || null,
+              utmMedium: pi.metadata?.utm_medium || null,
+              utmCampaign: pi.metadata?.utm_campaign || null,
               type: "cash", notes: evLevel ? `${evQty} × ${evLevel.name}, ${evRow.name}` : memLevel ? `${memLevel.name} membership` : "Online payment via Stripe",
               paymentMethod: "Card", fundId, campaignId, givingPageId,
               peerFundraiserId, coverFeeAmount, recurringSubscriptionId: recurringSubDbId,
@@ -804,6 +810,25 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (written.duplicate) {
               console.log(`[stripe] payment_intent.succeeded ${pi.id} already recorded — skipping duplicate (race-safe)`);
               return res.json({ received: true, duplicate: true });
+            }
+            // BUILD-102 Part 3 — the form's tribute, employer and answers. Runs
+            // only for a gift the duplicate guard just let through, so a
+            // redelivered webhook writes no second tribute draft and no second
+            // match pledge. Its failure is logged and costs the donation nothing.
+            const formMeta = pi.metadata || {};
+            if (formMeta.tribute_type || formMeta.employer || Object.keys(formMeta).some(k => k.startsWith("q_"))) {
+              await applyFormAsks(orgId, written.gift, formMeta, SYS_STRIPE)
+                .catch(e => console.error("[form] applying what the form asked:", e.message));
+            }
+            // BUILD-102 Part 6 — the COMPLETION, counted here and nowhere else. A
+            // page reports a view and a start; only the webhook knows money moved,
+            // and it runs inside the duplicate guard, so a redelivered event cannot
+            // count a second gift. The money is the CHARGED amount, which is what
+            // "average gift through this form" honestly means.
+            if (givingPageId) {
+              await bumpFormEvent(orgId, givingPageId, "completions",
+                { variant: formMeta.variant || null, cents: Math.round(amount * 100) })
+                .catch(e => console.error("[forms] counting a completion:", e.message));
             }
             if (evLevel) {
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
@@ -2335,7 +2360,13 @@ async function recordGift(o) {
                 // gala ticket) carries what it bought and what that was worth,
                 // so the receipt states the deductible part. Absent means
                 // nothing was received in exchange, which is every other gift.
-                "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value"];
+                "deductible_amount", "quid_pro_quo_desc", "quid_pro_quo_value",
+                // BUILD-102 Part 5 — which email brought this gift in. In THIS
+                // insert for the same reason as every column above it: a second
+                // UPDATE after the fact is a second write path, and the one thing
+                // that must never happen to an attribution is that it lands on
+                // some gifts and not others depending on which door they came in.
+                "utm_source", "utm_medium", "utm_campaign"];
   const vals = [giftId, orgId, o.donorId, amount, date, o.type || "cash", o.campaign || "",
                 o.campaignId || null, o.notes || "", fundId, paymentMethod, o.pledgeId || null,
                 o.externalId || null, o.idempotencyKey || null, o.stripePaymentId || null,
@@ -2345,7 +2376,8 @@ async function recordGift(o) {
                 o.chequeAssetId || null,
                 o.quidProQuoValue != null ? round2(Math.max(0, amount - Number(o.quidProQuoValue))) : null,
                 o.quidProQuoValue != null ? String(o.quidProQuoDesc || "").slice(0, 300) : null,
-                o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null];
+                o.quidProQuoValue != null ? round2(Number(o.quidProQuoValue)) : null,
+                o.utmSource || null, o.utmMedium || null, o.utmCampaign || null];
   // The conflict key is the caller's, because what makes a gift the SAME gift
   // differs by door: Stripe's payment intent, the form's idempotency key, the
   // source system's gift id. One of them, never a guess at (donor, amount, date)
@@ -5676,6 +5708,25 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
 
   // Donor-covers-fees switch — only touched when the request includes it
   // (Settings' Giving section sends it; no other PATCH caller does).
+  // BUILD-102 Part 2 — the upsell threshold, in CENTS. What counts as a gift
+  // worth asking about differs by an order of magnitude between a food pantry and
+  // a university, so it is the org's number. A value below $5 is refused rather
+  // than stored: below that the monthly suggestion is not worth the question, and
+  // a threshold of zero would ask every single donor.
+  if (req.body.upsellThresholdCents !== undefined) {
+    const F = await formConfigMod();
+    const raw = req.body.upsellThresholdCents;
+    if (raw === null || raw === "") {
+      await run(`UPDATE orgs SET form_upsell_threshold_cents=NULL WHERE id=?`, [req.params.id]);
+    } else {
+      const c = Number(raw);
+      if (!Number.isInteger(c) || c < F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION) {
+        return res.status(400).json({ code: "bad_upsell_threshold",
+          error: `The threshold is a whole number of cents, at least ${F.UPSELL_MIN_MONTHLY_CENTS * F.UPSELL_FRACTION} — below that the monthly suggestion is too small to be worth asking about.` });
+      }
+      await run(`UPDATE orgs SET form_upsell_threshold_cents=? WHERE id=?`, [c, req.params.id]);
+    }
+  }
   if (req.body.coverFeesEnabled !== undefined) {
     await run(`UPDATE orgs SET cover_fees_enabled=? WHERE id=?`, [!!req.body.coverFeesEnabled, req.params.id]);
   }
@@ -12147,24 +12198,123 @@ async function importProposals(orgId, rows, who, donorIdByIndex) {
   return out;
 }
 
+// ── ONE RESOLVE-OR-CREATE BY NAME ──────────────────────────────────────────
+// Extracted from importGiftExtras in BUILD-102 Part 3 so the donation form and
+// the importer cannot drift apart about what an employer is. A second copy would
+// eventually mean a form creating a PERSON called "Acme Corp" while the importer
+// creates an organisation, and the two would never merge.
+//
+// `made` is an out-parameter the caller counts, because "how many people did this
+// create" is a figure both callers report and neither may guess at.
+async function donorByNameOrCreate(orgId, name, { create = false, kind = null, who = null, cache = null, made = null } = {}) {
+  const nm = String(name || "").trim();
+  if (!nm) return null;
+  const key = (kind || "p") + ":" + nm.toLowerCase();
+  if (cache && cache.has(key)) return cache.get(key);
+  const rows = await query(
+    "SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 2",
+    [orgId, nm]);
+  let id = rows.length ? rows[0].id : null;
+  if (!id && create) {
+    id = "d_" + uuid().slice(0, 10);
+    await run(
+      `INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
+      [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]',
+       (who && who.id) || null, (who && who.name) || null]);
+    if (made) made.count++;
+  }
+  if (cache) cache.set(key, id);
+  return id;
+}
+
+// ── BUILD-102 (Steward Give) Part 3 — WHAT THE FORM ASKED, APPLIED ─────────
+// A tribute rides BUILD-98 Part 1's `writeGiftExtras`, so a tribute notice is a
+// DRAFT and Steward never sends it; the employer opens BUILD-98's match pledge on
+// the employer's own record; an answer lands in the BUILD-78 custom-field value
+// the report builder already reads. Three existing seams, no fourth.
+//
+// NOTHING HERE IS A SECOND GIFT PATH. The gift already exists when this runs, and
+// this only hangs the answers off it — so a failure costs the tribute draft, never
+// the donation.
+async function applyFormAsks(orgId, gift, meta, who) {
+  await GC_READY;
+  const out = { tribute: false, tributeNotice: false, matchPledgeId: null, answers: 0, created: 0, unresolved: [] };
+  const md = meta || {};
+  const cache = new Map(), made = { count: 0 };
+  const raw = {};
+
+  const tributeType = GC.normaliseTributeType(md.tribute_type || "");
+  const tributeName = String(md.tribute_name || "").trim();
+  if (tributeType && tributeName) {
+    // THE HONOUREE IS A RECORD WHEN THERE IS ONE AND A NAME WHEN THERE IS NOT —
+    // the BUILD-98 rule. A form never invents a record for a memorial: somebody
+    // who has died is not a prospect, and creating one would put them on a
+    // mailing list.
+    const hid = await donorByNameOrCreate(orgId, tributeName, { create: false, cache });
+    raw.tribute = { type: tributeType, donorId: hid, name: tributeName,
+                    notifyName: String(md.notify_name || "").trim() || null,
+                    notifyEmail: String(md.notify_email || "").trim() || null };
+  }
+
+  const employer = String(md.employer || "").trim();
+  if (employer) {
+    // AN EMPLOYER IS AN ORGANISATION, found or created as one — the same call the
+    // importer makes, so a form and a spreadsheet cannot disagree about it.
+    const eid = await donorByNameOrCreate(orgId, employer, { create: true, kind: "organisation", who, cache, made });
+    if (eid && eid !== gift.donor_id) raw.match = { employerId: eid };
+    out.created = made.count;
+  }
+
+  if (raw.tribute || raw.match) {
+    const cents = money.toCents(gift.amount) ?? 0;
+    const ck = await checkGiftExtras(orgId, gift.donor_id, cents, raw);
+    if (ck.errors || ck.notFound) {
+      out.unresolved.push({ kind: "extras", why: (ck.errors || ["not found"]).join("; ") });
+    } else {
+      const r = await writeGiftExtras(orgId, gift, ck.extras, { actorId: who.id, actorName: who.name });
+      out.tribute = !!ck.extras.tribute;
+      out.tributeNotice = !!r.tributeNotice;
+      out.matchPledgeId = r.matchPledgeId || null;
+    }
+  }
+
+  // THE ANSWERS. `custom_field_defs` + `donors.custom_fields` is the pair the
+  // report builder reads (`d.custom_fields->>'key'`), which is what makes an
+  // answer filterable in a saved report like any other field. An answer to a
+  // question whose definition has since been archived is DROPPED rather than
+  // written somewhere nothing can see it.
+  const answers = Object.entries(md).filter(([k]) => k.startsWith("q_"))
+    .map(([k, v]) => [k.slice(2), v]).filter(([k]) => k);
+  if (answers.length) {
+    const defs = await query(
+      "SELECT key, type FROM custom_field_defs WHERE org_id=? AND entity='donor' AND archived_at IS NULL", [orgId]);
+    const known = new Map(defs.map(d => [d.key, d.type]));
+    const patch = {};
+    for (const [k, v] of answers) {
+      const t = known.get(k);
+      if (!t) { out.unresolved.push({ kind: "answer", name: k, why: "no field on file" }); continue; }
+      patch[k] = t === "checkbox" ? (String(v) === "yes") : String(v);
+    }
+    if (Object.keys(patch).length) {
+      // Merged, never replaced: a donor who answered a different form last year
+      // keeps that answer.
+      await run(
+        `UPDATE donors SET custom_fields = COALESCE(custom_fields,'{}'::jsonb) || ?::jsonb, updated_at=NOW()
+          WHERE id=? AND org_id=?`, [JSON.stringify(patch), gift.donor_id, orgId]);
+      out.answers = Object.keys(patch).length;
+    }
+  }
+  return out;
+}
+
 async function importGiftExtras(orgId, pending, who) {
   await GC_READY;
   const out = { softCredits: 0, tributes: 0, tributeNotices: 0, matches: 0, peopleCreated: 0, unresolved: [] };
   const cache = new Map();
-  const byName = async (name, { create = false, kind = null } = {}) => {
-    const nm = String(name || "").trim();
-    if (!nm) return null;
-    const key = (kind || "p") + ":" + nm.toLowerCase();
-    if (cache.has(key)) return cache.get(key);
-    const rows = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(name)=LOWER(?) ORDER BY created_at, id LIMIT 2", [orgId, nm]);
-    let id = rows.length ? rows[0].id : null;
-    if (!id && create) {
-      id = "d_" + uuid().slice(0, 10);
-      await run(`INSERT INTO donors (id,org_id,name,stage,status,tags,kind,person_types,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?::jsonb,?,?)`,
-        [id, orgId, nm, "prospect", "active", "[]", kind || "person", '["donor"]', who.id, who.name]);
-      out.peopleCreated++;
-    }
-    cache.set(key, id);
+  const made = { count: 0 };
+  const byName = async (name, opts = {}) => {
+    const id = await donorByNameOrCreate(orgId, name, { ...opts, who, cache, made });
+    out.peopleCreated = made.count;
     return id;
   };
   for (const { giftId, g } of pending) {
@@ -21928,7 +22078,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // the org's white-label display name (portal_settings.display_name) when
   // set, never the staff-side orgs.name (e.g. "CREO Arts (Demo)").
   const orgs = await query(
-    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS}
+    `SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
      FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = $1`,
     [req.params.orgSlug]
   );
@@ -22122,6 +22272,311 @@ const givingPageOr404 = async (id, orgId) => {
   return p || null;
 };
 
+// ── BUILD-102 (Steward Give) Part 6 — THE FUNNEL, COUNTED NOT TRACKED ──────
+// Views, starts and completions per form per day. NOTHING about who: no person id,
+// no session id, no IP, no user agent, no cookie id — and the SHAPE is the
+// guarantee rather than a promise in a policy, because `form_events` has nowhere to
+// put one.
+//
+// Every counter is an ATOMIC UPSERT on (form, day, variant). A read-modify-write
+// would lose counts the moment two people opened the form in the same second, and
+// the first thing anybody would notice is a completion rate over 100%.
+async function bumpFormEvent(orgId, formId, field, { variant = null, cents = 0, today = null } = {}) {
+  if (!["views", "starts", "completions"].includes(field)) return;
+  const org = await orgTz(orgId);
+  const day = today || orgToday(org);                                  // ORG_TZ_SEAM_OK
+  const v = variant === "a" || variant === "b" ? variant : null;
+  await run(
+    `INSERT INTO form_events (id,org_id,form_id,day,variant,${field},completed_cents)
+     VALUES (?,?,?,?,?,1,?)
+     ON CONFLICT (form_id, day, COALESCE(variant,''))
+     DO UPDATE SET ${field} = form_events.${field} + 1,
+                   completed_cents = form_events.completed_cents + ?,
+                   updated_at = NOW()`,
+    ["fe_" + uuid().slice(0, 10), orgId, formId, day, v, Math.max(0, Math.trunc(cents) || 0),
+     Math.max(0, Math.trunc(cents) || 0)]);
+}
+
+// POST /forms/:id/event — the public counter. A view and a start are the only two
+// things the PAGE may report; a COMPLETION is counted from the gift itself in the
+// webhook, because a page cannot be trusted to know whether money actually moved
+// and a completion nobody paid for is the one number that would matter.
+app.post("/forms/:id/event", donateLimiter, wrap(async (req, res) => {
+  const kind = String(req.body && req.body.kind || "");
+  if (!["view", "start"].includes(kind)) {
+    return res.status(400).json({ error: "bad_event", code: "bad_event" });
+  }
+  const [page] = await query("SELECT id, org_id, status FROM giving_pages WHERE id=?", [req.params.id]);
+  // An unknown or archived form counts nothing, and answers 204 either way: this is
+  // called from a public page and must never leak whether an id exists.
+  if (!page || page.status !== "active") return res.status(204).end();
+  const variant = req.body && (req.body.variant === "b" ? "b" : req.body.variant === "a" ? "a" : null);
+  await bumpFormEvent(page.org_id, page.id, kind === "view" ? "views" : "starts", { variant })
+    .catch(e => console.error("[forms] counting a " + kind + ":", e.message));
+  // NO BODY, EVER. There is nothing to tell the page, and a response with content
+  // is a response somebody will eventually read something into.
+  res.status(204).end();
+}));
+
+// GET /giving-pages/:id/funnel — the numbers, each with its definition.
+app.get("/giving-pages/:id/funnel", requireAuth, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const days = Math.max(1, Math.min(365, Number(req.query.days) || 90));
+  const org = await orgTz(req.user.orgId);
+  const today = orgToday(org);                                         // ORG_TZ_SEAM_OK
+  const from = orgTime.addDays(today, -(days - 1));
+  const rows = await query(
+    `SELECT variant, COALESCE(SUM(views),0)::int AS views, COALESCE(SUM(starts),0)::int AS starts,
+            COALESCE(SUM(completions),0)::int AS completions, COALESCE(SUM(completed_cents),0)::bigint AS cents
+       FROM form_events WHERE org_id=? AND form_id=? AND day >= ? AND day <= ?
+      GROUP BY variant`, [req.user.orgId, pg.id, from, today]);
+  const pick = v => {
+    const r = rows.find(x => (x.variant || null) === v) || {};
+    return F.funnelFor({ views: r.views, starts: r.starts, completions: r.completions,
+                         completedCents: Number(r.cents || 0) });
+  };
+  // The whole form is every variant together — an A/B splits the SAME traffic, so
+  // the total is what the org actually received.
+  const all = F.funnelFor(rows.reduce((acc, r) => ({
+    views: acc.views + Number(r.views || 0), starts: acc.starts + Number(r.starts || 0),
+    completions: acc.completions + Number(r.completions || 0),
+    completedCents: acc.completedCents + Number(r.cents || 0),
+  }), { views: 0, starts: 0, completions: 0, completedCents: 0 }));
+  const ab = pg.ab_test && typeof pg.ab_test === "object" ? pg.ab_test : null;
+  const a = pick("a"), b = pick("b");
+  res.json({
+    formId: pg.id, formTitle: pg.title, from, to: today, days,
+    funnel: all,
+    money: { completed: toDollars(all.completedCents),
+             averageGift: all.averageGiftCents == null ? null : toDollars(all.averageGiftCents) },
+    // EVERY FIGURE CARRIES ITS DEFINITION, one string from the registry to the
+    // hover — never a copy (BUILD-86 C.3).
+    metrics: F.FUNNEL_METRICS,
+    definitions: Object.fromEntries(F.FUNNEL_METRICS.map(m => [m.key, m.definition])),
+    // A clamped figure is SAID, so a reader knows they are looking at a floor.
+    note: all.clamped
+      ? "Some counts arrived out of order, so these are a floor rather than an exact figure."
+      : null,
+    abTest: ab ? {
+      running: ab.running !== false, b: ab.b || null,
+      minViews: F.AB_MIN_VIEWS,
+      a, bFunnel: b,
+      verdict: F.abVerdict(a, b),
+    } : null,
+    // NOTHING ABOUT WHO, and the screen says so rather than leaving somebody to
+    // wonder what Steward knows about their donors' browsing.
+    privacyNote: "Steward counts how many times this form was opened and finished. "
+      + "It records nothing about who opened it — no names, no addresses, no cookies.",
+  });
+}));
+
+// PUT /giving-pages/:id/ab-test — start, change or stop a test.
+app.put("/giving-pages/:id/ab-test", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const orgFundIds = await orgFundIdsFor(req.user.orgId);
+  const v = F.validateAbTest(req.body && req.body.abTest === undefined ? null : req.body.abTest, { orgFundIds });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_ab_test", errors: v.errors });
+  await run("UPDATE giving_pages SET ab_test=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [v.test ? JSON.stringify(v.test) : null, pg.id, req.user.orgId]);
+  res.json({ formId: pg.id, abTest: v.test, fields: F.AB_FIELDS, minViews: F.AB_MIN_VIEWS });
+}));
+
+// ── BUILD-102 (Steward Give) Part 4 — THE EMBED ────────────────────────────
+// One public read, by FORM ID, so `embed.js` needs nothing but the id the org
+// pasted into its own page. It is the same payload shape the giving page's own
+// public route returns — the same `formSpec`, the same theme — because an embedded
+// form that differed from the hosted one would be a second product.
+//
+// AN ARCHIVED FORM ANSWERS 200 WITH `closed: true`, NOT 404. The embed is sitting
+// on somebody else's website: a 404 there renders as a broken box or a console
+// error on a page the org is judged by, where a quiet "this form is closed" line
+// is the truth and costs them nothing.
+app.get("/forms/:id/public", wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const [page] = await query(
+    `SELECT gp.*, o.id AS org_id, o.name AS org_name, o.org_slug, o.cover_fees_enabled,
+            o.form_upsell_threshold_cents, ${GIVE_THEME_COLS}
+       FROM giving_pages gp
+       JOIN orgs o ON o.id = gp.org_id
+       LEFT JOIN portal_settings ps ON ps.org_id = o.id
+      WHERE gp.id = ?`, [req.params.id]);
+  // An id that never existed is a 404 — there is nothing honest to render for it.
+  if (!page) return res.status(404).json({ error: "form_not_found" });
+  const orgName = await donorFacingOrgName(page.org_id, page.org_name || "").catch(() => page.org_name || "");
+  if (page.status !== "active") {
+    return res.json({
+      closed: true,
+      // Enough to render the line in the org's own colours rather than Steward's.
+      org: { name: orgName, slug: page.org_slug, theme: giveThemePayload(page) },
+      message: "This form is closed.",
+    });
+  }
+  const funds = await query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [page.org_id]);
+  res.json({
+    closed: false,
+    org: { name: orgName, slug: page.org_slug,
+           coverFeesEnabled: page.cover_fees_enabled !== false, theme: giveThemePayload(page) },
+    form: {
+      id: page.id, slug: page.slug, title: page.title,
+      // BUILD-102 Part 6 — the variant the caller was assigned. The SPLIT is the
+      // page's (a cookie it sets itself); the SPEC for each side comes from here,
+      // through one function, so A and B cannot drift into two forms.
+      spec: F.specForVariant(page.form_config, page.ab_test, req.query.v,
+        { funds: funds.map(f => ({ id: f.id, name: f.name })), orgName }),
+      abRunning: !!(page.ab_test && page.ab_test.running !== false && page.ab_test.b),
+      upsellThresholdCents: page.form_upsell_threshold_cents != null
+        ? Number(page.form_upsell_threshold_cents)
+        : F.UPSELL_DEFAULT_THRESHOLD_CENTS,
+    },
+  });
+}));
+
+// GET /giving-pages/:id/embed — the two snippets, for Settings. Generated HERE so
+// the script URL, the id and the fallback cannot drift from each other in three
+// places of copy (the BUILD-95 registry lesson, applied to two lines of HTML).
+app.get("/giving-pages/:id/embed", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const base = publicAppUrl();
+  res.json({
+    pageId: pg.id, status: pg.status,
+    // ONE LINE, which is the whole promise of the product's first page.
+    script: `<script src="${base}/embed.js" data-form="${pg.id}"></script>`,
+    // The fallback, for a site that refuses third-party script tags (a Squarespace
+    // or Wix plan without code injection). It cannot self-size, so it carries a
+    // height somebody may change.
+    iframe: `<iframe src="${base}/embed/${pg.id}" width="100%" height="720" style="border:0" `
+      + `title="Donation form" loading="lazy"></iframe>`,
+    previewUrl: `${base}/embed/${pg.id}`,
+    // NO CARD FIELD EVER LIVES ON THE ORG'S SITE, and the screen says so rather
+    // than leaving somebody to wonder what their PCI exposure is.
+    note: "Payment always finishes on Stripe's own page. No card details are ever "
+      + "typed on your website, and the form cannot read the page it sits on.",
+  });
+}));
+
+// ── BUILD-102 (Steward Give) Part 1 — A FORM IS A GIVING PAGE WITH A CONFIG ──
+// shared/formConfig.js is the ONE validator and the ONE spec builder. The editor
+// and the page a stranger opens from a QR code derive their form from the SAME
+// function — not two components fed similar props — so a preview cannot show a
+// field the donor will not get.
+async function formConfigMod() { return import("./shared/formConfig.js"); }
+
+// The org's own funds, which is what makes "a fund from another org is refused"
+// a fact rather than a hope (BUILD-37 B9: the caller does not get to assert what
+// it owns).
+async function orgFundIdsFor(orgId) {
+  return (await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId])).map(r => r.id);
+}
+async function orgFundsForSpec(orgId) {
+  return query("SELECT id, name FROM fin_funds WHERE org_id=? ORDER BY name ASC", [orgId]);
+}
+
+// GET /giving-pages/:id/form — the stored config, the spec the editor renders,
+// and the registry the editor's own labels come from (never a copy of them).
+app.get("/giving-pages/:id/form", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const funds = await orgFundsForSpec(req.user.orgId);
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgName = await donorFacingOrgName(req.user.orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  res.json({
+    pageId: pg.id, pageTitle: pg.title, pageSlug: pg.slug, status: pg.status,
+    config: F.normalizeFormConfig(pg.form_config, { orgFundIds: funds.map(f => f.id) }),
+    // THE SAME SPEC THE DONOR GETS, through the SAME function — including the
+    // A/B, so an admin running a test can preview either side with `?v=b` and the
+    // preview is still the donor's own form rather than a near-copy of it.
+    //
+    // Part 6 broke this for one commit: the public read moved to `specForVariant`
+    // (which stamps `variant`) while this one stayed on `formSpec`, and the
+    // byte-identical guard in build102-form-config §5 caught the divergence
+    // immediately. That is the guard doing exactly what it was written for.
+    spec: F.specForVariant(pg.form_config, pg.ab_test, req.query.v, { funds, orgName }),
+    abTest: pg.ab_test || null,
+    funds: funds.map(f => ({ id: f.id, name: f.name })),
+    // The registry, so the editor's copy is ONE string from here to the screen.
+    designationModes: F.DESIGNATION_MODES,
+    questionTypes: F.QUESTION_TYPES,
+    frequencies: F.FREQUENCIES,
+    limits: F.LIMITS,
+    defaults: F.DEFAULT_CONFIG,
+  });
+}));
+
+// PUT /giving-pages/:id/form — save it. The validator is the SAME one the editor
+// read, so a field the editor offered cannot be a field the server refuses.
+app.put("/giving-pages/:id/form", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const F = await formConfigMod();
+  const pg = await givingPageOr404(req.params.id, req.user.orgId);
+  if (!pg) return res.status(404).json({ error: "not_found" });
+  const orgFundIds = await orgFundIdsFor(req.user.orgId);
+  const v = F.validateFormConfig(req.body && req.body.config, { orgFundIds });
+  // EVERY BAD FIELD IS NAMED, not just the first — an editor that reports one
+  // problem at a time makes somebody press save five times to learn five things.
+  if (!v.ok) return res.status(400).json({ error: v.errors[0].message, code: "bad_form_config", errors: v.errors });
+
+  await run("UPDATE giving_pages SET form_config=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [JSON.stringify(v.config), pg.id, req.user.orgId]);
+
+  // A CUSTOM QUESTION IS A CUSTOM FIELD ON THE PERSON, created here so an answer
+  // is queryable in the report builder like any other field (Part 3 writes the
+  // answers). Created, never renamed and never deleted: a field somebody already
+  // answered is data, and a form edit must not take it away.
+  const failedQuestions = [];
+  // `custom_field_defs` is the BUILD-78 table the report builder reads
+  // (`rbCustomDefs`), keyed by `key` — NOT the older `custom_fields`, which has
+  // no key column at all and which nothing in the report builder can see. A
+  // question written into the wrong table would be an answer nobody can filter
+  // on, which is the whole promise of Part 3.
+  //
+  // AND THE ENTITY IS `donor`, NOT `person`. `CF_ENTITIES` is ["donor","gift"]
+  // and reportBuilder's people entity declares `custom: { entity: "donor" }`, so
+  // `person` would have stored a definition the catalogue cannot see — a field
+  // that exists and is invisible, which is worse than one that does not exist.
+  // The suite caught it by asking the catalogue rather than trusting the insert.
+  const created = [];
+  for (const q of v.config.questions) {
+    const [existing] = await query(
+      "SELECT id FROM custom_field_defs WHERE org_id=? AND entity='donor' AND key=?", [req.user.orgId, q.key]);
+    if (existing) continue;
+    const t = F.questionType(q.type);
+    const [maxPos] = await query(
+      "SELECT MAX(position) AS mp FROM custom_field_defs WHERE org_id=? AND entity='donor'", [req.user.orgId]);
+    const id = "cfd_" + uuid().slice(0, 10);
+    try {
+      await run(
+        `INSERT INTO custom_field_defs (id,org_id,entity,key,label,type,options,position,created_by,created_by_name,created_source)
+         VALUES (?,?,'donor',?,?,?,?,?,?,?,'donation_form')`,
+        [id, req.user.orgId, q.key, q.label, t ? t.cfType : "text",
+         JSON.stringify(q.options || []), Number((maxPos && maxPos.mp) || 0) + 1,
+         actor(req).id, actor(req).name]);
+      created.push({ key: q.key, label: q.label, type: t ? t.cfType : "text" });
+    } catch (e) {
+      // A field that cannot be created is a question whose answers would go
+      // nowhere, so it is REPORTED rather than swallowed — the form still saves,
+      // because refusing the whole save over one field would lose her other work.
+      console.error("[form] custom field for question", q.key, e.message);
+      failedQuestions.push({ key: q.key, label: q.label, why: e.message });
+    }
+  }
+
+  const funds = await orgFundsForSpec(req.user.orgId);
+  const [org] = await query("SELECT name FROM orgs WHERE id=?", [req.user.orgId]);
+  const orgName = await donorFacingOrgName(req.user.orgId, (org && org.name) || "").catch(() => (org && org.name) || "");
+  res.json({
+    pageId: pg.id, config: v.config,
+    spec: F.formSpec(v.config, { funds, orgName }),
+    customFieldsCreated: created,
+    // Said out loud rather than swallowed (BUILD-37 H2).
+    questionsWithoutAField: failedQuestions,
+  });
+}));
+
 app.get("/giving-pages/:id/page", requireAuth, requireAdmin, wrap(async (req, res) => {
   const pg = await givingPageOr404(req.params.id, req.user.orgId);
   if (!pg) return res.status(404).json({ error: "not_found" });
@@ -22227,7 +22682,7 @@ app.get("/org/:orgSlug/event/:eventId/public", wrap(async (req, res) => {
 }));
 
 app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -22295,6 +22750,23 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       // sees no change at all, which is what makes this safe to ship.
       page: builtWidgets,
       formPosition: formPos,
+      // BUILD-102 Part 1 — THE FORM THE DONOR IS OFFERED, from the same
+      // `formSpec` the editor's preview renders. Not a second shape derived from
+      // the same row: the same function, so the two cannot drift.
+      form: (await formConfigMod()).specForVariant(page.form_config, page.ab_test, req.query.v, {
+        funds: funds.map(f => ({ id: f.id, name: f.name })),
+        orgName: org.donor_facing_name,
+      }),
+      // BUILD-102 Part 6 — whether a test is running, so a first-time visitor can
+      // be assigned a side WITHOUT a cookie being set on every form that has none.
+      // A cookie nobody needs is a cookie somebody has to explain in a policy.
+      abRunning: !!(page.ab_test && page.ab_test.running !== false && page.ab_test.b),
+      // BUILD-102 Part 2 — the org's threshold, so the page can ask the shared
+      // rule rather than carry a copy of it. The RULE stays in
+      // shared/formConfig.js; this is only the org's number.
+      upsellThresholdCents: org.form_upsell_threshold_cents != null
+        ? Number(org.form_upsell_threshold_cents)
+        : (await formConfigMod()).UPSELL_DEFAULT_THRESHOLD_CENTS,
     },
     funds,
     peerFundraisers: {
@@ -22451,7 +22923,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
 // "never existed") if either the fundraiser OR its parent page is archived —
 // a fundraiser cannot outlive its campaign's own availability.
 app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public", wrap(async (req, res) => {
-  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
+  const orgs = await query(`SELECT o.id, o.name, o.mission, o.cover_fees_enabled, o.form_upsell_threshold_cents, ${GIVE_THEME_COLS} FROM orgs o LEFT JOIN portal_settings ps ON ps.org_id = o.id WHERE o.org_slug = ?`, [req.params.orgSlug]);
   if (!orgs.length) return res.status(404).json({ error: "Organization not found" });
   const org = orgs[0];
   org.donor_facing_name = String(org.display_name || "").trim() || org.name; // W-2 white-label
@@ -22594,8 +23066,14 @@ function coverFeesGrossUpCents(netCents) {
 
 app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
-  const { fundId, firstName, lastName, email, campaignId } = req.body;
-  let { amount, frequency, coverFees } = req.body;
+  const { firstName, lastName, email, campaignId } = req.body;
+  // BUILD-102 Part 2 — `fundId` is a `let` because the FORM's designation
+  // replaces whatever the request carried (a fixed form was never asking).
+  let { amount, frequency, coverFees, fundId } = req.body;
+  // BUILD-102 Part 3 — what the FORM asked, filled in below once its config has
+  // been read. Declared here, above every line that reads it: the TDZ class has
+  // cost this repo five builds and now fails the pre-push hook.
+  let formAsks = null;
   let { givingPageId, peerFundraiserId } = req.body;
   // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
   // never by the amount the page sent. One-time only, and no fee gross-up: the
@@ -22667,11 +23145,6 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const isRecurring = frequency === "monthly" || frequency === "annual";
   const frontendUrl = publicAppUrl();
 
-  let fundName = "";
-  if (fundId) {
-    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
-    if (fundRow.length) fundName = fundRow[0].name;
-  }
 
   // Peer-fundraiser donations always resolve givingPageId from the
   // fundraiser row itself, not whatever the client sent — the fundraiser
@@ -22712,6 +23185,89 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     pageCampaignId = pageRow[0].campaign_id || null;
   }
 
+  // ── BUILD-102 Part 2 — THE FORM'S CONFIG CONSTRAINS THE CHARGE ───────────
+  // The server has always priced the charge; this is the narrower rule the form
+  // adds. A form offering four amounts and no box to type in may not be charged
+  // $3.17 because somebody edited the request, and the designation is the FORM's
+  // rather than the request's (the BUILD-88a rule — which fund is the default is
+  // the server's to say — applied to a page a stranger opens from a flyer).
+  //
+  // It runs ONLY for a gift arriving through a giving page, and only for a plain
+  // donation: a ticket and a membership are already priced from their own level
+  // above, and running this over them would be a second opinion about a price
+  // the server itself just set.
+  if (givingPageId && !eventLevelId && !membershipLevelId) {
+    const F = await formConfigMod();
+    const [pageCfgRow] = await query("SELECT form_config FROM giving_pages WHERE id=? AND org_id=?", [givingPageId, org.id]);
+    const cfg = pageCfgRow ? pageCfgRow.form_config : null;
+    const orgFunds = await query("SELECT id, name FROM fin_funds WHERE org_id=?", [org.id]);
+    const amountCheck = F.checkRequestedAmount(cfg, baseCents, { funds: orgFunds });
+    if (!amountCheck.ok) {
+      return res.status(400).json({ error: amountCheck.message, code: amountCheck.code,
+                                    amountsCents: amountCheck.amountsCents });
+    }
+    const des = F.resolveDesignation(cfg, fundId, { funds: orgFunds });
+    if (des.from === "refused") return res.status(400).json({ error: des.message, code: des.code });
+    // The form's answer REPLACES whatever the request carried, and `fundName` is
+    // re-read from it below rather than from the request's id.
+    fundId = des.fundId || null;
+    // A FREQUENCY THE FORM DOES NOT OFFER IS REFUSED. A form with monthly
+    // switched off must not be able to mint a subscription through a hand-rolled
+    // request — that is a recurring charge the org never agreed to take.
+    const spec = F.formSpec(cfg, { funds: orgFunds, orgName: "" });
+    const wanted = frequency === "monthly" || frequency === "annual" ? "monthly" : "once";
+    if (!spec.amount.frequencies.includes(wanted)) {
+      return res.status(400).json({ error: "This form does not offer monthly giving.", code: "frequency_not_offered" });
+    }
+    // ── BUILD-102 Part 3 — ONLY WHAT THE FORM ASKED IS KEPT ────────────────
+    // A tribute from a form that does not show tribute fields, an employer from
+    // a form that does not ask where you work, an answer to a question that is
+    // not on the form: each is a field nobody was asked, arriving from a request
+    // somebody wrote by hand. Dropped silently rather than refused — the donor
+    // did nothing wrong and their gift must still go through — but never stored,
+    // because a tribute nobody was asked for becomes a draft letter to a family.
+    formAsks = { tributeType: null, tributeName: null, employer: null, answers: {} };
+    if (spec.details.tribute && req.body.tributeType) {
+      const t = String(req.body.tributeType) === "memory" ? "memory"
+        : String(req.body.tributeType) === "honor" ? "honor" : null;
+      if (t) {
+        formAsks.tributeType = t;
+        formAsks.tributeName = String(req.body.tributeName || "").trim().slice(0, 200);
+        // WHO SHOULD HEAR ABOUT IT. BUILD-98 writes a tribute notice only when
+        // somebody is named to receive one, which is right — a notice with nobody
+        // to send it to is a draft nobody will ever open. Optional: a donor may
+        // dedicate a gift without telling a family about it.
+        formAsks.notifyName = String(req.body.notifyName || "").trim().slice(0, 200);
+        formAsks.notifyEmail = String(req.body.notifyEmail || "").trim().slice(0, 200);
+      }
+    }
+    if (spec.details.employerMatch && req.body.employer) {
+      formAsks.employer = String(req.body.employer).trim().slice(0, 200);
+    }
+    const asked = new Map(spec.details.questions.map(q => [q.key, q]));
+    const given = req.body.answers && typeof req.body.answers === "object" ? req.body.answers : {};
+    for (const [k, v] of Object.entries(given)) {
+      const q = asked.get(k);
+      if (!q) continue;                               // not on this form
+      if (q.type === "yesno") { formAsks.answers[k] = v === true || v === "yes"; continue; }
+      const val = String(v == null ? "" : v).trim().slice(0, 480);
+      if (!val) continue;
+      // A CHOICE MAY ONLY BE ONE OF ITS OWN OPTIONS. Otherwise a hand-rolled
+      // answer writes free text into a field the report builder groups by, and
+      // the grouping quietly stops meaning anything.
+      if (q.type === "choice" && !q.options.includes(val)) continue;
+      formAsks.answers[k] = val;
+    }
+  }
+
+  // Resolved AFTER the form has had its say, so a fixed designation cannot
+  // charge one fund and label the gift with the one the request asked for.
+  let fundName = "";
+  if (fundId) {
+    const fundRow = await query("SELECT name FROM fin_funds WHERE id=$1 AND org_id=$2", [fundId, org.id]);
+    if (fundRow.length) fundName = fundRow[0].name;
+  }
+
   // Attribution FIX — a page configured to count toward a campaign stamps that
   // campaign into the charge metadata, so the webhook writes gifts.campaign_id
   // and the thermometer moves with no human touch. The page's own configured
@@ -22749,6 +23305,41 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
   };
+  // ── BUILD-102 Part 3 — WHAT THE FORM ASKED, carried to the webhook ────────
+  // One metadata key per thing rather than a JSON blob, because Stripe's own
+  // dashboard is where a support question actually gets answered, and a blob is
+  // unreadable there. Stripe allows 50 keys of 500 characters; five questions
+  // plus a tribute plus an employer fits with room to spare.
+  //
+  // These are only carried for a gift arriving through a CONFIGURED form: the
+  // form is what asked the questions, and a field nobody was asked must not
+  // arrive from a hand-rolled request. `formAsks` is set by the Part 2 block.
+  // BUILD-102 Part 5 — the UTM tags, carried for EVERY gift through a giving
+  // page, not only a configured form: a tagged link to an unconfigured page is
+  // still a link somebody sent, and the question "which email brought this in" is
+  // the same question. Read through the ONE shared cleaner.
+  {
+    const F = await formConfigMod();
+    const utm = F.utmFrom(req.body.utm && typeof req.body.utm === "object" ? req.body.utm : req.body);
+    for (const [k, v] of Object.entries(utm)) metadata[k] = v;
+    // BUILD-102 Part 6 — which side of an A/B this gift came through, so the
+    // completion lands on the right variant. The page tells us; it has nothing to
+    // gain by lying and the only consequence of a wrong value is a wrong count on
+    // one side of a test the org is running on itself.
+    if (req.body.variant === "a" || req.body.variant === "b") metadata.variant = req.body.variant;
+  }
+  if (formAsks) {
+    if (formAsks.tributeType) {
+      metadata.tribute_type = formAsks.tributeType;
+      metadata.tribute_name = formAsks.tributeName || "";
+      if (formAsks.notifyName) metadata.notify_name = formAsks.notifyName;
+      if (formAsks.notifyEmail) metadata.notify_email = formAsks.notifyEmail;
+    }
+    if (formAsks.employer) metadata.employer = formAsks.employer;
+    for (const [k, v] of Object.entries(formAsks.answers || {})) {
+      metadata["q_" + k] = typeof v === "boolean" ? (v ? "yes" : "no") : String(v).slice(0, 480);
+    }
+  }
   // BUILD-77 Part 6 — a valid reconnect token stitches the resulting
   // subscription to the EXISTING donor (webhook reads reconnect_donor_id).
   const reconnectDecoded = req.body.reconnectToken ? verifyReconnectToken(req.body.reconnectToken) : null;

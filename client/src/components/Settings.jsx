@@ -62,6 +62,131 @@ function UrlLinkButtons({url,openLabel="Open page ↗"}){
 // distinct from the org-wide /give/:orgSlug page, sharing that same QR/embed
 // mechanism per-page rather than a second system. See CLAUDE.md "Giving
 // Pages" — NOT the `campaigns` (email campaign) table/concept.
+// ── BUILD-102 (Steward Give) Part 6 — THE FUNNEL ───────────────────────────
+// Five figures, each with its definition on a hover, from the server's own
+// registry rather than a copy (the BUILD-86 C.3 rule). And the honest line
+// underneath: Steward counts how many times the form was opened and finished, and
+// records nothing about who.
+function FormFunnelBlock({pageId}){
+  const [d,setD]=useState(null);
+  const [days,setDays]=useState(90);
+  useEffect(()=>{
+    let alive=true;
+    apiFetch(`/giving-pages/${pageId}/funnel?days=${days}`).then(r=>{if(alive)setD(r);}).catch(()=>{});
+    return()=>{alive=false;};
+  },[pageId,days]);
+  if(!d) return null;
+  const f=d.funnel||{};
+  const fig=[
+    ["views",f.views],
+    ["starts",f.starts],
+    ["completions",f.completions],
+    ["completionRate",f.completionRate==null?"—":f.completionRate+"%"],
+    ["averageGift",f.averageGiftCents==null?"—":"$"+Math.round(f.averageGiftCents/100).toLocaleString()],
+  ];
+  const label=k=>((d.metrics||[]).find(m=>m.key===k)||{}).label||k;
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+        <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+          How this form is doing
+        </div>
+        <select value={days} onChange={e=>setDays(Number(e.target.value))}
+          style={{fontSize:11,border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 6px",background:T.white,color:T.ink2}}>
+          <option value={30}>Last 30 days</option>
+          <option value={90}>Last 90 days</option>
+          <option value={365}>Last year</option>
+        </select>
+      </div>
+      <div className="funnel-figures" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(104px,1fr))",gap:10}}>
+        {fig.map(([k,v])=>(
+          <div key={k} title={(d.definitions||{})[k]||""}
+            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:20,fontWeight:700,color:T.ink}}>{v==null?"—":v}</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:2}}>{label(k)}</div>
+          </div>
+        ))}
+      </div>
+      {d.note?<div style={{fontSize:12,color:T.ink3,marginTop:8,lineHeight:1.6}}>{d.note}</div>:null}
+      {d.abTest?(
+        <div className="funnel-ab" style={{marginTop:12,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"12px 14px"}}>
+          <div style={{fontSize:12,fontWeight:700,marginBottom:6}}>A test is running on this form</div>
+          <div style={{fontSize:13,color:T.ink2,lineHeight:1.6}}>{d.abTest.verdict.sentence}</div>
+          <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
+            A: {d.abTest.a.views} views, {d.abTest.a.completions} gifts ·
+            {" "}B: {d.abTest.bFunnel.views} views, {d.abTest.bFunnel.completions} gifts
+          </div>
+        </div>
+      ):null}
+      <div style={{fontSize:12,color:T.ink3,marginTop:10,lineHeight:1.6}}>{d.privacyNote}</div>
+    </div>
+  );
+}
+
+// ── BUILD-102 (Steward Give) Part 4 — THE FORM ON HER OWN WEBSITE ──────────
+// Two snippets and a live preview. Both snippets come from the SERVER
+// (`GET /giving-pages/:id/embed`) rather than being assembled here: the script
+// URL, the form id and the iframe fallback would otherwise be three pieces of
+// copy in two files, and the BUILD-95 registry lesson is that nothing keeps
+// three copies in step.
+//
+// The PREVIEW is the real embedded page in a real iframe, because "it renders on
+// my site" is the only question this screen exists to answer.
+function FormEmbedBlock({pageId,status}){
+  const [snip,setSnip]=useState(null);
+  const [copied,setCopied]=useState("");
+  useEffect(()=>{
+    let alive=true;
+    apiFetch(`/giving-pages/${pageId}/embed`).then(r=>{if(alive)setSnip(r);}).catch(()=>{});
+    return()=>{alive=false;};
+  },[pageId]);
+  const copy=(text,which)=>{
+    navigator.clipboard?.writeText(text).then(()=>{setCopied(which);setTimeout(()=>setCopied(""),1600);}).catch(()=>{});
+  };
+  if(!snip) return null;
+  const box={width:"100%",fontFamily:"ui-monospace,SFMono-Regular,Menlo,monospace",fontSize:11,
+    background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",resize:"vertical",color:T.ink2};
+  const btn={background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",
+    fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"};
+  return(
+    <div>
+      <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>
+        Put the donation form on your own website
+      </div>
+      <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,marginBottom:10}}>{snip.note}</div>
+      <div style={{marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:600,marginBottom:4}}>One line, anywhere on your page</div>
+        <textarea className="embed-script-snippet" readOnly rows={2} value={snip.script} style={box}
+          onClick={e=>e.target.select()}/>
+        <button style={{...btn,marginTop:6}} onClick={()=>copy(snip.script,"script")}>
+          {copied==="script"?"Copied":"Copy"}
+        </button>
+      </div>
+      <details style={{marginBottom:10}}>
+        <summary style={{fontSize:12,fontWeight:600,cursor:"pointer"}}>
+          If your site will not allow a script tag
+        </summary>
+        <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"6px 0 6px"}}>
+          This works everywhere, but it cannot resize itself — change the height if the
+          form is cut off or floating in space.
+        </div>
+        <textarea className="embed-iframe-snippet" readOnly rows={2} value={snip.iframe} style={box}
+          onClick={e=>e.target.select()}/>
+        <button style={{...btn,marginTop:6}} onClick={()=>copy(snip.iframe,"iframe")}>
+          {copied==="iframe"?"Copied":"Copy"}
+        </button>
+      </details>
+      <div>
+        <div style={{fontSize:12,fontWeight:600,marginBottom:6}}>
+          What a visitor sees{status!=="active"?" — this form is archived, so it shows a closed line":""}
+        </div>
+        <iframe className="embed-live-preview" src={snip.previewUrl} title="Donation form preview"
+          style={{width:"100%",maxWidth:480,height:560,border:"1px solid "+T.bg3,borderRadius:10,background:T.white}}/>
+      </div>
+    </div>
+  );
+}
+
 function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
   const [pages,setPages]=useState([]);
   const [funds,setFunds]=useState([]);
@@ -240,6 +365,16 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                   <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Embed Code</div>
                   <EmbedCodeBlock url={url}/>
                 </div>
+                {/* BUILD-102 Part 4 — the DONATION FORM on her own website, which
+                    is a different thing from embedding the whole page: one line,
+                    a self-sizing frame, and no card field anywhere on her site.
+                    The snippets are generated by the SERVER so the script URL, the
+                    id and the fallback cannot drift apart in three places of copy. */}
+                <FormEmbedBlock pageId={p.id} status={p.status}/>
+                {/* BUILD-102 Part 6 — the funnel, with every figure's definition
+                    on its own hover, and a sentence where a winner would be if it
+                    were callable. */}
+                <FormFunnelBlock pageId={p.id}/>
               </div>
             )}
             {fundraisersOpen&&(()=>{

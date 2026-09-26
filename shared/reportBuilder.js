@@ -73,6 +73,16 @@ export const ENTITIES = {
       tribute:         { label: "Tribute", sql: "g.tribute_name", type: "text" },
       donor_stage:     { label: "Donor stage", sql: "d.stage", type: "text" },
       donor_kind:      { label: "Donor is person or organisation", sql: "COALESCE(d.kind,'person')", type: "text" },
+      // BUILD-102 (Steward Give) Part 5 — which email brought this gift in. Stored
+      // on the gift, so the question is answered over the SAME rows every money
+      // figure comes from rather than in a separate analytics product nobody
+      // reconciles against the money. "(not tagged)" rather than blank, because a
+      // grouping needs a row for the gifts that arrived without tags — otherwise
+      // the total of the groups is quietly less than the total of the gifts.
+      utm_source:      { label: "Link source", sql: "COALESCE(NULLIF(g.utm_source,''),'(not tagged)')", type: "text" },
+      utm_medium:      { label: "Link medium", sql: "COALESCE(NULLIF(g.utm_medium,''),'(not tagged)')", type: "text" },
+      utm_campaign:    { label: "Link campaign", sql: "COALESCE(NULLIF(g.utm_campaign,''),'(not tagged)')", type: "text" },
+      form:            { label: "Donation form", sql: "(SELECT gp.title FROM giving_pages gp WHERE gp.id = g.giving_page_id)", type: "text" },
     },
     custom: { entity: "gift", sql: key => `g.custom_fields->>'${key}'` },
   },
@@ -387,6 +397,10 @@ export const STANDARD_REPORTS = [
     kind: "handler", handler: "grant-deadlines", params: { days: 90 } },
   { key: "grant-restricted-balances", name: "Restricted balances by grant", question: "How much restricted money are we holding, and against which grant?",
     kind: "handler", handler: "grant-restricted" },
+  { key: "gifts-by-link-source", name: "Gifts by link source", question: "Which email or ad brought this money in?",
+    kind: "builder",
+    def: { entity: "gifts", columns: [], groupBy: "utm_source",
+           filter: { op: "and", rules: [{ field: "date", cmp: "on_or_after", value: "{{fyStart}}" }] } } },
   { key: "board-giving", name: "Board giving", question: "What has each board member given?", kind: "builder",
     def: { entity: "people", columns: ["name", "lifetime", "last_gift_date", "last_gift_amount"], filter: { op: "and", rules: [{ field: "person_type", cmp: "contains", value: "staff_board" }] }, sort: { field: "lifetime", dir: "desc" } } },
   // BUILD-101 Part 5 — memberships. Handler reports: the same functions the

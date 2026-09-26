@@ -34,6 +34,30 @@ if ! (cd client && npx eslint src --max-warnings=-1); then
   exit 1
 fi
 
+# ── TDZ SELF-REFERENCES ALWAYS. Two seconds, and it is the ONE class of mistake
+# ── in this codebase that reaches a browser past every other gate: `const INK =
+# ── INK;` parses, type-checks, lints and passes every server suite, then replaces
+# ── a whole screen with its error boundary at runtime.
+#
+# It has now cost FIVE builds (BUILD-84, 89, 95, 96, 102), and four of those five
+# were a blanket string replace that rewrote a declaration along with its uses. A
+# scanner nobody runs is worth nothing, so it runs here rather than being
+# remembered — Jonathan's instruction, 2026-09-25.
+#
+# ONLY the self-reference half is gated. `--all` reports ~200 read-above
+# candidates that are mostly function parameters sharing a spelling with a later
+# binding; it cannot be made exact without real scope analysis, and a gate with
+# false positives is a gate people learn to bypass. A self-reference needs no
+# judgement at all: it is always a bug.
+echo "[pre-push] tdz-scan (self-references)"
+if ! node scripts/tdz-scan.js; then
+  echo ""
+  echo "[pre-push] BLOCKED: a const reads itself. That is always a bug — it throws"
+  echo "[pre-push] ReferenceError at runtime and takes the screen to its error boundary."
+  echo "[pre-push] Fix the declaration; do not --no-verify past this one."
+  exit 1
+fi
+
 zero=0000000000000000000000000000000000000000
 mode=""
 reason=""
