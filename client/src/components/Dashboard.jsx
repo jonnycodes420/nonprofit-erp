@@ -1861,7 +1861,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   </span>
                 )}
               </span>
-              <span style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+              <span className="thread-hdr-tools" style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
                 {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
                     shop with more than one officer (the BUILD-32 standing rule:
                     hide a picker whose options all resolve to the same view). */}

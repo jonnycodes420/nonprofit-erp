@@ -547,6 +547,15 @@ export function GlobalStyles() {
          name, and the buttons take the row below it. */
       .attn-row{flex-wrap:wrap!important;}
       .attn-row .attn-row-main{flex:1 1 100%!important;}
+      /* FIX-1 walk — on Home the "how late" badge sits INSIDE the row's link,
+         beside the name, so its 100% basis crushed the text to one word a
+         line. The link wraps, and the badge takes its own line under the
+         text, indented past the face (38px mark + 14px gap). */
+      .attn-row .attn-row-main{flex-wrap:wrap!important;}
+      .attn-row .attn-row-main>.attn-row-next{padding-left:52px!important;}
+      /* …and the Thread header's toggle, count and "Plan a follow-up" wrap
+         rather than running the button off the right edge. */
+      .thread-hdr-tools{flex-wrap:wrap!important;flex-shrink:1!important;}
       .attn-row .attn-clause{flex-wrap:wrap!important;}
       .attn-row .attn-meta{flex-basis:100%!important;white-space:normal!important;}
       .attn-row .attn-row-next{flex:1 1 100%!important;text-align:left!important;margin-top:6px!important;}

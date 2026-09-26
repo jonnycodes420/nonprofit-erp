@@ -1,0 +1,212 @@
+{
+  "1440/home": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/dashboards": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/donors": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/fundraising-overview": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/fundraising-campaigns": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/fundraising-majorgifts": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/fundraising-moneyin": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/volunteers": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/agent-plans": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/agent-ask": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/agent-workflows": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/agent-waiting": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/agent-guardrails": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/reports": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/finance-restricted": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/finance-payouts": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/finance-close": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/grants": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/communications": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/tasks": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "1440/settings": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/home": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/dashboards": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/donors": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/fundraising-overview": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/fundraising-campaigns": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/fundraising-majorgifts": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/fundraising-moneyin": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/volunteers": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/agent-plans": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/agent-ask": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/agent-workflows": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/agent-waiting": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/agent-guardrails": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/reports": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/finance-restricted": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/finance-payouts": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/finance-close": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/grants": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/communications": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/tasks": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  },
+  "390/settings": {
+    "overflow": 0,
+    "bad": [],
+    "errors": []
+  }
+}
