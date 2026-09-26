@@ -1,6 +1,6 @@
 {
  "generatedAt": "2026-09-25T20:52:42.460Z",
- "count": 618,
+ "count": 621,
  "routes": [
   {
    "method": "POST",
@@ -13926,6 +13926,77 @@
    "identifiers": [],
    "frontend": {
     "probe": "/people/photos",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/people",
+   "line": 36192,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [],
+    "query": [
+     "role"
+    ],
+    "body": []
+   },
+   "identifiers": [],
+   "frontend": {
+    "probe": "/people",
+    "referenced": true
+   }
+  },
+  {
+   "method": "GET",
+   "path": "/people/:id",
+   "line": 36217,
+   "auth": [
+    "requireAuth"
+   ],
+   "sourceSeen": true,
+   "layerCount": 2,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/people",
+    "referenced": true
+   }
+  },
+  {
+   "method": "PUT",
+   "path": "/people/:id/roles",
+   "line": 36227,
+   "auth": [
+    "requireAuth",
+    "checkWriteAccess"
+   ],
+   "sourceSeen": true,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "id"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "id"
+   ],
+   "frontend": {
+    "probe": "/people",
     "referenced": true
    }
   },

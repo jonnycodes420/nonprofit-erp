@@ -689,66 +689,65 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
   );
 }
 
-// ── BUILD-94 Part 2 — what this person IS, on the header ───────────────────
-// A record that is only a Donor shows nothing: that is every record in the
-// product until this build, and a badge that is always on is not a badge.
-// Anything else says so, and clicking opens the picker — one person can be
-// more than one (a volunteer who gives is both, on ONE record).
-function PersonTypeChips({donor,isReadOnly}){
+// ── FIX-1 D — what this person IS, as a row of chips under the name ────────
+// One person, one record, even when they are two things (BUILD-94 Part 2).
+// Each chip is ONE write through PUT /people/:id/roles. A role that is on is a
+// STATE (cream, emerald hairline) — never a second action colour. Adding
+// Volunteer puts them on the Volunteers roster that moment, on this record.
+//
+// DONOR IS SET BY GIVING. While gifts are on file the Donor chip cannot come
+// off, and it says why — the SERVER's sentence (GET /people/:id), and the
+// server refuses the removal too, so the chip and the rule cannot disagree.
+const ROLE_CHIPS=PERSON_TYPES.filter(t=>t.key!=="other");
+function RoleChips({donor,isReadOnly}){
   const [types,setTypes]=useState(donor.personTypes||["donor"]);
-  const [open,setOpen]=useState(false);
-  const [busy,setBusy]=useState(false);
+  const [lock,setLock]=useState({locked:false,reason:null});
+  const [busy,setBusy]=useState(null);
+  const [note,setNote]=useState("");
   useEffect(()=>{setTypes(donor.personTypes||["donor"]);},[donor.id,JSON.stringify(donor.personTypes||[])]);
-  const save=async(next)=>{
-    setBusy(true);
-    const prev=types;
-    setTypes(next);
+  useEffect(()=>{
+    let gone=false;
+    apiFetch(`/people/${donor.id}`).then(r=>{
+      if(gone||!r)return;
+      if(Array.isArray(r.person_types))setTypes(r.person_types);
+      setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
+    }).catch(()=>{});
+    return()=>{gone=true;};
+  },[donor.id]);
+  const toggle=async(k)=>{
+    if(isReadOnly||busy)return;
+    const on=!types.includes(k);
+    if(k==="donor"&&!on&&lock.locked){setNote(lock.reason);return;}
+    setBusy(k);setNote("");
     try{
-      await apiFetch(`/donors/${donor.id}`,{method:"PUT",
-        body:JSON.stringify({name:donor.name,email:donor.email,phone:donor.phone,status:donor.status,
-          stage:donor.stage,tags:donor.tags,notes:donor.notes,personTypes:next})});
-    }catch(e){setTypes(prev);alert(errorMessage(e,"Could not change this person's type"));}
-    setBusy(false);
+      const r=await apiFetch(`/people/${donor.id}/roles`,{method:"PUT",body:JSON.stringify({role:k,on})});
+      if(r&&Array.isArray(r.person_types)){
+        setTypes(r.person_types);
+        setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
+      }
+    }catch(e){setNote(errorMessage(e,"Could not change this person's role"));}
+    setBusy(null);
   };
-  const toggle=(k)=>{
-    const has=types.includes(k);
-    const next=has?types.filter(t=>t!==k):[...types,k];
-    // normalizeTypes floors an empty list at ["other"] server-side; say so here
-    // rather than letting the screen and the row disagree for a moment.
-    save(next.length?next:["other"]);
-  };
-  const shown=PERSON_TYPES.filter(t=>types.includes(t.key));
-  const onlyDonor=types.length===1&&types[0]==="donor";
   return (
-    <span style={{position:"relative",display:"inline-flex",alignItems:"center",gap:5}}>
-      {!onlyDonor&&shown.map(t=>(
-        <span key={t.key} data-testid="person-type-chip"
-          style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,
-            background:T.bg2,color:T.ink2,border:`1px solid ${T.bg3}`}}>{t.label}</span>
-      ))}
-      {!isReadOnly&&(
-        <button type="button" onClick={()=>setOpen(v=>!v)} data-testid="person-type-edit"
-          aria-label="Change what this person is" title="Donor, volunteer, staff and board, other"
-          style={{background:"none",border:"none",padding:"2px 4px",fontSize:11,color:T.ink3,cursor:"pointer",opacity:busy?0.5:1}}>
-          {onlyDonor?"+ type":"⌄"}
-        </button>
-      )}
-      {open&&(
-        <span style={{position:"absolute",top:22,left:0,zIndex:20,background:T.white,border:`1px solid ${T.bg3}`,
-          borderRadius:10,boxShadow:T.shadowMd,padding:"6px 4px",minWidth:170}}>
-          {PERSON_TYPES.map(t=>(
-            <label key={t.key} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",fontSize:12.5,color:T.ink,cursor:"pointer",whiteSpace:"nowrap"}}>
-              <input type="checkbox" checked={types.includes(t.key)} disabled={busy}
-                onChange={()=>toggle(t.key)} style={{accentColor:T.greenDk}}/>
-              {t.label}
-            </label>
-          ))}
-          <div style={{fontSize:10.5,color:T.ink3,padding:"4px 10px 2px",lineHeight:1.45,whiteSpace:"normal"}}>
-            Someone who is not a donor stays out of giving totals, Drift, receipts and every count that reads donors.
-          </div>
-        </span>
-      )}
-    </span>
+    <div data-testid="role-chips" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:5}}>
+      {ROLE_CHIPS.map(c=>{
+        const on=types.includes(c.key);
+        const locked=c.key==="donor"&&on&&lock.locked;
+        return (
+          <button key={c.key} type="button" data-testid={"role-chip-"+c.key} aria-pressed={on}
+            disabled={isReadOnly||busy===c.key} onClick={()=>toggle(c.key)}
+            title={locked?lock.reason:(isReadOnly?c.label:(on?`Remove ${c.label}`:`Add ${c.label}`))}
+            style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,lineHeight:1.35,
+              cursor:isReadOnly?"default":(locked?"help":"pointer"),opacity:busy===c.key?0.55:1,
+              background:on?T.bg2:T.white,color:on?T.ink:T.ink3,
+              border:`1px solid ${on?T.greenDk:T.bg3}`}}>
+            {on?c.label:"+ "+c.label}
+            {locked&&<span style={{fontWeight:600,color:T.ink3}}> · set by giving</span>}
+          </button>
+        );
+      })}
+      {note&&<span role="status" data-testid="role-chip-note" style={{fontSize:11.5,color:T.ink2,lineHeight:1.4}}>{note}</span>}
+    </div>
   );
 }
 
@@ -1435,11 +1434,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
-              {/* BUILD-94 Part 2 — what this person IS. A donor-only record
-                  says nothing (that is every record, and a badge that is
-                  always on is not a badge); a volunteer, a board member or an
-                  untyped Mailchimp contact says so. */}
-              <PersonTypeChips donor={donor} isReadOnly={isReadOnly}/>
               <DriftBadge drift={donor.drift}/>
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
@@ -1448,6 +1442,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100||"#edf3ee",color:T.greenDk,border:`1px solid ${T.green200||"#dce7df"}`}}>Sustainer · not reconnected</span>}
               <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
             </div>
+            {/* FIX-1 D — the roles, under the name, one tap each. */}
+            <RoleChips donor={donor} isReadOnly={isReadOnly}/>
             <div className="dph-meta" style={{fontSize:11,color:T.ink3,marginTop:2,display:"flex",flexWrap:"wrap",gap:"0 4px"}}>
               <span style={{whiteSpace:"nowrap"}}>{fmtFull(donor.total)} lifetime</span>
               <span style={{whiteSpace:"nowrap"}}>·</span>
