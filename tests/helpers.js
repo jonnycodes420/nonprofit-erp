@@ -97,6 +97,27 @@ const BILLING_MOCK_PORT = Number(process.env.BILLING_MOCK_PORT || 5604);
 // Tests that date something "today" must use the same civil clock.
 const civilToday = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 
+// N days from the ORG's civil today, as a civil date. THE ONE OF THESE, because
+// four suites had written their own and all four were wrong the same way.
+//
+// CI #297 is what this is for. Each of those four helpers carried a comment
+// warning against `toISOString()` — "after 8pm Eastern the UTC calendar has
+// already turned over" — and then fixed it by reading the MACHINE's local
+// calendar parts, on the stated assumption that the machine is New York. True on
+// a developer's laptop, false on a UTC CI runner: at 20:30 EDT the runner's own
+// calendar had already turned over and every expected date was a day out while
+// the server was right. Four suites failed and the product was innocent in all
+// four.
+//
+// The arithmetic is done in UTC on purpose, but only AFTER the base day has been
+// taken from the org's zone — so no daylight-saving transition can move a civil
+// day count. Adding days to a zoned Date is what breaks across a DST boundary
+// (BUILD-94 paid for that); adding days to a bare calendar date cannot.
+const civilPlusDays = (n) => {
+  const [y, m, d] = civilToday().split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + Number(n || 0))).toISOString().slice(0, 10);
+};
+
 // ── BUILD-84 census — A GUARD OVER A PAYLOAD WALKS IT ─────────────────────
 // `JSON.stringify(payload).includes(x)` throws away every boundary the
 // structure provides and then asks a question about letters. That is how a
@@ -166,4 +187,4 @@ async function waitFor(fn, { timeout = 10000, interval = 50 } = {}) {
 const NEGATIVE_MAIL_WAIT_MS = Number(process.env.NEGATIVE_MAIL_WAIT_MS || 4000);
 const settleNegative = () => new Promise(r => setTimeout(r, NEGATIVE_MAIL_WAIT_MS));
 
-module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, textMatch, leaks, waitFor, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, settleNegative, NEGATIVE_MAIL_WAIT_MS };
