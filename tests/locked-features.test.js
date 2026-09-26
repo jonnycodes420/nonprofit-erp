@@ -70,11 +70,14 @@ const nav = id => (app.match(new RegExp(`const ${id}=\\[([^\\]]*)\\]`)) || [, ""
 const primary = nav("PRIMARY_NAV"), more = nav("MORE_NAV");
 ok(/const PRIMARY_NAV=\[/.test(app) && /const MORE_NAV=\[/.test(app), "App splits the sidebar into PRIMARY_NAV and MORE_NAV");
 ok(/^"dashboard","board"/.test(primary), "Home leads the rail and Dashboards is the item under it");
-for (const id of ["donors", "fundraising", "reports"])
+// FIX-1 §A — Agent is its own rail item, and the Workflows recipes moved into
+// it (Agent → Workflows), so "workflows" leaves More; its id deep-links there.
+for (const id of ["donors", "fundraising", "agent", "reports"])
   ok(primary.includes(`"${id}"`), `${id} is a primary rail item`);
 // FIX-1 §B — "pipeline" left this list: the sidebar's Pipeline folded into
 // Fundraising → Major gifts (tests/fix1-fundraising.test.js §2/§3 prove it lands).
-for (const id of ["grants", "communications", "tasks", "workflows", "finance"])
+// FIX-1 §A — "workflows" left it too: the recipes moved into Agent → Workflows.
+for (const id of ["grants", "communications", "tasks", "finance"])
   ok(more.includes(`"${id}"`), `${id} folds into "More"`);
 // Nothing may be in both lists, and nothing that has a tab may be in neither —
 // a nav that loses a surface is the one failure this split could cause.

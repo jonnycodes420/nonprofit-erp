@@ -17,7 +17,7 @@ import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
-import { Workflows } from "./components/Workflows";
+import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
@@ -146,6 +146,8 @@ function AppShell() {
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
+  // FIX-1 §A — Agent opens on a view, and Home's one-line entry carries her words in.
+  const [agentIntent,setAgentIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),
@@ -168,6 +170,10 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts)=>{
+    // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
+    // activity (the thirty-day undo list). Every old way in lands there.
+    if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
+    if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
     // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
     // one lands on the portal hub instead of a locked/broken view.
     if(data?.org?.plan==="portal"&&!PORTAL_TIER_TABS.has(t))t="portal";
@@ -196,6 +202,7 @@ function AppShell() {
     setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
+    setAgentIntent(t==="agent"&&(opts?.agentView||opts?.agentText)?{view:opts.agentView||null,text:opts.agentText||"",autoAsk:!!opts.autoAsk}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
   };
@@ -426,7 +433,7 @@ function AppShell() {
     {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:tab==="agent"?T.bgDark:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -640,7 +647,7 @@ function AppShell() {
           its routes and its table are untouched, like Events and Volunteers. */}
       {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
-      {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
     </ErrorBoundary>

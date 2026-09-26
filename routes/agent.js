@@ -25,7 +25,7 @@ const {
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
-  processWorkflowSweeps, query, requireAdmin, requireAuth, requirePlan, run, runTx,
+  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
@@ -136,14 +136,34 @@ const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
 // selected — never a database handle and never a query it wrote. This function
 // is the entire surface, and it is org-scoped, capped, and excludes the people
 // nothing may be drafted for.
-async function agentReadPeople(orgId, { limit = 400 } = {}) {
+async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
+  // FIX-1 §A — READS ARE SCOPED. `ids` is the people an instruction names (or
+  // a run's steps name); null is the whole organisation, and only an
+  // instruction that names nobody reads that. The walk's run "read 400
+  // people" for an instruction about one foundation.
+  const only = Array.isArray(ids) && ids.length ? ids.map(String) : null;
   return query(
-    `SELECT d.id, d.name, d.email, d.kind, d.stage, d.status, d.total_giving, d.gift_count,
+    `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status, d.total_giving, d.gift_count,
             d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample
        FROM donors d
       WHERE d.org_id = ? AND d.deleted_at IS NULL
+        AND (?::text[] IS NULL OR d.id = ANY(?::text[]))
       ORDER BY d.total_giving DESC NULLS LAST, d.id
-      LIMIT ?`, [orgId, Math.min(Number(limit) || 400, 1000)]);
+      LIMIT ?`, [orgId, only, only, Math.min(Number(limit) || 400, 1000)]);
+}
+
+// WHO AN INSTRUCTION NAMES. Only the records whose name appears in her words
+// come back from the database (ids, names and kinds, nothing else), and
+// agentShape.scopeFromInstruction keeps the ones named by whole words. This is
+// how "the Sunrise Foundation" reads one record instead of the organisation.
+async function agentNamedIn(orgId, text) {
+  const A = await agentShapeMod();
+  const candidates = await query(
+    `SELECT id, name, kind, funder_type FROM donors
+      WHERE org_id = ? AND deleted_at IS NULL AND length(name) >= 3
+        AND position(lower(regexp_replace(name, '^the[[:space:]]+', '', 'i')) in lower(?)) > 0
+      ORDER BY length(name) DESC LIMIT 50`, [orgId, String(text || "")]);
+  return { scope: A.scopeFromInstruction(text, candidates), candidates };
 }
 
 // Every agent write goes through HERE, so the undo ledger cannot be forgotten
@@ -290,15 +310,23 @@ async function agentUndoWrite(w, orgId) {
 }
 
 // ── THE PLAN ───────────────────────────────────────────────────────────────
-// Nothing runs until she has read one. The model is given the instruction, the
-// org's own words, and a SUMMARY of the rows — never the rows' contents at plan
-// time, because a plan is about shape, not about people.
-async function agentBuildPlan(orgId, instructionText, { authorization }) {
+// Nothing runs until she has read one.
+//
+// FIX-1 §A — THE PLAN IS COMPILED FROM THE STEPS THAT WILL RUN. The model
+// returns STEPS (each a tool, a person, and the rows it came from), never a
+// headline; Steward writes the headline from those steps (compilePlan), and
+// the run executes exactly those steps. The model sees only the rows the
+// instruction names, or the organisation when it names nobody.
+async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null }) {
   const A = await agentShapeMod();
-  const people = await agentReadPeople(orgId);
+  const TH = await thresholdsMod();
+  const people = await agentReadPeople(orgId, { ids: scope });
   const V = await import("../shared/vocabulary.js");
   const [orgRow] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
   const words = V.normalizeVocabulary(orgRow && orgRow.vocabulary_json);
+  // The people a draft may never be written for are removed BEFORE the model
+  // sees them (BUILD-83's rule: fiction and the no-ask family generate nothing).
+  const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
   const client = new Anthropic();
   const toolList = A.AGENT_TOOLS
     .filter(t => A.PLANNABLE.includes(t.name))
@@ -311,161 +339,204 @@ async function agentBuildPlan(orgId, instructionText, { authorization }) {
     toolList,
     "",
     "RULES, and they are not negotiable:",
-    "- Produce a PLAN, not results. The plan is what she reads before anything happens.",
-    "- Say how many people this will touch. It is an estimate and you say so.",
+    "- Return STEPS: every action you will take, one per person, in order. Nothing else will run.",
+    "- EVERY step must carry `citesRows`: the ids of the rows it came from. A step you cannot",
+    "  point at a row for must not be returned at all.",
     authorization === A.AUTH_SEND
       ? "- This instruction is signed for sending, so `sends` may be greater than zero."
       : "- NOTHING may be sent. `sends` must be 0. Drafts go in her queue.",
-    "- Never plan anything that moves money: no refunds, charges, pledges, receipts or recurring changes.",
-    "- Use NO number that is not in the data you were given. Do not state rules about how giving works.",
+    "- Never plan anything that moves money: no gifts, refunds, charges, pledges, receipts or recurring changes.",
+    "- Use NO number that is not in the rows below. Never state a rule about how giving works.",
+    "- Call each person what the row calls them. An organisation is a foundation, church or business, never a donor's word.",
+    "- Plain sentences. No markdown.",
   ].join("\n");
 
   const user = [
     `Her instruction, verbatim: "${String(instructionText).slice(0, 2000)}"`,
     "",
-    `This organisation has ${people.length} people on file.`,
-    words ? `It calls a giver a "${words.giver_singular}" and a fund a "${words.fund_singular}".` : "",
-    "",
-    "Plan the work.",
-  ].filter(Boolean).join("\n");
+    scope ? "The records she named:" : `The people on file (${reachable.length}):`,
+    ...reachable.slice(0, 200).map(p =>
+      `  ${p.id} | ${p.name} | ${V.giverWordFor(p, words)} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}`),
+  ].join("\n");
 
   const msg = await client.messages.create({
     model: AGENT_MODEL,
-    max_tokens: 1500,
+    max_tokens: 8000,
     system,
-    tools: [{ name: "plan", description: "The plan she will read before anything runs.",
+    tools: [{ name: "plan", description: "The steps she will read before anything runs.",
               strict: true, input_schema: A.PLAN_SCHEMA }],
     tool_choice: { type: "tool", name: "plan" },
     messages: [{ role: "user", content: user }],
   });
   const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "plan");
-  return { plan: block ? block.input : null, peopleCount: people.length, prompt: system + "\n\n" + user,
-           response: JSON.stringify(block ? block.input : null) };
+  const raw = block && block.input ? block.input : { steps: [], sends: 0 };
+  await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
+             VALUES (?,?,?,'agent_plan',?,?,?)`,
+    ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
+     (system + "\n\n" + user).slice(0, 200000), JSON.stringify(raw).slice(0, 200000)]);
+
+  // A step that cannot be run as written is left out HERE, before she reads the
+  // plan, and COUNTED on it; the run never meets a step she did not read. A
+  // tool she has not signed for stays in, so validatePlan REFUSES the plan
+  // rather than trimming it.
+  const byId = new Map(reachable.map(p => [p.id, p]));
+  const knownRowIds = reachable.map(p => p.id);
+  const groundedValues = reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount])
+    .map(Number).filter(Number.isFinite);
+  const steps = [];
+  let withheld = 0;
+  for (const s of Array.isArray(raw.steps) ? raw.steps : []) {
+    if (!A.PLANNABLE.includes(s.tool)) { steps.push(s); continue; }
+    if (s.donorId && !byId.has(s.donorId)) { withheld++; continue; }
+    if (A.citationProblems(s, { knownRowIds }).length) { withheld++; continue; }
+    const text = [s.body, s.note, s.title, s.label, s.subject].filter(Boolean).join(" \n ");
+    if (TH.ungroundedClaims(text, { groundedValues }).length) { withheld++; continue; }
+    steps.push(s);
+  }
+  return { steps, sends: Number(raw.sends) || 0, withheld, people: reachable };
+}
+
+// ── A GIFT SHE TELLS IT ABOUT ──────────────────────────────────────────────
+// No model. Steward parsed the amount and found the one record she named; the
+// plan is the gift PREPARED for her to confirm, and a follow-up that waits for
+// it. What the detail column says is read from the rows, never guessed.
+function agentCivil(ymd, addDays = 0) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ""));
+  if (!m) return { ymd: null, long: "" };
+  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + addDays));
+  return { ymd: t.toISOString().slice(0, 10),
+           long: t.toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" }) };
+}
+async function agentPreparedGiftPlan(orgId, text, donor) {
+  const A = await agentShapeMod();
+  const V = await import("../shared/vocabulary.js");
+  const today = orgToday(await orgTz(orgId));
+  const [fund] = await query(
+    "SELECT name FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]);
+  const method = A.methodFromInstruction(text);
+  const day = agentCivil(today), due = agentCivil(today, 2);
+  const who = A.nameInSentence(donor);
+  const gift = A.preparedGiftFromInstruction(text, [donor]);
+  const steps = [
+    { tool: "record_gift", donorId: donor.id, amountCents: gift.amountCents, preparedBy: "steward",
+      method, date: day.ymd, citesRows: [donor.id],
+      detail: [(fund && fund.name) || "General Operating", method || "method: you fill it in", day.long].join(" · ") },
+    { tool: "open_thread", donorId: donor.id, label: "Thank " + who, after: "record_gift", due: due.ymd,
+      citesRows: [donor.id], detail: `Due ${due.long} · you` },
+  ];
+  const plan = A.compilePlan(steps, { people: [donor], reads: `${who}'s record` });
+  const last = donor.last_gift_date && Number(donor.last_gift_amount) > 0
+    ? `Last gift ${A.formatCents(Math.round(Number(donor.last_gift_amount) * 100))}, ${agentCivil(donor.last_gift_date).long}`
+    : "No gift on file yet";
+  plan.readIds = [donor.id];
+  plan.readDetail = last;
+  plan.giverWord = V.giverWordFor(donor, null);
+  plan.prepared = true;
+  plan.confirmLabel = A.confirmLabel(plan);
+  return plan;
 }
 
 // ── RUNNING A CONFIRMED PLAN ───────────────────────────────────────────────
-// `steps` come from the model, and EVERY ONE is checked here: the tool must be
-// runnable, the donor must be this org's, and the action must cite rows Steward
-// actually read. A step that fails any of those is WITHHELD and COUNTED.
-async function agentRunPlan(orgId, instruction, { userId }) {
+// THE RUN IS THE PLAN. It executes the plan's own steps, in the plan's order,
+// and nothing else: there is no second model call to come up with different
+// actions. Each step is still checked here, because a stored plan is data: the
+// tool must have an executor, the donor must be this org's, and the step must
+// cite rows Steward read. A money step is never executed here: the PERSON
+// recorded it in the confirm route (`confirmed`), and the run says so.
+async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
   const runId = "arun_" + uuid().slice(0, 10);
-  const people = await agentReadPeople(orgId);
+  const plan = instruction.plan || {};
+  const planSteps = Array.isArray(plan.steps) ? plan.steps : [];
+  // READS ARE SCOPED: the run reads the people its steps name, and nobody else.
+  const named = [...new Set(planSteps.map(s => s.donorId).filter(Boolean))];
+  const people = named.length ? await agentReadPeople(orgId, { ids: named }) : [];
   const byId = new Map(people.map(p => [p.id, p]));
   const knownRowIds = people.map(p => p.id);
+  // Deceased, do-not-contact and sample people get no work, whatever the plan
+  // says (BUILD-83; the incident's rule that fiction generates nothing).
+  const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
+  const reachableIds = new Set(reachable.map(p => p.id));
   const today = orgToday(await orgTz(orgId));
+  const readSummary = plan.reads
+    || (people.length === 1 ? `${A.nameInSentence(people[0])}'s record` : `${people.length} records`);
 
   await run(`INSERT INTO agent_runs (id,org_id,instruction_id,status,plan,read_summary)
              VALUES (?,?,?,'running',?,?)`,
-    [runId, orgId, instruction.id, JSON.stringify(instruction.plan || null),
-     `${people.length} people`]);
+    [runId, orgId, instruction.id, JSON.stringify(plan), String(readSummary).slice(0, 300)]);
 
-  const client = new Anthropic();
-  const plan = instruction.plan || {};
-  const allowed = AGENT_RUNNABLE.filter(n => (plan.steps || []).some(s => s.tool === n));
-  // The people a draft may never be written for, removed BEFORE the model sees
-  // them rather than filtered after — the same rule getDraftFor has carried
-  // since BUILD-83, and the incident's rule that fiction generates nothing.
-  const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
-
-  const system = [
-    "You are carrying out an instruction inside a nonprofit's own CRM.",
-    "",
-    "Return ACTIONS, one per person, using only these tools: " + (allowed.join(", ") || "none"),
-    "",
-    "RULES:",
-    "- EVERY action must carry `citesRows`: the ids of the rows it came from. An action you cannot",
-    "  point at a row for must not be returned at all.",
-    "- Use NO number that is not in the rows below. Never state a rule about how giving works.",
-    "- Write in plain words, as the person running this organisation would.",
-  ].join("\n");
-
-  const user = [
-    `Her instruction, verbatim: "${instruction.text}"`,
-    "",
-    "The people, with their own giving:",
-    ...reachable.slice(0, 200).map(p =>
-      `  ${p.id} | ${p.name} | lifetime ${p.total_giving || 0} | ${p.gift_count || 0} gifts | last ${p.last_gift_date || "never"} | stage ${p.stage || "none"}`),
-  ].join("\n");
-
-  const ACTIONS_SCHEMA = {
-    type: "object", additionalProperties: false, required: ["actions"],
-    properties: { actions: { type: "array", items: {
-      type: "object", additionalProperties: false,
-      required: ["tool", "donorId", "citesRows"],
-      properties: {
-        tool: { type: "string" },
-        donorId: { type: ["string", "null"] },
-        citesRows: { type: "array", items: { type: "string" } },
-        subject: { type: ["string", "null"] }, body: { type: ["string", "null"] },
-        title: { type: ["string", "null"] }, note: { type: ["string", "null"] },
-        stage: { type: ["string", "null"] }, tag: { type: ["string", "null"] },
-        label: { type: ["string", "null"] }, due: { type: ["string", "null"] },
-        priority: { type: ["string", "null"] },
-      } } } },
-  };
-
-  let actions = [];
-  let promptLog = system + "\n\n" + user, responseLog = "";
-  try {
-    const msg = await client.messages.create({
-      model: AGENT_MODEL, max_tokens: 8000, system,
-      tools: [{ name: "act", description: "The actions to take.", strict: true, input_schema: ACTIONS_SCHEMA }],
-      tool_choice: { type: "tool", name: "act" },
-      messages: [{ role: "user", content: user }],
-    });
-    const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "act");
-    actions = (block && Array.isArray(block.input.actions)) ? block.input.actions : [];
-    responseLog = JSON.stringify(block ? block.input : null);
-  } catch (e) {
-    await run(`UPDATE agent_runs SET status='failed', finished_at=NOW(), error=? WHERE id=?`,
-      [String(e && e.message || e).slice(0, 400), runId]);
-    return { runId, status: "failed", error: "model_failed" };
-  }
-
-  // Every prompt and response, kept per org (agentShape.PROMPT_RETENTION_DAYS).
+  // Every run is kept per org beside the prompts (agentShape.PROMPT_RETENTION_DAYS):
+  // the plan it carried out, verbatim, and what came of each step below.
   await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full,run_id)
              VALUES (?,?,?,'agent',?,?,?,?)`,
-    ["log_" + uuid().slice(0, 8), orgId, userId || null,
-     String(instruction.text).slice(0, 100), promptLog.slice(0, 200000),
-     responseLog.slice(0, 200000), runId]);
+    ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instruction.text).slice(0, 100),
+     JSON.stringify({ instruction: instruction.text, steps: planSteps }).slice(0, 200000), "", runId]);
 
   const groundedValues = reachable.flatMap(p => [p.total_giving, p.gift_count, p.last_gift_amount])
     .map(Number).filter(Number.isFinite);
+  const SKIPPED = { already_open: "a follow-up was already open", unknown_donor: "the record is not there",
+    unknown_stage: "that stage does not exist", already_there: "they were already at that stage",
+    no_tag: "there was no tag to add", already_tagged: "they already had that tag" };
 
   let drafted = 0, done = 0, withheld = 0, declined = 0;
   const withheldReasons = [];
-  const taken = [];
+  const outcomes = [];
+  const outcome = (a, o, reason, extra) => outcomes.push({ tool: a.tool, donorId: a.donorId || null,
+    describes: a.describes || null, state: a.state || null, outcome: o, reason: reason || null, ...(extra || {}) });
 
-  await withTransaction(async (txClient) => {
-    const ctx = { client: txClient, orgId, runId, instructionId: instruction.id, userId, today,
-                  donorById: id => byId.get(id) || null };
-    for (const a of actions) {
-      // 1 · a tool with no executor is refused. A money tool has no executor.
-      if (!AGENT_RUNNABLE.includes(a.tool)) { declined++; withheldReasons.push(`no such tool: ${a.tool}`); continue; }
-      // 2 · a donor that is not this org's is nobody. The agent cannot name a
-      //     person in another org because it was never handed one.
-      if (a.donorId && !byId.has(a.donorId)) { declined++; withheldReasons.push("names somebody not in this organisation"); continue; }
-      // 3 · A DRAFT THAT CANNOT CITE A ROW IS NOT PRODUCED.
-      const cite = A.citationProblems(a, { knownRowIds });
-      if (cite.length) { withheld++; withheldReasons.push(cite[0]); continue; }
-      // 4 · no invented rule reaches a screen (shared/thresholds.js).
-      const text = [a.body, a.note, a.title, a.label, a.subject].filter(Boolean).join(" \n ");
-      const ungrounded = TH.ungroundedClaims(text, { groundedValues });
-      if (ungrounded.length) { withheld++; withheldReasons.push(TH.ungroundedSentence(ungrounded)); continue; }
+  try {
+    await withTransaction(async (txClient) => {
+      const ctx = { client: txClient, orgId, runId, instructionId: instruction.id, userId, today,
+                    donorById: id => byId.get(id) || null };
+      for (let i = 0; i < planSteps.length; i++) {
+        const a = planSteps[i];
+        // THE PERSON'S STEP. Recorded by her before this run began, or not at all.
+        if (a.state === A.STEP_CONFIRM) {
+          const c = confirmed[i];
+          if (c && c.giftId) { done++; outcome(a, A.OUTCOME_DONE, null, { giftId: c.giftId, by: c.by || null }); }
+          else outcome(a, A.OUTCOME_NOT_DONE, (c && c.reason) || "it was not confirmed");
+          continue;
+        }
+        // A step that waits on another runs only when that one was done.
+        if (a.after) {
+          const dep = outcomes.find(o => o.tool === a.after);
+          if (!dep || dep.outcome !== A.OUTCOME_DONE) {
+            outcome(a, A.OUTCOME_NOT_DONE, a.after === "record_gift" ? "the gift was not recorded" : "the step before it did not run");
+            continue;
+          }
+        }
+        // 1 · a tool with no executor is refused. A money tool has no executor.
+        if (!AGENT_RUNNABLE.includes(a.tool)) { declined++; withheldReasons.push(`no such tool: ${a.tool}`); outcome(a, A.OUTCOME_NOT_DONE, "Steward has no way to do that"); continue; }
+        // 2 · a donor that is not this org's is nobody.
+        if (a.donorId && !byId.has(a.donorId)) { declined++; withheldReasons.push("names somebody not in this organisation"); outcome(a, A.OUTCOME_NOT_DONE, "that record is not in this organisation"); continue; }
+        if (a.donorId && !reachableIds.has(a.donorId)) { declined++; withheldReasons.push("deceased, do-not-contact or sample"); outcome(a, A.OUTCOME_NOT_DONE, "the record says not to contact them"); continue; }
+        // 3 · A STEP THAT CANNOT CITE A ROW IS NOT TAKEN.
+        const cite = A.citationProblems(a, { knownRowIds });
+        if (cite.length) { withheld++; withheldReasons.push(cite[0]); outcome(a, A.OUTCOME_NOT_DONE, "Steward could not point at the record it came from"); continue; }
+        // 4 · no invented rule reaches a screen (shared/thresholds.js).
+        const text = [a.body, a.note, a.title, a.label, a.subject].filter(Boolean).join(" \n ");
+        const ungrounded = TH.ungroundedClaims(text, { groundedValues });
+        if (ungrounded.length) { withheld++; withheldReasons.push(TH.ungroundedSentence(ungrounded)); outcome(a, A.OUTCOME_NOT_DONE, "it said something the record does not"); continue; }
 
-      const r = await AGENT_EXECUTORS[a.tool](ctx, a);
-      if (r && r.skipped) { declined++; withheldReasons.push(r.skipped); continue; }
-      if (r && r.drafted) drafted++;
-      done++;
-      taken.push({ tool: a.tool, donorId: a.donorId || null, cites: a.citesRows });
-    }
-  });
+        const r = await AGENT_EXECUTORS[a.tool](ctx, a);
+        if (r && r.skipped) { declined++; withheldReasons.push(r.skipped); outcome(a, A.OUTCOME_NOT_DONE, SKIPPED[r.skipped] || r.skipped); continue; }
+        if (r && r.drafted) { drafted++; done++; outcome(a, A.OUTCOME_WAITING, "the draft is waiting for you", { entityId: r.id || null }); continue; }
+        done++;
+        outcome(a, A.OUTCOME_DONE, null, { entityId: (r && r.id) || null });
+      }
+    });
+  } catch (e) {
+    // A run that broke still ENDS: the server's row says failed, so no screen
+    // can sit on "Running…" for a run that is over.
+    await run(`UPDATE agent_runs SET status='failed', finished_at=NOW(), actions=?, error=? WHERE id=?`,
+      [JSON.stringify(outcomes), String(e && e.message || e).slice(0, 400), runId]);
+    return { runId, status: "failed", error: "run_failed", steps: outcomes, sent: 0 };
+  }
 
   await run(`UPDATE agent_runs SET status='done', finished_at=NOW(), actions=?, drafted=?, sent=0,
              declined=?, withheld=?, withheld_reason=? WHERE id=?`,
-    [JSON.stringify(taken), drafted, declined, withheld,
+    [JSON.stringify(outcomes), drafted, declined, withheld,
      withheldReasons.slice(0, 5).join(" · ").slice(0, 600) || null, runId]);
 
   // NOTHING IS SENT BY THIS PATH. `sent` is written as 0 above, deliberately
@@ -474,7 +545,7 @@ async function agentRunPlan(orgId, instruction, { userId }) {
   // deliberate incident containment, and shipping a send path that has never
   // once been walked is exactly the mistake that caused the incident.
   return { runId, status: "done", done, drafted, withheld, declined, sent: 0,
-           withheldReason: withheldReasons.slice(0, 5) };
+           steps: outcomes, withheldReason: withheldReasons.slice(0, 5) };
 }
 
 // ── ROUTES ─────────────────────────────────────────────────────────────────
@@ -493,8 +564,9 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   const money = A.moneyRefusal(text);
   if (money) return res.status(400).json({ error: "money_instruction", sentence: money.sentence, matched: money.matched });
 
-  const gate = await agentGate(req.user.orgId);
-  if (!gate.ok) return res.status(503).json({ error: gate.reason });
+  // PAUSE STOPS EVERYTHING, the gift she tells it about included.
+  const [pauseRow] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [req.user.orgId]);
+  if (pauseRow && pauseRow.agent_paused_at) return res.status(503).json({ error: "agent_paused" });
 
   const kind = req.body?.kind === A.KIND_STANDING ? A.KIND_STANDING : A.KIND_TASK;
   const trigger = kind === A.KIND_STANDING ? String(req.body?.trigger || "") : null;
@@ -506,20 +578,47 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   // drafts.
   const auth = req.body?.authorization === A.AUTH_SEND ? A.AUTH_SEND : A.AUTH_DRAFT;
 
-  let built;
-  try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth }); }
-  catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }
+  // FIX-1 §A — WHO SHE NAMED decides what is read.
+  const named = await agentNamedIn(req.user.orgId, text);
 
-  const check = A.validatePlan(built.plan, { authorization: auth });
+  let plan;
+  if (kind === A.KIND_TASK && A.isGiftNews(text) && A.parseAmountCents(text)) {
+    // A GIFT SHE TELLS IT ABOUT is prepared for her to confirm. No model is
+    // asked, so no key is needed: Steward parsed it and found the record.
+    const gift = A.preparedGiftFromInstruction(text, named.candidates);
+    const [donor] = gift && gift.donorId ? await agentReadPeople(req.user.orgId, { ids: [gift.donorId] }) : [];
+    if (!donor) {
+      return res.status(400).json({ error: "gift_needs_giver",
+        sentence: gift && gift.ambiguous
+          ? "More than one record matches that name. Say which one, as it is written on their record, and Steward will prepare the gift for you to confirm."
+          : "Steward could not tell who gave it. Name the giver as they are written on their record, and Steward will prepare the gift for you to confirm." });
+    }
+    plan = await agentPreparedGiftPlan(req.user.orgId, text, donor);
+  } else {
+    const gate = await agentGate(req.user.orgId);
+    if (!gate.ok) return res.status(503).json({ error: gate.reason });
+    let built;
+    try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId }); }
+    catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }
+    const readNames = named.scope
+      ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
+      : `your ${built.people.length} people`;
+    plan = A.compilePlan(built.steps, { people: built.people, reads: readNames, withheld: built.withheld });
+    plan.sends = Math.max(plan.sends, built.sends);
+    plan.readIds = named.scope || null;
+    plan.confirmLabel = A.confirmLabel(plan);
+  }
+
+  const check = A.validatePlan(plan, { authorization: auth });
   if (!check.ok) return res.status(422).json({ error: "plan_refused", reasons: check.errors });
 
   const id = "ai_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_instructions (id,org_id,text,kind,trigger,status,send_authorization,plan,last_count,created_by,created_by_name)
              VALUES (?,?,?,?,?,'planned',?,?,?,?,?)`,
-    [id, req.user.orgId, text, kind, trigger, auth, JSON.stringify(built.plan),
-     built.plan.expectedCount || 0, actor(req).id, actor(req).name]);
+    [id, req.user.orgId, text, kind, trigger, auth, JSON.stringify(plan),
+     plan.expectedCount || 0, actor(req).id, actor(req).name]);
 
-  res.status(201).json({ id, kind, trigger, authorization: auth, plan: built.plan,
+  res.status(201).json({ id, kind, trigger, authorization: auth, plan,
     // A standing instruction is never retroactive, and the screen says so with
     // the count it would have caught — so she can do those by hand rather than
     // find the gap in March (BUILD-94's enrolment rule, carried over).
@@ -531,11 +630,13 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
 // SHE CONFIRMS THE PLAN. This is the only thing that runs work.
 app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const A = await agentShapeMod();
-  const [ins] = await query("SELECT * FROM agent_instructions WHERE id=? AND org_id=?",
-    [req.params.id, req.user.orgId]);
+  const orgId = req.user.orgId;
+  const [ins] = await query("SELECT * FROM agent_instructions WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!ins) return res.status(404).json({ error: "Instruction not found" });
-  const gate = await agentGate(req.user.orgId);
-  if (!gate.ok) return res.status(503).json({ error: gate.reason });
+  // The run no longer asks a model anything (the plan IS the run), so the only
+  // gate here is pause.
+  const [pauseRow] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [orgId]);
+  if (pauseRow && pauseRow.agent_paused_at) return res.status(503).json({ error: "agent_paused" });
 
   // "SHE TURNED IT ON" HAS TO BE TRUE. A super-admin may build an instruction
   // inside her org and leave it planned; only somebody who works there can
@@ -543,17 +644,46 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
   if (req.user.isSuperAdmin) return res.status(403).json({ error: "turn_on_must_be_theirs",
     sentence: "Turning this on has to be done by somebody at this organisation." });
 
-  await run(`UPDATE agent_instructions SET status='active', turned_on_by=?, turned_on_by_name=?,
-             turned_on_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
-    [actor(req).id, actor(req).name, ins.id, req.user.orgId]);
+  // ONCE. The row moves out of 'planned' in the same statement that checks it,
+  // so two presses cannot both run it and a gift cannot be recorded twice.
+  const took = await run(`UPDATE agent_instructions SET status='active', turned_on_by=?, turned_on_by_name=?,
+             turned_on_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=? AND status='planned'`,
+    [actor(req).id, actor(req).name, ins.id, orgId]);
+  if (!took || took.changes === 0) return res.status(409).json({ error: "already_run",
+    sentence: "This plan has already been run or set aside." });
 
   const plan = typeof ins.plan === "string" ? JSON.parse(ins.plan || "null") : ins.plan;
-  const result = await agentRunPlan(req.user.orgId,
+
+  // THE MONEY IS HERS. A step the agent may not do alone was PREPARED; pressing
+  // confirm is her recording it, through the one gift path, in her name.
+  const confirmed = {};
+  const today = orgToday(await orgTz(orgId));
+  for (const [i, s] of ((plan && plan.steps) || []).entries()) {
+    if (s.state !== A.STEP_CONFIRM || s.tool !== "record_gift") continue;
+    const [donor] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [s.donorId, orgId]);
+    if (!donor || !(Number(s.amountCents) > 0)) { confirmed[i] = { reason: "the record is no longer there" }; continue; }
+    const written = await recordGift({
+      orgId, donorId: donor.id, amount: Number(s.amountCents) / 100, date: s.date || today,
+      type: "cash", paymentMethod: s.method || undefined, notes: "",
+      idempotencyKey: `agent:${ins.id}:${i}`, conflict: "idempotency",
+      actorId: actor(req).id, actorName: actor(req).name, source: "agent_confirm",
+    });
+    if (!written || written.duplicate || !written.gift) { confirmed[i] = { reason: "it was already recorded" }; continue; }
+    confirmed[i] = { giftId: written.gift.id, by: actor(req).name };
+    // The same live event the gift form fires: a person just recorded a gift.
+    const [after] = await query("SELECT gift_count FROM donors WHERE id=? AND org_id=?", [donor.id, orgId]);
+    fireWorkflows(orgId, "gift_received", {
+      dedupKey: `gift:${written.gift.id}`, donorId: donor.id, giftId: written.gift.id, amount: Number(s.amountCents) / 100,
+      isFirstGift: ((after && after.gift_count) || 0) === 1, entityType: "gift", entityId: written.gift.id,
+    }).catch(e => console.error("[workflow] gift_received:", e.message));
+  }
+
+  const result = await agentRunPlan(orgId,
     { id: ins.id, text: ins.text, plan, authorization: ins.send_authorization },
-    { userId: req.user.userId });
+    { userId: req.user.userId, confirmed });
 
   if (ins.kind === A.KIND_TASK)
-    await run("UPDATE agent_instructions SET status='done' WHERE id=? AND org_id=?", [ins.id, req.user.orgId]);
+    await run("UPDATE agent_instructions SET status='done' WHERE id=? AND org_id=?", [ins.id, orgId]);
 
   res.json(result);
 }));
@@ -640,6 +770,130 @@ app.post("/agent/writes/:id/undo", requireAuth, checkWriteAccess, wrap(async (re
   await run("UPDATE agent_writes SET undone_at=NOW(), undone_by=?, undone_by_name=? WHERE id=? AND org_id=?",
     [actor(req).id, actor(req).name, w.id, req.user.orgId]);
   res.json({ ok: true, ...r });
+}));
+
+// ── FIX-1 §A — THE RUN STATE IS THE SERVER'S ───────────────────────────────
+// The screen asks HERE whether a run is still going. The walk's button sat on
+// "Running..." after the run had finished because it believed its own last
+// guess; a run with a finish time is over, whatever the screen thought.
+function agentRunOut(A, r) {
+  let steps = r.actions;
+  if (typeof steps === "string") { try { steps = JSON.parse(steps); } catch { steps = []; } }
+  steps = (Array.isArray(steps) ? steps : []).map(s => ({ ...s, label: A.outcomeLabel(s) }));
+  const { actions: _a, ...rest } = r;
+  return { ...rest, steps, live: A.runIsLive(r) };
+}
+app.get("/agent/runs/:id", requireAuth, wrap(async (req, res) => {
+  const A = await agentShapeMod();
+  const [r] = await query(
+    `SELECT r.id, r.instruction_id, r.status, r.started_at, r.finished_at, r.read_summary, r.actions,
+            r.drafted, r.sent, r.declined, r.withheld, r.withheld_reason, r.error, i.text AS instruction_text
+       FROM agent_runs r LEFT JOIN agent_instructions i ON i.id = r.instruction_id AND i.org_id = r.org_id
+      WHERE r.id=? AND r.org_id=?`, [req.params.id, req.user.orgId]);
+  if (!r) return res.status(404).json({ error: "Not found" });
+  res.json({ run: agentRunOut(A, r) });
+}));
+
+// EVERY PLAN, WITH ITS RUN. The Plans view: her words, the plan she read, and
+// what each step came to.
+app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
+  const A = await agentShapeMod();
+  const rows = await query(
+    `SELECT id, text, kind, trigger, status, send_authorization, plan, created_at, created_by_name,
+            turned_on_by_name, turned_on_at
+       FROM agent_instructions WHERE org_id=? ORDER BY created_at DESC LIMIT 100`, [req.user.orgId]);
+  const runs = await query(
+    `SELECT DISTINCT ON (instruction_id) id, instruction_id, status, started_at, finished_at, read_summary,
+            actions, drafted, sent, declined, withheld, withheld_reason, error
+       FROM agent_runs WHERE org_id=? AND instruction_id IS NOT NULL
+      ORDER BY instruction_id, started_at DESC`, [req.user.orgId]);
+  const byIns = new Map(runs.map(r => [r.instruction_id, r]));
+  const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [req.user.orgId]);
+  res.json({
+    pausedAll: !!(org && org.agent_paused_at),
+    plans: rows.map(p => {
+      const plan = typeof p.plan === "string" ? JSON.parse(p.plan || "null") : p.plan;
+      const r = byIns.get(p.id);
+      return { ...p, plan: plan ? { ...plan, confirmLabel: plan.confirmLabel || A.confirmLabel(plan) } : null,
+               run: r ? agentRunOut(A, r) : null };
+    }),
+  });
+}));
+
+// NOT THIS ONE. A plan she read and does not want is set aside; nothing ran and
+// nothing is recorded. Kept, because what she was offered is part of the record.
+app.post("/agent/instructions/:id/discard", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run(`UPDATE agent_instructions SET status='set_aside', updated_at=NOW()
+                       WHERE id=? AND org_id=? AND status='planned'`, [req.params.id, req.user.orgId]);
+  if (!r || r.changes === 0) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, status: "set_aside" });
+}));
+
+// ── WAITING FOR YOU — ONE QUEUE, OLDEST FIRST ──────────────────────────────
+// Everything Steward prepared that waits on a person: thank-you drafts, tribute
+// notices, renewal and reminder notes on a thread, notes the agent drafted, and
+// gifts to confirm. Read-only: each item is acted on where it already lives.
+app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
+  const A = await agentShapeMod();
+  const G = await import("../shared/suggestionGuard.js");
+  const V = await import("../shared/vocabulary.js");
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const words = org && org.vocabulary_json;
+  const items = [];
+  const ins = await query(
+    `SELECT id, text, plan, created_at, created_by_name FROM agent_instructions
+      WHERE org_id=? AND status='planned' ORDER BY created_at ASC LIMIT 200`, [orgId]);
+  const giftDonors = new Map();
+  for (const i of ins) {
+    const plan = typeof i.plan === "string" ? JSON.parse(i.plan || "null") : i.plan;
+    const g = ((plan && plan.steps) || []).find(s => s.state === A.STEP_CONFIRM && s.tool === "record_gift");
+    if (g) giftDonors.set(i.id, { plan, g });
+  }
+  const donorIds = [...new Set([...giftDonors.values()].map(x => x.g.donorId))];
+  const drows = donorIds.length ? await agentReadPeople(orgId, { ids: donorIds }) : [];
+  const dById = new Map(drows.map(d => [d.id, d]));
+  for (const i of ins) {
+    const x = giftDonors.get(i.id);
+    if (!x) continue;
+    const d = dById.get(x.g.donorId);
+    if (!d) continue;
+    items.push({ kind: "gift_to_confirm", id: i.id, createdAt: i.created_at, donorId: d.id,
+      title: `A gift of ${A.formatCents(x.g.amountCents)} from ${A.nameInSentence(d)}, to confirm`,
+      who: `${d.name} · ${V.giverWordFor(d, words)}`, body: `“${G.plainText(i.text)}”`,
+      confirmLabel: A.confirmLabel(x.plan) });
+  }
+  const ty = await query(
+    `SELECT t.id, t.donor_id, t.body, t.created_at, d.name, d.kind, d.funder_type
+       FROM thank_you_drafts t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id=? AND t.sent_at IS NULL AND t.skipped_at IS NULL AND d.deleted_at IS NULL
+      ORDER BY t.created_at ASC LIMIT 200`, [orgId]);
+  for (const t of ty) items.push({ kind: "thank_you", id: t.id, createdAt: t.created_at, donorId: t.donor_id,
+    title: `A thank-you to ${t.name}`, who: `${t.name} · ${V.giverWordFor(t, words)}`, body: G.plainText(t.body) });
+  const tn = await query(
+    `SELECT t.id, t.donor_id, t.tribute_type, t.honouree_name, t.notify_name, t.body, t.created_at, d.name
+       FROM tribute_notices t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id=? AND t.status='waiting' AND d.deleted_at IS NULL ORDER BY t.created_at ASC LIMIT 200`, [orgId]);
+  for (const t of tn) items.push({ kind: "tribute_notice", id: t.id, createdAt: t.created_at, donorId: t.donor_id,
+    title: `A tribute notice: ${t.tribute_type === "honour" || t.tribute_type === "honor" ? "in honour of" : "in memory of"} ${t.honouree_name}`,
+    who: `From ${t.name}${t.notify_name ? ", to " + t.notify_name : ""}`, body: G.plainText(t.body) });
+  const th = await query(
+    `SELECT t.id, t.donor_id, t.next_step_label, t.draft_note, t.created_at, d.name
+       FROM threads t JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
+      WHERE t.org_id=? AND t.closed_at IS NULL AND t.draft_note IS NOT NULL AND t.draft_note <> ''
+        AND d.deleted_at IS NULL ORDER BY t.created_at ASC LIMIT 200`, [orgId]);
+  for (const t of th) items.push({ kind: "renewal_note", id: t.id, createdAt: t.created_at, donorId: t.donor_id,
+    title: G.plainText(t.next_step_label), who: t.name, body: G.plainText(t.draft_note) });
+  const ad = await query(
+    `SELECT a.id, a.donor_id, a.subject, a.body, a.created_at, d.name
+       FROM agent_drafts a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+      WHERE a.org_id=? AND a.status='pending' AND d.deleted_at IS NULL ORDER BY a.created_at ASC LIMIT 200`, [orgId]);
+  for (const a of ad) items.push({ kind: "agent_draft", id: a.id, createdAt: a.created_at, donorId: a.donor_id,
+    title: `A note Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
+    body: G.plainText(a.body) });
+  items.sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt));
+  res.json({ count: items.length, items,
+    definition: "Everything Steward prepared that waits on a person, oldest first. Nothing here has been sent or recorded." });
 }));
 
 // The drafts the agent wrote, waiting for her.

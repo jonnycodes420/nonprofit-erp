@@ -185,9 +185,53 @@ export function seasonDaysAway(vocabulary, today) {
 // ("giver" or "monthly_giver"). A legacy row with no kind is a person.
 export function giverCountWord(rows, vocabulary, { pair = "giver" } = {}) {
   const list = Array.isArray(rows) ? rows : [];
-  const isOrg = r => /^organi[sz]ation$/.test(String(r?.kind || ""));
-  const orgs = list.filter(isOrg).length;
+  const orgs = list.filter(isOrganisationRow).length;
   if (list.length > 0 && orgs === list.length) return "organisations";
   if (orgs > 0) return "givers";
   return makeT(vocabulary)(pair, 2);
+}
+
+// ── FIX-1 §5 — AND ONE GIVER AT A TIME ─────────────────────────────────────
+// The walk found the Sunrise Foundation called a "sponsor": the org's word for
+// the PEOPLE who give to it, applied to a foundation. giverCountWord (above)
+// answers for a count; these answer for one row, on the same test of what an
+// organisation is, so a count and a name can never disagree about a row.
+//
+// An organisation is called what it is: from the funder type first (BUILD-100),
+// then the imported donor type, then whole words of its own name. Nothing
+// matched: "organisation". A legacy row with no kind is a person.
+export function isOrganisationRow(r) { return /^organi[sz]ation$/.test(String(r?.kind || "")); }
+const ORG_WORD_BY_FUNDER_TYPE = {
+  private_foundation: "foundation", community_foundation: "foundation", family_foundation: "foundation",
+  foundation: "foundation", church: "church", corporate: "business", corporation: "business",
+  business: "business", government: "government agency", daf_sponsor: "donor-advised fund",
+};
+// Whole words only, never substrings: "Churchill Ltd" is a business, not a
+// church, and it would be one if this read letters instead of words.
+const ORG_WORD_BY_TOKEN = [
+  [["foundation", "trust", "endowment"], "foundation"],
+  [["church", "parish", "ministries", "ministry", "chapel", "congregation", "umc", "diocese", "synagogue", "temple", "mosque"], "church"],
+  [["inc", "llc", "ltd", "corp", "corporation", "company", "co", "business", "bank"], "business"],
+];
+const wordsOf = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+
+export function orgWordFor(donor) {
+  const ft = String((donor && (donor.funder_type || donor.funderType)) || "").toLowerCase();
+  if (ORG_WORD_BY_FUNDER_TYPE[ft]) return ORG_WORD_BY_FUNDER_TYPE[ft];
+  for (const src of [donor && (donor.donor_type || donor.donorType), donor && donor.name]) {
+    const toks = new Set(wordsOf(src));
+    for (const [words, label] of ORG_WORD_BY_TOKEN) if (words.some(w => toks.has(w))) return label;
+  }
+  return "organisation";
+}
+
+// giverWordFor(donor, vocabulary) — the word for THIS giver: her word for a
+// person, what it is for an organisation.
+export function giverWordFor(donor, vocabulary, { plural = false } = {}) {
+  if (isOrganisationRow(donor)) {
+    const w = orgWordFor(donor);
+    const PLURAL = { business: "businesses", church: "churches", "government agency": "government agencies" };
+    return plural ? (PLURAL[w] || w + "s") : w;
+  }
+  return makeT(vocabulary)("giver", plural ? 2 : 1);
 }

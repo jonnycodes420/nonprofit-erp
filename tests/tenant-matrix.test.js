@@ -361,6 +361,8 @@ function bResolver(routePath, param) {
   if (routePath.startsWith("/plans/")) return `cp_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;
   if (routePath.startsWith("/agent/writes/")) return `aw_${B}`;
+  // FIX-1 §A — a run's state, read by id: org A's token on org B's run reaches nothing.
+  if (routePath.startsWith("/agent/runs/")) return `arun_${B}`;
   if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

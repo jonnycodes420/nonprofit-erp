@@ -22,7 +22,10 @@ const TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"◧"},
+  // FIX-1 §A — Steward Agent is its own room. The Workflows recipes moved
+  // into it (Agent → Workflows); the "workflows" id still deep-links there
+  // (App.jsx navigateTo), it just has no nav entry of its own.
+  {id:"agent",label:"Agent",icon:"✦"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
@@ -44,8 +47,8 @@ const MORE_TABS=[
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"◧"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
+  {id:"agent",label:"Agent",icon:"✦"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
@@ -65,8 +68,8 @@ const MORE_TABS=[
 //
 // MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
 // and four slots is a different constraint from a 220px rail.
-const PRIMARY_NAV=["dashboard","board","donors","fundraising","volunteers","reports"];
-const MORE_NAV=["grants","communications","tasks","workflows","finance","portal"];
+const PRIMARY_NAV=["dashboard","board","donors","fundraising","volunteers","agent","reports"];
+const MORE_NAV=["grants","communications","tasks","finance","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 // FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →
 // Major gifts (App.jsx's navigateTo sends every "pipeline" there). The gate

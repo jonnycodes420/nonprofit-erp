@@ -9,6 +9,7 @@ import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { T, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
 import { LogConversationModal } from "./LogConversation";
+import { guardSuggestion, droppedLine, plainText } from "../../../shared/suggestionGuard.js";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -242,7 +243,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     const key=`${donor.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
     const urg=moveUrgency(donor);
-    const sys=`You are an expert major gifts officer. Be specific, strategic, brief. Max 200 words. Reference actual donor data.`;
+    const sys=`You are an expert major gifts officer. Be specific, strategic, brief. Max 200 words. Use ONLY the facts given below: never name a person, number, program or outcome that is not in them. Plain sentences, no markdown, no headings, no bullet points.`;
     let threadCtx="";
     if(type==="email"||type==="outreach"){
       try{
@@ -260,7 +261,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       // last contact against that stage's own thresholds, and it is on the
       // Contact tile beside this panel already. The model is asked for the move,
       // the timing and the words, which is what it is good for.
-      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nProvide:\n**Recommended Move:** [exact action]\n**Timing:** [when]\n**What to say:** [2-3 sentences]\n**Goal:** [what you're trying to achieve]`,
+      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nIn four short plain sentences: the move to make, when to make it, what to say, and what it is for.`,
       outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
       email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
@@ -268,7 +269,30 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // A failed stream is said in the panel and the spinner stops. It used to
     // throw out of an async handler: an unhandled rejection on every profile
     // open (this fires on mount) and a spinner that never ended.
-    try{await askClaude(sys,prompts[type],chunk=>setAiMap(p=>({...p,[key]:chunk})));}
+    // FIX-1 §A — A SUGGESTION MAY ONLY SAY WHAT THE RECORD SAYS. The walk's
+    // panel told her to "reach out to Angela Wu" and quoted "68% participant
+    // retention", none of it on the record, in raw **markdown**. The stream is
+    // held until it ends, then every sentence goes through the validator
+    // (shared/suggestionGuard.js): a line naming a person, a number or a claim
+    // the record does not carry is left out and COUNTED, and markdown is
+    // stripped. A prompt that says "use only the data" is a request; this is
+    // the rule.
+    let full="";
+    try{
+      await askClaude(sys,prompts[type],chunk=>{full=chunk;});
+      const record={
+        donor:{id:donor.id,name:donor.name,email:donor.email,contact_name:donor.contactName||donor.contact_name,
+               total:donor.total,gifts:donor.gifts,lastAmount:donor.lastAmount,lastGift:donor.lastGift},
+        orgName:[data.org?.name,data.org?.mission].filter(Boolean).join(" "),
+        names:[stage.label,...(donor.tags||[])],
+        rows:[{id:"contact",count:urg.days},
+              ...(donor.interactions||[]).slice(0,20).map((i,n)=>({id:i.id||("int"+n),amount:i.amount,date:i.date,label:i.note,type:i.type}))],
+      };
+      const g=guardSuggestion(full,record);
+      const kept=g.kept.map(k=>plainText(k.text)).join(" ");
+      const out=[kept||"Steward had nothing it could say from this record.",droppedLine(g.dropped)].filter(Boolean).join("\n\n");
+      setAiMap(p=>({...p,[key]:out}));
+    }
     catch(e){setAiMap(p=>({...p,[key]:errorMessage(e,"No suggestion is available right now.")}));}
     finally{setLoadingKey(null);}
   };

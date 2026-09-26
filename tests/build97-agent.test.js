@@ -417,9 +417,10 @@ const mkDonor = (id, org, name, opts = {}) => q(
     // THE ACTIVITY SCREEN.
     await page.goto(APP + "/dashboard", { waitUntil: "networkidle" });
     await page.waitForTimeout(1200);
-    await page.click('button:has-text("Settings")').catch(() => {});
+    // FIX-1 §A — the activity screen moved from Settings to Agent → Guardrails.
+    await page.click('.app-sidebar button:has-text("Agent")').catch(() => {});
     await page.waitForTimeout(1200);
-    await page.click('button:has-text("Steward\'s activity")').catch(() => {});
+    await page.click('[data-testid="agent-tab-guardrails"]').catch(() => {});
     await page.waitForTimeout(1800);
 
     ok("the activity screen shows her instructions",

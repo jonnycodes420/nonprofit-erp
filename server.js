@@ -8676,7 +8676,7 @@ require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
-  processWorkflowSweeps, query, requireAdmin, requireAuth, requirePlan, run, runTx,
+  processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
 });
 require("./routes/give").mount({

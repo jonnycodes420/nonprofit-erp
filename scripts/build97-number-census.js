@@ -61,6 +61,7 @@ const SURFACES = [
   "components/Finance.jsx",
   "components/Tasks.jsx",
   "components/Workflows.jsx",
+  "components/Agent.jsx",           // FIX-1 §A — Steward Agent (its figures are sentences the server compiled)
   "components/Settings.jsx",
   "components/DepositSheet.jsx",
   "components/DonorMap.jsx",

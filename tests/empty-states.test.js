@@ -117,7 +117,8 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
       // and therefore in the empty-org sweep like every other tab.
       // FIX-1 §B — "Pipeline" is no longer a sidebar item (it folded into
       // Fundraising → Major gifts), so there is no nav button to sweep.
-      ? ["Home", "Dashboards", "Donors", "Fundraising", "Grants", "Communications", "Tasks", "Workflows", "Reports", "Finance", "Settings"]
+      // FIX-1 §A — Workflows moved into Agent (Agent → Workflows); Agent is the rail item.
+      ? ["Home", "Dashboards", "Donors", "Fundraising", "Grants", "Communications", "Tasks", "Agent", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
     // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,
