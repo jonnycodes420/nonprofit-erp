@@ -99,6 +99,15 @@ const SURFACES = [
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather
 // than silently absent, which is the same rule the ignored-column list follows.
+// FIX-1 — Donors.jsx was split into these files. They ARE scanned: as
+// components/Donors.jsx, which scanFile reads through readSource and which is
+// rebuilt from them (scripts/lib/readSource.js). Named here so the scope check
+// sees every screen file accounted for.
+const SCANNED_AS_DONORS = [
+  "components/donorShared.jsx", "components/DonorImport.jsx",
+  "components/DonorProfile.jsx", "components/DonorDirectory.jsx",
+];
+
 const OUT_OF_SCOPE = {
   "components/Events.jsx": "hidden from the nav since the 2026-07-12 pivot",
   "components/Volunteers.jsx": "hidden from the nav since the 2026-07-12 pivot",
@@ -235,7 +244,7 @@ function census() {
   return { byFile, total, claims: claims.length, claimSites: claims, sites: all, outOfScope: OUT_OF_SCOPE };
 }
 
-module.exports = { census, SURFACES, OUT_OF_SCOPE, PATTERNS };
+module.exports = { census, SURFACES, OUT_OF_SCOPE, SCANNED_AS_DONORS, PATTERNS };
 
 if (require.main === module) {
   const r = census();

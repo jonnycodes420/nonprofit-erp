@@ -36,7 +36,8 @@ const ROOT = path.join(__dirname, "..", "..");
 const FILES = {
   "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js"],
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
-  "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx"],
+  "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
+    "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", "client/src/components/DonorDirectory.jsx"],
 };
 const ORDER_FILE = path.join(__dirname, "splitOrder.json");
 
