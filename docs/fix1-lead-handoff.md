@@ -187,4 +187,27 @@ database with the server env set.
 
 ## 8. The merge
 
-Filled in after the merge: the PR, CI on it and on main, and both live SHAs.
+- **PR #16** (`fix-1` → main), https://github.com/jonnycodes420/nonprofit-erp/pull/16.
+  First CI run: 244/1. `fix1-agent` failed its browser leg instead of
+  skipping it on a runner with no Playwright; fixed in `a07987a` to follow
+  the convention every other browser suite follows. Second run: **245
+  passed, 0 failed**, with the demo seeded in its own step ("shape holds")
+  and **demo-shape 33/0 in CI for the first time**.
+- **CodeQL** on the PR reports 4 warnings, all on code the split MOVED
+  (each line exists verbatim in main's pre-FIX-1 server.js):
+  `js/missing-rate-limiting` routes/webhooks.js (`POST /resend/webhook`,
+  which sits where it always did in the stack; CodeQL cannot see server.js's
+  limiter from the module), `js/incomplete-html-attribute-sanitization`
+  routes/email.js, `js/insufficient-password-hash` server.js (`hashApiKey`),
+  `js/incomplete-multi-character-sanitization` server.js. Not dismissed; that
+  is Jonathan's to do or to fix.
+- **Merged** by the lead on Jonathan's word (27 Sep): merge commit **`5487fd0`**.
+- **CI on main** (run 36322633712): test ✓, deploy-railway ✓, deploy-vercel ✓.
+- **Live:** backend `/health` buildSha `5487fd0…` and frontend
+  `<meta name="build-sha">` `5487fd0…`: prod was 0 behind main at the merge.
+  (This handoff is a docs-only commit after it and redeploys the same code.)
+- **Prod smoke** (`npm run status`): ok. **Landing verifier**
+  (`scripts/landing-prod-verify.js`): 80 passed, 0 failed.
+- **Still Jonathan's:** run `node scripts/seed-demo.js` against prod through
+  its guarded path so Harborlight is the pitch there; decide on the four
+  CodeQL warnings; a spend cap on the Anthropic workspace (NEEDS-JONATHAN §3).
