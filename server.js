@@ -3003,12 +3003,16 @@ const VH_READY = import("./shared/volunteerHours.js").then(m => { VH = m; return
 // A person who logged a shift IS a volunteer, on the same record — the
 // recordGift rule for "donor", applied to hours. "other" means "we do not know"
 // and a shift answers that.
-async function markVolunteer(orgId, personId) {
-  await run(`UPDATE donors SET person_types = CASE
+// `client` (FIX-3 B): inside a transaction (the agent's run), the same write
+// on that transaction's connection.
+async function markVolunteer(orgId, personId, client = null) {
+  const sql = `UPDATE donors SET person_types = CASE
       WHEN person_types IS NULL THEN '["donor","volunteer"]'::jsonb
       WHEN person_types @> '["volunteer"]'::jsonb THEN person_types
       ELSE (person_types - 'other') || '["volunteer"]'::jsonb END
-    WHERE id=? AND org_id=?`, [personId, orgId]);
+    WHERE id=? AND org_id=?`;
+  if (client) await runTx(client, sql, [personId, orgId]);
+  else await run(sql, [personId, orgId]);
 }
 
 async function insertShift(orgId, personId, shift, { via, importKey = null, who }) {
@@ -8665,7 +8669,7 @@ require("./routes/volunteer").mount({
 require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
-  fireWorkflows, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
+  fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
 });
