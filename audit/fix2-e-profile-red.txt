@@ -1,0 +1,27 @@
+fix2-e-profile
+
+— §1 · the source —
+  FAIL  §1 the open-step line says a step opened today in words, not "day 0" — "13.5,fontWeight:700,color:it.overdue?T.terracotta:T.ink}}>\n                        {it.nextStep.label} · {it.overdue?\"overdue\":\"due\"} {displayDateShort(it.nextStep.due,new Date())} · day {it.daysOpen}"
+  FAIL  §1 moveUrgency draws an overdue contact in brass, not terracotta — "export function moveUrgency(d) {\n  const lastContact=d.lastTouchpoint||d.lastGift;\n  const days=lastContact?daysDiff(lastContact):999;\n  const [warn,crit]=STAGE_THRESH[d.stage||\"cultivate\"]||[30,60];\n  const level=days>crit?\"critical\":days>warn?\"due\":\"ok\";\n  const urgencyColor={critical:T.terracotta,due:T.gold600,ok:T.greenMid}[level];\n  const contactTextColor=days>365?T.terracotta:days>180?T.gold"
+  FAIL  §1 the header's stage pill has a brass case for Lapsed — "le={{minWidth:0}}>\n            <div style={{display:\"flex\",alignItems:\"center\",gap:8,flexWrap:\"wrap\"}}>\n              <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:\"-0.01em\"}}>{donor.name}</span>\n              <span style={{fontSize:10,fontWeight:700,padding:\"3px 9px\",borderRadius:99,background:stage.color+\"22\",color:stage.color}}>{stage.label}</span>\n              <DriftBadge"
+
+— §2 · the profile, as drawn —
+  PASS  §2 fixture: the conversation and its step were logged
+  PASS  §2 @1440 the open step is on the profile
+  FAIL  §2 @1440 a step opened today never reads "day 0" — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  FAIL  §2 @1440 …it reads "opened today" — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  FAIL  §2 @1440 …and its due date reads as a date, not ISO — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  PASS  §2 @1440 the stale contact is on the tile
+  FAIL  §2 @1440 a stale contact is not drawn in red — {"contact":"200d ago","contactColor":"rgb(184, 89, 63)","pill":true,"pillColor":"rgb(184, 89, 63)","pillBg":"rgba(184, 89, 63, 0.133)","pillBorder":"rgb(184, 89, 63)"}
+  PASS  §2 @1440 the Lapsed pill is on the header
+  FAIL  §2 @1440 the Lapsed pill is not red (text, ground or edge) — {"contact":"200d ago","contactColor":"rgb(184, 89, 63)","pill":true,"pillColor":"rgb(184, 89, 63)","pillBg":"rgba(184, 89, 63, 0.133)","pillBorder":"rgb(184, 89, 63)"}
+  PASS  §2 @390 the open step is on the profile
+  FAIL  §2 @390 a step opened today never reads "day 0" — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  FAIL  §2 @390 …it reads "opened today" — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  FAIL  §2 @390 …and its due date reads as a date, not ISO — "OPEN\nSend the visit dates · due 2026-09-30 · day 0\n\"Talked about the spring visit.\" · 2026-09-27 · Pia\nDone\n◫\n…"
+  PASS  §2 @390 the stale contact is on the tile
+  FAIL  §2 @390 a stale contact is not drawn in red — {"contact":"200d ago","contactColor":"rgb(184, 89, 63)","pill":true,"pillColor":"rgb(184, 89, 63)","pillBg":"rgba(184, 89, 63, 0.133)","pillBorder":"rgb(184, 89, 63)"}
+  PASS  §2 @390 the Lapsed pill is on the header
+  FAIL  §2 @390 the Lapsed pill is not red (text, ground or edge) — {"contact":"200d ago","contactColor":"rgb(184, 89, 63)","pill":true,"pillColor":"rgb(184, 89, 63)","pillBg":"rgba(184, 89, 63, 0.133)","pillBorder":"rgb(184, 89, 63)"}
+
+7 passed, 13 failed

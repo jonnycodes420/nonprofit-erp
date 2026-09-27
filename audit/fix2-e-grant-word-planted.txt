@@ -1,0 +1,11 @@
+  FAIL  §1 no other file chooses between grant and gift on its own — ["client/src/lib/taskDue.js"]
+  FAIL  §2 Hope Presbyterian Church says "last gift" — {"donorId":"d_d7eda722b88541fda8c30d547767827d","name":"Hope Presbyterian Church","totalGiving":"500.00","lastGiftDate":"2026-08-18","giftCount":
+  FAIL  §2 Ironworks Coffee Roasters says "last gift" — {"donorId":"d_69368fc39c284891870e52d3779799db","name":"Ironworks Coffee Roasters","totalGiving":"600.00","lastGiftDate":"2026-08-18","giftCount
+  FAIL  §2 Rivet Bakery says "last gift" — {"donorId":"d_55b559e6a60342bf806f0e3b4ecc77c9","name":"Rivet Bakery","totalGiving":"700.00","lastGiftDate":"2026-08-18","giftCount":1,"lastWord":"last grant
+  FAIL  §3 @1440 Hope Presbyterian Church: "last gift", never "last grant" — "Hope Presbyterian Church $500 · last grant Aug 18, 2026"
+  FAIL  §3 @1440 Ironworks Coffee Roasters: "last gift", never "last grant" — "Ironworks Coffee Roasters $600 · last grant Aug 18, 2026"
+  FAIL  §3 @1440 Rivet Bakery: "last gift", never "last grant" — "Rivet Bakery $700 · last grant Aug 18, 2026"
+  FAIL  §3 @390 Hope Presbyterian Church: "last gift", never "last grant" — "Hope Presbyterian Church $500 · last grant Aug 18, 2026"
+  FAIL  §3 @390 Ironworks Coffee Roasters: "last gift", never "last grant" — "Ironworks Coffee Roasters $600 · last grant Aug 18, 2026"
+  FAIL  §3 @390 Rivet Bakery: "last gift", never "last grant" — "Rivet Bakery $700 · last grant Aug 18, 2026"
+11 passed, 10 failed
