@@ -55,6 +55,9 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   estimate always carries its assumption inline. (FIX 2026-07-28)
 - **Every dashboard metric has a one-sentence definition in `shared/dashboards.js`, and the hover and PDF
   footnote use that one string.** Each dashboard is one parallel batch of reads. Its PDF equals the screen in cents. (BUILD-86 C.3)
+- **Every number opens (FIX-2).** A figure is a `<Figure>` carrying the `source` it was computed from, and it
+  opens the one drill-through panel (`MetricBreakdownPanel`) on the rows behind it, which foot to it to the cent.
+  The value is an aggregate over the source's own rows query, never a second computation. (FIX-2 A)
 - **Every other on-screen number is registered with its sentence in `shared/numberCensus.js`.**
   `build97-numbers` asserts the counts exactly. A new component or page goes in its scan list or is excluded
   with a reason. (BUILD-97, BUILD-98 P3)
@@ -77,6 +80,8 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Scheduled sends reserve a ledger row first (`digest_sends`, `saved_report_sends`) and release it on failure.**
   They ride the existing 5-minute tick, never a second scheduler. (BUILD-17, BUILD-98 P3)
 ## Gotchas
+- **A figure's params are the rows' params.** The client sends back exactly the `source` the server gave it; a new
+  figure is a new source (or new params) in `figureSources.js`, never a number computed beside it. (FIX-2 A)
 - **A deep link straight onto a report tab can crash on a first render that clicking in never hits.** Stale data
   after a switch has the wrong shape, which is why it is tagged `{key, d}`. Test the first render. (BUILD-98 P3, BUILD-02)
 - **Wrapping `{fmtFull(` in a helper hides the figure from the number census.** Keep it inline at the render site. (BUILD-100)
@@ -87,11 +92,60 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   date, or the weekend rule fails it on Fridays. (FIX 2026-09-18)
 - **An adapted donor carries `total`, not `total_giving` (`adaptDonor`, api.js).** Seed conversations with
   `TOUCH_TYPES` from `threadShape.js`, because invented touch keys are dropped silently. (BUILD-89)
+## Every number opens (FIX-2 A)
+
+Jonathan's rule from the 27 September walk: every number Steward shows is clickable, and clicking it opens the
+rows that make it, the sentence that defines it, and a total that foots to the number on screen to the cent. A
+number that cannot open does not ship.
+
+- **The component.** `client/src/components/Figure.jsx`: `<Figure value kind label definition source blank
+  blankShort variant>`, with `kind` one of money, count or percent and `variant` one of `tile` (a headline
+  figure), `inline` (a number inside a sentence), `cell` (a row's figure) and `point` (a point on a chart, an SVG
+  circle). Click, Enter or Space opens the panel. A figure without a source renders `data-no-source` and cannot
+  open. A screen says how a person row opens that person once, through `FigureContext` (`openPerson`); the
+  dashboards use the app's own `onNavigate("donors", {selectDonorId})`.
+- **The one panel.** `MetricBreakdownPanel.jsx`. Given a `source`, it fetches the rows and shows the figure,
+  its definition, the source's sentence ("Every gift dated Jul 1, 2026 to Sep 27, 2026."), the rows (50 a page,
+  Previous/Next; a row naming a person opens that person) and the foot: the total of every row, which is the
+  number on screen. A percentage shows its numerator's rows and its denominator's rows, each with its own total
+  and paging, and the foot shows the arithmetic ("14 of 24" → 58%). A difference shows both halves. A blank shows
+  the sentence saying what is missing and when it will appear, computed from the org's data (retention: the
+  history floor and the prior-year cohort in `RETENTION_FLOOR`; the change on last year: a year after the first
+  gift). Given `rows` instead, it is the older caller-supplied list Home's drill-downs use. There is no second panel.
+- **The endpoint.** `GET /figures/:source/rows?<params>&page&pageSize` (routes/crm.js, by the dashboards).
+  Tenant-scoped (the caller's org is the first argument of every source's query), read-only (a GET that writes
+  nothing, proven by row counts), paginated (pageSize up to 200; the total is over every row, never the page), an
+  unknown source is 404 and a malformed parameter is 400. Its shape: `{ key, params, measure, amountKind, label,
+  sentence, value, cents, blank, blankShort, rows: [{ id, type, donorId, name, date, dateLabel, amount, detail }],
+  page, pageSize, totalRows, parts? }`. `date` stays ISO for a machine; `dateLabel` is what a person reads.
+- **One definition.** `figureSources.js` is a registry of named sources. A `sql` source is one SELECT; its value
+  is SUM, COUNT or AVG over that SELECT and its rows page through the same SELECT, so the two cannot disagree. A
+  `js` source (Drift among the top givers, the retention cohorts) aggregates the same array it pages. A `ratio`
+  (a percentage) and a `difference` (the Board sentence) are computed from their two parts' values. The
+  dashboards compute every metric through `figureValue`, and `composeActivityReport` (the Week in Review email,
+  `/reports/activity`) reads the same activity sources as the People dashboard's This week.
+- **The in-scope list.** `FIGURE_SOURCE_SCOPE` in `scripts/build97-number-census.js`: the screens where every
+  figure must carry a source. It starts with `components/Dashboards.jsx`; other screens join it in the commit
+  that converts them to `<Figure>`.
+- **Guard one, the census.** On an in-scope screen, a `<Figure>` written without `source=`, or a number drawn any
+  other way (any site the census patterns find), fails `build97-numbers` §6 by file and line. Proven by planting
+  both in a synthetic screen.
+- **Guard two, the footing.** `tests/fix2-a-footing.test.js` builds an org with known gifts across this year and
+  last, fetches the rows behind EVERY figure on all four dashboards (every page) and checks each foots in cents; a
+  percentage through its numerator and denominator, a blank through its sentence. Proven by moving a figure one
+  cent, one count and one point.
+- **The dashboards.** Each answers its question in a sentence at the top, whose numbers are figures too (Board:
+  "We are $X ahead of this time last year.", its $X the two tiles' difference in cents). Board has the fiscal
+  year month by month, this year in emerald against last year in brass, each point opening its gifts; retention
+  with its cohort; designation as Restricted and Unrestricted with their funds. Dates through
+  `shared/displayDate.js`; the PDF prints the sentence and no ISO date.
+
 ## Where the code is
 - `client/src/lib/homeLayout.js` — section registry and merge · `shared/homeNote.js` — the Home note and its sentences
 - `client/src/components/Dashboard.jsx` — Home and board render, Thread rows, `OneLineEmpty`, `goalHeadSub`
 - `shared/threadShape.js` · `shared/threadRank.js` — step defaults and extraction · queue ranking
 - `shared/dashboards.js` · `shared/numberCensus.js` — definitions for dashboard metrics · for every other screen
+- `figureSources.js` · `client/src/components/Figure.jsx` · `MetricBreakdownPanel.jsx` — every number opens (FIX-2 A)
 - `shared/reportBuilder.js` — custom-report catalogue and `STANDARD_REPORTS`
 - `client/src/lib/reportsRail.js` · `client/src/lib/reportFormat.js` — the one rail and its resolver · how a report cell reads
 - server.js `REPORT_HANDLERS`, `reportToCsv`, `sendReportCsv`, `reportBuntList`, `parseReportParams`

@@ -975,11 +975,35 @@ async function orgStewardStart(orgId) {
   return row && row.d ? String(row.d) : null;
 }
 
+// FIX-2 A — EVERY NUMBER OPENS. Each figure below is computed THROUGH its
+// source (figureSources.js): the value is the aggregate over the exact query
+// the drill-through pages, so a figure and its rows cannot disagree. Every
+// figure leaves here carrying that `source`, and a blank carries the sentence
+// that says what is missing and when it will appear.
+const figureSources = require("../figureSources");
+
+// The money in a sentence: whole dollars when there are no cents.
+function sentenceMoney(v) {
+  const c = Math.abs(Math.round((Number(v) || 0) * 100));
+  const whole = c % 100 === 0;
+  return "$" + (c / 100).toLocaleString("en-US", { minimumFractionDigits: whole ? 0 : 2, maximumFractionDigits: whole ? 0 : 2 });
+}
+const sentenceCount = n => Number(n || 0).toLocaleString("en-US");
+const RECURRING_STATUS_WORDS = {
+  active: "Giving", recovered: "Giving again after a failed card", past_due: "Card failing",
+  recovering: "Card being retried", paused: "Paused", canceled: "Ended", cancelled: "Ended",
+};
+const recurringStatusWord = s => RECURRING_STATUS_WORDS[s] || String(s || "Unknown").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
+
 async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   const D = await dashboardsMod();
   const def = D.dashboardByKey(key);
   if (!def) return null;
-  const org = await orgTz(orgId);
+  const DD = await import("../shared/displayDate.js");
+  // The ORG's year: its timezone and the fiscal start month it chose
+  // (orgPeriodBounds reads vocabulary_json), never the July default alone.
+  const [orgRowTz] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const org = { ...(await orgTz(orgId)), vocabulary_json: orgRowTz ? orgRowTz.vocabulary_json : null };
   const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
   const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0);     // the ORG's year
   const fyPrev = orgTime.orgPeriodBounds(org, "fiscal_year", -1);
@@ -987,174 +1011,250 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   // like for like rather than a full year against a part of one.
   const prevSamePoint = orgTime.addDays(fyPrev.start, orgTime.daysBetween(fy.start, today) ?? 0);
   const qtr = orgTime.orgPeriodBounds(org, "quarter", 0);
-  const values = {};
+  const yr = { from: fy.start, to: today };
+  const deps = { computeRetentionRate, computeDriftForDonors };
+  const values = {}, extra = {};
+  // One figure: its value, through its source, and the source it carries.
+  const fig = async source => ({ ...(await figureSources.figureValue(orgId, source, deps)), source });
+  const put = async (k, source) => { const f = await fig(source); values[k] = f.value; extra[k] = { source, blank: f.blank, blankShort: f.blankShort }; return f; };
+  let answer = null;
+  const answerFig = (k, f) => ({ figure: { ...D.answerFigure(key, k), value: f.value, source: f.source } });
 
   if (key === "board") {
-    const [thisYr, lastYr, donors, byDes, rec] = await Promise.all([
-      query(`SELECT COALESCE(SUM(g.amount),0) AS v FROM gifts g JOIN donors d ON d.id=g.donor_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fy.start, today]),
-      query(`SELECT COALESCE(SUM(g.amount),0) AS v FROM gifts g JOIN donors d ON d.id=g.donor_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fyPrev.start, prevSamePoint]),
-      query(`SELECT COUNT(DISTINCT g.donor_id)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?`, [orgId, fy.start, today]),
-      query(`SELECT COALESCE(f.name,'Unrestricted') AS name, COALESCE(SUM(g.amount),0) AS v
-               FROM gifts g JOIN donors d ON d.id=g.donor_id
-               LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
-              GROUP BY 1 ORDER BY 2 DESC LIMIT 12`, [orgId, fy.start, today]),
-      query(`SELECT
-               COUNT(*) FILTER (WHERE status IN ('active','recovered'))::int AS giving,
-               COUNT(*) FILTER (WHERE status='canceled' AND canceled_at >= ?)::int AS stopped,
-               COUNT(*) FILTER (WHERE status='recovered' AND recovered_at >= ?)::int AS recovered
-             FROM recurring_subscriptions WHERE org_id=?`, [qtr.start, qtr.start, orgId]),
-    ]);
-    const a = parseFloat(thisYr[0]?.v) || 0, b = parseFloat(lastYr[0]?.v) || 0;
-    values.revenueThisYear = a;
-    values.revenueLastYear = b;
-    // NO PRIOR YEAR IS NULL, NOT ZERO PER CENT. New money has no denominator.
-    values.revenueChangePct = b > 0 ? Math.round(((a - b) / b) * 100) : null;
-    values.donorCount = donors[0]?.n || 0;
-    const { retentionRate, thinData } = await computeRetentionRate(orgId);
-    values.retentionRate = thinData ? null : retentionRate;
-    values.byDesignation = byDes.map(r => ({ label: r.name, value: parseFloat(r.v) || 0 }));
-    values.recurringActive = rec[0]?.giving || 0;
-    values.recurringStopped = rec[0]?.stopped || 0;
-    values.recurringRecovered = rec[0]?.recovered || 0;
-    // BUILD-88a A.6 — the org's other income, ONLY if somebody turned it on and
-    // typed one. It is its own line and it is NEVER added to giving anywhere:
-    // `values.revenueThisYear` above is gifts, and stays gifts.
+    const cmp = { ...yr, prevFrom: fyPrev.start, prevTo: prevSamePoint };
     const [oi] = await query("SELECT other_income_enabled, other_income_this_year FROM orgs WHERE id=?", [orgId]);
-    values.otherIncomeThisYear = oi && oi.other_income_enabled && oi.other_income_this_year != null
-      ? Math.round((parseFloat(oi.other_income_this_year) || 0) * 100) / 100
-      : undefined;
+    // THE DESIGNATIONS THIS YEAR'S GIFTS NAME, each a figure of its own.
+    const funds = await query(
+      `SELECT f.id, f.name, COALESCE(f.restricted,false) AS restricted
+         FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+         LEFT JOIN fin_funds f ON f.id=g.fund_id AND f.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
+        GROUP BY f.id, f.name, f.restricted`, [orgId, yr.from, yr.to]);
+    // THE MONTHS OF THE FISCAL YEAR, this year to today and last year in full.
+    const months = [];
+    for (let i = 0; i < 12; i++) {
+      const c = orgTime.parseCivil(fy.start);
+      const idx = (c.y * 12 + c.m - 1) + i;
+      const y = Math.floor(idx / 12), m = idx % 12 + 1;
+      const mStart = `${y}-${String(m).padStart(2, "0")}-01`;
+      const nIdx = idx + 1;
+      const mEnd = orgTime.addDays(`${Math.floor(nIdx / 12)}-${String(nIdx % 12 + 1).padStart(2, "0")}-01`, -1);
+      const pIdx = idx - 12, py = Math.floor(pIdx / 12), pm = pIdx % 12 + 1;
+      const pnIdx = pIdx + 1;
+      const pEnd = orgTime.addDays(`${Math.floor(pnIdx / 12)}-${String(pnIdx % 12 + 1).padStart(2, "0")}-01`, -1);
+      months.push({ month: mStart.slice(0, 7), label: DD.displayMonth(mStart).slice(0, 3), mStart, mEnd,
+                    prevMonth: `${py}-${String(pm).padStart(2, "0")}`, pEnd });
+    }
+    const seriesDef = D.dashboardByKey("board").metrics.find(m => m.key === "givingByMonth");
+    const [, , , diff, , , , , , desRows, series] = await Promise.all([
+      put("revenueThisYear", { key: "gifts", params: yr }),
+      put("revenueLastYear", { key: "gifts", params: { from: fyPrev.start, to: prevSamePoint } }),
+      put("revenueChangePct", { key: "giving-change", params: cmp }),
+      fig({ key: "giving-difference", params: cmp }),
+      put("donorCount", { key: "givers", params: yr }),
+      put("retentionRate", { key: "retention", params: {} }),
+      put("recurringActive", { key: "recurring", params: { status: "giving" } }),
+      put("recurringStopped", { key: "recurring", params: { endedSince: qtr.start } }),
+      put("recurringRecovered", { key: "recurring", params: { recoveredSince: qtr.start } }),
+      (async () => {
+        // Restricted and unrestricted, each with its funds under it. A gift
+        // with no fund named is unrestricted, as it always was.
+        const out = [];
+        for (const restricted of [true, false]) {
+          const g = await fig({ key: "gifts", params: { ...yr, restricted } });
+          out.push({ label: restricted ? "Restricted" : "Unrestricted", group: true, restricted, kind: "money", value: g.value, source: g.source });
+          const mine = funds.filter(f => (f.id ? f.restricted === restricted : !restricted));
+          const rows = await Promise.all(mine.map(async f => {
+            const v = await fig({ key: "gifts", params: { ...yr, fund: f.id || "none" } });
+            return { label: f.id ? f.name : "No fund named", restricted, kind: "money", value: v.value, source: v.source };
+          }));
+          out.push(...rows.sort((a, b) => b.value - a.value || a.label.localeCompare(b.label)));
+        }
+        return out;
+      })(),
+      Promise.all(months.map(async mo => {
+        const thisYear = mo.mStart <= today
+          ? await fig({ key: "gifts", params: { from: fy.start, to: mo.mEnd < today ? mo.mEnd : today } }) : null;
+        const lastYear = await fig({ key: "gifts", params: { from: fyPrev.start, to: mo.pEnd } });
+        const pt = f => f && ({ value: f.value, kind: "money", source: f.source, definition: seriesDef.definition,
+          label: `Giving ${DD.displayDate(f.source.params.from)} to ${DD.displayDate(f.source.params.to)}` });
+        return { month: mo.month, label: mo.label, thisYear: pt(thisYear), lastYear: pt(lastYear) };
+      })),
+    ]);
+    values.byDesignation = desRows;
+    values.givingByMonth = series;
+    // Retention with its cohort: who it is measured against, and who stayed.
+    const retained = await fig({ key: "retention-retained", params: {} });
+    const prior = await fig({ key: "retention-prior", params: {} });
+    if (prior.value > 0) {
+      extra.retentionRate.also = [
+        { key: "retained", label: "Gave again this year", kind: "count", value: retained.value, source: retained.source,
+          definition: "Everyone who gave last calendar year and has given again this one." },
+        { key: "prior", label: "Gave last year", kind: "count", value: prior.value, source: prior.source,
+          definition: "Everyone who gave last calendar year: the people retention is measured against." },
+      ];
+    }
+    // BUILD-88a A.6 — the org's other income, ONLY if somebody turned it on
+    // and typed one. Its own line, NEVER added to giving.
+    if (oi && oi.other_income_enabled && oi.other_income_this_year != null) await put("otherIncomeThisYear", { key: "other-income", params: {} });
+    else values.otherIncomeThisYear = undefined;
+    // THE ANSWER. Its dollar difference is the two tiles', subtracted in cents.
+    const dc = Math.round((diff.value || 0) * 100);
+    answer = dc === 0
+      ? { parts: [{ text: "We are level with this time last year." }] }
+      : { parts: [{ text: "We are " }, answerFig("givingDifference", diff), { text: dc > 0 ? " ahead of this time last year." : " behind this time last year." }] };
   }
 
   if (key === "fundraising") {
-    const [goalsOut, pledges, grants, funnel] = await Promise.all([
+    const grantWin = { from: today, to: orgTime.addDays(today, 90) };
+    const [goalsOut, grants, funnel] = await Promise.all([
       fundraisingCampaignRows(orgId).then(fundraisingGoalsPortfolio).catch(() => null),
-      query(`SELECT COALESCE(SUM(p.amount),0) AS pledged,
-                    COALESCE(SUM((SELECT COALESCE(SUM(g.amount),0) FROM gifts g WHERE g.pledge_id=p.id)),0) AS paid
-               FROM pledges p WHERE p.org_id=? AND p.status='open'`, [orgId]),
-      query(`SELECT funder, program, amount, deadline FROM grants
+      query(`SELECT id, funder, program, deadline FROM grants
               WHERE org_id=? AND deadline IS NOT NULL AND deadline <> '' AND deadline >= ? AND deadline <= ?
                 AND status NOT IN ('awarded','active','closed','rejected')
-              ORDER BY deadline ASC LIMIT 12`, [orgId, today, orgTime.addDays(today, 90)]),
-      isTeam ? query(`SELECT stage, COUNT(*)::int AS n FROM donors
+              ORDER BY deadline ASC, id LIMIT 12`, [orgId, grantWin.from, grantWin.to]),
+      isTeam ? query(`SELECT COALESCE(stage,'none') AS stage FROM donors
                        WHERE org_id=? AND deleted_at IS NULL AND assigned_to IS NOT NULL
-                       GROUP BY 1 ORDER BY 2 DESC`, [orgId]) : Promise.resolve([]),
+                       GROUP BY 1`, [orgId]) : Promise.resolve([]),
     ]);
-    values.goals = ((goalsOut?.goals) || []).filter(g => g.active !== false).map(g => ({
-      label: g.name, value: parseFloat(g.raised) || 0, goal: parseFloat(g.goalAmount) || 0,
-      percent: g.rawPercent ?? g.percent ?? null, pace: g.paceState || null,
-    }));
-    const pl = pledges[0] || {};
-    const pledged = parseFloat(pl.pledged) || 0, paid = parseFloat(pl.paid) || 0;
-    values.pledgedOutstanding = Math.max(0, pledged - paid);
-    values.pledgedPaid = paid;
-    values.grantDeadlines = grants.map(g => ({ label: `${g.funder}${g.program ? " · " + g.program : ""}`,
-      value: parseFloat(g.amount) || 0, when: String(g.deadline).slice(0, 10) }));
-    values.pipelineFunnel = isTeam ? funnel.map(r => ({ label: r.stage, value: r.n })) : null;
+    const goals = ((goalsOut?.goals) || []).filter(g => g.active !== false);
+    const [pledged] = await Promise.all([
+      put("pledgedOutstanding", { key: "pledges-open", params: {} }),
+      put("pledgedPaid", { key: "pledge-payments", params: {} }),
+      (async () => {
+        values.goals = await Promise.all(goals.map(async g => {
+          const [raised, target, pct] = await Promise.all([
+            fig({ key: "goal-raised", params: { campaign: g.id } }),
+            fig({ key: "campaign-goal", params: { campaign: g.id } }),
+            fig({ key: "goal-progress", params: { campaign: g.id } }),
+          ]);
+          return { label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
+            also: [
+              { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
+                definition: "The target set on this goal's record." },
+              { key: "percent", label: "Of the goal", kind: "percent", value: pct.value, source: pct.source,
+                definition: "What has been raised toward this goal, as a share of its target." },
+            ] };
+        }));
+      })(),
+      (async () => {
+        values.grantDeadlines = await Promise.all(grants.map(async g => {
+          const v = await fig({ key: "grant", params: { id: g.id } });
+          return { label: `${g.funder}${g.program ? " · " + g.program : ""}`, kind: "money", value: v.value, source: v.source,
+                   when: String(g.deadline).slice(0, 10), whenLabel: DD.displayDate(String(g.deadline).slice(0, 10)) };
+        }));
+      })(),
+      (async () => {
+        values.pipelineFunnel = isTeam ? await Promise.all(funnel.map(async r => {
+          const v = await fig({ key: "pipeline-stage", params: { stage: r.stage } });
+          return { label: r.stage === "none" ? "No stage set" : String(r.stage).replace(/_/g, " ").replace(/^./, c => c.toUpperCase()),
+                   kind: "count", value: v.value, source: v.source };
+        })).then(rows => rows.sort((a, b) => b.value - a.value)) : null;
+      })(),
+    ]);
+    const due = await fig({ key: "grants-due", params: grantWin });
+    answer = { parts: [
+      answerFig("pledgedOutstanding", pledged), { text: " is pledged and still to come, and " },
+      answerFig("grantDeadlineCount", due),
+      { text: due.value === 1 ? " grant deadline falls in the next ninety days." : " grant deadlines fall in the next ninety days." },
+    ] };
   }
 
   if (key === "people") {
     const start = await orgStewardStart(orgId);
-    const [rows, drifting, milestones, unthanked] = await Promise.all([
-      query(`SELECT d.id, d.name, COALESCE(SUM(g.amount),0) AS v
-               FROM gifts g JOIN donors d ON d.id=g.donor_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date>=? AND g.date<=?
-              GROUP BY d.id, d.name ORDER BY 3 DESC`, [orgId, fy.start, today]),
-      computeDriftForDonors(orgId, {}).catch(() => ({ list: [] })),
-      query(`SELECT COUNT(*)::int AS n FROM milestone_drafts
-              WHERE org_id=? AND created_at >= ?::date`, [orgId, qtr.start]),
+    const wk = orgTime.orgPeriodBounds(org, "week", 0);
+    const week = { from: wk.start, to: today };
+    const [share, carried, topCount, drifting] = await Promise.all([
+      fig({ key: "concentration-share", params: yr }),
+      fig({ key: "top-givers", params: { ...yr, measure: "sum" } }),
+      fig({ key: "top-givers", params: yr }),
+      put("driftingAmongTop", { key: "drifting-top", params: yr }),
+      put("milestonesThisQuarter", { key: "milestones", params: { since: qtr.start } }),
       // 0.6 — GIFTS NOT YET THANKED. A count, with a start date, and the start
       // date is what makes it honest: an imported file is history.
-      query(`SELECT COUNT(*)::int AS n FROM gifts g JOIN donors d ON d.id=g.donor_id
-              WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.is_sample,false)=false
-                AND g.date >= ? AND COALESCE(g.acknowledgement_sent,false)=false`, [orgId, start || fy.start]),
+      put("giftsNotYetThanked", { key: "unthanked", params: { since: start || fy.start } }),
+      (async () => {
+        // BUILD-88a A.5 — the activity report, from the ONE counter
+        // (composeActivityReport reads these same sources). Monday to today in
+        // the ORG's timezone, the window the Week in Review email uses.
+        const row = async (label, definition, source, money) => {
+          const f = await fig(source);
+          return { label, value: f.value, kind: money ? "money" : "count", ...(money ? { money: true } : {}), definition, source };
+        };
+        values.thisWeek = await Promise.all([
+          row("Conversations logged", ACTIVITY_DEFINITIONS.conversationsLogged, { key: "conversations", params: week }),
+          row("Gifts received", ACTIVITY_DEFINITIONS.giftsReceived, { key: "gifts", params: { ...week, measure: "count" } }),
+          row("Given this week", ACTIVITY_DEFINITIONS.giftsReceived, { key: "gifts", params: week }, true),
+          row("Thank-yous marked sent", ACTIVITY_DEFINITIONS.thankYousMarkedSent, { key: "thanks-marked", params: week }),
+          row("Follow-ups closed by outcome", ACTIVITY_DEFINITIONS.threadsClosedByOutcome, { key: "threads-closed", params: { ...week, kind: "outcome" } }),
+          row("Follow-ups dismissed", ACTIVITY_DEFINITIONS.threadsDismissed, { key: "threads-closed", params: { ...week, kind: "dismissed" } }),
+        ]);
+      })(),
     ]);
-    const total = rows.reduce((n, r) => n + (parseFloat(r.v) || 0), 0);
-    let run = 0; const top = [];
-    for (const r of rows) { if (run >= total * 0.9) break; run += parseFloat(r.v) || 0; top.push(r); }
-    values.concentration = total > 0
-      ? [{ label: `${top.length} of ${rows.length} people`, value: Math.round(top.length / rows.length * 100), suffix: "% of your givers" },
-         // Cents, not whole dollars: this figure is printed in a board packet
-         // beside the year's total, and a rounded one would not add up to it.
-         { label: "carry 90% of this year's giving", value: Math.round(run * 100) / 100, money: true }]
+    // WHO THEY ARE: the top givers, each opening their own gifts this year.
+    const top = await figureSources.figure(orgId, { key: "top-givers", params: yr }, deps, { page: 1, pageSize: 20 });
+    values.topDonors = await Promise.all((top.rows || []).map(async r => {
+      const v = await fig({ key: "gifts", params: { ...yr, donor: r.donorId } });
+      return { label: r.name, id: r.donorId, kind: "money", value: v.value, source: v.source };
+    }));
+    values.concentration = carried.value > 0
+      ? [{ label: "Share of this year's givers who carry 90% of the giving", kind: "percent", value: share.value, source: share.source },
+         // Cents, not whole dollars: printed in a board packet beside the
+         // year's total, and a rounded one would not add up to it.
+         { label: "What those givers gave this year", kind: "money", money: true, value: carried.value, source: carried.source }]
       : [];
-    values.topDonors = top.slice(0, 20).map(r => ({ label: r.name, value: parseFloat(r.v) || 0, id: r.id }));
-    const topIds = new Set(top.map(r => r.id));
-    values.driftingAmongTop = (drifting.list || []).filter(x => topIds.has(x.donorId)).length;
-    values.milestonesThisQuarter = milestones[0]?.n || 0;
-    values.giftsNotYetThanked = unthanked[0]?.n || 0;
     values.stewardStart = start;
-    // BUILD-88a A.5 — the activity report, from the ONE counter. Monday to
-    // today in the ORG's timezone, which is the same window the Week in Review
-    // email uses, so the screen and the email are the same arithmetic.
-    {
-      const wk = orgTime.orgPeriodBounds(org, "week", 0);
-      const act = await composeActivityReport(orgId, { start: wk.start, end: today });
-      values.thisWeek = [
-        { label: "Conversations logged", value: act.conversationsLogged, definition: ACTIVITY_DEFINITIONS.conversationsLogged },
-        { label: "Gifts received", value: act.giftsReceived, definition: ACTIVITY_DEFINITIONS.giftsReceived },
-        { label: "Given this week", value: act.giftDollars, money: true, definition: ACTIVITY_DEFINITIONS.giftsReceived },
-        { label: "Thank-yous marked sent", value: act.thankYousMarkedSent, definition: ACTIVITY_DEFINITIONS.thankYousMarkedSent },
-        { label: "Follow-ups closed by outcome", value: act.threadsClosedByOutcome, definition: ACTIVITY_DEFINITIONS.threadsClosedByOutcome },
-        { label: "Follow-ups dismissed", value: act.threadsDismissed, definition: ACTIVITY_DEFINITIONS.threadsDismissed },
-      ];
-    }
+    answer = carried.value > 0
+      ? { parts: [answerFig("topGiverCount", topCount), { text: topCount.value === 1 ? " person carries" : " people carry" },
+                  { text: " ninety per cent of this year's giving, and " }, answerFig("driftingAmongTop", drifting),
+                  { text: drifting.value === 1 ? " of them is drifting." : " of them are drifting." }] }
+      : { parts: [{ text: "Nobody has given yet this fiscal year, so there is nobody carrying it." }] };
   }
 
   if (key === "recurring") {
-    const [byStatus, mrrRows, trend, failures, months] = await Promise.all([
-      query(`SELECT status, COUNT(*)::int AS n FROM recurring_subscriptions WHERE org_id=? GROUP BY 1 ORDER BY 2 DESC`, [orgId]),
-      query(`SELECT COALESCE(SUM(CASE WHEN interval='year' THEN amount/12.0 ELSE amount END),0) AS v
-               FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','recovered')`, [orgId]),
-      query(`SELECT
-               COALESCE(SUM(CASE WHEN created_at >= ?::date THEN (CASE WHEN interval='year' THEN amount/12.0 ELSE amount END) ELSE 0 END),0) AS added,
-               COALESCE(SUM(CASE WHEN canceled_at >= ?::date THEN (CASE WHEN interval='year' THEN amount/12.0 ELSE amount END) ELSE 0 END),0) AS lost
-             FROM recurring_subscriptions WHERE org_id=?`, [orgTime.orgPeriodBounds(org, "month", 0).start, orgTime.orgPeriodBounds(org, "month", 0).start, orgId]),
-      query(`SELECT
-               COUNT(*) FILTER (WHERE type='payment_failed' AND created_at >= ?)::int AS caught,
-               COUNT(*) FILTER (WHERE type='payment_recovered' AND created_at >= ?)::int AS recovered
-             FROM payment_recovery_events WHERE org_id=?`, [qtr.start, qtr.start, orgId]),
-      query(`SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (NOW() - created_at))/2629800.0),0) AS m
-               FROM recurring_subscriptions WHERE org_id=? AND status IN ('active','recovered')`, [orgId]),
+    const statuses = await query(`SELECT DISTINCT status FROM recurring_subscriptions WHERE org_id=?`, [orgId]);
+    const month = orgTime.orgPeriodBounds(org, "month", 0);
+    const [givers, mrr] = await Promise.all([
+      fig({ key: "recurring", params: { status: "giving" } }),
+      put("mrr", { key: "recurring-monthly", params: {} }),
+      put("mrrTrend", { key: "recurring-change", params: { since: month.start } }),
+      put("failuresCaught", { key: "recovery-events", params: { type: "payment_failed", since: qtr.start } }),
+      put("failuresRecovered", { key: "recovery-events", params: { type: "payment_recovered", since: qtr.start } }),
+      put("avgMonthsOnFile", { key: "recurring-months", params: {} }),
+      // BUILD-89S 89f — provider-neutral recurring, counted apart from the
+      // subscriptions Steward processes itself, never folded into them.
+      put("sourceRecurring", { key: "source-recurring", params: {} }),
+      put("sourceRecurringUnconfirmed", { key: "source-recurring", params: { unconfirmed: true } }),
+      (async () => {
+        values.byStatus = (await Promise.all(statuses.map(async r => {
+          const v = await fig({ key: "recurring", params: { status: r.status } });
+          return { label: recurringStatusWord(r.status), kind: "count", value: v.value, source: v.source };
+        }))).sort((a, b) => b.value - a.value || a.label.localeCompare(b.label));
+      })(),
     ]);
-    values.byStatus = byStatus.map(r => ({ label: r.status, value: r.n }));
-    values.mrr = Math.round((parseFloat(mrrRows[0]?.v) || 0) * 100) / 100;
-    values.mrrTrend = Math.round(((parseFloat(trend[0]?.added) || 0) - (parseFloat(trend[0]?.lost) || 0)) * 100) / 100;
-    values.failuresCaught = failures[0]?.caught || 0;
-    values.failuresRecovered = failures[0]?.recovered || 0;
-    values.avgMonthsOnFile = Math.round(parseFloat(months[0]?.m) || 0);
-
-    // BUILD-89S 89f — provider-neutral recurring, from the sources an
-    // organisation already takes gifts through. Counted apart from the
-    // subscriptions Steward processes itself, never folded into them: they are
-    // different money on different rails, and one number covering both would
-    // be a figure nobody could reconcile against either provider.
-    const [srcRec] = await query(
-      `SELECT COUNT(*)::int AS n,
-              COUNT(*) FILTER (WHERE r.confidence='inferred' AND r.confirmed_at IS NULL)::int AS unconfirmed
-         FROM giving_recurring r
-         JOIN giving_sources s ON s.id = r.source_id AND s.org_id = r.org_id
-         JOIN donors d ON d.id = r.donor_id AND d.org_id = r.org_id AND d.deleted_at IS NULL
-        WHERE r.org_id=? AND r.status <> 'ended' AND s.status <> 'disconnected'`, [orgId]);
-    values.sourceRecurring = srcRec?.n || 0;
-    values.sourceRecurringUnconfirmed = srcRec?.unconfirmed || 0;
+    answer = givers.value > 0
+      ? { parts: [answerFig("monthlyGivers", givers), { text: givers.value === 1 ? " monthly gift brings in " : " monthly gifts bring in " },
+                  answerFig("mrr", mrr), { text: " a month." }] }
+      : { parts: [{ text: "No monthly gifts are charging yet, so there is no monthly base to read." }] };
   }
 
-  // EVERY number leaves here WITH its definition. One string, from the
-  // registry, to the hover and to the PDF footnote.
+  // EVERY number leaves here WITH its definition and its source. One string,
+  // from the registry, to the hover, the panel and the PDF footnote.
   const metrics = def.metrics
     .filter(m => !m.teamOnly || isTeam)
-    // A.6 — an OPTIONAL metric with no value is ABSENT, not blank. A board
-    // screen showing "Other income this year — not enough history yet" for an
-    // org that never had other income is a question nobody asked.
+    // A.6 — an OPTIONAL metric with no value is ABSENT, not blank.
     .filter(m => !m.optional || values[m.key] !== undefined)
     .map(m => ({ key: m.key, label: m.label, kind: m.kind, rowsAre: m.rowsAre || null, definition: m.definition,
-                 value: values[m.key] === undefined ? null : values[m.key] }));
+                 value: values[m.key] === undefined ? null : values[m.key],
+                 ...(extra[m.key] ? { source: extra[m.key].source, blank: extra[m.key].blank || null,
+                                      blankShort: extra[m.key].blankShort || null } : {}),
+                 ...(extra[m.key] && extra[m.key].also ? { also: extra[m.key].also } : {}) }));
+  const text = (answer?.parts || []).map(p => p.text != null ? p.text
+    : p.figure.kind === "money" ? sentenceMoney(p.figure.value) : sentenceCount(p.figure.value)).join("");
   return { key: def.key, label: def.label, question: def.question, blurb: def.blurb,
-           asOf: today, fiscalYear: { start: fy.start, end: fy.end }, isTeam,
+           asOf: today, asOfLabel: DD.displayDate(today),
+           fiscalYear: { start: fy.start, end: fy.end, label: `${DD.displayDate(fy.start)} to ${DD.displayDate(fy.end)}` }, isTeam,
+           answer: { text, parts: answer?.parts || [] },
            // The boundary 0.6's answer turns on, on the payload so a reader can
            // see WHICH date decided the count rather than trusting it.
            ...(values.stewardStart ? { stewardStart: values.stewardStart } : {}),
@@ -1178,6 +1278,7 @@ app.get("/dashboards/:key", requireAuth, wrap(async (req, res) => {
 // are one string, not two copies.
 async function renderDashboardPdf(board, org) {
   const PDFDocument = require("pdfkit");
+  const DD = await import("../shared/displayDate.js");
   const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -1185,50 +1286,76 @@ async function renderDashboardPdf(board, org) {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
     const INK = "#0f1a12", EMERALD = "#0d5c3a", GREY = "#5a554f", PW = doc.page.width;
-    const fmtMoney = n => "$" + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Sign first (-$800.00), the fmtFull rule.
+    const fmtMoney = n => {
+      const c = Math.round((Number(n) || 0) * 100);
+      return (c < 0 ? "-$" : "$") + (Math.abs(c) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    // A figure prints the way it is DECLARED, never guessed from its size.
+    const fmtFigure = (kind, v, suffix) => v === null || v === undefined ? "not enough history yet"
+      : kind === "money" ? fmtMoney(v) : kind === "percent" ? `${v}%` : `${v}${suffix || ""}`;
 
     doc.rect(0, 0, PW, 78).fill(INK);
     doc.font("Helvetica").fontSize(9).fillColor("#c9a84c").text(displayNameCase(org.name || ""), 50, 24);
     doc.font("Helvetica-Bold").fontSize(19).fillColor("#f0ede6").text(board.question, 50, 40, { width: PW - 100 });
 
-    let y = 104;
+    let y = 96;
+    // FIX-2 A — THE ANSWER, printed as the screen says it.
+    if (board.answer && board.answer.text) {
+      doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(board.answer.text, 50, y, { width: PW - 100 });
+      y = doc.y + 8;
+    }
     doc.font("Helvetica").fontSize(9).fillColor(GREY)
-      .text(`As of ${board.asOf} · fiscal year ${board.fiscalYear.start} to ${board.fiscalYear.end}`, 50, y);
-    y += 22;
+      .text(`As of ${DD.displayDate(board.asOf)} · fiscal year ${DD.displayDate(board.fiscalYear.start)} to ${DD.displayDate(board.fiscalYear.end)}`, 50, y);
+    y = doc.y + 14;
 
     const notes = [];
     for (const m of board.metrics) {
       notes.push(`${m.label}. ${m.definition}`);
-      if (m.kind === "breakdown") {
+      if (m.kind === "series") {
+        const pts = Array.isArray(m.value) ? m.value : [];
+        doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(m.label, 50, y); y = doc.y + 4;
+        for (const p of pts) {
+          if (y > doc.page.height - 120) { doc.addPage(); y = 60; }
+          doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(DD.displayMonth(p.month), 58, y, { width: 120 });
+          doc.font("Helvetica").fillColor(EMERALD).text(p.thisYear ? `${fmtMoney(p.thisYear.value)} this year` : "", 180, y, { width: 170, align: "right" });
+          doc.font("Helvetica").fillColor(GREY).text(p.lastYear ? `${fmtMoney(p.lastYear.value)} last year` : "", 360, y, { width: PW - 410, align: "right" });
+          y = Math.max(doc.y, y + 13);
+        }
+        y += 10;
+      } else if (m.kind === "breakdown") {
         const rows = Array.isArray(m.value) ? m.value : [];
         doc.font("Helvetica-Bold").fontSize(11).fillColor(INK).text(m.label, 50, y); y = doc.y + 4;
         if (!rows.length) { doc.font("Helvetica").fontSize(9).fillColor(GREY).text("Nothing here yet.", 50, y); y = doc.y + 12; continue; }
         for (const r of rows) {
           if (y > doc.page.height - 120) { doc.addPage(); y = 60; }
-          doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(String(r.label), 58, y, { width: PW - 220 });
-          const right = r.suffix ? `${r.value}${r.suffix}`
-            : r.goal ? `${fmtMoney(r.value)} of ${fmtMoney(r.goal)}`
-            : typeof r.value === "number" && r.value > 999 ? fmtMoney(r.value) : String(r.value);
+          const label = `${r.group ? "" : "   "}${r.label}${r.whenLabel ? " · due " + r.whenLabel : ""}`;
+          doc.font(r.group ? "Helvetica-Bold" : "Helvetica").fontSize(9.5).fillColor(INK).text(label, 58, y, { width: PW - 220 });
+          const kind = r.kind || (m.rowsAre === "money" || r.money ? "money" : "count");
+          const goal = (r.also || []).find(a => a.key === "goal"), pct = (r.also || []).find(a => a.key === "percent");
+          const right = goal ? `${fmtMoney(r.value)} of ${fmtMoney(goal.value)}${pct && pct.value != null ? ` · ${pct.value}%` : ""}`
+            : fmtFigure(kind, r.value, r.suffix);
           doc.font("Helvetica-Bold").fillColor(EMERALD).text(right, PW - 210, y, { width: 160, align: "right" });
           y = Math.max(doc.y, y + 13);
         }
         y += 10;
       } else {
         if (y > doc.page.height - 140) { doc.addPage(); y = 60; }
-        // A BLANK IS PRINTED AS A BLANK. "0%" retention for an org with no
-        // history is a lie a board would act on.
-        const v = m.value === null || m.value === undefined ? "not enough history yet"
-          : m.kind === "money" ? fmtMoney(m.value)
-          : m.kind === "percent" ? `${m.value}%` : String(m.value);
+        // A BLANK IS PRINTED AS A BLANK, with the sentence saying when.
         doc.font("Helvetica").fontSize(9).fillColor(GREY).text(m.label, 50, y, { width: 260 });
-        doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(v, 320, y - 2, { width: PW - 370, align: "right" });
+        doc.font("Helvetica-Bold").fontSize(13).fillColor(INK).text(fmtFigure(m.kind, m.value), 320, y - 2, { width: PW - 370, align: "right" });
         y += 20;
+        if (m.value == null && m.blank) {
+          doc.font("Helvetica").fontSize(8.5).fillColor(GREY).text(m.blank, 58, y - 4, { width: PW - 110 });
+          y = doc.y + 8;
+        }
       }
     }
 
     doc.addPage();
     doc.font("Helvetica-Bold").fontSize(12).fillColor(INK).text("What each number means", 50, 60);
     let ny = 82;
+    for (const p of (board.answer?.parts || [])) if (p.figure && p.figure.definition) notes.unshift(`${p.figure.label}. ${p.figure.definition}`);
     for (const n of notes) {
       if (ny > doc.page.height - 90) { doc.addPage(); ny = 60; }
       doc.font("Helvetica").fontSize(8.5).fillColor(GREY).text(n, 50, ny, { width: PW - 100, lineGap: 1.5 });
@@ -1255,6 +1382,27 @@ app.get("/dashboards/:key/pdf", requireAuth, wrap(async (req, res) => {
 app.get("/dashboards", requireAuth, wrap(async (req, res) => {
   const D = await dashboardsMod();
   res.json({ dashboards: D.DASHBOARDS.map(d => ({ key: d.key, label: d.label, question: d.question, blurb: d.blurb })) });
+}));
+
+// ── FIX-2 A — THE ROWS BEHIND A FIGURE ─────────────────────────────────────
+// One endpoint shape for every number Steward shows. The caller's org only
+// (req.user.orgId is the first argument of every source's query), read-only
+// (a GET that writes nothing), paginated (?page, ?pageSize up to 200), and
+// computed by the SAME source the figure was: figureSources.js is the one
+// definition of each, so the rows and the number cannot disagree. A source
+// name is from a fixed registry; a parameter it does not know is ignored and
+// a malformed one is refused, never guessed.
+app.get("/figures/:source/rows", requireAuth, wrap(async (req, res) => {
+  const { page, pageSize, ...params } = req.query;
+  try {
+    const out = await figureSources.figure(req.user.orgId, { key: String(req.params.source), params },
+      { computeRetentionRate, computeDriftForDonors }, { page, pageSize });
+    if (!out) return res.status(404).json({ error: "Steward has no figure by that name." });
+    res.json(out);
+  } catch (e) {
+    if (e instanceof figureSources.FigureParamError) return res.status(400).json({ error: e.message });
+    throw e;
+  }
 }));
 
 async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE id=?", [orgId]); return o || {}; }

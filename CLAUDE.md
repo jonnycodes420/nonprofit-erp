@@ -39,6 +39,8 @@ drafts or suggests the next move, and a human always reviews and sends. It start
   (`person_types`), with one timeline. Never fork a second table or profile for a kind of person.
 - **Every number has a sentence.** A number on a screen, report or PDF comes with the one
   sentence that defines it. When two surfaces show the same number, it's computed once.
+- **Every number opens.** A figure is a `<Figure>` with a `source`, and clicking it shows the rows
+  behind it, footing to the cent (`figureSources.js`). See `docs/decisions/home-and-reports.md`.
 - **A GET never changes state.** Every link in an email must survive GET and HEAD with zero
   writes. A change of state takes a POST from a page the person sees.
 - **Four colours reach a screen:** ink `#0F1A12`, white `#FFFFFF` (cream `#F0EDE6` is its
