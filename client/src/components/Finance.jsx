@@ -997,7 +997,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <div style={{ fontSize:10, color:T.ink3, marginTop:2 }}>Cumulative — all money in minus out, since inception</div>
             </div>
             {onNavigate && funds.length > 0 && (
-              <button onClick={() => onNavigate("reports")} style={{ background:"none", border:"none", color:T.greenMid, fontSize:12, fontWeight:700, cursor:"pointer", padding:0 }}>Gifts by fund →</button>
+              <button onClick={() => onNavigate("reports", { report: "std:by-fund" })} style={{ background:"none", border:"none", color:T.greenMid, fontSize:12, fontWeight:700, cursor:"pointer", padding:0 }}>Gifts by fund →</button>
             )}
           </div>
           {finFundBalances.length === 0
