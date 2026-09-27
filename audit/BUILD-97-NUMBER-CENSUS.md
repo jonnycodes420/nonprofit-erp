@@ -61,7 +61,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 | `Donors.jsx` | 117 | 16 |
 | `Dashboard.jsx` | 62 | 24 |
 | `Finance.jsx` | 38 | 5 |
-| `Reports.jsx` | 42 | 23 |
+| `Reports.jsx` | 40 | 25 |
 | `Fundraising.jsx` | 31 | 16 |
 | `Communications.jsx` | 20 | 6 |
 | `Grants.jsx` | 13 | 5 |

@@ -74,6 +74,14 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **Reports has one way in: the rail in `client/src/lib/reportsRail.js`, grouped by question, with Build a report at
   its top and a `<select>` below 760px.** Never add a tab row or a second list. Every id a report ever arrived by (an old
   tab id, `std:<key>`, a saved id, `saved`) goes through `resolveReportId`, and a new report goes into `RAIL_GROUPS`. (FIX-2 B)
+- **The rail's seven groups are Your saved reports, Who stopped giving, Who gives the most, The year, Money in, Grants,
+  and Volunteers and members, in that order.** A group folds, the fold is kept per viewer in try/catch'd localStorage,
+  and opening a report opens its group (`groupOfReport`). The search box (`filterRail`) matches names across groups and
+  drives the phone picker too. (FIX-3 E)
+- **"The same point last year" is one window, `orgTime.samePointLastYear`, read through one source,
+  `samePointLastYearSource` (routes/crm.js).** The Board and the giving summary both call it, so they agree in cents.
+  A running period is cut at today and compared day for day, and a finished one with the same dates a year earlier.
+  Reports read the org's fiscal start month too (`reportYearBounds(year, mode, startMonth)`). (FIX-3 E)
 - **Results draw through `ReportTable` (ReportBuilder.jsx) and `reportFormat.js`.** Dates go through `shared/displayDate.js`,
   money is whole dollars unless it has cents, the totals row is the sum of the rows in integer cents, and a person row
   opens the person (`_pid` on builder rows, never a column). The CSV and PDF keep ISO dates and full values. (FIX-2 B)

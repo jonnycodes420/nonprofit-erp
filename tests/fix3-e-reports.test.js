@@ -240,7 +240,7 @@ async function seedOrg(org, startMonth) {
   const grants = st.find(g => g.id === "grants");
   ok("collapse: a group's header folds its reports away", !!grants && grants.expanded === "false" && grants.items.length === 0, grants);
   await page.locator('[data-group-id="people"] [data-testid="rail-group-toggle"]').click({ timeout: 3000 }).catch(() => {});
-  await page.reload({ waitUntil: "networkidle" }); await settle(page);
+  await goReport(page, "lybunt");   // a fresh load of the page (the app drops ?report= once read, so not reload())
   st = await railState(page);
   ok("collapse: remembered for this viewer across a reload",
      st.find(g => g.id === "grants")?.expanded === "false" && st.find(g => g.id === "people")?.expanded === "false"
@@ -262,8 +262,8 @@ async function seedOrg(org, startMonth) {
   await search.fill("month", { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(150);
   st = await railState(page);
-  ok("search: \"month\" finds its reports across groups, folded or not, and hides the rest",
-     JSON.stringify(st.map(g => [g.id, g.items])) === JSON.stringify([["saved", [saved.body.id]], ["stopped", ["std:monthly-givers"]],
+  ok("search: \"month\" finds its reports across groups (Lapsed over 24 months too), folded or not, and hides the rest",
+     JSON.stringify(st.map(g => [g.id, g.items])) === JSON.stringify([["saved", [saved.body.id]], ["stopped", ["std:lapsed-24", "std:monthly-givers"]],
        ["year", ["std:by-month"]], ["people", ["std:members-new-renewed"]]]), st.map(g => [g.id, g.items]));
   await search.press("Escape", { timeout: 3000 }).catch(() => {});
   await page.waitForTimeout(150);
@@ -308,11 +308,15 @@ async function seedOrg(org, startMonth) {
   await ms.fill("month", { timeout: 3000 }).catch(() => {}); await m.page.waitForTimeout(150);
   og = await groupsOf();
   ok("390: a search narrows the picker to its matches",
-     JSON.stringify(og) === JSON.stringify([["Your saved reports", [saved.body.id]], ["Who stopped giving", ["std:monthly-givers"]],
+     JSON.stringify(og) === JSON.stringify([["Your saved reports", [saved.body.id]], ["Who stopped giving", ["std:lapsed-24", "std:monthly-givers"]],
        ["The year", ["std:by-month"]], ["Volunteers and members", ["std:members-new-renewed"]]]), og);
+  const listed = await m.page.evaluate(() => [...document.querySelectorAll('[data-testid="rail-list"] [data-report-id]')].filter(e => e.offsetParent !== null).map(e => e.getAttribute("data-report-id")));
+  ok("390: …and lists its matches under the box, to tap", JSON.stringify(listed) === JSON.stringify([saved.body.id, "std:lapsed-24", "std:monthly-givers", "std:by-month", "std:members-new-renewed"]), listed);
   await picker.selectOption("std:monthly-givers").catch(() => {}); await settle(m.page);
   ok("390: picking from it lands on the report", (await picker.inputValue().catch(() => null)) === "std:monthly-givers");
   ok("390: no sideways scroll", !(await sideways(m.page)));
+  await ms.fill("", { timeout: 3000 }).catch(() => {}); await m.page.waitForTimeout(150);
+  ok("390: with no search, the list folds back into the picker", !(await m.page.locator('[data-testid="rail-list"]').isVisible().catch(() => true)));
   await m.page.close();
 
   await browser.close();

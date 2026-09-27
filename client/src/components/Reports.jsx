@@ -3,8 +3,9 @@ import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey } from "../lib/reportsRail";
 import { displayDate } from "../../../shared/displayDate";
+import { Figure, FigureContext } from "./Figure";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -49,18 +50,21 @@ const YEARMODE_TOGGLE_REPORTS = ["lybunt", "sybunt", "retention", "three-year", 
 const DIGEST_REPORTS = ["week-in-review"]; // fetched from /digests/preview, not /reports/:key
 
 const now = new Date();
-const CUR_FY = now.getMonth() < 6 ? now.getFullYear() : now.getFullYear() + 1; // FY label = its June-30 end year
 const CUR_CY = now.getFullYear();
-
-const PRESETS = [
-  { id: "thisFY", label: "This FY", year: CUR_FY, yearMode: "fiscal" },
-  { id: "lastFY", label: "Last FY", year: CUR_FY - 1, yearMode: "fiscal" },
+// FIX-3 E — the fiscal year is the ORG's (its start month comes back on the
+// giving summary, from the vocabulary the Board reads), labelled by the year
+// it ends in, as the server labels it. July until the server has said.
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fyOf = start => (now.getMonth() + 1 < start ? now.getFullYear() : now.getFullYear() + 1);
+const fyLastMonth = start => MON[(start + 10) % 12];
+const fyRangeLabel = (y, start) => `${MON[start - 1]} ${y - 1} – ${fyLastMonth(start)} ${start === 1 ? y - 1 : y}`;
+const presetsFor = fy => [
+  { id: "thisFY", label: "This FY", year: fy, yearMode: "fiscal" },
+  { id: "lastFY", label: "Last FY", year: fy - 1, yearMode: "fiscal" },
   { id: "thisCY", label: "This CY", year: CUR_CY, yearMode: "calendar" },
   { id: "lastCY", label: "Last CY", year: CUR_CY - 1, yearMode: "calendar" },
   { id: "custom", label: "Custom" },
 ];
-
-const fyRangeLabel = y => `Jul ${y - 1} – Jun ${y}`;
 const pctStr = v => v === null || v === undefined ? "—" : `${v}%`;
 const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
@@ -70,10 +74,12 @@ const REPORTS_CSS = `
   .reports-layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:22px;align-items:start;}
   .reports-picker{display:none;}
   .reports-rail-item:hover{background:${T.white};}
-  .reports-rail-item:focus-visible{outline:2px solid ${T.greenDk};outline-offset:1px;}
+  .reports-rail-item:focus-visible,.reports-group-toggle:focus-visible{outline:2px solid ${T.greenDk};outline-offset:1px;}
+  .reports-group-toggle:hover{color:${T.ink};}
   @media (max-width:760px){
     .reports-layout{grid-template-columns:minmax(0,1fr);gap:14px;}
     .reports-rail-list{display:none;}
+    .reports-rail-list.is-searching{display:block;}
     .reports-picker{display:block;}
   }
 `;
@@ -91,7 +97,42 @@ function PctBar({ pct }) {
 // ── THE ONE RAIL ────────────────────────────────────────────────────────────
 // Active item (the common brief's rule): white ground, ink, weight 700, and a
 // 3px emerald rule on the leading edge — never a solid green block.
-function ReportsRail({ groups, active, onPick }) {
+//
+// FIX-3 E (finding 12): seven groups, each folds under its header; the fold is
+// remembered per viewer in this browser (a convenience, so storage that throws
+// or comes back empty only means every group starts open). The group holding
+// the open report is always opened when the report opens. A search box at the
+// top finds a report by name across every group, folded or not; Escape clears
+// it. Below 760px the same groups and the same search drive the <select>, and
+// while a search is typed its matches are listed under the box as well, so a
+// phone can tap one.
+const viewerId = () => { try { return (JSON.parse(localStorage.getItem("npe_user") || "{}") || {}).id || null; } catch { return null; } };
+const readFolded = key => { try { const v = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(v) ? v.filter(x => typeof x === "string") : []; } catch { return []; } };
+const writeFolded = (key, ids) => { try { localStorage.setItem(key, JSON.stringify(ids)); } catch { /* remembered only where the browser lets it be */ } };
+
+function Chevron({ open }) {
+  return <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"
+    style={{ flex: "none", transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }}>
+    <path d="M3 1.5 L7 5 L3 8.5" fill="none" stroke={T.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
+}
+
+function ReportsRail({ groups, active, activeLabel, onPick }) {
+  const [key] = useState(() => collapseKey(viewerId()));
+  const openGroup = groupOfReport(active);
+  const [folded, setFolded] = useState(() => readFolded(key).filter(g => g !== openGroup));
+  const [seenOpen, setSeenOpen] = useState(openGroup);
+  const [search, setSearch] = useState("");
+  // A report opening inside a folded group opens that group.
+  if (openGroup !== seenOpen) {
+    setSeenOpen(openGroup);
+    if (openGroup && folded.includes(openGroup)) setFolded(folded.filter(g => g !== openGroup));
+  }
+  useEffect(() => { writeFolded(key, folded); }, [key, folded]);
+  const toggle = id => setFolded(f => f.includes(id) ? f.filter(g => g !== id) : [...f, id]);
+  const searching = search.trim() !== "";
+  const shown = filterRail(groups, search);
+
   const item = it => {
     const on = active === it.id;
     return <button key={it.id} type="button" className="reports-rail-item" data-testid={`rail-item-${it.id}`} data-report-id={it.id}
@@ -102,32 +143,55 @@ function ReportsRail({ groups, active, onPick }) {
       {it.label}{it.sub ? <span style={{ color: T.ink3, fontWeight: 500 }}> · {it.sub}</span> : null}
     </button>;
   };
+  const inPicker = shown.some(g => g.items.some(i => i.id === active));
   // While the builder is open its own Save is the screen's one emerald action,
   // so this button steps down to an outline.
   return <nav data-testid="reports-rail" aria-label="Reports" style={{ minWidth: 0 }}>
     <button type="button" data-testid="rb-new" onClick={() => onPick(BUILD_ID)} aria-current={active === BUILD_ID ? "page" : undefined}
       style={{ width: "100%", background: active === BUILD_ID ? T.white : T.greenDk, color: active === BUILD_ID ? T.greenDk : T.white,
         border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "10px 14px",
-        fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>
+        fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
       Build a report
     </button>
+    <input type="text" data-testid="reports-search" className="reports-search" aria-label="Find a report by name" placeholder="Find a report"
+      value={search} onChange={e => setSearch(e.target.value)}
+      onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); setSearch(""); } }}
+      style={{ width: "100%", maxWidth: "100%", boxSizing: "border-box", padding: "9px 12px", borderRadius: 10, border: `1.5px solid ${T.bg3}`,
+        background: T.white, color: T.ink, fontSize: 13, fontFamily: "'DM Sans',sans-serif", marginBottom: 12 }} />
     <select data-testid="reports-picker" className="reports-picker" aria-label="Choose a report" value={active === BUILD_ID ? "" : active}
       onChange={e => e.target.value && onPick(e.target.value)}
       style={{ width: "100%", maxWidth: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${T.bg3}`, background: T.white,
         color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>
       {active === BUILD_ID && <option value="">Building a report</option>}
-      {groups.map(g => g.items.length > 0 && <optgroup key={g.id} label={g.question}>
+      {active !== BUILD_ID && !inPicker && <option value={active}>{activeLabel || "This report"}</option>}
+      {shown.map(g => g.items.length > 0 && <optgroup key={g.id} label={g.question}>
         {g.items.map(it => <option key={it.id} value={it.id}>{it.label}</option>)}
       </optgroup>)}
     </select>
-    <div data-testid="rail-list" className="reports-rail-list">
-      {groups.map(g => <div key={g.id} data-testid="rail-group" style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, margin: "0 0 5px 13px" }}>{g.question}</div>
-        {g.items.map(item)}
-        {g.id === "saved" && g.items.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, padding: "2px 10px 0 13px" }}>
-          Nothing saved yet. Build a report and save it, and it appears here.
-        </div>}
-      </div>)}
+    {searching && shown.length === 0 && <div data-testid="rail-no-match" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, padding: "8px 2px 0" }}>
+      No report has &ldquo;{search.trim()}&rdquo; in its name.
+    </div>}
+    <div data-testid="rail-list" className={`reports-rail-list${searching ? " is-searching" : ""}`}>
+      {shown.map(g => {
+        const open = searching || !folded.includes(g.id);
+        return <div key={g.id} data-testid="rail-group" data-group-id={g.id} style={{ marginBottom: open ? 12 : 4 }}>
+          <button type="button" data-testid="rail-group-toggle" className="reports-group-toggle" aria-expanded={open ? "true" : "false"}
+            aria-controls={`rail-group-${g.id}`} onClick={() => { if (!searching) toggle(g.id); }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, width: "100%", background: "transparent",
+              border: "none", borderRadius: 8, padding: "6px 10px 6px 13px", margin: "0 0 2px", cursor: searching ? "default" : "pointer",
+              fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, textAlign: "left",
+              fontFamily: "'DM Sans',sans-serif" }}>
+            <span>{g.question}</span>
+            <Chevron open={open} />
+          </button>
+          {open && <div id={`rail-group-${g.id}`}>
+            {g.items.map(item)}
+            {g.id === "saved" && g.items.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, padding: "2px 10px 0 13px" }}>
+              Nothing saved yet. Build a report and save it, and it appears here.
+            </div>}
+          </div>}
+        </div>;
+      })}
     </div>
   </nav>;
 }
@@ -158,6 +222,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const [planLocked, setPlanLocked] = useState(false); // 403 plan_required → upgrade card
   const [digestType, setDigestType] = useState("weekly"); // week-in-review: weekly | monthly
   const [downloading, setDownloading] = useState(false);
+  const [fiscalStart, setFiscalStart] = useState(null); // the org's first fiscal month; null until the server says
 
   // The default period resolves from data, not the calendar: early in a new
   // fiscal year "This FY" is nearly empty (e.g. two weeks in), which makes a
@@ -169,11 +234,14 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const setYearMode = v => { localStorage.setItem("steward_reports_yearmode", v); setYearModeState(v); setYear(null); };
 
   const isTab = isTabReport(active);
+  const fsm = fiscalStart || 7;
+  const CUR_FY = fyOf(fsm);
+  const PRESETS = presetsFor(CUR_FY);
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
   const showFilters = PERIOD_REPORTS.includes(active) && active !== "bookkeeper" && !(active === "top-donors" && scope === "lifetime");
-  const presetPending = isPeriodReport && !effPreset;
+  const presetPending = (isPeriodReport && !effPreset) || (isTab && fiscalStart === null);
 
   // Every pick goes through the resolver too: an alias (std:top-50) brings the
   // controls the standard version fixes.
@@ -191,12 +259,15 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
     const fiscal = yearMode === "fiscal";
     const thisId = fiscal ? "thisFY" : "thisCY", lastId = fiscal ? "lastFY" : "lastCY";
-    apiFetch(`/reports/giving-summary?year=${fiscal ? CUR_FY : CUR_CY}&yearMode=${yearMode}`)
+    // No year: the server answers for its current one, in the org's own
+    // fiscal year, and says which month that year starts in.
+    apiFetch(`/reports/giving-summary?yearMode=${yearMode}`)
       .then(d => {
+        setFiscalStart(Number(d.fiscalStartMonth) || 7);
         const lowVolume = d.prior.total > 0 && d.giftCount < 10 && d.total < d.prior.total * 0.01;
         setAutoDefault(lowVolume ? lastId : thisId);
       })
-      .catch(() => setAutoDefault(thisId));
+      .catch(() => { setFiscalStart(7); setAutoDefault(thisId); });
   }, []);
 
   function buildParams() {
@@ -283,7 +354,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
 
   const yearModeToggle = <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
     {["fiscal", "calendar"].map(m => <button key={m} onClick={() => setYearMode(m)} aria-pressed={yearMode === m} style={segStyle(yearMode === m)}>
-      {m === "fiscal" ? "Fiscal (Jul–Jun)" : "Calendar"}
+      {m === "fiscal" ? `Fiscal (${MON[fsm - 1]}–${fyLastMonth(fsm)})` : "Calendar"}
     </button>)}
   </div>;
 
@@ -297,10 +368,15 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   if (isTab && !loading && !err && d) {
     if (active === "giving-summary") {
       empty = d.giftCount === 0;
-      const diff = d.total - d.prior.total;
-      narrative = <>You've raised <strong>{fmtFull(d.total)}</strong> from <strong>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"}</strong> this period
-        {d.prior.total > 0 && <> — {diff >= 0 ? "up" : "down"} from {fmtFull(d.prior.total)} the prior period</>}.
-        {" "}<strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave ({d.newDonors} new, {d.returningDonors} returning); the median gift was <strong>{fmtFull(d.medianGift)}</strong>.</>;
+      // FIX-3 E (finding 13) — the comparison is the same point last year,
+      // the Board's figure through the Board's own source, and the sentence
+      // says so. Both figures open onto the gifts that make them.
+      const c = d.comparison;
+      narrative = <span data-testid="gs-narrative">You've raised <strong><Figure variant="inline" kind="money" value={d.total} figureKey="givingThisPeriod"
+          label="Giving this period" definition="Every gift dated in the period you picked." source={d.totalSource} /></strong> from <strong>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"}</strong> this period
+        {c && c.value > 0 && <> — {d.total >= c.value ? "up" : "down"} from <Figure variant="inline" kind="money" value={c.value} figureKey="samePointLastYear"
+          label={c.label} definition={c.definition} source={c.source} /> at the same point last year</>}.
+        {" "}<strong>{d.uniqueDonors}</strong> donor{d.uniqueDonors === 1 ? "" : "s"} gave ({d.newDonors} new, {d.returningDonors} returning); the median gift was <strong>{fmtFull(d.medianGift)}</strong>.</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Total raised", fmtFull(d.total)], ["Gifts", d.giftCount], ["Unique donors", d.uniqueDonors],
@@ -529,7 +605,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const label = reportLabel(active, REPORT_DEFS, standard, saved);
   const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
-  return <div className="fade-in">
+  return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
     <style>{REPORTS_CSS}</style>
     <PageTitle main="Your" accent="Reports" />
 
@@ -541,7 +617,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
     </div>
 
     <div className="reports-layout">
-      <ReportsRail groups={groups} active={active} onPick={pick} />
+      <ReportsRail groups={groups} active={active} activeLabel={label} onPick={pick} />
 
       <div style={{ minWidth: 0 }}>
         {active === BUILD_ID && <BuilderView onOpen={openPerson} onCancel={() => pick("")}
@@ -561,7 +637,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
             </>}
             {YEARMODE_TOGGLE_REPORTS.includes(active) && yearModeToggle}
             {YEAR_SELECT_REPORTS.includes(active) && <select value={effYear} onChange={e => setYear(parseInt(e.target.value, 10))} style={{ ...selStyle, maxWidth: 230 }}>
-              {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `FY${y} (${fyRangeLabel(y)})` : y}</option>)}
+              {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `FY${y} (${fyRangeLabel(y, fsm)})` : y}</option>)}
             </select>}
             {active === "week-in-review" && <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
               {["weekly", "monthly"].map(s => <button key={s} onClick={() => setDigestType(s)} aria-pressed={digestType === s}
@@ -635,5 +711,5 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
         </Card>}
       </div>
     </div>
-  </div>;
+  </div></FigureContext.Provider>;
 }

@@ -37,22 +37,26 @@ export const ALIASES = {
   saved: { id: "lybunt" },
 };
 
-// Where each report sits: the question it answers. The fifth group is the
-// org's own saved reports, filled from the server, so it holds no fixed item.
+// Where each report sits. FIX-3 E (finding 12): the org's own saved reports on
+// top; the money that came in and the grants each get a group of their own
+// instead of hanging under the year. The names are the brief's, word for word.
+// The saved group is filled from the server, so it holds no fixed item.
 export const RAIL_GROUPS = [
-  { id: "stopped", question: "Who stopped giving?",
+  { id: "saved", question: "Your saved reports", items: [] },
+  { id: "stopped", question: "Who stopped giving",
     items: ["lybunt", "sybunt", "std:lapsed-24", "retention", "std:monthly-givers"] },
-  { id: "most", question: "Who gives the most?",
+  { id: "most", question: "Who gives the most",
     items: ["top-donors", "three-year", "std:board-giving", "solicitations"] },
-  { id: "year", question: "How did the year go?",
-    items: ["giving-summary", "std:by-month", "by-group", "annual", "week-in-review", "std:first-time",
-      "std:pledges-outstanding", "std:ack-backlog", "std:gifts-by-link-source", "bookkeeper",
-      "std:grants-pipeline", "std:grants-by-funder", "std:grants-awarded-vs-requested",
+  { id: "year", question: "The year",
+    items: ["giving-summary", "std:by-month", "by-group", "annual", "week-in-review", "std:first-time"] },
+  { id: "money", question: "Money in",
+    items: ["std:pledges-outstanding", "std:ack-backlog", "std:gifts-by-link-source", "bookkeeper"] },
+  { id: "grants", question: "Grants",
+    items: ["std:grants-pipeline", "std:grants-by-funder", "std:grants-awarded-vs-requested",
       "std:grant-deadlines-90", "std:grant-restricted-balances"] },
   { id: "people", question: "Volunteers and members",
     items: ["std:volunteers-who-give", "std:members-by-level", "std:members-expiring", "std:members-lapsed",
       "std:members-new-renewed", "std:membership-revenue"] },
-  { id: "saved", question: "Your saved reports", items: [] },
 ];
 
 export const DEFAULT_REPORT = "giving-summary";
@@ -97,3 +101,28 @@ export function reportLabel(id, tabDefs = [], standard = [], saved = []) {
     || (standard.find(s => s.id === id) || {}).name
     || (saved.find(s => s.id === id) || {}).name || null;
 }
+
+// The group a report id opens into: its rail item's group (through the
+// resolver, so an alias opens its twin's group), "saved" for an org's own
+// report, null for the builder.
+export function groupOfReport(raw) {
+  const r = resolveReportId(raw);
+  if (r.id === BUILD_ID) return null;
+  if (r.saved) return "saved";
+  const g = RAIL_GROUPS.find(x => x.items.includes(r.id));
+  return g ? g.id : null;
+}
+
+// The rail's search: reports whose name holds the text, any case, across every
+// group. A group with no match drops out. An empty search is the whole rail.
+export function filterRail(groups, text) {
+  const t = String(text || "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!t) return groups;
+  return groups
+    .map(g => ({ ...g, items: g.items.filter(i => String(i.label || "").toLowerCase().includes(t)) }))
+    .filter(g => g.items.length > 0);
+}
+
+// Which groups a viewer has folded, remembered per viewer in this browser.
+export const COLLAPSE_KEY = "steward_reports_rail_collapsed";
+export const collapseKey = userId => `${COLLAPSE_KEY}:${userId || "anon"}`;

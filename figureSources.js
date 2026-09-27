@@ -86,6 +86,7 @@ function giftsWhere(p, args) {
   if (p.fund === "none") w += " AND f.id IS NULL";
   else if (p.fund) { w += " AND f.id = ?"; args.push(p.fund); }
   if (p.restricted !== undefined) { w += " AND COALESCE(f.restricted,false) = ?"; args.push(p.restricted); }
+  if (p.campaign) { w += " AND g.campaign_id = ?"; args.push(p.campaign); }
   if (p.donor) { w += " AND g.donor_id = ?"; args.push(p.donor); }
   if (p.assigned) { w += " AND d.assigned_to = ?"; args.push(p.assigned); }
   return w;
@@ -115,8 +116,8 @@ const SOURCES = {
   gifts: {
     label: "Gifts",
     measure: p => p.measure || "sum",
-    params: { from: "date:required", to: "date:required", fund: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure" },
-    sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}.`,
+    params: { from: "date:required", to: "date:required", fund: "id", campaign: "id", restricted: "bool", donor: "id", assigned: "id", measure: "measure" },
+    sentence: (p, dd) => `Every gift dated ${dd(p.from)} to ${dd(p.to)}${p.fund === "none" ? " with no fund named" : p.fund ? " to this fund" : ""}${p.campaign ? " in this campaign" : ""}${p.restricted === true ? " to a restricted fund" : p.restricted === false ? " that is unrestricted" : ""}${p.donor ? " from this person" : ""}.`,
     sql: (orgId, p) => {
       const args = [orgId, p.from, p.to];
       const where = giftsWhere(p, args);
