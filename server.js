@@ -395,7 +395,8 @@ const generalLimiter = rateLimit({
   handler: rateLimitHandler,
   // Webhooks are server-to-server (Stripe) and health checks are polled
   // frequently by design — neither should share budget with browser traffic.
-  skip: (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook",
+  // FIX-2 F: Resend's webhook has its own ceiling on its route (routes/webhooks.js).
+  skip: (req) => rateLimitDisabled() || req.path === "/health" || req.path === "/stripe/webhook" || req.path === "/billing/webhook" || req.path === "/resend/webhook",
 });
 app.use(generalLimiter);
 
@@ -3783,7 +3784,6 @@ async function runCampaignSend(campaign, org, donors) {
         const pixel    = `<img src="${BACKEND_URL}/track/${recipientId}/open.gif" width="1" height="1" style="display:none">`;
         const footer   = await unsubscribeEmailFooterHtml(donor.email, org.id, "campaign");
         const htmlFull = brandHeader + bodyHtml + footer + pixel;
-        const textBody = bodyHtml.replace(/<[^>]+>/g, "");
 
         try {
           if (resendApiKey && smtpFrom) {
@@ -8647,6 +8647,7 @@ require("./routes/webhooks").mount({
   recalcDonorSummary, recalcPledgePayment, recordAutoMove, recordGift, registerForEvent,
   renewMembership, requireAdmin, requireAuth, requireFlag, resend, run, runTx, stripe, toCents,
   unsubscribeEmailFooterHtml, uuid, withAdvisoryLock, withTransaction, wrap, writeGiftExtras,
+  rateLimitHandler, rateLimitDisabled,
 });
 require("./routes/billing").mount({
   CLOSE_PLANS, PLAN_LIMITS, PLAN_PRICE_ENV, RECOVERY_SECRET, SYS_AUTO, bcrypt, billingConfigError,

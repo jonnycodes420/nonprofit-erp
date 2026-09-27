@@ -1,7 +1,8 @@
 // routes/webhooks.js — Stripe, Resend, billing and inbound-email webhooks, and unsubscribe.
 //
 // FIX-1 split: these routes and the helpers only they use were moved here
-// VERBATIM from server.js. Nothing in them changed.
+// VERBATIM from server.js. Nothing in them changed then; FIX-2 F gave
+// /resend/webhook its own rate limit (see resendWebhookLimiter).
 //
 // How it is wired, so it behaves exactly as it did inside server.js:
 //   * Each router below is mounted in server.js with app.use(...) at the place
@@ -15,6 +16,7 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+const { rateLimit } = require("express-rate-limit");
 
 const routers = {
   r0: express.Router(),
@@ -34,6 +36,7 @@ const {
   recalcDonorSummary, recalcPledgePayment, recordAutoMove, recordGift, registerForEvent,
   renewMembership, requireAdmin, requireAuth, requireFlag, resend, run, runTx, stripe, toCents,
   unsubscribeEmailFooterHtml, uuid, withAdvisoryLock, withTransaction, wrap, writeGiftExtras,
+  rateLimitHandler, rateLimitDisabled,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -1291,7 +1294,20 @@ async function markEmailEvent(orgId, email, reason, event) {
   return rows.length;
 }
 
-app.post("/resend/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+// FIX-2 F — Resend's delivery events get their OWN ceiling, on the route, not
+// a share of the browser budget. server.js's generalLimiter (1000 per IP per
+// 15 minutes) used to count them: one large appeal's bounce/complaint events
+// arrive from a handful of Svix IPs in a burst, and a 429 there only delays a
+// suppression the next send needs. 3000 per IP per minute is far above any
+// burst Steward's appeals make and still stops a flood before the signature
+// check. The Stripe and billing webhooks stay unlimited (generalLimiter skips
+// them, and no limiter here touches them): a 429 must never cost a charge.
+const resendWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000, limit: 3000, standardHeaders: true, legacyHeaders: false,
+  handler: rateLimitHandler, skip: rateLimitDisabled,
+});
+
+app.post("/resend/webhook", resendWebhookLimiter, express.raw({ type: "application/json" }), async (req, res) => {
   if (!process.env.RESEND_WEBHOOK_SECRET) return res.status(503).json({ error: "Resend webhook not configured" });
 
   let event;
