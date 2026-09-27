@@ -107,7 +107,7 @@ export default function PlanPicker({ open, onClose }) {
                   background: plan.highlight ? T.greenMid : "transparent",
                   border: plan.highlight ? "none" : `1px solid ${T.bg3}`,
                   borderRadius: 10, padding: "12px 16px",
-                  color: plan.highlight ? "#fff" : T.ink2,
+                  color: plan.highlight ? T.white : T.ink2,
                   fontSize: 13, fontWeight: 700,
                   cursor: loading === plan.id ? "not-allowed" : "pointer",
                   opacity: loading === plan.id ? 0.7 : 1,

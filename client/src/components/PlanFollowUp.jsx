@@ -75,7 +75,7 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
     } finally { setBusy(false); }
   }
 
-  const fld = { width: "100%", padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 14, color: T.ink, background: "#fff", boxSizing: "border-box" };
+  const fld = { width: "100%", padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 14, color: T.ink, background: T.white, boxSizing: "border-box" };
   const lbl = { fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase", color: T.ink3, display: "block", marginBottom: 5 };
 
   return (
@@ -100,7 +100,7 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
               : <>
                   <input style={fld} value={q} onChange={e => setQ(e.target.value)} placeholder="Search donors by name or email" />
                   {hits.length > 0 && (
-                    <div style={{ border: "1px solid " + T.bg3, borderTop: "none", borderRadius: "0 0 8px 8px", background: "#fff" }}>
+                    <div style={{ border: "1px solid " + T.bg3, borderTop: "none", borderRadius: "0 0 8px 8px", background: T.white }}>
                       {hits.map(h => (
                         <button key={h.id} onClick={() => { setPicked(h); setHits([]); }}
                           style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 11px", border: "none", background: "none", fontSize: 13, color: T.ink, cursor: "pointer" }}>
@@ -120,7 +120,7 @@ export function PlanFollowUpModal({ donor = null, donors = null, onSaved, onClos
           <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
             {QUICK.map(k => (
               <button key={k} onClick={() => setLabel(k)}
-                style={{ background: label === k ? T.greenDk : "transparent", color: label === k ? "#fff" : T.ink3,
+                style={{ background: label === k ? T.greenDk : "transparent", color: label === k ? T.white : T.ink3,
                          border: "1px solid " + (label === k ? T.greenDk : T.bg3), borderRadius: 99, padding: "3px 10px", fontSize: 11.5, cursor: "pointer" }}>{k}</button>
             ))}
           </div>

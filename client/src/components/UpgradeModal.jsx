@@ -19,7 +19,7 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
         <div style={{ fontSize:26,fontWeight:400,color:T.ink,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em",marginBottom:12,lineHeight:1.2 }}>
           {isSeat ? "Your team is growing." : "You're building real momentum."}
         </div>
-        <div style={{ fontSize:14,color:"#4a5e4f",lineHeight:1.65,marginBottom:8 }}>
+        <div style={{ fontSize:14,color:T.ink3,lineHeight:1.65,marginBottom:8 }}>
           {isSeat
             ? <>You're using all <strong>{limit}</strong> seats on the {planName} plan. Upgrade to add your whole team and keep growing.</>
             : <>You've reached <strong>{limit}</strong> donor records on your current plan. Upgrade to keep adding contacts and growing your database.</>}
@@ -31,7 +31,7 @@ export default function UpgradeModal({ open, onClose, reason, current, limit, pl
         <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
           <button
             onClick={() => { onClose(); navigate("/pricing"); }}
-            style={{ flex:1,background:"#0d5c3a",border:"none",borderRadius:10,padding:"11px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}
+            style={{ flex:1,background:T.greenDk,border:"none",borderRadius:10,padding:"11px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer" }}
           >
             Upgrade plan →
           </button>

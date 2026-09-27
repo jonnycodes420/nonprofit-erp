@@ -89,6 +89,13 @@ export const T = {
   gold300:    "#e7cf91",  // soft gold — highlight underlines, hover accents
   gold100:    "#f6eccf",  // gold wash — active-tab tint, callout fills
   gold50:     "#fdfaf2",  // gold-tinted white — gold-moment / StartHere cards
+  // FIX-2 C — Settings › Branding's preset accents. Customer data (the colour
+  // an org picks for ITS brand, normalised on save), not Steward chrome; named
+  // here so no literal lives outside the tokens.
+  accentRust:  "#7c3a12",
+  accentSlate: "#3f5c8a",
+  accentPlum:  "#6b3f8a",
+  accentOchre: "#8a5a1f",
   // Surfaces
   white:      "#ffffff",
   shadow:     "0 1px 3px rgba(10,10,10,0.08), 0 4px 16px rgba(10,10,10,0.06)",
@@ -160,7 +167,7 @@ function ErrorFallback({ label, onReload, onHome, onRetry }) {
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           {onRetry && <button onClick={onRetry} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Try again</button>}
-          <button onClick={onReload} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+          <button onClick={onReload} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
           {onHome && <button onClick={onHome} style={{ background: T.gold, border: "none", borderRadius: 10, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Go Home</button>}
         </div>
       </div>
@@ -302,25 +309,25 @@ export function moveUrgency(d) {
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`
-    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:#f0ede6;-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
+    html,body{margin:0;padding:0;overflow-x:hidden;max-width:100vw;background:${T.bg};-webkit-font-smoothing:antialiased;overscroll-behavior:none;}
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
-    body{font-family:'DM Sans',system-ui,sans-serif;color:#0f1a12;}
+    body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
     ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-track{background:#e8e4db;}
-    ::-webkit-scrollbar-thumb{background:#c9a84c;border-radius:99px;}
-    ::-webkit-scrollbar-thumb:hover{background:#a97f22;}
-    ::selection{background:#0d5c3a22;color:#0f1a12;}
-    input,textarea,select{background:#fdfaf2;border:1.5px solid #d4cfc6;border-radius:8px;color:#0f1a12;transition:border-color 0.15s,box-shadow 0.15s;}
-    input:focus,textarea:focus,select:focus{border-color:#0d5c3a!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
+    ::-webkit-scrollbar-track{background:${T.bg2};}
+    ::-webkit-scrollbar-thumb{background:${T.gold500};border-radius:99px;}
+    ::-webkit-scrollbar-thumb:hover{background:${T.gold600};}
+    ::selection{background:${T.greenDk}22;color:${T.ink};}
+    input,textarea,select{background:${T.gold50};border:1.5px solid ${T.bg3};border-radius:8px;color:${T.ink};transition:border-color 0.15s,box-shadow 0.15s;}
+    input:focus,textarea:focus,select:focus{border-color:${T.greenDk}!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
     button{transition:all 0.15s ease;touch-action:manipulation;}
     button:not(:disabled):active{transform:scale(0.97);}
     .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
     .app-sidebar{user-select:none;}
     .app-topbar{user-select:none;}
     .topbar-search::placeholder{color:rgba(240,237,230,0.7);}
-    .topbar-search:focus{border-color:#c9a84c!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
-    .side-nav-btn:hover{color:#f0ede6!important;}
+    .topbar-search:focus{border-color:${T.gold500}!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
+    .side-nav-btn:hover{color:${T.inkInverse}!important;}
     .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
     @keyframes sp{to{transform:rotate(360deg)}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -331,7 +338,7 @@ export function GlobalStyles() {
     @keyframes goldRise{from{opacity:0;transform:translateY(8px) scale(0.985)}to{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes goldSheen{0%{background-position:-200% 0}100%{background-position:200% 0}}
     .gold-moment{animation:goldRise 0.5s cubic-bezier(0.2,0.8,0.3,1) backwards;}
-    .gold-moment .gold-moment-bar{background:linear-gradient(100deg,#c9a84c 40%,#e7cf91 50%,#c9a84c 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
+    .gold-moment .gold-moment-bar{background:linear-gradient(100deg,${T.gold500} 40%,${T.gold300} 50%,${T.gold500} 60%);background-size:200% 100%;animation:goldSheen 1.8s ease-out 0.4s 1;}
     @media (prefers-reduced-motion: reduce){.gold-moment,.gold-moment .gold-moment-bar{animation:none;}}
 
     /* BUILD-94 FIRST RUN — the gold moment at full-screen scale. The SAME
@@ -394,23 +401,23 @@ export function GlobalStyles() {
     .slide-up{animation:slideup 0.25s ease backwards;}
     .modal-anim{animation:slideUp 0.2s ease-out backwards;}
     .card-click{transition:transform 0.15s ease,box-shadow 0.15s ease,border-color 0.15s;}
-    .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:#0d5c3a!important;}
+    .card-click:hover{box-shadow:0 4px 24px rgba(10,10,10,0.12)!important;transform:translateY(-1px);border-color:${T.greenDk}!important;}
     /* BUILD-12 shared interactive treatment — see interactive() in shared.jsx.
        Any aggregate/entity that navigates gets this: pointer, a warm green
        hover wash + gold accent, and a visible keyboard focus ring. */
     .click-card{cursor:pointer;transition:background 0.14s ease,box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
-    .click-card:hover{background:#edf3ee!important;border-color:#c9a84c!important;box-shadow:0 4px 20px rgba(10,10,10,0.10)!important;transform:translateY(-1px);}
-    .click-card:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.45)!important;border-color:#c9a84c!important;}
+    .click-card:hover{background:${T.green100}!important;border-color:${T.gold500}!important;box-shadow:0 4px 20px rgba(10,10,10,0.10)!important;transform:translateY(-1px);}
+    .click-card:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.45)!important;border-color:${T.gold500}!important;}
     /* Dark interactive panels (goal card): NO background change — the inline
        pine gradient must survive — just a gold edge + lift on hover, same
        gold focus ring. Deliberately does not carry the .click-card class so
        the light mist wash can never clobber the gradient. */
     .click-card-dark{cursor:pointer;transition:box-shadow 0.15s ease,border-color 0.15s ease,transform 0.14s ease;outline:none;}
-    .click-card-dark:hover{border-color:#c9a84c!important;box-shadow:0 6px 26px rgba(0,0,0,0.28)!important;transform:translateY(-1px);}
-    .click-card-dark:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.5)!important;border-color:#c9a84c!important;}
+    .click-card-dark:hover{border-color:${T.gold500}!important;box-shadow:0 6px 26px rgba(0,0,0,0.28)!important;transform:translateY(-1px);}
+    .click-card-dark:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.5)!important;border-color:${T.gold500}!important;}
     /* gold wash behind an active section tab (added by SectionTabs) */
-    .section-tab-on{background:#f6eccf66!important;}
-    .dash-row:hover{background:#f0ede6!important;box-shadow:inset 2px 0 0 #0d5c3a;}
+    .section-tab-on{background:${T.gold100}66!important;}
+    .dash-row:hover{background:${T.bg}!important;box-shadow:inset 2px 0 0 ${T.greenDk};}
     /* D-1 (BUILD-45): "Needs your attention" row main is a real link. Hover
        affordance so it reads as clickable, not broken — cream-alt wash + the
        donor name underlines. Colour change only, so no transition is needed
@@ -425,11 +432,11 @@ export function GlobalStyles() {
     @media (prefers-reduced-motion:reduce){.attn-meta{transition:none;}}
     .attn-row-main{cursor:default;}
     a.attn-row-main{cursor:pointer;}
-    .attn-row:hover{background:#f7f5f0;}
-    .attn-row[data-railsel="1"]{background:#f7f5f0;}
+    .attn-row:hover{background:${T.ground};}
+    .attn-row[data-railsel="1"]{background:${T.ground};}
     a.attn-row-main:hover .attn-donor-name{text-decoration:underline;}
     a.attn-row-main:focus-visible,
-    .fr-welcome .fr-card button:focus-visible{outline:2px solid #c9a84c;outline-offset:-2px;border-radius:2px;}
+    .fr-welcome .fr-card button:focus-visible{outline:2px solid ${T.gold500};outline-offset:-2px;border-radius:2px;}
     /* Touch: each of the row's two targets clears the 44px minimum, and a tap
        on one never fires the other (they're siblings, not nested). */
     .attn-row-main{min-height:44px;}
@@ -440,42 +447,42 @@ export function GlobalStyles() {
        rail goes FIRST (order:-1) — three numbers are the right thing to meet
        on a phone, and the work follows. minmax/min-width:0 everywhere: a long
        donor name in a flex child otherwise refuses to shrink. */
-    .home-shell{background:#ffffff;border:1px solid #e8e4db;border-radius:16px;display:flex;flex-direction:column;overflow:hidden;}
+    .home-shell{background:${T.white};border:1px solid ${T.bg2};border-radius:16px;display:flex;flex-direction:column;overflow:hidden;}
     .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
-    .home-rail{min-width:0;padding:32px;border-top:1px solid #e8e4db;order:-1;}
+    .home-rail{min-width:0;padding:32px;border-top:1px solid ${T.bg2};order:-1;}
     @media (min-width:1100px){
       .home-shell{flex-direction:row;align-items:stretch;}
       .home-shell-main{flex:1;}
-      .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid #e8e4db;}
+      .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
     }
     /* A row in the rail is pressable and says so quietly. */
     .home-rail-row{cursor:pointer;transition:background 0.12s ease;}
-    .home-rail-row+.home-rail-row{border-top:1px solid #e8e4db;}
-    .home-rail-row:hover,.home-rail-row:focus-visible{background:#f7f5f0;}
+    .home-rail-row+.home-rail-row{border-top:1px solid ${T.bg2};}
+    .home-rail-row:hover,.home-rail-row:focus-visible{background:${T.ground};}
     @media (prefers-reduced-motion:reduce){.home-rail-row{transition:none;}}
     /* A section inside the panel is separated by air and a rule, never by a
        second border — the panel already drew one. */
     .home-block{margin-top:28px;}
-    .home-block+.home-block{border-top:1px solid #e8e4db;padding-top:28px;}
+    .home-block+.home-block{border-top:1px solid ${T.bg2};padding-top:28px;}
     /* FIX (2026-09-18) — the row is Drift's shape now: a face, a sentence that
        WRAPS, one fact on the right. A fixed 64px is what forced the sentence
        into one truncated line in the first place, so the height is the
        content's and the minimum is the touch target. */
     .attn-row{min-height:64px;box-sizing:border-box;}
-    .rpt-row-click:hover td{background:#f0ede6;}
-    .dash-action:hover{background:#f0ede6!important;border-color:#0d5c3a!important;transform:translateY(-1px);}
+    .rpt-row-click:hover td{background:${T.bg};}
+    .dash-action:hover{background:${T.bg}!important;border-color:${T.greenDk}!important;transform:translateY(-1px);}
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
-    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:#0f1a12;border-top:1px solid #1a2e1f;box-shadow:0 -1px 0 rgba(0,0,0,.2),0 -4px 20px rgba(0,0,0,.15);padding-bottom:env(safe-area-inset-bottom,0px);}
+    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.ink};border-top:1px solid ${T.bgElevated};box-shadow:0 -1px 0 rgba(0,0,0,.2),0 -4px 20px rgba(0,0,0,.15);padding-bottom:env(safe-area-inset-bottom,0px);}
     .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
-    .mobile-bottom-tab.active{color:#c9a84c;}
+    .mobile-bottom-tab.active{color:${T.gold500};}
     .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);align-items:flex-end;}
-    .mobile-more-drawer{background:#0f1a12;border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
-    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:#1a2e1f;margin:12px auto 4px;}
-    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid #1a2e1f;padding:16px 24px;color:#f0ede6;font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
+    .mobile-more-drawer{background:${T.ink};border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
+    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:${T.bgElevated};margin:12px auto 4px;}
+    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid ${T.bgElevated};padding:16px 24px;color:${T.inkInverse};font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
     .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
-    .mobile-more-row.active{color:#c9a84c;font-weight:700;}
+    .mobile-more-row.active{color:${T.gold500};font-weight:700;}
     .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
     /* BUILD-41 mobile donor rows + Select toggle — desktop never shows them */
@@ -617,7 +624,7 @@ export function GlobalStyles() {
       /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
          not a color fill — the §9 gradient ban is about bars/thermometers). */
       /* mask stops only use ALPHA — ink stands in for opaque (allowlist-clean) */
-      .dp-tabs{-webkit-mask-image:linear-gradient(to right,#0f1a12 88%,transparent);mask-image:linear-gradient(to right,#0f1a12 88%,transparent);}
+      .dp-tabs{-webkit-mask-image:linear-gradient(to right,${T.ink} 88%,transparent);mask-image:linear-gradient(to right,${T.ink} 88%,transparent);}
 
       /* Directory donor list (BUILD-41): the desktop table is GONE under
          768px — it crushed names to a 68px cell ("M…", "Ju…"). One tappable
@@ -719,7 +726,7 @@ let scrollLocks = 0;
 export function Modal({
   onClose, title, subtitle, header, footer, children,
   width = 460, align = "center", zIndex = 400,
-  backdrop = "#0f1a12cc", blur = true,
+  backdrop = T.ink+"cc", blur = true,
   padding = "24px 26px", dialogStyle, overlayStyle,
   className = "", dismissOnBackdrop = true, ariaLabel,
 }) {
@@ -821,14 +828,14 @@ export function Modal({
 }
 
 export function Spin() {
-  return <span style={{display:"inline-block",width:11,height:11,border:"2px solid #ffffff30",borderTopColor:"#fff",borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
+  return <span style={{display:"inline-block",width:11,height:11,border:"2px solid "+T.white+"30",borderTopColor:T.white,borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
 export function Pill({label,color}) {
   return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
 }
 export function Card({children,selected,accent,onClick,style={},variant}) {
   const base = variant==="dark"
-    ? {background:"#0f1a12",border:`1px solid ${selected?"#c9a84c":"#1a2e1f"}`,color:"#f0ede6"}
+    ? {background:T.ink,border:`1px solid ${selected?T.gold500:T.bgElevated}`,color:T.inkInverse}
     : variant==="elevated"
     ? {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadowMd}
     : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
@@ -864,15 +871,15 @@ export function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
 }
 export function AIBtn({onClick,loading,label="✦ Suggest",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?"#1a2e1f":"linear-gradient(135deg,#0d5c3a,#0d5c3a)",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:"#f0ede6",fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
+  return <button onClick={onClick} disabled={loading} style={{background:loading?T.bgElevated:"linear-gradient(135deg,"+T.greenDk+","+T.greenDk+")",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:T.inkInverse,fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
     {loading?<><Spin/>Thinking…</>:label}
   </button>;
 }
 export function AIPanel({text,onClose}) {
   if(!text) return null;
-  return <div className="fade-in modal-anim" style={{background:"#0f1a12",border:"1px solid #1a2e1f",borderLeft:"3px solid #c9a84c",borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"#c9a84c",marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
-    <div style={{fontSize:13,color:"#e8e4db",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
+  return <div className="fade-in modal-anim" style={{background:T.ink,border:"1px solid "+T.bgElevated,borderLeft:"3px solid "+T.gold500,borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
+    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold500,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
+    <div style={{fontSize:13,color:T.bg2,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
     {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:6,color:T.sage400,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
@@ -896,7 +903,7 @@ export function EmptyState({title,message,action,onAction}) {
     <div aria-hidden style={{width:32,height:3,borderRadius:2,background:T.gold500,opacity:0.9,marginBottom:6}}/>
     <div style={{fontSize:15,fontWeight:700,color:T.ink2}}>{title||"Nothing here yet"}</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:340,lineHeight:1.65}}>{message||"Nothing here yet — this is where the magic starts."}</div>
-    {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
+    {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
 // ── DriftBadge (BUILD-76 Part 2) ───────────────────────────────────────────
@@ -933,7 +940,7 @@ export function GoldMoment({moment,title,line,onDismiss}) {
   useEffect(()=>{ if(show){ try{localStorage.setItem(key,new Date().toISOString());}catch{} } },[]);
   if(!show) return null;
   return (
-    <div className="gold-moment" style={{position:"relative",background:`linear-gradient(135deg,${T.gold50},${T.gold100})`,border:"1px solid #c9a84c55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>
+    <div className="gold-moment" style={{position:"relative",background:`linear-gradient(135deg,${T.gold50},${T.gold100})`,border:"1px solid "+T.gold500+"55",borderRadius:14,padding:"16px 44px 16px 18px",display:"flex",gap:14,alignItems:"center",overflow:"hidden"}}>
       <div className="gold-moment-bar" style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:T.gold}}/>
       <div style={{width:34,height:34,borderRadius:"50%",background:T.gold,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:T.ink,fontSize:15}}>✦</div>
       <div style={{minWidth:0}}>
@@ -957,7 +964,7 @@ export function StartHere({line,actionLabel,onAction,dismissKey}) {
   if(!show) return null;
   const dismiss = ()=>{ if(key){ try{localStorage.setItem(key,"1");}catch{} } setShow(false); };
   return (
-    <div className="fade-in" style={{background:T.gold50,border:"1px solid #c9a84c55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+    <div className="fade-in" style={{background:T.gold50,border:"1px solid "+T.gold500+"55",borderLeft:"4px solid "+T.gold,borderRadius:12,padding:"14px 18px",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
       <div style={{flex:"1 1 280px",minWidth:0}}>
         <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold600,marginBottom:4}}>Start here</div>
         <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.6}}>{line}</div>
@@ -1038,15 +1045,15 @@ export function GivingHistoryChart({gifts}) {
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
       <defs>
         <linearGradient id="giftGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#0d5c3a" stopOpacity="0.22"/>
-          <stop offset="100%" stopColor="#0d5c3a" stopOpacity="0.01"/>
+          <stop offset="0%" stopColor={T.greenDk} stopOpacity="0.22"/>
+          <stop offset="100%" stopColor={T.greenDk} stopOpacity="0.01"/>
         </linearGradient>
       </defs>
       {area&&<path d={area} fill="url(#giftGrad)"/>}
-      {sorted.length>1&&<polyline points={pts} stroke="#0d5c3a" strokeWidth="2" fill="none" strokeLinejoin="round"/>}
+      {sorted.length>1&&<polyline points={pts} stroke={T.greenDk} strokeWidth="2" fill="none" strokeLinejoin="round"/>}
       {sorted.map((g,i)=>(
         <g key={i}>
-          <circle cx={xs[i]} cy={ys[i]} r={4} fill="#0d5c3a" stroke={T.white} strokeWidth={1.5}/>
+          <circle cx={xs[i]} cy={ys[i]} r={4} fill={T.greenDk} stroke={T.white} strokeWidth={1.5}/>
           <title>${g.amount.toLocaleString()} · {g.date}</title>
         </g>
       ))}
@@ -1068,7 +1075,7 @@ export function TpField({label,children}){
 }
 export function TpYesNo({val,set}){
   return <div style={{display:"flex",gap:6}}>
-    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?"#0d5c3a":T.bg,border:`1px solid ${val===v?"#0d5c3a":T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?"#fff":T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
+    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?T.greenDk:T.bg,border:`1px solid ${val===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?T.white:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
   </div>;
 }
 // onDelete (optional): called with the interaction after the user confirms —
@@ -1298,14 +1305,14 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
 
             {(phase==="idle")&&(
               <div style={{textAlign:"center",padding:"24px 0"}}>
-                <button onClick={startRecording} style={{width:64,height:64,borderRadius:"50%",background:T.terracotta,border:"none",color:"#fff",fontSize:24,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>●</button>
+                <button onClick={startRecording} style={{width:64,height:64,borderRadius:"50%",background:T.terracotta,border:"none",color:T.white,fontSize:24,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>●</button>
                 <div style={{fontSize:12,color:T.ink3,marginTop:12}}>Tap to start recording</div>
               </div>
             )}
 
             {phase==="recording"&&(
               <div style={{textAlign:"center",padding:"24px 0"}}>
-                <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:T.terracotta,border:"none",color:"#fff",fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>■</button>
+                <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:T.terracotta,border:"none",color:T.white,fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>■</button>
                 <div style={{fontSize:18,fontWeight:700,color:T.ink,marginTop:12,fontFamily:"monospace"}}>{mm}:{ss}</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Recording — tap to stop</div>
               </div>
@@ -1315,7 +1322,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
               <div style={{padding:"12px 0"}}>
                 {audioUrl&&<audio controls src={audioUrl} style={{width:"100%",marginBottom:14}}/>}
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={transcribeAndSuggest} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Transcribe</button>
+                  <button onClick={transcribeAndSuggest} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>Transcribe</button>
                   <button onClick={reRecord} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Re-record</button>
                 </div>
               </div>
@@ -1352,7 +1359,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
                 )}
 
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={save} disabled={phase==="saving"||!transcript.trim()} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:phase==="saving"?"not-allowed":"pointer",opacity:phase==="saving"?0.7:1}}>
+                  <button onClick={save} disabled={phase==="saving"||!transcript.trim()} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:phase==="saving"?"not-allowed":"pointer",opacity:phase==="saving"?0.7:1}}>
                     {phase==="saving"?"Saving…":"Save to timeline"}
                   </button>
                   <button onClick={close} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>

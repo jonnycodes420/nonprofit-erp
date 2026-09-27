@@ -4,20 +4,20 @@ import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 
 const EVENT_TYPES = {
-  gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
-  cultivation:   { label: "Cultivation",    icon: "•", color: "#0d5c3a" },
-  site_visit:    { label: "Site Visit",     icon: "•", color: "#3b82f6" },
-  board_meeting: { label: "Board Meeting",  icon: "•", color: "#0d5c3a" },
-  volunteer:     { label: "Volunteer Day",  icon: "•", color: "#f59e0b" },
-  webinar:       { label: "Webinar",        icon: "•", color: "#ec4899" },
-  other:         { label: "Other",          icon: "•", color: "#6b7280" },
+  gala:          { label: "Gala",           icon: "•", color: T.ink },
+  cultivation:   { label: "Cultivation",    icon: "•", color: T.greenDk },
+  site_visit:    { label: "Site Visit",     icon: "•", color: T.greenDk },
+  board_meeting: { label: "Board Meeting",  icon: "•", color: T.greenDk },
+  volunteer:     { label: "Volunteer Day",  icon: "•", color: T.gold500 },
+  webinar:       { label: "Webinar",        icon: "•", color: T.terracotta },
+  other:         { label: "Other",          icon: "•", color: T.ink3 },
 };
 
-const STATUS_COLORS = { upcoming: "#3b82f6", completed: "#0d5c3a", cancelled: "#6b7280" };
+const STATUS_COLORS = { upcoming: T.greenDk, completed: T.greenDk, cancelled: T.ink3 };
 
 const ATT_COLORS = {
-  invited: "#6b7280", confirmed: "#3b82f6", attended: "#0d5c3a",
-  no_show: "#ef4444", cancelled: "#6b7280",
+  invited: T.ink3, confirmed: T.greenDk, attended: T.greenDk,
+  no_show: T.terracotta, cancelled: T.ink3,
 };
 const ATT_LABELS = {
   invited: "Invited", confirmed: "Confirmed", attended: "Attended",
@@ -30,7 +30,7 @@ function fmtDate(d) {
 }
 
 function StatusBadge({ status, small }) {
-  const color = STATUS_COLORS[status] || "#6b7280";
+  const color = STATUS_COLORS[status] || T.ink3;
   return (
     <span style={{
       background: color + "22", color, border: `1px solid ${color}44`,
@@ -42,7 +42,7 @@ function StatusBadge({ status, small }) {
 }
 
 function AttBadge({ status }) {
-  const color = ATT_COLORS[status] || "#6b7280";
+  const color = ATT_COLORS[status] || T.ink3;
   return (
     <span style={{
       background: color + "22", color, border: `1px solid ${color}44`,
@@ -93,7 +93,7 @@ function NewEventPanel({ onSave, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", justifyContent: "flex-end" }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "#0f1a12aa" }} />
+      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: T.ink+"aa" }} />
       <div style={{ position: "relative", width: 420, background: T.white, height: "100%", overflowY: "auto", padding: "28px 28px 40px", boxShadow: "-8px 0 40px rgba(0,0,0,0.15)", display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>New Event</div>
@@ -119,7 +119,7 @@ function NewEventPanel({ onSave, onClose }) {
         </div>
 
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <button onClick={save} disabled={saving || !form.name.trim()} style={{ flex: 1, background: form.name.trim() ? T.greenDk : T.bg3, border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
+          <button onClick={save} disabled={saving || !form.name.trim()} style={{ flex: 1, background: form.name.trim() ? T.greenDk : T.bg3, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: form.name.trim() ? "pointer" : "not-allowed" }}>
             {saving ? "Saving…" : "Create Event →"}
           </button>
           <button onClick={onClose} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -175,14 +175,14 @@ function EventCard({ event, onManage, onAddAttendees }) {
         )}
 
         {revenue > 0 && (
-          <div style={{ fontSize: 12, color: "#0d5c3a", fontWeight: 700, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, color: T.greenDk, fontWeight: 700, marginBottom: 6 }}>
             {fmtFull(revenue)} raised
           </div>
         )}
       </div>
 
       <div style={{ borderTop: "1px solid " + T.bg2, padding: "10px 14px", display: "flex", gap: 6 }}>
-        <button onClick={() => onManage(event)} style={{ flex: 2, background: T.greenDk, border: "none", borderRadius: 7, padding: "7px 0", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        <button onClick={() => onManage(event)} style={{ flex: 2, background: T.greenDk, border: "none", borderRadius: 7, padding: "7px 0", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
           Manage →
         </button>
         <button onClick={() => onAddAttendees(event)} style={{ flex: 1, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 7, padding: "7px 0", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
@@ -226,9 +226,9 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
 
         {result !== null ? (
           <div style={{ textAlign: "center", padding: "20px 0" }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: "#0d5c3a", marginBottom: 8 }}>{result}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: T.greenDk, marginBottom: 8 }}>{result}</div>
             <div style={{ fontSize: 14, color: T.ink3, marginBottom: 20 }}>tasks created ✓</div>
-            <button onClick={onDone} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Done</button>
+            <button onClick={onDone} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Done</button>
           </div>
         ) : (
           <>
@@ -254,7 +254,7 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={create} disabled={saving} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+              <button onClick={create} disabled={saving} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 {saving ? "Creating…" : "Create Tasks →"}
               </button>
               <button onClick={onClose} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -375,7 +375,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   };
 
   if (loading || !event) return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#0f1a12", display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ color: "rgba(240,237,230,0.7)", fontSize: 13 }}>Loading…</div>
     </div>
   );
@@ -398,19 +398,19 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
      d.email?.toLowerCase().includes(donorSearch.toLowerCase()))
   );
 
-  const INP_DARK = { background: "#0f1a12", border: "1px solid #2d4a35", borderRadius: 8, padding: "8px 10px", color: "#f0ede6", fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
+  const INP_DARK = { background: T.ink, border: "1px solid "+T.green650, borderRadius: 8, padding: "8px 10px", color: T.inkInverse, fontSize: 13, outline: "none", fontFamily: "inherit", boxSizing: "border-box", width: "100%" };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#0f1a12", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: T.ink, display: "flex", flexDirection: "column" }}>
       {/* Header */}
-      <div style={{ background: "#0f1a12", borderBottom: "1px solid #1a2e1f", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
-        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #2d4a35", borderRadius: 8, padding: "6px 12px", color: "rgba(240,237,230,0.7)", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
+      <div style={{ background: T.ink, borderBottom: "1px solid "+T.bgElevated, padding: "14px 24px", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
+        <button onClick={onClose} style={{ background: "transparent", border: "1px solid "+T.green650, borderRadius: 8, padding: "6px 12px", color: "rgba(240,237,230,0.7)", fontSize: 12, cursor: "pointer", flexShrink: 0 }}>
           ← Back
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontSize: 20, lineHeight: 1 }}>{t.icon}</span>
-            <div style={{ fontSize: 20, fontWeight: 700, color: "#f0ede6", fontFamily: "'DM Serif Display',serif", lineHeight: 1.2 }}>{event.name}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: T.inkInverse, fontFamily: "'DM Serif Display',serif", lineHeight: 1.2 }}>{event.name}</div>
             <TypeBadge type={event.event_type} />
             <StatusBadge status={event.status} small />
           </div>
@@ -420,7 +420,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <button onClick={() => { setEditing(true); setEditForm({ name: event.name, eventType: event.event_type, date: event.date, endDate: event.end_date || "", location: event.location || "", description: event.description || "", capacity: event.capacity || "", status: event.status, revenue: event.revenue || 0, cost: event.cost || 0, notes: event.notes || "" }); }}
-            style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 8, padding: "7px 14px", color: "#f0ede6", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "7px 14px", color: T.inkInverse, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             Edit Event
           </button>
         </div>
@@ -430,17 +430,17 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
       <div className="event-detail-body" style={{ flex: 1, display: "grid", gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", overflow: "hidden" }}>
 
         {/* LEFT */}
-        <div style={{ overflowY: "auto", padding: "20px 20px 32px 24px", display: "flex", flexDirection: "column", gap: 20, borderRight: "1px solid #1a2e1f" }}>
+        <div style={{ overflowY: "auto", padding: "20px 20px 32px 24px", display: "flex", flexDirection: "column", gap: 20, borderRight: "1px solid "+T.bgElevated }}>
 
           {/* Stat tiles */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
               ["Invited", totalCount, "rgba(240,237,230,0.7)"],
-              ["Confirmed", confirmedCount, "#3b82f6"],
-              ["Attended", attendedCount, "#0d5c3a"],
-              ["No Show", noShowCount, "#ef4444"],
+              ["Confirmed", confirmedCount, T.greenDk],
+              ["Attended", attendedCount, T.greenDk],
+              ["No Show", noShowCount, T.terracotta],
             ].map(([l, v, c]) => (
-              <div key={l} style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 12, padding: "12px 14px" }}>
+              <div key={l} style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 12, padding: "12px 14px" }}>
                 <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 4 }}>{l}</div>
                 <div style={{ fontSize: 24, fontWeight: 800, color: c, fontFamily: "'DM Serif Display',serif", lineHeight: 1 }}>{v}</div>
               </div>
@@ -454,22 +454,22 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             const net = totalRev - cost;
             const maxVal = Math.max(totalRev, cost, 1);
             return (
-              <div style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 14, padding: "16px 18px" }}>
+              <div style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 14, padding: "16px 18px" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Revenue vs Cost</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[["Revenue", totalRev, "#0d5c3a"], ["Cost", cost, "#ef4444"]].map(([lbl, val, col]) => (
+                  {[["Revenue", totalRev, T.greenDk], ["Cost", cost, T.terracotta]].map(([lbl, val, col]) => (
                     <div key={lbl} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ width: 60, fontSize: 11, color: "rgba(240,237,230,0.7)", textAlign: "right", flexShrink: 0 }}>{lbl}</div>
-                      <div style={{ flex: 1, height: 16, background: "#0f1a12", borderRadius: 4, overflow: "hidden" }}>
+                      <div style={{ flex: 1, height: 16, background: T.ink, borderRadius: 4, overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${val > 0 ? Math.max((val / maxVal) * 100, 4) : 0}%`, background: col, borderRadius: 4, transition: "width 0.4s" }} />
                       </div>
-                      <div style={{ width: 72, fontSize: 11, fontWeight: 700, color: "#f0ede6", textAlign: "right", flexShrink: 0 }}>{fmtFull(val)}</div>
+                      <div style={{ width: 72, fontSize: 11, fontWeight: 700, color: T.inkInverse, textAlign: "right", flexShrink: 0 }}>{fmtFull(val)}</div>
                     </div>
                   ))}
                 </div>
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #2d4a35", display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid "+T.green650, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Net</span>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? "#0d5c3a" : "#ef4444", fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: net >= 0 ? T.greenDk : T.terracotta, fontFamily: "'DM Serif Display',serif" }}>{net >= 0 ? "+" : ""}{fmtFull(net)}</span>
                 </div>
               </div>
             );
@@ -478,7 +478,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           {/* Notes */}
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 8 }}>
-              Notes {notesSaved && <span style={{ color: "#0d5c3a", fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
+              Notes {notesSaved && <span style={{ color: T.greenDk, fontSize: 10, fontWeight: 600, marginLeft: 6 }}>Saved ✓</span>}
             </div>
             <textarea
               value={notes}
@@ -495,7 +495,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)" }}>Attendees ({totalCount})</div>
               {attendedCount > 0 && (
-                <button onClick={() => setShowFollowUp(true)} style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 8, padding: "5px 12px", color: "#c9a84c", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                <button onClick={() => setShowFollowUp(true)} style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 8, padding: "5px 12px", color: T.gold500, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   ✦ Follow-up Tasks
                 </button>
               )}
@@ -506,7 +506,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               <button onClick={async () => {
                 const confirmed = event.attendees.filter(a => a.status === "confirmed");
                 for (const a of confirmed) await patchAttendee(a.id, { status: "attended" });
-              }} style={{ background: "#0d5c3a22", border: "1px solid #0d5c3a44", borderRadius: 8, padding: "6px 12px", color: "#0d5c3a", fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
+              }} style={{ background: T.greenDk+"22", border: "1px solid "+T.greenDk+"44", borderRadius: 8, padding: "6px 12px", color: T.greenDk, fontSize: 11, fontWeight: 700, cursor: "pointer", marginBottom: 10 }}>
                 ✓ Mark all confirmed as attended
               </button>
             )}
@@ -516,16 +516,16 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 {/* Table header */}
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "6px 10px", borderRadius: 8, background: "#0f1a12" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "6px 10px", borderRadius: 8, background: T.ink }}>
                   {["Name", "Email", "Stage", "Status", "Gift", ""].map(h => (
                     <div key={h} style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "rgba(240,237,230,0.7)" }}>{h}</div>
                   ))}
                 </div>
                 {event.attendees.map(a => (
-                  <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "8px 10px", borderRadius: 8, background: "#1a2e1f", border: "1px solid #2d4a35", alignItems: "center" }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div key={a.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.4fr) minmax(0,1fr) 80px 90px 80px 32px", gap: 6, padding: "8px 10px", borderRadius: 8, background: T.bgElevated, border: "1px solid "+T.green650, alignItems: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: T.inkInverse, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
                     <div style={{ fontSize: 11, color: "rgba(240,237,230,0.7)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.email || "—"}</div>
-                    <div>{a.stage ? <Pill label={a.stage} color={SC[a.stage] || "#6b7280"} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>—</span>}</div>
+                    <div>{a.stage ? <Pill label={a.stage} color={SC[a.stage] || T.ink3} /> : <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>—</span>}</div>
                     <div>
                       {savingAtt === a.id ? (
                         <span style={{ fontSize: 11, color: "rgba(240,237,230,0.7)" }}>Saving…</span>
@@ -538,7 +538,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                           }}
                           onBlur={() => setEditingStatus(null)}
                           autoFocus
-                          style={{ background: "#0f1a12", border: "1px solid #2d4a35", borderRadius: 6, padding: "3px 6px", color: "#f0ede6", fontSize: 11, outline: "none", cursor: "pointer" }}
+                          style={{ background: T.ink, border: "1px solid "+T.green650, borderRadius: 6, padding: "3px 6px", color: T.inkInverse, fontSize: 11, outline: "none", cursor: "pointer" }}
                         >
                           {Object.keys(ATT_LABELS).map(s => <option key={s} value={s}>{ATT_LABELS[s]}</option>)}
                         </select>
@@ -555,15 +555,15 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                           onBlur={async () => { setEditingGift(null); await patchAttendee(a.id, { giftAmount: parseFloat(giftVal) || 0 }); }}
                           onKeyDown={async e => { if (e.key === "Enter") { e.target.blur(); } }}
                           autoFocus
-                          style={{ background: "#0f1a12", border: "1px solid #2d4a35", borderRadius: 6, padding: "3px 6px", color: "#f0ede6", fontSize: 11, width: 72, outline: "none" }}
+                          style={{ background: T.ink, border: "1px solid "+T.green650, borderRadius: 6, padding: "3px 6px", color: T.inkInverse, fontSize: 11, width: 72, outline: "none" }}
                         />
                       ) : (
-                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? "#0d5c3a" : "rgba(240,237,230,0.7)", fontWeight: a.gift_amount ? 700 : 400 }}>
+                        <button onClick={() => { setEditingGift(a.id); setGiftVal(a.gift_amount || ""); }} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: a.gift_amount ? T.greenDk : "rgba(240,237,230,0.7)", fontWeight: a.gift_amount ? 700 : 400 }}>
                           {a.gift_amount ? fmtFull(a.gift_amount) : "—"}
                         </button>
                       )}
                     </div>
-                    <button onClick={() => removeAttendee(a.id)} style={{ background: "none", border: "none", color: "#ef444466", fontSize: 16, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+                    <button onClick={() => removeAttendee(a.id)} style={{ background: "none", border: "none", color: T.terracotta+"66", fontSize: 16, cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
                   </div>
                 ))}
               </div>
@@ -572,16 +572,16 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
         </div>
 
         {/* RIGHT */}
-        <div style={{ overflowY: "auto", padding: "20px 24px 32px 20px", display: "flex", flexDirection: "column", gap: 20, background: "#0f1a12" }}>
+        <div style={{ overflowY: "auto", padding: "20px 24px 32px 20px", display: "flex", flexDirection: "column", gap: 20, background: T.ink }}>
 
           {/* Quick stats */}
-          <div style={{ background: "#1a2e1f", border: "1px solid #2d4a35", borderRadius: 14, padding: "16px" }}>
+          <div style={{ background: T.bgElevated, border: "1px solid "+T.green650, borderRadius: 14, padding: "16px" }}>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 12 }}>Event Stats</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[
-                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? "#0d5c3a" : convRate >= 40 ? "#f59e0b" : "rgba(240,237,230,0.7)"],
-                ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "—", "#0d5c3a"],
-                ["Top Donor", topDonor ? topDonor.name : "—", "#c9a84c"],
+                ["Conversion Rate", `${convRate}%`, convRate >= 70 ? T.greenDk : convRate >= 40 ? T.gold500 : "rgba(240,237,230,0.7)"],
+                ["Avg Gift", avgGift > 0 ? fmtFull(avgGift) : "—", T.greenDk],
+                ["Top Donor", topDonor ? topDonor.name : "—", T.gold500],
               ].map(([label, value, color]) => (
                 <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 12, color: "rgba(240,237,230,0.7)" }}>{label}</span>
@@ -596,9 +596,9 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>Add Attendees</div>
 
             {/* Toggle */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 12, background: "#1a2e1f", borderRadius: 8, padding: 3 }}>
+            <div style={{ display: "flex", gap: 4, marginBottom: 12, background: T.bgElevated, borderRadius: 8, padding: 3 }}>
               {[["directory", "From Directory"], ["guest", "Add Guest"]].map(([mode, label]) => (
-                <button key={mode} onClick={() => setAddMode(mode)} style={{ flex: 1, background: addMode === mode ? "#0f1a12" : "transparent", border: addMode === mode ? "1px solid #2d4a35" : "none", borderRadius: 6, padding: "5px 0", color: addMode === mode ? "#f0ede6" : "rgba(240,237,230,0.7)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                <button key={mode} onClick={() => setAddMode(mode)} style={{ flex: 1, background: addMode === mode ? T.ink : "transparent", border: addMode === mode ? "1px solid "+T.green650 : "none", borderRadius: 6, padding: "5px 0", color: addMode === mode ? T.inkInverse : "rgba(240,237,230,0.7)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
                   {label}
                 </button>
               ))}
@@ -617,21 +617,21 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
                       const n = new Set(s);
                       n.has(d.id) ? n.delete(d.id) : n.add(d.id);
                       return n;
-                    })} style={{ display: "flex", alignItems: "center", gap: 8, background: selectedIds.has(d.id) ? "#0d5c3a22" : "#1a2e1f", border: `1px solid ${selectedIds.has(d.id) ? "#0d5c3a" : "#2d4a35"}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
-                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedIds.has(d.id) ? "#0d5c3a" : "#2d4a35"}`, background: selectedIds.has(d.id) ? "#0d5c3a" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {selectedIds.has(d.id) && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1 }}>✓</span>}
+                    })} style={{ display: "flex", alignItems: "center", gap: 8, background: selectedIds.has(d.id) ? T.greenDk+"22" : T.bgElevated, border: `1px solid ${selectedIds.has(d.id) ? T.greenDk : T.green650}`, borderRadius: 8, padding: "8px 10px", cursor: "pointer", textAlign: "left" }}>
+                      <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selectedIds.has(d.id) ? T.greenDk : T.green650}`, background: selectedIds.has(d.id) ? T.greenDk : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {selectedIds.has(d.id) && <span style={{ color: T.white, fontSize: 10, lineHeight: 1 }}>✓</span>}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "#f0ede6", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.inkInverse, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
                         {d.lastAmount > 0 && <div style={{ fontSize: 10, color: "rgba(240,237,230,0.7)" }}>Last gift: {fmtFull(d.lastAmount)}</div>}
                       </div>
-                      {d.stage && <Pill label={d.stage} color={SC[d.stage] || "#6b7280"} />}
+                      {d.stage && <Pill label={d.stage} color={SC[d.stage] || T.ink3} />}
                     </button>
                   ))}
                   {filteredDonors.length === 0 && <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", padding: "12px 0", textAlign: "center" }}>No donors to add</div>}
                 </div>
                 {selectedIds.size > 0 && (
-                  <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                  <button onClick={addFromDirectory} disabled={addingDonors} style={{ background: T.greenDk, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                     {addingDonors ? "Adding…" : `Add ${selectedIds.size} donor${selectedIds.size > 1 ? "s" : ""} →`}
                   </button>
                 )}
@@ -640,7 +640,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <input value={guestForm.name} onChange={e => setGuestForm(f => ({ ...f, name: e.target.value }))} placeholder="Guest name *" style={INP_DARK} />
                 <input value={guestForm.email} onChange={e => setGuestForm(f => ({ ...f, email: e.target.value }))} placeholder="Email (optional)" style={INP_DARK} />
-                <button onClick={addGuest} disabled={addingGuest || !guestForm.name.trim()} style={{ background: guestForm.name.trim() ? T.greenDk : "#1a2e1f", border: "none", borderRadius: 8, padding: "9px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: guestForm.name.trim() ? "pointer" : "not-allowed" }}>
+                <button onClick={addGuest} disabled={addingGuest || !guestForm.name.trim()} style={{ background: guestForm.name.trim() ? T.greenDk : T.bgElevated, border: "none", borderRadius: 8, padding: "9px", color: T.white, fontSize: 12, fontWeight: 700, cursor: guestForm.name.trim() ? "pointer" : "not-allowed" }}>
                   {addingGuest ? "Adding…" : "Add Guest →"}
                 </button>
               </div>
@@ -649,10 +649,10 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
           {/* Follow-up tasks call-to-action */}
           {attendedCount > 0 && (
-            <div style={{ background: "#1a2e1f", border: "1px solid #c9a84c44", borderRadius: 14, padding: "14px 16px" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#c9a84c", marginBottom: 8 }}>Follow-up Tasks</div>
+            <div style={{ background: T.bgElevated, border: "1px solid "+T.gold500+"44", borderRadius: 14, padding: "14px 16px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.gold500, marginBottom: 8 }}>Follow-up Tasks</div>
               <div style={{ fontSize: 12, color: "rgba(240,237,230,0.7)", marginBottom: 10 }}>{attendedCount} donor{attendedCount !== 1 ? "s" : ""} attended — create follow-up tasks for each.</div>
-              <button onClick={() => setShowFollowUp(true)} style={{ background: "#c9a84c22", border: "1px solid #c9a84c44", borderRadius: 8, padding: "8px 14px", color: "#c9a84c", fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}>
+              <button onClick={() => setShowFollowUp(true)} style={{ background: T.gold500+"22", border: "1px solid "+T.gold500+"44", borderRadius: 8, padding: "8px 14px", color: T.gold500, fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%" }}>
                 ✦ Create Follow-up Tasks
               </button>
             </div>
@@ -695,7 +695,7 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
               </select>
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-              <button onClick={saveEdit} disabled={editSaving} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: "#fff", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+              <button onClick={saveEdit} disabled={editSaving} style={{ flex: 1, background: T.greenDk, border: "none", borderRadius: 10, padding: "12px", color: T.white, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
                 {editSaving ? "Saving…" : "Save Changes"}
               </button>
               <button onClick={() => setEditing(false)} style={{ background: T.bg, border: "none", borderRadius: 10, padding: "12px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -772,9 +772,9 @@ export function Events({ data, isReadOnly }) {
       <div className="events-stats-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
         {[
           ["Events This Year", thisYear.length, T.ink],
-          ["Total Attendees", totalAttendees, "#3b82f6"],
-          ["Event Revenue", fmtFull(totalRevenue), "#0d5c3a"],
-          ["Avg Attendance Rate", `${avgRate}%`, "#8b5cf6"],
+          ["Total Attendees", totalAttendees, T.greenDk],
+          ["Event Revenue", fmtFull(totalRevenue), T.greenDk],
+          ["Avg Attendance Rate", `${avgRate}%`, T.ink],
         ].map(([label, value, color]) => (
           <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderLeft: `3px solid ${color}`, borderRadius: 12, padding: "14px 16px", boxShadow: T.shadow }}>
             <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3, marginBottom: 6 }}>{label}</div>
@@ -792,7 +792,7 @@ export function Events({ data, isReadOnly }) {
             </button>
           ))}
         </div>
-        <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
+        <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "9px 20px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>
           + New Event
         </button>
       </div>
@@ -804,7 +804,7 @@ export function Events({ data, isReadOnly }) {
         <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "48px 24px", textAlign: "center" }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 6 }}>No {filter === "all" ? "" : filter} events yet</div>
           <div style={{ fontSize: 13, color: T.ink3, marginBottom: 20 }}>Track galas, cultivation dinners, site visits, and more.</div>
-          <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create Your First Event</button>
+          <button onClick={() => setShowNew(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{ background: T.greenDk, border: "none", borderRadius: 10, padding: "10px 24px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly?"not-allowed":"pointer", opacity: isReadOnly?0.45:1 }}>Create Your First Event</button>
         </div>
       ) : (
         <div className="events-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
@@ -827,7 +827,7 @@ export function Events({ data, isReadOnly }) {
       )}
 
       {addTarget && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "#0f1a12aa" }} onClick={() => setAddTarget(null)} />
+        <div style={{ position: "fixed", inset: 0, zIndex: 200, background: T.ink+"aa" }} onClick={() => setAddTarget(null)} />
       )}
     </div>
   );

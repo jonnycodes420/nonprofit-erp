@@ -20,6 +20,30 @@ import { PageRenderer } from "../components/PortalWidgets";
 import PortalBanner, { PORTAL_HEADER_RATIO, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, bannerImgStyle, bannerSrcSet } from "../components/PortalBanner";
 import { portalScaleVars } from "../lib/portalScale";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  paper: "#faf9f6",
+  body: "#1c1c1a",
+  white: "#ffffff",
+  hair: "#e7e4dc",
+  muted: "#6b6b64",
+  quietEdge: "#d8d4c9",
+  wash: "#efece5",
+  cream: "#f0ede6",
+  sageDeep: "#6b8f7a",
+  greyWash: "#eeeeee",
+  greenWash: "#eef4ef",
+  greyText: "#777777",
+  brassWash: "#fdf6ec",
+  brassEdge: "#ecd9b0",
+  terra700: "#8a3a24",
+  terra200: "#eac6b8",
+  greyDeep: "#555555",
+  bodyDark: "#3a3a35",
+};
+
+
 // Same-origin in production via the vercel.json /portal-api proxy (the cookie
 // must be first-party); direct in dev (localhost ports are same-site).
 // VITE_PORTAL_API is the local-capture override (a `vite build` for the
@@ -49,15 +73,15 @@ async function pfetch(path, opts = {}) {
 // hard (reported in FINDINGS). Buttons are one height/padding/label-case
 // everywhere; body/inputs share the body step; line-height is the body token.
 const S = {
-  page: { minHeight: "100vh", background: "var(--pt-bg, #faf9f6)", color: "#1c1c1a", fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)", fontSize: "var(--pt-fs-body, 15px)", lineHeight: "var(--pt-lh-body, 1.55)" },
+  page: { minHeight: "100vh", background: "var(--pt-bg, "+PAL.paper+")", color: PAL.body, fontFamily: "var(--pt-sans, 'DM Sans',system-ui,sans-serif)", fontSize: "var(--pt-fs-body, 15px)", lineHeight: "var(--pt-lh-body, 1.55)" },
   wrap: { maxWidth: 860, margin: "0 auto", padding: "0 var(--pt-sp-5, 24px) var(--pt-sp-8, 64px)" },
-  card: { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "var(--pt-sp-5, 24px)", marginBottom: "var(--pt-sp-4, 16px)" },
+  card: { background: PAL.white, border: "var(--pt-card-border, 1px solid "+PAL.hair+")", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "var(--pt-sp-5, 24px)", marginBottom: "var(--pt-sp-4, 16px)" },
   h2: { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: "var(--pt-fs-h2, 22px)", lineHeight: "var(--pt-lh-display, 1.15)", margin: "0 0 var(--pt-sp-3, 12px)" },
-  label: { fontSize: "var(--pt-fs-micro, 12px)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#6b6b64", marginBottom: "var(--pt-sp-2, 8px)" },
-  input: { width: "100%", boxSizing: "border-box", padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", border: "1px solid #d8d4c9", borderRadius: 10, outline: "none", fontFamily: "inherit" },
+  label: { fontSize: "var(--pt-fs-micro, 12px)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: PAL.muted, marginBottom: "var(--pt-sp-2, 8px)" },
+  input: { width: "100%", boxSizing: "border-box", padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", border: "1px solid "+PAL.quietEdge, borderRadius: 10, outline: "none", fontFamily: "inherit" },
   btn: { background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, var(--pt-primary-fg))", border: "none", borderRadius: 10, padding: "var(--pt-sp-3, 12px) var(--pt-sp-5, 24px)", fontSize: "var(--pt-fs-body, 15px)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  btnQuiet: { background: "transparent", color: "#1c1c1a", border: "1px solid #d8d4c9", borderRadius: 10, padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  muted: { fontSize: "var(--pt-fs-small, 13px)", color: "#6b6b64", lineHeight: "var(--pt-lh-body, 1.55)" },
+  btnQuiet: { background: "transparent", color: PAL.body, border: "1px solid "+PAL.quietEdge, borderRadius: 10, padding: "var(--pt-sp-3, 12px) var(--pt-sp-4, 16px)", fontSize: "var(--pt-fs-body, 15px)", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  muted: { fontSize: "var(--pt-fs-small, 13px)", color: PAL.muted, lineHeight: "var(--pt-lh-body, 1.55)" },
 };
 
 // 2026-08-15 wide-width pass — explicit override of the BUILD-54 "the donor
@@ -107,10 +131,10 @@ function varsFor(theme) {
     "--pt-accent": theme.accent, "--pt-accent-fg": theme.accentFg,
     "--pt-button": theme.buttonColor || theme.primary,
     "--pt-button-fg": theme.buttonFg || theme.primaryFg,
-    "--pt-bg": theme.backgroundTint || "#faf9f6",
+    "--pt-bg": theme.backgroundTint || PAL.paper,
     "--pt-serif": pairing.serif, "--pt-sans": pairing.sans,
     "--pt-card-radius": cs.radius + "px",
-    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid #e7e4dc` : "none",
+    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid ${PAL.hair}` : "none",
     "--pt-card-shadow": cs.shadow,
     ...portalScaleVars(), // BUILD-59 — the one type + spacing scale
   };
@@ -123,7 +147,7 @@ function varsFor(theme) {
 // own primary with monogram + name — never generated abstract shapes.
 function Monogram({ theme, size = 52 }) {
   return (
-    <div aria-hidden style={{ width: size, height: size, borderRadius: "50%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: size * 0.46, color: "var(--pt-primary-fg, #fff)", flexShrink: 0 }}>
+    <div aria-hidden style={{ width: size, height: size, borderRadius: "50%", background: "rgba(255,255,255,0.14)", border: "1px solid rgba(255,255,255,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: size * 0.46, color: "var(--pt-primary-fg, "+PAL.white+")", flexShrink: 0 }}>
       {(theme.displayName || "?").slice(0, 1)}
     </div>
   );
@@ -135,7 +159,7 @@ function PortalHeader({ theme }) {
       {theme.logo
         ? <img src={resolveAssetUrl(theme.logo)} alt="" style={{ height: 46, maxWidth: 150, objectFit: "contain", background: "rgba(255,255,255,0.92)", borderRadius: 10, padding: "4px 8px" }} />
         : <Monogram theme={theme} />}
-      <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: "var(--pt-fs-display, clamp(26px, 3.4vw, 34px))", lineHeight: 1.1, color: "var(--pt-primary-fg, #fff)" }}>
+      <div style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: "var(--pt-fs-display, clamp(26px, 3.4vw, 34px))", lineHeight: 1.1, color: "var(--pt-primary-fg, "+PAL.white+")" }}>
         {theme.displayName}
       </div>
     </div>
@@ -182,7 +206,7 @@ function AccountBar({ me, onSignOut }) {
     // GROUP that clearly reads as nav, not floating tabs beside the greeting;
     // (3) Sign out is a quiet button pinned right.
     <div className="pt-col" style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
-      <span style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 17, color: "#1c1c1a", letterSpacing: "-0.01em" }}>
+      <span style={{ fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontSize: 17, color: PAL.body, letterSpacing: "-0.01em" }}>
         Welcome back{me.donorName ? `, ${me.donorName.split(" ")[0]}` : ""}.
       </span>
       {links.length > 0 && (
@@ -199,7 +223,7 @@ function AccountBar({ me, onSignOut }) {
 
 function PortalFooter({ theme }) {
   return (
-    <footer style={{ ...S.muted, marginTop: 40, borderTop: "1px solid #e7e4dc", paddingTop: 18 }}>
+    <footer style={{ ...S.muted, marginTop: 40, borderTop: "1px solid "+PAL.hair, paddingTop: 18 }}>
       {theme.footerText && <div style={{ marginBottom: 6 }}>{theme.footerText}</div>}
       {theme.einLine && <div style={{ marginBottom: 6 }}>{theme.einLine}</div>}
       {theme.contactEmail && <div style={{ marginBottom: 6 }}>Questions? <a href={`mailto:${theme.contactEmail}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>{theme.contactEmail}</a></div>}
@@ -290,7 +314,7 @@ function YearBars({ byYear, gifts }) {
             onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenYear(openYear === y.year ? null : y.year); } }}
             style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer" }}>
             <div style={{ width: 44, fontSize: 13, fontWeight: 700 }}>{y.year}</div>
-            <div style={{ flex: 1, height: 26, background: "#efece5", borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ flex: 1, height: 26, background: PAL.wash, borderRadius: 6, overflow: "hidden" }}>
               <div style={{ width: `${Math.max(4, (y.total / max) * 100)}%`, height: "100%", background: "var(--pt-primary)" }} />
             </div>
             <div style={{ width: 90, textAlign: "right", fontSize: 13, fontWeight: 600 }}>{fmtFull(y.total)}</div>
@@ -298,7 +322,7 @@ function YearBars({ byYear, gifts }) {
           {openYear === y.year && (
             <div style={{ margin: "8px 0 4px 56px" }}>
               {gifts.filter(g => (g.date || "").startsWith(y.year)).map(g => (
-                <div key={g.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid #f0ede6" }}>
+                <div key={g.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: "1px solid "+PAL.cream }}>
                   {/* BUILD-64 Part 4: human date (never ISO); a quiet Recurring
                       tag so a column of identical monthly amounts explains
                       itself; and the FUND designation shown where one exists
@@ -309,7 +333,7 @@ function YearBars({ byYear, gifts }) {
                     {fmtDay(g.date)}
                     {g.campaign ? ` · ${g.campaign}` : ""}
                     {g.fund ? ` · ${g.fund}` : ""}
-                    {g.recurring && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "var(--pt-accent, #6b8f7a)", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recurring</span>}
+                    {g.recurring && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: "var(--pt-accent, "+PAL.sageDeep+")", textTransform: "uppercase", letterSpacing: "0.04em" }}>Recurring</span>}
                   </span>
                   <span style={{ fontWeight: 600 }}>{fmtFull(g.amount)}</span>
                 </div>
@@ -339,13 +363,13 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
   };
   const statusLabel = { active: "Active", paused: "Paused", past_due: "Payment issue", recovering: "Payment issue", recovered: "Active", canceled: "Canceled" }[sub.status] || sub.status;
   return (
-    <div style={{ borderTop: "1px solid #f0ede6", paddingTop: 14, marginTop: 14 }}>
+    <div style={{ borderTop: "1px solid "+PAL.cream, paddingTop: 14, marginTop: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
         <div>
           <span style={{ fontSize: 18, fontWeight: 700 }}>{fmtFull(sub.amount)}</span>
           <span style={S.muted}> / {sub.interval === "year" ? "year" : "month"}</span>
           <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
-            background: sub.status === "canceled" ? "#eee" : "#eef4ef", color: sub.status === "canceled" ? "#777" : "var(--pt-primary)" }}>{statusLabel}</span>
+            background: sub.status === "canceled" ? PAL.greyWash : PAL.greenWash, color: sub.status === "canceled" ? PAL.greyText : "var(--pt-primary)" }}>{statusLabel}</span>
         </div>
         {sub.cardLast4 && <div style={S.muted}>Card ending {sub.cardLast4}</div>}
       </div>
@@ -354,7 +378,7 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
         <div style={{ ...S.muted, marginTop: 6 }}>Next charge: {fmtDay(sub.nextChargeDate)}</div>
       )}
       {["past_due", "recovering"].includes(sub.status) && (
-        <div style={{ marginTop: 10, padding: "10px 14px", background: "#fdf6ec", border: "1px solid #ecd9b0", borderRadius: 10, fontSize: 14 }}>
+        <div style={{ marginTop: 10, padding: "10px 14px", background: PAL.brassWash, border: "1px solid "+PAL.brassEdge, borderRadius: 10, fontSize: 14 }}>
           Your last payment didn't go through — updating your card usually fixes it.
         </div>
       )}
@@ -368,7 +392,7 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
             const r = await pfetch(`/${slug}/recurring/${sub.id}/update-card`, { method: "POST", body: {} });
             if (r.status === 200 && r.body?.url) window.location.href = r.body.url;
           }}>Update payment method</button>
-          <button style={{ ...S.btnQuiet, color: "#8a3a24", borderColor: "#eac6b8" }} onClick={() => setMode(mode === "cancel" ? null : "cancel")}>Cancel</button>
+          <button style={{ ...S.btnQuiet, color: PAL.terra700, borderColor: PAL.terra200 }} onClick={() => setMode(mode === "cancel" ? null : "cancel")}>Cancel</button>
         </div>
       )}
       {mode === "amount" && (
@@ -401,13 +425,13 @@ function RecurringCard({ slug, sub, theme, onChanged }) {
           <div style={S.label}>Anything you'd like to share? (optional)</div>
           <input style={S.input} value={reason} onChange={e => setReason(e.target.value)} placeholder="Entirely optional" />
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <button style={{ ...S.btn, background: "#8a3a24", color: "#fff" }} disabled={busy}
+            <button style={{ ...S.btn, background: PAL.terra700, color: PAL.white }} disabled={busy}
               onClick={() => act("cancel", reason.trim() ? { reason: reason.trim() } : {})}>{busy ? "Canceling…" : "Yes, cancel my gift"}</button>
             <button style={S.btnQuiet} onClick={() => setMode(null)}>Keep giving</button>
           </div>
         </div>
       )}
-      {err && <div style={{ marginTop: 10, color: "#8a3a24", fontSize: 14 }}>{err}</div>}
+      {err && <div style={{ marginTop: 10, color: PAL.terra700, fontSize: 14 }}>{err}</div>}
     </div>
   );
 }
@@ -482,7 +506,7 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
         <div style={S.card}>
           <h2 style={S.h2}>Pledges</h2>
           {me.pledges.filter(p => p.status === "open").map(p => (
-            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
+            <div key={p.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, padding: "8px 0", borderBottom: "1px solid "+PAL.cream }}>
               <span>Pledged {fmtFull(p.amount)} · due {fmtDay(p.dueDate)}</span>
               <span style={{ fontWeight: 600 }}>{p.paid > 0 ? `${fmtFull(p.paid)} paid · ${fmtFull(p.balance)} remaining` : `${fmtFull(p.balance)} remaining`}</span>
             </div>
@@ -494,7 +518,7 @@ function MyGivingSection({ slug, me, reload, theme, includeGiveCta }) {
         <div id="receipts" style={{ ...S.card, scrollMarginTop: 16 }}>
           <h2 style={S.h2}>Tax receipts</h2>
           {me.receipts.map(r => (
-            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid #f0ede6" }}>
+            <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 14, padding: "8px 0", borderBottom: "1px solid "+PAL.cream }}>
               <span>{r.type === "year_end" ? `${r.taxYear} year-end statement` : `Receipt #${r.number}`} · {fmtFull(r.amount)}</span>
               <a href={`${PORTAL_BASE}/${slug}/receipts/${r.id}/pdf`} style={{ color: "var(--pt-button, var(--pt-primary))", fontWeight: 600, fontSize: 13 }}>Download PDF</a>
             </div>
@@ -537,7 +561,7 @@ function Dashboard({ slug, me, reload, page }) {
           finished setting one up. The signup link carries the donor's verified
           email in the URL FRAGMENT (never sent to any server). */}
       {me.account && !(me.account.exists && me.account.hasPassword) && (
-        <div style={{ fontSize: 13, color: "#555", margin: "0 0 10px" }}>
+        <div style={{ fontSize: 13, color: PAL.greyDeep, margin: "0 0 10px" }}>
           {me.account.exists
             ? <>Add a password to your giving account for one-step sign-in — use "Reset password" at <a href="/giving" style={{ color: "var(--pt-button, var(--pt-primary))" }}>your giving dashboard</a>.</>
             : <>See all your giving in one place — <a href={`/giving#signup&email=${encodeURIComponent(me.account.email || "")}&from=${encodeURIComponent(slug)}`} style={{ color: "var(--pt-button, var(--pt-primary))" }}>create a free account</a>. This page keeps working exactly as it does now.</>}
@@ -586,7 +610,7 @@ function Dashboard({ slug, me, reload, page }) {
           )}
           <div style={{ padding: "20px 22px" }}>
             <h2 style={{ ...S.h2, marginBottom: 6 }}>{c.name}</h2>
-            {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: "#3a3a35" }}>{c.description}</p>}
+            {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: PAL.bodyDark }}>{c.description}</p>}
             <StoryBlocks blocks={c.story} />
             {c.goal && c.goal.amount > 0 && (
               <div style={{ marginTop: 14 }}>
@@ -594,7 +618,7 @@ function Dashboard({ slug, me, reload, page }) {
                   <span style={{ fontWeight: 700 }}>{fmtFull(c.goal.raised)} raised</span>
                   <span style={S.muted}>of {fmtFull(c.goal.amount)}{c.goal.percent != null ? ` · ${c.goal.percent}%` : ""}</span>
                 </div>
-                <div style={{ height: 10, background: "#efece5", borderRadius: 5, overflow: "hidden" }}>
+                <div style={{ height: 10, background: PAL.wash, borderRadius: 5, overflow: "hidden" }}>
                   <div style={{ width: `${Math.max(2, Math.min(100, c.goal.percent || 0))}%`, height: "100%", background: "var(--pt-primary)" }} />
                 </div>
               </div>

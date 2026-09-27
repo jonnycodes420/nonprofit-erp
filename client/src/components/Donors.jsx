@@ -28,10 +28,10 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.error) {
       return (
-        <div style={{padding:"32px 24px",textAlign:"center",color:"#b8593f",fontSize:14}}>
+        <div style={{padding:"32px 24px",textAlign:"center",color:T.terracotta,fontSize:14}}>
           <div style={{fontWeight:700,marginBottom:8}}>Something went wrong loading this profile.</div>
-          <div style={{color:"#5a554f",marginBottom:16}}>{this.state.error?.message}</div>
-          <button onClick={()=>this.setState({error:null})} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 18px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
+          <div style={{color:T.ink3,marginBottom:16}}>{this.state.error?.message}</div>
+          <button onClick={()=>this.setState({error:null})} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 18px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Try again</button>
         </div>
       );
     }
@@ -458,9 +458,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         <input className="donors-search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search donors…" style={{flex:1,minWidth:160,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",color:T.ink,fontSize:13,outline:"none"}}/>
         <div className="donors-view-toggle" style={{display:"flex",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,overflow:"hidden"}}>
           {[["directory","Directory"],...(isAdmin?[["team","Team"]]:[]),["reengage","Re-engage"],["map","Map"]].map(([v,l])=>(
-            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:"#5a554f",fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
+            <button key={v} onClick={()=>setView(v)} style={{background:view===v?T.bg2:"transparent",border:"none",padding:"9px 14px",color:view===v?T.ink:T.ink3,fontSize:13,fontWeight:view===v?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:5}}>
               {l}
-              {v==="reengage"&&lapsedCount>0&&<span style={{background:"#0d5c3a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
+              {v==="reengage"&&lapsedCount>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:800,lineHeight:1.4}}>{lapsedCount}</span>}
             </button>
           ))}
         </div>
@@ -526,7 +526,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setFiltersOpen(v=>!v)} style={{background:filtersOpen||count>0?T.bg2:T.bg,border:"1px solid "+(count>0?T.greenDk:T.bg3),borderRadius:9,padding:"7px 12px",color:count>0?T.greenDk:T.ink3,fontSize:12,fontWeight:count>0?700:400,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
               ⊞ Filters
-              {count>0&&<span style={{background:T.greenDk,color:"#fff",borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
+              {count>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"0 6px",fontSize:10,fontWeight:800,lineHeight:"16px"}}>{count}</span>}
             </button>
             {pills.map(p=>(
               <span key={p.id} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:99,padding:"4px 10px",fontSize:12,color:T.ink2,display:"inline-flex",alignItems:"center",gap:5}}>
@@ -555,7 +555,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           {orgTeam.filter(u=>u.id!==userId).map(u=><option key={u.id} value={u.id}>Assign to {u.name}</option>)}
         </select>}
         <div style={{display:"flex",gap:8}}>
-          <button onClick={addDonor} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
+          <button onClick={addDonor} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:600,cursor:"pointer"}}>Save</button>
           <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </Card>}

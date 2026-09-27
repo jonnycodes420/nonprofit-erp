@@ -28,7 +28,7 @@ function GrantLogModal({grant,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
-          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?T.greenDk:T.bg2,border:`1px solid ${type===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?T.greenDk:T.bg2,border:`1px solid ${type===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
         </div>
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Date</div>
@@ -255,7 +255,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.ink}}>
           <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>

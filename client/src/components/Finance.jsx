@@ -40,7 +40,7 @@ const sourceMeta = (s, grantId) => (grantId ? SOURCE_META.grant : (SOURCE_META[s
 
 // ── Shared style helpers ───────────────────────────────────────────────────
 const inp = { background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 11px", color:T.ink, fontSize:13, outline:"none", width:"100%", boxSizing:"border-box" };
-const btn = (bg=T.greenDk,fg="#fff") => ({ background:bg, border:"none", borderRadius:8, padding:"9px 16px", color:fg, fontSize:13, fontWeight:700, cursor:"pointer" });
+const btn = (bg=T.greenDk,fg=T.white) => ({ background:bg, border:"none", borderRadius:8, padding:"9px 16px", color:fg, fontSize:13, fontWeight:700, cursor:"pointer" });
 const ghostBtn = { background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, padding:"8px 14px", color:T.ink3, fontSize:12, cursor:"pointer" };
 
 // Read-only gate for write buttons — matches the app-wide isReadOnly pattern.
@@ -245,7 +245,7 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
         <div style={{ display:"flex", gap:6 }}>
           {["income","expense"].map(t => (
             <button key={t} onClick={() => setForm(p => ({ ...p, type:t, accountId:"" }))}
-              style={{ flex:1, ...btn(form.type===t ? (t==="income"?IN:OUT) : T.bg, form.type===t?"#fff":T.ink3), border:"1px solid "+(form.type===t?"transparent":T.bg3) }}>
+              style={{ flex:1, ...btn(form.type===t ? (t==="income"?IN:OUT) : T.bg, form.type===t?T.white:T.ink3), border:"1px solid "+(form.type===t?"transparent":T.bg3) }}>
               {t === "income" ? "↑ Money in" : "↓ Money out"}
             </button>
           ))}
@@ -855,7 +855,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
               {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
                 <button key={v} onClick={() => handleYearModeChange(v)}
-                  style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?"#fff":T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+                  style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?T.white:T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
                   {l}
                 </button>
               ))}
@@ -939,7 +939,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               </div>
             </div>
             <button onClick={() => onNavigate("reports")}
-              style={{ background:T.greenMid, color:"#fff", border:"none", borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+              style={{ background:T.greenMid, color:T.white, border:"none", borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
               View giving in Reports →
             </button>
           </div>
@@ -1048,7 +1048,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                   <thead>
                     <tr style={{ background:T.greenMid }}>
                       {[["date","Date"],["amount","Amount"],["description","Description"],["account_name","Account"],["fund_name","Fund"]].map(([col, label]) => (
-                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
                           {label}{sortArrow(col)}
                         </th>
                       ))}
@@ -1060,7 +1060,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                       const sm = sourceMeta(t.source, t.grant_id);
                       const linkedDonor = t.donor_id && donorById[t.donor_id];
                       return (
-                      <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>
+                      <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:T.ground }}>
                         <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
                         <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, whiteSpace:"nowrap", textAlign:"right" }}>
                           {t.type === "income" ? "+" : "−"}{fmtFull(parseFloat(t.amount))}
@@ -1085,7 +1085,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.fund_name && (
-                            <span style={{ background:t.fund_restricted?T.gold+"22":T.greenMid+"18", color:t.fund_restricted?"#8a6d1f":T.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
+                            <span style={{ background:t.fund_restricted?T.gold+"22":T.greenMid+"18", color:t.fund_restricted?T.gold700:T.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
                               {t.fund_name}
                             </span>
                           )}
@@ -1180,12 +1180,12 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
                   <tr style={{ background:T.greenMid }}>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
                     <th style={{ padding:"8px 12px", width:80 }}/>
                   </tr>
                 </thead>
@@ -1284,7 +1284,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                     <thead>
-                      <tr style={{ background:"#0f1a12" }}>
+                      <tr style={{ background:T.ink }}>
                         {["Timestamp","User","Action","Entity","Description"].map(h => (
                           <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"rgba(240,237,230,0.7)", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
                         ))}
@@ -1298,13 +1298,13 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                         const hasOldNew = (changes.old && Object.keys(changes.old).length > 0) || (changes.new && Object.keys(changes.new).length > 0);
                         const ACTION_STYLE = {
                           created: { bg:T.greenMid+"18", color:T.greenDk },
-                          updated: { bg:T.gold+"26", color:"#8a6d1f" },
+                          updated: { bg:T.gold+"26", color:T.gold700 },
                           deleted: { bg:OUT+"20", color:OUT },
                         };
                         const as = ACTION_STYLE[entry.action] || { bg:T.bg2, color:T.ink3 };
                         return (
                           <Fragment key={entry.id}>
-                            <tr style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?"transparent":"#0f1a1244" }}>
+                            <tr style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?"transparent":T.ink+"44" }}>
                               <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap", fontSize:11, fontFamily:"'Fira Mono',monospace" }}>
                                 {new Date(entry.created_at).toLocaleString()}
                               </td>

@@ -147,13 +147,13 @@ export function TopBar({ auth, logout, onNavigate }) {
   // product. It is how a colleague is addressed, not how a row is keyed.
   const userName = firstNameOf(auth?.user?.name) || "You";
 
-  return <div className="app-topbar" style={{height:52,background:"#0f1a12",borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
+  return <div className="app-topbar" style={{height:52,background:T.ink,borderBottom:"1px solid "+T.bgElevated,display:"flex",alignItems:"center",gap:14,padding:"0 20px 0 0",position:"fixed",top:0,left:0,right:0,zIndex:250,boxSizing:"border-box"}}>
 
     {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
         old sidebar wordmark), links to Home */}
     <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward — Home"
       style={{width:240,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
-      <span style={{fontSize:21,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
+      <span style={{fontSize:21,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
     </button>
 
     {/* Global search */}
@@ -168,9 +168,9 @@ export function TopBar({ auth, logout, onNavigate }) {
         onFocus={()=>setOpen(true)}
         onKeyDown={onKeyDown}
         placeholder="Search donors, grants… ⌘K"
-        style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid #2d4a35",borderRadius:10,padding:"7px 12px 7px 30px",color:"#f0ede6",fontSize:13,outline:"none",fontFamily:"inherit"}}
+        style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"7px 12px 7px 30px",color:T.inkInverse,fontSize:13,outline:"none",fontFamily:"inherit"}}
       />
-      {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
+      {showDrop && <div data-testid="search-dropdown" style={{position:"absolute",top:"calc(100% + 6px)",left:0,right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",maxHeight:420,overflowY:"auto",zIndex:130}}>
         {flat.length===0 && <div style={{padding:"10px 14px",fontSize:12.5,color:"rgba(240,237,230,0.55)"}}>No matches for “{q.trim()}”</div>}
         {groups.map(gr=><div key={gr.name}>
           <div style={{padding:"6px 14px 3px",fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.55)"}}>{gr.name}</div>
@@ -187,7 +187,7 @@ export function TopBar({ auth, logout, onNavigate }) {
                     uses. Only people get one; a grant is not a person. */}
                 {item.personId && <PersonMark id={item.personId} name={item.personName} kind={item.personKind} size={22}/>}
                 <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontSize:13,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                  <div style={{fontSize:13,fontWeight:600,color:T.inkInverse,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
                     <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{item.title}</span>
                     <DriftBadge drift={item.drift}/>
                   </div>
@@ -205,10 +205,10 @@ export function TopBar({ auth, logout, onNavigate }) {
     {/* Help menu */}
     <div ref={helpRef} style={{position:"relative"}}>
       <button data-testid="topbar-help" onClick={()=>setHelpOpen(v=>!v)} title="Help"
-        style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid #2d4a35",color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
-      {helpOpen && <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:210,zIndex:130}}>
+        style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid "+T.green650,color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
+      {helpOpen && <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:210,zIndex:130}}>
         <a href="mailto:jonathan@stewardapp.dev?subject=Steward%20question" onClick={()=>setHelpOpen(false)}
-          style={{display:"block",padding:"8px 14px",fontSize:13,color:"#f0ede6",textDecoration:"none",fontWeight:600}}>
+          style={{display:"block",padding:"8px 14px",fontSize:13,color:T.inkInverse,textDecoration:"none",fontWeight:600}}>
           Email the founder
           <div style={{fontSize:11,color:"rgba(240,237,230,0.7)",fontWeight:400}}>jonathan@stewardapp.dev</div>
         </a>
@@ -222,11 +222,11 @@ export function TopBar({ auth, logout, onNavigate }) {
       <button onClick={()=>onNavigate("settings",{section:"account"})} title="Account settings"
         style={{display:"flex",alignItems:"center",gap:9,background:"transparent",border:"none",padding:"3px 5px",borderRadius:8,cursor:"pointer"}}>
         <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <span style={{fontSize:11,fontWeight:700,color:"#f0ede6"}}>{userName[0].toUpperCase()}</span>
+          <span style={{fontSize:11,fontWeight:700,color:T.inkInverse}}>{userName[0].toUpperCase()}</span>
         </div>
-        <span style={{fontSize:12.5,fontWeight:600,color:"#f0ede6",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
+        <span style={{fontSize:12.5,fontWeight:600,color:T.inkInverse,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
       </button>
-      <button onClick={logout} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
+      <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
   </div>;
 }

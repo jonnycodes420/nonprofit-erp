@@ -1,6 +1,17 @@
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  ink: "#0f1a12",
+  cream: "#f0ede6",
+  rule: "#ddd9d0",
+  bodyText: "#3d4a42",
+  emerald: "#0d5c3a",
+};
+
+
 // Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
 // above is a change to the document, and a stale last-updated date beside a
 // changed document is itself a false statement.
@@ -8,9 +19,9 @@ const LAST_UPDATED = "September 12, 2026";
 
 function Nav() {
   return (
-    <nav style={{ background: "#0f1a12", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
+    <nav style={{ background: PAL.ink, padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 10 }}>
       <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-        <span style={{ fontSize: 20, fontWeight: 400, color: "#f0ede6", fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
+        <span style={{ fontSize: 20, fontWeight: 400, color: PAL.cream, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
       </Link>
       <Link to="/" style={{ fontSize: 13, color: "rgba(240,237,230,0.7)", textDecoration: "none" }}>← Back to home</Link>
     </nav>
@@ -18,15 +29,15 @@ function Nav() {
 }
 
 const S = {
-  page: { background: "#f0ede6", minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif" },
+  page: { background: PAL.cream, minHeight: "100vh", fontFamily: "'DM Sans',system-ui,sans-serif" },
   body: { maxWidth: 720, margin: "0 auto", padding: "56px 32px 80px" },
-  h1: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 40, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 8px" },
+  h1: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 40, fontWeight: 400, color: PAL.ink, letterSpacing: "-0.02em", lineHeight: 1.15, margin: "0 0 8px" },
   meta: { fontSize: 13, color: "rgba(240,237,230,0.7)", marginBottom: 48 },
-  h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: "#0f1a12", letterSpacing: "-0.01em", margin: "40px 0 12px", paddingTop: 8, borderTop: "1px solid #ddd9d0" },
-  p: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, margin: "0 0 16px" },
-  li: { fontSize: 15, color: "#3d4a42", lineHeight: 1.75, marginBottom: 6 },
+  h2: { fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, fontWeight: 400, color: PAL.ink, letterSpacing: "-0.01em", margin: "40px 0 12px", paddingTop: 8, borderTop: "1px solid "+PAL.rule },
+  p: { fontSize: 15, color: PAL.bodyText, lineHeight: 1.75, margin: "0 0 16px" },
+  li: { fontSize: 15, color: PAL.bodyText, lineHeight: 1.75, marginBottom: 6 },
   ul: { paddingLeft: 20, margin: "0 0 16px" },
-  a: { color: "#0d5c3a", textDecoration: "none" },
+  a: { color: PAL.emerald, textDecoration: "none" },
 };
 
 export default function PrivacyPage() {

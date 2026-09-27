@@ -41,7 +41,7 @@ export function ColumnTargetSelect({
 
   if (locked) {
     return (
-      <div style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: T.gold600 || "#a97f22" }}
+      <div style={{ fontSize: compact ? 11 : 12, fontWeight: 700, color: T.gold600 }}
         data-testid={testId} data-column-target="flag">
         → safety flags ({locked}) — locked
       </div>
@@ -119,17 +119,17 @@ export function ColumnTargetSelect({
             <option value="gift">on the gift</option>
           </select>
           {/select/.test(draft.type) && !(draft.options || []).length && (
-            <span style={{ fontSize: 11, color: "#b8593f" }}>a choice field needs its options — pick another type</span>
+            <span style={{ fontSize: 11, color: T.terracotta }}>a choice field needs its options — pick another type</span>
           )}
           <button onClick={create} disabled={busy || !draft.label.trim() || (/select/.test(draft.type) && !(draft.options || []).length)} data-testid="ct-create-field"
-            style={{ background: T.green600 || "#1e6b45", color: "#fff", border: "none", borderRadius: 7,
+            style={{ background: T.green600, color: T.white, border: "none", borderRadius: 7,
                      padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
             {busy ? "Creating…" : "Create field"}
           </button>
           <button onClick={() => setDraft(null)} style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Cancel</button>
         </div>
       )}
-      {err && <div style={{ fontSize: 11.5, color: "#b8593f" }}>{err}</div>}
+      {err && <div style={{ fontSize: 11.5, color: T.terracotta }}>{err}</div>}
       {evidence && !draft && <div style={{ fontSize: 11, color: T.ink3 }}>{evidence}</div>}
     </div>
   );

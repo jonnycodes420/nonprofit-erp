@@ -57,7 +57,7 @@ export function Programs({data}) {
 
   return <div style={{display:"flex",flexDirection:"column",gap:16}}>
     <PageTitle main="Your" accent="programs."/>
-    <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:"#0d5c3a",border:"none",borderRadius:10,padding:"10px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
+    <button onClick={()=>setShowAdd(!showAdd)} style={{alignSelf:"flex-start",background:T.greenDk,border:"none",borderRadius:10,padding:"10px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ New Program</button>
 
     {showAdd&&<Card style={{display:"flex",flexDirection:"column",gap:12}}>
       <SectionLabel>New Program</SectionLabel>
@@ -87,7 +87,7 @@ export function Programs({data}) {
           style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>
       </div>
       <div style={{display:"flex",gap:8}}>
-        <button onClick={save} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
+        <button onClick={save} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Save Program</button>
         <button onClick={()=>setShowAdd(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"9px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
       </div>
     </Card>}
@@ -101,7 +101,7 @@ export function Programs({data}) {
         const grants=p.grants||[];
         const pct=p.budget>0?Math.round(p.spent/p.budget*100):0;
         const totalAllocated=grants.reduce((s,g)=>s+g.allocated,0);
-        const statusColor={active:"#0d5c3a",planning:"#3b82f6",completed:"#6b7280",paused:"#f59e0b"}[p.status]||"#6b7280";
+        const statusColor={active:T.greenDk,planning:T.greenDk,completed:T.ink3,paused:T.gold500}[p.status]||T.ink3;
         return <Card key={p.id} selected={isOpen} accent={statusColor} onClick={()=>setSelected(isOpen?null:p)}>
           <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
             <div style={{flex:1}}>
@@ -113,16 +113,16 @@ export function Programs({data}) {
             </div>
             <div style={{textAlign:"right",flexShrink:0}}>
               <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{fmt(p.budget)}</div>
-              <div style={{fontSize:11,color:pct>90?"#ef4444":"#6b7280"}}>{pct}% spent</div>
+              <div style={{fontSize:11,color:pct>90?T.terracotta:T.ink3}}>{pct}% spent</div>
             </div>
           </div>
           <div style={{marginTop:10,height:4,background:T.bg3,borderRadius:99}}>
-            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?"#ef4444":pct>70?"#f59e0b":"#0d5c3a",borderRadius:99}}/>
+            <div style={{height:"100%",width:`${Math.min(pct,100)}%`,background:pct>90?T.terracotta:pct>70?T.gold500:T.greenDk,borderRadius:99}}/>
           </div>
           <div style={{display:"flex",gap:16,marginTop:10}}>
             <span style={{fontSize:11,color:T.ink3}}>{p.participant_count} participants</span>
             {staff.length>0&&<span style={{fontSize:11,color:T.ink3}}>Staff: {staff.join(", ")}</span>}
-            {grants.length>0&&<span style={{fontSize:11,color:"#8b5cf6"}}>{fmt(totalAllocated)} grant-funded</span>}
+            {grants.length>0&&<span style={{fontSize:11,color:T.ink}}>{fmt(totalAllocated)} grant-funded</span>}
           </div>
           {isOpen&&<div style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
             {p.outcomes&&<div style={{marginBottom:12}}>
@@ -143,8 +143,8 @@ export function Programs({data}) {
               {grants.map(g=><div key={g.grant_id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid "+T.bg2,fontSize:12}}>
                 <span style={{color:T.ink}}>{g.funder} — {g.program_name}</span>
                 <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                  <span style={{color:"#8b5cf6",fontWeight:600}}>{fmt(g.allocated)}</span>
-                  {isAdmin&&<button onClick={e=>{e.stopPropagation();removeGrantLink(p.id,g.grant_id);}} style={{background:"transparent",border:"none",color:"#ef4444",cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
+                  <span style={{color:T.ink,fontWeight:600}}>{fmt(g.allocated)}</span>
+                  {isAdmin&&<button onClick={e=>{e.stopPropagation();removeGrantLink(p.id,g.grant_id);}} style={{background:"transparent",border:"none",color:T.terracotta,cursor:"pointer",fontSize:14,lineHeight:1}}>×</button>}
                 </div>
               </div>)}
               {isAdmin&&linkGrant.programId!==p.id&&<button onClick={e=>{e.stopPropagation();setLinkGrant({programId:p.id,grantId:"",allocated:""});}}
@@ -157,7 +157,7 @@ export function Programs({data}) {
                 </select>
                 <input type="number" placeholder="Allocated $" value={linkGrant.allocated} onChange={e=>setLinkGrant(l=>({...l,allocated:e.target.value}))}
                   style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none"}}/>
-                <button onClick={()=>addGrantLink(p.id)} style={{background:"#8b5cf6",border:"none",borderRadius:8,padding:"8px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Link</button>
+                <button onClick={()=>addGrantLink(p.id)} style={{background:T.ink,border:"none",borderRadius:8,padding:"8px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Link</button>
                 <button onClick={e=>{e.stopPropagation();setLinkGrant({programId:null,grantId:"",allocated:""});}} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
               </div>}
             </div>

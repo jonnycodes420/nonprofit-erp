@@ -26,9 +26,9 @@ import { TEAM_GATED } from "../lib/tabRegistry";
 const lockIcon = color => LockGlyph({ size: 10, color });
 
 const PACE_META = {
-  met:      { label: "Goal reached",  color: T.gold,       bg: "#faf5e6" },
-  on_track: { label: "On pace",       color: T.greenMid,   bg: "#e8f3ee" },
-  behind:   { label: "Behind pace",   color: T.terracotta, bg: "#f6ece8" },
+  met:      { label: "Goal reached",  color: T.gold,       bg: T.gold50 },
+  on_track: { label: "On pace",       color: T.greenMid,   bg: T.green100 },
+  behind:   { label: "Behind pace",   color: T.terracotta, bg: T.terra100 },
 };
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
@@ -72,7 +72,7 @@ function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
 }
 
 const SOURCE_BADGE = {
-  online:  { label: "Online", bg: "#e8f3ee", color: T.greenMid },
+  online:  { label: "Online", bg: T.green100, color: T.greenMid },
   offline: { label: "Offline", bg: T.bg2, color: T.ink3 },
 };
 
@@ -324,13 +324,13 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           that single goal reads as the hero via the portfolio below. */}
       {rollup ? (
         <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns", dark: true })} style={{ background: `linear-gradient(135deg,${T.green950},${T.green800})`, borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden", border: "1px solid transparent" }}>
-          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,#c9a84c22,transparent 70%)" }} />
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>
+          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,"+T.gold500+"22,transparent 70%)" }} />
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold500, marginBottom: 10 }}>
             {rollup.activeGoalCount === 1 ? "Active goal" : `All active goals · ${rollup.activeGoalCount}`}
           </div>
           <RollupThermometer rollup={rollup} />
           {rollup.activeGoalCount > 1 && (
-            <div style={{ marginTop: 14, fontSize: 13, color: "#a9c3b2" }}>
+            <div style={{ marginTop: 14, fontSize: 13, color: T.sage400 }}>
               Combined progress across {rollup.activeGoalCount} goals — each tracks its own gifts automatically.
             </div>
           )}
@@ -437,11 +437,11 @@ function RollupThermometer({ rollup }) {
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
+          <span style={{ fontSize: 14, color: T.sage400 }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
         </div>
         {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>}
       </div>
-      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 14, background: T.bgElevated, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
@@ -508,11 +508,11 @@ function GoalThermometerDark({ goal }) {
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(goal.currentAmount)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(goal.goalAmount)}{over > 0 ? ` · ${fmtFull(over)} over` : ""}</span>
+          <span style={{ fontSize: 14, color: T.sage400 }}>of {fmtFull(goal.goalAmount)}{over > 0 ? ` · ${fmtFull(over)} over` : ""}</span>
         </div>
         <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>
       </div>
-      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 14, background: T.bgElevated, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
@@ -833,7 +833,7 @@ function FundsView({ data, onNavigate }) {
   const funds = data?.funds || [];
   return (
     <div>
-      <div style={{ background: "#fdfaf2", border: "1px solid #c9a84c55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ background: T.gold50, border: "1px solid "+T.gold500+"55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 260px" }}>
           <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>Funds live in <strong>Finance</strong> — they're the accounting home for restricted and unrestricted money. Manage balances, targets, and restrictions there so there's one source of truth.</div>
         </div>
@@ -878,7 +878,7 @@ function DepositsView({ isReadOnly, roTip }) {
           rest, and refuses to record the deposit until the cents add up. Nothing is sent.
         </div>
         <button onClick={() => !isReadOnly && setOpen(true)} disabled={isReadOnly} title={roTip} data-testid="add-a-deposit"
-          style={{ background: isReadOnly ? T.bg2 : T.greenDk, border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+          style={{ background: isReadOnly ? T.bg2 : T.greenDk, border: "none", borderRadius: 10, padding: "10px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
           Add a deposit
         </button>
       </div>

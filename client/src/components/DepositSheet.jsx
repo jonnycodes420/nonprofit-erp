@@ -26,7 +26,7 @@ import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 const STATE_META = {
   placed:           { label: "Placed",     colour: T.ink,      note: "" },
   placed_new_donor: { label: "New donor",  colour: T.greenDk,  note: "Nobody on file answers to this name. Steward will add them." },
-  needs_you:        { label: "Needs you",  colour: T.gold600 || "#a97f22", note: "" },
+  needs_you:        { label: "Needs you",  colour: T.gold600, note: "" },
   not_a_gift:       { label: "Not a gift", colour: T.ink3,     note: "Recorded on the record as a payment, out of every giving total." },
 };
 const cents = c => fmtFull((Number(c) || 0) / 100);
@@ -236,7 +236,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
             Nothing was sent. The thank-yous this earns are waiting on Home.
             This deposit can be undone as a whole for the next 24 hours, from Settings → Imports.
           </div>
-          <button onClick={onClose} style={{ background: T.greenDk, border: "none", borderRadius: 9, padding: "10px 18px", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Done</button>
+          <button onClick={onClose} style={{ background: T.greenDk, border: "none", borderRadius: 9, padding: "10px 18px", color: T.white, fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>Done</button>
         </div>
       </Modal>
     );
@@ -307,7 +307,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
           </div>
           {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 10 }}>{err}</div>}
           <button onClick={() => askPlan()} disabled={busy || !paste.trim()} data-testid="deposit-read"
-            style={{ background: busy || !paste.trim() ? T.bg2 : T.greenDk, border: "none", borderRadius: 9, padding: "10px 18px", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: busy || !paste.trim() ? "not-allowed" : "pointer", opacity: busy || !paste.trim() ? 0.6 : 1 }}>
+            style={{ background: busy || !paste.trim() ? T.bg2 : T.greenDk, border: "none", borderRadius: 9, padding: "10px 18px", color: T.white, fontSize: 13.5, fontWeight: 700, cursor: busy || !paste.trim() ? "not-allowed" : "pointer", opacity: busy || !paste.trim() ? 0.6 : 1 }}>
             {busy ? "Reading…" : "Read the slip"}
           </button>
         </>)}
@@ -370,7 +370,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                               ))}
                               {l.nearInstallmentId && (<>
                                 <button onClick={() => resolve(l.line, { installmentId: l.nearInstallmentId })}
-                                  style={{ background: T.greenDk, border: "none", borderRadius: 7, padding: "5px 10px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>It is that instalment</button>
+                                  style={{ background: T.greenDk, border: "none", borderRadius: 7, padding: "5px 10px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>It is that instalment</button>
                                 <button onClick={() => resolve(l.line, { installmentId: null })}
                                   style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 10px", color: T.ink3, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>A separate gift</button>
                               </>)}
@@ -398,7 +398,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
           </div>
 
           {/* THE ARITHMETIC, SHOWN. Not a reassurance that it worked. */}
-          <div data-testid="deposit-balance" style={{ fontSize: 12.5, color: plan.balanced === false ? (T.terra700 || "#8a3a24") : T.ink3, marginBottom: 12, lineHeight: 1.6 }}>
+          <div data-testid="deposit-balance" style={{ fontSize: 12.5, color: plan.balanced === false ? T.terra700 : T.ink3, marginBottom: 12, lineHeight: 1.6 }}>
             {cents(plan.totals.giftCents)} in gifts
             {plan.totals.notGiftCents ? ` + ${cents(plan.totals.notGiftCents)} not gifts` : ""}
             {plan.totals.needsCents ? ` + ${cents(plan.totals.needsCents)} still to answer` : ""}
@@ -413,7 +413,7 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button onClick={commit} disabled={busy || !plan.canCommit} data-testid="deposit-commit"
               title={needsYou.length ? `${needsYou.length} line${needsYou.length === 1 ? "" : "s"} still need you` : undefined}
-              style={{ background: busy || !plan.canCommit ? T.bg2 : T.greenDk, border: "none", borderRadius: 9, padding: "11px 20px", color: "#fff", fontSize: 13.5, fontWeight: 700, cursor: busy || !plan.canCommit ? "not-allowed" : "pointer", opacity: busy || !plan.canCommit ? 0.6 : 1 }}>
+              style={{ background: busy || !plan.canCommit ? T.bg2 : T.greenDk, border: "none", borderRadius: 9, padding: "11px 20px", color: T.white, fontSize: 13.5, fontWeight: 700, cursor: busy || !plan.canCommit ? "not-allowed" : "pointer", opacity: busy || !plan.canCommit ? 0.6 : 1 }}>
               {busy ? "Recording…" : plan.commitLabel}
             </button>
             <button onClick={() => { setPlan(null); setResolutions({}); }} disabled={busy}

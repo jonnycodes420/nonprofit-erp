@@ -108,7 +108,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
         <PageTitle main="Your" accent="tasks." />
         <button onClick={() => setShowAdd(v => !v)} disabled={isReadOnly}
           title={isReadOnly ? "Reactivate your subscription to make changes." : undefined}
-          style={{ background: T.greenMid, border: "none", borderRadius: 10, padding: "10px 16px", color: "#fff",
+          style={{ background: T.greenMid, border: "none", borderRadius: 10, padding: "10px 16px", color: T.white,
             fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", opacity: isReadOnly ? 0.45 : 1 }}>
           + New task
         </button>
@@ -151,7 +151,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
           {err && <div style={{ color: T.terracotta, fontSize: 12 }}>{err}</div>}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={add} disabled={!form.title.trim() || saving}
-              style={{ background: T.greenMid, border: "none", borderRadius: 8, padding: "9px 16px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!form.title.trim() || saving) ? 0.5 : 1 }}>
+              style={{ background: T.greenMid, border: "none", borderRadius: 8, padding: "9px 16px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: (!form.title.trim() || saving) ? 0.5 : 1 }}>
               {saving ? "Saving…" : "Add task"}
             </button>
             <button onClick={() => { setShowAdd(false); setErr(""); }} style={{ background: T.bg2, border: "none", borderRadius: 8, padding: "9px 16px", color: T.ink3, fontSize: 13, cursor: "pointer" }}>Cancel</button>
@@ -185,7 +185,7 @@ export function Tasks({ data, setData, isReadOnly, onNavigate, initialScope }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
             {doneTasks.map(t => (
               <div key={t.id} onClick={() => toggle(t)} style={{ display: "flex", alignItems: "center", gap: 12, background: T.white, border: `1px solid ${T.bg2}`, borderRadius: 10, padding: "9px 14px", opacity: 0.55, cursor: isReadOnly ? "default" : "pointer" }}>
-                <span style={{ width: 20, height: 20, borderRadius: 6, background: T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 11, fontWeight: 800 }}>✓</span>
+                <span style={{ width: 20, height: 20, borderRadius: 6, background: T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: T.white, fontSize: 11, fontWeight: 800 }}>✓</span>
                 <span style={{ fontSize: 13, color: T.ink3, textDecoration: "line-through", flex: 1 }}>{t.title}</span>
               </div>
             ))}
@@ -215,7 +215,7 @@ function TaskRow({ t, accent, onToggle, onDonor, isReadOnly }) {
           {t.assigned_to_name && <span style={{ fontSize: 11, color: T.ink3 }}>· {t.assigned_to_name}</span>}
         </div>
       </div>
-      {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.terracotta, background: "#f6e3dd", borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}
+      {t.priority === "high" && <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: T.terracotta, background: T.terra100, borderRadius: 99, padding: "2px 8px", flexShrink: 0 }}>HIGH</span>}
     </div>
   );
 }

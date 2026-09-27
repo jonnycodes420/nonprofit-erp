@@ -9,9 +9,21 @@ import { WIDGETS } from "../../../shared/pageWidgets.js";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  hair: "#e7e4dc",
+  wash: "#efece5",
+  bodyDark: "#3a3a35",
+  muted: "#6b6b64",
+  cream: "#f0ede6",
+  white: "#ffffff",
+};
+
+
 const muted = { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 };
 const h2 = { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" };
-const cardStyle = { background: "#fff", border: "var(--pt-card-border, 1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "20px 22px", marginBottom: 18 };
+const cardStyle = { background: "#fff", border: "var(--pt-card-border, 1px solid "+PAL.hair+")", borderRadius: "var(--pt-card-radius, 14px)", boxShadow: "var(--pt-card-shadow, none)", padding: "20px 22px", marginBottom: 18 };
 
 export function StoryBlocksView({ blocks }) {
   if (!Array.isArray(blocks) || !blocks.length) return null;
@@ -34,7 +46,7 @@ function GoalBar({ goal }) {
         <span style={{ fontWeight: 700 }}>{fmtFull(goal.raised)} raised</span>
         <span style={muted}>of {fmtFull(goal.amount)}{goal.percent != null ? ` · ${goal.percent}%` : ""}</span>
       </div>
-      <div style={{ height: 10, background: "#efece5", borderRadius: 5, overflow: "hidden" }}>
+      <div style={{ height: 10, background: PAL.wash, borderRadius: 5, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(2, Math.min(100, goal.percent || 0))}%`, height: "100%", background: "var(--pt-primary)" }} />
       </div>
     </div>
@@ -58,7 +70,7 @@ export function WidgetView({ w, ctx }) {
           {(w.heading || w.sub) && (
             <div style={{ padding: w.image ? "14px 4px 0" : "8px 4px 0" }}>
               {w.heading && <div style={{ ...h2, fontSize: w.size === "tall" ? 30 : 24, marginBottom: 4 }}>{w.heading}</div>}
-              {w.sub && <div style={{ fontSize: 15, lineHeight: 1.6, color: "#3a3a35" }}>{w.sub}</div>}
+              {w.sub && <div style={{ fontSize: 15, lineHeight: 1.6, color: PAL.bodyDark }}>{w.sub}</div>}
             </div>
           )}
         </div>
@@ -89,7 +101,7 @@ export function WidgetView({ w, ctx }) {
           {(w.items || []).map((s, i) => (
             <div key={i}>
               <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "var(--pt-serif, Georgia,serif)" }}>{s.value}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#6b6b64", textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: PAL.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -99,7 +111,7 @@ export function WidgetView({ w, ctx }) {
         <div style={cardStyle}>
           {w.heading && <h2 style={h2}>{w.heading}</h2>}
           {(w.funds || []).map(f => (
-            <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 0", borderTop: "1px solid #f0ede6" }}>
+            <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 0", borderTop: "1px solid "+PAL.cream }}>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>{f.name}</div>
                 {f.description && <div style={{ ...muted, marginTop: 2 }}>{f.description}</div>}
@@ -107,7 +119,7 @@ export function WidgetView({ w, ctx }) {
               {/* BUILD-55 — each card's Give carries ITS fund as the designation
                   (?fund= preselects on the giving page → gifts.fund_id → the
                   impact matcher), never the generic undesignated link. */}
-              <a href={`/give/${ctx.giveSlug}?fund=${encodeURIComponent(f.id)}`} style={{ background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, #fff)", textDecoration: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Give</a>
+              <a href={`/give/${ctx.giveSlug}?fund=${encodeURIComponent(f.id)}`} style={{ background: "var(--pt-button, var(--pt-primary))", color: "var(--pt-button-fg, "+PAL.white+")", textDecoration: "none", borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Give</a>
             </div>
           ))}
           {!(w.funds || []).length && <div style={muted}>No funds selected yet.</div>}
@@ -127,7 +139,7 @@ export function WidgetView({ w, ctx }) {
           )}
           <div style={{ padding: "20px 22px" }}>
             <h2 style={{ ...h2, marginBottom: 6 }}>{c.name}</h2>
-            {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: "#3a3a35" }}>{c.description}</p>}
+            {c.description && <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 8px", color: PAL.bodyDark }}>{c.description}</p>}
             <StoryBlocksView blocks={c.story} />
             <GoalBar goal={c.goal} />
           </div>
@@ -180,7 +192,7 @@ export function WidgetView({ w, ctx }) {
               <div key={i} style={{ width: 120, textAlign: "center" }}>
                 {m.photo
                   ? <img src={resolveAssetUrl(m.photo)} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", margin: "0 auto 8px", display: "block" }} />
-                  : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--pt-primary)", color: "var(--pt-primary-fg,#fff)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 26, margin: "0 auto 8px" }}>{m.name.slice(0, 1)}</div>}
+                  : <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--pt-primary)", color: "var(--pt-primary-fg,"+PAL.white+")", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 26, margin: "0 auto 8px" }}>{m.name.slice(0, 1)}</div>}
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{m.name}</div>
                 {m.role && <div style={{ ...muted, fontSize: 12 }}>{m.role}</div>}
               </div>
@@ -193,7 +205,7 @@ export function WidgetView({ w, ctx }) {
       return (
         <div style={cardStyle}>
           {(w.items || []).map((it, i) => (
-            <details key={i} style={{ borderTop: i ? "1px solid #f0ede6" : "none", padding: "10px 0" }}>
+            <details key={i} style={{ borderTop: i ? "1px solid "+PAL.cream : "none", padding: "10px 0" }}>
               <summary style={{ fontSize: 14, fontWeight: 700, cursor: "pointer" }}>{it.q}</summary>
               <div style={{ fontSize: 14, lineHeight: 1.7, marginTop: 6 }}>{it.a}</div>
             </details>
@@ -219,9 +231,9 @@ export function WidgetView({ w, ctx }) {
       // §5 vertical rhythm — a solid band in the org's own color, not another
       // white card in a uniform stack.
       return (
-        <div style={{ background: "var(--pt-primary)", color: "var(--pt-primary-fg, #fff)", borderRadius: "var(--pt-card-radius, 14px)", padding: "26px 24px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ background: "var(--pt-primary)", color: "var(--pt-primary-fg, "+PAL.white+")", borderRadius: "var(--pt-card-radius, 14px)", padding: "26px 24px", marginBottom: 18, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div style={{ fontFamily: "var(--pt-serif, Georgia,serif)", fontSize: 20 }}>{w.heading || "Make a new gift"}</div>
-          <a href={`/give/${ctx.giveSlug}`} style={{ background: "var(--pt-primary-fg, #fff)", color: "var(--pt-primary)", textDecoration: "none", borderRadius: 10, padding: "12px 26px", fontSize: 15, fontWeight: 700 }}>{w.buttonLabel || "Give"}</a>
+          <a href={`/give/${ctx.giveSlug}`} style={{ background: "var(--pt-primary-fg, "+PAL.white+")", color: "var(--pt-primary)", textDecoration: "none", borderRadius: 10, padding: "12px 26px", fontSize: 15, fontWeight: 700 }}>{w.buttonLabel || "Give"}</a>
         </div>
       );
     case "mygiving":

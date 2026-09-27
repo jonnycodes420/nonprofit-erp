@@ -45,11 +45,24 @@ const PrivacyPage        = React.lazy(() => import("./pages/PrivacyPage"));
 import { Analytics } from '@vercel/analytics/react'
 import { SpeedInsights } from '@vercel/speed-insights/react'
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  cream: "#f0ede6",
+  cream3: "#d4cfc6",
+  emerald: "#0d5c3a",
+  white: "#ffffff",
+  cardEdge: "#e0dccf",
+  terracotta: "#b8593f",
+  bodyMuted: "#5b6b60",
+};
+
+
 // Matches the app shell's own loading state (cream ground, small spinner)
 // so a chunk load doesn't flash a bare white page.
 function RouteFallback() {
-  return <div style={{ minHeight: "100vh", background: "#f0ede6", display: "flex", alignItems: "center", justifyContent: "center" }}>
-    <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #d4cfc6", borderTopColor: "#0d5c3a", borderRadius: "50%", animation: "lpsp 0.7s linear infinite" }} />
+  return <div style={{ minHeight: "100vh", background: PAL.cream, display: "flex", alignItems: "center", justifyContent: "center" }}>
+    <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid "+PAL.cream3, borderTopColor: PAL.emerald, borderRadius: "50%", animation: "lpsp 0.7s linear infinite" }} />
     <style>{`@keyframes lpsp{to{transform:rotate(360deg)}}`}</style>
   </div>;
 }
@@ -131,11 +144,11 @@ function RequireSuperAdmin({ children }) {
 // module out of route-split. Inline fallback, no external deps.
 function RootErrorFallback() {
   return (
-    <div style={{ minHeight: "100vh", background: "#f0ede6", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-      <div style={{ maxWidth: 420, textAlign: "center", background: "#fff", border: "1px solid #e0dccf", borderRadius: 16, padding: "30px 26px" }}>
-        <div style={{ fontSize: 22, color: "#b8593f", fontFamily: "'DM Serif Display',Georgia,serif", marginBottom: 8 }}>Something went wrong</div>
-        <div style={{ fontSize: 13.5, color: "#5b6b60", lineHeight: 1.6, marginBottom: 18 }}>The app hit an unexpected error and it's been reported. Reloading usually clears it.</div>
-        <button onClick={() => window.location.reload()} style={{ background: "#0d5c3a", border: "none", borderRadius: 10, padding: "10px 20px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
+    <div style={{ minHeight: "100vh", background: PAL.cream, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+      <div style={{ maxWidth: 420, textAlign: "center", background: PAL.white, border: "1px solid "+PAL.cardEdge, borderRadius: 16, padding: "30px 26px" }}>
+        <div style={{ fontSize: 22, color: PAL.terracotta, fontFamily: "'DM Serif Display',Georgia,serif", marginBottom: 8 }}>Something went wrong</div>
+        <div style={{ fontSize: 13.5, color: PAL.bodyMuted, lineHeight: 1.6, marginBottom: 18 }}>The app hit an unexpected error and it's been reported. Reloading usually clears it.</div>
+        <button onClick={() => window.location.reload()} style={{ background: PAL.emerald, border: "none", borderRadius: 10, padding: "10px 20px", color: PAL.white, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Reload</button>
       </div>
     </div>
   );

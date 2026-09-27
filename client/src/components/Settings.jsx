@@ -18,12 +18,12 @@ import { SecurityPanel } from "./SecurityPanel";
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
 // rows may have been written with either spelling (see server.js).
 const BILLING_STATUS_META = {
-  active:        { label:"Active",        bg:"#edf3ee", color:"#0d5c3a", border:"#0d5c3a" },
-  trialing:      { label:"Trialing",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
-  past_due:      { label:"Past Due",      bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
-  trial_expired: { label:"Trial Expired", bg:"#f6e3dd", color:"#8a3a24", border:"#eac6b8" },
-  canceled:      { label:"Canceled",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
-  cancelled:     { label:"Canceled",      bg:"#1a2e1f", color:"rgba(240,237,230,0.7)", border:"#2d4a35" },
+  active:        { label:"Active",        bg:T.green100, color:T.greenDk, border:T.greenDk },
+  trialing:      { label:"Trialing",      bg:T.bgElevated, color:"rgba(240,237,230,0.7)", border:T.green650 },
+  past_due:      { label:"Past Due",      bg:T.terra100, color:T.terra700, border:T.terra200 },
+  trial_expired: { label:"Trial Expired", bg:T.terra100, color:T.terra700, border:T.terra200 },
+  canceled:      { label:"Canceled",      bg:T.bgElevated, color:"rgba(240,237,230,0.7)", border:T.green650 },
+  cancelled:     { label:"Canceled",      bg:T.bgElevated, color:"rgba(240,237,230,0.7)", border:T.green650 },
 };
 
 // QrCodeBlock/EmbedCodeBlock now live in ./ShareBlocks (factored out so
@@ -35,8 +35,8 @@ function slugifyPreview(s){
 }
 
 const GP_STATUS_META={
-  active:   {label:"Active",   bg:"#edf3ee", color:"#0d5c3a", border:"#0d5c3a"},
-  archived: {label:"Archived", bg:"#f3f0eb", color:"#6b6b6b", border:"#d4cfc6"},
+  active:   {label:"Active",   bg:T.green100, color:T.greenDk, border:T.greenDk},
+  archived: {label:"Archived", bg:T.bg2, color:T.ink3, border:T.bg3},
 };
 
 // A shareable URL renders as labeled actions — open + copy — never bare
@@ -292,7 +292,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <SectionLabel>Giving Pages</SectionLabel>
         {isAdmin&&<button onClick={openAdd} disabled={isReadOnly||!orgSlug} title={isReadOnly?"Reactivate your subscription to make changes.":(!orgSlug?"Set up your organization first.":undefined)}
-          style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",opacity:(isReadOnly||!orgSlug)?0.45:1}}>
+          style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:(isReadOnly||!orgSlug)?"not-allowed":"pointer",opacity:(isReadOnly||!orgSlug)?0.45:1}}>
           + New Giving Page
         </button>}
       </div>
@@ -336,22 +336,22 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
                 <button onClick={()=>setShareOpenId(shareOpen?null:p.id)}
-                  style={{background:shareOpen?T.greenDk:T.bg,border:"1px solid "+(shareOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:shareOpen?"#fff":T.ink2,cursor:"pointer"}}>
+                  style={{background:shareOpen?T.greenDk:T.bg,border:"1px solid "+(shareOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:shareOpen?T.white:T.ink2,cursor:"pointer"}}>
                   Share {shareOpen?"▲":"▼"}
                 </button>
                 <button onClick={()=>toggleFundraisers(p)}
-                  style={{background:fundraisersOpen?T.greenDk:T.bg,border:"1px solid "+(fundraisersOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:fundraisersOpen?"#fff":T.ink2,cursor:"pointer"}}>
+                  style={{background:fundraisersOpen?T.greenDk:T.bg,border:"1px solid "+(fundraisersOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:fundraisersOpen?T.white:T.ink2,cursor:"pointer"}}>
                   Fundraisers{fundraisersByPage[p.id]?` (${fundraisersByPage[p.id].length})`:""} {fundraisersOpen?"▲":"▼"}
                 </button>
                 {isAdmin&&<>
                   <button onClick={()=>openEdit(p)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
                   <a href={`/portal-editor?page=${p.id}`} style={{background:T.gold500,border:"none",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink,cursor:"pointer",textDecoration:"none"}}>Build the page</a>
                   <button onClick={()=>toggleArchive(p)} disabled={isReadOnly}
-                    style={{background:p.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(p.status==="active"?"#eac6b8":"#0d5c3a"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?"#8a3a24":"#0d5c3a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                    style={{background:p.status==="active"?T.terra100:T.green100,border:"1px solid "+(p.status==="active"?T.terra200:T.greenDk),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:p.status==="active"?T.terra700:T.greenDk,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                     {p.status==="active"?"Archive":"Reactivate"}
                   </button>
                   <button onClick={()=>deletePage(p)}
-                    style={{background:"transparent",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>
+                    style={{background:"transparent",border:"1px solid "+T.terra200,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.terra700,cursor:"pointer"}}>
                     Delete
                   </button>
                 </>}
@@ -406,7 +406,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                         </div>
                         {isAdmin&&(
                           <button onClick={()=>toggleFundraiserArchive(p.id,f)} disabled={isReadOnly}
-                            style={{flexShrink:0,background:f.status==="active"?"#f6e3dd":"#edf3ee",border:"1px solid "+(f.status==="active"?"#eac6b8":"#0d5c3a"),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?"#8a3a24":"#0d5c3a",cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
+                            style={{flexShrink:0,background:f.status==="active"?T.terra100:T.green100,border:"1px solid "+(f.status==="active"?T.terra200:T.greenDk),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:f.status==="active"?T.terra700:T.greenDk,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.6:1}}>
                             {f.status==="active"?"Archive":"Reactivate"}
                           </button>
                         )}
@@ -492,7 +492,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={closeModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
               <button onClick={save} disabled={saving||!form.title.trim()}
-                style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(saving||!form.title.trim())?0.7:1}}>
+                style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:(saving||!form.title.trim())?0.7:1}}>
                 {saving?"Saving…":editing?"Save changes":"Create giving page"}
               </button>
             </div>
@@ -512,7 +512,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 // server response is the source of truth (it may hand back a slightly deepened
 // color for legibility — we show a note when it does). Applied only to accent
 // moments across app/emails/receipts, never a full re-skin.
-const PRESET_ACCENTS=["#0d5c3a","#0d5c3a","#b8593f","#7c3a12","#3f5c8a","#6b3f8a","#8a5a1f","#0f1a12"];
+const PRESET_ACCENTS=[T.greenDk,T.greenDk,T.terracotta,T.accentRust,T.accentSlate,T.accentPlum,T.accentOchre,T.ink];
 function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [logo,setLogo]=useState("");        // data URI or ""
   const [accent,setAccent]=useState("");    // hex or ""
@@ -526,7 +526,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
     apiFetch("/org").then(o=>{setLogo(o.logo_data||"");setAccent(o.brand_accent||"");setLoaded(true);}).catch(()=>setLoaded(true));
   },[]);
   const disabled=!isAdmin||isReadOnly;
-  const effAccent=accent||"#0d5c3a";
+  const effAccent=accent||T.greenDk;
   async function save(){
     if(disabled||saving)return;
     setSaving(true);setErr("");setMsg("");
@@ -562,7 +562,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Accent color</div>
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <input type="color" value={effAccent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} style={{width:40,height:40,border:"1px solid "+T.bg3,borderRadius:8,background:"none",cursor:disabled?"not-allowed":"pointer",padding:2}}/>
-              <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder="#0d5c3a" style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
+              <input value={accent} onChange={e=>{setDirty(true);setAccent(e.target.value);}} disabled={disabled} placeholder={T.greenDk} style={{width:110,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"monospace"}}/>
               {accent&&!disabled&&<button onClick={()=>setAccent("")} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Reset to Steward gold</button>}
             </div>
             <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
@@ -570,7 +570,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             </div>
           </div>
           {isAdmin&&<div style={{display:"flex",alignItems:"center",gap:12}}>
-            <button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:disabled?T.bg3:T.greenMid,border:"none",borderRadius:9,padding:"10px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save branding"}</button>
+            <button onClick={save} disabled={disabled||saving} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:disabled?T.bg3:T.greenMid,border:"none",borderRadius:9,padding:"10px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:disabled?"not-allowed":"pointer"}}>{saving?"Saving…":"Save branding"}</button>
             {msg&&<span style={{fontSize:12,color:T.greenMid}}>{msg}</span>}
             {err&&<span style={{fontSize:12,color:T.terracotta}}>{err}</span>}
           </div>}
@@ -581,11 +581,11 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
           <div style={{border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden",background:T.bg}}>
             <div style={{background:effAccent,padding:"14px 18px",display:"flex",alignItems:"center",gap:10}}>
               {logo&&<img src={logo} alt="" style={{height:26,maxWidth:90,objectFit:"contain"}}/>}
-              <span style={{color:"#fff",fontWeight:800,fontSize:15}}>Your Organization</span>
+              <span style={{color:T.white,fontWeight:800,fontSize:15}}>Your Organization</span>
             </div>
             <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:13,color:T.ink3}}>Dear Jordan, thank you for your generous gift…</div>
-              <button style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:700}}>Primary action</button>
+              <button style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:12,fontWeight:700}}>Primary action</button>
               <div style={{fontSize:11,color:T.ink3}}>The dashboard welcome, receipts, and donor emails use this header.</div>
             </div>
           </div>
@@ -661,7 +661,7 @@ function TimezoneCard({orgId,isAdmin,isReadOnly,focused}){
           {tz&&!ZONES.some(([z])=>z===tz)&&<option value={tz}>{tz}</option>}
         </select>
         {today&&<span style={{fontSize:12,color:T.ink3}}>Today here is <strong style={{color:T.ink}}>{today}</strong></span>}
-        {savedAt>0&&<span style={{fontSize:12,color:T.green||"#0d5c3a"}}>Saved</span>}
+        {savedAt>0&&<span style={{fontSize:12,color:T.green||T.greenDk}}>Saved</span>}
       </div>
       {err&&<div style={{fontSize:12,color:T.terracotta,marginTop:8}}>{err}</div>}
       {!isAdmin&&<div style={{fontSize:12,color:T.ink3,marginTop:8}}>Only an admin can change this.</div>}
@@ -699,7 +699,7 @@ function CoverFeesCard({orgId,isAdmin}){
           <button onClick={toggle} disabled={enabled===null||saving}
             style={{background:enabled?T.greenDk:T.bg3,border:"none",borderRadius:99,width:46,height:26,position:"relative",cursor:"pointer",flexShrink:0,transition:"background 0.15s",opacity:enabled===null?0.5:1}}
             aria-label={enabled?"Disable donor-covers-fees":"Enable donor-covers-fees"}>
-            <span style={{position:"absolute",top:3,left:enabled?23:3,width:20,height:20,background:"#fff",borderRadius:"50%",transition:"left 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
+            <span style={{position:"absolute",top:3,left:enabled?23:3,width:20,height:20,background:T.white,borderRadius:"50%",transition:"left 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
           </button>
         )}
       </div>
@@ -809,7 +809,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
           <SectionLabel>Tax Receipts</SectionLabel>
-          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?"#edf3ee":"#f3f0eb",color:form.receiptsEnabled?"#0d5c3a":"#6b6b6b",border:"1px solid "+(form.receiptsEnabled?"#0d5c3a":"#d4cfc6")}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:form.receiptsEnabled?T.green100:T.bg2,color:form.receiptsEnabled?T.greenDk:T.ink3,border:"1px solid "+(form.receiptsEnabled?T.greenDk:T.bg3)}}>
             {form.receiptsEnabled?"Enabled":"Not enabled"}
           </span>
         </div>
@@ -840,25 +840,25 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
         <div style={lbl}>Custom message (optional)</div>
         <textarea value={form.receiptCustomMessage} onChange={e=>setForm(f=>({...f,receiptCustomMessage:e.target.value}))} placeholder="A warm line or two for {{donor_name}}, added to every receipt." rows={3} style={{...inp,resize:"vertical",marginBottom:6}} disabled={!isAdmin||isReadOnly}/>
 
-        {!canEnable&&<div style={{fontSize:12,color:"#8a6d1f",background:"#f6eccf",borderRadius:8,padding:"8px 12px",marginBottom:12}}>Legal name, EIN, and receipt address are all required before receipts can be enabled.</div>}
+        {!canEnable&&<div style={{fontSize:12,color:T.gold700,background:T.gold100,borderRadius:8,padding:"8px 12px",marginBottom:12}}>Legal name, EIN, and receipt address are all required before receipts can be enabled.</div>}
 
-        {saveErr&&<div style={{fontSize:12,color:"#8a3a24",background:"#f6e3dd",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{saveErr}</div>}
+        {saveErr&&<div style={{fontSize:12,color:T.terra700,background:T.terra100,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{saveErr}</div>}
 
         {isAdmin&&(
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
             <button onClick={()=>save()} disabled={saving||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-              style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:(saving||isReadOnly)?"not-allowed":"pointer",opacity:(saving||isReadOnly)?0.6:1}}>
+              style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:12,fontWeight:700,cursor:(saving||isReadOnly)?"not-allowed":"pointer",opacity:(saving||isReadOnly)?0.6:1}}>
               {saving?"Saving…":"Save settings"}
             </button>
             <button onClick={()=>save(!form.receiptsEnabled)} disabled={saving||isReadOnly||(!form.receiptsEnabled&&!canEnable)}
               title={isReadOnly?"Reactivate your subscription to make changes.":(!form.receiptsEnabled&&!canEnable)?"Fill in legal name, EIN, and receipt address first.":undefined}
-              style={{background:form.receiptsEnabled?"#f6e3dd":T.green,border:"1px solid "+(form.receiptsEnabled?"#eac6b8":T.green),borderRadius:8,padding:"9px 16px",color:form.receiptsEnabled?"#8a3a24":"#fff",fontSize:12,fontWeight:700,cursor:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?"not-allowed":"pointer",opacity:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?0.6:1}}>
+              style={{background:form.receiptsEnabled?T.terra100:T.green,border:"1px solid "+(form.receiptsEnabled?T.terra200:T.green),borderRadius:8,padding:"9px 16px",color:form.receiptsEnabled?T.terra700:T.white,fontSize:12,fontWeight:700,cursor:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?"not-allowed":"pointer",opacity:(saving||isReadOnly||(!form.receiptsEnabled&&!canEnable))?0.6:1}}>
               {form.receiptsEnabled?"Disable receipts":"Enable receipts"}
             </button>
             <button onClick={downloadPreview} disabled={previewLoading} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 16px",color:T.ink2,fontSize:12,fontWeight:600,cursor:previewLoading?"not-allowed":"pointer"}}>
               {previewLoading?"Generating…":"Preview receipt"}
             </button>
-            {saveMsg&&<span style={{fontSize:12,color:"#0d5c3a",fontWeight:600}}>✓ {saveMsg}</span>}
+            {saveMsg&&<span style={{fontSize:12,color:T.greenDk,fontWeight:600}}>✓ {saveMsg}</span>}
           </div>
         )}
       </div>
@@ -877,20 +877,20 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
             </button>
           </div>
           {!form.receiptsEnabled&&<div style={{fontSize:12,color:T.ink3}}>Enable tax receipts above first.</div>}
-          {runErr&&<div style={{fontSize:12,color:"#8a3a24",background:"#f6e3dd",borderRadius:8,padding:"8px 12px",marginBottom:10}}>{runErr}</div>}
+          {runErr&&<div style={{fontSize:12,color:T.terra700,background:T.terra100,borderRadius:8,padding:"8px 12px",marginBottom:10}}>{runErr}</div>}
           {dryRunResult&&(
             <div style={{background:T.bg,borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:T.ink}}>
               <strong>{dryRunResult.donorCount}</strong> donor{dryRunResult.donorCount===1?"":"s"} · <strong>{dryRunResult.giftCount}</strong> gift{dryRunResult.giftCount===1?"":"s"} in {yearEndYear}
-              {dryRunResult.missingEmailCount>0&&<span style={{color:"#8a6d1f"}}> · {dryRunResult.missingEmailCount} donor{dryRunResult.missingEmailCount===1?" has":"s have"} no email on file (statement generated but not sent)</span>}
+              {dryRunResult.missingEmailCount>0&&<span style={{color:T.gold700}}> · {dryRunResult.missingEmailCount} donor{dryRunResult.missingEmailCount===1?" has":"s have"} no email on file (statement generated but not sent)</span>}
               <div style={{marginTop:10}}>
-                <button onClick={generateAndSend} disabled={runLoading} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:"#fff",fontSize:12,fontWeight:700,cursor:runLoading?"not-allowed":"pointer"}}>
+                <button onClick={generateAndSend} disabled={runLoading} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:12,fontWeight:700,cursor:runLoading?"not-allowed":"pointer"}}>
                   {runLoading?"Generating & sending…":"Generate & send"}
                 </button>
               </div>
             </div>
           )}
           {runResult&&(
-            <div style={{background:"#edf3ee",border:"1px solid #0d5c3a",borderRadius:10,padding:"12px 16px",fontSize:13,color:"#0d5c3a"}}>
+            <div style={{background:T.green100,border:"1px solid "+T.greenDk,borderRadius:10,padding:"12px 16px",fontSize:13,color:T.greenDk}}>
               ✓ Generated <strong>{runResult.generated}</strong> statement{runResult.generated===1?"":"s"}, emailed <strong>{runResult.emailed}</strong>{runResult.skipped>0?`, skipped ${runResult.skipped}`:""}.
             </div>
           )}
@@ -925,7 +925,7 @@ export function PortalWebsiteSnippet({ps}){
   const givingUrl=`${base}/giving#from=${ps.org_slug}`;
   const orgName=ps.display_name||"our organization";
   const linkHtml=`<a href="${givingUrl}">See your giving with ${orgName} — receipts, recurring gifts, and history</a>`;
-  const buttonHtml=`<a href="${givingUrl}" style="display:inline-block;background:#0f1a12;color:#f0ede6;padding:10px 22px;border-radius:8px;font-family:sans-serif;font-size:14px;font-weight:600;text-decoration:none;">Your giving account</a>`;
+  const buttonHtml=`<a href="${givingUrl}" style="display:inline-block;background:${T.ink};color:${T.inkInverse};padding:10px 22px;border-radius:8px;font-family:sans-serif;font-size:14px;font-weight:600;text-decoration:none;">Your giving account</a>`;
   const copy=async(label,text)=>{
     try{await navigator.clipboard.writeText(text);setCopied(label);setTimeout(()=>setCopied(""),2000);}
     catch{/* clipboard blocked — the text is selectable below */}
@@ -964,7 +964,7 @@ export function PortalWebsiteSnippet({ps}){
     </div>
   );
 }
-const lblCopy={fontSize:11,fontWeight:700,color:"#6b6b64",textTransform:"uppercase",letterSpacing:"0.07em"};
+const lblCopy={fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em"};
 
 // The snippet renders in the Donor Portal hub now (a share/links artifact);
 // this gate keeps the enabled+listed+slug rule in ONE place (pinned by
@@ -1722,7 +1722,7 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
   const quietBtn={font:"inherit",fontSize:12.5,padding:"6px 11px",borderRadius:8,cursor:"pointer",
     background:"none",color:T.ink3,border:"1px solid "+T.bg3};
   const greenBtn={font:"inherit",fontSize:12.5,fontWeight:700,padding:"6px 12px",borderRadius:8,
-    border:"none",background:T.green,color:"#fff",cursor:"pointer"};
+    border:"none",background:T.green,color:T.white,cursor:"pointer"};
 
   const body=(
     <>
@@ -2510,7 +2510,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div>
             <div style={{fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.01em"}}>{userName}</div>
             <div style={{fontSize:13,color:T.ink3,marginTop:2}}>{userEmail}</div>
-            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:"#5a554f"}/></div>
+            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:T.ink3}/></div>
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
@@ -2530,12 +2530,12 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="team"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Team Members</SectionLabel>
-          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
+          {isAdmin&&<button onClick={()=>setShowInvite(true)} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite Staff</button>}
         </div>
         {billing&&!billing.isTrial&&billing.limits?.seats!==999999999&&billing.usage?.seats>=billing.limits?.seats&&(
-          <div style={{background:"#faf9f6",border:"1px solid #d4cfc6",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#4a5e4f",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+          <div style={{background:T.ground,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:T.ink3,display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
             <span>You're using all {billing.limits.seats} seat{billing.limits.seats!==1?"s":""}.</span>
-            <a href="/pricing" style={{color:"#0d5c3a",fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
+            <a href="/pricing" style={{color:T.greenDk,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>Upgrade your plan →</a>
           </div>
         )}
         {team.map((m,i)=>(
@@ -2547,7 +2547,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
-            <Pill label={m.role} color={m.role==="admin"?T.greenDk:"#5a554f"}/>
+            <Pill label={m.role} color={m.role==="admin"?T.greenDk:T.ink3}/>
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps
@@ -2574,10 +2574,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <SectionLabel>Payments</SectionLabel>
         {stripe?.connected?(
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:10,padding:"10px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"10px 16px"}}>
               <div>
-                <div style={{fontSize:13,fontWeight:700,color:"#0d5c3a"}}>Stripe Connected</div>
-                <div style={{fontSize:11,color:"#0d5c3a",marginTop:1}}>Account: {stripe.accountId}</div>
+                <div style={{fontSize:13,fontWeight:700,color:T.greenDk}}>Stripe Connected</div>
+                <div style={{fontSize:11,color:T.greenDk,marginTop:1}}>Account: {stripe.accountId}</div>
               </div>
             </div>
             <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
@@ -2589,7 +2589,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Steward never touches your money — donors pay directly to your Stripe account.</div>
             </div>
             {isAdmin&&<button onClick={connectStripe} disabled={stripeLoading}
-              style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
+              style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
               {stripeLoading?"Setting up…":"Set up Stripe →"}
             </button>}
           </div>
@@ -2635,7 +2635,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <SectionLabel>Gmail</SectionLabel>
         <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Sync donor emails automatically to your interaction timeline.</div>
         <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",background:T.bg,borderRadius:12,border:"1px solid "+T.bg3,flexWrap:"wrap"}}>
-          <div style={{width:40,height:40,borderRadius:10,background:"#fff",border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
+          <div style={{width:40,height:40,borderRadius:10,background:T.white,border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
             @
           </div>
           <div style={{flex:1,minWidth:180}}>
@@ -2654,22 +2654,22 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
             {gmailStatus?.connected ? (
               <>
-                <div style={{display:"flex",alignItems:"center",gap:5,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:8,padding:"5px 10px"}}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:"#1e6b45"}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:"#0d5c3a"}}>Connected</span>
+                <div style={{display:"flex",alignItems:"center",gap:5,background:T.green100,border:"1px solid "+T.green200,borderRadius:8,padding:"5px 10px"}}>
+                  <div style={{width:7,height:7,borderRadius:"50%",background:T.green600}}/>
+                  <span style={{fontSize:12,fontWeight:600,color:T.greenDk}}>Connected</span>
                 </div>
                 <button onClick={syncGmailNow} disabled={gmailSyncing}
-                  style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:gmailSyncing?"not-allowed":"pointer",opacity:gmailSyncing?0.7:1}}>
+                  style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:gmailSyncing?"not-allowed":"pointer",opacity:gmailSyncing?0.7:1}}>
                   {gmailSyncing?"Syncing…":"Sync now"}
                 </button>
                 <button onClick={disconnectGmail}
-                  style={{background:"transparent",border:"none",fontSize:12,color:"#8a3a24",cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
+                  style={{background:"transparent",border:"none",fontSize:12,color:T.terra700,cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
                   Disconnect
                 </button>
               </>
             ) : gmailStatus?.disconnected ? (
               <button onClick={connectGmail}
-                style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                 Reconnect Gmail →
               </button>
             ) : (
@@ -2681,7 +2681,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           </div>
         </div>
         {gmailToast&&(
-          <div style={{marginTop:12,background:"#edf3ee",border:"1px solid #dce7df",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#0d5c3a",fontWeight:600}}>
+          <div style={{marginTop:12,background:T.green100,border:"1px solid "+T.green200,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.greenDk,fontWeight:600}}>
             ✓ {gmailToast}
           </div>
         )}
@@ -2732,7 +2732,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {/* BUILD-80 Part 10 — kept-raw values: what the migration stored that
           doesn't type, each fixable in place through the validated seam. */}
       {isAdmin&&keptRaw&&keptRaw.length>0&&(
-        <div style={{background:T.white,border:"1px solid "+(T.gold500||"#c9a84c")+"55",borderRadius:16,padding:"24px 28px",marginBottom:16}}>
+        <div style={{background:T.white,border:"1px solid "+T.gold500+"55",borderRadius:16,padding:"24px 28px",marginBottom:16}}>
           <SectionLabel>Values that don't match their field's type</SectionLabel>
           <div style={{fontSize:12.5,color:T.ink3,margin:"10px 0 12px",lineHeight:1.6}}>
             These came in through the one-time migration and were kept as written. Fix each in place — the corrected value is validated against the field's type before it's stored.
@@ -2748,7 +2748,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               <input defaultValue={String(row.value)} onChange={e=>setKeptRawEdits(p=>({...p,[`${row.donorId}|${row.key}`]:e.target.value}))}
                 style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"4px 8px",fontSize:12,color:T.ink,width:140}}/>
               <button onClick={()=>fixKeptRaw(row)} disabled={isReadOnly}
-                style={{background:T.green,border:"none",borderRadius:6,padding:"4px 10px",color:"#fff",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>Fix</button>
+                style={{background:T.green,border:"none",borderRadius:6,padding:"4px 10px",color:T.white,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>Fix</button>
             </div>
           ))}
           {keptRaw.length>30&&<div style={{fontSize:12,color:T.ink3,marginTop:6}}>+{keptRaw.length-30} more.</div>}
@@ -2757,7 +2757,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Custom Fields</SectionLabel>
-          {isAdmin&&<button onClick={openAddField} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Field</button>}
+          {isAdmin&&<button onClick={openAddField} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Field</button>}
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
@@ -2766,7 +2766,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{display:"flex",gap:6,marginBottom:12}}>
           {["donor","gift"].map(en=>(
             <button key={en} onClick={()=>setCfEntity(en)}
-              style={{background:cfEntity===en?T.green:T.bg,border:"1px solid "+(cfEntity===en?T.green:T.bg3),borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:cfEntity===en?"#fff":T.ink2,cursor:"pointer"}}>
+              style={{background:cfEntity===en?T.green:T.bg,border:"1px solid "+(cfEntity===en?T.green:T.bg3),borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:cfEntity===en?T.white:T.ink2,cursor:"pointer"}}>
               {en==="donor"?"Donor fields":"Gift fields"}
             </button>
           ))}
@@ -2820,7 +2820,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Impact Metrics</SectionLabel>
-          {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
+          {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
@@ -2837,7 +2837,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </div>
             {isAdmin&&<div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={()=>openEditMetric(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer"}}>Edit</button>
-              <button onClick={()=>deleteImMetric(m.id)} style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:"#8a3a24",cursor:"pointer"}}>Delete</button>
+              <button onClick={()=>deleteImMetric(m.id)} style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.terra700,cursor:"pointer"}}>Delete</button>
             </div>}
           </div>
         ))}
@@ -2852,7 +2852,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="imports"&&<><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
 
       {section==="data"&&<>
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"24px 28px"}}>
+      <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Export your data</SectionLabel>
         <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Your data is yours.</div>
         <div style={{fontSize:13,color:T.ink3,marginBottom:6,lineHeight:1.6,maxWidth:520}}>
@@ -2861,7 +2861,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{isAdmin?"CSV opens anywhere; JSON is the machine-readable copy of the same data.":"The full CSV export is available to your organization's admins. You can still download the JSON export below."}</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
           {isAdmin&&<button onClick={exportCsv} disabled={exportingCsv}
-            style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exportingCsv?"not-allowed":"pointer",opacity:exportingCsv?0.7:1}}>
+            style={{background:T.gold500,color:T.white,border:"none",borderRadius:8,padding:"10px 22px",fontSize:13,fontWeight:700,cursor:exportingCsv?"not-allowed":"pointer",opacity:exportingCsv?0.7:1}}>
             {exportingCsv?"Building export…":"Export all data (CSV)"}
           </button>}
           <button onClick={exportData} disabled={exporting}
@@ -2912,7 +2912,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       )}
 
       {sampleStatus&&(
-        <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid #c9a84c",borderRadius:16,padding:"20px 24px"}}>
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"20px 24px"}}>
           <SectionLabel>Demo Data</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6}}>
             Instantly populate this workspace with a realistic sample dataset — 25 donors across every stage, gifts, grants, events, campaigns, and tasks — so you can explore every feature without entering real data first.
@@ -2921,13 +2921,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
               <span style={{fontSize:13,color:T.ink3,background:T.bg,borderRadius:8,padding:"6px 12px"}}>{sampleStatus.sampleDonorCount} sample donors loaded</span>
               <button onClick={clearSampleData} disabled={sampleClearing}
-                style={{background:"#f6e3dd",color:"#8a3a24",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
+                style={{background:T.terra100,color:T.terra700,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:600,cursor:sampleClearing?"not-allowed":"pointer",opacity:sampleClearing?0.7:1}}>
                 {sampleClearing?"Clearing…":"Clear sample data"}
               </button>
             </div>
           ):(
             <button onClick={loadSampleData} disabled={sampleLoading}
-              style={{background:"#c9a84c",color:"#fff",border:"none",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
+              style={{background:T.gold500,color:T.white,border:"none",borderRadius:8,padding:"10px 20px",fontSize:13,fontWeight:700,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1}}>
               {sampleLoading?"Loading sample data…":"Load sample data"}
             </button>
           )}
@@ -3051,12 +3051,12 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 </div>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                   {isSubscriber&&hasSub&&(
-                    <button onClick={openBillingPortal} disabled={portalLoading} style={{background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:portalLoading?"wait":"pointer",opacity:portalLoading?0.7:1}}>
+                    <button onClick={openBillingPortal} disabled={portalLoading} style={{background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:portalLoading?"wait":"pointer",opacity:portalLoading?0.7:1}}>
                       {portalLoading?"Opening…":"Manage billing →"}
                     </button>
                   )}
                   {(isUpgradable||(isSubscriber&&!hasSub))&&(
-                    <a href="/pricing" style={{display:"inline-block",background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
+                    <a href="/pricing" style={{display:"inline-block",background:T.greenMid,border:"none",borderRadius:8,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
                       Choose a plan →
                     </a>
                   )}
@@ -3144,7 +3144,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   aria-label="The address donors should see" placeholder="ada@yourcharity.org"
                   style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",width:260}}/>
                 <button onClick={claimDomain} disabled={sdBusy} data-testid="sd-claim"
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
                   {sdBusy?"Setting up…":"Use this address"}</button>
               </div>
             )}
@@ -3153,13 +3153,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
                   {sd.verified
-                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.green100||"#edf3ee",color:T.greenDk,border:"1px solid "+(T.green200||"#dce7df"),borderRadius:99,padding:"2px 9px"}}>
+                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.green100,color:T.greenDk,border:"1px solid "+T.green200,borderRadius:99,padding:"2px 9px"}}>
                        Verified {String(sd.verifiedAt||"").slice(0,10)}</span>
                     :<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
                        Waiting for DNS</span>}
                   {!sd.verified&&(
                     <button onClick={checkDomain} disabled={sdBusy} data-testid="sd-check"
-                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 13px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 13px",color:T.white,fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
                       {sdBusy?"Checking…":"Check"}</button>
                   )}
                   <button onClick={releaseDomain} disabled={sdBusy}
@@ -3218,7 +3218,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               ))}
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <button onClick={saveVoice} data-testid="voice-save"
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save my voice</button>
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save my voice</button>
                 {voiceSaved&&<span style={{fontSize:12,color:T.ink3}}>{voiceSaved}</span>}
               </div>
             </div>
@@ -3243,7 +3243,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   aria-label="Other income this year" data-testid="other-income-amount" placeholder="e.g. 41,250"
                   style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",width:160}}/>
                 <button onClick={saveOtherIncome}
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save</button>
                 {otherIncomeSaved&&<span style={{fontSize:12,color:T.ink3}}>{otherIncomeSaved}</span>}
               </div>
             )}
@@ -3305,7 +3305,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                     onKeyDown={e=>e.key==="Enter"&&(e.preventDefault(),addCfOption())}
                     style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:13,color:T.ink,background:T.bg,outline:"none"}}
                   />
-                  <button onClick={addCfOption} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Add</button>
+                  <button onClick={addCfOption} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Add</button>
                 </div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                   {cfForm.options.map((o,i)=>(
@@ -3319,7 +3319,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             )}
             <div style={{display:"flex",gap:10,marginTop:6}}>
               <button onClick={closeCfModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-              <button onClick={saveCfField} disabled={cfSaving||!cfForm.label.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(cfSaving||!cfForm.label.trim())?0.7:1}}>
+              <button onClick={saveCfField} disabled={cfSaving||!cfForm.label.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:(cfSaving||!cfForm.label.trim())?0.7:1}}>
                 {cfSaving?"Saving…":editingField?"Save changes":"Add field"}
               </button>
             </div>
@@ -3357,7 +3357,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </div>
             <div style={{display:"flex",gap:10}}>
               <button onClick={closeImModal} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-              <button onClick={saveImMetric} disabled={imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:(imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim())?0.7:1}}>
+              <button onClick={saveImMetric} disabled={imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim()} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:(imSaving||!imForm.name.trim()||!imForm.dollarThreshold||!imForm.outcomeTemplate.trim())?0.7:1}}>
                 {imSaving?"Saving…":editingMetric?"Save changes":"Add metric"}
               </button>
             </div>
@@ -3389,30 +3389,30 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <option value="staff">Staff — can view and edit data</option>
                   <option value="admin">Admin — full access including settings</option>
                 </select>
-                {invErr&&<div style={{marginBottom:12,fontSize:13,color:"#8a3a24",background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
+                {invErr&&<div style={{marginBottom:12,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
                 <div style={{display:"flex",gap:10}}>
                   <button onClick={closeInvite} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px",color:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer"}}>Cancel</button>
-                  <button onClick={sendInvite} disabled={inviting} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",opacity:inviting?0.7:1}}>
+                  <button onClick={sendInvite} disabled={inviting} style={{flex:2,background:T.green,border:"none",borderRadius:10,padding:"10px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:inviting?0.7:1}}>
                     {inviting?"Generating invite…":"Generate invite link"}
                   </button>
                 </div>
               </>
             ):(
               <>
-                <div style={{background:"#edf3ee",border:"1px solid #dce7df",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#0d5c3a",marginBottom:4}}>
+                <div style={{background:T.green100,border:"1px solid "+T.green200,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+                  <div style={{fontSize:13,fontWeight:700,color:T.greenDk,marginBottom:4}}>
                     {inviteResult.emailSent?"Invite sent! You can also share the link below:":"Share this invite link:"}
                   </div>
-                  <div style={{fontSize:12,color:"#0d5c3a",wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
+                  <div style={{fontSize:12,color:T.greenDk,wordBreak:"break-all",lineHeight:1.5}}>{inviteResult.link}</div>
                 </div>
                 {!inviteResult.emailSent&&<div style={{fontSize:12,color:T.ink3,marginBottom:14,lineHeight:1.5}}>
                   SMTP not configured — copy and share this link directly. It expires in 7 days.
                 </div>}
                 <div style={{display:"flex",gap:10}}>
-                  <button onClick={copyLink} style={{flex:1,background:copied?T.green:T.bg,border:"1px solid "+(copied?T.green:T.bg3),borderRadius:10,padding:"10px",color:copied?"#fff":T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>
+                  <button onClick={copyLink} style={{flex:1,background:copied?T.green:T.bg,border:"1px solid "+(copied?T.green:T.bg3),borderRadius:10,padding:"10px",color:copied?T.white:T.ink2,fontSize:13,fontWeight:600,cursor:"pointer",transition:"all 0.15s"}}>
                     {copied?"Copied!":"Copy link"}
                   </button>
-                  <button onClick={closeInvite} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"10px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
+                  <button onClick={closeInvite} style={{flex:1,background:T.green,border:"none",borderRadius:10,padding:"10px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
                 </div>
               </>
             )}

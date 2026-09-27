@@ -1105,7 +1105,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
-                <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:15,fontWeight:600,color:T.sage400,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
                     <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
@@ -1118,10 +1118,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
                   <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
-                <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
+                <div style={{background:T.ink,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
+                <div style={{fontSize:13,color:T.sage400}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
               {/* RIGHT — real supporting stats. Pace + the FY comparison are kept;
                   this-week giving + money at risk are the two live
@@ -1146,7 +1146,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
                 <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>Fundraising Goal</div>
-                <div style={{fontSize:15,fontWeight:600,color:"#c9c2b4",marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:15,fontWeight:600,color:T.sage400,marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
                   <span>{goal.label}</span>
                   {isAdmin&&(
                     <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
@@ -1160,17 +1160,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
                   <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
-                <div style={{background:"#0a120c",borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
+                <div style={{background:T.ink,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:"#c9c2b4"}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+                <div style={{fontSize:13,color:T.sage400}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
               </div>
 
               {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving
                   + money at risk (BUILD-73 Part 3) are the two live added figures,
                   replacing the vaguer "recent momentum" text line. */}
               <div style={{flex:"1 1 260px",minWidth:230,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px 18px",alignContent:"start"}}>
-                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:"#f0ede6"} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
+                <GoalStat label="Pace" value={paceLabel} valueColor={paceLabel==="Ahead of pace"?T.gold:paceLabel==="Behind pace"?T.terracotta:T.bg} sub={paceSub} onClick={()=>onNavigate("fundraising")}/>
                 <GoalStat label="Time Left" value={daysLeftInPeriod!=null?`${daysLeftInPeriod} day${daysLeftInPeriod!==1?"s":""}`:"—"} sub="left to reach this goal"/>
                 <GoalStat {...twStat}/>
                 <GoalStat {...reengStat}/>
@@ -1616,7 +1616,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       style={{flex:1,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:12.5,color:T.ink,background:T.bg,outline:"none"}}/>
                     <button onClick={()=>submitDriftDone(r.donorId,driftLine)} disabled={driftBusy||!driftLine.trim()}
                       title={!driftLine.trim()?"A reason is what makes this a record instead of a disappearance":""}
-                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:(driftBusy||!driftLine.trim())?"not-allowed":"pointer",opacity:driftLine.trim()?1:0.45}}>Save</button>
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:(driftBusy||!driftLine.trim())?"not-allowed":"pointer",opacity:driftLine.trim()?1:0.45}}>Save</button>
                     <button onClick={()=>setDriftLineFor(null)} disabled={driftBusy}
                       style={{background:"transparent",border:"none",padding:"8px 4px",color:T.ink3,fontSize:12,fontWeight:700,cursor:driftBusy?"wait":"pointer"}}>Cancel</button>
                   </div>
@@ -1871,7 +1871,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     {[["mine","Mine"],["all","Everyone"]].map(([k,lbl])=>(
                       <button key={k} onClick={()=>{setThreadScope(k);loadThreads(k);}}
                         style={{border:"none",padding:"3px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",
-                                background:threadScope===k?T.greenDk:"transparent",color:threadScope===k?"#fff":T.ink3}}>{lbl}</button>
+                                background:threadScope===k?T.greenDk:"transparent",color:threadScope===k?T.white:T.ink3}}>{lbl}</button>
                     ))}
                   </span>
                 )}
@@ -1991,7 +1991,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   style={{width:"100%",minHeight:130,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.55,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
                 <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                   <button onClick={()=>tyCopy(d)} data-testid="ty-copy"
-                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{tyCopied===d.id?"Copied ✓":"Copy"}</button>
+                    style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{tyCopied===d.id?"Copied ✓":"Copy"}</button>
                   <button onClick={()=>tyAct(d.id,"sent")} data-testid="ty-sent"
                     style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Mark sent</button>
                   <button onClick={()=>tyAct(d.id,"skip")} data-testid="ty-skip"
@@ -2529,7 +2529,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                       </div>
                     </a>
                     <button onClick={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
-                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
                       Open
                     </button>
                   </li>);
@@ -2618,7 +2618,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
         </>);
       })()}
-      {layoutError&&<div role="alert" style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:T.terracotta,color:"#fff",padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:500,boxShadow:T.shadowLg,maxWidth:"90vw"}}>{layoutError}</div>}
+      {layoutError&&<div role="alert" style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:T.terracotta,color:T.white,padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:500,boxShadow:T.shadowLg,maxWidth:"90vw"}}>{layoutError}</div>}
 
       {/* Set-goal modal */}
       {showSetGoal&&(
