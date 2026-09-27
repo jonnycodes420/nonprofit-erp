@@ -61,7 +61,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 | `Donors.jsx` | 117 | 16 |
 | `Dashboard.jsx` | 62 | 24 |
 | `Finance.jsx` | 38 | 5 |
-| `Reports.jsx` | 41 | 25 |
+| `Reports.jsx` | 42 | 23 |
 | `Fundraising.jsx` | 31 | 16 |
 | `Communications.jsx` | 20 | 6 |
 | `Grants.jsx` | 13 | 5 |
@@ -75,8 +75,9 @@ things that matter, and a census nobody can read is a census nobody checks.
 | `PortalBanner.jsx` | 4 | 0 |
 | `Pipeline.jsx` | 3 | 3 |
 | `DonorMap.jsx` | 3 | 0 |
-| `Dashboards.jsx` | 2 | 0 |
-| `Workflows.jsx` · `MetricBreakdownPanel.jsx` · `Uploader.jsx` | 1 each | 0 / 1 / 0 |
+| `MetricBreakdownPanel.jsx` | 6 | 1 |
+| `Dashboards.jsx` | 0 | 0 |
+| `Workflows.jsx` · `Figure.jsx` · `Uploader.jsx` | 1 each | 0 / 0 / 0 |
 
 ### Out of scope, each with its reason
 
@@ -191,8 +192,9 @@ that rule applied to the rest of the product.**
 
 ### Reports · **data, not claims**
 
-25 claim-shaped sites, almost all of them a table header or the narrative
-summary line above a table. A report is the org's own rows with a definition
+23 claim-shaped sites (FIX-2 B: 25 → 23, and 41 → 42 sites, when the results
+became one table with human dates, a totals row and rows that open the person),
+almost all of them a table header or the narrative summary line above a table. A report is the org's own rows with a definition
 already pinned, in cents, by `tests/report-truth.test.js` — 85 assertions
 against hand-computed values, and the definitions written down in CLAUDE.md
 under "Report definitions (LOCKED)". No change.
@@ -216,6 +218,18 @@ reconcile sentence: the lines add up to it to the cent, or it does not
 reconcile by $X), and its lines (cells: amount, fee, net, total). **Monthly
 close** — the BUILD-87 bookkeeper export for one month: the foot sentence and
 the per-fund totals, the export's own figures.
+
+### Dashboards · **every number opens (FIX-2 A, 27 Sep 2026): 2 → 0 sites**
+
+The four dashboards draw no number of their own any more: every figure on them
+is a `<Figure>` (`Figure.jsx`, 1 site: the value, formatted by its declared
+kind) with the `source` it was computed from, and clicking it opens the one
+drill-through panel (`MetricBreakdownPanel.jsx`, 1 → 6 sites: a ratio's and a
+difference's foot, the figure repeated at the top of the panel, a percentage's
+value). Dashboards.jsx is on the census's `FIGURE_SOURCE_SCOPE`: a `<Figure>`
+there without `source=`, or a number drawn any other way, fails
+`build97-numbers` by file and line. Every figure's rows foot to it in cents on a
+fixture org (`tests/fix2-a-footing.test.js`).
 
 ### Fundraising · **thermometers, already explained**
 

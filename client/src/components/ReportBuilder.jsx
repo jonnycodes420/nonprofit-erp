@@ -1,23 +1,25 @@
 // BUILD-98 (switch) Part 3 — REPORTS PEOPLE CAN BUILD.
 //
-// The twelve standard reports, the org's saved ones, and a builder. The
-// builder writes a DEFINITION — a list of field names from the server's
-// catalogue — never SQL; the server compiles it (shared/reportBuilder.js).
-import { useState, useEffect } from "react";
+// The standard reports, the org's saved ones, and a builder. The builder
+// writes a DEFINITION — a list of field names from the server's catalogue —
+// never SQL; the server compiles it (shared/reportBuilder.js).
+//
+// FIX-2 B — this file no longer keeps a list of reports of its own: Reports'
+// one rail (client/src/lib/reportsRail.js) picks the report, and this file
+// runs it (ReportRunView) or builds one (BuilderView). ReportTable is the one
+// results table both files draw: human dates, whole dollars unless cents, a
+// totals row summed from the rows in cents, sortable headers with the total
+// kept at the foot, and every person row opening that person.
+import { useState, useEffect, useMemo } from "react";
 import { apiFetch, API } from "../api";
 import { T, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { cellText, centsOf, footCents, footCount, sortValue, nextSort, sortRows, splitHandlerRows } from "../lib/reportFormat";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
-const btn = (primary) => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
-  padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" });
-
-function fmtCell(v, type) {
-  if (v === null || v === undefined || v === "") return "";
-  if (type === "money") return "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (type === "bool") return v ? "Yes" : "No";
-  return String(v);
-}
+const btn = (primary) => ({ background: primary ? T.greenDk : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
+  padding: "8px 14px", fontSize: 13, fontWeight: 700, color: primary ? T.white : T.ink, cursor: "pointer" });
+const SUMMED = new Set(["money", "count"]);
 
 async function download(path, name) {
   const r = await fetch(API + path, { headers: { Authorization: "Bearer " + localStorage.getItem("npe_token") } });
@@ -27,18 +29,98 @@ async function download(path, name) {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-function ResultTable({ out }) {
+// ── THE ONE RESULTS TABLE ──────────────────────────────────────────────────
+// cols: { key, label, type, align?, value?(r) raw, render?(r) node, sum?,
+//         sortVal?(r), person? (this cell links the row's person) }
+// personOf(r) → the person id a row opens, or null (a month, a fund).
+// foot: draw the totals row (every `sum` column: money in cents, counts).
+export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLabel = "Total", testid = "report-table" }) {
+  const [sort, setSort] = useState(null);
+  const colKey = cols.map(c => c.key).join(",");
+  useEffect(() => { setSort(null); }, [colKey, rows]);
+  const valueOf = (r, key) => { const c = cols.find(x => x.key === key); return c.sortVal ? c.sortVal(r) : sortValue(c.value ? c.value(r) : r[key], c.type); };
+  const sorted = useMemo(() => sortRows(rows, sort, valueOf), [rows, sort, colKey]);
+  const raw = (c, r) => (c.value ? c.value(r) : r[c.key]);
+  const summed = c => c.sum !== undefined ? c.sum : SUMMED.has(c.type);
+  const showFoot = foot && rows.length > 0 && cols.some(summed);
+  const open = r => { const id = personOf && personOf(r); if (id && onOpen) onOpen(id); };
+  const align = c => c.align || (["money", "count", "number", "pct", "price"].includes(c.type) ? "right" : "left");
+  const th = { padding: "8px 10px", borderBottom: `2px solid ${T.bg3}`, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, whiteSpace: "nowrap" };
+  const td = { padding: "9px 10px", borderBottom: `1px solid ${T.bg2}`, whiteSpace: "nowrap", color: T.ink2 };
+  // A figure or a date stays on one line; words (a name, an email, a note) may
+  // wrap, so a six-column report fits its card at 1440 instead of hiding its
+  // last column behind a scrollbar the Mac does not draw (the FIX-2 walk).
+  const wraps = c => !["money", "count", "number", "pct", "price", "date"].includes(c.type);
+  const cell = (c, r) => {
+    const v = raw(c, r);
+    const body = c.render ? c.render(r) : cellText(v, c.type === "price" ? "money" : c.type);
+    const pid = c.person && personOf ? personOf(r) : null;
+    return pid
+      ? <a href={`/donors/${encodeURIComponent(pid)}`} onClick={e => { e.preventDefault(); e.stopPropagation(); onOpen && onOpen(pid); }}
+          style={{ color: T.ink, fontWeight: 700, textDecoration: "none" }}>{body}</a>
+      : body;
+  };
+  return <div className="reports-table-wrap" style={{ overflowX: "auto" }}>
+    <table data-testid={testid} style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <thead>
+        <tr>
+          {cols.map(c => {
+            const on = sort?.key === c.key;
+            return <th key={c.key} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"} style={{ ...th, textAlign: align(c) }}>
+              <button type="button" data-sort-key={c.key} onClick={() => setSort(s => nextSort(s, c.key))}
+                style={{ all: "unset", cursor: "pointer", font: "inherit", letterSpacing: "inherit", textTransform: "inherit", color: on ? T.ink : T.ink3 }}>
+                {c.label}{on ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
+              </button>
+            </th>;
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {sorted.map((r, i) => {
+          const pid = personOf ? personOf(r) : null;
+          return <tr key={r.id || r._pid || i} data-testid="report-row" data-person-id={pid || undefined}
+            onClick={pid ? () => open(r) : undefined} className={pid ? "rpt-row-click" : undefined}
+            style={{ cursor: pid ? "pointer" : "default" }}>
+            {cols.map(c => <td key={c.key} data-cents={c.type === "money" && summed(c) ? centsOf(raw(c, r)) : undefined}
+              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 96 } : null) }}>{cell(c, r)}</td>)}
+          </tr>;
+        })}
+      </tbody>
+      {showFoot && <tfoot>
+        <tr data-testid="report-total-row">
+          {cols.map((c, i) => {
+            const style = { padding: "10px 10px", borderTop: `2px solid ${T.bg3}`, fontWeight: 800, color: T.ink, whiteSpace: "nowrap", textAlign: align(c) };
+            if (summed(c) && c.type === "money") {
+              const cents = footCents(rows, r => raw(c, r));
+              return <td key={c.key} data-cents={cents} style={style}>{cellText(cents / 100, "money")}</td>;
+            }
+            if (summed(c)) return <td key={c.key} style={style}>{cellText(footCount(rows, r => raw(c, r)), "count")}</td>;
+            return <td key={c.key} style={style}>{i === 0 ? footLabel : ""}</td>;
+          })}
+        </tr>
+      </tfoot>}
+    </table>
+  </div>;
+}
+
+// A saved or standard report's output → ReportTable columns. A handler
+// report's cells are text with a `display` hint; a builder report's are typed.
+function outColumns(out) {
+  return out.columns.map((c, i) => {
+    const type = out.grouped && c.key === "count" ? "count" : (c.display || c.type);
+    return { key: c.key, label: c.label, type, person: i === 0 };
+  });
+}
+
+function ResultTable({ out, onOpen }) {
   if (!out) return null;
+  const { rows } = splitHandlerRows(out.rows, out.columns[0]?.key);
   return (
-    <div style={{ overflowX: "auto" }} data-testid="rb-result">
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
-        <thead><tr>{out.columns.map(c => <th key={c.key} style={{ textAlign: "left", padding: "6px 10px", borderBottom: "1px solid " + T.bg3, color: T.ink3, fontSize: 11, textTransform: "uppercase", letterSpacing: ".05em" }}>{c.label}</th>)}</tr></thead>
-        <tbody>{out.rows.map((r, i) => <tr key={i}>{out.columns.map(c => <td key={c.key} style={{ padding: "6px 10px", borderBottom: "1px solid " + T.bg3, color: T.ink }}>{fmtCell(r[c.key], c.type)}</td>)}</tr>)}</tbody>
-      </table>
+    <div data-testid="rb-result">
+      <ReportTable cols={outColumns(out)} rows={rows} personOf={r => r._pid || null} onOpen={onOpen} />
       <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
-        {out.totals.count.toLocaleString("en-US")} {out.totals.count === 1 ? "row" : "rows"}
-        {out.totals.sums.map(s => ` · ${s.label} ${fmtCell(s.cents / 100, "money")}`).join("")}
-        {out.capped ? ` · the first ${out.rows.length} are shown here; the file has them all` : ""}
+        {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "row" : "rows"}
+        {out.capped ? ` · the first ${out.rows.length} are shown here; the file has all ${out.totals.count.toLocaleString("en-US")}` : ""}
       </div>
     </div>
   );
@@ -92,7 +174,7 @@ function GroupEditor({ group, fields, ops, onChange, depth = 1 }) {
   );
 }
 
-function Builder({ catalogue, initial, onSaved, onCancel }) {
+function Builder({ catalogue, initial, onSaved, onCancel, onOpen }) {
   const [entity, setEntity] = useState(initial?.entity || "people");
   const E = catalogue.entities.find(e => e.key === entity) || catalogue.entities[0];
   const [columns, setColumns] = useState(initial?.columns || ["name"]);
@@ -114,6 +196,7 @@ function Builder({ catalogue, initial, onSaved, onCancel }) {
   const toggleCol = k => setColumns(c => c.includes(k) ? c.filter(x => x !== k) : [...c, k]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="rb-builder">
+      <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>Build a report</div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ fontSize: 13, color: T.ink }}>A report about</span>
         <select value={entity} onChange={e => pickEntity(e.target.value)} style={inp} data-testid="rb-entity">
@@ -142,9 +225,9 @@ function Builder({ catalogue, initial, onSaved, onCancel }) {
         <button onClick={runIt} style={btn(false)} data-testid="rb-run">Run it</button>
       </div>
       {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
-      <ResultTable out={out} />
+      <ResultTable out={out} onOpen={onOpen} />
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid " + T.bg3, paddingTop: 12 }}>
-        <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this report" style={{ ...inp, width: 240 }} data-testid="rb-name" />
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Name this report" style={{ ...inp, width: 240, maxWidth: "100%" }} data-testid="rb-name" />
         <label style={{ fontSize: 13, color: T.ink, display: "flex", gap: 5 }}><input type="checkbox" checked={shared} onChange={e => setShared(e.target.checked)} style={{ accentColor: T.greenDk }} />Share with everyone here</label>
         <label style={{ fontSize: 13, color: T.ink, display: "flex", gap: 5 }}><input type="checkbox" checked={weekly} onChange={e => setWeekly(e.target.checked)} style={{ accentColor: T.greenDk }} />Email it to me every Monday</label>
         <button onClick={save} disabled={!name.trim()} style={{ ...btn(true), opacity: name.trim() ? 1 : 0.5 }} data-testid="rb-save">Save report</button>
@@ -154,57 +237,54 @@ function Builder({ catalogue, initial, onSaved, onCancel }) {
   );
 }
 
-export function SavedReportsView({ initialReportId = null }) {
-  const [list, setList] = useState(null);
+// The builder, in its own card. `onSaved(id)` lands on the saved report.
+export function BuilderView({ onSaved, onCancel, onOpen }) {
   const [catalogue, setCatalogue] = useState(null);
-  const [sel, setSel] = useState(initialReportId || "std:lybunt");
-  const [out, setOut] = useState(null);
-  const [building, setBuilding] = useState(false);
   const [msg, setMsg] = useState("");
-  const load = () => apiFetch("/saved-reports").then(setList).catch(e => setMsg(errorMessage(e, "Could not load your reports.")));
-  useEffect(() => { load(); apiFetch("/report-builder/catalogue").then(setCatalogue).catch(() => {}); }, []);
-  useEffect(() => {
-    if (!sel || building) return;
-    setOut(null); setMsg("");
-    apiFetch(`/saved-reports/${encodeURIComponent(sel)}/run`).then(setOut).catch(e => setMsg(errorMessage(e, "That report could not run.")));
-  }, [sel, building]);
-  if (!list) return <div style={{ padding: 24, color: T.ink3, fontSize: 13 }}>{msg || "Loading…"}</div>;
-  const all = [...list.standard, ...list.saved];
-  const current = all.find(r => r.id === sel);
-  const item = r => (
-    <button key={r.id} onClick={() => { setBuilding(false); setSel(r.id); }} data-testid={`rb-item-${r.id}`}
-      style={{ textAlign: "left", background: sel === r.id && !building ? T.bg2 : "transparent", border: "none", borderRadius: 8, padding: "7px 10px", cursor: "pointer", color: T.ink, fontSize: 13 }}>
-      {r.name}{r.schedule === "weekly" ? " · weekly" : ""}{r.shared ? "" : r.mine === false ? "" : r.id.startsWith("std:") ? "" : " · just you"}
-    </button>);
+  useEffect(() => { apiFetch("/report-builder/catalogue").then(setCatalogue).catch(e => setMsg(errorMessage(e, "The builder could not load."))); }, []);
   return (
-    <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }} data-testid="rb-view">
-      <div style={{ width: 240, display: "flex", flexDirection: "column", gap: 2 }}>
-        <button onClick={() => setBuilding(true)} style={{ ...btn(true), marginBottom: 10 }} data-testid="rb-new">Build a report</button>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", margin: "6px 10px" }}>Everyday questions</div>
-        {list.standard.map(item)}
-        {list.saved.length > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: ".06em", margin: "12px 10px 6px" }}>Saved here</div>}
-        {list.saved.map(item)}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <Card style={{ padding: "18px 22px" }}>
-          {building && catalogue
-            ? <Builder catalogue={catalogue} onCancel={() => setBuilding(false)} onSaved={id => { setBuilding(false); load().then(() => setSel(id)); }} />
-            : <>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{current?.name}</div>
-                    {current?.question && <div style={{ fontSize: 13, color: T.ink3, marginTop: 2 }}>{current.question}</div>}
-                  </div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(sel)}/csv`, `${current?.name || "report"}.csv`).catch(e => setMsg(e.message))}>CSV</button>
-                    <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(sel)}/pdf`, `${current?.name || "report"}.pdf`).catch(e => setMsg(e.message))}>PDF</button>
-                  </div>
-                </div>
-                {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
-                {out ? <ResultTable out={out} /> : !msg && <div style={{ color: T.ink3, fontSize: 13 }}>Running…</div>}
-              </>}
-        </Card>
-      </div>
+    <div data-testid="rb-view">
+      <Card style={{ padding: "18px 22px" }}>
+        {catalogue
+          ? <Builder catalogue={catalogue} onCancel={onCancel} onSaved={onSaved} onOpen={onOpen} />
+          : <div style={{ color: T.ink3, fontSize: 13 }}>{msg || "Loading…"}</div>}
+      </Card>
+    </div>
+  );
+}
+
+// One standard or saved report, run: its name, its question, CSV and PDF, and
+// the results. `meta` is its entry from /saved-reports, when it is known.
+export function ReportRunView({ id, meta, onOpen }) {
+  const [out, setOut] = useState(null);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    let dead = false;
+    setOut(null); setMsg("");
+    apiFetch(`/saved-reports/${encodeURIComponent(id)}/run`)
+      .then(o => { if (!dead) setOut(o); })
+      .catch(e => { if (!dead) setMsg(errorMessage(e, "That report could not run.")); });
+    return () => { dead = true; };
+  }, [id]);
+  const name = meta?.name || out?.report?.name || "";
+  const question = meta?.question || out?.report?.question || "";
+  return (
+    <div data-testid="rb-view">
+      <Card style={{ padding: "18px 22px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>{name}</div>
+            {question && <div style={{ fontSize: 13, color: T.ink3, marginTop: 2 }}>{question}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/csv`, `${name || "report"}.csv`).catch(e => setMsg(e.message))}>CSV</button>
+            <button style={btn(false)} onClick={() => download(`/saved-reports/${encodeURIComponent(id)}/pdf`, `${name || "report"}.pdf`).catch(e => setMsg(e.message))}>PDF</button>
+          </div>
+        </div>
+        {msg && <div role="alert" style={{ fontSize: 13, color: T.terracotta }}>{msg}</div>}
+        {out ? (out.rows.length ? <ResultTable out={out} onOpen={onOpen} /> : <div style={{ color: T.ink3, fontSize: 13 }}>Nothing matches this report yet.</div>)
+          : !msg && <div style={{ color: T.ink3, fontSize: 13 }}>Running…</div>}
+      </Card>
     </div>
   );
 }

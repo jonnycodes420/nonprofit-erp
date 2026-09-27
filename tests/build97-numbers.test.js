@@ -73,7 +73,11 @@ const EXPECTED = {
   // reconcile sentence (shared/payoutReconcile.js); the close's are the
   // bookkeeper export's own (BUILD-87). Claim-shaped 3 → 5 (see below).
   "components/Finance.jsx": 38,
-  "components/Reports.jsx": 41,
+  // FIX-2 B: 41 → 42. Out: the 3-year table's bold {fmtFull(r.y0)} cell (the
+  // one results table now formats every money cell). In: the bookkeeper
+  // narrative's total (was a raw "$26100.50") and the "Total" under its
+  // totals-by-fund table (was "TOTAL $26100.50"). Claim-shaped 25 → 23.
+  "components/Reports.jsx": 42,
   "components/Fundraising.jsx": 31,   // BUILD-98 Part 2: +1, a gift amount in the acknowledgment backlog row (a cell, not a claim)
   "components/Communications.jsx": 20,
   "components/Grants.jsx": 13,
@@ -87,9 +91,14 @@ const EXPECTED = {
   "components/PortalBanner.jsx": 4,
   "components/Pipeline.jsx": 3,
   "components/DonorMap.jsx": 3,
-  "components/Dashboards.jsx": 2,
+  // FIX-2 A: 2 → 0. Every figure on the dashboards is a <Figure> now (below),
+  // drawn with the source it opens; the screen draws no number of its own.
+  "components/Dashboards.jsx": 0,
   "components/Workflows.jsx": 1,
-  "components/MetricBreakdownPanel.jsx": 1,
+  // FIX-2 A: 1 → 6. It is the one drill-through panel now: the figure at its
+  // head, a ratio's and a difference's foot, and the old caller-supplied rows.
+  "components/MetricBreakdownPanel.jsx": 6,
+  "components/Figure.jsx": 1,          // FIX-2 A — the one figure component: a value, by its declared kind
   "components/Uploader.jsx": 1,
   "components/EventsDesk.jsx": 3,   // BUILD-98 Part 4: price, value received and deductible per level — cells, not claims
   // BUILD-99 Part 1: the two headline tiles (asked-for-still-open, weighted),
@@ -112,8 +121,8 @@ const EXPECTED = {
   "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
   "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 408;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above)
-const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline)
+const EXPECTED_TOTAL = 413;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above) · FIX-2 A: +4 (Dashboards -2, panel +5, Figure +1)
+const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline) · FIX-2 B: -2 (Reports: the 3-year y0 cell and the retention sentence's two percentages no longer sit beside a table-header label; +1 the bookkeeper fund "Total")
 
 (async () => {
   console.log("build97-numbers");
@@ -218,6 +227,37 @@ const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, t
      weighted.sentence);
   ok("…and admits they are not measured",
      /working assumption|not anything measured/i.test(weighted.sentence), weighted.sentence);
+
+  // ── §6 · FIX-2: EVERY NUMBER OPENS ───────────────────────────────────────
+  // On an in-scope screen every figure carries a `source`. A <Figure> without
+  // one, or a number drawn any other way, fails here by file and line.
+  console.log("\n— §6 · every figure on an in-scope screen carries a source —");
+  ok("the in-scope list names the dashboards", scanner.FIGURE_SOURCE_SCOPE.includes("components/Dashboards.jsx"),
+     scanner.FIGURE_SOURCE_SCOPE);
+  ok("every in-scope screen is scanned by the census too",
+     scanner.FIGURE_SOURCE_SCOPE.every(f => scanner.SURFACES.includes(f)) && scanner.FIGURE_COMPONENTS.every(f => scanner.SURFACES.includes(f)));
+  const figProblems = scanner.figureSourceProblems();
+  ok("no figure on an in-scope screen is without its source", figProblems.length === 0,
+     figProblems.map(p => `${p.file}:${p.line} ${p.problem}`));
+  const dashSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Dashboards.jsx"), "utf8");
+  ok("…and the dashboards actually draw their figures through <Figure>",
+     scanner.figureTags(dashSrc).length >= 8, scanner.figureTags(dashSrc).length);
+  const figSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Figure.jsx"), "utf8");
+  ok("the figure component takes a source and opens the one panel with it",
+     /export function Figure\(\{[^)]*\bsource\b/.test(figSrc) && /<MetricBreakdownPanel[\s\S]{0,300}?\bsource=\{source\}/.test(figSrc));
+  // PROVEN ABLE TO FAIL, on each of the two things it refuses.
+  const plantedNoSource = scanner.figureSourceProblems({ files: { "components/_planted.jsx":
+    'const a = 1;\nexport const X = () => (\n  <Figure variant="tile" value={v} kind="money"\n    label="Planted" definition="A planted figure." />\n);\n' } });
+  ok("PLANTED: a <Figure> with no source fails, naming its file and line",
+     plantedNoSource.length === 1 && plantedNoSource[0].file === "components/_planted.jsx" && plantedNoSource[0].line === 3,
+     plantedNoSource);
+  const plantedBare = scanner.figureSourceProblems({ files: { "components/_planted.jsx":
+    '<div>\n  <span style={{ fontSize: 28 }}>{fmtFull(total)}</span>\n</div>\n' } });
+  ok("PLANTED: a number drawn outside <Figure> fails, naming its file and line",
+     plantedBare.length === 1 && plantedBare[0].line === 2 && /outside <Figure>/.test(plantedBare[0].problem), plantedBare);
+  const plantedGood = scanner.figureSourceProblems({ files: { "components/_planted.jsx":
+    '// a <Figure> in a comment is not a figure\n<Figure value={v} kind="money"\n  source={m.source} label={m.label} />\n' } });
+  ok("…and a <Figure> written with its source passes (a comment is not a screen)", plantedGood.length === 0, plantedGood);
 
   // ── §4 · AN INVENTED RULE CANNOT REACH A SCREEN ──────────────────────────
   // (Before §3, because §3 needs a browser and this does not.)

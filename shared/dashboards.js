@@ -52,15 +52,25 @@ export const DASHBOARDS = [
       { key: "donorCount", label: "People who gave", kind: "count",
         definition: "Distinct givers with at least one gift this fiscal year." },
       { key: "retentionRate", label: "Retention", kind: "percent",
-        definition: "Of the people who gave last fiscal year, the share who have given again this one. Blank until there is enough history for the number to mean anything." },
+        // FIX-2 A — CALENDAR, not fiscal: it is computeRetentionRate's
+        // number, which Home and the snapshots share, and it buckets by the
+        // calendar year. The sentence said "fiscal" and the rows said otherwise
+        // the moment the rows could be opened.
+        definition: "Of the people who gave last calendar year, the share who have given again this one. Blank until there is enough history for the number to mean anything, with the day it will appear." },
       { key: "byDesignation", rowsAre: "money", label: "Giving by designation", kind: "breakdown",
         definition: "This year's gifts grouped by the fund or programme they were given to. Gifts with no designation are counted as unrestricted." },
-      { key: "recurringActive", label: "Monthly gifts giving", kind: "count",
+      // FIX-2 A — "Monthly gifts giving" was not English. It was never composed
+      // by vocabulary: it was typed that way. People read "Monthly givers".
+      { key: "recurringActive", label: "Monthly givers", kind: "count",
         definition: "Monthly commitments currently charging successfully." },
       { key: "recurringStopped", label: "Stopped this quarter", kind: "count",
         definition: "Monthly commitments that ended this quarter, whether cancelled or exhausted after a failed card." },
       { key: "recurringRecovered", label: "Recovered this quarter", kind: "count",
         definition: "Monthly commitments that failed and then charged successfully again, this quarter." },
+      // FIX-2 A — the month-by-month line. Each point is a figure of its own and
+      // opens the gifts that make it.
+      { key: "givingByMonth", label: "Giving this year against last year", kind: "series",
+        definition: "Giving added up month by month through your fiscal year: this year to today, and last year in full. Where this year's line sits above last year's, you are ahead." },
     ],
   },
   {
@@ -118,7 +128,7 @@ export const DASHBOARDS = [
     question: "Is the monthly base healthy?",
     blurb: "The screen a sponsorship-led organisation asks for by name.",
     metrics: [
-      { key: "byStatus", label: "Monthly gifts by status", kind: "breakdown",
+      { key: "byStatus", label: "Monthly gifts, by where they stand", kind: "breakdown",
         definition: "Every monthly commitment grouped by where it stands: giving, failing, being recovered, paused, or ended." },
       { key: "mrr", label: "Monthly giving", kind: "money",
         definition: "What the currently-giving monthly commitments bring in each month. A commitment billed yearly counts as a twelfth of its amount." },
@@ -141,6 +151,42 @@ export const DASHBOARDS = [
     ],
   },
 ];
+
+// FIX-2 A — THE SENTENCE AT THE TOP. Each dashboard answers its question in
+// one sentence, and a number inside that sentence is a figure like any other:
+// it has its definition here and opens its rows. Figures the sentence shares
+// with a metric use the metric's own definition instead (`metric`).
+export const ANSWER_FIGURES = {
+  board: [
+    { key: "givingDifference", label: "Ahead of or behind last year", kind: "money",
+      definition: "Giving this year so far, less giving in the same stretch of last year. The two tiles below it, subtracted." },
+  ],
+  fundraising: [
+    { key: "pledgedOutstanding", metric: "pledgedOutstanding" },
+    { key: "grantDeadlineCount", label: "Grant deadlines in the next ninety days", kind: "count",
+      definition: "Grants still being pursued whose deadline falls in the next ninety days. A grant already awarded or closed is not counted." },
+  ],
+  people: [
+    { key: "topGiverCount", label: "People who carry ninety per cent", kind: "count",
+      definition: "How few givers it takes, largest first, to reach ninety per cent of this year's giving." },
+    { key: "driftingAmongTop", metric: "driftingAmongTop" },
+  ],
+  recurring: [
+    { key: "monthlyGivers", label: "Monthly givers", kind: "count",
+      definition: "Monthly commitments currently charging successfully." },
+    { key: "mrr", metric: "mrr" },
+  ],
+};
+
+// An answer figure with its label and sentence, wherever they are written.
+export function answerFigure(dashboardKey, key) {
+  const d = dashboardByKey(dashboardKey);
+  const a = (ANSWER_FIGURES[dashboardKey] || []).find(f => f.key === key);
+  if (!d || !a) return null;
+  if (!a.metric) return { key: a.key, label: a.label, kind: a.kind, definition: a.definition };
+  const m = d.metrics.find(x => x.key === a.metric);
+  return m ? { key: a.key, label: m.label, kind: m.kind, definition: m.definition } : null;
+}
 
 export const DASHBOARD_KEYS = DASHBOARDS.map(d => d.key);
 export const dashboardByKey = key => DASHBOARDS.find(d => d.key === key) || null;

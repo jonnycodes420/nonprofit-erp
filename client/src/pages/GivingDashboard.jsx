@@ -70,6 +70,11 @@ const G = {
   ink: "#0f1a12", cream: "#f0ede6", brass: "#c9a84c", emerald: "#0d5c3a",
   sage: "#8fa896", sageDeep: "#6b8f7a", pineHair: "#2d4a35",
   white: "#faf8f4", hair: "#e8e4db", err: "#8a3a24",
+
+  // FIX-2 C — named here once, where they were inline.
+  pureWhite: "#ffffff",
+  muted: "#6b6b64",
+  paper: "#faf9f6",
 };
 const SERIF = "'DM Serif Display',Georgia,serif";
 const SANS = "'DM Sans',Helvetica,Arial,sans-serif";
@@ -469,7 +474,7 @@ function orgTheme(org) {
     sans: resolvePairing(t.typePairing).sans,
     chrome: cardChrome(t.cardStyle, G.hair),
     button: t.buttonColor || t.primary || G.emerald,
-    buttonFg: t.buttonFg || t.primaryFg || "#ffffff",
+    buttonFg: t.buttonFg || t.primaryFg || G.pureWhite,
   };
 }
 
@@ -484,7 +489,7 @@ function ImpactCard({ u, t, eyebrow }) {
   // card; a demo update seeded with a placeholder SVG "photo" rendered abstract
   // shapes — both are wrong. With no real photo, show the designed band.
   const bandColor = t.primary || t.accent || G.emerald;
-  const bandFg = t.primaryFg || "#ffffff";
+  const bandFg = t.primaryFg || G.pureWhite;
   const monogram = (u.orgName || eyebrow || "?").trim()[0] || "?";
   return (
     <div style={{ ...S.card, ...(t.chrome || {}), margin: 0, padding: 0, overflow: "hidden", borderLeft: `3px solid ${t.accent || G.emerald}` }}>
@@ -592,16 +597,16 @@ function FollowedCard({ org, onConnect, onUnfollow }) {
 function TakeoverHeader({ org, onSignOut }) {
   const t = orgTheme(org);
   const primary = t.primary || G.emerald;
-  const fg = t.primaryFg || "#ffffff";
+  const fg = t.primaryFg || G.pureWhite;
   const name = t.displayName || org.orgName;
   const quietLine = (
     <div style={{ maxWidth: 1060, margin: "0 auto", padding: "10px 24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-      <span data-testid="steward-quiet-line" style={{ fontSize: 12, color: "#6b6b64", fontFamily: SANS }}>
+      <span data-testid="steward-quiet-line" style={{ fontSize: 12, color: G.muted, fontFamily: SANS }}>
         <span style={{ fontFamily: SERIF, fontSize: 13 }}>Steward</span> · your giving account
       </span>
       {onSignOut && (
         <button onClick={onSignOut}
-          style={{ background: "transparent", color: "#6b6b64", border: `1px solid ${G.hair}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: SANS }}>
+          style={{ background: "transparent", color: G.muted, border: `1px solid ${G.hair}`, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: SANS }}>
           Sign out
         </button>
       )}
@@ -672,7 +677,7 @@ function FollowStateBar({ org, t, onConnect, onUnfollow }) {
 // the moment a second org exists).
 function TakeoverHome({ org, linked, impact, onOpen, onConnect, onUnfollow, loadDash }) {
   const t = orgTheme(org);
-  const fg = t.primaryFg || "#ffffff";
+  const fg = t.primaryFg || G.pureWhite;
   const [showDir, setShowDir] = useState(false);
   return (
     <div style={{ fontFamily: t.sans }}>
@@ -832,7 +837,7 @@ function Home({ me, dash, loadDash, takeover, onOpenOrg }) {
   const themeBySlug = {};
   for (const o of [...(dash.orgs || []), ...followed]) themeBySlug[o.orgSlug] = orgTheme(o);
   const tabbtn = (on) => tt
-    ? { ...S.tabbtn(on), fontFamily: tt.sans, borderBottomColor: on ? tt.accent : "transparent", color: on ? G.ink : "#6b6b64" }
+    ? { ...S.tabbtn(on), fontFamily: tt.sans, borderBottomColor: on ? tt.accent : "transparent", color: on ? G.ink : G.muted }
     : S.tabbtn(on);
   return (
     <div>
@@ -1071,9 +1076,9 @@ export default function GivingDashboard({ landing }) {
   const takeover = !landing && me && dash && (dash.orgs.length + followed.length === 1)
     ? (dash.orgs[0] || followed[0]) : null;
   const tt = takeover ? orgTheme(takeover) : null;
-  const tfg = tt ? (tt.primaryFg || "#ffffff") : null;
+  const tfg = tt ? (tt.primaryFg || G.pureWhite) : null;
   const pageStyle = tt
-    ? { ...S.page, background: tt.backgroundTint || "#faf9f6", fontFamily: tt.sans }
+    ? { ...S.page, background: tt.backgroundTint || G.paper, fontFamily: tt.sans }
     : S.page;
   const showLanding = !landing && !me;
   // Drill-down handoff: stash the org's theme so the portal's first paint is
@@ -1127,7 +1132,7 @@ export default function GivingDashboard({ landing }) {
               )}
             </div>
           </div>
-          <p style={{ color: "#6b6b64", fontFamily: tt.sans, fontSize: 12, lineHeight: 1.6, margin: 0, padding: "16px 24px 22px", textAlign: "center" }}>
+          <p style={{ color: G.muted, fontFamily: tt.sans, fontSize: 12, lineHeight: 1.6, margin: 0, padding: "16px 24px 22px", textAlign: "center" }}>
             Each nonprofit sees only its own relationship with you. We never share
             your giving at one organization with another.
           </p>
@@ -1155,9 +1160,9 @@ export function GivingOrgShell({ children }) {
   const navigate = useNavigate();
   return (
     <div>
-      <div style={{ background: "#0f1a12", padding: "10px 20px" }}>
+      <div style={{ background: G.ink, padding: "10px 20px" }}>
         <button onClick={() => navigate("/giving")}
-          style={{ background: "transparent", border: "none", color: "#f0ede6", cursor: "pointer", fontSize: 14, fontFamily: "'DM Sans',Helvetica,Arial,sans-serif" }}>
+          style={{ background: "transparent", border: "none", color: G.cream, cursor: "pointer", fontSize: 14, fontFamily: "'DM Sans',Helvetica,Arial,sans-serif" }}>
           ← Your Giving
         </button>
       </div>

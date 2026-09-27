@@ -20,6 +20,10 @@ const T = {
   forest: "#0d5c3a",   // greenDk — standard link/accent, WCAG AA on cream
   greenDark: "#0d5c3a",
   red:    "#8a3a24",   // deep terracotta — errors ride terracotta, never library red
+  // FIX-2 C — named here once, where they were inline.
+  gold100: "#f6eccf",
+  terra100: "#f6e3dd",
+  terra200: "#eac6b8",
 };
 
 function Shell({ children }) {
@@ -131,7 +135,7 @@ export default function InvitePage() {
     return (
       <Shell>
         <div style={{ ...cardStyle, textAlign: "center" }}>
-          <div style={{ width: 48, height: 48, background: "#f6eccf", border: `1px solid ${T.gold}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: T.forest }}>✓</div>
+          <div style={{ width: 48, height: 48, background: T.gold100, border: `1px solid ${T.gold}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px", fontSize: 22, color: T.forest }}>✓</div>
           <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, fontWeight: 400, color: T.ink, marginBottom: 8 }}>Welcome aboard</div>
           <div style={{ fontSize: 14, color: T.ink3 }}>Taking you to your workspace…</div>
         </div>
@@ -172,7 +176,7 @@ export default function InvitePage() {
           </Field>
 
           {formErr && (
-            <div style={{ background: "#f6e3dd", border: `1px solid #eac6b8`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: T.red }}>
+            <div style={{ background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: T.red }}>
               {formErr}
             </div>
           )}

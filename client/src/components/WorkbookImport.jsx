@@ -20,9 +20,10 @@ import { detectExclusionColumn, proposeCustomField, proposalEvidenceText } from 
 import { importLeadSentence, decisionsFromSubmission } from "../../../shared/importSentence";
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
+import { displayDate } from "../../../shared/displayDate";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
-const ROLE_COLOR = r => r === "donors" || r === "gifts" ? (T.green600 || "#1e6b45") : r === "pledges" || r === "recurring" ? (T.gold600 || "#a97f22") : T.ink3;
+const ROLE_COLOR = r => r === "donors" || r === "gifts" ? T.green600 : r === "pledges" || r === "recurring" ? T.gold600 : T.ink3;
 const fmtN = n => Number(n || 0).toLocaleString();
 // Part 2.5 — a review list shows the NORMALISED id; the raw cell rides the tooltip.
 const normalisedId = v => { const s = String(v ?? "").trim().replace(/\.0+$/, "").replace(/^0+(?=[0-9])/, ""); return s || String(v ?? ""); };
@@ -333,7 +334,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
   const btn = (label, onClick, opts = {}) => (
     <button onClick={onClick} disabled={opts.disabled}
       data-testid={opts.testid}
-      style={{ background: opts.secondary ? "transparent" : (T.green600 || "#1e6b45"), color: opts.secondary ? T.ink3 : "#fff",
+      style={{ background: opts.secondary ? "transparent" : T.green600, color: opts.secondary ? T.ink3 : T.white,
                border: opts.secondary ? `1px solid ${T.bg3}` : "none", borderRadius: 10, padding: "11px 18px",
                fontSize: 13.5, fontWeight: 700, cursor: opts.disabled ? "default" : "pointer", opacity: opts.disabled ? 0.5 : 1 }}>
       {label}
@@ -351,8 +352,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {fmtN(workbook.roled.length)} sheets — each with a role and the reason. Roles are editable; nothing marked “not data” or “superseded” imports without your say-so.
         </div>
         {legend.length > 0 && (
-          <div style={{ background: T.gold100 || "#f6eccf", border: `1px solid ${T.gold300 || "#e7cf91"}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.gold600 || "#a97f22", marginBottom: 4 }}>The file's own legend</div>
+          <div style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 10, padding: "10px 14px", marginBottom: 14 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.gold600, marginBottom: 4 }}>The file's own legend</div>
             {legend.map((l, i) => <div key={i} style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>“{l.text}” <span style={{ color: T.ink3 }}>— {l.sheet}</span></div>)}
           </div>
         )}
@@ -376,7 +377,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                 </div>
               )}
               {s.role === "decoy" && (
-                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 12, color: "#b8593f", cursor: "pointer" }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 12, color: T.terracotta, cursor: "pointer" }}>
                   <input type="checkbox" checked={includeDecoy} onChange={e => setIncludeDecoy(e.target.checked)} style={{ marginTop: 2 }} />
                   <span>Import it anyway — this would add <strong>{fmt$(s.decoyDollars)}</strong> of gifts that look already-imported; anything duplicating a real sheet (same donor, date, amount) will be excluded and shown.</span>
                 </label>
@@ -418,8 +419,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                     {(sig.options || []).map(o => (
                       <label key={o.value} data-testid={`wb-opt-${sig.id}-${o.value}`}
                         style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 6, alignItems: "center", cursor: "pointer",
-                                 border: `1px solid ${chosen === o.value ? (T.green600 || "#1e6b45") : T.bg3}`, borderRadius: 8, padding: "6px 10px",
-                                 background: chosen === o.value ? (T.green100 || "#edf3ee") : "transparent" }}>
+                                 border: `1px solid ${chosen === o.value ? T.green600 : T.bg3}`, borderRadius: 8, padding: "6px 10px",
+                                 background: chosen === o.value ? T.green100 : "transparent" }}>
                         <input type="radio" name={sig.id} checked={chosen === o.value}
                           onChange={() => setSignalAnswers(p => ({ ...p, [sig.id]: o.value }))} />
                         {o.label}
@@ -467,7 +468,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
                         {col.header}
-                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#b8593f", marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column — not auto-mapped</span>}
+                        {col.hidden && <span style={{ fontSize: 10.5, fontWeight: 700, color: T.terracotta, marginLeft: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>hidden column — not auto-mapped</span>}
                         <span style={{ fontSize: 11.5, fontWeight: 400, color: T.ink3, marginLeft: 8 }}>e.g. “{String(col.sample ?? "").slice(0, 28)}”</span>
                       </div>
                       {/* FIX (2026-09-09) — the ONE column-target dropdown. This
@@ -513,7 +514,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {btn("← Back", () => setStep(answerable.length ? "signals" : "sheets"), { secondary: true, disabled: building })}
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
-        {err && <div style={{ color: "#b8593f", fontSize: 12.5, marginTop: 8 }}>{err}</div>}
+        {err && <div style={{ color: T.terracotta, fontSize: 12.5, marginTop: 8 }}>{err}</div>}
       </div>
     );
   }
@@ -632,13 +633,13 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
                 <div key={tr.sheet} style={{ padding: "4px 0", lineHeight: 1.55 }}>
                   <strong>{tr.sheet}</strong>: the file says {fmt$(tr.stated)}; imported {fmt$(tr.imported)}; refused {fmt$(tr.refusedAbs)} ({fmtN(tr.refusedCount)} rows); routed {fmt$(tr.routedAbs)} ({fmtN(tr.routedCount)} rows)
                   {Math.abs(unexplained) >= 0.01
-                    ? <span style={{ color: "#b8593f" }}>; unexplained {fmt$(unexplained)}</span>
+                    ? <span style={{ color: T.terracotta }}>; unexplained {fmt$(unexplained)}</span>
                     : <span style={{ color: T.ink3 }}>; nothing unexplained</span>}.
                 </div>
               );
             })}
             {s.totalRows.some(tr => Math.abs(Math.round((tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs)) * 100) / 100) >= 0.01) && (
-              <div style={{ fontSize: 11.5, color: "#b8593f", marginTop: 6 }}>
+              <div style={{ fontSize: 11.5, color: T.terracotta, marginTop: 6 }}>
                 Import confidence: reconciled within {fmt$(Math.max(...s.totalRows.map(tr => Math.abs(Math.round((tr.stated - (tr.imported + tr.refusedAbs + tr.routedAbs)) * 100) / 100))))}.
               </div>
             )}
@@ -647,7 +648,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
 
         <SectionHead>Largest gifts about to land</SectionHead>
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
-          {s.largestGifts.map((g, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>{g.name}</span><span>{fmt$(g.dollars)} · {g.date}</span></div>)}
+          {s.largestGifts.map((g, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>{g.name}</span><span>{fmt$(g.dollars)} · {displayDate(g.date)||g.date}</span></div>)}
         </div>
 
         {s.merges.length > 0 && (<>
@@ -669,7 +670,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           {building && <span style={{ fontSize: 12.5, color: T.ink3 }}><Spin /> {progressText}</span>}
         </div>
         <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 8 }}>One transaction: if anything fails mid-way, nothing lands — never a half-imported org.</div>
-        {err && <div style={{ color: "#b8593f", fontSize: 12.5, marginTop: 8 }}>{err}</div>}
+        {err && <div style={{ color: T.terracotta, fontSize: 12.5, marginTop: 8 }}>{err}</div>}
       </div>
     );
   }
@@ -749,8 +750,8 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           </div>
         )}
         {checks.length > 0 && (
-          <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? "#f6e3dd" : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? "#eac6b8" : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
-            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? "#8a3a24" : T.ink3, marginBottom: 6 }}>
+          <div data-testid="wb-readback" style={{ background: (mismatches.length || notReadBack.length) ? T.terra100 : T.bg, border: `1px solid ${(mismatches.length || notReadBack.length) ? T.terra200 : T.bg3}`, borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: (mismatches.length || notReadBack.length) ? T.terra700 : T.ink3, marginBottom: 6 }}>
               {mismatches.length ? "What we showed you does NOT match what was written"
                 : notReadBack.length ? "Checked against the database — some figures could not be read back"
                 : "Checked against the database after writing"}
@@ -758,7 +759,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
             {checks.map(c2 => {
               const bad = c2.readBack && (c2.money ? Math.abs(Number(c2.shown) - Number(c2.written)) > 0.005 : Number(c2.shown) !== Number(c2.written));
               return (
-                <div key={c2.key} style={{ fontSize: 12.5, color: bad || !c2.readBack ? "#8a3a24" : T.ink, display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
+                <div key={c2.key} style={{ fontSize: 12.5, color: bad || !c2.readBack ? T.terra700 : T.ink, display: "flex", justifyContent: "space-between", gap: 8, padding: "2px 0" }}>
                   <span>{c2.label}</span>
                   <span>{!c2.readBack ? `shown ${fmtVal(c2, c2.shown)} · not read back`
                     : bad ? `shown ${fmtVal(c2, c2.shown)} · written ${fmtVal(c2, c2.written)}`

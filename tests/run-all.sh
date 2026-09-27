@@ -156,6 +156,16 @@ CORE=(
   fix1-fundraising
   fix1-finance
   fix1-institutional
+  fix2-codeql
+  fix2-d-agent
+  fix2-e-grant-word
+  fix2-e-no-iso
+  fix2-e-profile
+  fix2-b-reports
+  fix2-a-dashboards
+  fix2-a-footing
+  fix2-c-hex
+  fix2-c-cream
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

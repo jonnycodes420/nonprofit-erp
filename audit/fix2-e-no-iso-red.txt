@@ -1,0 +1,40 @@
+fix2-e-no-iso
+
+— §1 · no JSX text child renders a date the ISO way —
+  FAIL  §1 no ISO-shaped date render in client/src outside the named survivors — ["client/src/components/Dashboard.jsx:1788 {(t.lastTouch?.date||t.openedOn)?` · ${String(t.lastTouch?.date||t.openedOn).slice(0,10)}`:\"\"}","client/src/components/DonorImport.jsx:3487 <span style={{fontSize:12,color:T.ink3}}>{g.date}</span>","client/src/components/DonorImport.jsx:3583 · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {g.date}","client/src/components/DonorPortalHub.jsx:57 <span style={{ color: T.ink3 }}>{String(r.createdAt).slice(0, 10)}</span>","client/src/components/DonorProfile.jsx:1556 {it.nextStep.label} · {it.overdue?\"overdue\":\"due\"} {String(it.nextStep.due).slice(0,10)} · day {it.daysOpen}","client/src/components/DonorProfile.jsx:1560 {it.lastTouch?.date&&it.kind!==\"task\"?<> · {String(it.lastTouch.date).slice(0,10)}</>:null}","client/src/components/DonorProfile.jsx:1694 <span style={{color:T.ink3}}>{sc.date}</span>","client/src/components/DonorProfile.jsx:1983 <option key={p.id} value={p.id}>Fulfills {fmtFull(p.amount)} pledge due {p.due_date}</option>","client/src/components/DonorProfile.jsx:2078 <td style={{padding:\"9px 12px\",color:T.ink3,whiteSpace:\"nowrap\"}}>{g.date}</td>","client/src/components/DonorProfile.jsx:2155 <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {pl.due_date}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.i","client/src/components/DonorProfile.jsx:2245 <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?\"s\":\"\"} · Last: {f.lastDate}</div>","client/src/components/DonorProfile
+  PASS  §1 the survivors list is exact (a fixed survivor leaves the list)
+
+— §2 · the screens, as rendered —
+  PASS  §2 every rail screen opened (12/12)
+
+2 passed, 2 failed
+--- ISO findings by screen (FIX2E_PRINT) ---
+   1     ISO Dashboards
+  11     ISO Donor profile
+   9     ISO Donor profile › Activity
+   5     ISO Donor profile › Funds
+   8     ISO Donor profile › Gifts & Pledges8
+  11     ISO Donor profile › Overview
+   1     ISO Finance › Restricted › Transactions
+   8     ISO Fundraising
+   8     ISO Fundraising › Overview
+  12     ISO Home
+   2     ISO Reports › Week in Review
+ 336     ISO Reports › Your reports
+ 476     ISO Reports › Your reports › Gifts for the bookkeeper
+   2     ISO Reports › Your reports › Week in Review
+--- first context per screen ---
+    ISO Home :: a week ago. ¦ Next: ¦ send the proposal ¦ . ¦ Meeting ¦ · 2026-09-20 ¦ · Ivy ¦ 14 days ¦ overdue 
+    ISO Dashboards :: thly base healthy? ¦ How are we doing this year? ¦ As of ¦ 2026-09-27 ¦ . Numbers a board can read.
+    ISO Fundraising :: cent gifts ¦ Rupert and Genevieve Ferraro ¦ General ¦ · ¦ 2026-09-25 ¦ Offline ¦ $380 ¦ Covenant B
+    ISO Fundraising › Overview :: cent gifts ¦ Rupert and Genevieve Ferraro ¦ General ¦ · ¦ 2026-09-25 ¦ Offline ¦ $380 ¦ Covenant B
+    ISO Reports › Your reports :: ¦ Lifetime giving ¦ Ada Petrossian ¦ demo0057@example.org ¦ 2026-05-09 ¦ 13602 ¦ 51910 ¦ 137576 ¦ Ha
+    ISO Reports › Your reports › Week in Review ::  completed week's gifts, asks, moves, and past-due tasks. ¦ 2026-09-14 ¦ to ¦ 2026-09-20 ¦ — ¦ $
+    ISO Reports › Your reports › Gifts for the bookkeeper ::  CY ¦ Custom ¦ Download CSV ¦ 474 ¦ gift ¦ s ¦ between ¦ 2026-07-01 ¦ and ¦ 2027-06-30 ¦ , tota
+    ISO Finance › Restricted › Transactions :: ction ¦ Date ¦ ↓ ¦ Amount ¦ Description ¦ Account ¦ Fund ¦ 2026-09-27 ¦ + ¦ $60,000 ¦ Grant awarded
+    ISO Reports › Week in Review ::  completed week's gifts, asks, moves, and past-due tasks. ¦ 2026-09-14 ¦ to ¦ 2026-09-20 ¦ — ¦ $
+    ISO Donor profile :: als ¦ Activity ¦ Open ¦ Send the proposal ¦ · ¦ overdue ¦ 2026-09-13 ¦ · day ¦ 0 ¦ " ¦ Sat down 
+    ISO Donor profile › Overview :: als ¦ Activity ¦ Open ¦ Send the proposal ¦ · ¦ overdue ¦ 2026-09-13 ¦ · day ¦ 0 ¦ " ¦ Sat down 
+    ISO Donor profile › Gifts & Pledges8 :: +. ¦ Date ¦ Amount ¦ Type ¦ Method ¦ Ack ¦ Receipt ¦ Note ¦ 2026-05-09 ¦ $13,602 ¦ cash ¦ Credit Car
+    ISO Donor profile › Funds ::  $54,290 ¦ 39 ¦ % of lifetime ¦ 3 ¦ gift ¦ s ¦ · Last: ¦ 2026-05-09 ¦ General Operating ¦ $33,372
+    ISO Donor profile › Activity :: ¦ note ¦ Log Stewardship ¦ + Log Touchpoint ¦ • ¦ meeting ¦ 2026-09-20 ¦ by ¦ Ivy ¦ Sat down about 

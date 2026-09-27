@@ -65,7 +65,8 @@ const SURFACES = [
   "components/Settings.jsx",
   "components/DepositSheet.jsx",
   "components/DonorMap.jsx",
-  "components/MetricBreakdownPanel.jsx",
+  "components/MetricBreakdownPanel.jsx", // FIX-2 A — the one drill-through panel (a figure's rows and their total)
+  "components/Figure.jsx",          // FIX-2 A — the one figure component; every figure it draws opens
   "components/FunnelChart.jsx",
   "components/PlanFollowUp.jsx",
   "components/LogConversation.jsx",
@@ -154,6 +155,82 @@ const OUT_OF_SCOPE = {
   "pages/TermsPage.jsx": "legal text; its numbers are dates, prices pinned by tests/one-date.test.js",
   "pages/WelcomePage.jsx": "first-run onboarding; the import receipt it shows is census'd in Donors.jsx",
 };
+
+// ── FIX-2 — EVERY NUMBER OPENS ─────────────────────────────────────────────
+// The screens on which every figure must carry a `source` (the rows behind it,
+// figureSources.js on the server). On these screens a number is drawn ONLY by
+// <Figure> (components/Figure.jsx), and every <Figure> is written with
+// `source=`. Two things fail the battery, each named by file and line:
+//   · a <Figure …> element written without a `source=` attribute
+//   · a number drawn any other way (any numeric render site the patterns
+//     below find) — a figure with no source, because it is not a <Figure>
+// FIX-2 starts with the four dashboards. OTHER SCREENS JOIN THIS LIST AS THEY
+// ADOPT <Figure>, in the commit that converts them; a screen on it can never
+// again draw a number that does not open.
+const FIGURE_SOURCE_SCOPE = [
+  "components/Dashboards.jsx",      // Board, Fundraising, People, Recurring (FIX-2 A)
+];
+// The component and the panel themselves: they are where a figure's number
+// and its rows' total are drawn, so the patterns below find numbers in them by
+// design. Figure.jsx must take `source`; the panel draws only rows and totals.
+const FIGURE_COMPONENTS = ["components/Figure.jsx", "components/MetricBreakdownPanel.jsx"];
+
+// Every opening <Figure …> tag in a source text, with the line it starts on
+// and its attribute text (braces and strings are walked, so a `>` inside an
+// expression does not end the tag).
+function figureTags(src) {
+  const out = [];
+  const re = /<Figure\b/g;
+  let m;
+  while ((m = re.exec(src))) {
+    let i = m.index + m[0].length, depth = 0, quote = null;
+    for (; i < src.length; i++) {
+      const c = src[i];
+      if (quote) { if (c === quote && src[i - 1] !== "\\") quote = null; continue; }
+      if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      else if (c === ">" && depth === 0) break;
+    }
+    out.push({ line: src.slice(0, m.index).split("\n").length, attrs: src.slice(m.index + m[0].length, i) });
+  }
+  return out;
+}
+
+// [{ file, line, problem }] — empty when every figure on every in-scope
+// screen carries its source. `files` ({ rel: text }) lets the suite plant a
+// defect in a synthetic screen without writing to the client tree.
+function figureSourceProblems({ files } = {}) {
+  const problems = [];
+  const texts = files || Object.fromEntries(FIGURE_SOURCE_SCOPE.map(rel => {
+    const full = path.join(SRC, rel);
+    return [rel, fs.existsSync(full) ? fs.readFileSync(full, "utf8") : null];
+  }));
+  for (const [rel, raw] of Object.entries(texts)) {
+    if (raw === null) { problems.push({ file: rel, line: 0, problem: "an in-scope screen that does not exist" }); continue; }
+    // COMMENTS ARE NOT A SCREEN. Blanked, keeping every newline, so a line
+    // number still points at the line in the file.
+    const src = raw.replace(/\/\*[\s\S]*?\*\//g, c => c.replace(/[^\n]/g, " "))
+      .split("\n").map(l => (/^\s*\/\//.test(l) ? "" : l.replace(/\s\/\/\s.*$/, ""))).join("\n");
+    for (const t of figureTags(src)) {
+      // `source=` as an attribute, not a word inside some other expression.
+      if (!/(^|\s)source=\{/.test(t.attrs)) {
+        problems.push({ file: rel, line: t.line, problem: "a <Figure> without a source, so it cannot open" });
+      }
+    }
+    const lines = src.split("\n");
+    lines.forEach((line, i) => {
+      if (isNoise(line)) return;
+      for (const p of PATTERNS) {
+        p.re.lastIndex = 0;
+        if (p.re.test(line)) {
+          problems.push({ file: rel, line: i + 1, problem: `a number drawn outside <Figure> (${p.what}), so it has no source: ${line.trim().slice(0, 90)}` });
+        }
+      }
+    });
+  }
+  return problems;
+}
 
 // ── THE PATTERNS ───────────────────────────────────────────────────────────
 // Each names what it catches, because a pattern nobody can explain is a count
@@ -246,7 +323,8 @@ function census() {
   return { byFile, total, claims: claims.length, claimSites: claims, sites: all, outOfScope: OUT_OF_SCOPE };
 }
 
-module.exports = { census, SURFACES, OUT_OF_SCOPE, SCANNED_AS_DONORS, PATTERNS };
+module.exports = { census, SURFACES, OUT_OF_SCOPE, SCANNED_AS_DONORS, PATTERNS,
+                   FIGURE_SOURCE_SCOPE, FIGURE_COMPONENTS, figureSourceProblems, figureTags };
 
 if (require.main === module) {
   const r = census();
@@ -255,6 +333,11 @@ if (require.main === module) {
   } else if (process.argv.includes("--claims")) {
     for (const s of r.claimSites) console.log(`${s.file}:${s.line}  [${s.kind}]  ${s.snippet}`);
     console.log(`\n${r.claims} claim-shaped sites of ${r.total} numeric render sites`);
+  } else if (process.argv.includes("--figures")) {
+    const probs = figureSourceProblems();
+    for (const x of probs) console.log(`${x.file}:${x.line}  ${x.problem}`);
+    console.log(`\n${probs.length} figure(s) without a source on ${FIGURE_SOURCE_SCOPE.length} in-scope screen(s)`);
+    if (probs.length) process.exitCode = 1;
   } else if (process.argv.includes("--sites")) {
     for (const s of r.sites) console.log(`${s.file}:${s.line}  [${s.kind}]  ${s.snippet}`);
     console.log(`\n${r.sites.length} numeric render sites`);

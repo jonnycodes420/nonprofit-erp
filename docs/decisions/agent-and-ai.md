@@ -19,6 +19,17 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
 - **Put every Anthropic call behind `aiGate(orgId)`.** `ai_no_key` means the control is absent (503, never
   500); `ai_disabled` is the org's Settings switch (`orgs.ai_enabled`, undefined reads as ON). The agent adds
   `agentGate` for pause. (BUILD-96, BUILD-97)
+- **A read needs no drafting.** Opening a report, finding a person, counting and explaining a number are
+  routed without a model (`agentShape.readIntent`) and answered by `POST /agent/instructions` with
+  `{ read }`, writing NOTHING (no instruction row, no run, no audit). A sentence that asks Steward to DO
+  something to people (draft, send, tag…) is never a read. A count is the report's own (`reportHooks.run`,
+  the handler `GET /reports/:key` runs). (FIX-2 D)
+- **Say which gate is shut.** `agentShape.draftingState` orders the causes: no `ANTHROPIC_API_KEY` first
+  (one line that names the key, never the organisation's permission), then `orgs.ai_enabled`, then pause.
+  Drafting off says what still works, what drafting adds, and shows Turn on drafting to an admin (it opens
+  Agent → Guardrails → Drafting) or names the admins to anyone else. `GET /agent/status` is the read. (FIX-2 D)
+- **One drafting switch.** Settings → Data and Agent → Guardrails both write `PATCH /org/ai-settings`
+  (admin only), which audits who turned drafting on or off (`fin_audit_log`, entity `ai_drafting`). (FIX-2 D)
 - **Check the gate after the org-ownership check.** A cross-tenant probe must get 404, not 503. (BUILD-99)
 - **Build the gate before `new Anthropic()`.** The constructor throws without a key. (BUILD-99)
 - **Any new feature that sends org data to Anthropic joins the one disclosure:** steward-data-handling.md, the

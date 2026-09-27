@@ -20,7 +20,7 @@ const S = {
   input: { width: "100%", padding: "11px 12px", fontSize: 15, border: `1px solid ${T.bg3}`, borderRadius: 8, background: T.white, color: T.ink, boxSizing: "border-box" },
   btn: { background: T.gold, color: T.ink, border: "none", borderRadius: 8, padding: "12px 24px", fontSize: 15, fontWeight: 700, cursor: "pointer", marginTop: 16 },
   muted: { color: T.ink3, fontSize: 14, lineHeight: 1.55 },
-  err: { color: "#8a3a24", fontSize: 14, marginTop: 8 },
+  err: { color: T.terra700, fontSize: 14, marginTop: 8 },
   step: { display: "flex", gap: 10, margin: "8px 0", fontSize: 14 },
 };
 

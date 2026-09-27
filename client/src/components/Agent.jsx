@@ -1,22 +1,33 @@
-// client/src/components/Agent.jsx — FIX-1 §A. STEWARD AGENT, ITS OWN ROOM.
+// client/src/components/Agent.jsx — FIX-1 §A, rebuilt to Direction 2 in FIX-2 D.
 //
-// Direction 2, the run sheet (docs/fix-1/agent-directions/): an ink desk with a
-// cream sheet on it. The content lives on the sheet; the ink is the room. Brass
-// is what the agent is doing, and emerald is only ever the one yes.
+// Direction 2, the run sheet (docs/fix-1/agent-directions/, Jonathan's pick):
+// the CREAM SHEET TAKES THE ROOM and ink is only the margin around it. The
+// content lives on the sheet: the views as a tab row along its top edge, the
+// instructions she has given down its left with each run's state, the open plan
+// as a checklist on its right with the confirm at the foot. Brass is what the
+// agent is doing; emerald is only ever the one yes.
 //
 // Five views:
 //   Plans      — every instruction she has given down the left with its run's
 //                state; the open plan on the right as a checklist (what it read,
-//                each step, its state), the confirm at the foot of the sheet.
+//                each step, its state), the confirm at the foot.
 //   Ask        — a large box and three examples in the org's own words.
 //   Workflows  — the recipes, moved here from their own tab.
 //   Waiting    — everything Steward prepared that waits on a person, one queue,
 //                oldest first.
-//   Guardrails — pause everything, what it can and cannot do in plain sentences,
-//                every instruction and run, and the thirty-day undo list (moved
-//                here from Settings).
+//   Guardrails — pause everything, drafting on or off (the org's switch, the
+//                same control and write as Settings → Data), what it can and
+//                cannot do in plain sentences, every instruction and run, and
+//                the thirty-day undo list.
 //
-// Two rules this screen keeps, and the suite holds it to (tests/fix1-agent):
+// FIX-2 D — DRAFTING OFF IS NOT A DEAD END. When drafting is off the sheet says
+// what Steward can do now, what drafting would add, and either offers Turn on
+// drafting (an admin: it opens the switch in Guardrails) or names who can. When
+// the server has no ANTHROPIC_API_KEY it says THAT, in one line, and never
+// blames the organisation. A READ (open a report, find a person, count,
+// explain a number) needs no drafting: the server answers it and writes nothing.
+//
+// Rules this screen keeps (tests/fix1-agent, tests/fix2-d-agent):
 //   · THE RUN STATE IS THE SERVER'S. The sheet reads GET /agent/runs/:id; the
 //     button never believes its own guess that a run is still going.
 //   · NO RAW MARKDOWN AND NO COLOUR LITERALS. Every colour is a token.
@@ -26,6 +37,7 @@ import { T } from "./shared";
 import { Workflows } from "./Workflows";
 import { errorMessage } from "../lib/domainError";
 import { makeT } from "../../../shared/vocabulary";
+import { displayDateShort } from "../../../shared/displayDate";
 import { AGENT_TOOLS, runIsLive, stateLabel, STEP_CONFIRM, STEP_WAITS, OUTCOME_DONE, OUTCOME_WAITING } from "../../../shared/agentShape";
 
 // ── Shared consts, above everything that reads them (the TDZ rule) ─────────
@@ -60,16 +72,25 @@ const CANNOT = {
   change_subscription: "Change, pause or cancel a monthly gift. It is the giver's money and the giver's decision.",
   issue_receipt: "Issue a tax receipt. A receipt belongs to a specific gift and comes from the path that took the money.",
 };
+const EYEBROW = { fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 };
+// A panel ON the sheet: white on cream, a hairline, never a second dark card.
+const PANEL = { background: T.white, color: T.ink, border: "1px solid " + T.bg2, borderRadius: 12 };
+const OUTLINE_BTN = { background: "transparent", color: T.ink, border: "1.5px solid " + T.ink, borderRadius: 10,
+  padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+const YES_BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "12px 20px",
+  fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
+const REFUSAL = { fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10, lineHeight: 1.5 };
 // The tool table speaks about "her"; this screen speaks to her.
 const toHer = s => String(s || "").replace(/\bSHE\b/g, "you").replace(/\bher (send )?queue\b/g, "your $1queue");
+const localYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtWhen = ts => {
   if (!ts) return "";
   const d = new Date(ts);
+  if (isNaN(d.getTime())) return "";
   const today = new Date();
-  const sameDay = d.toDateString() === today.toDateString();
-  return sameDay
+  return d.toDateString() === today.toDateString()
     ? "today, " + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
-    : d.toLocaleDateString("en-GB", { day: "numeric", month: "long" });
+    : displayDateShort(localYmd(d), localYmd(today));
 };
 
 function useWide() {
@@ -111,7 +132,7 @@ function check(on) {
     border: "1.5px solid " + (on ? T.ink : T.ink3), background: on ? T.ink : "transparent" }} />;
 }
 
-// ── THE SHEET ──────────────────────────────────────────────────────────────
+// ── THE OPEN PLAN ──────────────────────────────────────────────────────────
 // One plan, as a checklist a person could tick: what it read, each step, its
 // state; the one yes at the foot.
 function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
@@ -142,11 +163,10 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
       ? "Messages go out only because you signed this instruction for sending. Everything else can be undone for thirty days."
       : "Nothing is sent. Everything Steward does here can be undone for thirty days.";
   return (
-    <section data-testid="agent-sheet" style={{ background: T.bg, color: T.ink, borderRadius: 14,
-      padding: wide ? "28px 30px" : "20px 16px", minWidth: 0 }}>
-      <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 }}>{eyebrow}</div>
-      <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 6px" }}>{plan.summary}</h2>
-      <p style={{ color: T.ink3, margin: "0 0 18px", fontSize: 15, lineHeight: 1.5 }}>“{item.text}”</p>
+    <section data-testid="agent-sheet" style={{ ...PANEL, padding: wide ? "26px 28px" : "18px 16px", minWidth: 0 }}>
+      <div style={EYEBROW}>{eyebrow}</div>
+      <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 6px", overflowWrap: "anywhere" }}>{plan.summary}</h2>
+      <p style={{ color: T.ink3, margin: "0 0 18px", fontSize: 15, lineHeight: 1.5, overflowWrap: "anywhere" }}>“{item.text}”</p>
       <div role="table" style={{ fontSize: 14 }}>
         {wide && (
           <div role="row" style={{ display: "grid", gridTemplateColumns: "30px 1.3fr 1fr 190px", gap: 10, padding: "8px 0",
@@ -156,10 +176,10 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
         )}
         {rows.map(r => (
           <div role="row" key={r.key} data-testid="agent-step" data-state={r.pill}
-            style={{ display: "grid", gridTemplateColumns: wide ? "30px 1.3fr 1fr 190px" : "30px 1fr", gap: wide ? 10 : 6,
+            style={{ display: "grid", gridTemplateColumns: wide ? "30px 1.3fr 1fr 190px" : "30px minmax(0,1fr)", gap: wide ? 10 : 6,
               padding: "14px 0", borderBottom: "1px solid " + T.bg2, alignItems: "start" }}>
             {check(r.on)}
-            <span style={{ lineHeight: 1.45 }}>{r.describes}</span>
+            <span style={{ lineHeight: 1.45, minWidth: 0, overflowWrap: "anywhere" }}>{r.describes}</span>
             {wide ? <span style={{ color: T.ink2, lineHeight: 1.45 }}>{r.detail}</span> : null}
             <span style={wide ? {} : { gridColumn: 2 }}>{pill(r.pill, r.label)}</span>
           </div>
@@ -170,7 +190,7 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
           {plan.withheld} {plan.withheld === 1 ? "step was" : "steps were"} left out because Steward could not point at the record {plan.withheld === 1 ? "it" : "they"} came from.
         </div>
       )}
-      {err && <div data-testid="agent-refusal" style={{ marginTop: 14, fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10, lineHeight: 1.5 }}>{err}</div>}
+      {err && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginTop: 14 }}>{err}</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginTop: 22, flexWrap: "wrap" }}>
         <div style={{ fontSize: 14, color: T.ink3, maxWidth: "44ch", lineHeight: 1.5 }}>
           {item.status === "set_aside" ? "Set aside. Nothing ran and nothing was recorded."
@@ -186,14 +206,96 @@ function sheet({ item, wide, busy, isReadOnly, onConfirm, onDiscard, err }) {
               </button>
             )}
             <button data-testid="agent-sheet-confirm" onClick={onConfirm} disabled={isReadOnly || busy || live || !canRun}
-              style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "12px 20px",
-                fontSize: 15, fontWeight: 700, cursor: busy || live ? "default" : "pointer", width: wide ? "auto" : "100%",
-                opacity: isReadOnly ? 0.5 : 1 }}>
+              style={{ ...YES_BTN, cursor: busy || live ? "default" : "pointer", width: wide ? "auto" : "100%", opacity: isReadOnly ? 0.5 : 1 }}>
               {busy || live ? "Running…" : (plan.confirmLabel || "Run the plan")}
             </button>
           </div>
         )}
       </div>
+    </section>
+  );
+}
+
+// ── A READ, ANSWERED ───────────────────────────────────────────────────────
+// A report opened, a person found, a count, a number explained. The server
+// wrote nothing, and the panel says so.
+function readPanel({ read, wide, onNavigate, onClose }) {
+  const go = (tab, opts) => onNavigate && onNavigate(tab, opts);
+  const eyebrow = read.kind === "explain" ? "Read · what it means" : read.kind === "person" || read.kind === "people" ? "Read · found" : "Read · a report";
+  return (
+    <section data-testid="agent-read" data-kind={read.kind} style={{ ...PANEL, padding: wide ? "26px 28px" : "18px 16px", minWidth: 0 }}>
+      <div style={EYEBROW}>{eyebrow}</div>
+      <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 8px", overflowWrap: "anywhere" }}>
+        {read.kind === "person" ? read.name : read.kind === "people" ? "More than one record matches" : read.name}
+      </h2>
+      {read.answer && <p style={{ fontSize: 16, lineHeight: 1.5, margin: "0 0 8px", color: T.ink }}>{read.answer}</p>}
+      <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: "0 0 8px", color: T.ink2 }}>{read.sentence}</p>
+      {read.kind === "people" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
+          {(read.people || []).map(p => (
+            <button key={p.id} onClick={() => go("donors", { selectDonorId: p.id })}
+              style={{ ...OUTLINE_BTN, textAlign: "left", fontWeight: 600, borderWidth: 1 }}>{p.name}</button>
+          ))}
+        </div>
+      )}
+      <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 18px" }}>{read.note || "Steward read this and wrote nothing."}</p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", flexDirection: wide ? "row" : "column", alignSelf: "stretch" }}>
+        {read.report && (
+          <button data-testid="agent-read-open" onClick={() => go("reports", { report: read.report })}
+            style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open {read.name}</button>
+        )}
+        {read.kind === "person" && (
+          <button data-testid="agent-read-open" onClick={() => go("donors", { selectDonorId: read.donorId })}
+            style={{ ...YES_BTN, width: wide ? "auto" : "100%" }}>Open the record</button>
+        )}
+        {read.savedReport && (
+          <button data-testid="agent-read-save" onClick={() => go("reports", { savedReport: read.savedReport })}
+            style={{ ...OUTLINE_BTN, width: wide ? "auto" : "100%" }}>Keep it in Your reports</button>
+        )}
+        <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "10px 6px" }}>
+          Close
+        </button>
+      </div>
+      {read.savedReport && (
+        <p style={{ fontSize: 12.5, color: T.ink3, margin: "12px 0 0", lineHeight: 1.5 }}>
+          {read.name} is one of the everyday reports kept under Reports → Your reports, always up to date, with its CSV and PDF.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ── DRAFTING OFF: WHAT, WHO, WHERE ─────────────────────────────────────────
+function draftingNotice({ status, isReadOnly, onTurnOn, onGuardrails }) {
+  if (!status || status.on) return null;
+  if (status.reason === "ai_no_key") {
+    return (
+      <div data-testid="agent-drafting" data-reason="ai_no_key" style={{ ...REFUSAL, margin: "0 0 18px", fontSize: 13.5 }}>
+        <span data-testid="agent-key-missing">{status.sentence}</span>
+      </div>
+    );
+  }
+  if (status.reason === "agent_paused") {
+    return (
+      <div data-testid="agent-drafting" data-reason="agent_paused" style={{ ...REFUSAL, margin: "0 0 18px" }}>
+        Steward is paused. <button onClick={onGuardrails} style={{ background: "none", border: "none", padding: 0, color: T.ink, fontWeight: 700, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: "inherit" }}>Turn it back on in Guardrails</button>.
+      </div>
+    );
+  }
+  return (
+    <section data-testid="agent-drafting" data-reason={status.reason}
+      style={{ ...PANEL, borderLeft: "3px solid " + T.gold, padding: "16px 18px", margin: "0 0 18px", display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+        <div style={{ fontFamily: SERIF, fontSize: 20, marginBottom: 6 }}>Drafting is off.</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.55, color: T.ink2 }}>{status.canNow}</div>
+        <div style={{ fontSize: 13.5, lineHeight: 1.55, color: T.ink3, marginTop: 4 }}>{status.adds}</div>
+        {!status.canTurnOn && <div data-testid="agent-drafting-who" style={{ fontSize: 13.5, lineHeight: 1.55, color: T.ink, marginTop: 8, fontWeight: 600 }}>{status.whoCan}</div>}
+      </div>
+      {status.canTurnOn && (
+        <button data-testid="agent-turn-on-drafting" onClick={onTurnOn} disabled={isReadOnly} style={{ ...OUTLINE_BTN, opacity: isReadOnly ? 0.5 : 1 }}>
+          Turn on drafting
+        </button>
+      )}
     </section>
   );
 }
@@ -210,14 +312,18 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const [asking, setAsking] = useState(false);
   const [askErr, setAskErr] = useState("");
   const [askedId, setAskedId] = useState(null);
+  const [read, setRead] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [sheetErr, setSheetErr] = useState("");
+  const [status, setStatus] = useState(null);
+  const [focusDrafting, setFocusDrafting] = useState(false);
   const loadPlans = useCallback(() => apiFetch("/agent/plans").then(r => {
     setPlans(r.plans || []);
     return r.plans || [];
   }).catch(() => { setPlans([]); return []; }), []);
   const loadWaiting = useCallback(() => apiFetch("/agent/waiting").then(setWaiting).catch(() => setWaiting({ count: 0, items: [] })), []);
-  useEffect(() => { loadPlans(); loadWaiting(); }, [loadPlans, loadWaiting]);
+  const loadStatus = useCallback(() => apiFetch("/agent/status").then(setStatus).catch(() => setStatus(null)), []);
+  useEffect(() => { loadPlans(); loadWaiting(); loadStatus(); }, [loadPlans, loadWaiting, loadStatus]);
   // Guardrails' state: every instruction, every run, every write with its undo.
   const [guardData, setGuardData] = useState(null);
   const [guardInstr, setGuardInstr] = useState(null);
@@ -228,14 +334,31 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     apiFetch("/agent/instructions").then(setGuardInstr).catch(() => setGuardInstr(null));
   }, []);
   useEffect(() => { if (view === "guardrails") loadGuard(); }, [view, loadGuard]);
+  // "Turn on drafting" lands ON the switch, not at the top of a long view.
+  useEffect(() => {
+    if (view !== "guardrails" || !focusDrafting) return undefined;
+    const h = setTimeout(() => {
+      const el = typeof document !== "undefined" && document.getElementById("agent-drafting-setting");
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 60);
+    return () => clearTimeout(h);
+  }, [view, focusDrafting]);
   async function guardAct(path, key) {
     if (guardBusy) return;
     setGuardBusy(key); setGuardErr("");
-    try { await apiFetch(path, { method: "POST", body: "{}" }); loadGuard(); loadPlans(); }
+    try { await apiFetch(path, { method: "POST", body: "{}" }); loadGuard(); loadPlans(); loadStatus(); }
     catch (e) { setGuardErr(errorMessage(e, "That did not work.")); }
     setGuardBusy("");
   }
-
+  // THE ORG'S SWITCH. The same control and the same write as Settings → Data
+  // (PATCH /org/ai-settings, admin only, audited with who).
+  async function setDrafting(enabled) {
+    if (guardBusy) return;
+    setGuardBusy("drafting"); setGuardErr("");
+    try { await apiFetch("/org/ai-settings", { method: "PATCH", body: JSON.stringify({ enabled }) }); await loadStatus(); }
+    catch (e) { setGuardErr(errorMessage(e, "That did not work.")); }
+    setGuardBusy("");
+  }
 
   // THE SERVER SAYS WHEN A RUN IS OVER. While any run it reports is live, ask
   // again; the moment it has a finish time, stop.
@@ -249,20 +372,23 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const ask = useCallback(async (words) => {
     const said = String(words || "").trim();
     if (!said || asking) return;
-    setAsking(true); setAskErr(""); setAskedId(null);
+    setAsking(true); setAskErr(""); setAskedId(null); setRead(null);
     try {
       const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify({ text: said }) });
-      await loadPlans(); loadWaiting();
-      setAskedId(r.id); setOpenId(r.id); setText("");
+      if (r && r.read) { setRead({ ...r.read, text: said }); setText(""); }
+      else {
+        await loadPlans(); loadWaiting();
+        setAskedId(r.id); setOpenId(r.id); setText("");
+      }
     } catch (e) {
       setAskErr(e && e.sentence ? e.sentence
-        : e && e.error === "agent_unavailable" ? "Steward can prepare a gift you tell it about. Planning anything else needs drafting, which is not enabled for this organization yet."
         : e && e.error === "agent_paused" ? "Steward is paused. Turn it back on in Guardrails."
         : e && e.error === "plan_refused" ? "Steward would not plan that: it would have needed something you have not signed for."
         : errorMessage(e, "Steward could not plan that just now."));
+      if (e && (e.error === "agent_unavailable" || e.error === "ai_disabled")) loadStatus();
     }
     setAsking(false);
-  }, [asking, loadPlans, loadWaiting]);
+  }, [asking, loadPlans, loadWaiting, loadStatus]);
 
   // Home's one-line entry carried her words here, and she already pressed.
   useEffect(() => { if (autoAsk && initialText) ask(initialText); /* once, on arrival */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -287,6 +413,10 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const open = list.find(p => p.id === openId) || list[0] || null;
   const asked = askedId ? list.find(p => p.id === askedId) : null;
   const waitCount = waiting ? waiting.count : null;
+  const running = list.filter(p => p.run && runIsLive(p.run)).length;
+  // What the agent is doing, in brass on the margin.
+  const activity = running ? `Steward is running ${running === 1 ? "a plan" : running + " plans"} now.`
+    : waitCount ? `${waitCount} ${waitCount === 1 ? "thing is" : "things are"} waiting for you.` : "";
 
   // Examples in HER words: her word for a giver, and a name on her own file.
   const someone = (data?.donors || []).find(d => d && d.name && d.kind === "organisation")
@@ -302,118 +432,141 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
       err: busyId === null && sheetErr ? sheetErr : "",
       onConfirm: () => confirm(item.id), onDiscard: () => discard(item.id) })
   ) : null;
+  const readFor = () => read ? readPanel({ read, wide, onNavigate, onClose: () => setRead(null) }) : null;
+  const notice = draftingNotice({ status, isReadOnly,
+    onTurnOn: () => { setFocusDrafting(true); setView("guardrails"); },
+    onGuardrails: () => setView("guardrails") });
 
   const askBar = (
-    <form onSubmit={e => { e.preventDefault(); ask(text); }} style={{ display: "flex", gap: 10, marginBottom: 24 }}>
+    <form onSubmit={e => { e.preventDefault(); ask(text); }} style={{ display: "flex", gap: 10, marginBottom: 18 }}>
       <input value={text} onChange={e => setText(e.target.value)} data-testid="agent-ask-bar"
         placeholder="Tell Steward what to do, in your own words…"
-        style={{ flex: 1, minWidth: 0, border: "1px solid " + T.green650, background: T.green900, color: T.bg,
+        style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, background: T.white, color: T.ink,
           borderRadius: 12, padding: "14px 16px", fontSize: 15, fontFamily: "inherit", outline: "none" }} />
     </form>
   );
 
+  // The instructions she has given, down the left, each with its run's state.
+  const instructionList = (
+    <div data-testid="agent-instruction-list" style={{ borderTop: "1px solid " + T.bg3, order: wide ? 0 : 2, minWidth: 0 }}>
+      <div style={{ ...EYEBROW, padding: "12px 0 6px" }}>Everything you have asked</div>
+      {!list.length && (
+        <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.55, padding: "6px 0 14px" }}>
+          Nothing planned yet. Every instruction you give will be listed here with what its run did. A question about your file, like a report, is answered without being kept.
+        </div>
+      )}
+      {list.map(p => {
+        const st = planState(p);
+        const on = !read && open && open.id === p.id;
+        return (
+          <button key={p.id} data-testid="agent-plan-item" onClick={() => { setRead(null); setOpenId(p.id); }}
+            style={{ display: "block", width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+              padding: "13px 8px 13px 12px", border: "none", borderBottom: "1px solid " + T.bg3,
+              borderLeft: "3px solid " + (on ? T.greenDk : "transparent"), background: on ? T.white : "transparent" }}>
+            <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.45, fontWeight: on ? 700 : 400, overflowWrap: "anywhere" }}>{p.text}</div>
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
+              <span style={{ color: st.brass ? T.gold700 : T.ink3, fontWeight: st.brass ? 700 : 400 }}>{st.word}</span>
+              {" · "}{fmtWhen(p.created_at)}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   return (
-    <div data-testid="agent-room" style={{ color: T.bg, minWidth: 0, maxWidth: "100%" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 20, flexWrap: "wrap", marginBottom: 22 }}>
+    // FIX-2 — the ink is the room's own margin (data-agent-margin), laid over
+    // the page's cream ground to the content's edges, so no page root is ink.
+    <div data-testid="agent-room" data-agent-margin style={{ color: T.bg, minWidth: 0, background: T.bgDark,
+      margin: wide ? "-20px -32px -28px" : "-20px -16px 0", padding: wide ? "20px 32px 28px" : "20px 16px 24px",
+      minHeight: "calc(100vh - 52px)", boxSizing: "border-box" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: wide ? 18 : 14 }}>
         <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 32 : 26, margin: 0, color: T.bg }}>Agent</h1>
-        <div role="tablist" style={{ display: "flex", border: "1px solid " + T.green650, borderRadius: 10, overflowX: "auto", maxWidth: "100%" }}>
-          {VIEWS.map((v, i) => (
+        {activity && <div data-testid="agent-activity" style={{ fontSize: 13.5, color: T.gold, fontWeight: 700 }}>{activity}</div>}
+      </div>
+
+      {/* THE SHEET. Cream, and it takes the room: the ink is only its margin. */}
+      <section data-testid="agent-desk" style={{ background: T.bg, color: T.ink, borderRadius: 16, minWidth: 0,
+        padding: wide ? "0 28px 28px" : "0 14px 18px", boxSizing: "border-box" }}>
+        <div role="tablist" style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + T.bg3,
+          margin: wide ? "0 -28px 22px" : "0 -14px 16px", padding: wide ? "0 20px" : "0 6px" }}>
+          {VIEWS.map(v => (
             <button key={v.id} role="tab" aria-selected={view === v.id} data-testid={`agent-tab-${v.id}`}
-              onClick={() => setView(v.id)}
+              onClick={() => { setFocusDrafting(false); setView(v.id); }}
               title={v.id === "waiting" && waiting ? waiting.definition : undefined}
-              style={{ padding: "8px 14px", fontSize: 13, whiteSpace: "nowrap", cursor: "pointer", fontFamily: "inherit",
-                border: "none", borderRight: i < VIEWS.length - 1 ? "1px solid " + T.green650 : "none",
-                background: view === v.id ? T.gold : "transparent", color: view === v.id ? T.ink : T.sage400,
-                fontWeight: view === v.id ? 700 : 500 }}>
+              style={{ padding: wide ? "16px 14px 13px" : "14px 10px 11px", fontSize: 13.5, whiteSpace: "nowrap", cursor: "pointer", fontFamily: "inherit",
+                border: "none", borderBottom: "3px solid " + (view === v.id ? T.greenDk : "transparent"),
+                background: "transparent", color: view === v.id ? T.ink : T.ink3, fontWeight: view === v.id ? 700 : 500 }}>
               {v.label}{v.id === "waiting" && waitCount ? ` · ${waitCount}` : ""}
             </button>
           ))}
         </div>
-      </div>
 
-      {view === "plans" && (
-        <div data-testid="agent-view-plans">
-          {askBar}
-          {askErr && <div data-testid="agent-refusal" style={{ margin: "-10px 0 18px", fontSize: 13.5, color: T.bg, borderLeft: "3px solid " + T.gold, paddingLeft: 10, lineHeight: 1.5 }}>{askErr}</div>}
-          {plans === null ? <div style={{ color: T.sage400, fontSize: 14 }}>Loading your plans…</div>
-            : !list.length ? (
-              <section style={{ background: T.bg, color: T.ink, borderRadius: 14, padding: "24px 26px" }}>
-                <div style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 6 }}>Nothing planned yet.</div>
-                <div style={{ color: T.ink3, fontSize: 14, lineHeight: 1.55 }}>Tell Steward what to do above, or open Ask for three examples. Every plan you give it will be listed here with what its run did.</div>
-              </section>
-            ) : (
-              <div style={{ display: "grid", gridTemplateColumns: wide ? "320px minmax(0,1fr)" : "minmax(0,1fr)", gap: 24, alignItems: "start" }}>
-                <div style={{ borderTop: "1px solid " + T.green650, order: wide ? 0 : 2 }}>
-                  {!wide && <div style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: T.sage600, fontWeight: 700, padding: "12px 0 4px" }}>Everything you have asked</div>}
-                  {list.map(p => {
-                    const st = planState(p);
-                    const on = open && open.id === p.id;
-                    return (
-                      <button key={p.id} data-testid="agent-plan-item" onClick={() => setOpenId(p.id)}
-                        style={{ display: "block", width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-                          padding: "14px 4px 14px 14px", border: "none", borderBottom: "1px solid " + T.green650,
-                          borderLeft: "3px solid " + (on ? T.gold : "transparent"), background: on ? T.green900 : "transparent" }}>
-                        <div style={{ fontSize: 14, color: T.bg, lineHeight: 1.45 }}>{p.text}</div>
-                        <div style={{ fontSize: 12, color: T.sage600, marginTop: 4 }}>
-                          <span style={{ color: st.brass ? T.gold : T.sage600, fontWeight: st.brass ? 700 : 400 }}>{st.word}</span>
-                          {" · "}{fmtWhen(p.created_at)}
-                        </div>
-                      </button>
-                    );
-                  })}
+        {view === "plans" && (
+          <div data-testid="agent-view-plans">
+            {askBar}
+            {notice}
+            {askErr && <div data-testid="agent-refusal" style={{ ...REFUSAL, margin: "-4px 0 18px" }}>{askErr}</div>}
+            {plans === null ? <div style={{ color: T.ink3, fontSize: 14 }}>Loading your plans…</div> : (
+              <div style={{ display: "grid", gridTemplateColumns: wide ? "300px minmax(0,1fr)" : "minmax(0,1fr)", gap: wide ? 28 : 18, alignItems: "start" }}>
+                {instructionList}
+                <div style={{ order: 1, minWidth: 0 }}>
+                  {read ? readFor() : open ? sheetFor(open) : (
+                    <section style={{ ...PANEL, padding: "22px 24px" }}>
+                      <div style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 6 }}>Nothing planned yet.</div>
+                      <div style={{ color: T.ink3, fontSize: 14, lineHeight: 1.55 }}>Tell Steward what to do above, or open Ask for three examples. Ask for a report, a person or a count and it answers at once.</div>
+                    </section>
+                  )}
                 </div>
-                <div style={{ order: 1, minWidth: 0 }}>{sheetFor(open)}</div>
               </div>
             )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {view === "ask" && (
-        <div data-testid="agent-view-ask">
-          <section style={{ background: T.bg, color: T.ink, borderRadius: 14, padding: wide ? "26px 30px" : "20px 16px", marginBottom: 24 }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3, marginBottom: 10 }}>Ask · in your own words</div>
+        {view === "ask" && (
+          <div data-testid="agent-view-ask">
+            {notice}
+            <div style={{ ...EYEBROW, marginBottom: 10 }}>Ask · in your own words</div>
             <textarea data-testid="agent-ask-input" value={text} onChange={e => setText(e.target.value)} rows={wide ? 5 : 4}
               placeholder="Tell Steward what to do, in your own words…"
               style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, background: T.white, color: T.ink,
                 borderRadius: 12, padding: "14px 16px", fontSize: 16, lineHeight: 1.5, fontFamily: "inherit", resize: "vertical" }} />
             <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
               <button data-testid="agent-ask-submit" onClick={() => ask(text)} disabled={asking || !text.trim() || isReadOnly}
-                style={{ background: T.ink, color: T.bg, border: "none", borderRadius: 10, padding: "11px 18px", fontSize: 14,
-                  fontWeight: 700, cursor: asking || !text.trim() ? "default" : "pointer", opacity: asking || !text.trim() ? 0.55 : 1 }}>
+                style={{ ...OUTLINE_BTN, cursor: asking || !text.trim() ? "default" : "pointer", opacity: asking || !text.trim() ? 0.55 : 1 }}>
                 {asking ? "Planning…" : "Show me the plan"}
               </button>
               <span style={{ fontSize: 13, color: T.ink3 }}>Nothing happens until you say so.</span>
             </div>
-            <div style={{ marginTop: 20, fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 }}>For example</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+            <div style={{ ...EYEBROW, marginTop: 20 }}>For example</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, marginBottom: 20 }}>
               {examples.map(x => (
                 <button key={x} data-testid="agent-example" onClick={() => setText(x)}
-                  style={{ textAlign: "left", background: "transparent", border: "1px solid " + T.bg2, borderRadius: 10, padding: "10px 12px",
+                  style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg2, borderRadius: 10, padding: "10px 12px",
                     color: T.ink2, fontSize: 14, cursor: "pointer", fontFamily: "inherit", lineHeight: 1.45 }}>
                   “{x}”
                 </button>
               ))}
             </div>
-            {askErr && <div data-testid="agent-refusal" style={{ marginTop: 16, fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10, lineHeight: 1.5 }}>{askErr}</div>}
-          </section>
-          {asked && sheetFor(asked)}
-        </div>
-      )}
+            {askErr && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginBottom: 16 }}>{askErr}</div>}
+            {read ? readFor() : asked ? sheetFor(asked) : null}
+          </div>
+        )}
 
-      {view === "workflows" && (
-        <div data-testid="agent-view-workflows">
-          <section style={{ background: T.bg, color: T.ink, borderRadius: 14, padding: wide ? "26px 30px" : "20px 16px" }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3, marginBottom: 8 }}>Workflows · the recipes</div>
+        {view === "workflows" && (
+          <div data-testid="agent-view-workflows">
+            <div style={{ ...EYEBROW, marginBottom: 8 }}>Workflows · the recipes</div>
             <Workflows isReadOnly={isReadOnly} onNavigate={onNavigate} embedded />
-          </section>
-        </div>
-      )}
+          </div>
+        )}
 
-      {view === "waiting" && (
-        waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm: confirm, onDiscard: discard })
-      )}
+        {view === "waiting" && (
+          waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm: confirm, onDiscard: discard })
+        )}
 
-      {view === "guardrails" && guardrails({ wide, isReadOnly, data: guardData, instr: guardInstr, busy: guardBusy, err: guardErr, act: guardAct })}
+        {view === "guardrails" && guardrails({ wide, isReadOnly, data: guardData, instr: guardInstr, busy: guardBusy, err: guardErr,
+          act: guardAct, status, focusDrafting, setDrafting })}
+      </section>
     </div>
   );
 }
@@ -423,66 +576,66 @@ function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm,
   const items = (waiting && waiting.items) || [];
   return (
     <div data-testid="agent-view-waiting">
-      <section style={{ background: T.bg, color: T.ink, borderRadius: 14, padding: wide ? "26px 30px" : "20px 16px" }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 }}>Waiting for you · oldest first</div>
-        <div style={{ fontSize: 14, color: T.ink3, margin: "6px 0 14px", lineHeight: 1.5 }}>
-          {waiting ? waiting.definition : "Loading…"}
-        </div>
-        {waiting && !items.length && <div style={{ fontFamily: SERIF, fontSize: 20 }}>Nothing is waiting on you.</div>}
-        {items.map(it => (
-          <div key={it.kind + it.id} data-testid="agent-waiting-item" data-kind={it.kind}
-            style={{ borderTop: "1px solid " + T.bg2, padding: "14px 0", display: "grid",
-              gridTemplateColumns: wide ? "180px minmax(0,1fr) auto" : "minmax(0,1fr)", gap: wide ? 16 : 8, alignItems: "start" }}>
-            <div>
-              {pill(it.kind === "gift_to_confirm" ? "confirm" : "waiting", WAIT_KIND[it.kind] || "Waiting")}
-              <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>{fmtWhen(it.createdAt)}</div>
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4 }}>{it.title}</div>
-              {it.who && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{it.who}</div>}
-              {it.body && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6, lineHeight: 1.5, whiteSpace: "pre-wrap",
-                overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{it.body}</div>}
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: wide ? "flex-end" : "flex-start" }}>
-              {it.kind === "gift_to_confirm" ? (<>
-                <button onClick={() => onDiscard(it.id)} disabled={isReadOnly || !!busyId}
-                  style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Not this one</button>
-                <button onClick={() => onConfirm(it.id)} disabled={isReadOnly || !!busyId}
-                  style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 9, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  {busyId === it.id ? "Running…" : it.confirmLabel}
-                </button>
-              </>) : it.donorId ? (
-                <button onClick={() => onNavigate && onNavigate("donors", { selectDonorId: it.donorId })}
-                  style={{ background: "transparent", border: "1px solid " + T.ink3, borderRadius: 9, padding: "8px 12px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                  Open the record
-                </button>
-              ) : null}
-            </div>
+      <div style={EYEBROW}>Waiting for you · oldest first</div>
+      <div style={{ fontSize: 14, color: T.ink3, margin: "6px 0 14px", lineHeight: 1.5 }}>
+        {waiting ? waiting.definition : "Loading…"}
+      </div>
+      {waiting && !items.length && <div style={{ fontFamily: SERIF, fontSize: 20 }}>Nothing is waiting on you.</div>}
+      {items.map(it => (
+        <div key={it.kind + it.id} data-testid="agent-waiting-item" data-kind={it.kind}
+          style={{ borderTop: "1px solid " + T.bg3, padding: "14px 0", display: "grid",
+            gridTemplateColumns: wide ? "180px minmax(0,1fr) auto" : "minmax(0,1fr)", gap: wide ? 16 : 8, alignItems: "start" }}>
+          <div>
+            {pill(it.kind === "gift_to_confirm" ? "confirm" : "waiting", WAIT_KIND[it.kind] || "Waiting")}
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>{fmtWhen(it.createdAt)}</div>
           </div>
-        ))}
-      </section>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 14.5, fontWeight: 700, lineHeight: 1.4, overflowWrap: "anywhere" }}>{it.title}</div>
+            {it.who && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{it.who}</div>}
+            {it.body && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6, lineHeight: 1.5, whiteSpace: "pre-wrap",
+              overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{it.body}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: wide ? "flex-end" : "flex-start" }}>
+            {it.kind === "gift_to_confirm" ? (<>
+              <button onClick={() => onDiscard(it.id)} disabled={isReadOnly || !!busyId}
+                style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Not this one</button>
+              <button onClick={() => onConfirm(it.id)} disabled={isReadOnly || !!busyId}
+                style={{ ...YES_BTN, borderRadius: 9, padding: "9px 14px", fontSize: 13 }}>
+                {busyId === it.id ? "Running…" : it.confirmLabel}
+              </button>
+            </>) : it.donorId ? (
+              <button onClick={() => onNavigate && onNavigate("donors", { selectDonorId: it.donorId })}
+                style={{ background: "transparent", border: "1px solid " + T.ink3, borderRadius: 9, padding: "8px 12px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                Open the record
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 // ── GUARDRAILS ─────────────────────────────────────────────────────────────
-// Pause everything; what it can and cannot do, in sentences; every instruction
-// and every run; and every change it made, with an undo for thirty days. The
-// undo list moved here from Settings → Steward's activity (BUILD-97 Part 3).
-// A plain function over state the room holds (see guard* in Agent), so the
-// view is drawn, never mounted twice with its own copy of the truth.
-function guardrails({ wide, isReadOnly, data, instr, busy, err, act }) {
+// Pause everything; drafting on or off; what it can and cannot do, in
+// sentences; every instruction and every run; and every change it made, with an
+// undo for thirty days. The undo list moved here from Settings → Steward's
+// activity (BUILD-97 Part 3). A plain function over state the room holds (see
+// guard* in Agent), so the view is drawn, never mounted twice with its own copy
+// of the truth.
+function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, focusDrafting, setDrafting }) {
   const pausedAll = !!(instr && instr.pausedAll);
   const can = AGENT_TOOLS.filter(x => x.needsHuman === "never");
   const signature = AGENT_TOOLS.filter(x => x.needsHuman === "signature");
   const cannot = AGENT_TOOLS.filter(x => x.needsHuman === "always");
-  const card = { background: T.bg, color: T.ink, borderRadius: 14, padding: wide ? "24px 28px" : "18px 16px", marginBottom: 18 };
-  const eyebrow = { fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3, marginBottom: 10 };
+  const card = { ...PANEL, padding: wide ? "22px 26px" : "16px 14px", marginBottom: 16 };
+  const eyebrow = { ...EYEBROW, marginBottom: 10 };
   const small = { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 7, padding: "4px 10px", color: T.ink2, fontSize: 12, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer" };
+  const draftingOn = !!(status && status.enabled);
   return (
     <div data-testid="agent-view-guardrails">
       <section style={{ ...card, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", borderLeft: "4px solid " + (pausedAll ? T.gold : T.ink) }}>
-        <div style={{ flex: 1, minWidth: 220 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
           <div data-testid="agent-pause-state" style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 4 }}>
             {pausedAll ? "Steward is paused." : "Steward is running."}
           </div>
@@ -499,9 +652,37 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act }) {
           {pausedAll ? "Turn Steward back on" : "Pause everything"}
         </button>
       </section>
+
+      {/* DRAFTING — the organisation's switch, the same control and the same
+          write as Settings → Data (PATCH /org/ai-settings, admins only). */}
+      <section id="agent-drafting-setting" data-testid="agent-drafting-setting"
+        style={{ ...card, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
+          borderLeft: "4px solid " + (status && status.reason === "ai_disabled" ? T.gold : T.ink),
+          outline: focusDrafting ? "2px solid " + T.gold : "none", outlineOffset: 2 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 4 }}>
+            {!status ? "Drafting" : !status.configured ? "Drafting is not set up." : draftingOn ? "Drafting is on." : "Drafting is off."}
+          </div>
+          <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.55 }}>
+            {!status ? "Loading…"
+              : !status.configured ? status.sentence
+              : draftingOn ? "Steward drafts plans, thank-yous and notes from your records through Anthropic. Nothing is sent or recorded until you say so."
+              : status.canNow}
+          </div>
+          {status && status.configured && !status.isAdmin && (
+            <div style={{ fontSize: 13, color: T.ink, marginTop: 6, fontWeight: 600 }}>{status.whoCan}</div>
+          )}
+        </div>
+        {status && status.configured && status.isAdmin && (
+          <button data-testid="agent-drafting-toggle" disabled={isReadOnly || !!busy} onClick={() => setDrafting(!draftingOn)}
+            style={{ ...(draftingOn ? OUTLINE_BTN : YES_BTN), opacity: isReadOnly || busy ? 0.6 : 1 }}>
+            {busy === "drafting" ? "Saving…" : draftingOn ? "Turn drafting off" : "Turn on drafting"}
+          </button>
+        )}
+      </section>
       {err && <div style={{ ...card, borderLeft: "4px solid " + T.gold, fontSize: 13.5 }}>{err}</div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: wide ? "1fr 1fr" : "1fr", gap: 18 }}>
+      <div style={{ display: "grid", gridTemplateColumns: wide ? "1fr 1fr" : "minmax(0,1fr)", gap: 16 }}>
         <section style={{ ...card, marginBottom: 0 }}>
           <div style={eyebrow}>What Steward does on its own</div>
           {can.map(x => (
@@ -523,13 +704,13 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act }) {
         </section>
       </div>
 
-      <section style={{ ...card, marginTop: 18 }}>
+      <section style={{ ...card, marginTop: 16 }}>
         <div style={eyebrow}>What you have told Steward to do</div>
         {!instr || !instr.instructions.length ? (
           <div style={{ fontSize: 13.5, color: T.ink3 }}>Nothing yet. Tell Steward what to do from Ask.</div>
         ) : instr.instructions.map(i => (
           <div key={i.id} data-testid="agent-instruction" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
-            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 4 }}>“{i.text}”</div>
+            <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 4, overflowWrap: "anywhere" }}>“{i.text}”</div>
             <div style={{ fontSize: 12.5, color: T.ink3, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               <span>{i.kind === "standing" ? "Standing" : "One-off"}</span><span>·</span>
               <span data-testid="agent-instruction-status">{i.status === "set_aside" ? "set aside" : i.status}</span>
@@ -554,7 +735,7 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act }) {
         {!data || !data.runs.length ? <div style={{ fontSize: 13.5, color: T.ink3 }}>Steward has not run anything yet.</div>
           : data.runs.map(r => (
             <div key={r.id} data-testid="agent-run" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
-              <div style={{ fontSize: 14, lineHeight: 1.5 }}>{r.instruction_text || "(instruction removed)"}</div>
+              <div style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>{r.instruction_text || "(instruction removed)"}</div>
               <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>
                 {fmtWhen(r.started_at)} · read {r.read_summary || "nothing"} · drafted {r.drafted} · sent {r.sent} · declined {r.declined} · withheld {r.withheld}
               </div>
@@ -564,7 +745,7 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act }) {
           ))}
       </section>
 
-      <section style={card}>
+      <section style={{ ...card, marginBottom: 0 }}>
         <div style={eyebrow}>Everything Steward changed</div>
         <div style={{ fontSize: 13.5, color: T.ink3, marginBottom: 10, lineHeight: 1.55 }}>
           Anything here can be undone for {data ? data.undoDays : 30} days. A gift you recorded is yours, not Steward’s, and is changed on the gift itself.

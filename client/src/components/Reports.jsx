@@ -1,31 +1,39 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Card, EmptyState, PageTitle, SectionTabs, StartHere, LockedFeature, goToPricing } from "./shared";
-import { SavedReportsView } from "./ReportBuilder";
-
-// BUILD-98 (switch) Part 3 — the tab id for "Your reports".
-const SAVED_TAB = "saved";
+import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
+import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN } from "../lib/reportsRail";
+import { displayDate } from "../../../shared/displayDate";
 
-// ── Reports (BUILD-02) ──────────────────────────────────────────────────────
-// Six fixed, parameterized, table-first, CSV-downloadable reports — each one
-// an answer to a question a development director or board member actually
-// asks. Deliberately NOT an Analytics revival: no chart dashboard, no custom
-// report builder. All aggregation happens server-side (GET /reports/:key).
+// ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
+// Fixed, parameterized, table-first, CSV-downloadable reports — each one an
+// answer to a question a development director or board member actually asks —
+// plus the standard reports, the org's saved ones and the builder (BUILD-98).
+// All aggregation happens server-side (GET /reports/:key, /saved-reports).
+//
+// FIX-2 B — ONE WAY IN. The tab row and the "Your reports" list are gone; one
+// rail, grouped by the question each report answers, with Build a report at
+// its top (client/src/lib/reportsRail.js). Every id a report ever arrived by —
+// an old tab id, "std:<key>", a saved report's id — goes through
+// resolveReportId, so a Home chip, an Agent link and an email link are one
+// mechanism: navigateTo("reports", { report: "lybunt" }).
 
 // BUILD-12: the per-report `q` ("question this answers") strings were removed —
 // they rendered as a decorative grey subtitle line that Part 1 cut as clutter.
+// These are the reports this file draws itself, with their controls; the rail
+// takes their labels from here.
 const REPORT_DEFS = [
-  { key: "giving-summary", label: "Giving Summary" },
-  { key: "by-group", label: "Gifts by Fund" },
+  { key: "giving-summary", label: "Giving summary" },
+  { key: "by-group", label: "Gifts by fund" },
   { key: "lybunt", label: "LYBUNT" },
   { key: "sybunt", label: "SYBUNT" },
   { key: "retention", label: "Retention" },
-  { key: "top-donors", label: "Top Donors" },
+  { key: "top-donors", label: "Top donors" },
   // BUILD-17 — the development reporting cadence.
-  { key: "week-in-review", label: "Week in Review" },
-  { key: "three-year", label: "3-Year Comparison" },
-  { key: "annual", label: "Annual Report" },
+  { key: "week-in-review", label: "Week in review" },
+  { key: "three-year", label: "3-year comparison" },
+  { key: "annual", label: "Annual report" },
   { key: "solicitations", label: "Solicitations", team: true },
   // BUILD-87 Part 4 — the file the person who reconciles the bank actually
   // needs. Fixed columns, one row per gift, and a totals-by-fund section.
@@ -34,7 +42,6 @@ const REPORT_DEFS = [
 
 // Which reports take which controls
 const PERIOD_REPORTS = ["giving-summary", "by-group", "top-donors", "bookkeeper"];
-const YEAR_REPORTS = ["lybunt", "sybunt"];
 // Reports that take a year dropdown + fiscal/calendar toggle (BUILD-17 added
 // three-year/annual to the year-selecting family).
 const YEAR_SELECT_REPORTS = ["lybunt", "sybunt", "three-year", "annual"];
@@ -54,55 +61,24 @@ const PRESETS = [
 ];
 
 const fyRangeLabel = y => `Jul ${y - 1} – Jun ${y}`;
-const monthLabel = m => new Date(m + "-15T00:00:00").toLocaleDateString("en-US", { month: "short", year: "numeric" });
-const fmtDate = d => d ? new Date(d.length > 10 ? d : d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
 const pctStr = v => v === null || v === undefined ? "—" : `${v}%`;
+const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
-// ── Sortable table ──────────────────────────────────────────────────────────
-// Plain, dense, client-side sortable. cols: {key,label,align,render,sortVal}.
-function ReportTable({ cols, rows, onRowClick, accentRow }) {
-  const [sort, setSort] = useState(null); // {key,dir}
-  useEffect(() => { setSort(null); }, [cols.map(c => c.key).join(","), rows]);
-  const sorted = useMemo(() => {
-    if (!sort) return rows;
-    const col = cols.find(c => c.key === sort.key);
-    const val = r => (col.sortVal ? col.sortVal(r) : r[sort.key]);
-    return [...rows].sort((a, b) => {
-      const va = val(a), vb = val(b);
-      if (va === vb) return 0;
-      if (va === null || va === undefined) return 1;
-      if (vb === null || vb === undefined) return -1;
-      const cmp = typeof va === "number" && typeof vb === "number" ? va - vb : String(va).localeCompare(String(vb));
-      return sort.dir === "asc" ? cmp : -cmp;
-    });
-  }, [rows, sort, cols]);
+// The rail at desktop width; below 760px the list folds into one <select>
+// (the compact picker), so nothing on Reports ever scrolls sideways.
+const REPORTS_CSS = `
+  .reports-layout{display:grid;grid-template-columns:248px minmax(0,1fr);gap:22px;align-items:start;}
+  .reports-picker{display:none;}
+  .reports-rail-item:hover{background:${T.white};}
+  .reports-rail-item:focus-visible{outline:2px solid ${T.greenDk};outline-offset:1px;}
+  @media (max-width:760px){
+    .reports-layout{grid-template-columns:minmax(0,1fr);gap:14px;}
+    .reports-rail-list{display:none;}
+    .reports-picker{display:block;}
+  }
+`;
 
-  return <div className="reports-table-wrap" style={{ overflowX: "auto" }}>
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-      <thead>
-        <tr>
-          {cols.map(c => <th key={c.key}
-            onClick={() => setSort(s => s?.key === c.key ? (s.dir === "desc" ? { key: c.key, dir: "asc" } : null) : { key: c.key, dir: "desc" })}
-            style={{ textAlign: c.align || "left", padding: "8px 10px", borderBottom: `2px solid ${T.bg3}`, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}>
-            {c.label}{sort?.key === c.key ? (sort.dir === "desc" ? " ↓" : " ↑") : ""}
-          </th>)}
-        </tr>
-      </thead>
-      <tbody>
-        {sorted.map((r, i) => <tr key={r.id || i} onClick={onRowClick ? () => onRowClick(r) : undefined}
-          className={onRowClick ? "rpt-row-click" : undefined}
-          style={{ cursor: onRowClick ? "pointer" : "default", borderLeft: accentRow ? `3px solid ${T.terracotta}` : "3px solid transparent" }}>
-          {cols.map(c => <td key={c.key} style={{ padding: "9px 10px", borderBottom: `1px solid ${T.bg2}`, textAlign: c.align || "left", whiteSpace: "nowrap", color: T.ink2 }}>
-            {c.render ? c.render(r) : r[c.key]}
-          </td>)}
-        </tr>)}
-      </tbody>
-    </table>
-  </div>;
-}
-
-// Free visual: % share as a thin gold bar (five-color palette — gold =
-// positive/primary emphasis).
+// Free visual: % share as a thin brass bar.
 function PctBar({ pct }) {
   return <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 120 }}>
     <div style={{ flex: 1, height: 6, background: T.bg2, borderRadius: 99, overflow: "hidden" }}>
@@ -112,20 +88,66 @@ function PctBar({ pct }) {
   </div>;
 }
 
+// ── THE ONE RAIL ────────────────────────────────────────────────────────────
+// Active item (the common brief's rule): white ground, ink, weight 700, and a
+// 3px emerald rule on the leading edge — never a solid green block.
+function ReportsRail({ groups, active, onPick }) {
+  const item = it => {
+    const on = active === it.id;
+    return <button key={it.id} type="button" className="reports-rail-item" data-testid={`rail-item-${it.id}`} data-report-id={it.id}
+      aria-current={on ? "page" : undefined} onClick={() => onPick(it.id)}
+      style={{ display: "block", width: "100%", textAlign: "left", background: on ? T.white : "transparent", border: "none",
+        borderLeft: `3px solid ${on ? T.greenDk : "transparent"}`, borderRadius: "0 8px 8px 0", padding: "7px 10px",
+        color: on ? T.ink : T.ink2, fontWeight: on ? 700 : 500, fontSize: 13, lineHeight: 1.35, cursor: "pointer" }}>
+      {it.label}{it.sub ? <span style={{ color: T.ink3, fontWeight: 500 }}> · {it.sub}</span> : null}
+    </button>;
+  };
+  // While the builder is open its own Save is the screen's one emerald action,
+  // so this button steps down to an outline.
+  return <nav data-testid="reports-rail" aria-label="Reports" style={{ minWidth: 0 }}>
+    <button type="button" data-testid="rb-new" onClick={() => onPick(BUILD_ID)} aria-current={active === BUILD_ID ? "page" : undefined}
+      style={{ width: "100%", background: active === BUILD_ID ? T.white : T.greenDk, color: active === BUILD_ID ? T.greenDk : T.white,
+        border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "10px 14px",
+        fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 14 }}>
+      Build a report
+    </button>
+    <select data-testid="reports-picker" className="reports-picker" aria-label="Choose a report" value={active === BUILD_ID ? "" : active}
+      onChange={e => e.target.value && onPick(e.target.value)}
+      style={{ width: "100%", maxWidth: "100%", padding: "10px 12px", borderRadius: 10, border: `1.5px solid ${T.bg3}`, background: T.white,
+        color: T.ink, fontSize: 14, fontWeight: 600, fontFamily: "'DM Sans',sans-serif" }}>
+      {active === BUILD_ID && <option value="">Building a report</option>}
+      {groups.map(g => g.items.length > 0 && <optgroup key={g.id} label={g.question}>
+        {g.items.map(it => <option key={it.id} value={it.id}>{it.label}</option>)}
+      </optgroup>)}
+    </select>
+    <div data-testid="rail-list" className="reports-rail-list">
+      {groups.map(g => <div key={g.id} data-testid="rail-group" style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, margin: "0 0 5px 13px" }}>{g.question}</div>
+        {g.items.map(item)}
+        {g.id === "saved" && g.items.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, padding: "2px 10px 0 13px" }}>
+          Nothing saved yet. Build a report and save it, and it appears here.
+        </div>}
+      </div>)}
+    </div>
+  </nav>;
+}
+
 // initialReport/initialParams (attribution FIX): the Home hero chips deep-link
 // here — "This FY" lands on Giving Summary for the current fiscal year,
 // "This week" lands on Giving Summary with a custom from/to matching the
 // chip's exact Monday-based week, so the destination shows the SAME number
 // the chip claimed. Consumed on mount only (App remounts via navNonce).
 export function Reports({ onNavigate, initialReport, initialParams, initialSavedReport }) {
-  const [active, setActive] = useState(initialSavedReport ? "saved" : (initialReport || "giving-summary"));
+  const [start] = useState(() => resolveReportId(initialSavedReport || initialReport));
+  const [active, setActive] = useState(start.id);
+  const [list, setList] = useState(null);   // /saved-reports: { standard, saved }
   const [yearMode, setYearModeState] = useState(() => initialParams?.yearMode || localStorage.getItem("steward_reports_yearmode") || "fiscal");
   const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
   const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
   const [customTo, setCustomTo] = useState(initialParams?.to || "");
   const [year, setYear] = useState(null); // LYBUNT/SYBUNT; null → current per yearMode
-  const [groupBy, setGroupBy] = useState("funds");
-  const [scope, setScope] = useState("period");
+  const [groupBy, setGroupBy] = useState(start.params?.groupBy || "funds");
+  const [scope, setScope] = useState(start.params?.scope || "period");
   const [fundId, setFundId] = useState("");
   const [campaignId, setCampaignId] = useState("");
   const [funds, setFunds] = useState([]);
@@ -146,13 +168,25 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
 
   const setYearMode = v => { localStorage.setItem("steward_reports_yearmode", v); setYearModeState(v); setYear(null); };
 
+  const isTab = isTabReport(active);
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");
   const showFilters = PERIOD_REPORTS.includes(active) && active !== "bookkeeper" && !(active === "top-donors" && scope === "lifetime");
   const presetPending = isPeriodReport && !effPreset;
 
+  // Every pick goes through the resolver too: an alias (std:top-50) brings the
+  // controls the standard version fixes.
+  const pick = id => {
+    const r = resolveReportId(id);
+    if (r.params?.scope) setScope(r.params.scope);
+    if (r.params?.groupBy) setGroupBy(r.params.groupBy);
+    setActive(r.id);
+  };
+
+  const loadList = () => apiFetch("/saved-reports").then(setList).catch(() => setList({ standard: [], saved: [] }));
   useEffect(() => {
+    loadList();
     apiFetch("/finance/funds").then(setFunds).catch(() => {});
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
     const fiscal = yearMode === "fiscal";
@@ -167,11 +201,12 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
 
   function buildParams() {
     const q = new URLSearchParams();
-    // BUILD-98 (switch) Part 3 — "Your reports" has no period of its own. It
-    // must return BEFORE the period branch: on a first render opened straight
-    // onto this tab (the weekly email's link) the default preset has not
-    // resolved yet, and reading `.year` off it took the whole tab down.
-    if (active === SAVED_TAB) return q;
+    // A standard or saved report, or the builder, has no period of its own.
+    // It must return BEFORE the period branch: on a first render opened
+    // straight onto one (the weekly email's link) the default preset has not
+    // resolved yet, and reading `.year` off it took the whole page down
+    // (BUILD-98 switch Part 3).
+    if (!isTab) return q;
     if (DIGEST_REPORTS.includes(active)) { q.set("type", digestType); return q; }
     if (active === "solicitations") { q.set("yearMode", yearMode); return q; }
     if (active === "retention") { q.set("yearMode", yearMode); return q; }
@@ -193,8 +228,8 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
 
   useEffect(() => {
     if (customIncomplete || presetPending) return;
-    // BUILD-98 (switch) Part 3 — "Your reports" fetches its own; nothing here.
-    if (active === SAVED_TAB) return;
+    // A standard or saved report (or the builder) fetches its own; nothing here.
+    if (!isTab) return;
     let dead = false;
     setLoading(true); setErr(""); setPlanLocked(false);
     const url = DIGEST_REPORTS.includes(active) ? `/digests/preview?${paramsStr}` : `/reports/${active}?${paramsStr}`;
@@ -205,51 +240,61 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       .then(d => { if (!dead) { setData({ key: active, d }); setPlanLocked(!!d?.locked); setLoading(false); } })
       .catch(e => { if (!dead) { if (e.error === "plan_required" || e.status === 403) setPlanLocked(true); setErr(e.message); setLoading(false); } });
     return () => { dead = true; };
-  }, [active, paramsStr, customIncomplete, presetPending]);
+  }, [active, isTab, paramsStr, customIncomplete, presetPending]);
 
-  async function downloadCsv() {
+  async function fetchFile(path, name) {
     setDownloading(true);
     try {
-      const r = await fetch(`${API}/reports/${active}?${paramsStr}&format=csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const r = await fetch(`${API}${path}`, { headers: { Authorization: `Bearer ${getToken()}` } });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || "Download failed"); }
       const blob = await r.blob();
-      // Content-Disposition isn't CORS-exposed cross-origin, so build the
-      // filename client-side (mirrors the server's naming).
-      const suffix = active === "retention" ? yearMode
-        : active === "top-donors" && scope === "lifetime" ? "lifetime"
-        : YEAR_SELECT_REPORTS.includes(active) ? `${yearMode === "fiscal" ? "fy" : "cy"}${effYear}`
-        : active === "solicitations" ? yearMode
-        : effPreset === "custom" ? `${customFrom}_${customTo}`
-        : effPreset ? effPreset.toLowerCase() : "report";
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `${active}-${suffix}.csv`;
+      a.href = url; a.download = name;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) { alert(errorMessage(e, "Download failed")); }
     setDownloading(false);
   }
+  function downloadCsv() {
+    // Content-Disposition isn't CORS-exposed cross-origin, so build the
+    // filename client-side (mirrors the server's naming).
+    const suffix = active === "retention" ? yearMode
+      : active === "top-donors" && scope === "lifetime" ? "lifetime"
+      : YEAR_SELECT_REPORTS.includes(active) ? `${yearMode === "fiscal" ? "fy" : "cy"}${effYear}`
+      : active === "solicitations" ? yearMode
+      : effPreset === "custom" ? `${customFrom}_${customTo}`
+      : effPreset ? effPreset.toLowerCase() : "report";
+    return fetchFile(`/reports/${active}?${paramsStr}&format=csv`, `${active}-${suffix}.csv`);
+  }
+  // The PDF of the standard report that IS this one, offered only while the
+  // screen's controls are the ones the standard fixes — the same rows.
+  const pdfTwin = PDF_TWIN[active] && (active === "top-donors" ? scope === "lifetime"
+    : yearMode === "fiscal" && (active === "retention" || year === null)) ? PDF_TWIN[active] : null;
 
-  const openDonor = r => onNavigate && onNavigate("donors", { selectDonorId: r.id });
+  // Every person row opens that person, through the app's own navigation.
+  const openPerson = id => onNavigate && id && onNavigate("donors", { selectDonorId: id });
+  const byId = r => r.id || null;
 
   // ── Controls ──────────────────────────────────────────────────────────────
-  const chipStyle = on => ({ background: on ? T.greenDk : T.white, color: on ? "#fff" : T.ink2, border: `1.5px solid ${on ? T.greenDk : T.bg3}`, borderRadius: 99, padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" });
+  const chipStyle = on => ({ background: T.white, color: T.ink, border: `1.5px solid ${T.bg3}`, borderRadius: 99, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...activeMark(on) });
   const selStyle = { padding: "7px 10px", borderRadius: 8, fontSize: 12, fontFamily: "'DM Sans',sans-serif", maxWidth: 180 };
+  const segStyle = on => ({ background: T.white, color: T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", ...activeMark(on) });
 
   const yearModeToggle = <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
-    {["fiscal", "calendar"].map(m => <button key={m} onClick={() => setYearMode(m)}
-      style={{ background: yearMode === m ? T.greenDk : T.white, color: yearMode === m ? "#fff" : T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+    {["fiscal", "calendar"].map(m => <button key={m} onClick={() => setYearMode(m)} aria-pressed={yearMode === m} style={segStyle(yearMode === m)}>
       {m === "fiscal" ? "Fiscal (Jul–Jun)" : "Calendar"}
     </button>)}
   </div>;
 
   const yearOptions = Array.from({ length: 6 }, (_, i) => (yearMode === "fiscal" ? CUR_FY : CUR_CY) - i);
+  const subhead = t => <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, margin: "22px 0 8px" }}>{t}</div>;
 
   // ── Narrative + table per report ──────────────────────────────────────────
   let narrative = null, table = null, empty = false;
   const d = data && data.key === active ? data.d : null;
 
-  if (!loading && !err && d) {
+  if (isTab && !loading && !err && d) {
     if (active === "giving-summary") {
       empty = d.giftCount === 0;
       const diff = d.total - d.prior.total;
@@ -267,11 +312,13 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
           </div>)}
         </div>
+        {/* A month's unique donors do not add up to the period's (one person
+            can give in two months), so that column has no foot. */}
         <ReportTable cols={[
-          { key: "month", label: "Month", render: r => monthLabel(r.month) },
-          { key: "gifts", label: "Gifts", align: "right" },
-          { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) },
-          { key: "donors", label: "Unique donors", align: "right" },
+          { key: "month", label: "Month", type: "month" },
+          { key: "gifts", label: "Gifts", type: "count" },
+          { key: "total", label: "Total", type: "money" },
+          { key: "donors", label: "Unique donors", type: "number" },
         ]} rows={d.monthly} />
       </>;
     } else if (active === "by-group") {
@@ -279,11 +326,11 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       const top = d.rows[0];
       narrative = top && <>Your largest {groupBy === "funds" ? "fund" : groupBy === "campaigns" ? "campaign" : "giving page"} this period is <strong>{top.name}</strong> at <strong>{fmtFull(top.total)}</strong> — {top.pct}% of the {fmtFull(d.grandTotal)} raised.</>;
       table = <ReportTable cols={[
-        { key: "name", label: groupBy === "funds" ? "Fund" : groupBy === "campaigns" ? "Campaign" : "Giving page" },
-        { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) },
-        { key: "giftCount", label: "Gifts", align: "right" },
-        { key: "uniqueDonors", label: "Unique donors", align: "right" },
-        { key: "pct", label: "% of total", render: r => <PctBar pct={r.pct} /> },
+        { key: "name", label: groupBy === "funds" ? "Fund" : groupBy === "campaigns" ? "Campaign" : "Giving page", type: "text" },
+        { key: "total", label: "Total", type: "money" },
+        { key: "giftCount", label: "Gifts", type: "count" },
+        { key: "uniqueDonors", label: "Unique donors", type: "number" },
+        { key: "pct", label: "% of total", type: "pct", render: r => <PctBar pct={r.pct} /> },
       ]} rows={d.rows} />;
     } else if (active === "lybunt" || active === "sybunt") {
       empty = d.rows.length === 0;
@@ -293,13 +340,13 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       const havent = d.rows.length === 1 ? "hasn't" : "haven't";
       narrative = <><strong>{d.rows.length} donor{d.rows.length === 1 ? "" : "s"}</strong> {active === "lybunt" ? `gave in ${priorLabel} but ${havent} yet given in ${yl}` : `${d.rows.length === 1 ? "has" : "have"} given before, but not in ${yl}`}
         {active === "lybunt" && atStake > 0 && <> — <strong>{fmtFull(atStake)}</strong> of last year's giving is at stake</>}. This is a call list, not a chart.</>;
-      table = <ReportTable accentRow onRowClick={openDonor} cols={[
-        { key: "name", label: "Donor", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
-        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${yearMode === "fiscal" ? "FY" + (d.year - 1) : d.year - 1}` : "Gave prior year", align: "right", render: r => r.priorYearTotal > 0 ? fmtFull(r.priorYearTotal) : "—" },
-        { key: "lastGiftDate", label: "Last gift", render: r => `${fmtDate(r.lastGiftDate)}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
-        { key: "lifetimeGiving", label: "Lifetime", align: "right", render: r => fmtFull(r.lifetimeGiving) },
-        { key: "assignedTo", label: "Assigned to", render: r => r.assignedTo || "—" },
-        { key: "email", label: "Email", render: r => r.email || "—" },
+      table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
+        { key: "name", label: "Donor", type: "text", person: true },
+        { key: "priorYearTotal", label: active === "lybunt" ? `Gave ${yearMode === "fiscal" ? "FY" + (d.year - 1) : d.year - 1}` : "Gave prior year", type: "money" },
+        { key: "lastGiftDate", label: "Last gift", type: "date", render: r => `${displayDate(r.lastGiftDate) || "—"}${r.lastGiftAmount ? ` · ${fmtFull(r.lastGiftAmount)}` : ""}` },
+        { key: "lifetimeGiving", label: "Lifetime", type: "money" },
+        { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "—" },
+        { key: "email", label: "Email", type: "text", render: r => r.email || "—" },
       ]} rows={d.rows} />;
     } else if (active === "retention") {
       empty = d.rows.every(r => r.priorDonors === 0);
@@ -307,48 +354,49 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       narrative = latest
         ? <>In <strong>{latest.label}</strong> you retained <strong>{latest.retentionRate}%</strong> of the prior year's donors ({latest.retainedDonors} of {latest.priorDonors}) and <strong>{pctStr(latest.dollarRetentionRate)}</strong> of their dollars.{latest.firstYearRetentionRate !== null && <> First-year donors came back at <strong>{latest.firstYearRetentionRate}%</strong> — that number is what stewardship moves.</>}</>
         : <>Not enough multi-year giving history yet to compute retention.</>;
-      table = <ReportTable cols={[
-        { key: "label", label: "Year" },
-        { key: "priorDonors", label: "Prior-yr donors", align: "right" },
-        { key: "retainedDonors", label: "Retained", align: "right" },
-        { key: "retentionRate", label: "Retention", align: "right", render: r => <strong style={{ color: T.ink }}>{pctStr(r.retentionRate)}</strong> },
-        { key: "dollarRetentionRate", label: "$ retained", align: "right", render: r => `${pctStr(r.dollarRetentionRate)}${r.priorDollars > 0 ? ` of ${fmtFull(r.priorDollars)}` : ""}` },
-        { key: "firstYearDonors", label: "First-yr donors", align: "right" },
-        { key: "firstYearRetentionRate", label: "First-yr retention", align: "right", render: r => <strong style={{ color: r.firstYearRetentionRate !== null && r.firstYearRetentionRate < 30 ? T.terracotta : T.ink }}>{pctStr(r.firstYearRetentionRate)}</strong> },
+      // Each row is a different year's cohort; they do not add up, so no foot.
+      table = <ReportTable foot={false} cols={[
+        { key: "label", label: "Year", type: "text" },
+        { key: "priorDonors", label: "Prior-yr donors", type: "number" },
+        { key: "retainedDonors", label: "Retained", type: "number" },
+        { key: "retentionRate", label: "Retention", type: "pct", render: r => <strong style={{ color: T.ink }}>{pctStr(r.retentionRate)}</strong> },
+        { key: "dollarRetentionRate", label: "$ retained", type: "pct", render: r => `${pctStr(r.dollarRetentionRate)}${r.priorDollars > 0 ? ` of ${fmtFull(r.priorDollars)}` : ""}` },
+        { key: "firstYearDonors", label: "First-yr donors", type: "number" },
+        { key: "firstYearRetentionRate", label: "First-yr retention", type: "pct", render: r => <strong style={{ color: r.firstYearRetentionRate !== null && r.firstYearRetentionRate < 30 ? T.gold600 : T.ink }}>{pctStr(r.firstYearRetentionRate)}</strong> },
       ]} rows={d.rows} />;
     } else if (active === "top-donors") {
       empty = d.rows.length === 0;
       const sum = d.rows.reduce((s, r) => s + r.total, 0);
       narrative = d.rows.length > 0 && <>Your top <strong>{d.rows.length}</strong> donors {scope === "lifetime" ? "have given" : "gave"} <strong>{fmtFull(sum)}</strong>{scope === "lifetime" ? " all-time" : " this period"}.</>;
-      table = <ReportTable onRowClick={openDonor} cols={[
-        { key: "rank", label: "#", align: "right" },
-        { key: "name", label: "Donor", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
-        { key: "total", label: scope === "lifetime" ? "Lifetime giving" : "Total this period", align: "right", render: r => fmtFull(r.total) },
-        { key: "giftCount", label: "Gifts", align: "right" },
-        { key: "lastGiftDate", label: "Last gift", render: r => fmtDate(r.lastGiftDate) },
+      table = <ReportTable personOf={byId} onOpen={openPerson} cols={[
+        { key: "rank", label: "#", type: "number" },
+        { key: "name", label: "Donor", type: "text", person: true },
+        { key: "total", label: scope === "lifetime" ? "Lifetime giving" : "Total this period", type: "money" },
+        { key: "giftCount", label: "Gifts", type: "count" },
+        { key: "lastGiftDate", label: "Last gift", type: "date" },
       ]} rows={d.rows} />;
     } else if (active === "three-year") {
       empty = d.years.every(y => y.total === 0);
       const g = d.orgGrowthPct;
       narrative = <>Across the last three years your giving went {d.years.map((y, i) => <span key={y.year}>{i ? " → " : ""}<strong>{fmtFull(y.total)}</strong> ({y.label})</span>)}
         {g !== null && <> — {g >= 0 ? "up" : "down"} <strong>{Math.abs(g)}%</strong> year over year</>}. Each row compares a donor across the three years.</>;
-      const chg = r => r.changePct === null ? <span style={{ color: T.gold600 || "#a97f22", fontWeight: 700 }}>new</span>
-        : <span style={{ color: r.changePct > 0 ? T.greenDk : r.changePct < 0 ? T.terracotta : T.ink3, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
+      const chg = r => r.changePct === null ? <span style={{ color: T.gold600, fontWeight: 700 }}>new</span>
+        : <span style={{ color: T.ink, fontWeight: 700 }}>{r.changePct > 0 ? "+" : ""}{r.changePct}%</span>;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 18 }}>
-          {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
+          {d.years.map(y => <div key={y.year} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px", minWidth: 0 }}>
             <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{y.label}</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, marginTop: 2 }}>{fmtFull(y.total)}</div>
             <div style={{ fontSize: 11, color: T.ink3 }}>{y.donors} donor{y.donors === 1 ? "" : "s"}</div>
           </div>)}
         </div>
-        <ReportTable onRowClick={openDonor} cols={[
-          { key: "name", label: "Donor", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
-          { key: "y2", label: d.labels.y2, align: "right", render: r => fmtFull(r.y2) },
-          { key: "y1", label: d.labels.y1, align: "right", render: r => fmtFull(r.y1) },
-          { key: "y0", label: d.labels.y0, align: "right", render: r => <strong style={{ color: T.ink }}>{fmtFull(r.y0)}</strong> },
-          { key: "changePct", label: "YoY change", align: "right", render: chg, sortVal: r => r.changePct ?? Infinity },
-          { key: "assignedTo", label: "Assigned to", render: r => r.assignedTo || "—" },
+        <ReportTable personOf={byId} onOpen={openPerson} cols={[
+          { key: "name", label: "Donor", type: "text", person: true },
+          { key: "y2", label: d.labels.y2, type: "money" },
+          { key: "y1", label: d.labels.y1, type: "money" },
+          { key: "y0", label: d.labels.y0, type: "money" },
+          { key: "changePct", label: "YoY change", type: "pct", render: chg, sortVal: r => r.changePct ?? Infinity },
+          { key: "assignedTo", label: "Assigned to", type: "text", render: r => r.assignedTo || "—" },
         ]} rows={d.rows} />
       </>;
     } else if (active === "annual") {
@@ -367,15 +415,16 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
           </div>)}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 18 }}>
-          <div><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>By fund</div>
-            <ReportTable cols={[{ key: "name", label: "Fund" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
-          <div><div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>By campaign</div>
-            <ReportTable cols={[{ key: "name", label: "Campaign" }, { key: "total", label: "Total", align: "right", render: r => fmtFull(r.total) }, { key: "pct", label: "% ", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
+          <div style={{ minWidth: 0 }}>{subhead("By fund")}
+            <ReportTable cols={[{ key: "name", label: "Fund", type: "text" }, { key: "total", label: "Total", type: "money" }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byFund} /></div>
+          <div style={{ minWidth: 0 }}>{subhead("By campaign")}
+            <ReportTable cols={[{ key: "name", label: "Campaign", type: "text" }, { key: "total", label: "Total", type: "money" }, { key: "pct", label: "% ", type: "pct", render: r => <PctBar pct={r.pct} /> }]} rows={d.byCampaign} /></div>
         </div>
       </>;
     } else if (active === "bookkeeper") {
       empty = d.rows.length === 0;
-      narrative = <>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{d.from}</strong> and <strong>{d.to}</strong>, totalling <strong>${d.total}</strong>. One row per gift, sorted by date then donor.</>;
+      narrative = <>{d.giftCount} gift{d.giftCount === 1 ? "" : "s"} between <strong>{displayDate(d.from)}</strong> and <strong>{displayDate(d.to)}</strong>, totalling <strong>{fmtFull(Number(d.total))}</strong>. One row per gift, sorted by date then donor.</>;
+      const bkType = c => c.money ? "money" : c.key === "date" ? "date" : "text";
       table = <>
         {/* ONE line, above the button, saying what is deliberately not here. */}
         <div data-testid="bk-exclusion-note" style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, lineHeight: 1.6 }}>
@@ -384,60 +433,60 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
         {!d.balanced && <div data-testid="bk-refused" style={{ fontSize: 12.5, color: T.terra700, background: T.terra100, border: `1px solid ${T.terra200}`, borderRadius: 8, padding: "10px 12px", marginBottom: 14 }}>
           {d.exportRefused}
         </div>}
-        <ReportTable cols={d.columns.map(c => ({ key: c.key, label: c.label, align: c.money ? "right" : undefined }))} rows={d.rows} />
-        <div data-testid="bk-total" style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginTop: 10, textAlign: "right" }}>
-          TOTAL ${d.total}
-        </div>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, margin: "22px 0 8px" }}>Totals by fund</div>
-        <ReportTable cols={[
-          { key: "name", label: "Fund or designation" },
-          { key: "giftCount", label: "Gifts", align: "right" },
-          { key: "amount", label: "Amount", align: "right", render: r => `$${r.amount}` },
+        {/* The file carries every column as it is; the screen reads it. The
+            amount sums from the server's own integer cents. */}
+        <ReportTable personOf={r => r.donorId || null} onOpen={openPerson}
+          cols={d.columns.map(c => ({ key: c.key, label: c.label, type: bkType(c), person: c.key === "donorName",
+            ...(c.money ? { value: r => (Number.isFinite(Number(r.cents)) ? Number(r.cents) / 100 : r[c.key]) } : {}) }))} rows={d.rows} />
+        {subhead("Totals by fund")}
+        <ReportTable foot={false} cols={[
+          { key: "name", label: "Fund or designation", type: "text" },
+          { key: "giftCount", label: "Gifts", type: "count" },
+          { key: "amount", label: "Amount", type: "money" },
         ]} rows={d.byFund} />
         <div data-testid="bk-fund-total" style={{ fontSize: 13, fontWeight: 800, color: T.ink, marginTop: 10, textAlign: "right" }}>
-          TOTAL ${d.total}
+          Total {fmtFull(Number(d.total))}
         </div>
       </>;
     } else if (active === "solicitations") {
       empty = d.forecast.open === 0 && d.byOfficer.every(o => o.asksMade === 0 && o.giftsClosed === 0);
       narrative = <>You have <strong>{fmtFull(d.forecast.open)}</strong> in open asks; the stage-weighted forecast is <strong>{fmtFull(d.forecast.weighted)}</strong>. Below: asks by stage, activity by officer, and the prospects that have stalled longest.</>;
-      const cap = s => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
       table = <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 18 }}>
           {[["Open asks", fmtFull(d.forecast.open)], ["Stage-weighted forecast", fmtFull(d.forecast.weighted)]].map(([l, v]) =>
             <div key={l} style={{ background: T.white, border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "10px 14px" }}>
               <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3 }}>{l}</div>
-              <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, marginTop: 2 }}>{v}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, marginTop: 2 }}>{v}</div>
             </div>)}
         </div>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>Open asks by stage</div>
+        {subhead("Open asks by stage")}
         <ReportTable cols={[
-          { key: "stage", label: "Stage", render: r => cap(r.stage) },
-          { key: "count", label: "Open asks", align: "right" },
-          { key: "ask", label: "Ask total", align: "right", render: r => fmtFull(r.ask) },
-          { key: "weight", label: "Close prob.", align: "right", render: r => `${Math.round(r.weight * 100)}%` },
-          { key: "weighted", label: "Weighted", align: "right", render: r => fmtFull(r.weighted) },
+          { key: "stage", label: "Stage", type: "text", render: r => cap(r.stage) },
+          { key: "count", label: "Open asks", type: "count" },
+          { key: "ask", label: "Ask total", type: "money" },
+          { key: "weight", label: "Close prob.", type: "pct", render: r => `${Math.round(r.weight * 100)}%` },
+          { key: "weighted", label: "Weighted", type: "money" },
         ]} rows={d.byStage} />
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, margin: "22px 0 8px" }}>Asks vs. closes by officer</div>
-        <ReportTable cols={[
-          { key: "name", label: "Officer", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
-          { key: "openAsks", label: "Open", align: "right", render: r => `${r.openAsks} · ${fmtFull(r.openAskAmount)}` },
-          { key: "asksMade", label: "Made", align: "right", render: r => `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}` },
-          { key: "giftsClosed", label: "Won", align: "right", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
-          { key: "lostAsks", label: "Lost", align: "right", render: r => `${r.lostAsks ?? 0}` },
-          { key: "winRate", label: "Win rate", align: "right", render: r => r.winRate === null
+        {subhead("Asks vs. closes by officer")}
+        <ReportTable foot={false} cols={[
+          { key: "name", label: "Officer", type: "text", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
+          { key: "openAsks", label: "Open", type: "number", render: r => `${r.openAsks} · ${fmtFull(r.openAskAmount)}` },
+          { key: "asksMade", label: "Made", type: "number", render: r => `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}` },
+          { key: "giftsClosed", label: "Won", type: "number", render: r => `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}` },
+          { key: "lostAsks", label: "Lost", type: "number", render: r => `${r.lostAsks ?? 0}` },
+          { key: "winRate", label: "Win rate", type: "pct", render: r => r.winRate === null
             ? <span title="No decided asks yet" style={{ color: T.ink3 }}>—</span>
             : `${r.winRate}%` },
         ]} rows={d.byOfficer} />
         <div style={{ fontSize: 11, color: T.ink3, marginTop: 6 }}>Win rate = won ÷ (won + lost) — decided asks only. Open asks aren't losses; “—” means no decided asks yet.</div>
         {d.aging.length > 0 && <>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.terracotta, margin: "22px 0 8px" }}>Aging prospects</div>
-          <ReportTable accentRow onRowClick={openDonor} cols={[
-            { key: "name", label: "Prospect", render: r => <span style={{ fontWeight: 700, color: T.ink }}>{r.name}</span> },
-            { key: "stage", label: "Stage", render: r => cap(r.stage) },
-            { key: "ask", label: "Ask", align: "right", render: r => fmtFull(r.ask) },
-            { key: "stageAge", label: "Days in stage", align: "right", render: r => <strong style={{ color: r.stageAge > 60 ? T.terracotta : T.ink }}>{r.stageAge}</strong> },
-            { key: "assignedTo", label: "Officer", render: r => r.assignedTo || "—" },
+          {subhead("Aging prospects")}
+          <ReportTable personOf={byId} onOpen={openPerson} cols={[
+            { key: "name", label: "Prospect", type: "text", person: true },
+            { key: "stage", label: "Stage", type: "text", render: r => cap(r.stage) },
+            { key: "ask", label: "Ask", type: "money" },
+            { key: "stageAge", label: "Days in stage", type: "number", render: r => <strong style={{ color: r.stageAge > 60 ? T.gold600 : T.ink }}>{r.stageAge}</strong> },
+            { key: "assignedTo", label: "Officer", type: "text", render: r => r.assignedTo || "—" },
           ]} rows={d.aging} />
         </>}
       </>;
@@ -445,7 +494,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       if (d.type === "monthly") {
         const r = d.report;
         empty = false;
-        narrative = <>Your month at a glance — <strong>{r.officerName}</strong>, {d.window.start} to {d.window.end}.</>;
+        narrative = <>Your month at a glance — <strong>{r.officerName}</strong>, {displayDate(d.window.start)} to {displayDate(d.window.end)}.</>;
         table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
           {[["Asks made", `${r.asksMade} · ${fmtFull(r.asksMadeAmount)}`], ["Moves made", r.movesMade],
             ["Gifts closed", `${r.giftsClosed} · ${fmtFull(r.giftsClosedAmount)}`], ["Portfolio", `${r.portfolioCount} · ${fmtFull(r.portfolioValue)}`]].map(([l, v]) =>
@@ -457,51 +506,54 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
       } else {
         const s = d.sections, tt = s.totals;
         empty = false;
-        narrative = <><strong>{d.window.start}</strong> to <strong>{d.window.end}</strong>{d.scope === "officer" ? " · your portfolio" : ""} — <strong style={{ color: T.greenDk }}>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.terracotta : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
-        const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.greenDk, marginBottom: 8 }}>{title}</div>
+        narrative = <><strong>{displayDate(d.window.start)}</strong> to <strong>{displayDate(d.window.end)}</strong>{d.scope === "officer" ? " · your portfolio" : ""} — <strong>{fmtFull(tt.giftTotal)}</strong> in {tt.giftCount} gift{tt.giftCount === 1 ? "" : "s"}, {tt.askCount} ask{tt.askCount === 1 ? "" : "s"}, {tt.moveCount} move{tt.moveCount === 1 ? "" : "s"}, <strong style={{ color: tt.pastDueCount ? T.gold600 : T.ink2 }}>{tt.pastDueCount} past-due task{tt.pastDueCount === 1 ? "" : "s"}</strong>.{d.teamRollup && <> Team-wide this week: {fmtFull(d.teamRollup.giftTotal)} across {d.teamRollup.giftCount} gifts.</>}</>;
+        const Section = ({ title, items, empty: e, render }) => <div style={{ marginBottom: 18, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "0.06em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>{title}</div>
           {items.length === 0 ? <div style={{ fontSize: 13, color: T.ink3 }}>{e}</div>
-            : <div style={{ border: `1px solid ${T.bg3}`, borderRadius: 10, overflow: "hidden" }}>{items.map((it, i) => <div key={i} style={{ padding: "9px 14px", borderTop: i ? `1px solid ${T.bg2}` : "none", display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: T.ink }}>{render(it)}</div>)}</div>}
+            : <div style={{ border: `1px solid ${T.bg3}`, borderRadius: 10, overflow: "hidden" }}>{items.map((it, i) => <div key={i}
+                onClick={it.donorId ? () => openPerson(it.donorId) : undefined} className={it.donorId ? "rpt-row-click" : undefined}
+                style={{ padding: "9px 14px", borderTop: i ? `1px solid ${T.bg2}` : "none", display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13.5, color: T.ink, cursor: it.donorId ? "pointer" : "default" }}>{render(it)}</div>)}</div>}
         </div>;
-        table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: 20 }}>
-          <Section title="Gifts received" items={s.gifts} empty="No gifts this week." render={g => <><span>{g.donorName}</span><strong style={{ color: T.greenDk }}>{fmtFull(g.amount)}</strong></>} />
+        table = <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: 20 }}>
+          <Section title="Gifts received" items={s.gifts} empty="No gifts this week." render={g => <><span>{g.donorName}</span><strong>{fmtFull(g.amount)}</strong></>} />
           <Section title="Asks / pledges made" items={s.asks} empty="No new asks this week." render={a => <><span>{a.donorName}{a.name ? ` — ${a.name}` : ""}</span><strong>{fmtFull(a.targetAmount)}</strong></>} />
           <Section title="Moves" items={s.moves} empty="No pipeline moves this week." render={m => <div style={{ width: "100%" }}><div style={{ fontWeight: 600 }}>{m.donorName} · {m.fromStage || "—"} → {m.toStage}</div><div style={{ fontSize: 12, color: T.ink3 }}>{m.description}</div></div>} />
-          <Section title="Past-due tasks" items={s.pastDueTasks} empty="Nothing past due — nice." render={t => <><span>{t.title}{t.donorName ? ` · ${t.donorName}` : ""}</span><span style={{ color: T.terracotta, fontSize: 12, whiteSpace: "nowrap" }}>due {(t.due || "").slice(0, 10)}</span></>} />
+          <Section title="Past-due tasks" items={s.pastDueTasks} empty="Nothing past due — nice." render={t => <><span>{t.title}{t.donorName ? ` · ${t.donorName}` : ""}</span><span style={{ color: T.gold600, fontSize: 12, whiteSpace: "nowrap" }}>due {displayDate(t.due)}</span></>} />
         </div>;
       }
     }
   }
 
-  const activeDef = REPORT_DEFS.find(r => r.key === active);
+  const standard = list?.standard || [], saved = list?.saved || [];
+  const groups = railGroups(REPORT_DEFS, standard, saved);
+  const label = reportLabel(active, REPORT_DEFS, standard, saved);
+  const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
   return <div className="fade-in">
+    <style>{REPORTS_CSS}</style>
     <PageTitle main="Your" accent="Reports" />
 
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
     <div style={{ marginBottom: 14 }}>
       <StartHere dismissKey="reports_intro"
         line="If you only ever open one report, make it LYBUNT — the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
-        actionLabel="Open LYBUNT" onAction={() => setActive("lybunt")} />
+        actionLabel="Open LYBUNT" onAction={() => pick("lybunt")} />
     </div>
 
-    <div className="reports-layout" style={{ display: "flex", flexDirection: "column" }}>
-      {/* Report picker — horizontal tabs. (BUILD-12: the per-report grey
-          "question this answers" subtitle was removed as decorative clutter.) */}
-      <SectionTabs className="reports-tabbar"
-        tabs={[{ id: SAVED_TAB, label: "Your reports" }, ...REPORT_DEFS.map(r => ({ id: r.key, label: r.label }))]}
-        active={active} onSelect={setActive} style={{ marginBottom: 14 }} />
+    <div className="reports-layout">
+      <ReportsRail groups={groups} active={active} onPick={pick} />
 
-      {/* BUILD-98 (switch) Part 3 — the twelve everyday questions, the org's
-          saved reports, and the builder. */}
-      {active === SAVED_TAB && <SavedReportsView initialReportId={initialSavedReport || null} />}
+      <div style={{ minWidth: 0 }}>
+        {active === BUILD_ID && <BuilderView onOpen={openPerson} onCancel={() => pick("")}
+          onSaved={id => { loadList().then(() => setActive(id)); }} />}
 
-      {/* Main */}
-      {active !== SAVED_TAB && <div style={{ flex: 1, minWidth: 0 }}>
-        <Card style={{ padding: "18px 22px" }}>
+        {!isTab && active !== BUILD_ID && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
+
+        {isTab && <Card style={{ padding: "18px 22px" }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 12 }}>{label}</div>
           {/* Param bar */}
           <div className="reports-parambar" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 16 }}>
-            {isPeriodReport && PRESETS.map(p => <button key={p.id} onClick={() => setPreset(p.id)} style={chipStyle(effPreset === p.id)}>{p.label}</button>)}
+            {isPeriodReport && PRESETS.map(p => <button key={p.id} onClick={() => setPreset(p.id)} aria-pressed={effPreset === p.id} style={chipStyle(effPreset === p.id)}>{p.label}</button>)}
             {isPeriodReport && effPreset === "custom" && <>
               <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={selStyle} />
               <span style={{ color: T.ink3, fontSize: 12 }}>to</span>
@@ -512,8 +564,8 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
               {yearOptions.map(y => <option key={y} value={y}>{yearMode === "fiscal" ? `FY${y} (${fyRangeLabel(y)})` : y}</option>)}
             </select>}
             {active === "week-in-review" && <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
-              {["weekly", "monthly"].map(s => <button key={s} onClick={() => setDigestType(s)}
-                style={{ background: digestType === s ? T.greenDk : T.white, color: digestType === s ? "#fff" : T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
+              {["weekly", "monthly"].map(s => <button key={s} onClick={() => setDigestType(s)} aria-pressed={digestType === s}
+                style={{ ...segStyle(digestType === s), textTransform: "capitalize" }}>{s}</button>)}
             </div>}
             {active === "by-group" && <select value={groupBy} onChange={e => setGroupBy(e.target.value)} style={selStyle}>
               <option value="funds">By fund</option>
@@ -521,8 +573,8 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
               <option value="giving_pages">By giving page</option>
             </select>}
             {active === "top-donors" && <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
-              {["period", "lifetime"].map(s => <button key={s} onClick={() => setScope(s)}
-                style={{ background: scope === s ? T.greenDk : T.white, color: scope === s ? "#fff" : T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{s}</button>)}
+              {["period", "lifetime"].map(s => <button key={s} onClick={() => setScope(s)} aria-pressed={scope === s}
+                style={{ ...segStyle(scope === s), textTransform: "capitalize" }}>{s}</button>)}
             </div>}
             {showFilters && funds.length > 0 && <select value={fundId} onChange={e => setFundId(e.target.value)} style={selStyle}>
               <option value="">All funds</option>
@@ -537,6 +589,10 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
               style={{ background: T.white, border: `1.5px solid ${T.greenDk}`, borderRadius: 10, padding: "7px 16px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: downloading ? "wait" : "pointer", whiteSpace: "nowrap", opacity: downloading || loading || planLocked ? 0.6 : 1 }}>
               {downloading ? "Downloading…" : "Download CSV"}
             </button>}
+            {pdfTwin && <button onClick={() => fetchFile(`/saved-reports/${encodeURIComponent(pdfTwin)}/pdf`, `${label || active}.pdf`)} disabled={downloading || loading}
+              style={{ background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 10, padding: "7px 16px", color: T.ink, fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", opacity: downloading || loading ? 0.6 : 1 }}>
+              PDF
+            </button>}
           </div>
 
           {DIGEST_REPORTS.includes(active) && !planLocked && <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14, marginTop: -4 }}>
@@ -549,7 +605,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
 
           {!customIncomplete && loading && <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", padding: "48px 0", color: T.ink3, fontSize: 13 }}>
             <span style={{ display: "inline-block", width: 14, height: 14, border: `2px solid ${T.bg3}`, borderTopColor: T.greenDk, borderRadius: "50%", animation: "sp 0.7s linear infinite" }} />
-            Running {activeDef.label}…
+            Running {label}…
           </div>}
 
           {/* Team sub-tab on a Core org: the server returns the org's OWN data
@@ -576,8 +632,8 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
             );
             return <>{errBlock}{body}</>;
           })()}
-        </Card>
-      </div>}
+        </Card>}
+      </div>
     </div>
   </div>;
 }

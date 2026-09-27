@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
 // from. Two exports: RecurringView (the full Fundraising → Recurring page:
@@ -23,7 +24,8 @@ const STATUS_META = {
   canceled: { label: "Canceled", color: T.ink3, bg: T.bg2, border: T.bg3 },
 };
 
-const fmtDate = iso => iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+// FIX-2 finding 10 — the one formatter, never a Date in some timezone.
+const fmtDate = iso => (iso && displayDate(iso)) || "—";
 const per = interval => interval === "year" ? "/yr" : "/mo";
 const money = n => n == null ? "—" : fmtFull(n);
 
@@ -81,7 +83,7 @@ function MovementSummary({ movement }) {
               folding it into "at risk" would bury the preventable money in the
               lost money. */}
           {movement.expiringCount
-            ? <span style={{ color: T.gold600 || "#a97f22", fontWeight: 700 }}> · {movement.expiringCount} card{movement.expiringCount === 1 ? "" : "s"} expiring</span>
+            ? <span style={{ color: T.gold600, fontWeight: 700 }}> · {movement.expiringCount} card{movement.expiringCount === 1 ? "" : "s"} expiring</span>
             : null}
         </div>
       </div>
@@ -451,7 +453,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
     </div>
   );
   return (
-    <div style={{ background: T.bgCard, border: `1px solid ${counts.stopped ? (T.gold500 || "#c9a84c") + "66" : T.bg3}`, borderRadius: 12, padding: "14px 14px 6px" }}>
+    <div style={{ background: T.bgCard, border: `1px solid ${counts.stopped ? T.gold500 + "66" : T.bg3}`, borderRadius: 12, padding: "14px 14px 6px" }}>
       {toast && <div style={{ fontSize: 12, color: T.greenDk, padding: "0 10px 8px" }}>{toast}</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "0 10px 8px", flexWrap: "wrap" }}>
         <div>
@@ -486,7 +488,7 @@ export function UnlinkedSustainers({ isReadOnly, onNavigate }) {
         {!isReadOnly && !providerDunning && sendable.length > 0 && (
           <button onClick={send} disabled={busy || sendTargets.length === 0}
             title={sendTargets.length === 0 ? "Select sustainers below (those with an email on file)" : undefined}
-            style={{ background: sendTargets.length ? (T.gold500 || "#c9a84c") : T.bg2, border: "none", borderRadius: 9, padding: "9px 16px", color: sendTargets.length ? T.ink : T.ink3, fontSize: 12.5, fontWeight: 700, cursor: sendTargets.length && !busy ? "pointer" : "not-allowed" }}>
+            style={{ background: sendTargets.length ? T.gold500 : T.bg2, border: "none", borderRadius: 9, padding: "9px 16px", color: sendTargets.length ? T.ink : T.ink3, fontSize: 12.5, fontWeight: 700, cursor: sendTargets.length && !busy ? "pointer" : "not-allowed" }}>
             {busy ? "Sending…" : `Send reconnect link${sendTargets.length === 1 ? "" : "s"}${sendTargets.length ? ` (${sendTargets.length})` : ""}`}
           </button>
         )}
@@ -757,14 +759,14 @@ export function DashboardRecurring({ onNavigate }) {
         </div>
       )}
       {!nothing && stoppedFromFile > 0 && (
-        <div data-testid="rec-stopped-banner" style={{ background: T.gold100 || "#f6eccf", border: `1px solid ${T.gold300 || "#e7cf91"}`, borderRadius: 12, padding: "14px 18px", fontSize: 13.5, color: T.ink, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div data-testid="rec-stopped-banner" style={{ background: T.gold100, border: `1px solid ${T.gold300}`, borderRadius: 12, padding: "14px 18px", fontSize: 13.5, color: T.ink, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
           <span><strong>{stoppedFromFile}</strong> monthly donors stopped. Send reconnect links.</span>
           <button onClick={() => onNavigate("fundraising", { frSection: "recurring" })}
             style={{ background: T.gold500, border: "none", borderRadius: 9, padding: "8px 14px", color: T.ink, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Open Recurring Giving →</button>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 12 }} className="dash-rec-grid">
-        {section("Stopped giving (from your file)", stoppedFromFile, T.gold300 || "#e7cf91",
+        {section("Stopped giving (from your file)", stoppedFromFile, T.gold300,
           (data.stoppedFromFileList || []).map(s => donorRow(s, s.detail || "monthly giving stopped", true)))}
         {section("Cards just failed", counts.failedCards, T.terra200,
           data.failedCards.map(s => donorRow(s, `${money(s.amount)}${per(s.interval)} · failed ${s.lastFailedAt ? fmtDate(s.lastFailedAt) : "recently"}`, true)))}

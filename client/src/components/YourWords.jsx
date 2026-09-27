@@ -10,7 +10,7 @@
 // so a skip leaves the product exactly as it was.
 import { useEffect, useState } from "react";
 import { apiFetch } from "../api";
-import { T, Modal } from "./shared";
+import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { VOCAB_DEFAULTS, MONTH_NAMES } from "../../../shared/vocabulary";
 
@@ -42,10 +42,10 @@ export function YourWords({ mode = "settings", onDone, onClose }) {
     finally { setBusy(false); }
   }
 
-  const fld = { padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 14, color: T.ink, background: "#fff", boxSizing: "border-box", width: "100%" };
+  const fld = { padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 8, fontSize: 14, color: T.ink, background: T.white, boxSizing: "border-box", width: "100%" };
   const q = { fontSize: 15, fontWeight: 700, color: T.ink, marginBottom: 3 };
   const help = { fontSize: 12.5, color: T.ink3, marginBottom: 9, lineHeight: 1.5 };
-  const chip = on => ({ background: on ? T.greenDk : "transparent", color: on ? "#fff" : T.ink3, border: "1px solid " + (on ? T.greenDk : T.bg3), borderRadius: 99, padding: "4px 11px", fontSize: 12, cursor: "pointer" });
+  const chip = on => ({ background: "transparent", color: T.ink3, border: "1px solid " + T.bg3, borderRadius: 7, padding: "4px 11px", fontSize: 12, cursor: "pointer", ...activeMark(on, "bottom") });
 
   const body = (
     <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>

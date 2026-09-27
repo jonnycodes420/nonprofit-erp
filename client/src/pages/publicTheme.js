@@ -13,6 +13,12 @@ export const T = {
   // pages use the brand forest green (greenDk) + gold; nothing here referenced
   // the old emerald token.
   greenDk: "#1a6b4a", gold: "#c9a84c",
+
+  // FIX-2 C — the giving pages' inline colours, named here once.
+  terra100: "#f6e3dd",
+  terra200: "#eac6b8",
+  terra700: "#8a3a24",
+  pureWhite: "#ffffff",
 };
 
 export function fmtMoney(n) {

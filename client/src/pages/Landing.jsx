@@ -115,6 +115,9 @@ const C = {
   // verify floor is 5.0.
   ink3:    "#5A554F",
   sage:    "#8FA896",
+
+  // FIX-2 C — named here once, where they were inline.
+  white: "#ffffff",
 };
 
 const CALENDLY_URL   = "https://calendly.com/xjca2006/new-meeting";
@@ -325,7 +328,7 @@ const STYLES = `
   .lp-whocap { font-size: 14px; color: ${C.ink3}; margin-top: 12px; line-height: 1.5; }
 
   .lp-beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: #FFFFFF; }
+  .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: ${C.white}; }
   .lp-beat { background: ${C.cream}; border: 1px solid rgba(15, 26, 18, 0.1); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 14px 40px rgba(15, 26, 18, 0.06); }
 
   .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; max-width: 1440px; margin: 0 auto; }

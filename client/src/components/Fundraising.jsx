@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API } from "../api";
-import { T, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal, LockGlyph } from "./shared";
+import { T, activeMark, fmt, fmtFull, PageTitle, SectionTabs, EmptyState, GoldMoment, StartHere, interactive, Modal, LockGlyph } from "./shared";
 import { DepositSheetModal } from "./DepositSheet";
 import { RecurringView } from "./RecurringGiving";
 import { MembersView } from "./Memberships";
@@ -15,6 +15,7 @@ import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { TEAM_GATED } from "../lib/tabRegistry";
+import { displayDate } from "../../../shared/displayDate";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -26,9 +27,9 @@ import { TEAM_GATED } from "../lib/tabRegistry";
 const lockIcon = color => LockGlyph({ size: 10, color });
 
 const PACE_META = {
-  met:      { label: "Goal reached",  color: T.gold,       bg: "#faf5e6" },
-  on_track: { label: "On pace",       color: T.greenMid,   bg: "#e8f3ee" },
-  behind:   { label: "Behind pace",   color: T.terracotta, bg: "#f6ece8" },
+  met:      { label: "Goal reached",  color: T.gold,       bg: T.gold50 },
+  on_track: { label: "On pace",       color: T.ink,        bg: T.bg2 },
+  behind:   { label: "Behind pace",   color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
 };
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
@@ -72,7 +73,7 @@ function StatTile({ label, value, sub, accent, onClick, ariaLabel }) {
 }
 
 const SOURCE_BADGE = {
-  online:  { label: "Online", bg: "#e8f3ee", color: T.greenMid },
+  online:  { label: "Online", bg: T.bg2, color: T.ink },
   offline: { label: "Offline", bg: T.bg2, color: T.ink3 },
 };
 
@@ -148,16 +149,16 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       <div style={{ fontSize: 13, color: T.ink3, margin: sec.parts.length > 1 ? "0 0 10px" : "-8px 0 16px" }}>{sec.question}</div>
       {sec.parts.length > 1 && (
         <div data-fr-parts="" role="navigation" aria-label={sec.label}
-          style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+          style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2 }}>
           {sec.parts.map(p => {
             const on = subtab === p.id;
             return (
               <button key={p.id} data-fr-part={p.id} aria-current={on ? "true" : undefined}
                 onClick={() => setPartOf(m => ({ ...m, [sec.id]: p.id }))}
-                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: on ? T.ink : "transparent", color: on ? T.white : T.ink2, border: "1px solid " + (on ? T.ink : T.bg3), borderRadius: 99, padding: "5px 12px", fontSize: 12.5, fontWeight: on ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", color: T.ink3, border: "none", borderRadius: "6px 6px 0 0", padding: "6px 12px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...activeMark(on, "bottom") }}>
                 {p.label}
                 {PART_BADGE[p.id] != null && <span style={{ fontSize: 11, fontWeight: 700, opacity: 0.75 }}>{PART_BADGE[p.id]}</span>}
-                {lockedPart(p) && <span title="Team plan" style={{ display: "inline-flex" }}>{lockIcon(on ? T.white : T.ink3)}</span>}
+                {lockedPart(p) && <span title="Team plan" style={{ display: "inline-flex" }}>{lockIcon(on ? T.ink : T.ink3)}</span>}
               </button>
             );
           })}
@@ -323,14 +324,14 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           Degrades gracefully — no goals → a start-here signpost; one goal →
           that single goal reads as the hero via the portfolio below. */}
       {rollup ? (
-        <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns", dark: true })} style={{ background: `linear-gradient(135deg,${T.green950},${T.green800})`, borderRadius: 18, padding: "26px 28px", color: T.inkInverse, position: "relative", overflow: "hidden", border: "1px solid transparent" }}>
-          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,#c9a84c22,transparent 70%)" }} />
-          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: "#c9a84c", marginBottom: 10 }}>
+        <div {...interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns" })} style={{ background: T.white, borderRadius: 18, padding: "26px 28px", color: T.ink, position: "relative", overflow: "hidden", border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.gold500 }}>
+          <div style={{ position: "absolute", right: -30, top: -30, width: 160, height: 160, borderRadius: "50%", background: "radial-gradient(circle,"+T.gold500+"22,transparent 70%)" }} />
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.gold700, marginBottom: 10 }}>
             {rollup.activeGoalCount === 1 ? "Active goal" : `All active goals · ${rollup.activeGoalCount}`}
           </div>
           <RollupThermometer rollup={rollup} />
           {rollup.activeGoalCount > 1 && (
-            <div style={{ marginTop: 14, fontSize: 13, color: "#a9c3b2" }}>
+            <div style={{ marginTop: 14, fontSize: 13, color: T.ink3 }}>
               Combined progress across {rollup.activeGoalCount} goals — each tracks its own gifts automatically.
             </div>
           )}
@@ -360,15 +361,15 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           sub={period.priorRaised > 0
             ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs last period`
             : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
-        <StatTile label="Gifts this period" value={period.giftCount} accent={T.greenMid}
+        <StatTile label="Gifts this period" value={period.giftCount} accent={T.bg3}
           onClick={() => onNavigate && onNavigate("reports")}
           ariaLabel="View gifts in reports"
           sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
-        <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.greenDk}
+        <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.bg3}
           onClick={() => onGoto && onGoto("campaigns")}
           ariaLabel="View campaigns"
           sub={overview.campaigns.count > 0 ? `${fmtFull(overview.campaigns.raised)} raised across all` : "No campaigns yet"} />
-        <StatTile label="Live giving pages" value={gp.count} accent={T.greenMid}
+        <StatTile label="Live giving pages" value={gp.count} accent={T.bg3}
           onClick={() => onGoto && onGoto("pages")}
           ariaLabel="View giving pages"
           sub={gp.count > 0 ? `${fmtFull(gp.raised)} raised` : "None published"} />
@@ -412,10 +413,10 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
                   <div key={g.id} {...interactive(go, { label: `View ${g.donorName}` })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", margin: "0 -10px", borderRadius: 8, borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorName}</div>
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {g.date}</div>
+                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {displayDate(g.date)}</div>
                     </div>
                     <span style={{ fontSize: 10, fontWeight: 700, background: b.bg, color: b.color, borderRadius: 99, padding: "2px 8px" }}>{b.label}</span>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: T.greenMid, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
                   </div>
                 );
               })}
@@ -427,7 +428,8 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
   );
 }
 
-// Dark roll-up thermometer — total raised across active goals vs total goal.
+// Roll-up thermometer — total raised across active goals vs total goal. FIX-2 C:
+// it sits on a white card now (it was the dark pine hero), brass for progress.
 function RollupThermometer({ rollup }) {
   const pct = rollup.percent == null ? 0 : rollup.percent;
   const shown = rollup.rawPercent == null ? rollup.percent : rollup.rawPercent;
@@ -436,12 +438,12 @@ function RollupThermometer({ rollup }) {
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtFull(rollup.totalRaised)}</span>
+          <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtFull(rollup.totalGoal)}{rollup.over > 0 ? ` · ${fmtFull(rollup.over)} over` : ""}</span>
         </div>
-        {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>}
+        {shown != null && <span style={{ fontSize: 16, fontWeight: 800, color: T.gold700 }}>{shown}%</span>}
       </div>
-      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 14, background: T.bg2, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
@@ -507,12 +509,12 @@ function GoalThermometerDark({ goal }) {
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.inkInverse, lineHeight: 1 }}>{fmtFull(goal.currentAmount)}</span>
-          <span style={{ fontSize: 14, color: "#a9c3b2" }}>of {fmtFull(goal.goalAmount)}{over > 0 ? ` · ${fmtFull(over)} over` : ""}</span>
+          <span style={{ fontFamily: "'DM Serif Display',serif", fontSize: 30, color: T.ink, lineHeight: 1 }}>{fmtFull(goal.currentAmount)}</span>
+          <span style={{ fontSize: 14, color: T.ink3 }}>of {fmtFull(goal.goalAmount)}{over > 0 ? ` · ${fmtFull(over)} over` : ""}</span>
         </div>
-        <span style={{ fontSize: 16, fontWeight: 800, color: T.gold }}>{shown}%</span>
+        <span style={{ fontSize: 16, fontWeight: 800, color: T.gold700 }}>{shown}%</span>
       </div>
-      <div style={{ height: 14, background: "#1a2e1f", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 14, background: T.bg2, borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${Math.max(goal.percent, goal.percent > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.6s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
     </div>
@@ -601,7 +603,7 @@ function CampaignCard({ g, allGoals, editBtn }) {
       ) : (
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
           {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
-          {g.endDate ? ` · closes ${String(g.endDate).slice(0, 10)}` : ""}
+          {g.endDate ? ` · closes ${displayDate(g.endDate)}` : ""}
           {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>
       )}
@@ -805,7 +807,7 @@ function PagesView({ pages, orgSlug, onNavigate }) {
               {goal > 0 ? (
                 <Thermometer raised={raised} goal={goal} percent={pct} />
               ) : (
-                <div style={{ fontSize: 15, fontWeight: 700, color: T.greenMid }}>{fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>{fmtFull(raised)} raised <span style={{ fontSize: 12, color: T.ink3, fontWeight: 400 }}>· no goal set</span></div>
               )}
               {url && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -833,7 +835,7 @@ function FundsView({ data, onNavigate }) {
   const funds = data?.funds || [];
   return (
     <div>
-      <div style={{ background: "#fdfaf2", border: "1px solid #c9a84c55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ background: T.gold50, border: "1px solid "+T.gold500+"55", borderLeft: "4px solid " + T.gold, borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 260px" }}>
           <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.6 }}>Funds live in <strong>Finance</strong> — they're the accounting home for restricted and unrestricted money. Manage balances, targets, and restrictions there so there's one source of truth.</div>
         </div>
@@ -842,7 +844,7 @@ function FundsView({ data, onNavigate }) {
       {funds.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
           {funds.map(f => (
-            <div key={f.id || f.name} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.greenMid}` }}>
+            <div key={f.id || f.name} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", boxShadow: T.shadow, borderLeft: `3px solid ${f.restricted ? T.gold : T.bg3}` }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 4 }}>{f.name}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmt(parseFloat(f.balance) || 0)}</div>
               <div style={{ fontSize: 11, color: T.ink3, marginTop: 2 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
@@ -878,7 +880,7 @@ function DepositsView({ isReadOnly, roTip }) {
           rest, and refuses to record the deposit until the cents add up. Nothing is sent.
         </div>
         <button onClick={() => !isReadOnly && setOpen(true)} disabled={isReadOnly} title={roTip} data-testid="add-a-deposit"
-          style={{ background: isReadOnly ? T.bg2 : T.greenDk, border: "none", borderRadius: 10, padding: "10px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+          style={{ background: isReadOnly ? T.bg2 : T.greenDk, border: "none", borderRadius: 10, padding: "10px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: isReadOnly ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
           Add a deposit
         </button>
       </div>
@@ -1006,7 +1008,7 @@ function AcknowledgmentsView({ isReadOnly, roTip }) {
             <label key={g.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderTop: "1px solid " + T.bg3, fontSize: 13, color: T.ink, cursor: "pointer" }}>
               <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} style={{ accentColor: T.greenDk }} />
               <span style={{ fontWeight: 700, minWidth: 160 }}>{g.name}</span>
-              <span style={{ color: T.ink3, minWidth: 90 }}>{g.date}</span>
+              <span style={{ color: T.ink3, minWidth: 90 }}>{displayDate(g.date)}</span>
               <span>{fmtFull(g.amount)}</span>
               {g.fund && <span style={{ color: T.ink3 }}>{g.fund}</span>}
               <span style={{ marginLeft: "auto", color: T.ink3, fontSize: 12 }}>

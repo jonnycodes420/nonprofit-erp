@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -31,14 +32,14 @@ export function VolunteerPanel({ donor, isReadOnly }) {
   };
   return (
     <div data-testid="volunteer-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.greenDk }}>Volunteering</span>
+      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Volunteering</span>
       <div title={data.sentence} aria-label={data.sentence} tabIndex={0} data-testid="volunteer-total">
         <span style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{data.totalHours}</span>
         <span style={{ fontSize: 13, color: T.ink3 }}> hours across {data.shiftCount} {data.shiftCount === 1 ? "shift" : "shifts"}</span>
       </div>
       {data.shifts.slice(0, 6).map(s => (
         <div key={s.id} style={{ display: "flex", gap: 8, fontSize: 12, color: T.ink }}>
-          <span style={{ color: T.ink3, minWidth: 84 }}>{s.date}</span><span>{s.hours} h</span><span style={{ color: T.ink3 }}>{s.role || ""}</span>
+          <span style={{ color: T.ink3, minWidth: 84 }}>{displayDate(s.date)}</span><span>{s.hours} h</span><span style={{ color: T.ink3 }}>{s.role || ""}</span>
           {s.via === "self" && <span style={{ color: T.ink3, marginLeft: "auto" }}>logged by them</span>}
         </div>))}
       {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

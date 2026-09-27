@@ -5,13 +5,14 @@
 // user to create a task; logging the conversation IS creating the follow-up.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, Modal } from "./shared";
+import { T, activeMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import {
   TOUCH_TYPES, DISMISS_REASONS, NEXT_STEP_LABEL_MAX,
   nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel, NOTE_ONLY_PLUS_DAYS,
   sanitizeStepTime, formatStepTime,
 } from "../../../shared/threadShape";
+import { displayDate } from "../../../shared/displayDate";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
@@ -123,8 +124,8 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 14 }}>
           {TOUCH_TYPES.map(t => (
-            <button key={t.key} onClick={() => { setTouch(t.key); }}
-              style={{ background: touch === t.key ? T.greenDk : T.bg2, border: "1px solid " + (touch === t.key ? T.greenDk : T.bg3), borderRadius: 7, padding: "5px 12px", color: touch === t.key ? T.white : T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            <button key={t.key} aria-pressed={touch === t.key} onClick={() => { setTouch(t.key); }}
+              style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 12px", color: T.ink3, fontSize: 12, fontWeight: 600, cursor: "pointer", ...activeMark(touch === t.key, "bottom") }}>
               {t.label}
             </button>
           ))}
@@ -382,7 +383,7 @@ export function PutItOnMyCalendar({ threadId, compact = false }) {
                 <strong style={{ color: T.ink }}>{data.subject}</strong>
                 <div style={{ marginTop: 2 }}>
                   {data.allDay
-                    ? `${data.dueDate} · all day`
+                    ? `${displayDate(data.dueDate)} · all day`
                     : new Date(data.startsAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </div>
               </div>

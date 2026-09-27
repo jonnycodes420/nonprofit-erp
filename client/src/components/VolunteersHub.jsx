@@ -16,10 +16,6 @@
 //
 // No money is drawn here on purpose: this is the coordinator's screen. Giving
 // is one click away on the person's record, where it is defined.
-// The client lint config has no jsx-uses-vars rule, so every component this
-// file uses only in JSX reads as "never used" (ten false warnings). Off for this
-// file only; checked by hand that every name below is used. (FIX-1 C)
-/* eslint-disable no-unused-vars */
 import { useState, useEffect, useCallback } from "react";
 import Papa from "papaparse";
 import { apiFetch } from "../api";
@@ -27,6 +23,7 @@ import { T, PageTitle, SectionTabs, EmptyState, Modal } from "./shared";
 import { HoursImportModal } from "./VolunteerPanel";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const VIEWS = [
   { id: "roster", label: "Roster" },
@@ -200,11 +197,11 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
               {narrow ? <>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
                   <button onClick={() => onOpen({ id: s.person_id, name: s.person_name })} style={{ ...btnLink, color: T.ink }}>{s.person_name}</button>
-                  <span style={{ fontSize: 12, color: T.ink3 }}>{s.date}{s.role ? " · " + s.role : ""} · logged by {via(s)}</span>
+                  <span style={{ fontSize: 12, color: T.ink3 }}>{displayDate(s.date)}{s.role ? " · " + s.role : ""} · logged by {via(s)}</span>
                 </div>
                 <span style={{ fontWeight: 700, color: T.ink, whiteSpace: "nowrap" }}>{s.hours} h</span>
               </> : <>
-                <span style={{ color: T.ink3 }}>{s.date}</span>
+                <span style={{ color: T.ink3 }}>{displayDate(s.date)}</span>
                 <button onClick={() => onOpen({ id: s.person_id, name: s.person_name })} style={{ ...btnLink, color: T.ink }}>{s.person_name}</button>
                 <span style={{ fontWeight: 700, color: T.ink }}>{s.hours} h</span>
                 <span style={{ color: T.ink }}>{s.role || ""}</span>
@@ -359,7 +356,7 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
             <div key={n.id} data-testid="vol-note" style={{ padding: "9px 0", borderBottom: "1px solid " + T.bg2 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: T.ink3, flexWrap: "wrap" }}>
                 <strong style={{ color: T.ink }}>{KIND_LABEL[n.kind] || n.kind}</strong>
-                {n.note_date && <span>{n.note_date}</span>}
+                {n.note_date && <span>{displayDate(n.note_date)}</span>}
                 <span>by {n.created_by_name || "someone on your team"}</span>
                 {!isReadOnly && <button onClick={() => del(n.id)} style={{ ...btnLink, color: T.ink3, fontSize: 12, fontWeight: 600, marginLeft: "auto" }}>Remove</button>}
               </div>

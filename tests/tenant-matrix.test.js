@@ -391,6 +391,12 @@ const PARAM_EXEMPT = [
   // proven directly in tests/dashboards.test.js §6, which asserts org B never
   // sees org A's people or figures on any of the four.
   [/^\/dashboards\/:key(\/pdf)?$/, "param is a dashboard NAME from a fixed registry, not a row id — see dashboards.test.js §6"],
+  // FIX-2 A — the param is a SOURCE NAME from the fixed registry in
+  // figureSources.js (gifts · givers · retention · …), never a row id. The org
+  // comes from the token and is the first argument of every source's query;
+  // an unknown name is a 404. Cross-org rows are proven directly in
+  // tests/fix2-a-footing.test.js §2 (org B asking for org A's donor gets none).
+  [/^\/figures\/:source\/rows$/, "param is a figure SOURCE NAME from a fixed registry, not a row id — see fix2-a-footing.test.js §2"],
   [/^\/portfolio\/officers\/:userId\/color$/, "cross-org userId probed via bResolver userId map"], // resolved, listed for clarity
 ];
 

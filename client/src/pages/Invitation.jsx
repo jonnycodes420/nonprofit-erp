@@ -24,6 +24,10 @@ const C = {
   gold:  "#c9a84c",
   sage:  "rgba(240,237,230,0.7)",
   greenDk: "#0d5c3a",
+
+  // FIX-2 C — named here once, where they were inline.
+  terraLight: "#e0a893",
+  panel: "#1a2e1f",
 };
 
 const DONOR_BANDS = ["Under 500", "500–2,500", "2,500–10,000", "More than 10,000"];
@@ -176,7 +180,7 @@ export function InvitationSection({ headline }) {
             </Field>
 
             {err && (
-              <p role="alert" style={{ fontSize: 14, color: "#e0a893", lineHeight: 1.6, marginBottom: 14, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+              <p role="alert" style={{ fontSize: 14, color: C.terraLight, lineHeight: 1.6, marginBottom: 14, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
                 {err}
               </p>
             )}
@@ -202,7 +206,7 @@ export default function InvitationPage() {
   return (
     <div style={{ minHeight: "100vh", background: C.ink, display: "flex", flexDirection: "column" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet" />
-      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 60, borderBottom: "1px solid #1a2e1f" }}>
+      <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 60, borderBottom: "1px solid "+C.panel }}>
         <a href="/" style={{ textDecoration: "none" }}>
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, color: C.cream, letterSpacing: "-0.02em" }}>Steward</span>
         </a>
@@ -214,7 +218,7 @@ export default function InvitationPage() {
       <div style={{ flex: 1 }}>
         <InvitationSection />
       </div>
-      <footer style={{ padding: "22px 32px", borderTop: "1px solid #1a2e1f", textAlign: "center" }}>
+      <footer style={{ padding: "22px 32px", borderTop: "1px solid "+C.panel, textAlign: "center" }}>
         <span style={{ fontSize: 12, color: C.sage, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
           © 2026 Steward · <a href="mailto:jonathan@stewardapp.dev" style={{ color: C.sage }}>jonathan@stewardapp.dev</a>
         </span>

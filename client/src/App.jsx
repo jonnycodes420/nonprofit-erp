@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
+import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -43,7 +43,7 @@ function planTierOf(billing){
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
-const DUE_BADGE={background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
+const DUE_BADGE={background:T.terracotta,color:T.white,fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
@@ -341,7 +341,7 @@ function AppShell() {
     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
     <div style={{fontSize:15,fontWeight:700,color:T.terracotta}}>Failed to connect</div>
     <div style={{fontSize:13,color:T.ink3,maxWidth:300,textAlign:"center"}}>{loadErr||"Could not load your workspace. Check your connection and try again."}</div>
-    <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
+    <button onClick={()=>window.location.reload()} style={{marginTop:4,background:T.green,border:"none",borderRadius:10,padding:"9px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Retry</button>
   </div>;
 
   // Badge = tasks needing attention now: open + overdue-or-due-today.
@@ -406,15 +406,18 @@ function AppShell() {
   }
 
   // Sidebar nav button — one style for the main items and the pinned
-  // Settings item. Active = gold left accent + elevated dark green, matching
-  // the goal-card/dark-surface language (five-color palette only).
+  // Settings item. FIX-2 C — the active item is the shared light treatment
+  // (activeMark): cream's shade on the ink rail, ink text, 700, a 3px emerald
+  // rule on its left edge. It was an elevated dark-green block with a brass
+  // bar, and with the ink rail around it the green read as the whole app.
   const sideBtn=(active)=>({
     display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
-    background:active?"#1a2e1f":"transparent",
-    border:"none",borderLeft:`3px solid ${active?"var(--org-accent,#c9a84c)":"transparent"}`,
-    borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 13px",
-    color:active?"#f0ede6":"rgba(240,237,230,0.7)",fontSize:14,fontWeight:active?700:500,
-    cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
+    background:"transparent",
+    border:"none",
+    borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 16px",
+    color:T.sage400,fontSize:14,fontWeight:500,
+    cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box",
+    ...activeMark(active,"left")
   });
 
   // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
@@ -427,13 +430,13 @@ function AppShell() {
   // palette — applied only on accent moments (sidebar active bar/icon, the
   // Dashboard greeting). Falls back to Steward gold when unset, so an org
   // that never sets branding is visually identical to before.
-  const orgAccent=data.org?.brandAccent||"#c9a84c";
-  const orgAccentFg=data.org?.brandAccentFg||"#0f1a12";
+  const orgAccent=data.org?.brandAccent||T.gold500;
+  const orgAccentFg=data.org?.brandAccentFg||T.ink;
   return <PhotoContext.Provider value={photoCtx}>
     {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:tab==="agent"?T.bgDark:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -447,18 +450,18 @@ function AppShell() {
     {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
         moved into the bar's left edge, user chip/sign-out live in the bar. */}
-    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:240,background:"#0f1a12",borderRight:"1px solid #1a2e1f",display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
+    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:240,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {(()=>{
           const byId=Object.fromEntries(TABS.map(t=>[t.id,t]));
           const navItem=(t)=>{
             const active=tab===t.id;
             const locked=TEAM_GATED.has(t.id)&&isCoreTier;
-            return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
-              <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,#c9a84c)":"rgba(240,237,230,0.55)",flexShrink:0}}>{t.icon}</span>
+            return <button key={t.id} className="side-nav-btn" aria-current={active?"page":undefined} onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
+              <span style={{fontSize:14,width:18,textAlign:"center",color:active?T.ink:T.sage600,flexShrink:0}}>{t.icon}</span>
               {t.label}
               {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"rgba(240,237,230,0.7)",border:"1px solid #2d4a35",borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
               {t.id==="tasks"&&tasksDue>0&&<span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>}
             </button>;
           };
@@ -475,7 +478,7 @@ function AppShell() {
               <div style={{marginTop:12}}>
                 <button onClick={()=>setNavMoreOpen(o=>{try{localStorage.setItem(NAV_MORE_KEY,o?"0":"1");}catch{/* private mode */}return !o;})}
                   aria-expanded={navMoreOpen} aria-controls="side-nav-more"
-                  className="side-nav-btn" style={{...sideBtn(false),color:"#5a7566",fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 13px"}}>
+                  className="side-nav-btn" style={{...sideBtn(false),color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 16px"}}>
                   <span aria-hidden style={{fontSize:9,width:18,textAlign:"center",flexShrink:0,display:"inline-block",transform:navMoreOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▸</span>
                   More
                   {/* A count that vanishes when its tab folds away is worse
@@ -489,9 +492,9 @@ function AppShell() {
         })()}
       </div>
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
-      <div style={{borderTop:"1px solid #1a2e1f",padding:"10px 10px 12px 0",flexShrink:0}}>
-        <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
-          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"var(--org-accent,#c9a84c)":"rgba(240,237,230,0.55)",flexShrink:0}}>⚙</span>
+      <div style={{borderTop:"1px solid "+T.bgElevated,padding:"10px 10px 12px 0",flexShrink:0}}>
+        <button className="side-nav-btn" aria-current={tab==="settings"?"page":undefined} onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
+          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?T.ink:T.sage600,flexShrink:0}}>⚙</span>
           Settings
         </button>
       </div>
@@ -502,9 +505,9 @@ function AppShell() {
     <div className="app-main" style={{marginLeft:240,marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
-    <div className="app-header" style={{borderBottom:"1px solid #1a2e1f",padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:"#0f1a12",position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
+    <div className="app-header" style={{borderBottom:"1px solid "+T.bgElevated,padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:T.ink,position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
       <div style={{display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:20,fontWeight:400,color:"#f0ede6",fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
+        <span style={{fontSize:20,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
       </div>
       <div style={{display:"flex",gap:8,alignItems:"center"}}>
         {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -513,10 +516,10 @@ function AppShell() {
           Voice memo
         </button>
         */}
-        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <span style={{fontSize:12,fontWeight:700,color:"#f0ede6"}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:12,fontWeight:700,color:T.ink}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
-        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>
+        <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"6px 12px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>
           Sign out
         </button>
       </div>
@@ -578,14 +581,14 @@ function AppShell() {
           because for it choosing a plan really is the next thing. */}
       {billing.firstChargeAt
         ? <>
-            <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""} —</span>
+            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> until your first charge{billing.monthlyUsd?` of $${billing.monthlyUsd}`:""} —</span>
             <button onClick={()=>navigateTo("settings",{section:"account"})} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>See billing →</button>
           </>
         : <>
-            <span><strong style={{color:"#f0ede6"}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
+            <span><strong style={{color:T.inkInverse}}>{billing.trialDaysLeft} days</strong> left in your trial —</span>
             <button onClick={goToPricing} style={{background:"none",border:"none",color:billing.trialDaysLeft<=3?T.gold50:T.gold500,fontSize:13,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Choose a plan →</button>
           </>}
-      <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:"#3d5245",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
+      <button onClick={()=>setBannerDismissed(true)} style={{marginLeft:"auto",background:"transparent",border:"none",color:T.sage600,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
     </div>}
 
     {/* BUILD-58 W-2 — portal-tier application status: a quiet, honest line,
@@ -658,19 +661,19 @@ function AppShell() {
         Code intact, re-enable by uncommenting.
     {showVoiceMemo&&<VoiceMemoModal donors={data.donors} onClose={()=>setShowVoiceMemo(false)} onSaved={()=>loadData()}/>}
     */}
-    {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
+    {stripeToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:T.white,borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <div>
         <div style={{fontWeight:700,marginBottom:2}}>Stripe connected!</div>
         <div style={{fontWeight:400,opacity:0.85}}>You can now accept online donations.</div>
       </div>
-      <button onClick={()=>setStripeToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
+      <button onClick={()=>setStripeToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:T.white,cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
     </div>}
-    {subscribedToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:"#fff",borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
+    {subscribedToast&&<div style={{position:"fixed",bottom:24,right:24,zIndex:9999,background:T.greenDk,color:T.white,borderRadius:14,padding:"14px 20px",fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(26,107,74,0.35)",display:"flex",alignItems:"center",gap:10,maxWidth:340}}>
       <div>
         <div style={{fontWeight:700,marginBottom:2}}>Payment received — thank you!</div>
         <div style={{fontWeight:400,opacity:0.85}}>Finishing up… your new plan will be active in a moment.</div>
       </div>
-      <button onClick={()=>setSubscribedToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:"#fff",cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
+      <button onClick={()=>setSubscribedToast(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,0.2)",border:"none",borderRadius:6,color:T.white,cursor:"pointer",padding:"2px 8px",fontSize:13,fontWeight:700}}>✕</button>
     </div>}
 
     {/* More drawer — mobile only */}
@@ -683,8 +686,8 @@ function AppShell() {
             <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
               <span className="mob-icon">{t.icon}</span>
               <span style={{flex:1}}>{t.label}</span>
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:"#1a2e1f",color:"rgba(240,237,230,0.7)",border:"1px solid #2d4a35",borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
-              {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:"#fff",fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
+              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
+              {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
             </button>
           );
         })}
@@ -697,9 +700,9 @@ function AppShell() {
     </div>}
 
     {/* Install prompt — mobile browsers only */}
-    {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:"#0f1a12",borderTop:"1px solid #1a2e1f",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
-      <span style={{flex:1,fontSize:13,color:"#f0ede6",fontWeight:500}}>Add Steward to your home screen</span>
-      <button onClick={async()=>{deferredPrompt.prompt();setShowInstallPrompt(false);}} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"6px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Add</button>
+    {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
+      <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>
+      <button onClick={async()=>{deferredPrompt.prompt();setShowInstallPrompt(false);}} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>Add</button>
       <button onClick={()=>{setShowInstallPrompt(false);localStorage.setItem('installDismissed','true');}} style={{background:"transparent",border:"none",color:"rgba(240,237,230,0.7)",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1,flexShrink:0}}>×</button>
     </div>}
 

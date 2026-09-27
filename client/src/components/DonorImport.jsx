@@ -15,11 +15,12 @@ import { detectNpsp, npspMapping, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from ".
 import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
 import { membershipColumns, detectMembershipPreset, buildMembershipRows, MEMBERSHIP_FIELDS, MEMBERSHIP_FIELD_LABELS, MEMBERSHIP_PRESETS } from "../../../shared/membershipImport.js";
 import { coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
-import { T, fmt, fmtFull, Spin, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, Spin, Modal } from "./shared";
 import { detectImportShape, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytesDetailed, analyzeCsvText, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, buildGiftItemsFromLedger, buildTransactionRows, buildProposalRows, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { NEGATOR_PHRASES, STAGE_COLORS, inferStage, normalizeStage } from "./donorShared";
+import { displayDate } from "../../../shared/displayDate";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -1642,7 +1643,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               const badge = g.matchType === "email" ? "matched by email" : "matched by name";
               return (
                 <div key={g.userId} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <span style={{fontSize:12.5,color:T.ink,fontWeight:700,whiteSpace:"nowrap"}}>{g.userName}{groupPending&&<span style={{color:T.gold600||"#a97f22",fontWeight:600}}> · pending</span>}</span>
+                  <span style={{fontSize:12.5,color:T.ink,fontWeight:700,whiteSpace:"nowrap"}}>{g.userName}{groupPending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
                   <span style={{fontSize:10.5,color:T.green600,fontWeight:600}}>{g.totalCount} donor{g.totalCount===1?"":"s"} · {badge}{g.spellingCount>1?` · from ${g.spellingCount} spellings`:""}</span>
                   {g.spellingCount>1 && (
                     <span style={{fontSize:10.5,color:T.ink3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:230}} title={g.values.map(v=>v.value).join(", ")}>
@@ -1663,7 +1664,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               return (
                 <div key={mm.value} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <span style={{fontSize:12.5,color:T.ink,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:160}} title={mm.value}>{mm.value}</span>
-                  <span style={{fontSize:10.5,color:(T.gold600||"#a97f22"),fontWeight:600}}>no match · ×{mm.count}</span>
+                  <span style={{fontSize:10.5,color:T.gold600,fontWeight:600}}>no match · ×{mm.count}</span>
                   <span style={{flex:1}}/>
                   <select value={ownerMap[mm.value] ?? ""} onChange={e=>setOwnerMap(p=>({...p,[mm.value]:e.target.value}))}
                     style={{background:T.white,border:`1px solid ${ownerMap[mm.value]?T.green600:T.bg3}`,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",maxWidth:230}}>
@@ -1672,7 +1673,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   </select>
                   {!ownerMap[mm.value] && !invited && (
                     <button onClick={()=>{ setInviteFor(mm.value); setInviteEmail(mm.value.includes("@")?mm.value:""); setInviteErr(""); }}
-                      style={{background:"transparent",border:`1px solid ${T.gold500}`,borderRadius:7,padding:"4px 10px",color:T.gold600||"#a97f22",fontSize:11,fontWeight:700,cursor:"pointer"}}>Invite</button>
+                      style={{background:"transparent",border:`1px solid ${T.gold500}`,borderRadius:7,padding:"4px 10px",color:T.gold600,fontSize:11,fontWeight:700,cursor:"pointer"}}>Invite</button>
                   )}
                   {invited && <span style={{fontSize:11,color:T.green600,fontWeight:700}}>✓ invited</span>}
                 </div>
@@ -1686,7 +1687,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               <div style={{display:"flex",gap:6}}>
                 <input value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} placeholder="officer@email.org" style={{...inp,flex:1}}/>
                 <button onClick={sendOfficerInvite} disabled={!inviteEmail.trim()||inviteBusy}
-                  style={{background:inviteEmail.trim()?T.green600:T.bg2,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:inviteEmail.trim()?"pointer":"not-allowed"}}>{inviteBusy?"Sending…":"Send invite"}</button>
+                  style={{background:inviteEmail.trim()?T.green600:T.bg2,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:inviteEmail.trim()?"pointer":"not-allowed"}}>{inviteBusy?"Sending…":"Send invite"}</button>
                 <button onClick={()=>{setInviteFor(null);setInviteEmail("");setInviteErr("");}} style={{background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:8,padding:"8px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
               </div>
               {inviteErr && <div style={{color:T.terracotta,fontSize:11,marginTop:6}}>{inviteErr}</div>}
@@ -1723,15 +1724,15 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {/* BUILD-79 Part 3.3 — the check mark is EARNED: amount + date
               mapped, non-zero dollars, both axes balanced. Anything less is
               amber and names what is missing. */}
-          <div style={{fontSize:36,marginBottom:12,color:hasBatchErrors?T.terracotta:(result.summaryHealth&&!result.summaryHealth.greenEarned)?(T.gold600||"#a97f22"):T.ink}}>
+          <div style={{fontSize:36,marginBottom:12,color:hasBatchErrors?T.terracotta:(result.summaryHealth&&!result.summaryHealth.greenEarned)?T.gold600:T.ink}}>
             {hasBatchErrors?"✕":(result.summaryHealth&&!result.summaryHealth.greenEarned)?"◑":"✓"}
           </div>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:22,fontWeight:400,color:T.ink,marginBottom:12,letterSpacing:"-0.01em"}}>
             {hasBatchErrors ? "Import finished with errors." : (result.summaryHealth&&!result.summaryHealth.greenEarned) ? "Imported — with gaps you should read." : "Import complete."}
           </div>
           {result.summaryHealth && !result.summaryHealth.greenEarned && result.summaryHealth.missing.length > 0 && (
-            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold700||"#8a6d1f",marginBottom:4}}>What's missing before this counts as fully accounted for</div>
+            <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.ink,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold700,marginBottom:4}}>What's missing before this counts as fully accounted for</div>
               {result.summaryHealth.missing.map((m,i)=><div key={i}>· {m}</div>)}
             </div>
           )}
@@ -1772,7 +1773,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               </div>
             );
             return <div style={{textAlign:"left",background:T.bg2,border:`1px solid ${T.bg3}`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.8}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?(T.gold700||"#8a6d1f"):T.ink3,marginBottom:6}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:(result.summaryHealth&&!result.summaryHealth.greenEarned)?T.gold700:T.ink3,marginBottom:6}}>
                 {(result.summaryHealth&&!result.summaryHealth.greenEarned) ? "The arithmetic — read the gaps above before trusting it" : "Every row and every dollar accounted for"}
               </div>
               <div style={{display:"flex",justifyContent:"space-between",gap:12,color:T.ink}}>
@@ -1881,7 +1882,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     const blob=new Blob([lines.join("\n")],{type:"text/csv"});
                     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
                     a.download="imported-with-warnings.csv";a.click();URL.revokeObjectURL(a.href);
-                  }} style={{background:"transparent",border:"none",padding:0,color:T.gold700||"#8a6d1f",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  }} style={{background:"transparent",border:"none",padding:0,color:T.gold700,fontSize:12,fontWeight:700,cursor:"pointer"}}>
                     ↓ Download the {result.warnedRows.length} rows imported with warnings (line numbers + reasons)
                   </button>
                 </div>
@@ -2013,7 +2014,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {result.largestGifts.map((g,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${g.date}` : ""}
+                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${displayDate(g.date)||g.date}` : ""}
                   </span>
                   <span style={{color:T.ink,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>
                     {"$" + Number(g.dollars).toLocaleString(undefined,{maximumFractionDigits:2})}<span style={{color:T.ink3}}> · line {g.line}</span>
@@ -2047,8 +2048,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                           doNotEmail: e.flags.doNotEmail||f.flags.doNotEmail };
             }
             const shown = byDonor.slice(0, flaggedPage * 50);
-            return <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:6}}>
+            return <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
                 We flagged these — {byDonor.length.toLocaleString()} {byDonor.length===1?"person":"people"} from the notes column, please confirm
               </div>
               {shown.map((f,i)=>(
@@ -2073,8 +2074,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               and the human is told which homes disagreed before an ask can
               go out on a column's say-so. */}
           {result.exclusionConflicts?.length > 0 && (
-            <div style={{textAlign:"left",background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:6}}>
+            <div style={{textAlign:"left",background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"12px 16px",marginBottom:16,fontSize:12,lineHeight:1.7}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:6}}>
                 Columns that disagree — we kept the most restrictive
               </div>
               {result.exclusionConflicts.slice(0,20).map((c,i)=>(
@@ -2155,12 +2156,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             </div>;
           })()}
           {hasBatchErrors && (
-            <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:"#8a3a24"}}>
+            <div style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:10,padding:"10px 14px",marginBottom:24,textAlign:"left",fontSize:12,color:T.terra700}}>
               <strong>Batch errors — some rows may not have been inserted:</strong>
               {result.batchErrors.map((e,i) => <div key={i} style={{marginTop:4}}>Rows {e.rows}: {e.error}</div>)}
             </div>
           )}
-          <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          <button onClick={onImported} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"12px 28px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </Modal>
     );
@@ -2249,9 +2250,9 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={6}
             placeholder={"Name,Email,Total Giving,Last Gift Date\nJane Smith,jane@example.com,5000,2024-11-01"}
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err && <div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err && <div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doParse} disabled={!csvText.trim()}
-            style={{background:csvText.trim()?T.green600:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
+            style={{background:csvText.trim()?T.green600:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
           </button>
         </>)}
@@ -2263,14 +2264,14 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
 
           {/* Primary CTA — a Donors + Gift History workbook: import both, linked */}
           {workbookRoles?.isBoth && (
-            <div style={{background:`linear-gradient(180deg, ${T.green100||"#edf3ee"}, ${T.white})`,border:`1.5px solid ${T.green600||"#1e6b45"}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.green600||"#1e6b45",marginBottom:4}}>Donors + gift history detected</div>
+            <div style={{background:`linear-gradient(180deg, ${T.green100}, ${T.white})`,border:`1.5px solid ${T.green600}`,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.green600,marginBottom:4}}>Donors + gift history detected</div>
               <div style={{fontSize:13.5,color:T.ink,lineHeight:1.5,marginBottom:10}}>
                 <strong>{workbookRoles.donorSheet.name}</strong> ({workbookRoles.donorSheet.rowCount.toLocaleString()} donors) and{" "}
                 <strong>{workbookRoles.giftSheet.name}</strong> ({workbookRoles.giftSheet.rowCount.toLocaleString()} gifts) — we can link the gifts to their donors in one pass.
               </div>
               <button onClick={startImportBoth}
-                style={{width:"100%",background:T.green600||"#1e6b45",border:"none",borderRadius:10,padding:"12px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                style={{width:"100%",background:T.green600,border:"none",borderRadius:10,padding:"12px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>
                 Import both — donors + their gift history →
               </button>
             </div>
@@ -2287,7 +2288,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
                 <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
-                  style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>
               </div>
@@ -2298,7 +2299,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
 
         {/* ── Import-both preview: two linked sheets, match column, counts ── */}
         {bothMode && bothPayload && (<>
-          <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:10,padding:"11px 14px",marginBottom:14}}>
+          <div style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:10,padding:"11px 14px",marginBottom:14}}>
             <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
               <span style={{fontWeight:700}}>Importing both sheets:</span> donors from <strong>{bothMode.donorSheet.name}</strong>, giving history from <strong>{bothMode.giftSheet.name}</strong> — each gift attached to its donor.
             </div>
@@ -2327,8 +2328,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             <div style={{fontSize:13,fontWeight:700,color:T.ink,lineHeight:1.7}}>
               <span style={{color:T.green600}}>{(bothPayload.matchedGifts + bothPayload.unmatchedGifts).toLocaleString()}</span> gifts →{" "}
               <span style={{color:T.green600}}>{bothPayload.donors.length.toLocaleString()}</span> donors
-              {bothPayload.unmatchedGifts > 0 && <> · <span style={{color:T.gold600||"#a97f22"}}>{bothPayload.unmatchedGifts.toLocaleString()}</span> unmatched → {bothPayload.newDonors.toLocaleString()} new donor{bothPayload.newDonors!==1?"s":""}</>}
-              {bothPayload.donorWarned > 0 && <> · <span style={{color:T.gold600||"#a97f22"}}>{bothPayload.donorWarned.toLocaleString()}</span> warnings</>}
+              {bothPayload.unmatchedGifts > 0 && <> · <span style={{color:T.gold600}}>{bothPayload.unmatchedGifts.toLocaleString()}</span> unmatched → {bothPayload.newDonors.toLocaleString()} new donor{bothPayload.newDonors!==1?"s":""}</>}
+              {bothPayload.donorWarned > 0 && <> · <span style={{color:T.gold600}}>{bothPayload.donorWarned.toLocaleString()}</span> warnings</>}
               {bothPayload.skippedGifts > 0 && <> · <span style={{color:T.ink3}}>{bothPayload.skippedGifts.toLocaleString()}</span> gift rows skipped (no amount / no donor)</>}
             </div>
           </div>
@@ -2361,12 +2362,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             </div>
           )}
 
-          {err && <div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err && <div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setBothMode(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
             <button onClick={doImportBoth} disabled={loading||bothPayload.donors.length===0}
-              style={{flex:1,background:loading||bothPayload.donors.length===0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||bothPayload.donors.length===0?"not-allowed":"pointer",opacity:loading||bothPayload.donors.length===0?0.6:1}}>
+              style={{flex:1,background:loading||bothPayload.donors.length===0?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:loading||bothPayload.donors.length===0?"not-allowed":"pointer",opacity:loading||bothPayload.donors.length===0?0.6:1}}>
               {loading?"Importing…":`Import ${bothPayload.donors.length.toLocaleString()} donors + ${(bothPayload.matchedGifts+bothPayload.unmatchedGifts).toLocaleString()} gifts →`}
             </button>
           </div>
@@ -2412,7 +2413,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
 
           {/* Detection banner + override — BUILD-79 Part 2: the decision shows
               its evidence, and with too little evidence it becomes a QUESTION. */}
-          <div style={{background:effectiveShape==="unknown"?(T.terra100||"#f6e3dd"):(T.gold100||"#f6eccf"),border:`1px solid ${effectiveShape==="unknown"?(T.terra200||"#eac6b8"):(T.gold300||"#e7cf91")}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <div style={{background:effectiveShape==="unknown"?T.terra100:T.gold100,border:`1px solid ${effectiveShape==="unknown"?T.terra200:T.gold300}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
             <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
               <span style={{fontWeight:700}}>{effectiveShape==="unknown"?"We can't tell:":"We detected:"}</span> {shapeLabel(effectiveShape)}.
               {shapeDetail?.reason && <span style={{color:T.ink3}}> ({shapeDetail.reason})</span>}
@@ -2428,11 +2429,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
 
           {/* BUILD-79 Part 2.2 — totals mode REFUSES a per-gift file. */}
           {aggregateCollapse?.refuse && (
-            <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12.5,color:T.terra700||"#8a3a24",lineHeight:1.6}}>
+            <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:10,padding:"11px 14px",marginBottom:14,fontSize:12.5,color:T.terra700,lineHeight:1.6}}>
               <strong>{aggregateCollapse.collapsed.toLocaleString()} of {aggregateCollapse.keyedRows.toLocaleString()} rows collapse onto a donor already in this file.</strong>{" "}
               One row per donor would silently merge them — this file looks like one row per <em>gift</em>. Import as totals is disabled.
               <button onClick={()=>setShapeOverride("transaction")}
-                style={{display:"block",marginTop:8,background:T.green600,border:"none",borderRadius:8,padding:"8px 14px",color:"#fff",fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
+                style={{display:"block",marginTop:8,background:T.green600,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
                 Treat as individual gifts →
               </button>
             </div>
@@ -2481,15 +2482,15 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 </div>
               )}
               {dateConvEvidence?.convention === "mixed" && (
-                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.6}}>
+                <div style={{background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:8,padding:"10px 12px",marginTop:8,fontSize:12,color:T.ink,lineHeight:1.6}}>
                   <div style={{fontWeight:700,marginBottom:4}}>This date column mixes conventions — we won't guess.</div>
                   <div style={{color:T.ink2}}>
                     {dateConvEvidence.dayFirstEvidence.toLocaleString()} dates only work day-first (e.g. {dateConvEvidence.dayFirstExamples.join(", ")}) and {dateConvEvidence.monthFirstEvidence.toLocaleString()} only work month-first (e.g. {dateConvEvidence.monthFirstExamples.join(", ")}). Choose which to apply; impossible dates under your choice will be refused with their line numbers.
                   </div>
                   <div style={{display:"flex",gap:8,marginTop:8}}>
                     {[["dmy","Day / Month / Year"],["mdy","Month / Day / Year"]].map(([v,l])=>(
-                      <button key={v} onClick={()=>setDateConventionChoice(v)}
-                        style={{background:dateConventionChoice===v?T.green600:"transparent",border:`1px solid ${dateConventionChoice===v?T.green600:T.bg3}`,borderRadius:7,padding:"6px 12px",color:dateConventionChoice===v?"#fff":T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>{l}</button>
+                      <button key={v} aria-pressed={dateConventionChoice===v} onClick={()=>setDateConventionChoice(v)}
+                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",...activeMark(dateConventionChoice===v,"bottom")}}>{l}</button>
                     ))}
                   </div>
                 </div>
@@ -2502,12 +2503,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   Map columns <span style={{fontSize:11,color:T.ink3,fontWeight:400}}>({donorHeaders.length} donor columns{effectiveShape==="wide"?` · ${yearCols.length} year columns`:""} · {parsed.rows.length.toLocaleString()} rows)</span>
                 </div>
                 <button onClick={doAiMap} disabled={aiLoading}
-                  style={{background:aiLoading?"#14352a":(headersUnrecognized?T.bg2:T.green600),border:headersUnrecognized?`1px solid ${T.gold500||"#c9a84c"}`:"none",borderRadius:8,padding:"6px 14px",color:headersUnrecognized?(T.gold700||"#8a6d1f"):"#fff",fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
+                  style={{background:aiLoading?T.green800:(headersUnrecognized?T.bg2:T.green600),border:headersUnrecognized?`1px solid ${T.gold500}`:"none",borderRadius:8,padding:"6px 14px",color:headersUnrecognized?T.gold700:T.white,fontSize:12,fontWeight:700,cursor:aiLoading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:aiLoading?0.7:1}}>
                   {aiLoading?<><Spin/>Mapping…</>:headersUnrecognized?<>✦ Guess from contents</>:<>✦ Auto-map</>}
                 </button>
               </div>
               {headersUnrecognized && (
-                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${T.gold300||"#e7cf91"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
+                <div style={{background:T.gold100,border:`1px solid ${T.gold300}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.ink,lineHeight:1.5}}>
                   Most of these column headers aren't ones Steward recognises — one-click mapping is off. “Guess from contents” reads the values instead, and every guess still has to pass its type check. Review each column before importing.
                 </div>
               )}
@@ -2617,7 +2618,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                 </div>
               )}
               {mapRefusal && (
-                <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.terra700||"#8a3a24",lineHeight:1.5}}>
+                <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.terra700,lineHeight:1.5}}>
                   <strong>“{mapRefusal.header}” can't map to {mapRefusal.field.replace(/^_/,"")}:</strong> {mapRefusal.summary}
                 </div>
               )}
@@ -2687,8 +2688,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                     {yearCols.map((yc,i)=>(
                       <span key={yc.col} onClick={()=>setYearCols(cols=>cols.map((c,j)=>j===i?{...c,enabled:!c.enabled}:c))}
-                        style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:99,cursor:"pointer",background:yc.enabled?T.green600+"22":"transparent",color:yc.enabled?T.green600:T.ink3,border:`1px solid ${yc.enabled?T.green600+"55":T.bg3}`}}>
-                        {yc.col} {yc.enabled?`→ ${yc.date}`:"(off)"}
+                        style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:7,cursor:"pointer",background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,...activeMark(yc.enabled,"bottom")}}>
+                        {yc.col} {yc.enabled?`→ ${displayDate(yc.date)||yc.date}`:"(off)"}
                       </span>
                     ))}
                   </div>
@@ -2706,7 +2707,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {donorCount>0
                 ? <>{" "}<span style={{color:T.green600}}>{donorCount.toLocaleString()}</span>{" donors ready"}
                     {giftCount>0&&<>{" · "}<span style={{color:T.green600}}>{giftCount.toLocaleString()}</span>{" gifts"}</>}
-                    {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600||"#a97f22"}}>{payload.warnedCount}</span>{" with warnings"}</>}
+                    {payload.warnedCount>0&&<>{" · "}<span style={{color:T.gold600}}>{payload.warnedCount}</span>{" with warnings"}</>}
                     {(()=>{
                       if (effectiveShape !== "transaction") return payload.skippedCount>0&&<>{" · "}<span style={{color:T.ink3}}>{payload.skippedCount.toLocaleString()}</span>{" skipped (no name, email, or organization)"}</>;
                       // BUILD-80 Part 10 — the refusal line shows DOLLARS, not
@@ -2783,8 +2784,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             return <div aria-disabled={loading?"true":undefined} data-mapper-editable={loading?"0":"1"}
               style={{textAlign:"left",marginBottom:12,...(loading?{pointerEvents:"none",opacity:0.55}:null)}}>
               {flagCols.length>0 && (
-                <div style={{background:T.gold100||"#f6eccf",border:`1px solid ${(T.gold500||"#c9a84c")}55`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
-                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600||"#a97f22",marginBottom:4}}>These columns set safety flags</div>
+                <div style={{background:T.gold100,border:`1px solid ${T.gold500}55`,borderRadius:10,padding:"10px 14px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.gold600,marginBottom:4}}>These columns set safety flags</div>
                   {flagCols.map(c=>{
                     const discarded = cfDecisions[c.index]?.action==="discard";
                     return <div key={c.index} style={{marginBottom:6}}>
@@ -2829,7 +2830,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                         {" → "}<strong style={{color:T.greenDk}}>{({text:"Text",long_text:"Long text",number:"Number",money:"Money",date:"Date",select:"Select",multi_select:"Multi-select",checkbox:"Yes/No"})[type]||type}</strong>
                         {" ("}{entity}{" field). "}
                         <span style={{color:T.ink3}}>{proposalEvidenceText(c.proposal.type, c.proposal.evidence)}</span>
-                        {failed>0 && d.action==="accept" && <span style={{color:"#b8593f"}}>{" "}{failed.toLocaleString()} row{failed===1?"":"s"} will be refused with line numbers.</span>}
+                        {failed>0 && d.action==="accept" && <span style={{color:T.terracotta}}>{" "}{failed.toLocaleString()} row{failed===1?"":"s"} will be refused with line numbers.</span>}
                       </div>
                       {/* FIX (2026-09-09) — the ONE column-target dropdown, on this
                           card too. The rival "…or map to a standard field" select
@@ -2865,7 +2866,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                       <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                         {d.action!=="accept"&&d.action!=="discard"&&(
                           <button onClick={()=>setDecision(c.index,{...d,action:"accept"})}
-                            style={{background:T.green600,border:"none",borderRadius:7,padding:"4px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Store it</button>
+                            style={{background:T.green600,border:"none",borderRadius:7,padding:"4px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Store it</button>
                         )}
                         {d.action==="accept"&&<span style={{color:T.greenDk,fontWeight:700}}>Will be stored ✓</span>}
                         {d.action==="discard"&&<span style={{color:T.ink3,fontWeight:600}}>Discarded (acknowledged)</span>}
@@ -2911,12 +2912,12 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               )}
             </div>;
           })()}
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setErr("");}} disabled={loading}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:loading?"not-allowed":"pointer",opacity:loading?0.5:1}}>← Back</button>
             <button onClick={doImport} disabled={loading||donorCount===0||cfUndecided>0||shapeBlocked}
-              style={{flex:1,background:loading||donorCount===0||cfUndecided>0||shapeBlocked?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0||shapeBlocked?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0||shapeBlocked?0.6:1}}>
+              style={{flex:1,background:loading||donorCount===0||cfUndecided>0||shapeBlocked?T.bg2:T.green600,border:"none",borderRadius:10,padding:"11px 20px",color:T.white,fontSize:14,fontWeight:700,cursor:loading||donorCount===0||cfUndecided>0||shapeBlocked?"not-allowed":"pointer",opacity:loading||donorCount===0||cfUndecided>0||shapeBlocked?0.6:1}}>
               {loading?"Importing…":`Import ${donorCount.toLocaleString()} donor${donorCount!==1?"s":""}${giftCount>0?` + ${giftCount.toLocaleString()} gifts`:""} →`}
             </button>
           </div>
@@ -3234,7 +3235,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
             </div>
           )}
           <div style={{fontSize:12,color:T.ink3,marginBottom:28}}>Donor giving totals have been recalculated from the gifts table.</div>
-          <button onClick={onImported} style={{background:"#0d5c3a",border:"none",borderRadius:10,padding:"12px 28px",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          <button onClick={onImported} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"12px 28px",color:T.white,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
         </div>
       </Modal>
     );
@@ -3295,7 +3296,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           <textarea value={csvText} onChange={e=>setCsvText(e.target.value)} rows={5}
             placeholder={"Donor,Email,2021 Gift,2022 Gift,2023 Gift\nJane Smith,jane@example.com,500,750,1000"}
             style={{...inp,resize:"vertical",lineHeight:1.5,marginBottom:12}}/>
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <button onClick={doPaste} disabled={!csvText.trim()}
             style={{background:csvText.trim()?T.gold500:T.bg2,border:"none",borderRadius:10,padding:"11px 20px",color:csvText.trim()?T.ink:T.ink3,fontSize:14,fontWeight:700,cursor:csvText.trim()?"pointer":"not-allowed",opacity:csvText.trim()?1:0.5}}>
             Parse →
@@ -3314,7 +3315,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                   <div style={{fontSize:12,color:T.ink3,marginTop:2}}>{s.rowCount.toLocaleString()} rows · {s.headers.filter(Boolean).length} columns</div>
                 </div>
                 <button onClick={()=>applyParsed(s.headers,s.rows,s.physical,s.report)}
-                  style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   {i===0?"Use this ←":"Select"}
                 </button>
               </div>
@@ -3377,7 +3378,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                 Gift Year Columns — {yearCols.filter(yc=>yc.enabled).length}/{yearCols.length} enabled
               </div>
               {yearCols.length===0&&(
-                <div style={{color:"#a97f22",fontSize:13,background:"#f6eccf",borderRadius:8,padding:"10px 12px"}}>
+                <div style={{color:T.gold600,fontSize:13,background:T.gold100,borderRadius:8,padding:"10px 12px"}}>
                   No year-like columns detected. Switch to Transactional format.
                 </div>
               )}
@@ -3425,7 +3426,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
             </div>
           )}
 
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10}}>
             <button onClick={()=>{setParsed(null);setStep("upload");setErr("");}}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
@@ -3441,7 +3442,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
 
           {/* BUILD-79 Part 4 — refused dates are named, never today-stamped */}
           {dateRefused.length > 0 && (
-            <div style={{background:T.terra100||"#f6e3dd",border:`1px solid ${T.terra200||"#eac6b8"}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.terra700||"#8a3a24",lineHeight:1.6}}>
+            <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:12.5,color:T.terra700,lineHeight:1.6}}>
               <strong>{dateRefused.length} gift row{dateRefused.length===1?"":"s"} refused — the gift date could not be read.</strong>{" "}
               Nothing is ever stamped with today's date. Examples:{" "}
               {dateRefused.slice(0,3).map(r=>`row ${r.row} (“${r.rawDate||"blank"}”)`).join(" · ")}{dateRefused.length>3?" · …":""}
@@ -3451,9 +3452,9 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           {/* Summary card */}
           <div style={{background:T.bg,borderRadius:12,padding:"14px 16px",marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:8}}>
-              <span style={{color:"#0d5c3a"}}>{stats.toImportCount}</span> gifts ready to import, attaching to{" "}
+              <span style={{color:T.greenDk}}>{stats.toImportCount}</span> gifts ready to import, attaching to{" "}
               <span style={{color:T.ink}}>{stats.donorCount}</span> donors
-              {stats.lowPending>0&&<> · <span style={{color:"#a97f22"}}>{stats.lowPending} need review</span></>}
+              {stats.lowPending>0&&<> · <span style={{color:T.gold600}}>{stats.lowPending} need review</span></>}
               {stats.unmatched>0&&<> · <span style={{color:T.ink3}}>{stats.unmatched} unmatched (will skip)</span></>}
             </div>
             <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
@@ -3467,7 +3468,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
           {stats.low > 0 && (
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#8a6d1f",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                <div style={{fontSize:12,fontWeight:700,color:T.gold700,textTransform:"uppercase",letterSpacing:"0.08em"}}>
                   Low Confidence — {stats.lowPending} pending review
                 </div>
                 {stats.lowPending>0&&(
@@ -3481,16 +3482,16 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                   if (g.confidence !== "low") return null;
                   const ov = overrides[i];
                   return (
-                    <div key={i} style={{background:ov?.action==="skip"?T.bg:"#fdfaf2",border:`1px solid ${ov?.action==="skip"?T.bg3:"#e7cf91"}`,borderRadius:10,padding:"10px 12px",opacity:ov?.action==="skip"?0.55:1}}>
+                    <div key={i} style={{background:ov?.action==="skip"?T.bg:T.gold50,border:`1px solid ${ov?.action==="skip"?T.bg3:T.gold300}`,borderRadius:10,padding:"10px 12px",opacity:ov?.action==="skip"?0.55:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
                         <span style={{fontSize:13,fontWeight:700,color:T.ink}}>${g.amount.toLocaleString()}</span>
-                        <span style={{fontSize:12,color:T.ink3}}>{g.date}</span>
+                        <span style={{fontSize:12,color:T.ink3}}>{displayDate(g.date)||g.date}</span>
                         <span style={{fontSize:12,color:T.ink}}>· {g.rawName||g.rawEmail}</span>
                         <span style={{fontSize:11,color:T.ink3}}>({g.rawSource})</span>
                       </div>
                       {!ov&&g.ambiguousDonors&&(
                         <div style={{marginBottom:6}}>
-                          <div style={{fontSize:11,color:"#8a6d1f",marginBottom:4}}>Multiple donors with this name — select one:</div>
+                          <div style={{fontSize:11,color:T.gold700,marginBottom:4}}>Multiple donors with this name — select one:</div>
                           <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                             {g.ambiguousDonors.map(d=>(
                               <button key={d.id} onClick={()=>setOverrides(p=>({...p,[i]:{action:"pick",donorId:d.id,donorName:d.name}}))}
@@ -3505,11 +3506,11 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                         <div style={{fontSize:12,color:T.ink3,marginBottom:5}}>
                           Suggested: <strong style={{color:T.ink}}>{g.suggestedDonor.name}</strong>
                           {g.suggestedDonor.email&&<span> ({g.suggestedDonor.email})</span>}
-                          <span style={{color:"#a97f22",marginLeft:4}}>— partial match</span>
+                          <span style={{color:T.gold600,marginLeft:4}}>— partial match</span>
                         </div>
                       )}
                       {(ov?.action==="confirm"||ov?.action==="pick")&&(
-                        <div style={{fontSize:12,color:"#0d5c3a",marginBottom:5}}>✓ Will attach to: <strong>{ov.donorName}</strong></div>
+                        <div style={{fontSize:12,color:T.greenDk,marginBottom:5}}>✓ Will attach to: <strong>{ov.donorName}</strong></div>
                       )}
                       {ov?.action==="skip"&&(
                         <div style={{fontSize:12,color:T.ink3,marginBottom:5}}>✗ Skipped</div>
@@ -3538,7 +3539,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                       <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                         {!ov&&g.suggestedDonor&&(
                           <button onClick={()=>setOverrides(p=>({...p,[i]:{action:"confirm",donorId:g.suggestedDonor.id,donorName:g.suggestedDonor.name}}))}
-                            style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                            style={{background:T.greenDk,border:"none",borderRadius:7,padding:"5px 12px",color:T.white,fontSize:12,fontWeight:600,cursor:"pointer"}}>
                             ✓ Confirm
                           </button>
                         )}
@@ -3577,18 +3578,18 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
               <div style={{fontSize:11,color:T.ink3,marginBottom:6}}>
                 These donors don't exist yet — import them first via donor import, or use combined mode later.
               </div>
-              <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px"}}>
+              <div style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>
                 {matchedGifts.filter(g=>g.confidence==="unmatched").slice(0,8).map((g,i)=>(
-                  <div key={i} style={{fontSize:12,color:"#8a3a24",padding:"2px 0"}}>
-                    · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {g.date}
+                  <div key={i} style={{fontSize:12,color:T.terra700,padding:"2px 0"}}>
+                    · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {displayDate(g.date)||g.date}
                   </div>
                 ))}
-                {stats.unmatched>8&&<div style={{fontSize:12,color:"#8a3a24",marginTop:4}}>…and {stats.unmatched-8} more</div>}
+                {stats.unmatched>8&&<div style={{fontSize:12,color:T.terra700,marginTop:4}}>…and {stats.unmatched-8} more</div>}
               </div>
             </div>
           )}
 
-          {err&&<div style={{color:"#b8593f",fontSize:12,marginBottom:10}}>{err}</div>}
+          {err&&<div style={{color:T.terracotta,fontSize:12,marginBottom:10}}>{err}</div>}
           <div style={{display:"flex",gap:10,marginTop:4}}>
             <button onClick={()=>setStep("configure")}
               style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 18px",color:T.ink3,fontSize:13,cursor:"pointer"}}>← Back</button>
@@ -3662,8 +3663,8 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
           <button onClick={onClose} style={{background:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:T.ink3,cursor:"pointer",fontSize:13,flexShrink:0}}>✕ Close</button>
         </div>
 
-        {done&&<div style={{background:"#edf3ee",border:"1px solid #dce7df",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#0d5c3a",fontWeight:600,margin:"10px 0"}}>✓ {done}</div>}
-        {err&&<div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:10,padding:"10px 14px",fontSize:13,color:"#8a3a24",margin:"10px 0"}}>{err}</div>}
+        {done&&<div style={{background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.greenDk,fontWeight:600,margin:"10px 0"}}>✓ {done}</div>}
+        {err&&<div style={{background:T.terra100,border:"1px solid "+T.terra200,borderRadius:10,padding:"10px 14px",fontSize:13,color:T.terra700,margin:"10px 0"}}>{err}</div>}
 
         {groups===null&&<div style={{display:"flex",alignItems:"center",gap:8,color:T.ink3,fontSize:13,padding:"24px 0"}}><Spin/>Checking your donor list…</div>}
 
@@ -3682,7 +3683,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
               <button onClick={()=>{setOpen(isOpen?null:gi);setPrimaryId(null);}}
                 style={{width:"100%",background:isOpen?T.bg:T.white,border:"none",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10}}>
                 <span style={{fontSize:13,fontWeight:700,color:T.ink,textAlign:"left"}}>
-                  <span style={{display:"inline-block",background:g.tier==="email"?T.greenDk:T.gold,color:g.tier==="email"?"#fff":T.ink,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:800,marginRight:8,verticalAlign:"middle"}}>{g.tier==="email"?"SAME EMAIL":"SIMILAR NAME"}</span>
+                  <span style={{display:"inline-block",background:g.tier==="email"?T.bg2:T.gold100,color:T.ink,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:800,marginRight:8,verticalAlign:"middle"}}>{g.tier==="email"?"SAME EMAIL":"SIMILAR NAME"}</span>
                   {g.donors.map(d=>d.name).join("  ·  ")}
                 </span>
                 <span style={{fontSize:12,color:T.ink3,flexShrink:0}}>{isOpen?"▲":"▼"}</span>
@@ -3720,7 +3721,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
                     <span style={{fontSize:12,color:T.ink3}}>Nothing is lost — gifts, notes, and history all move to the kept record.</span>
                     <button onClick={()=>doMerge(g)} disabled={!primaryId||busy||isReadOnly}
                       title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                      style={{background:(!primaryId||busy||isReadOnly)?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:(!primaryId||busy||isReadOnly)?T.ink3:"#fff",fontSize:13,fontWeight:700,cursor:(!primaryId||busy||isReadOnly)?"not-allowed":"pointer"}}>
+                      style={{background:(!primaryId||busy||isReadOnly)?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:(!primaryId||busy||isReadOnly)?T.ink3:T.white,fontSize:13,fontWeight:700,cursor:(!primaryId||busy||isReadOnly)?"not-allowed":"pointer"}}>
                       {busy?"Merging…":"Merge into kept record"}
                     </button>
                   </div>

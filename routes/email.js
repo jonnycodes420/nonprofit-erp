@@ -135,9 +135,13 @@ async function donorFromAddress(orgId) {
 async function brandEmailHeaderHtml(orgId) {
   const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
   if (!theme) return "";
-  const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // FIX-2 F — the name also lands inside alt="…", so quotes are escaped too
+  // (an org called Smith "Friends" broke out of the attribute before); the
+  // logo URL is escaped the same way, since it sits inside src="…".
+  const esc = s => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   const name = esc(theme.displayName);
-  const src = theme.logoDataUri || theme.logoAbsUrl;
+  const src = esc(theme.logoDataUri || theme.logoAbsUrl);
   const logo = src
     ? `<img src="${src}" alt="${name}" height="34" style="height:34px;max-width:150px;vertical-align:middle;border:0;display:inline-block;margin-right:10px;" />`
     : "";

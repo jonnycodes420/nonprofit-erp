@@ -1,6 +1,13 @@
 import { Link } from "react-router-dom";
 import { LEGAL_ENTITY_NAME, LEGAL_ENTITY_STATE, LEGAL_ENTITY_ADDRESS_LINE } from "../../../shared/legalEntity";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  emerald: "#0d5c3a",
+};
+
+
 // Moved from "June 2, 2025" on 2026-09-12: the party/controller definition
 // above is a change to the document, and a stale last-updated date beside a
 // changed document is itself a false statement.
@@ -40,7 +47,7 @@ const S = {
   p: { fontSize: 15, color: BODY, lineHeight: 1.75, margin: "0 0 16px" },
   li: { fontSize: 15, color: BODY, lineHeight: 1.75, marginBottom: 6 },
   ul: { paddingLeft: 20, margin: "0 0 16px" },
-  a: { color: "#0d5c3a", textDecoration: "none" },
+  a: { color: PAL.emerald, textDecoration: "none" },
   // BUILD-96 Part 3 — the subprocessor table. `tableWrap` is not decoration:
   // this table has four columns on a 720px page and a phone is narrower than
   // its narrowest useful width, so it scrolls INSIDE its own box rather than

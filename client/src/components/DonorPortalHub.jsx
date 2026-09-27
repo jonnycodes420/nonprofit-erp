@@ -17,6 +17,7 @@ import { apiFetch } from "../api";
 import { T, PageTitle, SectionLabel, Pill } from "./shared";
 import { ImpactUpdatesManager, PortalWebsiteSnippetCard } from "./Settings";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const btnPrimary = { display: "inline-block", background: T.gold500, border: "none", borderRadius: 9, padding: "10px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "none" };
 const btnSecondary = { ...btnPrimary, background: T.bg2, border: "1px solid " + T.bg3 };
@@ -54,7 +55,7 @@ function EngagementCard() {
           {d.recent.slice(0, 6).map((r, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: T.ink2, padding: "4px 0" }}>
               <span>{r.donorName || r.email || "A donor"} · {String(r.action).replace(/_/g, " ")}</span>
-              <span style={{ color: T.ink3 }}>{String(r.createdAt).slice(0, 10)}</span>
+              <span style={{ color: T.ink3 }}>{displayDate(r.createdAt)}</span>
             </div>
           ))}
         </div>

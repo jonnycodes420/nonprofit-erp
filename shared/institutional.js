@@ -19,13 +19,6 @@ export function lastGiftWord(row) {
   return GRANT_MAKERS.has(orgWordFor(row || {})) ? "last grant" : "last gift";
 }
 
-// "Jan 14, 2026" from a civil date. Read from the text, never through a Date
-// in some timezone: 2025-12-31 is the 31st everywhere.
-const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-export function shortCivilDate(value) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ""));
-  if (!m) return "";
-  const mo = Number(m[2]), d = Number(m[3]);
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
-  return `${MON[mo - 1]} ${d}, ${m[1]}`;
-}
+// "Jan 14, 2026" from a civil date — FIX-2 moved the one formatter to
+// shared/displayDate.js; this name stays for the callers that read it here.
+export { displayDate as shortCivilDate } from "./displayDate.js";
