@@ -31,7 +31,7 @@ const MARK = "Zephyrine background check cleared";
 
 async function reset() {
   for (const o of [ORG, OTHER]) {
-    for (const t of ["volunteer_notes", "volunteer_shifts", "thank_you_drafts", "threads", "tasks", "workflow_runs",
+    for (const t of ["fin_audit_log", "volunteer_notes", "volunteer_shifts", "thank_you_drafts", "threads", "tasks", "workflow_runs",
                      "fin_transactions", "interactions", "gifts", "donors", "users", "budgets", "accounts", "fin_funds"])
       await q(`DELETE FROM ${t} WHERE org_id=$1`, [o]).catch(() => {});
     await q(`DELETE FROM orgs WHERE id=$1`, [o]).catch(() => {});
@@ -179,6 +179,28 @@ async function reset() {
   const n1 = await count();
   await post({ name: "Bot", email: "bot@example.org", website: "http://spam.example" });
   ok("§8 the honeypot writes nothing", (await count()) === n1);
+
+  // ── §9 THE LINK CAN BE TAKEN BACK ────────────────────────────────────────
+  // Jonathan (27 Sep): a link posted somewhere it should not be must be
+  // revocable. Making a new link kills every older one; nothing else changes.
+  const again = await api("GET", "/volunteer-hub/signup-link", tok);
+  ok("§9 asking for the link twice gives the same link (a GET changes nothing)", again.body && again.body.url === link.body.url);
+  const regen = await api("POST", "/volunteer-hub/signup-link/regenerate", tok, {});
+  const newToken = regen.body && regen.body.url ? new URL(regen.body.url).searchParams.get("token") : "";
+  ok("§9 staff can make a new link", regen.status === 200 && !!newToken && newToken !== token, regen.body);
+  ok("§9 ...and it says the old one stopped working", /stop/i.test((regen.body && regen.body.sentence) || ""), regen.body);
+  ok("§9 the old link's page is gone", (await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(token)}`)).status === 404);
+  const nOld = await count();
+  const oldPost = await post({ name: "Late Larry", email: "larry@example.org" });
+  ok("§9 the old link's form writes nothing", oldPost.status === 404 && (await count()) === nOld);
+  ok("§9 the new link works", (await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(newToken)}`)).status === 200);
+  const now9 = await api("GET", "/volunteer-hub/signup-link", tok);
+  ok("§9 the hub now shows the new link", now9.body && now9.body.url === regen.body.url);
+  const [audit9] = await q(`SELECT user_id FROM fin_audit_log WHERE org_id=$1 AND entity_type='volunteer_signup_link' ORDER BY created_at DESC LIMIT 1`, [ORG]);
+  ok("§9 who made the new link is recorded", !!audit9 && !!audit9.user_id, audit9);
+  const theirs = await api("POST", "/volunteer-hub/signup-link/regenerate", tok2, {});
+  ok("§9 another org making a new link does not touch this org's", theirs.status === 200
+    && (await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(newToken)}`)).status === 200);
 
   await reset();
   await closeDb();
