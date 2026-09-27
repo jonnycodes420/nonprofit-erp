@@ -1,0 +1,18 @@
+fix3-d-suggestion
+
+— §1 · every claim goes through the validator —
+  FAIL  §1 "underserved NYC youth" is refused when the record says nothing about NYC or youth — {"kept":[{"text":"Mention the work with underserved NYC youth.","cites":["d_fx3d_sun"]}],"dropped":0,"reasons":[]}
+  FAIL  §1 "the cycle deadline approaching" is refused when the record has no deadline — {"kept":[{"text":"Call them now, with the cycle deadline approaching.","cites":["d_fx3d_sun"]}],"dropped":0,"reasons":[]}
+  FAIL  §1 …and the reason names the claim — [[],[]]
+  PASS  §1 the same words are kept when the record carries them (a check, not a blanket ban)
+  PASS  §1 a true line still survives
+
+— §2 · three plain sentences —
+  FAIL  §2 shared/nextMove.js exports composeNextMove — "Cannot find module '/Users/jonathanatkinson/steward-fix3-d/shared/nextMove.js' imported from /Users/jonathanatkinson/steward-fix3-d/tests/fix3-d-suggestion.test.js"
+
+— §3 · the profile builds its suggestion through the template —
+  FAIL  §3 the next-move suggestion goes through composeNextMove — "id:\"contact\",count:urg.days},\n              ...(donor.interactions||[]).slice(0,20).map((i,n)=>({id:i.id||(\"int\"+n),amount:i.amount,date:i.date,label:i.note,type:i.type}))],\n      };\n      const g=guardSuggestion(full,record);\n      const kept=g.kept.map(k=>plainText(k.text)).join(\" \");\n      const out=[kept||\"Steward had nothing it could say from this record.\",droppedLine(g.dropped)].filter(Boolean).join(\"\\n\\n\");\n      setAiMap(p=>({...p,[key]:out}));\n    }\n    catch(e){setAiMap(p=>({...p,[key]:errorMessage(e,\"No suggestion is available right now.\")}));}\n    finally{se
+  FAIL  §3 the prompt no longer hands the model the field labels to echo — "ft}\\nNotes: ${donor.notes||\"none\"}\\nOrg: ${data.org.name} — ${data.org.mission}\\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join(\"; \")||\"none\"}\\n\\nIn four short plain sentences: the move to make, when to make it, what to say, and what it is for.`,"
+  FAIL  §3 the prompt asks for the three fields — "ft}\\nNotes: ${donor.notes||\"none\"}\\nOrg: ${data.org.name} — ${data.org.mission}\\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join(\"; \")||\"none\"}\\n\\nIn four short plain sentences: the move to make, when to make it, what to say, and what it is for.`,"
+
+2 passed, 7 failed

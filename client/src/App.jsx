@@ -25,15 +25,17 @@ import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
+import { PLAN_UNKNOWN } from "./lib/entitlement";
 import { TABS, BOTTOM_TABS, MORE_TABS, PRIMARY_NAV, MORE_NAV, NAV_MORE_KEY, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS } from "./lib/tabRegistry";
 // The tier rule, as a module-level function rather than a value computed
 // halfway down the component: `navigateTo` is declared above it and needs it,
 // and a `const` read from a closure that could run first is a TDZ crash
 // waiting for the right click. (BUILD-88a A.3 introduced exactly that and the
-// A.4 browser suite caught it on the next run.) Defaults to team while billing
-// is unknown, so no lock ever flashes before the plan loads.
+// A.4 browser suite caught it on the next run.) A billing that has not loaded
+// is PLAN_UNKNOWN: not Core (no lock may flash before the plan loads) and not
+// Team either (FIX-3 finding 9, client/src/lib/entitlement.js).
 function planTierOf(billing){
-  if(!billing)return "team";
+  if(!billing)return PLAN_UNKNOWN;
   if(billing.planTier)return billing.planTier;
   const p=billing.plan;
   if(p==="team"||p==="growth"||p==="impact")return "team";
@@ -355,8 +357,8 @@ function AppShell() {
   // Plan tier drives the sidebar lock indicator on Team-gated items. Prefer the
   // server's authoritative planTier (BUILD-24); fall back to the local mirror of
   // orgPlanTier: Team = team/growth/impact OR a live trial; everything else
-  // (core/seed/founding/lapsed) = Core. Defaults to team while billing is
-  // unknown so we never flash a lock before the plan loads.
+  // (core/seed/founding/lapsed) = Core. While billing is unknown the tier is
+  // PLAN_UNKNOWN, which is neither, so no lock flashes before the plan loads.
   const planTier=planTierOf(billing);
   const isCoreTier=planTier==="core";
   // BUILD-58 W-2 — the portal-tier shell. Derived from /org (synchronous with

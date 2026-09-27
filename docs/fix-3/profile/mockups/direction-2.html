@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Profile — Direction 2</title>
+<link rel="stylesheet" href="base.css">
+<style>
+/* DIRECTION 2 — TWO PANES AND A DRAWER.
+   Left: where we stand + what next, always in view (it does not scroll away).
+   Right: what has happened, as tabs. Management lives in a drawer behind
+   one "Manage" button, closed by default. */
+.page{display:grid;grid-template-columns:400px minmax(0,1fr);min-height:calc(100vh - 52px)}
+.left{background:var(--white);border-right:1px solid var(--line);padding:18px 20px 30px;position:sticky;top:0;align-self:stretch;min-height:calc(100vh - 52px)}
+.right{padding:0 28px 40px}
+.face{width:64px;height:64px;border-radius:50%;background:var(--brass);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px}
+.name{font-size:24px;font-weight:800;letter-spacing:-.01em;margin-top:8px}
+.figs{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:12px;margin:14px 0}
+.figs .fig{border-radius:0;border-left:1px solid var(--line);padding:10px}
+.figs .fig:first-child{border-left:none}
+.figs .fig .v{font-size:19px}
+.blk{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
+.hdr{display:flex;align-items:center;gap:10px;padding:16px 0 0}
+.drawer{position:fixed;top:52px;right:0;bottom:0;width:420px;background:var(--white);border-left:1px solid var(--line);box-shadow:-16px 0 40px rgba(15,26,18,.14);padding:18px 18px 30px;overflow:auto;transform:translateX(100%);visibility:hidden;z-index:40}
+.drawer.is-open{transform:none;visibility:visible}
+.manage-closed{display:inline-flex;align-items:center;gap:6px}
+@media (max-width:640px){
+  .page{grid-template-columns:minmax(0,1fr)}
+  .hdr{flex-wrap:wrap;justify-content:flex-end}
+  .hdr .tabs{min-width:0;flex:1 1 100%;order:2}
+  .hdr .manage-closed{margin-left:auto!important}
+  .left{position:static;min-height:0;border-right:none;border-bottom:1px solid var(--line);padding:14px 16px 18px}
+  .right{padding:0 16px 40px}
+  .face{width:48px;height:48px;font-size:17px}
+  .name{font-size:20px}
+  .figs .fig .v{font-size:16px}
+  .figs .fig{padding:8px 6px}
+  .figs .fig .s{font-size:10.5px}
+  .drawer{top:auto;left:0;width:auto;height:88vh;border-left:none;border-top:1px solid var(--line);border-radius:16px 16px 0 0;transform:translateY(100%)}
+  .drawer.is-open{position:static;transform:none;height:auto;box-shadow:none;border-radius:0}
+  .top .search{display:none}
+  .hide-sm{display:none}
+}
+</style></head>
+<body>
+<div class="top"><span class="wm">Steward</span><span class="search">Search donors, grants… ⌘K</span></div>
+<div class="page">
+
+<!-- LEFT: ① where we stand + ② what next -->
+<aside class="left">
+  <div class="muted small">← Donors</div>
+  <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+    <div class="face">EW</div>
+    <div>
+      <div class="name" style="margin:0">Eleanor Whitcombe</div>
+      <div class="muted small">eleanor.whitcombe@example.org · 555-0142</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:10px;align-items:center">
+    <a class="pill" href="#" title="Stage — opens Move stage">Cultivate ▾</a>
+    <span class="chip">Donor</span><span class="chip">Volunteer</span><span class="chip off">+ Staff and board</span>
+  </div>
+  <div class="figs">
+    <a class="fig" href="#"><div class="l">Lifetime</div><div class="v">$41,500</div><div class="s">6 gifts</div></a>
+    <a class="fig" href="#"><div class="l">Last gift</div><div class="v">$15,000</div><div class="s">Jul 19</div></a>
+    <a class="fig" href="#"><div class="l">Contact</div><div class="v">Today</div><div class="s">Call</div></a>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn primary" style="flex:1">Log a conversation</button>
+    <details class="more" data-open-for-capture><summary class="btn quiet">More ▾</summary>
+      <div class="menu">
+        <div>Plan a follow-up</div><div>Request a gift (send a link)</div><div>Suggest outreach · email · call script</div><div>Impact summary (PDF)</div><div>Edit details</div>
+      </div>
+    </details>
+  </div>
+
+  <div class="blk">
+    <div class="eyebrow">Next · due Oct 2</div>
+    <div style="font-size:15px;font-weight:700;margin-top:3px">Send the scholarship proposal</div>
+    <div class="muted small">"Said she would like to see a proposal before the spring recital."</div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn sm">Done</button><button class="btn sm quiet">Calendar</button><button class="btn sm quiet">Set aside</button></div>
+  </div>
+  <div class="blk">
+    <div style="display:flex;align-items:center"><div class="eyebrow">Open proposal</div><span class="pill" style="margin-left:auto">Cultivating · 75%</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:3px"><span style="font-weight:700">Named scholarship fund</span><span class="serif" style="font-size:20px;margin-left:auto">$50,000</span></div>
+    <div class="muted small">Expected Dec 11 · plan step 1 of 3: invite her to a studio lesson (Oct 4)</div>
+    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn sm">Move stage</button><button class="btn sm quiet">Brief me</button></div>
+  </div>
+  <div class="blk">
+    <div class="eyebrow">Suggested</div>
+    <p style="margin:4px 0 0;font-size:13px">Call her this week, before the spring recital. Thank her for the $15,000 gift in July and offer the scholarship proposal she asked for. It would fund the named scholarship.</p>
+  </div>
+</aside>
+
+<!-- RIGHT: ③ what has happened, as tabs; ④ behind Manage -->
+<section class="right">
+  <div class="hdr">
+    <div class="tabs" style="flex:1">
+      <span class="tab on">Timeline</span><span class="tab">Gifts · 6</span><span class="tab">Pledges</span><span class="tab">Funds</span><span class="tab">Related</span><span class="tab">Files</span>
+    </div>
+    <button class="btn quiet manage-closed" style="margin-left:6px">Manage ▸</button>
+  </div>
+  <div class="card" style="margin-top:14px">
+    <div style="display:flex;align-items:center;gap:10px"><div class="eyebrow">Giving by year</div><span class="muted small" style="margin-left:auto">+ Add gift</span></div>
+    <svg viewBox="0 0 600 96" style="width:100%;max-width:640px;height:auto;margin-top:8px;display:block"><g fill="#0F1A12"><rect x="20" y="62" width="60" height="14"/><rect x="130" y="50" width="60" height="26"/><rect x="240" y="38" width="60" height="38"/><rect x="350" y="26" width="60" height="50"/></g><rect x="460" y="4" width="60" height="72" fill="#C9A84C"/><g font-size="11" fill="#5A554F" font-family="DM Sans"><text x="36" y="58">2022</text><text x="146" y="46">2023</text><text x="256" y="34">2024</text><text x="366" y="22">2025</text><text x="476" y="92">2026</text></g></svg>
+    <div class="muted small">2026 so far: $16,500 in 2 gifts. Each bar opens its gifts.</div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div class="tl">
+      <div class="e"><b>Call</b> <span class="muted small">Today · Maya</span><div class="small">Said she would like to see a proposal before the spring recital.</div></div>
+      <div class="e"><b>Meeting</b> <span class="muted small">Today · Maya</span><div class="small">Lunch at the school; she asked how the scholarship fund works.</div></div>
+      <div class="e"><b>Proposal opened</b> <span class="muted small">Today</span><div class="small">Named scholarship fund — $50,000, Cultivating</div></div>
+      <div class="e"><b>Plan applied</b> <span class="muted small">Today</span><div class="small">Major gift, first ask (3 steps)</div></div>
+      <div class="e gift"><b>Gift $15,000</b> <span class="muted small">Jul 19, 2026 · check · General</span></div>
+      <div class="e gift"><b>Gift $1,500</b> <span class="muted small">Apr 20, 2026 · check · General</span></div>
+      <div class="e gift"><b>Gift $10,000</b> <span class="muted small">Aug 23, 2025 · check · Scholarships</span></div>
+    </div>
+    <div class="muted small">Showing 7 of 10 · Conversations, gifts, pledges, stewardship and sequence sends in one list</div>
+  </div>
+  <div class="card" style="margin-top:12px"><div class="eyebrow">Her notes</div><div class="small" style="margin-top:4px">Retired surgeon; her granddaughter took lessons here. Prefers a call to email.</div><div style="margin-top:8px"><span class="pill">board prospect</span> <span class="pill">piano</span></div></div>
+</section>
+</div>
+
+<!-- ④ HOW WE MANAGE THEM — the drawer, closed by default -->
+<aside class="drawer" data-open-for-capture>
+  <div style="display:flex;align-items:center"><div class="serif" style="font-size:20px">Manage Eleanor</div><span class="muted" style="margin-left:auto">✕</span></div>
+  <p class="muted small" style="margin:4px 0 14px">Who owns her, what runs on her, what we keep about her.</p>
+  <details class="group" open><summary>Owner and stage <span class="sum">Maya · Cultivate</span></summary><div class="body">Relationship owner: Maya — Reassign<br>Move stage: Prospect · Qualify · <b>Cultivate</b> · Solicit · Steward · Lapsed<br><span class="muted">Suggested move: share an impact story or invite to a program visit.</span></div></details>
+  <details class="group"><summary>Plan and pipeline <span class="sum">3 steps · 1 ask</span></summary><div class="body">Cultivation plan (stop, skip) · Pipeline moves and asks (add, won/lost)</div></details>
+  <details class="group"><summary>Sequences <span class="sum">1 running</span></summary><div class="body">Major donor stewardship · step 1 of 2 · Unenroll · + Enroll</div></details>
+  <details class="group"><summary>Custom fields <span class="sum">3 filled</span></summary><div class="body">Spouse: Harold Whitcombe · Instrument: Piano · Board interest: Maybe</div></details>
+  <details class="group"><summary>Household and relationships <span class="sum">none</span></summary><div class="body">Household · linked donors · planned giving and designations · matching-gift employer</div></details>
+  <details class="group"><summary>Volunteering, membership, events <span class="sum">0 hours</span></summary><div class="body">Log a shift · hours link · membership · events</div></details>
+  <details class="group"><summary>Files and tasks <span class="sum">0 · 0</span></summary><div class="body">Materials · follow-up tasks · stewardship log</div></details>
+  <details class="group"><summary>Record <span class="sum">Edit · Delete</span></summary><div class="body">Edit details · safety flags · Delete donor (behind its confirm)</div></details>
+</aside>
+</body></html>

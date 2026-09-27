@@ -171,6 +171,9 @@ CORE=(
   fix3-a-home
   fix3-e-reports
   fix3-b-agent
+  fix3-d-lock-flash
+  fix3-d-suggestion
+  fix3-d-profile
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

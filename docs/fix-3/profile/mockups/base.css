@@ -1,0 +1,62 @@
+/* FIX-3 finding 10 mockups — Steward's real tokens only (shared.jsx T):
+   ink #0F1A12, white, cream #F0EDE6 (+ hairline #E8E4DB), emerald #0D5C3A
+   (the ONE primary action), brass #C9A84C; secondary text warm grey #5A554F. */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap');
+:root{--ink:#0F1A12;--white:#FFFFFF;--cream:#F0EDE6;--line:#E8E4DB;--em:#0D5C3A;--brass:#C9A84C;--grey:#5A554F;--brasswash:#F6ECCF}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font:14px/1.5 'DM Sans',system-ui,sans-serif}
+.top{height:52px;background:var(--ink);display:flex;align-items:center;padding:0 20px;color:var(--cream);gap:24px}
+.top .wm{font-family:'DM Serif Display',Georgia,serif;font-size:21px}
+.top .search{flex:1;max-width:520px;height:32px;border:1px solid rgba(240,237,230,.25);border-radius:8px;padding:0 12px;display:flex;align-items:center;color:rgba(240,237,230,.6);font-size:13px}
+.eyebrow{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--grey)}
+.serif{font-family:'DM Serif Display',Georgia,serif}
+.card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+.btn{font:inherit;font-size:13px;font-weight:700;border-radius:8px;padding:8px 14px;border:1px solid var(--ink);background:var(--white);color:var(--ink);cursor:pointer;white-space:nowrap}
+.btn.primary{background:var(--em);border-color:var(--em);color:var(--white);font-weight:800}
+.btn.quiet{border-color:var(--line);color:var(--grey);font-weight:600}
+.btn.sm{font-size:12px;padding:5px 10px}
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--cream);color:var(--ink);border:1px solid var(--line)}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:7px;background:var(--cream);border:1px solid var(--line);border-bottom:2px solid var(--em)}
+.chip.off{border-bottom:1px solid var(--line);color:var(--grey);background:var(--white)}
+.fig{display:block;text-decoration:none;color:inherit;border-radius:10px;padding:6px 10px;border:1px solid transparent}
+.fig:hover{border-color:var(--line);background:var(--white)}
+.fig .v{font-family:'DM Serif Display',Georgia,serif;font-size:21px;line-height:1.1}
+.fig .l{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--grey)}
+.fig .s{font-size:11.5px;color:var(--grey)}
+.q{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--grey);margin:0 0 10px;display:flex;align-items:center;gap:10px}
+.q:after{content:"";flex:1;height:1px;background:var(--line)}
+.row{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--line)}
+.row:first-child{border-top:none}
+.muted{color:var(--grey)}
+.small{font-size:12px}
+.brass-edge{border-left:3px solid var(--brass)}
+details.group{background:var(--white);border:1px solid var(--line);border-radius:12px;margin-bottom:8px}
+details.group>summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;align-items:center;gap:10px;font-weight:700}
+details.group>summary::-webkit-details-marker{display:none}
+details.group>summary .sum{margin-left:auto;font-weight:400;font-size:12px;color:var(--grey);text-align:right}
+details.group>summary:before{content:"›";display:inline-block;width:12px;color:var(--grey);font-size:16px;transition:transform .1s}
+details.group[open]>summary:before{transform:rotate(90deg)}
+details.group .body{padding:0 16px 14px 38px;font-size:13px}
+details.more{position:relative;display:inline-block}
+details.more>summary{list-style:none}
+details.more>summary::-webkit-details-marker{display:none}
+.menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--white);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 32px rgba(15,26,18,.16);min-width:230px;z-index:30;overflow:hidden}
+.menu div{padding:10px 14px;border-top:1px solid var(--line);font-size:13px;font-weight:600}
+.menu div:first-child{border-top:none}
+.menu .sep{font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--grey);background:var(--cream);padding:6px 14px}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{padding:10px 14px;font-size:13px;color:var(--grey);white-space:nowrap;border-bottom:3px solid transparent}
+.tab.on{color:var(--ink);font-weight:700;border-bottom-color:var(--em);background:var(--white)}
+.tl{position:relative;padding-left:22px}
+.tl:before{content:"";position:absolute;left:6px;top:4px;bottom:4px;width:1px;background:var(--line)}
+.tl .e{position:relative;padding:0 0 14px}
+.tl .e:before{content:"";position:absolute;left:-20px;top:6px;width:9px;height:9px;border-radius:50%;background:var(--white);border:2px solid var(--ink)}
+.tl .e.gift:before{border-color:var(--brass);background:var(--brass)}
+.bar{height:6px;background:var(--cream);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ink)}
+table.g{width:100%;border-collapse:collapse;font-size:13px}
+table.g td,table.g th{padding:8px 6px;border-top:1px solid var(--line);text-align:left}
+table.g th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--grey);border-top:none}
+table.g td.n,table.g th.n{text-align:right}
+.note{font-size:11.5px;color:var(--grey);font-style:italic}
+a{text-decoration:none;color:inherit}
