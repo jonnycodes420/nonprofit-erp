@@ -168,6 +168,7 @@ CORE=(
   fix2-c-cream
   fix3-c-demo-people
   fix3-c-demo-giving
+  fix3-a-home
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

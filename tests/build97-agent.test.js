@@ -332,8 +332,10 @@ const mkDonor = (id, org, name, opts = {}) => q(
   ok("the daily line answers", daily.status === 200, daily.status);
   ok("…and with nothing to report it says nothing rather than filling a hole",
      A.dailyLine({ did: 0, sent: 0, waiting: 0 }) === "");
+  // FIX-3 finding 3 — a zero clause is dropped ("sent 0" was a hole) and the
+  // waiting clause is a sentence: "6 drafts are waiting for you".
   ok("…and with something to report it says it plainly",
-     /Steward did 14 things for you yesterday, sent 0, 6 drafts waiting\./
+     /^Steward did 14 things for you yesterday, and 6 drafts are waiting for you\.$/
        .test(A.dailyLine({ did: 14, sent: 0, waiting: 6 })),
      A.dailyLine({ did: 14, sent: 0, waiting: 6 }));
 
@@ -396,8 +398,11 @@ const mkDonor = (id, org, name, opts = {}) => q(
     } else {
     ok("…with somewhere to type", await page.locator('[data-testid="agent-input"]').count() === 1);
     const boxText = (await box.count()) ? await box.innerText() : "";
-    ok("…and it promises nothing happens until she says so",
-       /Nothing happens until you say so/i.test(boxText), boxText.slice(0, 200));
+    // FIX-3 finding 3 — Home keeps ONE LINE into Agent, not a second ask with
+    // its own sentence; the promise is the Agent's plan sheet to make.
+    ok("…and it is one line into Agent, not a second ask",
+       !/Nothing happens until you say so/i.test(boxText) && await page.locator('[data-testid="agent-ask"]').count() === 1,
+       boxText.slice(0, 200));
     ok("…and the daily line is there",
        await page.locator('[data-testid="agent-daily-line"]').count() === 1, boxText.slice(0, 200));
 

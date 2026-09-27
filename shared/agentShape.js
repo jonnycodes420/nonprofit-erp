@@ -556,12 +556,25 @@ export function planNeedsReshowing(lastCount, thisCount) {
 // One sentence in the morning email and on Home. It follows the morning
 // sentence's rules (shared/homeNote.js): never a template with holes, and a
 // clause only when there is something to put in it.
+//
+// FIX-3 (finding 3) — a ZERO CLAUSE IS A HOLE. "Steward did 0 things for you
+// yesterday, sent 0, 1 draft waiting." said two nothings to reach the one fact
+// she can act on. Each clause appears only when its count is above zero, the
+// verb agrees with the count, and all zeros say nothing at all:
+//   waiting only        "1 draft is waiting for you."
+//   did (and sent)      "Steward did 14 things for you yesterday and sent 2 messages."
+//   did and waiting     "Steward did 14 things for you yesterday, and 6 drafts are waiting for you."
 export function dailyLine({ did = 0, sent = 0, waiting = 0 } = {}) {
+  const n = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.floor(Number(v)) : 0);
+  did = n(did); sent = n(sent); waiting = n(waiting);
   if (!did && !sent && !waiting) return "";
-  const parts = [`Steward did ${did} thing${did === 1 ? "" : "s"} for you yesterday`];
-  parts.push(`sent ${sent}`);
-  if (waiting) parts.push(`${waiting} draft${waiting === 1 ? "" : "s"} waiting`);
-  return parts.join(", ") + ".";
+  const plural = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+  let done = "";
+  if (did) done = `Steward did ${plural(did, "thing")} for you yesterday` + (sent ? ` and sent ${plural(sent, "message")}` : "");
+  else if (sent) done = `Steward sent ${plural(sent, "message")} for you yesterday`;
+  const wait = waiting ? `${plural(waiting, "draft")} ${waiting === 1 ? "is" : "are"} waiting for you` : "";
+  if (done && wait) return `${done}, and ${wait}.`;
+  return `${done || wait}.`;
 }
 
 // The undo window, in one place.
