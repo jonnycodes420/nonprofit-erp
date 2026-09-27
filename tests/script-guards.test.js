@@ -193,6 +193,10 @@ const PROD_READONLY = [
   // self-reference (always a bug); the noisier read-above-declaration shape is
   // behind --all because it needs human triage.
   "tdz-scan",
+  // FIX-3 C — is there a real person in the demo? READ ONLY transaction,
+  // SELECTs only, ROLLBACK; a remote DATABASE_URL needs --i-know-this-is-prod
+  // and the /health identity match. Prints the offending rows, exits 1.
+  "demo-real-people-check",
 ];
 
 // Browser-driving captures: default loopback; any writes ride the logged-in
