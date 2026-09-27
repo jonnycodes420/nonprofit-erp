@@ -88,13 +88,15 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   // retention cohort) outside the button, so a figure never nests in another.
   return (
     <div className="fig-tile" style={{ background: T.bgCard, border: "1px solid " + T.bg2, borderRadius: 12, minWidth: 0,
-                                       display: "flex", flexDirection: "column" }}>
+                                       display: "flex", flexDirection: "column", containerType: "inline-size" }}>
       <button type="button" onClick={act} onKeyDown={onKey} title={definition} aria-label={aria} {...data}
         style={{ textAlign: "left", background: "transparent", border: "none", borderRadius: 12, width: "100%",
                  padding: "16px 18px 12px", cursor: openable ? "pointer" : "default", minWidth: 0,
                  display: "flex", flexDirection: "column", gap: 6, font: "inherit", color: T.ink }}>
         <span style={{ fontSize: 11, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3, fontWeight: 700 }}>{label}</span>
-        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: "clamp(24px, 2.3vw, 32px)", lineHeight: 1.1, color: T.ink, overflowWrap: "anywhere" }}>{text}</span>
+        {/* Sized to the TILE (a container query), never broken across lines: a
+            figure split as "$1,575.7 / 5" is a different number. */}
+        <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: "clamp(22px, 14cqi, 34px)", lineHeight: 1.1, color: T.ink, whiteSpace: "nowrap" }}>{text}</span>
         {/* A BLANK IS SAID, NOT GUESSED, and it says when it will appear. */}
         {/* The tile says when in a few words; the panel says the whole sentence. */}
         {isBlank && (blankShort || blank) && <span style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45 }}>{blankShort || blank}</span>}

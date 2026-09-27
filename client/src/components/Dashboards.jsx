@@ -31,6 +31,7 @@ const DASH_CSS = `
 .dash-two.even{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .dash-tiles{display:flex;flex-wrap:wrap;gap:12px}
 .dash-tiles>.fig-tile{flex:1 1 150px}
+.dash-tiles.wide>.fig-tile{flex-basis:200px}
 .dash-card{background:${T.bgCard};border:1px solid ${T.bg2};border-radius:14px;padding:18px 20px;min-width:0}
 .dash-answer{font-family:'DM Serif Display',Georgia,serif;font-size:32px;line-height:1.2;color:${T.ink};margin:4px 0 8px;overflow-wrap:anywhere}
 @media (max-width:1100px){.dash-two,.dash-two.even{grid-template-columns:minmax(0,1fr)}}
@@ -148,7 +149,7 @@ export function BoardBody({ get }) {
       <div className="dash-two">
         <section className="dash-card">
           <Eyebrow>Giving</Eyebrow>
-          <div className="dash-tiles">
+          <div className="dash-tiles wide">
             <Tile m={get("revenueThisYear")} />
             <Tile m={get("revenueLastYear")} />
             <Tile m={get("revenueChangePct")} />

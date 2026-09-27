@@ -988,7 +988,7 @@ function sentenceMoney(v) {
 const sentenceCount = n => Number(n || 0).toLocaleString("en-US");
 const RECURRING_STATUS_WORDS = {
   active: "Giving", recovered: "Giving again after a failed card", past_due: "Card failing",
-  recovering: "Being recovered", paused: "Paused", canceled: "Ended", cancelled: "Ended",
+  recovering: "Card being retried", paused: "Paused", canceled: "Ended", cancelled: "Ended",
 };
 const recurringStatusWord = s => RECURRING_STATUS_WORDS[s] || String(s || "Unknown").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
 

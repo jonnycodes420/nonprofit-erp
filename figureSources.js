@@ -77,7 +77,7 @@ function readParams(def, raw) {
 // id, type, donor_id, name, date (TEXT, ISO), amount (NUMERIC or NULL), detail
 const MONTHLY = "ROUND(CASE WHEN s.interval='year' THEN s.amount/12.0 ELSE s.amount END, 2)";
 const STATUS_WORD = `CASE s.status WHEN 'active' THEN 'Giving' WHEN 'recovered' THEN 'Giving again after a failed card'
-  WHEN 'past_due' THEN 'Card failing' WHEN 'recovering' THEN 'Being recovered' WHEN 'paused' THEN 'Paused'
+  WHEN 'past_due' THEN 'Card failing' WHEN 'recovering' THEN 'Card being retried' WHEN 'paused' THEN 'Paused'
   WHEN 'canceled' THEN 'Ended' WHEN 'cancelled' THEN 'Ended' ELSE INITCAP(REPLACE(s.status,'_',' ')) END`;
 const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
 
