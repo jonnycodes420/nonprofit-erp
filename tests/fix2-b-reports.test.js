@@ -44,7 +44,9 @@ const ISO = /\b\d{4}-\d{2}-\d{2}\b/;
 // keep honouring is the OLD one, not whatever the new file happens to hold.
 const OLD_TAB_IDS = ["saved", "giving-summary", "by-group", "lybunt", "sybunt", "retention", "top-donors",
   "week-in-review", "three-year", "annual", "solicitations", "bookkeeper"];
-const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year go?", "Volunteers and members", "Your saved reports"];
+// FIX-3 E (finding 12) regrouped the rail: saved reports on top, the year's
+// money and the grants in groups of their own.
+const GROUPS = ["Your saved reports", "Who stopped giving", "Who gives the most", "The year", "Money in", "Grants", "Volunteers and members"];
 
 (async () => {
   console.log("fix2-b-reports");
@@ -68,7 +70,7 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
   const RB = await import("../shared/reportBuilder.js");
   ok("client/src/lib/reportsRail.js exists and is pure", !!RAIL);
   if (RAIL) {
-    ok("the groups are the brief's five questions, in order",
+    ok("the groups are the FIX-3 brief's seven, in order",
        JSON.stringify(RAIL.RAIL_GROUPS.map(g => g.question)) === JSON.stringify(GROUPS), RAIL.RAIL_GROUPS.map(g => g.question));
     const placed = RAIL.RAIL_GROUPS.flatMap(g => g.items);
     ok("no report sits in two groups", new Set(placed).size === placed.length, placed);
@@ -76,7 +78,7 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
     ok("every old tab id and every standard report id resolves to a rail item", unresolved.length === 0, unresolved);
     ok("every standard report is reachable (placed, or the same computation as one that is)",
        RB.STANDARD_KEYS.every(k => placed.includes("std:" + k) || RAIL.resolveReportId("std:" + k).id !== "std:" + k));
-    ok("the saved group holds no fixed item (it is the org's own list)", RAIL.RAIL_GROUPS[4].items.length === 0);
+    ok("the saved group holds no fixed item (it is the org's own list)", RAIL.RAIL_GROUPS.find(g => g.id === "saved").items.length === 0);
     ok("a saved report's own id passes through untouched", RAIL.resolveReportId("rpt_abc123").id === "rpt_abc123" && RAIL.resolveReportId("rpt_abc123").saved === true);
     ok("std:top-50 lands on Top donors, lifetime", RAIL.resolveReportId("std:top-50").id === "top-donors" && RAIL.resolveReportId("std:top-50").params?.scope === "lifetime");
     ok("the old \"Your reports\" tab lands on LYBUNT, which is what it opened on", RAIL.resolveReportId("saved").id === "lybunt");
@@ -151,7 +153,14 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
   let RES = RAIL;
   if (!RES) RES = { resolveReportId: id => ({ id }) };
   const misses = [];
-  for (const id of [...OLD_TAB_IDS, ...RB.STANDARD_KEYS.map(k => "std:" + k), savedId]) {
+  // FIX-3 E — the rail's groups fold, and the fold is remembered per viewer.
+  // Every group is folded before the walk: a deep link must open the group
+  // that holds its report, or the report is not on the screen.
+  const deepIds = [...OLD_TAB_IDS, ...RB.STANDARD_KEYS.map(k => "std:" + k), savedId];
+  const foldAll = () => RAIL ? page.evaluate(x => localStorage.setItem("steward_reports_rail_collapsed:" + x.user, JSON.stringify(x.groups)),
+    { user: lj.user.id, groups: RAIL.RAIL_GROUPS.map(g => g.id) }) : null;
+  for (const id of deepIds) {
+    await foldAll();
     await goReport(page, id);
     const want = RES.resolveReportId(id).id;
     const got = await activeId(page);
@@ -159,6 +168,7 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
     if (got !== want || /Something went wrong/.test(body)) misses.push(`${id} → ${got} (want ${want})`);
   }
   ok("every old tab id, standard id and saved id lands on its report", misses.length === 0, misses);
+  ok(`…all ${deepIds.length} of them (12 old tab ids, 24 standard, a saved one), with every group folded first`, deepIds.length >= 37 && misses.length === 0, deepIds.length);
   ok("…with no page errors", errs.length === 0, errs.slice(0, 3));
   await goReport(page, "lybunt");
   ok("finding 3: no tablist anywhere on Reports", (await page.locator('[role="tablist"]').count()) === 0);
