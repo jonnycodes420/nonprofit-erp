@@ -166,6 +166,8 @@ CORE=(
   fix2-a-footing
   fix2-c-hex
   fix2-c-cream
+  fix3-c-demo-people
+  fix3-c-demo-giving
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
