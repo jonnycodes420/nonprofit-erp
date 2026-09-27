@@ -273,8 +273,11 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
   // ── §9 · THE BROWSER ────────────────────────────────────────────────────
   console.log("\n— §9 · the browser: five views, one run sheet —");
   if (!haveBrowser()) {
+    // The repo's convention for a browser leg with no Playwright (CI): say
+    // SKIP and move on. The local battery's SKIP grep is what catches a leg
+    // that should have run (docs/decisions/tests-and-ci.md). FIX-1: this
+    // failed CI on PR #16 by failing instead of skipping.
     console.log("  SKIP — no Playwright or client/dist (browser leg)");
-    ok("the browser leg ran", false, "no Playwright or dist");
   } else {
     const { chromium } = require(path.join(PW_DIR, "node_modules", "playwright"));
     const browser = await chromium.launch();
