@@ -24,7 +24,7 @@ function mount(ctx) {
 const {
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap, markVolunteer, publicAppUrl,
+  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -337,27 +337,54 @@ app.post("/volunteer-hub/notes/delete", requireAuth, wrap(async (req, res) => {
 // NOTHING; the form POSTs. Somebody who signs up with an email already on a
 // record gains the Volunteer role on THAT record (one person, one record) and
 // nothing else on it changes; otherwise a new person is created as a Volunteer.
-function signupToken(orgId) {
-  const sig = crypto.createHmac("sha256", process.env.JWT_SECRET || "").update("volunteer-signup:" + orgId).digest("base64url");
+//
+// FIX-1 (Jonathan, 27 Sep) — THE LINK CAN BE TAKEN BACK. The org's
+// volunteer_link_version is signed in with its id; "make a new link" bumps it,
+// so every link made before stops verifying at once, and nothing else moves.
+function signupToken(orgId, version) {
+  const sig = crypto.createHmac("sha256", process.env.JWT_SECRET || "")
+    .update("volunteer-signup:" + orgId + ":v" + (Number(version) || 0)).digest("base64url");
   return Buffer.from(orgId).toString("base64url") + "." + sig;
 }
-function verifySignupToken(token) {
+async function linkVersion(orgId) {
+  const [o] = await query("SELECT volunteer_link_version AS v FROM orgs WHERE id=?", [orgId]);
+  return o ? Number(o.v) || 0 : null;
+}
+async function verifySignupToken(token) {
   const [b, sig] = String(token || "").split(".");
   if (!b || !sig) return null;
   let orgId; try { orgId = Buffer.from(b, "base64url").toString(); } catch { return null; }
-  const want = signupToken(orgId).split(".")[1];
+  if (!orgId) return null;
+  const version = await linkVersion(orgId);
+  if (version === null) return null;
+  const want = signupToken(orgId, version).split(".")[1];
   if (want.length !== sig.length || !crypto.timingSafeEqual(Buffer.from(want), Buffer.from(sig))) return null;
-  return orgId || null;
+  return orgId;
 }
+const LINK_SENTENCE = "Anyone with this link can add themselves to your roster as a Volunteer. Steward does not send it; you share it where your volunteers will see it.";
 const SIGNUP_ACTOR = { id: "system:volunteer-signup", name: "The volunteer, from the sign-up link" };
 
 app.get("/volunteer-hub/signup-link", requireAuth, wrap(async (req, res) => {
-  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(req.user.orgId)}`,
-    sentence: "Anyone with this link can add themselves to your roster as a Volunteer. Steward does not send it; you share it where your volunteers will see it." });
+  const version = await linkVersion(req.user.orgId);
+  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(req.user.orgId, version)}`,
+    sentence: LINK_SENTENCE });
+}));
+
+// A new link; the old one stops working the moment this answers.
+app.post("/volunteer-hub/signup-link/regenerate", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [row] = await query(
+    "UPDATE orgs SET volunteer_link_version = COALESCE(volunteer_link_version, 0) + 1 WHERE id=? RETURNING volunteer_link_version AS v",
+    [orgId]);
+  const version = Number(row && row.v) || 0;
+  const a = actor(req);
+  await writeAuditLog(orgId, a.id, a.name, "regenerated", "volunteer_signup_link", orgId, { version });
+  res.json({ url: `${publicAppUrl()}/volunteer/join?token=${signupToken(orgId, version)}`,
+    sentence: "This is your new link. The old one has stopped working: anyone who opens it is told to ask for the current link. " + LINK_SENTENCE });
 }));
 
 app.get("/volunteer/join", donateLimiter, wrap(async (req, res) => {
-  const orgId = verifySignupToken(req.query.token);
+  const orgId = await verifySignupToken(req.query.token);
   const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
   if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid. Ask the organisation for its current link.</p>"));
   const orgName = await donorFacingOrgName(o.id, o.name).catch(() => o.name);
@@ -378,7 +405,7 @@ app.get("/volunteer/join", donateLimiter, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
-  const orgId = verifySignupToken(req.body?.token);
+  const orgId = await verifySignupToken(req.body?.token);
   const [o] = orgId ? await query("SELECT id, name FROM orgs WHERE id=?", [orgId]) : [];
   if (!o) return res.status(404).send(volunteerPage("Link not valid", "<p>This sign-up link is not valid.</p>"));
   const thanks = volunteerPage("Thank you", `<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px">Thank you.</h1><p>You are on the volunteer roster. Someone from the organisation will be in touch.</p>`);

@@ -224,7 +224,19 @@ function ShiftsView({ roster, narrow, isReadOnly, onChanged, onOpen }) {
 function SignupView() {
   const [link, setLink] = useState(null);
   const [msg, setMsg] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => { apiFetch("/volunteer-hub/signup-link").then(setLink).catch(e => setMsg(errorMessage(e, "The link did not load."))); }, []);
+  // FIX-1 — a link shared somewhere it should not be can be taken back: a new
+  // link, and the old one stops working the moment the server answers.
+  const regenerate = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await apiFetch("/volunteer-hub/signup-link/regenerate", { method: "POST", body: "{}" });
+      setLink(r); setConfirming(false); setMsg("New link made. The old one no longer works.");
+    } catch (e) { setMsg(errorMessage(e, "The new link was not made.")); }
+    setBusy(false);
+  };
   const copy = async () => {
     try { await navigator.clipboard.writeText(link.url); setMsg("Link copied."); }
     catch { setMsg("Select the link and copy it."); }
@@ -242,6 +254,18 @@ function SignupView() {
         </div>
       )}
       {link && <div style={{ fontSize: 12, color: T.ink3, marginTop: 10, lineHeight: 1.6 }}>{link.sentence} What they write about when they can help lands in their internal notes.</div>}
+      {link && !confirming && (
+        <button data-testid="vol-signup-regenerate" onClick={() => setConfirming(true)} style={{ ...btnQuiet, marginTop: 12 }}>Make a new link</button>
+      )}
+      {link && confirming && (
+        <div data-testid="vol-signup-confirm" style={{ marginTop: 12, padding: "12px 14px", border: "1px solid " + T.bg3, borderRadius: 10, fontSize: 13, color: T.ink, lineHeight: 1.55 }}>
+          The link you have shared will stop working, everywhere it is posted. Anyone who opens it will be asked for your current link.
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <button data-testid="vol-signup-regenerate-confirm" disabled={busy} onClick={regenerate} style={btnPrimary}>{busy ? "Making it…" : "Make a new link"}</button>
+            <button onClick={() => setConfirming(false)} style={btnQuiet}>Keep this link</button>
+          </div>
+        </div>
+      )}
       {msg && <div role="status" style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>{msg}</div>}
     </div>
   );

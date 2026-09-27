@@ -4201,6 +4201,9 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_notes_person ON volunteer_notes (org_id, person_id, created_at DESC)`);
+  // FIX-1 — the volunteer sign-up link's version. It is signed into the link,
+  // so "make a new link" bumps it and every older link stops verifying.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_link_version INTEGER NOT NULL DEFAULT 0`);
 
   // ── BUILD-98 (switch) Part 6 — A KEY THAT OPENS ONE ORG, READ ONLY ─────
   // A key is shown ONCE and stored as its SHA-256; the prefix is kept so a

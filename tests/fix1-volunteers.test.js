@@ -198,6 +198,10 @@ async function reset() {
   ok("§9 the hub now shows the new link", now9.body && now9.body.url === regen.body.url);
   const [audit9] = await q(`SELECT user_id FROM fin_audit_log WHERE org_id=$1 AND entity_type='volunteer_signup_link' ORDER BY created_at DESC LIMIT 1`, [ORG]);
   ok("§9 who made the new link is recorded", !!audit9 && !!audit9.user_id, audit9);
+  const hubSrc = require("fs").readFileSync(require("path").join(__dirname, "../client/src/components/VolunteersHub.jsx"), "utf8");
+  ok("§9 the hub offers it, behind a confirm that says the old link stops",
+    /data-testid="vol-signup-regenerate"/.test(hubSrc) && /data-testid="vol-signup-confirm"/.test(hubSrc)
+    && /\/volunteer-hub\/signup-link\/regenerate", \{ method: "POST"/.test(hubSrc) && /will stop working/.test(hubSrc));
   const theirs = await api("POST", "/volunteer-hub/signup-link/regenerate", tok2, {});
   ok("§9 another org making a new link does not touch this org's", theirs.status === 200
     && (await fetch(`${BASE}/volunteer/join?token=${encodeURIComponent(newToken)}`)).status === 200);
