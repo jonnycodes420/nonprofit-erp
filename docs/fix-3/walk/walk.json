@@ -1,0 +1,358 @@
+{
+  "checks": [
+    {
+      "name": "giving summary compares the same point last year",
+      "ok": true,
+      "extra": {
+        "basis": "same-point",
+        "label": "Same point last year",
+        "from": "2025-07-01",
+        "to": "2025-09-27",
+        "value": 355423,
+        "cents": 35542300,
+        "source": {
+          "key": "gifts",
+          "params": {
+            "from": "2025-07-01",
+            "to": "2025-09-27"
+          }
+        },
+        "definition": "Gifts received in the equivalent stretch of your previous fiscal year, so the comparison is like for like."
+      }
+    },
+    {
+      "name": "giving summary's comparison equals the Board's same point last year in cents (355423 vs 355423)",
+      "ok": true,
+      "extra": {
+        "summary": 355423,
+        "board": 355423
+      }
+    },
+    {
+      "name": "…through the Board's own source",
+      "ok": true,
+      "extra": {
+        "s": {
+          "key": "gifts",
+          "params": {
+            "from": "2025-07-01",
+            "to": "2025-09-27"
+          }
+        },
+        "b": {
+          "key": "gifts",
+          "params": {
+            "from": "2025-07-01",
+            "to": "2025-09-27"
+          }
+        }
+      }
+    },
+    {
+      "name": "1440 Home: no real person (Jonathan Atkinson) on Home",
+      "ok": true
+    },
+    {
+      "name": "1440 Home: no \"Steward did 0\" line",
+      "ok": true
+    },
+    {
+      "name": "1440 Home: the one-line entry is there",
+      "ok": true
+    },
+    {
+      "name": "1440 Home: the Go button shows while the entry is empty, disabled",
+      "ok": true
+    },
+    {
+      "name": "1440 Home: Go is enabled once there is text",
+      "ok": true
+    },
+    {
+      "name": "1440 Home: each thank-you draft has a button (3)",
+      "ok": true,
+      "extra": 3
+    },
+    {
+      "name": "1440 Home: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 Agent reached",
+      "ok": true
+    },
+    {
+      "name": "1440 Agent: the go button is drawn while the box is empty, disabled",
+      "ok": true
+    },
+    {
+      "name": "1440 Agent: the go button is enabled once there is text",
+      "ok": true
+    },
+    {
+      "name": "1440 ada: never \"Read your N people\"",
+      "ok": true
+    },
+    {
+      "name": "1440 ada: nobody by that name, so Steward says so and plans nothing",
+      "ok": true,
+      "extra": "Steward\n⌕\n?\nD\nDana\nSign out\n◈\nHome\n♦\nDonors\n↗\nFundraising\n◎\nVolunteers\n✦\nAgent\n▤\nReports\n◇\nFinance\n▸\nMORE\n2\n⚙\nSettings\nThis is a demonstration organisation. Everything in it is invented, and Steward will not send email to anyone here — not a receipt, not a reminder, not a campaign.\nYour data →\nAgent"
+    },
+    {
+      "name": "1440 margaret: never \"Read your N people\"",
+      "ok": true
+    },
+    {
+      "name": "1440 margaret: the plan reads ONE record",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nSTEP\nDETAIL\nSTATE\nRead Margaret Chen's record\nThis record only, not the whole file\nDone\nTag Margaret Chen Volunteer, on the same reco"
+    },
+    {
+      "name": "1440 margaret: headline is one short sentence",
+      "ok": true,
+      "extra": "Make Margaret Chen a volunteer, note 15 hours a week, and draft a welcome."
+    },
+    {
+      "name": "1440 margaret: tag Volunteer",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nSTEP\nDETAIL\nSTATE\nRead Margaret Chen's record\nThis record only, not the whole file\nDone\nTag Margaret Chen Volunteer, on the same record.\nThe Volunteer role, added to the same record\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nInternal note in Volunteers · never on the giving record\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nA draft under Waiting fo"
+    },
+    {
+      "name": "1440 margaret: note 15 hours a week in Volunteers",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nSTEP\nDETAIL\nSTATE\nRead Margaret Chen's record\nThis record only, not the whole file\nDone\nTag Margaret Chen Volunteer, on the same record.\nThe Volunteer role, added to the same record\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nInternal note in Volunteers · never on the giving record\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nA draft under Waiting fo"
+    },
+    {
+      "name": "1440 margaret: one welcome draft",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nSTEP\nDETAIL\nSTATE\nRead Margaret Chen's record\nThis record only, not the whole file\nDone\nTag Margaret Chen Volunteer, on the same record.\nThe Volunteer role, added to the same record\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nInternal note in Volunteers · never on the giving record\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nA draft under Waiting fo"
+    },
+    {
+      "name": "1440 margaret: no \"Confirm which\" task",
+      "ok": true
+    },
+    {
+      "name": "1440 Agent: no page errors",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 profile (Verity Yarrowdale): no locked marker at any point while it opened",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 profile: the four questions",
+      "ok": true,
+      "extra": "Steward\n⌕\n?\nD\nDana\nSign out\n◈\nHome\n♦\nDonors\n↗\nFundraising\n◎\nVolunteers\n✦\nAgent\n▤\nReports\n◇\nFinance\n▸\nMORE\n2\n⚙\nSettings\nThis is a demonstration organisation. Everything in it is invented, and Steward w"
+    },
+    {
+      "name": "1440 profile: no \"Stream failed\"",
+      "ok": true
+    },
+    {
+      "name": "1440 profile: no sideways scroll",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 Reports reached",
+      "ok": true
+    },
+    {
+      "name": "1440 Reports: the seven groups in order",
+      "ok": true,
+      "extra": [
+        "YOUR SAVED REPORTS",
+        "WHO STOPPED GIVING",
+        "WHO GIVES THE MOST",
+        "THE YEAR",
+        "MONEY IN",
+        "GRANTS",
+        "VOLUNTEERS AND MEMBERS"
+      ]
+    },
+    {
+      "name": "1440 giving summary says \"the same point last year\"",
+      "ok": true,
+      "extra": "You've raised $354,646 from 372 gifts this period — down from $355,423 at the same point last year. 240 donors gave (27 new, 213 returning); the median gift was $100."
+    },
+    {
+      "name": "1440 Reports: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 Reports/Board: no page errors",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 Home: no real person (Jonathan Atkinson) on Home",
+      "ok": true
+    },
+    {
+      "name": "390 Home: no \"Steward did 0\" line",
+      "ok": true
+    },
+    {
+      "name": "390 Home: the one-line entry is there",
+      "ok": true
+    },
+    {
+      "name": "390 Home: the Go button shows while the entry is empty, disabled",
+      "ok": true
+    },
+    {
+      "name": "390 Home: Go is enabled once there is text",
+      "ok": true
+    },
+    {
+      "name": "390 Home: each thank-you draft has a button (3)",
+      "ok": true,
+      "extra": 3
+    },
+    {
+      "name": "390 Home: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 Agent reached",
+      "ok": true
+    },
+    {
+      "name": "390 Agent: the go button is drawn while the box is empty, disabled",
+      "ok": true
+    },
+    {
+      "name": "390 Agent: the go button is enabled once there is text",
+      "ok": true
+    },
+    {
+      "name": "390 ada: never \"Read your N people\"",
+      "ok": true
+    },
+    {
+      "name": "390 ada: nobody by that name, so Steward says so and plans nothing",
+      "ok": true,
+      "extra": "Steward\nD\nThis is a demonstration organisation. Everything in it is invented, and Steward will not send email to anyone here — not a receipt, not a reminder, not a campaign.\nYour data →\nAgent\n3 things are waiting for you.\nPlans\nAsk\nWorkflows\nWaiting for you · 3\nGuardrails\nShow me the plan\nSteward co"
+    },
+    {
+      "name": "390 margaret: never \"Read your N people\"",
+      "ok": true
+    },
+    {
+      "name": "390 margaret: the plan reads ONE record",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nRead Margaret Chen's record\nDone\nTag Margaret Chen Volunteer, on the same record.\nRuns when you say yes\nNote Margaret Chen's availabi"
+    },
+    {
+      "name": "390 margaret: headline is one short sentence",
+      "ok": true,
+      "extra": "Make Margaret Chen a volunteer, note 15 hours a week, and draft a welcome."
+    },
+    {
+      "name": "390 margaret: tag Volunteer",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nRead Margaret Chen's record\nDone\nTag Margaret Chen Volunteer, on the same record.\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nRuns when you say yes\nNothing is sent. Everything Steward does here can be undone for thirty days.\nNot this one\nRun the plan"
+    },
+    {
+      "name": "390 margaret: note 15 hours a week in Volunteers",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nRead Margaret Chen's record\nDone\nTag Margaret Chen Volunteer, on the same record.\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nRuns when you say yes\nNothing is sent. Everything Steward does here can be undone for thirty days.\nNot this one\nRun the plan"
+    },
+    {
+      "name": "390 margaret: one welcome draft",
+      "ok": true,
+      "extra": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nRead Margaret Chen's record\nDone\nTag Margaret Chen Volunteer, on the same record.\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nRuns when you say yes\nNothing is sent. Everything Steward does here can be undone for thirty days.\nNot this one\nRun the plan"
+    },
+    {
+      "name": "390 margaret: no \"Confirm which\" task",
+      "ok": true
+    },
+    {
+      "name": "390 Agent: no page errors",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 profile (Verity Yarrowdale): no locked marker at any point while it opened",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 profile: the four questions",
+      "ok": true,
+      "extra": "Steward\nD\nThis is a demonstration organisation. Everything in it is invented, and Steward will not send email to anyone here — not a receipt, not a reminder, not a campaign.\nYour data →\nYour donors.\n←"
+    },
+    {
+      "name": "390 profile: no \"Stream failed\"",
+      "ok": true
+    },
+    {
+      "name": "390 profile: no sideways scroll",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 Reports reached",
+      "ok": true
+    },
+    {
+      "name": "390 giving summary says \"the same point last year\"",
+      "ok": true,
+      "extra": "You've raised $354,646 from 372 gifts this period — down from $355,423 at the same point last year. 240 donors gave (27 new, 213 returning); the median gift was $100."
+    },
+    {
+      "name": "390 Reports: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 Reports/Board: no page errors",
+      "ok": true,
+      "extra": []
+    }
+  ],
+  "summary": {
+    "total": 354646,
+    "comparison": 355423,
+    "board": 355423,
+    "from": "2026-07-01"
+  },
+  "drafting": {
+    "on": true,
+    "reason": null
+  },
+  "plan": "team",
+  "profileDonor": {
+    "id": "d_b72_19",
+    "name": "Verity Yarrowdale"
+  },
+  "ada1440": "not on file",
+  "margaretSheet1440": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nSTEP\nDETAIL\nSTATE\nRead Margaret Chen's record\nThis record only, not the whole file\nDone\nTag Margaret Chen Volunteer, on the same record.\nThe Volunteer role, added to the same record\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nInternal note in Volunteers · never on the giving record\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nA draft under Waiting for you · you send it\nRuns when you say yes\nNothing is sent. Everything Steward does here can be undone for thirty days.\nNot this one\nRun the plan",
+  "summarySentence1440": "You've raised $354,646 from 372 gifts this period — down from $355,423 at the same point last year. 240 donors gave (27 new, 213 returning); the median gift was $100.",
+  "ada390": "not on file",
+  "margaretSheet390": "PLAN · READ ONE RECORD\nMake Margaret Chen a volunteer, note 15 hours a week, and draft a welcome.\n\n“margaret just became a volunteer and wants to do 15 hours a week”\n\nRead Margaret Chen's record\nDone\nTag Margaret Chen Volunteer, on the same record.\nRuns when you say yes\nNote Margaret Chen's availability in Volunteers: 15 hours a week.\nRuns when you say yes\nDraft a welcome to Margaret Chen, for you to read and send.\nRuns when you say yes\nNothing is sent. Everything Steward does here can be undone for thirty days.\nNot this one\nRun the plan",
+  "summarySentence390": "You've raised $354,646 from 372 gifts this period — down from $355,423 at the same point last year. 240 donors gave (27 new, 213 returning); the median gift was $100."
+}

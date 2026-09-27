@@ -1,0 +1,5 @@
+[identity] https://nonprofit-erp-production.up.railway.app → product=steward database=postgres sha=2e051ff
+[demo] database postgres · org org_b72demo "Harborlight Youth Collective" · is_demo_org=true · emails_enabled=false · Stripe account connected=false
+[demo] online gifts (the report's rule, a Stripe payment id): 3031, $2,143,816 — 0 not minted by the seed
+
+OK — no real person in org_b72demo.
