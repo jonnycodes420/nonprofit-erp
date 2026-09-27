@@ -280,6 +280,18 @@ function others(n) {
   const picked = await api("POST", "/agent/instructions", tok, { text: ADA, personId: "d_fx3b_ada2" });
   ok("§6 her pick plans on Ada King alone", picked.status === 201 && same(picked.body.plan.readIds, ["d_fx3b_ada2"])
     && /Ada King/.test(picked.body.plan.summary), picked.body && picked.body.plan);
+  // Two ambiguous names, one pick each: "Ada and Adam" with two Adas and
+  // several Adams asks about each in turn, and plans once both are picked.
+  const TWO = "ada and adam just became volunteers";
+  const q1 = await api("POST", "/agent/instructions", tok, { text: TWO });
+  const q1ids = ((q1.body.which || {}).people || []).map(p => p.id);
+  const q2 = await api("POST", "/agent/instructions", tok, { text: TWO, personId: [q1ids[0]] });
+  const q2w = q2.body.which || {};
+  ok("§6 two names, each ambiguous: asked one at a time, the second after the first pick",
+    q1.status === 200 && q1ids.length >= 2 && q2.status === 200 && !!q2.body.which && q2w.said !== (q1.body.which || {}).said, { q1: q1.body, q2: q2.body });
+  const q3 = await api("POST", "/agent/instructions", tok, { text: TWO, personId: [q1ids[0], ((q2w.people || [])[0] || {}).id] });
+  ok("§6 …and with both picks it no longer asks (two people named: it says one at a time)",
+    q3.status === 400 && q3.body.error === "volunteer_needs_person" && /one new volunteer at a time/.test(q3.body.sentence || ""), q3.body);
   const c1 = await counts();
   const bad = await api("POST", "/agent/instructions", tok, { text: ADA, personId: "d_fx3b_000" });
   ok("§6 a pick that is not one of the Adas is refused", bad.status === 400, bad.body);

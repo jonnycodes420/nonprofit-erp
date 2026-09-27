@@ -405,15 +405,16 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     return () => clearInterval(h);
   }, [anyLive, loadPlans]);
 
-  const ask = useCallback(async (words, personId) => {
+  const ask = useCallback(async (words, picks) => {
     const said = String(words || "").trim();
     if (!said || asking) return;
     setAsking(true); setAskErr(""); setAskedId(null); setRead(null); setWhich(null);
     try {
-      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify(personId ? { text: said, personId } : { text: said }) });
+      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify(picks && picks.length ? { text: said, personId: picks } : { text: said }) });
       if (r && r.read) { setRead({ ...r.read, text: said }); setText(""); }
       // One name, several records: ask which, and keep her words for the pick.
-      else if (r && r.which) { setWhich({ ...r.which, text: said }); setText(""); }
+      // Her earlier picks ride along, one per name ("Margaret and Robert").
+      else if (r && r.which) { setWhich({ ...r.which, text: said, picks: picks || [] }); setText(""); }
       else {
         await loadPlans(); loadWaiting();
         setAskedId(r.id); setOpenId(r.id); setText("");
@@ -472,7 +473,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   ) : null;
   const readFor = () => read ? readPanel({ read, wide, onNavigate, onClose: () => setRead(null) }) : null;
   const whichFor = () => which ? whichPanel({ which, wide, busy: asking, isReadOnly,
-    onPick: id => ask(which.text, id), onClose: () => setWhich(null) }) : null;
+    onPick: id => ask(which.text, [...(which.picks || []), id]), onClose: () => setWhich(null) }) : null;
   const canGo = !!text.trim() && !asking && !isReadOnly;
   const goStyle = { ...(canGo ? YES_BTN : GO_OFF), whiteSpace: "nowrap", flexShrink: 0, width: wide ? "auto" : "100%" };
   const goLabel = asking ? "Planning…" : "Show me the plan";

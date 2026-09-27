@@ -161,8 +161,9 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
 // FIRST name is one of her words is a candidate too, and namedIn decides (whole
 // tokens; an ordinary-word first name only when capitalised). When one name
 // matches several records (two Adas) it is `ambiguous`, and the route asks
-// which BEFORE planning. `pick` is her answer: it must be one of the records
-// that name matched, so it cannot reach another organisation's row.
+// which BEFORE planning. `pick` is her answer (one id, or one per ambiguous
+// name): each must be one of the records its name matched, so it cannot reach
+// another organisation's row.
 async function agentNamedIn(orgId, text, pick = null) {
   const A = await agentShapeMod();
   const candidates = await query(
@@ -173,13 +174,13 @@ async function agentNamedIn(orgId, text, pick = null) {
       ORDER BY length(name) DESC, id LIMIT 200`, [orgId, String(text || ""), A.nameWords(text)]);
   const n = A.namedIn(text, candidates);
   let ids = n.ids, ambiguous = n.ambiguous, badPick = false;
-  if (pick != null && pick !== "") {
-    const g = ambiguous.find(x => x.ids.includes(String(pick)));
-    if (!g) badPick = true;
-    else {
-      ids = ids.filter(id => !g.ids.includes(id) || id === String(pick));
-      ambiguous = ambiguous.filter(x => x !== g);
-    }
+  // One pick per ambiguous name ("Margaret and Robert" may need two).
+  const picks = (Array.isArray(pick) ? pick : pick != null && pick !== "" ? [pick] : []).map(String).slice(0, 10);
+  for (const one of picks) {
+    const g = ambiguous.find(x => x.ids.includes(one));
+    if (!g) { badPick = true; break; }
+    ids = ids.filter(id => !g.ids.includes(id) || id === one);
+    ambiguous = ambiguous.filter(x => x !== g);
   }
   return { scope: ids.length ? ids : null, candidates, ambiguous, badPick };
 }
