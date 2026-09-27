@@ -1054,6 +1054,18 @@ export function LockedFeature({title,blurb,cta="See plans",onCta,children,minHei
     </div>
   );
 }
+// PlanPending — what a Team surface shows while the org's plan is still
+// unknown (FIX-3 finding 9). Never the lock: a plan that has not loaded is not
+// a plan without the feature (client/src/lib/entitlement.js). `failed` says
+// so when the plan fetch itself failed, instead of spinning for ever.
+export function PlanPending({failed=false,minHeight=120}){
+  return (
+    <div data-testid="plan-pending" role="status" aria-live="polite"
+      style={{minHeight,display:"flex",alignItems:"center",justifyContent:"center",gap:9,background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",color:T.ink3,fontSize:13}}>
+      {failed?"Couldn't check your plan. Reload the page to try again.":<><Spin dark/>Loading…</>}
+    </div>
+  );
+}
 export function GivingHistoryChart({gifts}) {
   if (!gifts?.length) return <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}>No gift history recorded</div>;
   const sorted=[...gifts].sort((a,b)=>new Date(a.date)-new Date(b.date));

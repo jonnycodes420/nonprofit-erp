@@ -110,6 +110,8 @@ const PLAN_ROUTES = /\/(billing\/status|portfolio\/officers)(\?|$)/;
     if (/Unlock with Team/.test(txt)) out.push("Unlock with Team");
     if (/on the Team plan/.test(txt)) out.push("on the Team plan");
     if (document.querySelector('[title="Team plan"]')) out.push("rail lock");
+    // Not a lock: the loading state that stands in for one.
+    if (document.querySelector("[data-testid=plan-pending]")) out.push("pending");
     return out;
   };
 
@@ -138,7 +140,7 @@ const PLAN_ROUTES = /\/(billing\/status|portfolio\/officers)(\?|$)/;
       polls++;
       await new Promise(r => setTimeout(r, 40));
     }
-    return { page, seen: [...seen], polls, held };
+    return { page, seen: [...seen].filter(x => x !== "pending"), pending: seen.has("pending"), polls, held };
   };
 
   for (const [w, hgt] of [[1440, 900], [390, 844]]) {
@@ -147,11 +149,12 @@ const PLAN_ROUTES = /\/(billing\/status|portfolio\/officers)(\?|$)/;
     ok(`§2 @${w} the plan fetches were held (the delay is real)`, t.held >= 1, t.held);
     ok(`§2 @${w} the DOM was polled through the delay`, t.polls >= 20, t.polls);
     ok(`§2 @${w} a Team org's profile never shows a locked marker while its plan loads`, t.seen.length === 0, t.seen);
+    ok(`§2 @${w} …it shows the loading state instead`, t.pending);
     if (w === 1440) {
       const feature = await t.page.waitForSelector("[data-testid=dp-move-stage]", { timeout: 10000 }).then(() => true).catch(() => false);
       ok(`§2 @${w} …then the Team feature renders (Move Stage)`, feature);
     }
-    const lockedAfter = await t.page.evaluate(probe);
+    const lockedAfter = (await t.page.evaluate(probe)).filter(x => x !== "pending");
     ok(`§2 @${w} …and no lock once the plan is known`, lockedAfter.length === 0, lockedAfter);
     await t.page.context().close();
 

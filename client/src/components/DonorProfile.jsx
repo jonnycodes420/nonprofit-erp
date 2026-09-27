@@ -14,7 +14,8 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
-import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { PlanFollowUpModal } from "./PlanFollowUp";
@@ -995,7 +996,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // Pipeline: moves history + ask/gift opportunities (BUILD-15, Team plan)
   const [moves,setMoves]=useState([]);
   const [opps,setOpps]=useState([]);
-  const [planTier,setPlanTier]=useState("core");
+  // The plan starts UNKNOWN, never "core": a plan that has not loaded is not a
+  // plan without the feature (FIX-3 finding 9, client/src/lib/entitlement.js).
+  const [planTier,setPlanTier]=useState(PLAN_UNKNOWN);
+  const [planFailed,setPlanFailed]=useState(false);
   const [askOpen,setAskOpen]=useState(false);
   const [askName,setAskName]=useState("");const [askAmt,setAskAmt]=useState("");
   // Smart-move suggestions (BUILD-22): surfaced, never auto-applied. `dismissed`
@@ -1033,7 +1037,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   useEffect(()=>{
     refreshSoftCredit();refreshPipeline();
     apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>setDesignations([]));
-    apiFetch("/portfolio/officers").then(r=>setPlanTier(r?.tier||"core")).catch(()=>{});
+    setPlanFailed(false);
+    apiFetch("/portfolio/officers").then(r=>setPlanTier(r?.tier||PLAN_UNKNOWN)).catch(()=>setPlanFailed(true));
   },[donor.id]);
   const isTeam=planTier==="team";
   // Donor-profile Core/Team split (FIX): the CRM core stays fully available to
@@ -1043,7 +1048,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // — Core sees the real panel with its own data behind frosted glass + an
   // "Unlock with Team" CTA; writes stay server-gated (requirePlan('team')→403).
   // A plain function (not a `<Component>`) so Team never remounts the subtree.
-  const lockMajor=(children,opts={})=>isTeam?children:(
+  // While the plan is unknown it draws the pending state, never the lock.
+  const lockMajor=(children,opts={})=>isTeam?children:(!planKnown(planTier)?<PlanPending failed={planFailed}/>:
     <LockedFeature title={opts.title||"A Team-plan feature"} blurb={opts.blurb} minHeight={opts.minHeight||220}
       onCta={goToPricing}>{children}</LockedFeature>
   );

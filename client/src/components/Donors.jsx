@@ -19,6 +19,7 @@ import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from ".
 import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
+import { PLAN_UNKNOWN } from "../lib/entitlement";
 export { DonorImport } from "./DonorImport";
 
 class ErrorBoundary extends Component {
@@ -71,7 +72,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirAssignee,setDirAssignee]=useState("");
   const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
-  const[portfolioMeta,setPortfolioMeta]=useState({tier:"core",single_user:true});
+  const[portfolioMeta,setPortfolioMeta]=useState({tier:PLAN_UNKNOWN,single_user:true}); // unknown until it loads, never "core" (FIX-3 finding 9)
   const[pendingInvites,setPendingInvites]=useState([]); // [{id:"invite:<id>",name,email,pending}] — bulk assign-owner to a not-yet-accepted officer (B2)
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
@@ -184,7 +185,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     .filter(matchesCf);
   const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
 
-  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||"core",single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
+  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
