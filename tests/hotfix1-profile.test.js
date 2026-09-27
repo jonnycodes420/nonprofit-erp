@@ -62,11 +62,22 @@ function browserReady() {
 
 async function frontendBase() {
   try { const r = await fetch(APP + "/", { signal: AbortSignal.timeout(1500) }); if (r.ok) return null; } catch { }
+  // The fallback static server, confined to DIST. The request path is
+  // resolved and then CHECKED to still be inside the build directory before
+  // anything is read — a request path is user input even in a test rig
+  // (CodeQL js/path-injection), and an index.html fallback for anything that
+  // escapes is also the right SPA behaviour.
+  const INDEX = path.join(DIST, "index.html");
+  const resolveInDist = url => {
+    const full = path.resolve(DIST, "." + path.posix.normalize("/" + url));
+    const inside = full === DIST || full.startsWith(DIST + path.sep);
+    if (!inside || !fs.existsSync(full) || fs.statSync(full).isDirectory()) return INDEX;
+    return full;
+  };
   const srv = http.createServer((req, res) => {
     const url = decodeURIComponent(req.url.split("?")[0]);
     if (url.startsWith("/_vercel/")) { res.statusCode = 404; return res.end(); }
-    let file = path.join(DIST, url);
-    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, "index.html");
+    const file = resolveInDist(url);
     res.setHeader("Content-Type", MIME[path.extname(file)] || "application/octet-stream");
     res.end(fs.readFileSync(file));
   });
