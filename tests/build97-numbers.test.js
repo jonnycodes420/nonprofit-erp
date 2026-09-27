@@ -73,7 +73,11 @@ const EXPECTED = {
   // reconcile sentence (shared/payoutReconcile.js); the close's are the
   // bookkeeper export's own (BUILD-87). Claim-shaped 3 → 5 (see below).
   "components/Finance.jsx": 38,
-  "components/Reports.jsx": 41,
+  // FIX-2 B: 41 → 42. Out: the 3-year table's bold {fmtFull(r.y0)} cell (the
+  // one results table now formats every money cell). In: the bookkeeper
+  // narrative's total (was a raw "$26100.50") and the "Total" under its
+  // totals-by-fund table (was "TOTAL $26100.50"). Claim-shaped 25 → 23.
+  "components/Reports.jsx": 42,
   "components/Fundraising.jsx": 31,   // BUILD-98 Part 2: +1, a gift amount in the acknowledgment backlog row (a cell, not a claim)
   "components/Communications.jsx": 20,
   "components/Grants.jsx": 13,
@@ -112,8 +116,8 @@ const EXPECTED = {
   "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
   "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 408;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above)
-const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline)
+const EXPECTED_TOTAL = 409;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above)
+const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline) · FIX-2 B: -2 (Reports: the 3-year y0 cell and the retention sentence's two percentages no longer sit beside a table-header label; +1 the bookkeeper fund "Total")
 
 (async () => {
   console.log("build97-numbers");

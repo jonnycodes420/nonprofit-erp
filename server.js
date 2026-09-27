@@ -4011,12 +4011,19 @@ async function runBuilderDef(orgId, def) {
       ...c.sums.map((s, i) => ({ key: "s" + i, label: s.label, type: "money" }))];
     return { columns, rows: rows.map(r => ({ group: r.g ?? "(blank)", count: r.n, ...Object.fromEntries(c.sums.map((s, i) => ["s" + i, rbCents(r["s" + i]) / 100])) })), totals, grouped: true };
   }
-  const sel = c.columns.map((f, i) => `${f.sql} AS c${i}`).join(", ");
+  // FIX-2 B — each row carries the person it is about (`_pid`), so a row on
+  // the screen opens that person. It is not a column: the CSV, the PDF and the
+  // weekly email walk `columns`, so no file grows a field for it.
+  const sel = c.columns.map((f, i) => `${f.sql} AS c${i}`).join(", ") + (c.person ? `, ${c.person} AS _pid` : "");
   const order = c.sort ? `${c.sort.sql} ${c.sort.dir} NULLS LAST` : "1";
   const rows = await query(`SELECT ${sel} FROM ${c.from} WHERE ${where} ORDER BY ${order} LIMIT ${c.limit}`, params);
   return {
     columns: c.columns.map((f, i) => ({ key: "c" + i, label: f.label, type: f.type })),
-    rows: rows.map(r => Object.fromEntries(c.columns.map((f, i) => ["c" + i, f.type === "money" ? rbCents(r["c" + i]) / 100 : r["c" + i]]))),
+    rows: rows.map(r => {
+      const o = Object.fromEntries(c.columns.map((f, i) => ["c" + i, f.type === "money" ? rbCents(r["c" + i]) / 100 : r["c" + i]]));
+      if (c.person && r._pid) o._pid = r._pid;
+      return o;
+    }),
     totals, capped: totals.count > rows.length,
   };
 }

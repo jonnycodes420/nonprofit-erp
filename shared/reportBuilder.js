@@ -29,6 +29,7 @@ export const ENTITIES = {
     from: "donors d",
     base: ["d.deleted_at IS NULL", "d.is_sample IS NOT TRUE"],
     orgCol: "d.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       name:            { label: "Name", sql: "d.name", type: "text" },
       email:           { label: "Email", sql: "d.email", type: "text" },
@@ -58,6 +59,7 @@ export const ENTITIES = {
     from: "gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id LEFT JOIN fin_funds f ON f.id = g.fund_id",
     base: ["d.deleted_at IS NULL", "g.is_sample IS NOT TRUE"],
     orgCol: "g.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       donor:           { label: "Donor", sql: "d.name", type: "text" },
       amount:          { label: "Amount", sql: "g.amount", type: "money", sum: true },
@@ -91,6 +93,7 @@ export const ENTITIES = {
     from: "pledges p JOIN donors d ON d.id = p.donor_id AND d.org_id = p.org_id",
     base: ["d.deleted_at IS NULL"],
     orgCol: "p.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       donor:     { label: "Donor", sql: "d.name", type: "text" },
       amount:    { label: "Pledged", sql: "p.amount", type: "money", sum: true },
@@ -106,6 +109,7 @@ export const ENTITIES = {
     from: "recurring_subscriptions rs JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id",
     base: ["d.deleted_at IS NULL"],
     orgCol: "rs.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       donor:         { label: "Donor", sql: "d.name", type: "text" },
       amount:        { label: "Amount", sql: "rs.amount", type: "money", sum: true },
@@ -138,6 +142,7 @@ export const ENTITIES = {
              LEFT JOIN users go ON go.id = gr.officer_id AND go.org_id = gr.org_id`,
     base: ["gr.is_sample IS NOT TRUE"],
     orgCol: "gr.org_id",
+    person: "fd.id",  // FIX-2 B: the funder, when the funder is a person record
     fields: {
       funder:       { label: "Funder", sql: "COALESCE(fd.name, gr.funder, '(not named)')", type: "text" },
       program:      { label: "Programme", sql: "COALESCE(NULLIF(gr.program,''),'(not stated)')", type: "text" },
@@ -171,6 +176,7 @@ export const ENTITIES = {
     from: "opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id",
     base: ["d.deleted_at IS NULL", "d.is_sample IS NOT TRUE"],
     orgCol: "o.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       donor:        { label: "Person", sql: "d.name", type: "text" },
       purpose:      { label: "What the ask is for", sql: "COALESCE(NULLIF(o.name,''),'(not stated)')", type: "text" },
@@ -195,6 +201,7 @@ export const ENTITIES = {
     from: "interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id",
     base: ["d.deleted_at IS NULL"],
     orgCol: "i.org_id",
+    person: "d.id",   // FIX-2 B: the person a row opens (never a column, never in a file)
     fields: {
       donor:  { label: "Donor", sql: "d.name", type: "text" },
       type:   { label: "Kind", sql: "i.type", type: "text" },
@@ -342,7 +349,7 @@ export function compile(def, { customDefs = [], paramStart = 1 } = {}) {
   if (sqlText.includes("?")) return { ok: false, errors: ["internal: the compiled report contains a ? and would bind wrongly"] };
   const sums = Object.entries(E.fields).filter(([, f]) => f.sum).map(([k, f]) => ({ key: k, label: f.label, sql: f.sql }));
   return {
-    ok: true, entity: def.entity, from: E.from, orgCol: E.orgCol, where, params,
+    ok: true, entity: def.entity, from: E.from, orgCol: E.orgCol, person: E.person || null, where, params,
     columns: colFields.map(f => ({ key: f.key, label: f.label, type: f.type, sql: f.sql })),
     group: group ? { key: group.key, label: group.label, sql: group.sql } : null,
     sums,

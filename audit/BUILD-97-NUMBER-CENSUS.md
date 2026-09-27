@@ -61,7 +61,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 | `Donors.jsx` | 117 | 16 |
 | `Dashboard.jsx` | 62 | 24 |
 | `Finance.jsx` | 38 | 5 |
-| `Reports.jsx` | 41 | 25 |
+| `Reports.jsx` | 42 | 23 |
 | `Fundraising.jsx` | 31 | 16 |
 | `Communications.jsx` | 20 | 6 |
 | `Grants.jsx` | 13 | 5 |
@@ -191,8 +191,9 @@ that rule applied to the rest of the product.**
 
 ### Reports · **data, not claims**
 
-25 claim-shaped sites, almost all of them a table header or the narrative
-summary line above a table. A report is the org's own rows with a definition
+23 claim-shaped sites (FIX-2 B: 25 → 23, and 41 → 42 sites, when the results
+became one table with human dates, a totals row and rows that open the person),
+almost all of them a table header or the narrative summary line above a table. A report is the org's own rows with a definition
 already pinned, in cents, by `tests/report-truth.test.js` — 85 assertions
 against hand-computed values, and the definitions written down in CLAUDE.md
 under "Report definitions (LOCKED)". No change.
