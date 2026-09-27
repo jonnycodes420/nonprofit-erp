@@ -155,6 +155,7 @@ CORE=(
   test-clock-seam
   fix1-fundraising
   fix1-finance
+  fix1-institutional
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
