@@ -167,6 +167,7 @@ CORE=(
   fix2-c-hex
   fix2-c-cream
   fix3-d-lock-flash
+  fix3-d-suggestion
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
