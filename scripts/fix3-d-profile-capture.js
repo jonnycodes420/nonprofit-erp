@@ -12,6 +12,10 @@ const fs = require("fs"), path = require("path");
 const root = path.join(__dirname, "..");
 const OUT = path.join(root, "docs/fix-3/profile");
 const what = process.argv[2] || "all";
+// Loopback only: it seeds a fixture org, so it refuses any other target.
+for (const [k, v] of [["BASE", process.env.BASE || ""], ["APP_URL", process.env.APP_URL || ""], ["DATABASE_URL", process.env.DATABASE_URL || ""]]) {
+  if (v && !/localhost|127\.0\.0\.1/.test(v)) { console.error(`Refusing: ${k} is not loopback (${v}).`); process.exit(2); }
+}
 const ORG = "org_fx3dprof", EMAIL = "fx3dprof@example.org", PW = "loadtest1234", DONOR = "d_fx3dprof";
 
 async function seedToday(h) {

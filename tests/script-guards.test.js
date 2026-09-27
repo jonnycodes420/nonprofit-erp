@@ -69,6 +69,8 @@ const GUARDED_WRITERS = [
 const SELF_REFUSING = [
   // FIX-2 B — captures every Reports export on the LOCAL stack (seeds a fixture org).
   "fix2-b-capture-exports",
+  // FIX-3 D — captures the donor profile and its mockups on the LOCAL stack (seeds a fixture org).
+  "fix3-d-profile-capture",
   // BUILD-75 B.1 — the route-inventory walker. BOOTS server.js (schema init
   // runs), so it hard-refuses any non-loopback DATABASE_URL outright.
   "build75-route-inventory","loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill",
