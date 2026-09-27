@@ -240,25 +240,19 @@ function MoveModal({ open, onClose, onSaved, meta, proposal }) {
   );
 }
 
-// On a person's own record (no donor column) the row WRAPS instead of holding
-// five fixed columns: at 390 the fixed columns left the purpose a few pixels
-// and it broke one letter per line (FIX-3, seen while capturing the profile),
-// and at desktop the date ran under the stage chip.
-const ROW_GRID = { display: "grid", gridTemplateColumns: "1.4fr 1.6fr 110px 96px 110px 120px" };
-const ROW_WRAP = { display: "flex", flexWrap: "wrap", columnGap: 16, rowGap: 6 };
 function ProposalRow({ p, onMove, onEdit, isReadOnly, showDonor }) {
-  const cell = showDonor ? {} : { flex: "0 0 auto" };
   return (
-    <div data-testid="proposal-row" style={{ ...(showDonor ? { ...ROW_GRID, gap: 12 } : ROW_WRAP), alignItems: "center", padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 56 }}>
+    <div style={{ display: "grid", gridTemplateColumns: showDonor ? "1.4fr 1.6fr 110px 96px 110px 120px" : "1.8fr 110px 96px 110px 120px",
+                  gap: 12, alignItems: "center", padding: "12px 14px", borderTop: "1px solid " + T.bg3, minHeight: 56 }}>
       {showDonor && <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, overflowWrap: "anywhere" }}>{p.donorName}</div>}
-      <div style={{ minWidth: 0, ...(showDonor ? {} : { flex: "1 1 180px" }) }}>
-        <div style={{ fontSize: 13, color: T.ink, overflowWrap: "break-word" }}>{p.purpose}</div>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: T.ink, overflowWrap: "anywhere" }}>{p.purpose}</div>
         <div style={{ fontSize: 11, color: T.ink3 }}>{p.fundName || "No particular fund"}{p.officerName ? " · " + p.officerName : ""}</div>
       </div>
-      <div style={{ ...cell, fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(p.askAmount)}</div>
-      <div style={{ ...cell, fontSize: 12, color: p.probability == null ? T.ink3 : T.ink2 }}>{p.probability == null ? "not set" : p.probability + "%"}</div>
-      <div style={{ ...cell, fontSize: 12, color: T.ink2, whiteSpace: "nowrap" }}>{niceDate(p.expectedClose)}</div>
-      <div style={{ ...cell, display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", ...(showDonor ? {} : { marginLeft: "auto" }) }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(p.askAmount)}</div>
+      <div style={{ fontSize: 12, color: p.probability == null ? T.ink3 : T.ink2 }}>{p.probability == null ? "not set" : p.probability + "%"}</div>
+      <div style={{ fontSize: 12, color: T.ink2 }}>{niceDate(p.expectedClose)}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
         <StageChip stage={p.stage} label={(p.stage || "").charAt(0).toUpperCase() + (p.stage || "").slice(1)} />
         {!isReadOnly && (
           <>
@@ -389,7 +383,7 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite }) {
       </div>
       {d.proposals.length === 0 ? (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
-          No proposal open. A proposal is one ask: what it's for, how much, and when you expect an answer.
+          No proposal open. A proposal is one ask — what it's for, how much, and when you expect an answer.
         </div>
       ) : (
         <>
@@ -591,15 +585,13 @@ function PlanSteps({ plan, onSkip, isReadOnly }) {
       {plan.steps.map(s => {
         const t = PLAN_STEP_TINT[s.status] || PLAN_STEP_TINT.pending;
         return (
-          // Wraps rather than holding fixed columns: at 390 the fixed columns
-          // left the label a few pixels, one letter per line (FIX-3).
-          <div key={s.id} data-testid="plan-step" style={{ display: "flex", flexWrap: "wrap", columnGap: 12, rowGap: 6, alignItems: "center",
+          <div key={s.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr 110px 88px 74px", gap: 10, alignItems: "center",
                                    padding: "10px 12px", borderTop: "1px solid " + T.bg3 }}>
-            <div style={{ flex: "0 0 18px", fontSize: 12, color: T.ink3, fontWeight: 700 }}>{s.seq}</div>
-            <div style={{ flex: "1 1 180px", minWidth: 0, fontSize: 13, color: s.status === "skipped" ? T.ink3 : T.ink, overflowWrap: "break-word" }}>{s.label}</div>
-            <div style={{ flex: "0 0 auto", fontSize: 12, color: T.ink3, whiteSpace: "nowrap" }}>{niceDate(s.dueDate)}</div>
-            <span style={{ flex: "0 0 auto", background: t.bg, color: t.fg, borderRadius: 99, padding: "3px 9px", fontSize: 11, fontWeight: 800, textAlign: "center" }}>{t.word}</span>
-            <div style={{ flex: "0 0 auto", marginLeft: "auto", textAlign: "right" }}>
+            <div style={{ fontSize: 12, color: T.ink3, fontWeight: 700 }}>{s.seq}</div>
+            <div style={{ fontSize: 13, color: s.status === "skipped" ? T.ink3 : T.ink, overflowWrap: "anywhere" }}>{s.label}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>{niceDate(s.dueDate)}</div>
+            <span style={{ background: t.bg, color: t.fg, borderRadius: 99, padding: "3px 9px", fontSize: 11, fontWeight: 800, textAlign: "center" }}>{t.word}</span>
+            <div style={{ textAlign: "right" }}>
               {!isReadOnly && (s.status === "pending" || s.status === "open") && (
                 <button onClick={() => onSkip(s)} title="Record that this step was skipped"
                   style={{ background: "none", border: "1px solid " + T.bg3, borderRadius: 8, padding: "4px 9px", fontSize: 11, color: T.ink2, cursor: "pointer" }}>Skip</button>
@@ -660,7 +652,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
           <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8 }}>{d.sentence}</div>
           <PlanSteps plan={d} onSkip={skip} isReadOnly={isReadOnly || !canWrite} />
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 8 }}>
-            Applied {niceDate(d.appliedOn)}{d.appliedByName ? ` by ${d.appliedByName}` : ""}. Nothing in a plan sends anything; each step is yours to do.
+            Applied {niceDate(d.appliedOn)}{d.appliedByName ? ` by ${d.appliedByName}` : ""}. Nothing in a plan sends anything — each step is yours to do.
           </div>
         </>
       ) : (
@@ -681,7 +673,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
       )}
       {tpls.length === 0 && canWrite && (
         <div style={{ fontSize: 11, color: T.ink3, marginTop: 10 }}>
-          No plans written yet. Fundraising → Plans is where the organisation keeps them.
+          No plans written yet — Fundraising → Plans is where the organisation keeps them.
         </div>
       )}
     </div>
@@ -826,7 +818,7 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
       {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 8 }}>{err}</div>}
       {!brief && !err && (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
-          One page from {donorName ? donorName.split(" ")[0] + "'s" : "this"} own record: giving, who they are to you, the open ask,
+          One page from {donorName ? donorName.split(" ")[0] + "'s" : "this"} own record — giving, who they are to you, the open ask,
           the last five conversations, and what you wrote. Every line rests on a row you can open.
         </div>
       )}

@@ -183,12 +183,7 @@ const addDays = (d, n) => { const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t
     const errs = []; page.on("pageerror", e => errs.push(String(e)));
     await page.goto(APP + "/login");
     await page.evaluate(d => { localStorage.setItem("npe_token", d.token); localStorage.setItem("npe_user", JSON.stringify(d.user)); localStorage.setItem("npe_org", JSON.stringify(d.org)); }, lj);
-    await page.goto(APP + "/donors/b101r_far");
-    // FIX-3 finding 10 — membership lives in the profile's "Volunteering,
-    // membership and events" group, closed until opened (navigation only).
-    await page.waitForSelector("[data-testid=dp-group-people] > summary", { timeout: 15000 });
-    await page.locator("[data-testid=dp-group-people] > summary").click();
-    await page.waitForSelector("[data-testid=membership-panel]", { timeout: 15000 });
+    await page.goto(APP + "/donors/b101r_far"); await page.waitForSelector("[data-testid=membership-panel]", { timeout: 15000 });
     const panel = () => page.locator("[data-testid=membership-panel]").innerText();
     const before = await panel();
     ok("§10 the profile shows the membership she holds, and lists it once", /Family/.test(before) && (before.match(/Active/g) || []).length === 1, before);
