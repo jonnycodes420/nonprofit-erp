@@ -1,4 +1,4 @@
-# FIX-1 — lead handoff (26 September 2026, after the workstreams)
+# FIX-1 — lead handoff (27 September 2026, merged to main)
 
 The FIX-1 lead's state of play. The brief is `claude/FIX-1.md` (with
 Jonathan's amendment). This file supersedes the post-split handoff of the
@@ -7,8 +7,7 @@ routes/ modules, `mount(ctx)`, readSource, the `../` rule — all still true).
 
 ## 1. Where fix-1 is
 
-`fix-1` pushed; the code is at **`32a0e4b`** and this handoff is the commit on top of it. Nothing is merged to main; that is
-Jonathan's call. On top of the split (`083d453`), first-parent:
+FIX-1 is **merged to main** on Jonathan's word (27 Sep), through the PR from `fix-1`; §8 has the PR, the CI runs and the live SHAs. On top of the split (`083d453`), first-parent:
 
 | Commit | What |
 |---|---|
@@ -26,14 +25,22 @@ Jonathan's call. On top of the split (`083d453`), first-parent:
 | `f939b48` | the demo's failed card has the day it failed (found by the walk) |
 | `06c2d45` | Home's Thread rows read at 390 again (found by the walk; predates FIX-1) |
 | `32a0e4b` | PageTitle's underline no longer cuts its sentence at 390; Volunteers says its empty sentence once |
+| `b7f2afc` | the 26 Sep handoff and the walk |
+| `a782338` | **§12** — the rail is Home, Donors, Fundraising, Volunteers, Agent, Reports, Finance (Jonathan approved) |
+| `b065875` | CLAUDE.md: Harborlight is the demo; the rail as it now is |
+| `b19569a` `a462f9b` | the volunteer sign-up link can be taken back (red first, then the fix) |
+| `244058e` `8ffa957` | Home's institutional list: gift vs grant by kind, dates as "Jan 14, 2026" (red first, then the fix) |
+| `7088516` | two browser checks B's fold had silently stopped running, running again |
 
-**Evidence on `32a0e4b`** (local stack, fresh `steward_fix1`, demo seeded by
-run-all): full battery **244 suites green, 0 red** (239 + the five fix1-* suites; demo-shape runs, 33/0); tenant-matrix 43/0 and
+**Evidence on `7088516`** (local stack, fresh `steward_fix1`, demo seeded by
+run-all): full battery **245 suites green, 0 red** (239 + six fix1-* suites; demo-shape runs, 33/0); tenant-matrix 43/0 and
 tenant-isolation 32/0 inside it; SKIP grep shows only assertion names
 ("…SKIPPED…"), no skipped leg; client lint 0 errors / 562 warnings (was 673);
-TDZ 0 self-references; route inventory 635 routes (618 + D 3 + C 9 + A 4 + E 1).
-Part 0 (`tests/fix1-walk.test.js`, not in CORE): **79 green / 1 red** — the
-one red is §12 (below). The walk: 22 screens × 1440 and 390 (44 captures, logged in to the local
+TDZ 0 self-references; route inventory 636 routes (618 + D 3 + C 9 + A 4 + E 1 +
+the link regenerate). Part 0 (`tests/fix1-walk.test.js`, not in CORE): **80 green, 0 red**.
+A per-suite assertion-count diff against the pre-merge battery found no
+unexplained drop (presentation-wiring and empty-states had dropped silently;
+`7088516` restored both). The walk: 22 screens × 1440 and 390 (44 captures, logged in to the local
 demo, read-only), zero page errors, zero sideways scroll, no NaN / undefined / `$-` / `**` on any screen,
 screenshots in `docs/fix-1/walk/` (+ `walk.json`). Each was looked at: that
 looking found the two 390 layout defects fixed in `06c2d45` and `32a0e4b`,
@@ -101,33 +108,36 @@ Called for by a section:
   purpose; they now ask the same questions of `/drift` (§11, "fixes
   demo-shape"). Its skip path became a failure.
 - `script-guards`: the classification entry renamed with the seed file.
-Fixture/wait only (no assertion text): tenant-matrix resolvers for the new
-`:id` routes; `fix1-people` reset clears `fin_audit_log`; `fix1-volunteers`
-reads App.jsx through readSource and its year through `civilToday`; the
-three `waitFor` suites; build101-renewals' wait.
+- **§12, approved by Jonathan (27 Sep)** — three pins of one fact: `build86`
+  "Dashboard sits directly under Home in the sidebar" → "Dashboards is on the
+  desktop rail's More"; `locked-features` "Home leads the rail and Dashboards
+  is the item under it" → "…Donors is the item under it" (the third pin of the
+  same property; the brief named two); `locked-features` "finance folds into
+  More" → Finance is a primary rail item.
+Fixture/wait/navigation only (no assertion text): tenant-matrix resolvers for
+the new `:id` routes; `fix1-people`/`fix1-volunteers` resets clear
+`fin_audit_log`; `fix1-volunteers` reads App.jsx through readSource and its
+year through `civilToday`; the three `waitFor` suites; build101-renewals'
+wait; presentation-wiring and empty-states reach the Pipeline board by
+`?fr=pipeline`.
 
-## 4. Waiting on Jonathan
+## 4. Jonathan's answers (27 Sep), and where each landed
 
-1. **§12, the sidebar.** Part 0 wants `PRIMARY_NAV` =
-   Home, Donors, Fundraising, Volunteers, Agent, Reports, Finance with
-   everything else under More. Today it is
-   `dashboard, board, donors, fundraising, volunteers, agent, reports`.
-   Getting there changes two pinned assertions no section calls for:
-   `build86` "Dashboard sits directly under Home in the sidebar" (Dashboards
-   would leave the rail) and `locked-features` "finance folds into More"
-   (Finance would join the rail; CORE_HIDDEN_TABS still hides it on Core).
-   Not done — the stop rule. Say yes and it is a four-line change.
-2. **The demo org.** CLAUDE.md still says the demo login is
-   admin@creoarts.org (org_creo). FIX-1 made Harborlight the demo (see §2).
-   CLAUDE.md is untouched until Jonathan confirms; prod's Harborlight needs
-   `node scripts/seed-demo.js` run against prod (its guarded prod path, which
-   only ever touches org_b72demo) if it is to be the pitch there.
-3. **Members and Funds placement** in Fundraising (B put Members under
-   Campaigns & pages, Funds under Money in; `docs/fix-1/B-NOTES.md`).
-4. **The Finance cut** (Accounts tab, the two AI buttons) stands as the brief
-   proposed; `docs/fix-1/E-NOTES.md` lists what went.
-5. **Volunteer sign-up link** never expires and cannot be revoked; an email
-   already on file gains the Volunteer role (`docs/fix-1/C-NOTES.md`).
+1. §12 sidebar — yes: `a782338`.
+2. Harborlight is the demo — CLAUDE.md and `docs/decisions/architecture.md`
+   say so (`b065875`). **Jonathan runs the prod seed himself**
+   (`node scripts/seed-demo.js` through its guarded prod path, which only ever
+   touches org_b72demo).
+3. Members/Funds placement — approved as B built it.
+4. The Finance cut — approved.
+5. The volunteer link must be revocable — `a462f9b`:
+   `orgs.volunteer_link_version` is signed into the link; "Make a new link"
+   (Volunteers → Sign-up link, behind a confirm) bumps it, the old link 404s
+   and its form writes nothing, the audit log says who. fix1-volunteers §9,
+   proven able to fail.
+Also asked: Home's institutional list says "last grant" only for foundations
+and DAFs and "last gift" for churches and businesses, with dates as
+"Jan 14, 2026" (`shared/institutional.js`, `8ffa957`; fix1-institutional).
 
 ## 5. For a later FIX (found, not fixed)
 
@@ -139,26 +149,42 @@ three `waitFor` suites; build101-renewals' wait.
   in red for a stale last contact, and the Lapsed pill is red (all predate
   FIX-1; overdue should be brass).
 - `fmt()` (compact) renders "$175.5" for sub-$1k amounts with cents.
-- The empty-org sweep no longer visits the Pipeline board (no sidebar
-  button); fix1-fundraising covers it on a populated org.
 - `uploader` (not in CORE) is 69/1 on file inputs in files FIX-1 did not add.
 - The eslint config cannot see JSX-only usage; one rule change would clear
   hundreds of false "unused" warnings (C disabled it for VolunteersHub.jsx).
+- A server restarted on a database that has run a battery fails schema init
+  (`opportunities_one_open_per_fund` against suite fixtures) and does not come
+  up; every stack here boots on a fresh database. Prod is unaffected (no
+  fixtures), but a migration that dies on data is worth a look.
 
-## 6. Databases, ports, scripts
+## 6. Turning on agent drafting
+
+One gate decides it (`agentGate` in server.js, via `aiGate`), and it answers
+with a reason when it is off:
+- **The server needs `ANTHROPIC_API_KEY`.** Without it every drafting surface
+  says `agent_unavailable` / `brief_unavailable` rather than inventing text.
+- **The org must not have switched it off:** Settings → Data → "Reading and
+  drafting" (`orgs.ai_enabled`; NULL/true is on). Admins only.
+- **The agent must not be paused:** Agent → Guardrails → "Pause everything"
+  (`orgs.agent_paused_at`).
+- Then every step is still drafted for a person: nothing reaches a donor or
+  moves money until she confirms it on the run sheet.
+Locally: add `ANTHROPIC_API_KEY=<key>` to the server's env (the run-all.sh
+header env) and restart; `AGENT_MODEL` is set in server.js. On prod: Railway →
+nonprofit-erp → Variables → `ANTHROPIC_API_KEY` (NEEDS-JONATHAN §3 records it
+as already set, and asks for a spend cap on that Anthropic workspace first).
+
+## 7. Databases, ports, scripts
 
 Lead `~/steward-fix1` · `steward_fix1` · 5701/4301 (sink 5702, mocks 5703/5704).
-Workstream worktrees `~/steward-fix1-{a..e}` (branches `fix-1-{a..e}2`, dbs
-`steward_fix1_{a..e}`, ports 57x1/43x1) are merged and can be removed. The
-stack/battery/walk scripts lived in the session scratchpad (not committed):
-boot = the run-all.sh header env with the port block substituted; battery =
-run-all with BASE, APP_URL, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT,
-NODE_PATH=~/steward-qa/node_modules, DATABASE_URL, SUITE_LOG_DIR. Regenerate
-the route inventory against a FRESH database (a used one fails schema init
-on suite fixtures) with the server env set.
+The workstream worktrees, branches and databases are removed (all merged).
+The stack/battery/walk scripts lived in the session scratchpad (not
+committed): boot = the run-all.sh header env with the port block
+substituted; battery = run-all with BASE, APP_URL, SINK_PORT,
+STRIPE_MOCK_PORT, BILLING_MOCK_PORT, NODE_PATH=~/steward-qa/node_modules,
+DATABASE_URL, SUITE_LOG_DIR. Regenerate the route inventory against a FRESH
+database with the server env set.
 
-## 7. How this build ends (not done here; needs the merge to main)
+## 8. The merge
 
-Per the brief: full battery, tenant battery, landing verifier, prod smoke, CI
-green, both SHAs, "prod is N behind main", and the same walk recorded on a
-fixture org. Everything up to the merge is done on fix-1 except §12.
+Filled in after the merge: the PR, CI on it and on main, and both live SHAs.
