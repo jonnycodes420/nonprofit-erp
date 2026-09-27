@@ -15432,7 +15432,7 @@ async function reportMembersByLevel(orgId) {
 async function reportMembersExpiring(orgId) {
   const today = await mbReportToday(orgId);
   const rows = await query(
-    `SELECT d.name, d.email, l.name AS level, m.status, m.expires_on
+    `SELECT d.name, d.email, l.name AS level, m.status, m.expires_on, d.id AS donor_id
        FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
        JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
       WHERE m.org_id=? AND m.status IN ('active','grace') AND m.expires_on BETWEEN ? AND ?
@@ -15441,7 +15441,7 @@ async function reportMembersExpiring(orgId) {
 }
 async function reportMembersLapsed(orgId) {
   const rows = await query(
-    `SELECT d.name, d.email, l.name AS level, COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on,
+    `SELECT d.name, d.email, l.name AS level, COALESCE(m.status_changed_on, m.expires_on) AS lapsed_on, d.id AS donor_id,
             (SELECT COUNT(*)::int FROM memberships t WHERE t.org_id=m.org_id AND t.donor_id=m.donor_id AND t.status IN ('active','grace','lapsed','renewed')) AS years
        FROM memberships m JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
        JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
@@ -15533,19 +15533,51 @@ async function reportByMonthVsLastYear(orgId, p) {
   return { from: p.from, to: p.to, rows, total: cur.total, lastTotal: last.total };
 }
 
+// Per handler, column by column, in reportToCsv's order: money (summed in the
+// foot), price (money, not summed), count (summed), number, pct, date, month.
+const STD_DISPLAY = {
+  "lybunt": [null, null, null, "date", "money", "money", "money"],
+  "sybunt": [null, null, null, "date", "money", "money", "money"],
+  "retention": [null, "number", "number", "pct", "money", "money", "pct", "number", "number", "pct"],
+  "top-donors": ["number", null, "money", "count", "date"],
+  "grant-deadlines": [null, null, null, "date", null, null, "number", null],
+  "grant-restricted": [null, null, null, null, "money", "money", "money", "money", "money", "date"],
+  "members-by-level": [null, "price", "count", "count", "money"],
+  "members-expiring": [null, null, null, null, "date"],
+  "members-lapsed": [null, null, null, "date", "number"],
+  "members-new-renewed": ["month", "count", "count"],
+  "membership-revenue": ["month", "money", "money"],
+};
+// The row's person, where a row is one.
+const STD_PERSON = {
+  "lybunt": r => r.id, "sybunt": r => r.id, "top-donors": r => r.id,
+  "members-expiring": r => r.donor_id, "members-lapsed": r => r.donor_id,
+};
+
 async function runStandardReport(orgId, std) {
   if (std.kind === "builder") return runBuilderDef(orgId, std.def);
   const p = parseReportParams({ ...std.params }, await orgTz(orgId));   // ORG_TZ_SEAM_OK
   if (std.handler === "by-month-vs-last-year") {
     const d = await reportByMonthVsLastYear(orgId, p);
-    return { columns: [{ key: "month", label: "Month", type: "text" }, { key: "thisYear", label: "This year", type: "money" }, { key: "lastYear", label: "Last year", type: "money" }],
+    return { columns: [{ key: "month", label: "Month", type: "text", display: "month" }, { key: "thisYear", label: "This year", type: "money" }, { key: "lastYear", label: "Last year", type: "money" }],
              rows: d.rows, totals: { count: d.rows.length, sums: [{ key: "thisYear", label: "This year", cents: rbCents(d.total) }, { key: "lastYear", label: "Last year", cents: rbCents(d.lastTotal) }] } };
   }
   const data = await REPORT_HANDLERS[std.handler](orgId, p);
   // The SAME shaping the Reports tab's CSV uses — one table, one definition.
   const { headers, rows } = reportToCsv(std.handler, data);
-  return { columns: headers.map((h, i) => ({ key: "c" + i, label: h, type: "text" })),
-           rows: rows.map(r => Object.fromEntries(r.map((v, i) => ["c" + i, v]))),
+  // FIX-2 B — how each cell READS on screen (`display`) and whose row it is
+  // (`_pid`). `type` stays "text": the PDF formats by `type` and the CSV by
+  // value, so neither file changes by a byte.
+  const hints = STD_DISPLAY[std.handler] || [];
+  const pidOf = STD_PERSON[std.handler];
+  const dataRows = Array.isArray(data?.rows) ? data.rows : [];
+  return { columns: headers.map((h, i) => ({ key: "c" + i, label: h, type: "text", ...(hints[i] ? { display: hints[i] } : {}) })),
+           rows: rows.map((r, j) => {
+             const o = Object.fromEntries(r.map((v, i) => ["c" + i, v]));
+             const pid = pidOf && j < dataRows.length ? pidOf(dataRows[j]) : null;
+             if (pid) o._pid = pid;
+             return o;
+           }),
            totals: { count: rows.length, sums: [] }, raw: data };
 }
 

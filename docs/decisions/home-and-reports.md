@@ -68,6 +68,12 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - **A custom-report field is a catalogue key and never SQL (`shared/reportBuilder.js`).** The standard reports
   call `REPORT_HANDLERS`, so saved and tab results are one computation. Totals are summed in the DB, and CSV
   goes only through `sendReportCsv`/`reportToCsv`. (BUILD-98 P3, BUILD-87 P4)
+- **Reports has one way in: the rail in `client/src/lib/reportsRail.js`, grouped by question, with Build a report at
+  its top and a `<select>` below 760px.** Never add a tab row or a second list. Every id a report ever arrived by (an old
+  tab id, `std:<key>`, a saved id, `saved`) goes through `resolveReportId`, and a new report goes into `RAIL_GROUPS`. (FIX-2 B)
+- **Results draw through `ReportTable` (ReportBuilder.jsx) and `reportFormat.js`.** Dates go through `shared/displayDate.js`,
+  money is whole dollars unless it has cents, the totals row is the sum of the rows in integer cents, and a person row
+  opens the person (`_pid` on builder rows, never a column). The CSV and PDF keep ISO dates and full values. (FIX-2 B)
 - **Scheduled sends reserve a ledger row first (`digest_sends`, `saved_report_sends`) and release it on failure.**
   They ride the existing 5-minute tick, never a second scheduler. (BUILD-17, BUILD-98 P3)
 ## Gotchas
@@ -87,6 +93,7 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
 - `shared/threadShape.js` · `shared/threadRank.js` — step defaults and extraction · queue ranking
 - `shared/dashboards.js` · `shared/numberCensus.js` — definitions for dashboard metrics · for every other screen
 - `shared/reportBuilder.js` — custom-report catalogue and `STANDARD_REPORTS`
+- `client/src/lib/reportsRail.js` · `client/src/lib/reportFormat.js` — the one rail and its resolver · how a report cell reads
 - server.js `REPORT_HANDLERS`, `reportToCsv`, `sendReportCsv`, `reportBuntList`, `parseReportParams`
 - `drift.js` + server.js `computeDriftForDonors` — Drift · `orgTime.js` — `orgPeriodBounds`, `orgReportYear`
 

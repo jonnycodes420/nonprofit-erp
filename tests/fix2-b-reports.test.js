@@ -81,6 +81,8 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
     ok("std:top-50 lands on Top donors, lifetime", RAIL.resolveReportId("std:top-50").id === "top-donors" && RAIL.resolveReportId("std:top-50").params?.scope === "lifetime");
     ok("the old \"Your reports\" tab lands on LYBUNT, which is what it opened on", RAIL.resolveReportId("saved").id === "lybunt");
     ok("nothing resolves to nowhere: an empty id lands on the default report", RAIL.resolveReportId("").id === RAIL.DEFAULT_REPORT && placed.includes(RAIL.DEFAULT_REPORT));
+    const defs = [...(reportsSrc.match(/const REPORT_DEFS = \[([\s\S]*?)\n\];/) || [, ""])[1].matchAll(/key: "([a-z0-9-]+)"/g)].map(m => m[1]);
+    ok("the rail's tab ids are exactly the reports Reports.jsx draws (REPORT_DEFS)", JSON.stringify(defs) === JSON.stringify(RAIL.TAB_IDS), { defs, rail: RAIL.TAB_IDS });
     ok("the Agent's LYBUNT link is the plain id", RAIL.resolveReportId("lybunt").id === "lybunt");
   }
 
@@ -97,7 +99,7 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
     ok("…and a text cell that is an ISO date is read as one", F.cellText("2025-01-02", "text") === "Jan 2, 2025");
     ok("nothing reads as nothing", F.cellText(null, "money") === "" && F.cellText("", "date") === "");
     const rows = [{ a: 24500 }, { a: 140.5 }, { a: "60.00" }, { a: null }, { a: 0.1 }, { a: 0.2 }];
-    ok("the foot is the sum of the rows in integer cents (no float drift)", F.footCents(rows, r => r.a) === 2470060, F.footCents(rows, r => r.a));
+    ok("the foot is the sum of the rows in integer cents (no float drift)", F.footCents(rows, r => r.a) === 2470080, F.footCents(rows, r => r.a));
   }
 
   // ── §4 · THE SERVER HANDS EVERY PERSON ROW ITS PERSON ────────────────────
@@ -244,6 +246,39 @@ const GROUPS = ["Who stopped giving?", "Who gives the most?", "How did the year 
   // Ada 24,500 + Ed 2,400 + Fay 1,250.25 + Cy 1,200 (lifetime over $1,000).
   ok("a saved report's lifetime column foots in cents", !!savedFoot && savedFoot.cells.length === 1 && savedFoot.cells[0].total === savedFoot.cells[0].sum && savedFoot.cells[0].total === 2935025, savedFoot);
   ok("…and shows no ISO date", !!savedFoot && !ISO.test(savedFoot.text));
+
+  // §7b every report on the rail, walked: no ISO date anywhere in the results
+  // (the saved and standard tables, the bookkeeper's gift list, Week in
+  // review's window and past-due tasks, members and grants). Inputs, selects
+  // and a [data-export-preview] are exports' business, not the screen's.
+  console.log("\n— §7b · every report on the rail shows no ISO date —");
+  const day = n => { const t = new Date(Date.now() + n * 86400000); return t.toISOString().slice(0, 10); };
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id) VALUES ('g_fx2b_wk1',$1,'fx2b_cy',25,$2,'cash','ff_fx2b_gen'),('g_fx2b_wk2',$1,'fx2b_fay',40,$3,'cash','ff_fx2b_gen')`, [ORG, day(-7), day(-10)]);
+  await q(`INSERT INTO tasks (id,org_id,title,due,done,donor_id) VALUES ('t_fx2b_1',$1,'Call Ada back',$2,0,'fx2b_ada')`, [ORG, day(-3)]);
+  await q(`INSERT INTO membership_levels (id,org_id,name,price,term) VALUES ('ml_fx2b',$1,'Friend',50,'12_months')`, [ORG]);
+  await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status) VALUES
+           ('m_fx2b_1',$1,'fx2b_di','ml_fx2b',$2,$2,$3,'lapsed'),('m_fx2b_2',$1,'fx2b_fay','ml_fx2b',$4,$4,$5,'active')`,
+    [ORG, day(-500), day(-135), day(-330), day(30)]);
+  const railIds = [...(RAIL ? RAIL.RAIL_GROUPS.flatMap(g => g.items) : OLD_TAB_IDS), savedId, "std:by-fund", "std:top-50"];
+  const isoHits = [];
+  for (const id of railIds) {
+    await goReport(page, id);
+    if (id === "week-in-review" || id === "bookkeeper") await page.waitForTimeout(600);
+    const text = await page.evaluate(() => {
+      const main = document.querySelector('[data-testid="reports-rail"]')?.parentElement || document.body;
+      const out = [];
+      const walk = n => {
+        if (n.nodeType === 3) { if (n.textContent.trim()) out.push(n.textContent); return; }
+        if (n.nodeType !== 1 || n.matches("select,option,input,textarea,script,style,[data-export-preview]")) return;
+        n.childNodes.forEach(walk);
+      };
+      walk(main);
+      return out.join(" | ");
+    });
+    const m = text.match(ISO);
+    if (m) isoHits.push(`${id}: ${text.slice(Math.max(0, m.index - 60), m.index + 30)}`);
+  }
+  ok(`every one of the ${railIds.length} reports renders its dates as people read them`, isoHits.length === 0, isoHits);
 
   // §8 Start here, and 390
   console.log("\n— §8 · Start here opens LYBUNT; 390 has a compact picker —");
