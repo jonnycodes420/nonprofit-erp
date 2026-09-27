@@ -47,6 +47,10 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
   const align = c => c.align || (["money", "count", "number", "pct", "price"].includes(c.type) ? "right" : "left");
   const th = { padding: "8px 10px", borderBottom: `2px solid ${T.bg3}`, fontSize: 10, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: T.ink3, whiteSpace: "nowrap" };
   const td = { padding: "9px 10px", borderBottom: `1px solid ${T.bg2}`, whiteSpace: "nowrap", color: T.ink2 };
+  // A figure or a date stays on one line; words (a name, an email, a note) may
+  // wrap, so a six-column report fits its card at 1440 instead of hiding its
+  // last column behind a scrollbar the Mac does not draw (the FIX-2 walk).
+  const wraps = c => !["money", "count", "number", "pct", "price", "date"].includes(c.type);
   const cell = (c, r) => {
     const v = raw(c, r);
     const body = c.render ? c.render(r) : cellText(v, c.type === "price" ? "money" : c.type);
@@ -78,7 +82,7 @@ export function ReportTable({ cols, rows, personOf, onOpen, foot = true, footLab
             onClick={pid ? () => open(r) : undefined} className={pid ? "rpt-row-click" : undefined}
             style={{ cursor: pid ? "pointer" : "default" }}>
             {cols.map(c => <td key={c.key} data-cents={c.type === "money" && summed(c) ? centsOf(raw(c, r)) : undefined}
-              style={{ ...td, textAlign: align(c) }}>{cell(c, r)}</td>)}
+              style={{ ...td, textAlign: align(c), ...(wraps(c) ? { whiteSpace: "normal", overflowWrap: "anywhere", minWidth: 96 } : null) }}>{cell(c, r)}</td>)}
           </tr>;
         })}
       </tbody>
