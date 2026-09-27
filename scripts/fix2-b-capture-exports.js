@@ -13,6 +13,11 @@ const zlib = require("zlib");
 const { BASE, closeDb } = require("../tests/helpers");
 const { seed, reset } = require("../tests/fix2-b-fixture");
 
+// Loopback only: it seeds a fixture org, so it refuses any other target.
+for (const [k, v] of [["BASE", BASE], ["DATABASE_URL", process.env.DATABASE_URL || ""]]) {
+  if (v && !/localhost|127\.0\.0\.1/.test(v)) { console.error(`Refusing: ${k} is not loopback (${v}).`); process.exit(2); }
+}
+
 const out = process.argv[2];
 if (!out) { console.error("usage: node scripts/fix2-b-capture-exports.js <outDir>"); process.exit(2); }
 

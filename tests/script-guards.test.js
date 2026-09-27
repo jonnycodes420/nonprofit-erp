@@ -67,6 +67,8 @@ const GUARDED_WRITERS = [
 // Writes data but HARD-REFUSES any non-loopback target outright (stricter
 // than the guard — these are load/e2e fixtures that must never see prod).
 const SELF_REFUSING = [
+  // FIX-2 B — captures every Reports export on the LOCAL stack (seeds a fixture org).
+  "fix2-b-capture-exports",
   // BUILD-75 B.1 — the route-inventory walker. BOOTS server.js (schema init
   // runs), so it hard-refuses any non-loopback DATABASE_URL outright.
   "build75-route-inventory","loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill",

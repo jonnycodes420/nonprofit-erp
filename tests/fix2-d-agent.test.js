@@ -30,7 +30,7 @@
 
 const fs = require("fs"), path = require("path");
 const bcrypt = require("bcryptjs");
-const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { ok, summary, login, api, q, closeDb, BASE, civilToday } = require("./helpers");
 
 const root = path.join(__dirname, "..");
 const ORG = "org_fx2dagent";
@@ -79,7 +79,7 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role) VALUES ('u_fx2d_s',$1,$2,$3,'Sam Okafor','staff')`,
     [ORG, STAFF, bcrypt.hashSync(PASS, 4)]);
   // Six people: three gave last year only (LYBUNT), two gave both years, one only this year.
-  const yr = new Date().getFullYear();
+  const yr = Number(civilToday().slice(0, 4));   // the org's civil year (America/New_York), not the machine's
   const people = [["d_fx2d_1", "Maria Chen", [yr - 1]], ["d_fx2d_2", "Alan Brooks", [yr - 1]], ["d_fx2d_3", "June Park", [yr - 1]],
     ["d_fx2d_4", "Tom Reyes", [yr - 1, yr]], ["d_fx2d_5", "Ivy Moss", [yr - 1, yr]], ["d_fx2d_6", "Noor Haddad", [yr]]];
   for (const [id, name] of people)
