@@ -19,6 +19,10 @@ import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
+import { displayDate, displayDateShort } from "../../../shared/displayDate";
+// FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
+// profile it is drawn in brass (deep brass on a light ground), never terracotta.
+const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
 
 const WEALTH_SCORE_DEFINITION = null;
 const WEALTH_SCORE_SOURCE = null;
@@ -333,7 +337,7 @@ function EditDonorModal({donor,onSave,onClose}){
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>setForm(p=>({...p,stage:s.id}))}
-                  style={{background:form.stage===s.id?s.color+"22":T.bg,border:`1px solid ${form.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:form.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  style={{background:form.stage===s.id?stageTone(s)+"22":T.bg,border:`1px solid ${form.stage===s.id?stageTone(s):T.bg3}`,borderRadius:7,padding:"5px 11px",color:form.stage===s.id?stageTone(s):T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>
                   {s.label}
                 </button>
               ))}
@@ -1433,7 +1437,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <div style={{minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
               <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
-              <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.color+"22",color:stage.color}}>{stage.label}</span>
+              {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
+                  it is brass (the overdue colour), never terracotta. */}
+              <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.id==="lapsed"?T.gold100:stage.color+"22",color:stageTone(stage)}}>{stage.label}</span>
               <DriftBadge drift={donor.drift}/>
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
@@ -1553,11 +1559,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <div style={{flex:"1 1 220px",minWidth:0}}>
                       <div style={{fontSize:13.5,fontWeight:700,color:it.overdue?T.terracotta:T.ink}}>
-                        {it.nextStep.label} · {it.overdue?"overdue":"due"} {String(it.nextStep.due).slice(0,10)} · day {it.daysOpen}
+                        {it.nextStep.label} · {it.overdue?"overdue":"due"} {displayDateShort(it.nextStep.due,new Date())} · {it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
                       </div>
                       <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
                         {it.lastTouch?.line?<>"{it.lastTouch.line}"</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
-                        {it.lastTouch?.date&&it.kind!=="task"?<> · {String(it.lastTouch.date).slice(0,10)}</>:null}
+                        {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
                         {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
                       </div>
                     </div>
@@ -1691,7 +1697,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   {softCredit.giftSoftCredits.slice(0,8).map(sc=>(
                     <div key={sc.id} style={{display:"flex",gap:8,fontSize:12,color:T.ink}}>
                       <span style={{fontWeight:700}}>{sc.giverName}</span>
-                      <span style={{color:T.ink3}}>{sc.date}</span>
+                      <span style={{color:T.ink3}}>{displayDate(sc.date)}</span>
                       <span style={{marginLeft:"auto"}}>{fmtFull(sc.amount)}</span>
                     </div>))}
                 </div>
@@ -1980,7 +1986,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
                   <option value="">Not fulfilling a pledge</option>
                   {pledges.filter(p=>p.status==="open").map(p=>(
-                    <option key={p.id} value={p.id}>Fulfills {fmtFull(p.amount)} pledge due {p.due_date}</option>
+                    <option key={p.id} value={p.id}>Fulfills {fmtFull(p.amount)} pledge due {displayDate(p.due_date)}</option>
                   ))}
                 </select>
               )}
@@ -2075,7 +2081,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           </td>
                         ):(
                           <>
-                            <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{g.date}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{displayDate(g.date)}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:"#0d5c3a",whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
@@ -2152,7 +2158,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
                             {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.terracotta}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
-                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {pl.due_date}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
+                          <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {displayDate(pl.due_date)}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
                         </div>
                         <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
@@ -2242,7 +2248,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
                             <div style={{height:"100%",background:"#0d5c3a",borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
                           </div>
-                          <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {f.lastDate}</div>
+                          <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {displayDate(f.lastDate)}</div>
                         </div>
                       ))}
                     </div>
@@ -2428,7 +2434,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,fontWeight:700,color:typeColor,textTransform:"capitalize"}}>{(i.type||"note").replace(/_/g," ")}</span>
-                        <span style={{fontSize:11,color:T.ink3}}>{i.date}</span>
+                        <span style={{fontSize:11,color:T.ink3}}>{displayDate(i.date)}</span>
                         {/* BUILD-88a A.4 — a colleague is a FIRST NAME. "by Admin User"
                             is the software talking to itself. */}
                         {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(i.logged_by_name)}</span>}
@@ -2517,7 +2523,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <div style={{background:ev.big?"#c9a84c08":T.white,border:`1px solid ${ev.big?"#c9a84c40":T.bg3}`,borderRadius:10,padding:ev.big?"12px 14px":"9px 13px",marginLeft:4}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:ev.big?800:700,color:ev.color,textTransform:"capitalize"}}>{ev.label}</span>
-                        <span style={{fontSize:11,color:T.ink3}}>{ev.date}</span>
+                        <span style={{fontSize:11,color:T.ink3}}>{displayDate(ev.date)}</span>
                         {ev.loggedBy&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(ev.loggedBy)}</span>}
                       </div>
                       {ev.desc&&<div style={{fontSize:12,color:T.ink,marginTop:2,lineHeight:1.4}}>{ev.desc}</div>}
@@ -2762,12 +2768,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
-                  style={{background:(donor.stage||"cultivate")===s.id?s.color+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?s.color:"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?s.color:"rgba(240,237,230,0.7)",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  style={{background:(donor.stage||"cultivate")===s.id?stageTone(s,true)+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?stageTone(s,true):"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?stageTone(s,true):"rgba(240,237,230,0.7)",fontSize:12,fontWeight:600,cursor:"pointer"}}>
                   {s.label}
                 </button>
               ))}
             </div>
-            <div style={{marginTop:8,fontSize:11,color:"rgba(240,237,230,0.7)",lineHeight:1.5,borderLeft:`2px solid ${stage.color}`,paddingLeft:8}}>
+            <div style={{marginTop:8,fontSize:11,color:"rgba(240,237,230,0.7)",lineHeight:1.5,borderLeft:`2px solid ${stageTone(stage,true)}`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
           </div>}

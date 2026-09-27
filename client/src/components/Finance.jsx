@@ -5,6 +5,7 @@ import { apiFetch, API, getToken } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
 import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
+import { displayDate, displayDateShort } from "../../../shared/displayDate";
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
@@ -337,7 +338,8 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
 
 // ── Money in — Stripe status/balance/payouts strip (Overview) ───────────────
 const PAYOUT_STATUS = { paid:IN, in_transit:T.gold, pending:T.gold, canceled:OUT, failed:OUT };
-const fmtDate = (iso, year) => iso ? new Date(iso).toLocaleDateString("en-US", year ? { month:"short", day:"numeric", year:"numeric" } : { month:"short", day:"numeric" }) : "—";
+// FIX-2 finding 10 — the one formatter, never a Date in some timezone.
+const fmtDate = (iso, year) => iso ? ((year ? displayDate(iso) : displayDateShort(iso, new Date())) || "—") : "—";
 const useStripeSummary = () => {
   const [s, setS] = useState(null);
   useEffect(() => {
@@ -1061,7 +1063,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                       const linkedDonor = t.donor_id && donorById[t.donor_id];
                       return (
                       <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background: i%2===0?T.white:"#faf9f6" }}>
-                        <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
+                        <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{displayDate(t.date)}</td>
                         <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, whiteSpace:"nowrap", textAlign:"right" }}>
                           {t.type === "income" ? "+" : "−"}{fmtFull(parseFloat(t.amount))}
                         </td>

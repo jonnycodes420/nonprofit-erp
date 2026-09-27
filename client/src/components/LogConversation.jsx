@@ -12,6 +12,7 @@ import {
   nextStepSuggestion, addCivilDays, nextStepTypeForLabel, sanitizeStepLabel, NOTE_ONLY_PLUS_DAYS,
   sanitizeStepTime, formatStepTime,
 } from "../../../shared/threadShape";
+import { displayDate } from "../../../shared/displayDate";
 
 const touchTypeLabel = k => (TOUCH_TYPES.find(t => t.key === k)?.label || "touch type");
 
@@ -382,7 +383,7 @@ export function PutItOnMyCalendar({ threadId, compact = false }) {
                 <strong style={{ color: T.ink }}>{data.subject}</strong>
                 <div style={{ marginTop: 2 }}>
                   {data.allDay
-                    ? `${data.dueDate} · all day`
+                    ? `${displayDate(data.dueDate)} · all day`
                     : new Date(data.startsAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                 </div>
               </div>

@@ -13,6 +13,7 @@ import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
 import { SecurityPanel } from "./SecurityPanel";
+import { displayDate } from "../../../shared/displayDate";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -1094,7 +1095,7 @@ export function ImpactUpdatesManager({isAdmin,isReadOnly}){
           <div>
             <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{u.title}</div>
             <div style={{fontSize:12,color:T.ink3}}>
-              {u.org_wide?"Org-wide":`${(Array.isArray(u.targets)?u.targets.length:0)} target${(Array.isArray(u.targets)?u.targets.length:0)===1?"":"s"}`} · {String(u.created_at).slice(0,10)}
+              {u.org_wide?"Org-wide":`${(Array.isArray(u.targets)?u.targets.length:0)} target${(Array.isArray(u.targets)?u.targets.length:0)===1?"":"s"}`} · {displayDate(u.created_at)}
             </div>
           </div>
           {isAdmin&&<div style={{display:"flex",gap:8}}>
@@ -1351,7 +1352,7 @@ function ImportsHistory(){
               {open.summary&&open.summary.leadSentence&&(
                 <div style={{fontSize:14,color:T.ink,lineHeight:1.6,marginBottom:12}}>{open.summary.leadSentence}</div>
               )}
-              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?String(open.committedAt).slice(0,10):""}. Stored at the moment it committed — this screen never recomputes it.</div>
+              <div style={{fontSize:11.5,color:T.ink3}}>Recorded {open.committedAt?displayDate(open.committedAt):""}. Stored at the moment it committed — this screen never recomputes it.</div>
             </div>
           )}
         </Modal>
@@ -3154,7 +3155,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
                   {sd.verified
                     ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.green100||"#edf3ee",color:T.greenDk,border:"1px solid "+(T.green200||"#dce7df"),borderRadius:99,padding:"2px 9px"}}>
-                       Verified {String(sd.verifiedAt||"").slice(0,10)}</span>
+                       Verified {displayDate(sd.verifiedAt)}</span>
                     :<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
                        Waiting for DNS</span>}
                   {!sd.verified&&(

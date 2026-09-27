@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const inp = { border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink, background: T.white, boxSizing: "border-box" };
 const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer", minHeight: 36 };
@@ -60,7 +61,7 @@ function SpendPanel({ grantId, isReadOnly, onChanged }) {
       {!d.spend.length && <div style={{ fontSize: 13, color: T.ink3 }}>No spending recorded against this award yet.</div>}
       {d.spend.map(s => (
         <div key={s.id} data-testid="spend-row" style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap", fontSize: 13 }}>
-          <span style={{ minWidth: 86, color: T.ink3 }}>{s.spentOn}</span>
+          <span style={{ minWidth: 86, color: T.ink3 }}>{displayDate(s.spentOn)}</span>
           <span style={{ flex: "1 1 160px", color: T.ink, overflowWrap: "anywhere" }}>{s.description}{s.byName ? <span style={{ color: T.ink3 }}> · {s.byName}</span> : null}</span>
           <span style={{ fontWeight: 700, color: T.ink }}>{fmtFull(s.amount)}</span>
           {!isReadOnly && <button style={quietBtn} onClick={() => del(s)}>Remove</button>}

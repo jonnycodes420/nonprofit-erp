@@ -15,6 +15,7 @@ import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
 import { TEAM_GATED } from "../lib/tabRegistry";
+import { displayDate } from "../../../shared/displayDate";
 
 // ── Fundraising (BUILD-11) ──────────────────────────────────────────────────
 // The money-moving home. Everything here reads live figures from the backend
@@ -412,7 +413,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
                   <div key={g.id} {...interactive(go, { label: `View ${g.donorName}` })} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", margin: "0 -10px", borderRadius: 8, borderTop: i === 0 ? "none" : "1px solid " + T.bg2 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: T.ink, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.donorName}</div>
-                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {g.date}</div>
+                      <div style={{ fontSize: 11, color: T.ink3 }}>{g.campaign || "General"} · {displayDate(g.date)}</div>
                     </div>
                     <span style={{ fontSize: 10, fontWeight: 700, background: b.bg, color: b.color, borderRadius: 99, padding: "2px 8px" }}>{b.label}</span>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.greenMid, fontFamily: "'DM Serif Display',serif" }}>{fmtFull(g.amount)}</div>
@@ -601,7 +602,7 @@ function CampaignCard({ g, allGoals, editBtn }) {
       ) : (
         <div style={{ fontSize: 12, color: T.ink3, borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
           {g.donorCount} donor{g.donorCount === 1 ? "" : "s"}
-          {g.endDate ? ` · closes ${String(g.endDate).slice(0, 10)}` : ""}
+          {g.endDate ? ` · closes ${displayDate(g.endDate)}` : ""}
           {committedText(g) ? ` · ${committedText(g)}` : ""}
         </div>
       )}
@@ -1006,7 +1007,7 @@ function AcknowledgmentsView({ isReadOnly, roTip }) {
             <label key={g.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderTop: "1px solid " + T.bg3, fontSize: 13, color: T.ink, cursor: "pointer" }}>
               <input type="checkbox" checked={sel.has(g.id)} onChange={() => toggle(g.id)} style={{ accentColor: T.greenDk }} />
               <span style={{ fontWeight: 700, minWidth: 160 }}>{g.name}</span>
-              <span style={{ color: T.ink3, minWidth: 90 }}>{g.date}</span>
+              <span style={{ color: T.ink3, minWidth: 90 }}>{displayDate(g.date)}</span>
               <span>{fmtFull(g.amount)}</span>
               {g.fund && <span style={{ color: T.ink3 }}>{g.fund}</span>}
               <span style={{ marginLeft: "auto", color: T.ink3, fontSize: 12 }}>

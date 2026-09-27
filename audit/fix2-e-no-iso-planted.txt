@@ -1,0 +1,6 @@
+Planted: Finance.jsx transactions table renders {t.date} raw (the pre-fix line).
+— §1 · no JSX text child renders a date the ISO way —
+  FAIL  §1 no ISO-shaped date render in client/src outside the named survivors — ["client/src/components/Finance.jsx:1066 <td style={{ padding:\"10px 14px\", color:T.ink3, whiteSpace:\"nowrap\" }}>{t.date}</td>"]
+    ISO Dashboards :: thly base healthy? ¦ How are we doing this year? ¦ As of ¦ 2026-09-27 ¦ . Numbers a board can read.
+    ISO Finance › Transactions :: ction ¦ Date ¦ ↓ ¦ Amount ¦ Description ¦ Account ¦ Fund ¦ 2026-09-27 ¦ + ¦ $60,000 ¦ Grant awarded
+2 passed, 2 failed

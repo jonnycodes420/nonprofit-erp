@@ -8,6 +8,7 @@ import { fmtFull } from "../lib/money";
 import { WIDGETS } from "../../../shared/pageWidgets.js";
 import { resolveAssetUrl } from "../lib/assetUrl";
 import { bannerImgStyle, bannerSrcSet, PORTAL_CAMPAIGN_HERO_RATIO, PORTAL_IMPACT_PHOTO_RATIO, PORTAL_WIDGET_IMAGE_RATIO } from "./PortalBanner";
+import { displayDate } from "../../../shared/displayDate";
 
 const muted = { fontSize: 13, color: "#6b6b64", lineHeight: 1.6 };
 const h2 = { fontFamily: "var(--pt-serif, 'DM Serif Display',Georgia,serif)", fontWeight: 400, fontSize: 22, margin: "0 0 12px" };
@@ -159,7 +160,7 @@ export function WidgetView({ w, ctx }) {
                 </div>
               )}
               {u.body && <div style={{ fontSize: 14, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{u.body}</div>}
-              <div style={{ ...muted, marginTop: 4, fontSize: 12 }}>{String(u.date).slice(0, 10)}</div>
+              <div style={{ ...muted, marginTop: 4, fontSize: 12 }}>{displayDate(u.date)}</div>
             </div>
           ))}
         </div>

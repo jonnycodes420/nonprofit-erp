@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, Card } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const inp = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 const btn = primary => ({ background: primary ? T.gold : T.white, border: primary ? "none" : "1px solid " + T.bg3, borderRadius: 9,
@@ -49,7 +50,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
         <div>
           <button onClick={onBack} style={{ ...btn(false), padding: "4px 10px", marginBottom: 8 }}>← All events</button>
           <div style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{event.name}</div>
-          <div style={{ fontSize: 13, color: T.ink3 }}>{String(event.date).slice(0, 10)}{event.location ? ` · ${event.location}` : ""}</div>
+          <div style={{ fontSize: 13, color: T.ink3 }}>{displayDate(event.date)}{event.location ? ` · ${event.location}` : ""}</div>
         </div>
         {ticketLevels.length > 0 && <div style={{ fontSize: 12, color: T.ink3, maxWidth: 420 }}>
           Tickets sell on your giving page at <span style={{ color: T.ink, wordBreak: "break-all" }} data-testid="event-public-url">{publicUrl}</span>
@@ -150,7 +151,7 @@ export function EventsDesk({ orgSlug, donors = [], isReadOnly }) {
         : events.map(e => (
           <button key={e.id} onClick={() => setOpen(e)} style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", cursor: "pointer", color: T.ink }}>
             <div style={{ fontWeight: 800, fontSize: 14 }}>{e.name}</div>
-            <div style={{ fontSize: 12, color: T.ink3 }}>{String(e.date).slice(0, 10)}{e.location ? ` · ${e.location}` : ""}</div>
+            <div style={{ fontSize: 12, color: T.ink3 }}>{displayDate(e.date)}{e.location ? ` · ${e.location}` : ""}</div>
           </button>))}
     </div>
   );

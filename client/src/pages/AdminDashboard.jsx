@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -711,7 +712,7 @@ function NetworkReview() {
             <div key={a.id} style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: A.ink }}>{a.org_name} <span style={{ color: A.muted, fontWeight: 400, fontSize: 12 }}>({a.org_id})</span></div>
-                <div style={{ color: A.muted, fontSize: 12 }}>{String(a.created_at).slice(0, 10)}</div>
+                <div style={{ color: A.muted, fontSize: 12 }}>{displayDate(a.created_at)}</div>
               </div>
               <div style={{ margin: "8px 0", fontSize: 13, color: A.muted }}>
                 EIN {a.ein} · {a.admin_email} · {a.website ? <a href={a.website} target="_blank" rel="noreferrer" style={{ color: A.green }}>{a.website}</a> : "no website"}
