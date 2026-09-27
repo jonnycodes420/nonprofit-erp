@@ -14,13 +14,16 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
-import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
+import { PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import MetricBreakdownPanel from "./MetricBreakdownPanel";
+import { Figure } from "./Figure";
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -756,6 +759,59 @@ function RoleChips({donor,isReadOnly}){
   );
 }
 
+// The four figures on the profile, in the order they are read: what they
+// have given, the last of it, how long since anybody spoke to them, and what
+// is being asked for now. One list, so the tiles, their definitions and their
+// sources cannot drift apart.
+const PROFILE_FIGURES = [
+  { key: "lifetime", label: "Lifetime",     kind: "money", def: censusById("profile.lifetime").sentence },
+  { key: "lastGift", label: "Last gift",    kind: "money", def: censusById("profile.lastGift").sentence },
+  { key: "contact",  label: "Last contact", kind: "count", suffix: " days", def: censusById("profile.contact").sentence },
+  { key: "openAsk",  label: "Open ask",     kind: "money", def: censusById("profile.openAsk").sentence },
+];
+
+// The four things Steward can draft on a record, in the order the rail
+// offers them. One list, so the buttons and the panels can never disagree.
+const SUGGEST_KINDS = ["nextmove", "outreach", "email", "callscript"];
+
+// The proposal stages, by their own labels, so the next-step row can name one
+// without retyping the list shared/proposalShape.js already owns.
+const PROPOSAL_STAGE_LABEL = Object.fromEntries(PROPOSAL_STAGES.map(s => [s.key, s.label]));
+
+// ── THE RAIL'S PALETTE (PROFILE-1) ─────────────────────────────────────────
+// Ink ground, light text. Nothing new enters the four colours: the ground is
+// T.ink, panels are the existing elevated ink, hairlines are the existing
+// on-dark border token, and the two greys are CREAM AT REDUCED OPACITY
+// (T.sage400/600) — the design system's own answer for secondary text on ink,
+// because warm grey scores about 2.0:1 there and would rightly be refused.
+const RAIL = {
+  bg:    T.ink,          // the rail's ground — must differ from the column's
+  panel: T.bgElevated,   // a card inside the rail
+  line:  T.green650,     // hairline / input edge on dark
+  text:  T.inkInverse,   // primary text on ink
+  dim:   T.sage400,      // secondary text on ink
+};
+
+// One shape for every rail section: a hairline above it, an uppercase title,
+// an optional action beside the title, and an optional fold. A folded section
+// says how much is inside ON ITS LABEL, so folding never hides a count.
+function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="Hide", foldShutLabel="Show", testid, first=false }) {
+  const [open,setOpen]=useState(!fold);
+  const btn={background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"};
+  return (
+    <section data-testid={testid} data-rail-section={fold?(open?"open":"folded"):"plain"}
+      style={{borderTop:first?"none":"1px solid "+RAIL.line,padding:first?"0 0 16px":"16px 0"}}>
+      <h4 style={{margin:"0 0 10px",fontSize:10.5,fontWeight:800,letterSpacing:"0.14em",textTransform:"uppercase",color:RAIL.dim,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+        <span>{title}</span>
+        {fold
+          ? <button onClick={()=>setOpen(o=>!o)} aria-expanded={open} style={btn}>{open?foldOpenLabel:foldShutLabel}</button>
+          : (actionNode || null)}
+      </h4>
+      {open&&children}
+    </section>
+  );
+}
+
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
@@ -1449,6 +1505,35 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id,dpItemsLoaded]);
 
+  // PROFILE-1 — a bar on "Giving by year" opens that year's gifts through
+  // the SAME seam every other number on the product opens through: the
+  // `gifts` source, filtered to this donor and that calendar year, so the
+  // rows and the bar cannot drift apart and the drawer foots to the cent.
+  const [yearDrill,setYearDrill]=useState(null);
+
+  // PROFILE-1 — SNOOZE, as one verb on the row. It is the thread's own
+  // "revisit" (the thread stays open and resurfaces on the date), moved
+  // seven days out; the ⋯ menu still offers a date she picks and the other
+  // two reasons, which CLOSE the thread. The date is civil and local, never
+  // toISOString, which has already turned over after 8pm Eastern.
+  const [snoozing,setSnoozing]=useState(null);
+  const [snoozeErr,setSnoozeErr]=useState("");
+  const snoozeThread=async it=>{
+    if(snoozing)return;
+    setSnoozing(it.id);setSnoozeErr("");
+    const d=new Date();d.setDate(d.getDate()+7);
+    const on=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    try{
+      await apiFetch(`/threads/${it.id}/dismiss`,{method:"POST",body:JSON.stringify({reason:"revisit",revisitOn:on})});
+      loadDpThread();
+    }catch(e){setSnoozeErr(errorMessage(e,"Could not snooze that step."));}
+    setSnoozing(null);
+  };
+
+  // PROFILE-1 — the named human at an organisation, however the record spells
+  // the field (the adaptDonor camel/snake trap).
+  const contactPerson=donor.contactName||donor.contact_name||"";
+
   const sortedGifts=[...gifts].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const lastGiftDisplay=giftLoading?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
 
@@ -1483,8 +1568,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             </div>
             {/* FIX-1 D — the roles, under the name, one tap each. */}
             <RoleChips donor={donor} isReadOnly={isReadOnly}/>
+            {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
+                to read donors.total_giving while the tile below it now reads
+                the gifts themselves (figureSources donor-lifetime), and on the
+                fixture record those two disagreed by $60,000 four inches
+                apart. The rule is that when two surfaces show the same number
+                it is computed once, so this line reads the figure the tile
+                reads, and falls back to the column only before the figures
+                have loaded. */}
             <div className="dph-meta" style={{fontSize:11,color:T.ink3,marginTop:2,display:"flex",flexWrap:"wrap",gap:"0 4px"}}>
-              <span style={{whiteSpace:"nowrap"}}>{fmtFull(donor.total)} lifetime</span>
+              <span style={{whiteSpace:"nowrap"}}>{fmtFull(donor.figures?.lifetime?.value ?? donor.total)} lifetime</span>
               <span style={{whiteSpace:"nowrap"}}>·</span>
               <span style={{whiteSpace:"nowrap"}}>{donor.gifts} gifts</span>
             </div>
@@ -1505,50 +1598,48 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             )}
           </div>
         </div>
-        {/* BUILD-41: Request Gift is THE action; Impact Summary/Edit collapse
-            into a "⋯" overflow on phones (four buttons across 390px wrapped
-            and misaligned). Delete left the top row entirely — a destructive
-            action at thumb height beside Edit is a mis-tap waiting to happen;
-            it now lives at the bottom of the Overview record (still behind
-            the existing confirm). */}
+        {/* PROFILE-1 — THREE BUTTONS AND A MENU, AT EVERY WIDTH. The header
+            carried five actions across the top of the record, which is four
+            more than anybody presses in a row; at 390 the overflow already
+            existed and at 1440 it did not, so the same screen taught two
+            different habits. Now: Log a conversation (the one emerald), Plan
+            a follow-up when there is no open thread, and More — a real
+            BUTTON with a menu, never a link, because it does something on
+            this page rather than going somewhere. Everything that was in the
+            row is in the menu, so nothing was dropped. */}
         <div className="dph-actions" style={{display:"flex",gap:6,flexShrink:0,alignItems:"center",position:"relative"}}>
           {/* BUILD-88a A.4 — ONE EMERALD PRIMARY. The header carried two filled
               buttons in two different colours (a brass "Log a conversation" and
               an emerald "Request Gift"), so nothing on it was the obvious thing
               to press. Emerald means "this is the button" and exactly one thing
               may mean that; the rest are outlines. */}
-          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Log a conversation
           </button>
           {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
               because one open step per donor is the model and a second button
               that can only 409 is a button that teaches people to distrust
               buttons. */}
-          {!dpThread&&<button onClick={()=>setPlanOpen(true)} disabled={isReadOnly} className="dph-desktop-act"
-            style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+          {!dpThread&&<button onClick={()=>setPlanOpen(true)} disabled={isReadOnly} data-testid="dp-plan-followup"
+            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Plan a follow-up
           </button>}
-          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-            Request Gift
-          </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
               Code intact, re-enable by uncommenting.
           <button onClick={()=>setShowVoiceMemo(true)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>
             Voice memo
           </button>
           */}
-          <button onClick={downloadImpactSummary} disabled={impactPdfLoading} className="dph-desktop-act" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:impactPdfLoading?"not-allowed":"pointer",opacity:impactPdfLoading?0.6:1}}>
-            {impactPdfLoading?"Generating…":"↓ Impact Summary"}
-          </button>
-          <button onClick={onEdit} className="dph-desktop-act" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Edit</button>
-          <button onClick={()=>setDpMoreOpen(o=>!o)} className="dph-more" aria-label="More actions" aria-expanded={dpMoreOpen} style={{display:"none",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,color:T.ink,fontSize:20,fontWeight:700,cursor:"pointer",lineHeight:1}}>⋯</button>
+          <button onClick={()=>setDpMoreOpen(o=>!o)} data-testid="dp-more" aria-haspopup="menu" aria-expanded={dpMoreOpen}
+            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>More ▾</button>
           {dpMoreOpen&&(
-            <div className="dph-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:200,overflow:"hidden"}}>
-              <button onClick={()=>{setDpMoreOpen(false);downloadImpactSummary();}} disabled={impactPdfLoading} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderBottom:"1px solid "+T.bg3,padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>
-                {impactPdfLoading?"Generating…":"↓ Impact Summary"}
-              </button>
-              <button onClick={()=>{setDpMoreOpen(false);setShowGiftModal(true);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderBottom:"1px solid "+T.bg3,padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Request Gift</button>
-              <button onClick={()=>{setDpMoreOpen(false);onEdit();}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"13px 16px",color:T.ink,fontSize:14,fontWeight:600,cursor:"pointer"}}>Edit</button>
+            <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
+              {[["Request a gift",()=>setShowGiftModal(true),false],
+                [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
+                ["Edit record",onEdit,false]].map(([label,fn,disabled])=>(
+                <button key={label} role="menuitem" disabled={disabled} onClick={()=>{setDpMoreOpen(false);fn();}}
+                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
+              ))}
             </div>
           )}
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
@@ -1566,6 +1657,63 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             not a contrast anybody can check. See docs/decisions/design-system.md. */}
         <div data-testid="dp-main-column" style={{overflowY:"auto",background:T.bg,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* Tab Nav */}
+          {/* ── THE FOUR FIGURES (PROFILE-1) ────────────────────────────
+              Lifetime, Last gift, Last contact, Open ask — the four numbers an
+              officer opens this record to check, above the tabs because they
+              are true of the person and not of whichever tab is showing.
+
+              Each one is a <Figure> with a SOURCE, so clicking it opens the
+              rows behind it and those rows foot to the cent (the "every number
+              opens" rule; figureSources.js holds the four donor-scoped
+              sources, and the server hands over the value and the source
+              together so the two can never be computed twice). The `?` beside
+              the label is the census definition, unchanged and still keyboard
+              reachable — the definition and the drill-through are different
+              affordances and each keeps its own. */}
+          {donor.figures&&(
+            <div className="donor-stat-grid" data-testid="dp-figures" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,padding:"18px 20px 4px 24px",flexShrink:0}}>
+              {PROFILE_FIGURES.map(({key,label,kind,suffix,def})=>{
+                const f=donor.figures[key];
+                if(!f)return null;
+                return (
+                  <div key={key} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
+                    <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
+                      {label}
+                      {/* BUILD-100 — the definition travels with the number, on
+                          the dashboards' hover convention: reachable by keyboard,
+                          because a tooltip nobody can tab to is a definition that
+                          does not exist for half the people who need it. */}
+                      <span tabIndex={0} title={def} aria-label={def} data-testid={"dp-tile-def-"+label}
+                        style={{marginLeft:5,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,
+                                borderRadius:99,width:13,height:13,display:"inline-flex",alignItems:"center",
+                                justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>
+                    </div>
+                    {/* A BLANK IS SAID, NOT GUESSED (the design system's own
+                        rule). An inline <Figure> draws an em dash when it has
+                        no value, which on this row read as "we are not going
+                        to tell you"; the short sentence says what will appear
+                        there and when. There is nothing to open, so there is
+                        no button either. */}
+                    {/* BUILD-100 — the overdue colour stays on Last contact.
+                        The DAYS are the server's figure now, but whether they
+                        are late is still moveUrgency's judgment against this
+                        donor's stage, and it is brass when they are (never
+                        terracotta: overdue is late, not dangerous). The
+                        inline Figure inherits its colour, so it is set here. */}
+                    <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",lineHeight:1.1,
+                                 color:key==="contact"&&urg.level!=="ok"?urg.urgencyColor:T.ink}}>
+                      {f.value===null||f.value===undefined
+                        ?<span data-figure={"profile."+key} data-figure-key={"profile."+key} data-blank="" style={{fontSize:12.5,fontWeight:400,color:T.ink3,lineHeight:1.45}}>{f.blankShort||f.blank}</span>
+                        :<Figure value={f.value} kind={kind} suffix={suffix||""} label={label} definition={def}
+                          source={f.source} blank={f.blank} blankShort={f.blankShort}
+                          figureKey={"profile."+key} variant="inline"/>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           <div className="dp-tabs" style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
               <button key={id} role="tab" aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,...activeMark(dpTab===id,"bottom")}}>
@@ -1579,45 +1727,107 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* Overview tab */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
-            {/* BUILD-81 — the donor's thread, above giving history.
-                BUILD-88a A.2 — and every other open item for them, in ONE list,
-                ranked by the one ranking, with the count on the label. */}
-            {dpItems.length>0&&(
-              <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+(dpItems.some(x=>x.overdue)?T.gold600+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>
-                    {dpItems.length===1?"Open":`Open · ${dpItems.length}`}
-                  </span>
-                  {dpThread?.snoozedUntil&&<span style={{fontSize:10,color:T.ink3}}>· set aside until {dpThread.snoozedUntil}</span>}
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {dpItems.map(it=>(
-                  <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <div style={{flex:"1 1 220px",minWidth:0}}>
-                      <div style={{fontSize:13.5,fontWeight:700,color:it.overdue?T.gold700:T.ink}}>
-                        {it.nextStep.label} · {it.overdue?"overdue":"due"} {displayDateShort(it.nextStep.due,new Date())} · {it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
+            {/* ── WHAT DO I DO NEXT (PROFILE-1) ──────────────────────────
+                BUILD-81 put the donor's thread above giving history and
+                BUILD-88a A.2 folded every other open item into it, ranked by
+                the one ranking. PROFILE-1 gives it the question as its
+                heading and two plain verbs on the row: Mark done, which is
+                the conversation that closes it, and Snooze, which moves the
+                promise to a date and keeps it.
+
+                HOTFIX-1's rule holds here and is the reason this block is
+                first: when there IS an open proposal or an open thread, this
+                section names the next real step. It only ever says nothing is
+                open when nothing is. */}
+            <section data-testid="dp-next">
+              <div style={{fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.14em",color:T.ink3,marginBottom:10}}>What do I do next</div>
+              {dpItems.length>0?(
+                <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+                  {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
+                  {dpItems.map(it=>(
+                    <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                      <div style={{flex:"1 1 240px",minWidth:0}}>
+                        <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{it.nextStep.label}</div>
+                        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
+                          {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
+                          {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
+                          {" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
+                          {" "}
+                          <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
+                            {it.overdue?"Overdue":"Due"} {displayDateShort(it.nextStep.due,new Date())}
+                          </span>
+                        </div>
                       </div>
-                      <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
-                        {it.lastTouch?.line?<>"{it.lastTouch.line}"</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
-                        {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
-                        {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
-                      </div>
+                      {it.kind!=="task"&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
+                            style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
+                          <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
+                            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
+                          {/* BUILD-94 Part 5 — the same three outputs as the
+                              Home row, from the same builder. */}
+                          {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
+                          <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
+                        </div>
+                      )}
                     </div>
-                    {it.kind!=="task"&&(
-                      <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                        <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
-                          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:7,padding:"6px 11px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
-                        {/* BUILD-94 Part 5 — the same three outputs as the
-                            Home row, from the same builder. */}
-                        {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
-                        <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))}
+                  {snoozeErr&&<div style={{fontSize:12,color:T.terra700}}>{snoozeErr}</div>}
                 </div>
-              </div>
-            )}
+              ):openProposals.length>0?(
+                /* HOTFIX-1's RULE, AND THE REASON IT IS A RULE. A donor can
+                   have no thread and no task and still have an ask in flight,
+                   and the first draft of this very section answered "nothing
+                   is open" on exactly that record — with the proposal sitting
+                   four inches below it. An open proposal IS the next step, so
+                   it is named here, with what it asks for and when an answer
+                   is expected. (tests/profile1-screen §6 is the guard.) */
+                <div data-testid="dp-open-items" data-open-item="proposal" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+T.greenDk,borderRadius:10,padding:"16px 18px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",minWidth:0}}>
+                    <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{openProposals[0].purpose||"An open ask"}</div>
+                    <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                      {openProposals[0].askAmount!=null?<>{fmtFull(openProposals[0].askAmount)} · </>:null}
+                      {PROPOSAL_STAGE_LABEL[openProposals[0].stage]||openProposals[0].stage}
+                      {openProposals[0].expectedClose?<> · <span style={{fontWeight:700,color:T.greenDk}}>An answer is expected {displayDateShort(openProposals[0].expectedClose,new Date())}</span></>:null}
+                      {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
+                    </div>
+                  </div>
+                  {!isReadOnly&&<button onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:"pointer"}}>Plan a follow-up</button>}
+                </div>
+              ):(
+                <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
+                    Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan the next step and it appears here, with the day you promised it.
+                  </div>
+                  {!isReadOnly&&<button onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:"pointer"}}>Plan a follow-up</button>}
+                </div>
+              )}
+
+              {/* ── SUGGESTED ────────────────────────────────────────────
+                  What Steward drafted, beside the step it is about. Every
+                  line came through the HOTFIX-1 checker: a sentence naming
+                  somebody, stating a number or making a claim the record does
+                  not carry is dropped SILENTLY (the count goes to the
+                  console), timing that is already behind today is refused,
+                  and when nothing survives this renders nothing at all. */}
+              {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
+                <div key={t} data-testid={`dp-suggested-${t}`}>
+                  <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
+                  <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
+                    From <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
+                    {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
+                  </div>
+                </div>
+              ):null)}
+            </section>
+            {/* BUILD-99 Part 1 / PROFILE-1 — PROPOSALS SIT DIRECTLY UNDER THE NEXT
+                STEP, because an open ask IS the next step in most of the
+                records an officer opens, and the giving below is the evidence
+                behind it. Team-locked for Core along with
+                the rest of the major-gifts layer (the 2026-07-19 split). */}
+            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}/>)}
+
             {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
                 BUILD-100 renamed it ("Score 77/99" → "Giving strength") and
                 said plainly what it was not, and that was the right first move
@@ -1634,27 +1844,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 show it, and turning the tile back on is this array.
                 The three that stay each carry their own sentence now, on the
                 keyboard-reachable hover BUILD-100 built for the fourth. */}
-            <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-              {[["Lifetime",fmtFull(donor.total),T.ink,censusById("profile.lifetime").sentence],
-                ["Last Gift",lastGiftDisplay,T.ink,censusById("profile.lastGift").sentence],
-                ["Contact",`${urg.days}d ago`,urg.level==="ok"?T.ink:urg.urgencyColor,censusById("profile.contact").sentence]].map(([l,v,c,def])=>(
-                <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
-                    {l}
-                    {/* BUILD-100 — the definition travels with the number, on
-                        the dashboards' hover convention: reachable by keyboard,
-                        because a tooltip nobody can tab to is a definition that
-                        does not exist for half the people who need it. */}
-                    {def&&<span tabIndex={0} title={def} aria-label={def} data-testid={"dp-tile-def-"+l}
-                      style={{marginLeft:5,fontSize:9,fontWeight:700,color:T.ink3,border:"1px solid "+T.bg3,
-                              borderRadius:99,width:13,height:13,display:"inline-flex",alignItems:"center",
-                              justifyContent:"center",cursor:"help",verticalAlign:"middle"}}>?</span>}
-                  </div>
-                  <div style={{fontSize:20,fontWeight:800,color:c,fontFamily:"'DM Serif Display',serif",lineHeight:1.1}}>{v}</div>
-                </div>
-              ))}
-            </div>
-
             {/* BUILD-57 §2c — the lifetime figure and the itemized gift list
                 legitimately differ when history arrived as an imported TOTAL
                 (aggregate import writes total_giving/gift_count with no gift
@@ -1693,23 +1882,49 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
               onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
 
-            {/* BUILD-99 Part 1 — PROPOSALS SIT ABOVE GIVING HISTORY, because an
-                open ask is what an officer came to this record to look at and the
-                history is the evidence behind it. Team-locked for Core along with
-                the rest of the major-gifts layer (the 2026-07-19 split). */}
-            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}/>)}
+            {/* PROFILE-1 — the cultivation plan and "Brief me" moved to the
+                rail, with the rest of how-we-manage-them. The reading column
+                keeps what she came to read. */}
 
-            {/* BUILD-99 Part 3 — the cultivation plan, beside the proposals it
-                is there to make possible. */}
-            {lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>)}
-
-            {/* BUILD-99 Part 4 — "Brief me". The page she reads in the car. */}
-            {lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>)}
-
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving History</div>
-              {giftLoading?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>:<GivingHistoryChart gifts={gifts}/>}
+            <div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
+              {giftLoading
+                ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
+                :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
+              <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
+                Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
+              </div>
             </div>
+            {yearDrill&&(
+              <MetricBreakdownPanel open onClose={()=>setYearDrill(null)}
+                title={`Giving in ${yearDrill}`}
+                explanation={`Every gift ${donor.name} gave between 1 January and 31 December ${yearDrill}, as it is recorded on this record.`}
+                source={{key:"gifts",params:{donor:donor.id,from:`${yearDrill}-01-01`,to:`${yearDrill}-12-31`}}}/>
+            )}
+
+            {/* ── RECENT CONVERSATIONS (PROFILE-1) ────────────────────────
+                The last three, where an officer looks for them: under the
+                giving, above everything she manages. The full timeline is
+                still at the bottom of the record and on the Activity tab —
+                this is the glance, not a second copy of the truth. */}
+            {(() => {
+              const ints=(localInts??donor.interactions??[]).filter(i=>i&&i.type!=="gift").slice(0,3);
+              if(!ints.length) return null;
+              return <div data-testid="dp-recent-conversations" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:10}}>
+                  <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Recent conversations</div>
+                  <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>All activity →</button>
+                </div>
+                <ul style={{listStyle:"none",margin:0,padding:0}}>
+                  {ints.map((i,n)=>(
+                    <li key={i.id||n} style={{display:"grid",gridTemplateColumns:"92px 1fr",gap:12,padding:"10px 0",borderTop:n?"1px solid "+T.bg2:"none"}}>
+                      <span style={{fontSize:12,color:T.ink3}}>{displayDateShort(i.date,new Date())}</span>
+                      <span style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{i.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>;
+            })()}
 
             {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
             {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
@@ -2571,69 +2786,142 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>}
         </div>
 
-        {/* RIGHT — THE RAIL. It is never removed: the donor profile always has
-            it, on a contrasting ground to the main column (a never-crossed rule
-            in CLAUDE.md, pinned by tests/hotfix1-profile.test.js at 1440). */}
-        <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
-          {donor.stripeSubscriptionStatus==="active"&&(
-            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:16}}>↻</span>
-              <div>
-                <div style={{fontSize:12,fontWeight:700,color:T.ink}}>Recurring Donor</div>
-                <div style={{fontSize:11,color:T.ink3,marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
-              </div>
-            </div>
-          )}
-          <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Relationship Owner</div>
-            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:T.ink,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+        {/* ── THE RAIL (PROFILE-1) ────────────────────────────────────────
+            Ink, with light text, framing the cream main column the way the
+            sidebar frames it on the left. The rail is never removed and its
+            ground always contrasts with the column (CLAUDE.md's never-crossed
+            list, pinned by tests/hotfix1-profile.test.js at 1440).
+
+            What lives here is what is true of the person all the time — who
+            owns them, where they are, how to reach them, and the tools —
+            which is why it can sit outside whichever tab is open. Emerald is
+            still the one action colour (the active stage); brass is still
+            emphasis (the quick actions). Nothing new enters the palette: the
+            rail's greys are cream at reduced opacity (T.sage400/600), which
+            is the design system's own answer for secondary text on ink. */}
+        <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
+
+          <RailSection title="Relationship owner" testid="dp-rail-owner" first
+            actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
+              style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":"Reassign"}</button>}>
+            <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:RAIL.line,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:RAIL.text,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
                 {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
-                {/* Reassigning a relationship owner is portfolio management → Team.
-                    Core sees the owner read-only; the server 403s the assign route. */}
-                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.white}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
               </div>
               {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer"}}>
                   <option value="">Select team member…</option>
                   {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
-                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.ink:T.bg,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
-                  {reassignLoading?"Saving…":"Confirm Reassignment"}
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:reassignId?"pointer":"not-allowed"}}>
+                  {reassignLoading?"Saving…":"Confirm reassignment"}
                 </button>
               </div>}
             </div>
-          </div>
+          </RailSection>
 
-          {/* BUILD-88a A.4 — sequences render ONLY with the Team flag. */}
-          {isTeam&&sequences.length>0&&(<div data-testid="dp-sequences">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Sequences</div>
-            {seqToast&&<div style={{background:T.bg2,border:"1px solid "+T.greenDk,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.ink,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.greenDk,cursor:"pointer"}}>+ Enroll in sequence</button>
-              :<>
-                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
-                  <option value="">Select sequence…</option>
-                  {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-                <button disabled={!seqId||seqLoading} onClick={async()=>{
-                  if(!seqId)return;setSeqLoading(true);
-                  try{
-                    await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
-                    const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
-                    setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
-                    setSeqOpen(false);setSeqId("");
-                  }catch(e){alert(errorMessage(e, "Could not enroll"));}
-                  setSeqLoading(false);
-                }} style={{background:seqId?T.ink:T.bg,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
-                  {seqLoading?"…":"Enroll"}
-                </button>
-                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
-              </>}
+          {/* The stage, and the smart moves that argue for changing it. Both
+              are the major-gifts layer, so a Core org sees the one frosted
+              preview — and, until the plan is KNOWN, the pending state and
+              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
+          {isTeam&&<RailSection title="Stage" testid="dp-move-stage">
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {STAGES.map(s=>{
+                const on=(donor.stage||"cultivate")===s.id;
+                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
+                  style={{background:on?T.greenDk:RAIL.panel,border:"1px solid "+(on?T.greenDk:RAIL.line),borderRadius:8,padding:"6px 11px",color:on?T.white:RAIL.text,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
+                  {s.label}
+                </button>;
+              })}
             </div>
-          </div>)}
+            <div style={{marginTop:9,fontSize:11.5,color:RAIL.dim,lineHeight:1.55}}>
+              {STAGE_ACTION[donor.stage||"cultivate"]}
+            </div>
+            {(() => {
+              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
+              // Lapsed is set automatically elsewhere; these are the judgment
+              // moves the officer owns, offered one-click. They sit WITH the
+              // stage now, because that is the only thing they are about.
+              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
+              if(!shown.length) return null;
+              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+                {shown.map(s=>(
+                  <div key={s.signal} style={{background:RAIL.panel,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:12,color:RAIL.text,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {s.toStage&&!isReadOnly&&(
+                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
+                        </button>
+                      )}
+                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:7,padding:"5px 12px",color:RAIL.dim,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>;
+            })()}
+          </RailSection>}
+
+          {/* The Stage strip above is ABSENT for Core, not frosted (BUILD-88a
+              A.4): a Core org has no pipeline, and showing them the strip
+              teaches them the product is not for them. What these four write
+              appears in Suggested, on the Overview, beside the record it came
+              from. */}
+          {/* Major-gifts rail — locked as ONE preview for Core. */}
+          {lockMajor(<>
+          <RailSection title="Quick actions" testid="dp-rail-quick">
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <AIBtn onClick={()=>getAI(donor,"nextmove",openForNextMove)} loading={loadingKey===`${donor.id}_nextmove`} label="+ Next move" small/>
+              <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="+ Outreach" small/>
+              <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="+ Draft email" small/>
+              <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="+ Call script" small/>
+            </div>
+          </RailSection>
+          </>,{title:"Major-gift tools",blurb:"Outreach drafting and the suggested next move — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:180})}
+
+          {/* How to reach them: what an officer copies out of this screen. */}
+          <RailSection title="Contact" testid="dp-rail-contact">
+            <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
+              {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
+              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
+              {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
+            </dl>
+          </RailSection>
+
+          {/* Folded by default: the things she opens when she needs them, and
+              not before. Each one says how much is inside on its own label,
+              so folding never hides a count. */}
+          {isTeam&&sequences.length>0&&(
+            <RailSection title="Sequences" testid="dp-sequences" fold foldOpenLabel="Hide" foldShutLabel="Show">
+              {seqToast&&<div style={{background:RAIL.panel,borderLeft:"3px solid "+T.green500,borderRadius:8,padding:"8px 12px",fontSize:12,color:RAIL.text,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"transparent",border:"1px dashed "+RAIL.line,borderRadius:8,padding:"6px 12px",fontSize:12,color:RAIL.text,cursor:"pointer"}}>+ Enroll in sequence</button>
+                :<>
+                  <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"6px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
+                    <option value="">Select sequence…</option>
+                    {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <button disabled={!seqId||seqLoading} onClick={async()=>{
+                    if(!seqId)return;setSeqLoading(true);
+                    try{
+                      await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
+                      const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
+                      setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
+                      setSeqOpen(false);setSeqId("");
+                    }catch(e){alert(errorMessage(e, "Could not enroll"));}
+                    setSeqLoading(false);
+                  }} style={{background:seqId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:seqId?"pointer":"not-allowed"}}>
+                    {seqLoading?"…":"Enroll"}
+                  </button>
+                  <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:RAIL.dim,fontSize:12,cursor:"pointer"}}>✕</button>
+                </>}
+              </div>
+            </RailSection>
+          )}
 
           {cfData.length>0&&(()=>{
             // BUILD-78 5.1 — custom fields in position order, empty fields
@@ -2661,47 +2949,45 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 setCfError(e?.errors?.[0]?.error||errorMessage(e, "That value was refused"));
               }
             };
-            return <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Custom Fields</div>
+            const inputStyle={flex:1,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"5px 8px",fontSize:12,color:RAIL.text,outline:"none"};
+            return <RailSection title="Custom fields" testid="dp-rail-custom-fields" fold
+              foldOpenLabel="Hide" foldShutLabel={`Show ${withValues.length||cfData.length}`}>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {shown.map(f=>(
                 <div key={f.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:T.ink3,fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
+                  <div style={{fontSize:12,color:RAIL.dim,fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
                   {cfEditing===f.key?(
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.type==="checkbox"?(
-                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} style={inputStyle}>
                           <option value="">—</option>
                           <option value="yes">Yes</option>
                           <option value="no">No</option>
                         </select>
                       ):f.type==="select"?(
-                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
+                        <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} style={inputStyle}>
                           <option value="">—</option>
                           {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
                       ):f.type==="multi_select"?(
-                        <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px"}}>
+                        <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"5px 8px"}}>
                           {(f.options||[]).map(o=>{
                             const cur=cfEditVal?cfEditVal.split("; ").filter(Boolean):[];
                             const on=cur.includes(o);
                             return <button key={o} onClick={()=>{
                               const next=on?cur.filter(x=>x!==o):[...cur,o];
                               setCfEditVal(next.join("; "));
-                            }} aria-pressed={on} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"2px 8px",fontSize:11,color:T.ink3,cursor:"pointer",...activeMark(on,"bottom")}}>{o}</button>;
+                            }} aria-pressed={on} style={{background:on?T.greenDk:"transparent",border:"1px solid "+(on?T.greenDk:RAIL.line),borderRadius:7,padding:"2px 8px",fontSize:11,color:on?T.white:RAIL.dim,cursor:"pointer"}}>{o}</button>;
                           })}
                         </div>
                       ):f.type==="long_text"?(
                         <textarea value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} rows={3}
-                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none",resize:"vertical"}}
-                          autoFocus/>
+                          style={{...inputStyle,resize:"vertical"}} autoFocus/>
                       ):(
                         <input value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
                           type={f.type==="date"?"date":"text"}
                           inputMode={f.type==="number"||f.type==="money"?"decimal":undefined}
-                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}
+                          style={inputStyle}
                           onKeyDown={e=>{
                             if(e.key==="Enter"){saveCf(f);}
                             else if(e.key==="Escape"){setCfEditing(null);setCfError("");}
@@ -2709,184 +2995,101 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           autoFocus
                         />
                       )}
-                      <button onClick={()=>saveCf(f)} style={{background:T.ink,border:"none",borderRadius:8,padding:"5px 10px",color:T.white,fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                      <button onClick={()=>saveCf(f)} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:T.white,fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:RAIL.dim,fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?T.ink:T.ink3,fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
+                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?RAIL.text:RAIL.dim,fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
                         {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
                       </span>
                       <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
-                        style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 8px",fontSize:10,color:T.greenDk,cursor:"pointer"}}>Edit</button>
+                        style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:6,padding:"3px 8px",fontSize:10,color:RAIL.text,cursor:"pointer"}}>Edit</button>
                     </div>
                   )}
                 </div>
               ))}
-              {cfError&&<div style={{fontSize:11.5,color:T.terracotta}}>{cfError}</div>}
+              {cfError&&<div style={{fontSize:11.5,color:T.gold300}}>{cfError}</div>}
               {hidden>0&&(
-                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:T.ink3,cursor:"pointer",textAlign:"left"}}>
+                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:RAIL.dim,cursor:"pointer",textAlign:"left"}}>
                   {cfShowAll?"Hide empty fields":`Show all ${cfData.length} fields (${hidden} empty)`}
                 </button>
               )}
             </div>
-            </div>;
+            </RailSection>;
           })()}
 
-          {donorEvents.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Events</div>
-            <div style={{display:"flex",flexDirection:"column",gap:4}}>
-              {donorEvents.slice(0,5).map(e=>{
-                const EVT_ICONS={gala:"•",cultivation:"•",site_visit:"•",board_meeting:"•",volunteer:"•",webinar:"•",other:"•"};
-                const EVT_COLORS={gala:T.greenDk,cultivation:T.green,site_visit:T.green500,board_meeting:T.greenDk,volunteer:T.gold600,webinar:T.gold500,other:T.ink3};
-                const ATT_COL={invited:T.ink3,confirmed:T.green500,attended:T.green,no_show:T.terracotta,cancelled:T.ink3};
-                const icon=EVT_ICONS[e.event_type]||"•";
-                const attCol=ATT_COL[e.attendee_status]||T.ink3;
-                // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
-                // sample seed writes timestamps) — blindly appending T12:00:00
-                // to the latter produced "Invalid Date" on the profile card.
-                const _raw=e.date?String(e.date):"";
-                const _iso=_raw.match(/^\d{4}-\d{2}-\d{2}/);
-                const _dt=_raw?(_iso?new Date(_iso[0]+"T12:00:00"):new Date(_raw)):null;
-                const d=_dt&&!isNaN(_dt)?_dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
-                return(
-                  <div key={e.id} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
-                      <div style={{fontSize:10,color:T.ink3}}>{d}</div>
-                    </div>
-                    <span style={{background:attCol+"22",color:attCol,border:`1px solid ${attCol}44`,borderRadius:99,padding:"2px 8px",fontSize:9,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>}
+          {/* BUILD-99 Part 3 — the cultivation plan. It moved off the reading
+              column and into the rail with the rest of how-we-manage-them, and
+              it is folded because most days she does not open it. */}
+          <RailSection title="Cultivation plan" testid="dp-rail-plan" fold foldOpenLabel="Hide" foldShutLabel="Show">
+            <div>{lockMajor(<PlanPanel donorId={donor.id} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
+          </RailSection>
 
-          {/* Major-gifts rail — Suggested Move + Move Stage + Wealth Score +
-              Suggested Actions. Locked as ONE preview for Core (lockMajor): the
-              real panels (with the org's own data) render behind frosted glass
-              with a single Unlock-with-Team CTA; writes are server-gated. */}
-          {lockMajor(<>
-          {(() => {
-            // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
-            // Lapsed is set automatically elsewhere; these are the judgment
-            // moves the officer owns, offered one-click.
-            const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
-            if(!shown.length) return null;
-            return (
-              <div>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.gold700,marginBottom:8}}>Suggested Move</div>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {shown.map(s=>(
-                    <div key={s.signal} style={{background:T.bg,border:"1px solid "+T.gold700,borderLeft:"3px solid "+T.gold500,borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
-                      <div style={{display:"flex",gap:6}}>
-                        {s.toStage&&!isReadOnly&&(
-                          <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                            Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
-                          </button>
-                        )}
-                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+          {donorEvents.length>0&&(
+            <RailSection title="Events" testid="dp-rail-events" fold foldOpenLabel="Hide" foldShutLabel={`Show ${donorEvents.length}`}>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {donorEvents.slice(0,5).map(e=>{
+                  // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
+                  // sample seed writes timestamps) — blindly appending T12:00:00
+                  // to the latter produced "Invalid Date" on the profile card.
+                  const _raw=e.date?String(e.date):"";
+                  const _iso=_raw.match(/^\d{4}-\d{2}-\d{2}/);
+                  const d=_iso?displayDate(_iso[0]):"";
+                  return(
+                    <div key={e.id} style={{background:RAIL.panel,borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,color:RAIL.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
+                        <div style={{fontSize:10.5,color:RAIL.dim}}>{d}</div>
                       </div>
+                      <span style={{border:"1px solid "+RAIL.line,color:RAIL.dim,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            );
-          })()}
+            </RailSection>
+          )}
 
-          {/* BUILD-88a A.4 — the Move Stage strip renders ONLY with the Team
-              flag, not as a frosted preview. A stage is a position in a pipeline
-              somebody moves people through; a Core org has no pipeline and no
-              Kanban, and showing them the strip teaches them the product is not
-              for them. */}
-          {isTeam&&<div data-testid="dp-move-stage">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Move Stage</div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {STAGES.map(s=>(
-                <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
-                  aria-pressed={(donor.stage||"cultivate")===s.id} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark((donor.stage||"cultivate")===s.id,"bottom")}}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            <div style={{marginTop:8,fontSize:11,color:T.ink3,lineHeight:1.5,borderLeft:`2px solid ${stageTone(stage,true)}`,paddingLeft:8}}>
-              {STAGE_ACTION[donor.stage||"cultivate"]}
-            </div>
-          </div>}
-
-          {/* BUILD-88a A.4 — THE WEALTH SCORE IS HIDDEN UNTIL IT CAN SAY WHAT IT
-              IS. It renders a number out of 10, a tier and a confidence word,
-              and nothing on the screen says how any of them are arrived at or
-              what they were computed from. A number a board member — or a
-              fundraiser about to decide how much to ask for — cannot define is a
-              number they should not be shown; that is BUILD-86 C.3's rule, and
-              it applies to the officer's own screen as much as to the board's.
-              It comes back when WEALTH_SCORE_DEFINITION carries a sentence AND
-              WEALTH_SCORE_SOURCE names where the inputs come from. The panel's
-              code is untouched below so that is a one-line change, not a
-              rebuild. */}
-          {WEALTH_SCORE_DEFINITION&&WEALTH_SCORE_SOURCE&&<div data-testid="dp-wealth-score">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Proven capacity</div>
-            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px"}}>
-              {localScore!==null?(
-                <>
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                    <div style={{textAlign:"center",background:wsc+"22",border:`2px solid ${wsc}`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
-                      <div style={{fontSize:26,fontWeight:800,color:wsc,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
-                      <div style={{fontSize:9,color:T.ink3,fontWeight:600,marginTop:2}}>/ 10</div>
-                    </div>
-                    <div>
-                      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
-                        <span style={{background:(TIER_COLOR[localTier]||T.ink3)+"33",color:TIER_COLOR[localTier]||T.ink3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
+          {/* BUILD-88a A.4 — THE WEALTH SCORE IS HIDDEN UNTIL IT CAN SAY WHAT
+              IT IS (WEALTH_SCORE_DEFINITION + WEALTH_SCORE_SOURCE). Kept here,
+              folded, so turning it back on is still one line. */}
+          {WEALTH_SCORE_DEFINITION&&WEALTH_SCORE_SOURCE&&(
+            <RailSection title="Proven capacity" testid="dp-wealth-score" fold foldOpenLabel="Hide" foldShutLabel="Show">
+              <div style={{background:RAIL.panel,borderRadius:10,padding:"14px"}}>
+                {localScore!==null?(
+                  <>
+                    <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                      <div style={{textAlign:"center",border:"1px solid "+RAIL.line,borderRadius:10,padding:"10px 14px",minWidth:56,flexShrink:0}}>
+                        <div style={{fontSize:26,fontWeight:800,color:T.white,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
+                        <div style={{fontSize:9,color:RAIL.dim,fontWeight:600,marginTop:2}}>/ 10</div>
                       </div>
-                      <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>{localConf} confidence</div>
+                      <div>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
+                          <span style={{border:"1px solid "+RAIL.line,color:RAIL.text,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
+                        </div>
+                        <div style={{fontSize:10,color:RAIL.dim,fontWeight:600}}>{localConf} confidence</div>
+                      </div>
                     </div>
+                    {localRationale&&<p style={{fontSize:12,color:RAIL.dim,lineHeight:1.6,margin:"0 0 12px 0",borderLeft:"2px solid "+RAIL.line,paddingLeft:10}}>{localRationale}</p>}
+                    <button onClick={recalcScore} disabled={scoreLoading} style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:8,padding:"6px",color:RAIL.text,fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
+                  </>
+                ):(
+                  <div style={{textAlign:"center",padding:"4px 0"}}>
+                    <div style={{fontSize:12,color:RAIL.dim,marginBottom:10}}>No score yet</div>
+                    <button onClick={recalcScore} disabled={scoreLoading} style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:8,padding:"7px 15px",color:RAIL.text,fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate score"}</button>
                   </div>
-                  {localRationale&&<p style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid "+T.bg3,paddingLeft:10}}>{localRationale}</p>}
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
-                </>
-              ):(
-                <div style={{textAlign:"center",padding:"4px 0"}}>
-                  <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>No score yet</div>
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 15px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
-                </div>
-              )}
-              <div style={{fontSize:10.5,color:T.ink3,marginTop:10,lineHeight:1.5}}>{WEALTH_SCORE_DEFINITION} Source: {WEALTH_SCORE_SOURCE}.</div>
-            </div>
-          </div>}
+                )}
+                <div style={{fontSize:10.5,color:RAIL.dim,marginTop:10,lineHeight:1.5}}>{WEALTH_SCORE_DEFINITION} Source: {WEALTH_SCORE_SOURCE}.</div>
+              </div>
+            </RailSection>
+          )}
 
-          <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Suggested Actions</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-              <AIBtn onClick={()=>getAI(donor,"nextmove",openForNextMove)} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
-              <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
-              <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
-              <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>
-              {/* BUILD-88a A.4 — SEND EMAIL IS GONE FROM THE PROFILE. Steward
-                  prepares, she sends. A draft written here went out from this
-                  screen without ever passing through the place she reads her
-                  own mail, so a sentence she would have changed left in her
-                  name. The draft goes to the clipboard and into her mail
-                  client, where she can read it as the donor will. */}
-              {aiMap[`${donor.id}_email`]&&(
-                <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft"
-                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 11px",color:T.gold700,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  {draftCopied?"Copied ✓":"Copy the draft"}
-                </button>
-              )}
-            </div>
-            {["nextmove","outreach","email","callscript"].map(t=>aiMap[`${donor.id}_${t}`]?<AIPanel key={t} text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>:null)}
-
-            {/* BUILD-88a A.4 — THE SEND PANEL IS GONE FROM THE PROFILE.
-                Steward prepares, she sends. A draft written and sent from here
-                never passed through the place she reads her own mail, so a
-                sentence she would have changed went out in her name. The draft
-                is copied to the clipboard instead; Gmail's send route still
-                exists for the surfaces that are genuinely about sending. */}
-          </div>
-          </>,{title:"Major-gift tools",blurb:"Suggested moves, stage management, capacity scoring, and outreach drafting — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:520})}
+          {/* BUILD-99 Part 4 — "Brief me". The page she reads in the car, and
+              the last thing in the rail because it is the last thing she does
+              before she leaves. */}
+          <RailSection title="Before you go" testid="dp-rail-brief">
+            <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
+          </RailSection>
         </div>
       </div>
     </div>

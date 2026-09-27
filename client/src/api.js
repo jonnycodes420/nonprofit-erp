@@ -175,6 +175,13 @@ export function adaptDonor(d) {
     // BUILD-89 adaptDonor trap: a field the server sets and this adapter does
     // not carry reaches the profile as undefined and renders as nothing.)
     sourceRecurring: d.source_recurring ?? null,
+    // PROFILE-1 — the four figures the profile draws, each with the SOURCE
+    // that opens the rows behind it. Built by the server (routes/crm.js
+    // donorProfileFigures) so the value and the rows are one computation.
+    // This line is the BUILD-89 adaptDonor trap again: without it the server
+    // sets `figures`, the profile reads undefined, and the whole row of
+    // numbers silently does not render. It cost twenty minutes here too.
+    figures:       d.figures ?? null,
     // BUILD-84 P0-2 — the donor type and the contact person on an
     // organization's record. `kind` null on a legacy row reads as a person.
     kind:          d.kind ?? null,

@@ -1113,6 +1113,65 @@ export function GivingHistoryChart({gifts}) {
   );
 }
 
+// ── GIVING BY YEAR (PROFILE-1) ─────────────────────────────────────────────
+// The line chart plotted one point per GIFT, so a donor with eight gifts got
+// eight x-positions labelled with whichever years happened to fall at the
+// ends — two 2023s and two 2025s side by side on the demo record, which is
+// not a shape anybody can read a giving pattern out of. This is one bar per
+// CALENDAR YEAR, every year in the span drawn even when it is empty (a gap is
+// the thing you came to see), and each bar OPENS the gifts behind it.
+//
+// `onOpenYear(year)` is what makes a bar a button. Without it the bars are
+// inert and no `role` or tab stop is drawn — an element that looks clickable
+// and is not is worse than a plain one.
+export function GivingByYearChart({gifts, onOpenYear, currency=fmtFull}) {
+  if (!gifts?.length) return <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}>No gift history recorded</div>;
+  const yearOf=g=>Number(String(g.date).slice(0,4))||0;
+  const years=gifts.map(yearOf).filter(Boolean);
+  if(!years.length) return <div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}>No gift history recorded</div>;
+  const lo=Math.min(...years), hi=Math.max(...years);
+  // A very long history collapses to the last twelve years rather than
+  // drawing forty bars four pixels wide.
+  const from=Math.max(lo,hi-11);
+  const totals=new Map();
+  for(const g of gifts){const y=yearOf(g);if(y>=from)totals.set(y,(totals.get(y)||0)+(Number(g.amount)||0));}
+  const span=[];for(let y=from;y<=hi;y++)span.push(y);
+  const max=Math.max(...span.map(y=>totals.get(y)||0),1);
+  const W=640,H=176,pad={t:10,r:8,b:34,l:52};
+  const pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  const slot=pw/span.length, bw=Math.min(48,slot*0.62);
+  const mid=max/2;
+  return(
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Giving by year, ${from} to ${hi}`} style={{display:"block",overflow:"visible"}}>
+      {[0,mid,max].map((v,i)=>{
+        const y=pad.t+ph-(v/max)*ph;
+        return <g key={i}>
+          <line x1={pad.l} y1={y} x2={W-pad.r} y2={y} stroke={i===0?T.bg3:T.bg2}/>
+          <text x={pad.l-6} y={y+3} textAnchor="end" fontSize={10} fill={T.ink3}>{i===0?"$0":fmt(v)}</text>
+        </g>;
+      })}
+      {span.map((y,i)=>{
+        const v=totals.get(y)||0;
+        const h=v>0?Math.max(3,(v/max)*ph):0;
+        const x=pad.l+i*slot+(slot-bw)/2;
+        const top=pad.t+ph-h;
+        const open=onOpenYear&&v>0?()=>onOpenYear(y):null;
+        return (
+          <g key={y} data-bar-year={y} {...(open?{role:"button",tabIndex:0,style:{cursor:"pointer"},onClick:open,
+               onKeyDown:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}}}:{})}>
+            {open&&<rect x={x-3} y={pad.t} width={bw+6} height={ph} fill="transparent"/>}
+            {v>0
+              ? <rect x={x} y={top} width={bw} height={h} rx={3} fill={T.greenDk}/>
+              : <rect x={x} y={pad.t+ph-3} width={bw} height={3} rx={1.5} fill={T.bg3}/>}
+            <text x={x+bw/2} y={H-10} textAnchor="middle" fontSize={10} fill={T.ink3}>{y}</text>
+            <title>{v>0?`${currency(v)} in ${y}${open?" — open these gifts":""}`:`Nothing recorded in ${y}`}</title>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── Touchpoint helpers (module-level to avoid focus-loss on re-render) ──────
 export function TpField({label,children}){
   return <div style={{display:"flex",flexDirection:"column",gap:4}}>

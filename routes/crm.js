@@ -2570,6 +2570,62 @@ app.get("/donors/stage-counts", requireAuth, wrap(async (req, res) => {
   res.json({ counts: anyPlaced ? placed : suggested, placed, suggested, anyPlaced });
 }));
 
+// ── PROFILE-1 — THE FOUR FIGURES AT THE TOP OF A PERSON'S RECORD ───────────
+// Lifetime giving, the last gift, how long since we last spoke, and what we
+// are asking them for. Each one is a figure like every other number in
+// Steward: its VALUE comes from figureSources.figureValue, and the `source`
+// it carries is exactly what the drawer re-fetches for the rows behind it, so
+// the number on the record and the rows in the drawer are one computation and
+// cannot drift apart.
+//
+// A figure with NO ROWS BEHIND IT IS NOT A ZERO. "£0 lifetime" and "nobody
+// has given yet" are different facts and a record that says the first when it
+// means the second is lying. So an empty figure comes back with value null
+// and a sentence saying what will appear there and when.
+const PROFILE_FIGURE_BLANKS = {
+  lifetime: {
+    blank: "Nothing has been given on this record yet. The first gift — logged here, imported, or given online — starts this total, and it never resets.",
+    short: "No giving yet.",
+  },
+  lastGift: {
+    blank: "No gift has come in from this person yet. The first one shows here the day it lands, with its date, its fund and how it was paid.",
+    short: "No gift yet.",
+  },
+  contact: {
+    blank: "Nobody has logged a conversation with this person yet. Log a call, a meeting, an email, an ask or a note and this becomes the days since the last one.",
+    short: "Never contacted.",
+  },
+  openAsk: {
+    blank: "There is no ask in flight with this person. Open a proposal and what you are asking for sits here until they say yes or no.",
+    short: "No open ask.",
+  },
+};
+
+// The four, in one round trip. `today` is the ORGANISATION's civil date,
+// computed once by the caller and handed to the source — figureSources.js
+// never reads a clock for a calendar day.
+async function donorProfileFigures(orgId, donorId, today) {
+  const deps = { computeRetentionRate, computeDriftForDonors };
+  const wanted = [
+    ["lifetime", { key: "donor-lifetime",    params: { donor: donorId } }],
+    ["lastGift", { key: "donor-last-gift",   params: { donor: donorId } }],
+    ["contact",  { key: "donor-contact-gap", params: { donor: donorId, today } }],
+    ["openAsk",  { key: "donor-open-ask",    params: { donor: donorId } }],
+  ];
+  const got = await Promise.all(wanted.map(async ([k, source]) => {
+    const f = await figureSources.figureValue(orgId, source, deps);
+    const empty = !f.totalRows;
+    return [k, {
+      value: empty ? null : f.value,
+      cents: empty ? null : f.cents,
+      source,
+      blank: empty ? PROFILE_FIGURE_BLANKS[k].blank : null,
+      blankShort: empty ? PROFILE_FIGURE_BLANKS[k].short : null,
+    }];
+  }));
+  return Object.fromEntries(got);
+}
+
 app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const rows = await query(
     "SELECT * FROM donors WHERE id = ? AND org_id = ?",
@@ -2615,6 +2671,9 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   // record whose face went missing because a list was capped.
   d.photo_url = donorPhotoUrl(req.user.orgId, d.photo_asset_id);
   d.person_types = PT.typesOf(d);   // BUILD-94 Part 2
+  // PROFILE-1 — the four figures, each carrying the source its drawer opens.
+  d.figures = await donorProfileFigures(
+    req.user.orgId, d.id, orgToday(await orgTz(req.user.orgId)));   // ORG_TZ_SEAM_OK
   res.json(d);
 }));
 

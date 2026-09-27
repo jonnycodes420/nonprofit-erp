@@ -28,6 +28,7 @@ import { apiFetch } from "../api";
 // the Dashboard's root retained a `transform` from `.fade-in`'s fill-mode,
 // which made it the containing block for every position:fixed descendant and
 // dropped this panel at the vertical middle of the whole tall page.
+const UNITS = { months: "months", days: "days" };
 const PAGE_SIZE = 50;
 const qs = params => Object.entries(params || {})
   .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -57,8 +58,15 @@ export function SourceRows({ source, initial, onSelectDonor, heading }) {
   const total = data?.totalRows || 0;
   const first = total ? (page - 1) * (data?.pageSize || PAGE_SIZE) + 1 : 0;
   const last = Math.min(total, first + rows.length - 1);
+  // PROFILE-1 — a source may measure something that is not money. `months`
+  // was the first (recurring-months); `days` is the second (the profile's
+  // "Last contact", where the figure is the gap and only the most recent
+  // conversation carries it, so the rows still add to it). A row with no
+  // amount renders BLANK, never 0 — a zero there would read as "nothing on
+  // that day" instead of "this row is not what the number counts".
+  const unit = UNITS[data?.amountKind];
   const amount = r => r.amount === null || r.amount === undefined ? ""
-    : data?.amountKind === "months" ? `${Math.round(r.amount)} months` : fmtFull(r.amount);
+    : unit ? `${Math.round(r.amount)} ${unit}` : fmtFull(r.amount);
   return (
     <div data-figure-part={heading ? heading.role : undefined}>
       {heading && (
@@ -144,9 +152,10 @@ export function Foot({ data, figure }) {
       </div>
     );
   }
+  const totUnit = UNITS[data.amountKind];
   const word = data.measure === "sum" ? "Total of every row" : data.measure === "avg" ? "Average of every row" : "Rows";
-  const shown = data.measure === "sum" ? fmtFull(data.value)
-    : data.measure === "avg" ? `${data.value}${data.amountKind === "months" ? " months" : ""}`
+  const shown = data.measure === "sum" ? (totUnit ? `${Math.round(data.value)} ${totUnit}` : fmtFull(data.value))
+    : data.measure === "avg" ? `${data.value}${totUnit ? " " + totUnit : ""}`
     : Number(data.value).toLocaleString("en-US");
   const matches = figure && figure.value !== null && figure.value !== undefined
     && (data.measure === "sum" ? centsOf(figure.value) === data.cents : Number(figure.value) === data.value);

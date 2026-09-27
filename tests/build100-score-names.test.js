@@ -71,8 +71,12 @@ const SRC = path.join(__dirname, "..", "client", "src", "components");
   const shared = fs.readFileSync(path.join(SRC, "shared.jsx"), "utf8");
   ok("moveUrgency still computes urgency from days against the stage threshold",
     /export function moveUrgency/.test(shared) && /STAGE_THRESH/.test(shared), null);
-  ok("…and the profile still renders it on the Contact tile",
-    /urg\.days.*urg\.urgencyColor/.test(donors), null);
+  // PROFILE-1 — the DAYS on the Last contact tile are the server's figure
+  // now (figureSources donor-contact-gap, so the number and the rows behind
+  // it are one computation), but whether they are LATE is still moveUrgency's
+  // judgment against this donor's stage, and it still colours the tile.
+  ok("…and the profile still renders it on the Last contact tile",
+    /urg\.level!=="ok"\?urg\.urgencyColor/.test(donors), null);
 
   console.log("\n— §4 · the browser: the definition is reachable —");
   if (!haveDeps()) { console.log("  SKIP — no Playwright or client/dist"); await closeDb(); summary(); return; }

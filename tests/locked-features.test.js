@@ -165,8 +165,8 @@ ok(/Major-gifts rail[\s\S]{0,400}lockMajor\(<>/.test(donors), "the Suggested Mov
 // BUILD-88a A.4 — sequences are ABSENT on Core, not a frosted preview. A Core
 // org has no sequences to enrol anybody in, and a padlock over an empty panel
 // is an advertisement rather than a feature.
-ok(/isTeam&&sequences\.length>0&&\(<div/.test(donors), "the Sequences enroll panel renders ONLY with the Team flag");
-ok(/isTeam&&<div data-testid="dp-move-stage"/.test(donors), "…and so does the Move Stage strip (BUILD-88a A.4)");
+ok(/isTeam&&sequences\.length>0&&\(\s*<RailSection/.test(donors), "the Sequences enroll panel renders ONLY with the Team flag");
+ok(/isTeam&&<RailSection title="Stage" testid="dp-move-stage"/.test(donors), "…and so does the Move Stage strip (BUILD-88a A.4)");
 // Reassign (owner display stays; the write control is Team)
 ok(/isAdmin&&isTeam&&<button onClick=\{\(\)=>setShowReassign/.test(donors), "the Reassign control is Team-gated (owner shown read-only for Core)");
 ok(/showReassign&&isAdmin&&isTeam&&/.test(donors), "the Reassign form is Team-gated too");
@@ -178,7 +178,7 @@ ok(/\{isAdmin&&teamPortfolios&&\(orgTeam\.length>0\|\|pendingInvites\.length>0\)
 ok(/Assign owner ▾/.test(donors), "directory bulk control is labeled 'Assign owner'");
 ok(/teamPortfolios&&<button[\s\S]{0,120}onAssign\(d\)/.test(donors), "directory per-row 'Assign' is Team-only");
 // CRM core is NOT gated — still fully available to Core
-ok(has(donors, "GivingHistoryChart") && has(donors, "Gifts & Pledges") && has(donors, "Materials"), "CRM core (giving history, Gifts & Pledges, Materials tabs) stays present/ungated");
+ok(has(donors, "GivingByYearChart") && has(donors, "Gifts & Pledges") && has(donors, "Materials"), "CRM core (giving history, Gifts & Pledges, Materials tabs) stays present/ungated");
 
 // ── Server: the major-gifts WRITE/COMPUTE routes are Team-gated ─────────────
 ok(/app\.patch\("\/donors\/:id\/stage", requireAuth, requirePlan\("team"\)/.test(server), "PATCH /donors/:id/stage is requirePlan('team')");

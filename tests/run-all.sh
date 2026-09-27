@@ -174,6 +174,8 @@ CORE=(
   fix3-d-lock-flash
   fix3-d-suggestion
   hotfix1-profile
+  profile1-figures
+  profile1-screen
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
