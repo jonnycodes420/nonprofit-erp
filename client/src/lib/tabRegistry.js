@@ -68,8 +68,10 @@ const MORE_TABS=[
 //
 // MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
 // and four slots is a different constraint from a 220px rail.
-const PRIMARY_NAV=["dashboard","board","donors","fundraising","volunteers","agent","reports"];
-const MORE_NAV=["grants","communications","tasks","finance","portal"];
+// FIX-1 §12 (Jonathan, 27 Sep) — the rail is the seven questions; Dashboards
+// and the rest live under More.
+const PRIMARY_NAV=["dashboard","donors","fundraising","volunteers","agent","reports","finance"];
+const MORE_NAV=["board","grants","communications","tasks","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 // FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →
 // Major gifts (App.jsx's navigateTo sends every "pipeline" there). The gate

@@ -228,8 +228,11 @@ const root = path.join(__dirname, "..");
   // this reads the rail's own order rather than the two call sites it used to
   // pin. The property is the same one and it is now stated more directly:
   // Dashboards is the SECOND thing on the rail and is not behind a disclosure.
-  ok("Dashboard sits directly under Home in the sidebar, not buried in a group",
-     /const PRIMARY_NAV=\["dashboard","board"/.test(app) && !/const MORE_NAV=\[[^\]]*"board"/.test(app));
+  // REVIEWED CONTRACT CHANGE (FIX-1 §12, approved by Jonathan 27 Sep): the
+  // rail is the seven questions, and Dashboards moved under More. Was:
+  // "Dashboard sits directly under Home in the sidebar, not buried in a group".
+  ok("Dashboards is on the desktop rail's More, not a primary item",
+     /const MORE_NAV=\[[^\]]*"board"/.test(app) && !/const PRIMARY_NAV=\[[^\]]*"board"/.test(app));
   ok("…and is reachable on mobile", /const MORE_TABS=\[\s*\n\s*\{id:"board"/.test(app));
 
   // ── §4 · names on the at-risk count (live) ───────────────────────────────
