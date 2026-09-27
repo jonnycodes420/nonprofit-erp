@@ -100,6 +100,10 @@ export function GivingLine({ m }) {
   const x = i => L + (i * (W - L - R)) / Math.max(1, pts.length - 1);
   const y = v => TOP + (H - TOP - BOT) * (1 - (Number(v) || 0) / max);
   const line = key => pts.map((p, i) => (p[key] ? `${x(i)},${y(p[key].value)}` : null)).filter(Boolean).join(" ");
+  // Where the two years meet, last year's point sat under this year's and no
+  // pointer could reach it — a number that could not open (the FIX-2 walk).
+  // Two points closer than a finger apart are drawn side by side instead.
+  const split = p => (p.thisYear && p.lastYear && Math.abs(y(p.thisYear.value) - y(p.lastYear.value)) < 12 ? 6 : 0);
   return (
     <div style={{ marginTop: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", fontSize: 12, color: T.ink3, marginBottom: 6 }}>
@@ -119,11 +123,11 @@ export function GivingLine({ m }) {
           <text key={p.month} x={x(i)} y={H - 10} textAnchor="middle" fontSize={12} fill={T.ink3}>{p.label}</text>
         ))}
         {pts.map((p, i) => p.lastYear && (
-          <Figure key={"l" + p.month} variant="point" figureKey={"last-" + p.month} cx={x(i)} cy={y(p.lastYear.value)} r={4.5}
+          <Figure key={"l" + p.month} variant="point" figureKey={"last-" + p.month} cx={x(i) + split(p)} cy={y(p.lastYear.value)} r={4.5}
             color={T.gold} value={p.lastYear.value} kind="money" label={p.lastYear.label} definition={m.definition} source={p.lastYear.source} />
         ))}
         {pts.map((p, i) => p.thisYear && (
-          <Figure key={"t" + p.month} variant="point" figureKey={"this-" + p.month} cx={x(i)} cy={y(p.thisYear.value)} r={5.5}
+          <Figure key={"t" + p.month} variant="point" figureKey={"this-" + p.month} cx={x(i) - split(p)} cy={y(p.thisYear.value)} r={5.5}
             color={T.greenDk} value={p.thisYear.value} kind="money" label={p.thisYear.label} definition={m.definition} source={p.thisYear.source} />
         ))}
       </svg>

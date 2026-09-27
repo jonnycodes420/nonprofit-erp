@@ -282,6 +282,21 @@ const qs = params => Object.entries(params || {}).map(([k, v]) => `${encodeURICo
         ok(`§4 ${k} @${w}: no ISO date on the screen`, !ISO.test(shape.text), (shape.text.match(ISO) || [])[0]);
         ok(`§4 ${k} @${w}: every drawn figure carries a source`, shape.noSource === 0, shape.noSource);
         await page.screenshot({ path: path.join(SHOTS, `${k}-${w}.png`) });
+        // FIX-2 walk: a figure a pointer cannot reach does not open. Every chart
+        // point must be the element under its own centre (last year's used to
+        // hide under this year's where the two lines met).
+        const hidden = await page.evaluate(async () => {
+          const out = [];
+          for (const el of document.querySelectorAll('[data-figure-key^="last-"],[data-figure-key^="this-"]')) {
+            el.scrollIntoView({ block: "center" });
+            await new Promise(r => setTimeout(r, 30));
+            const b = el.getBoundingClientRect();
+            const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+            if (!(hit && (hit === el || el.contains(hit)))) out.push(el.getAttribute("data-figure-key"));
+          }
+          return out;
+        });
+        ok(`§4 ${k} @${w}: every chart point can be reached by a pointer`, hidden.length === 0, hidden);
       }
       // Open Giving this year: the panel's total equals the tile to the cent.
       await page.locator('[data-dash-key="board"]').first().click();
