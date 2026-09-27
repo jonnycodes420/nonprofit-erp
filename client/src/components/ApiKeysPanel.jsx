@@ -39,7 +39,7 @@ export function ApiKeysPanel({ isReadOnly }) {
       {!isReadOnly && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="What it's for, e.g. Zapier"
           style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink, minWidth: 220 }} />
-        <button onClick={make} disabled={!name.trim()} style={{ ...btn, background: T.greenDk, color: T.white, border: "none" }}>Make a key</button>
+        <button onClick={make} disabled={!name.trim()} style={{ ...btn, background: T.white, color: T.ink, border: "1.5px solid " + T.ink }}>Make a key</button>
       </div>}
       {fresh && <div role="status" data-testid="api-key-fresh" style={{ background: T.bg, border: "1px solid " + T.gold500, borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: T.ink, marginBottom: 6 }}>{fresh.sentence}</div>

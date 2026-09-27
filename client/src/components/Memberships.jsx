@@ -68,7 +68,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
   const chosen = form && levels.find(l => l.id === form.levelId);
   return (
     <div data-testid="membership-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.greenDk }}>Membership</span>
+      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Membership</span>
       {cur ? (
         <div data-testid="membership-current" title={data.sentence} aria-label={data.sentence} tabIndex={0}>
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{cur.level_name}</span>{" "}

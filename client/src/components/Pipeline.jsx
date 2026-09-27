@@ -56,7 +56,7 @@ function MoveModal({ card, onClose, onMoved }) {
         {err && <div style={{ color: T.terracotta, fontSize: 13, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <button onClick={onClose} style={{ background: "none", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: T.ink }}>Cancel</button>
-          <button onClick={save} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Log move"}</button>
+          <button onClick={save} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: T.white, cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Log move"}</button>
         </div>
       </div>
     </Modal>
@@ -93,7 +93,7 @@ function DropNotePrompt({ card, fromStage, toStage, onSave, onCancel }) {
         {err && <div style={{ color: T.terracotta, fontSize: 13, marginTop: 8 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
           <button onClick={onCancel} style={{ background: "none", border: `1px solid ${T.bg3}`, borderRadius: T.radiusSm, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: T.ink }}>Cancel</button>
-          <button onClick={submit} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Save move ↵"}</button>
+          <button onClick={submit} disabled={busy} style={{ background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 18px", fontSize: 13, fontWeight: 700, color: T.white, cursor: busy ? "wait" : "pointer" }}>{busy ? "Saving…" : "Save move ↵"}</button>
         </div>
       </div>
     </Modal>
@@ -111,7 +111,7 @@ function ProspectCard({ card, colorMap, onOpen, onMove, isReadOnly, dndEnabled, 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
         <div {...interactive(() => onOpen(card.donorId), { label: `Open ${card.name}` })} style={{ borderRadius: 6, margin: -4, padding: 4, flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div title={card.assignedToName || "Unassigned"} style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: color || "#0d5c3a22", color: color ? "#fff" : T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{initials(card.assignedToName)}</div>
+            <div title={card.assignedToName || "Unassigned"} style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, background: color || T.greenDk+"22", color: color ? T.white : T.greenMid, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800 }}>{initials(card.assignedToName)}</div>
             <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{card.name}</span>
               <DriftBadge drift={card.drift}/>
@@ -309,7 +309,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
           </div>
         )}
         <span style={{ fontSize: 12.5, color: T.ink3 }}>{totalCards} {canViewAll ? "on the board" : "in your portfolio"}{anyFilter ? " (filtered)" : ""}</span>
-        <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: "#fff", cursor: "pointer" }}>+ Add prospects from your donors</button>
+        <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.white, border: "1.5px solid " + T.ink, borderRadius: T.radiusSm, padding: "7px 13px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>+ Add prospects from your donors</button>
       </div>
 
       {/* Filters */}
@@ -381,7 +381,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
       )}
       {moving && <MoveModal card={moving} onClose={() => setMoving(null)} onMoved={() => { setMoving(null); load(); }} />}
       {prompt && <DropNotePrompt card={prompt.card} fromStage={prompt.fromStage} toStage={prompt.toStage} onSave={savePrompt} onCancel={cancelPrompt} />}
-      {dndError && <div role="alert" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: T.terracotta, color: "#fff", padding: "10px 16px", borderRadius: T.radiusSm, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: T.shadowLg, maxWidth: "90vw" }}>{dndError}</div>}
+      {dndError && <div role="alert" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", background: T.terracotta, color: T.white, padding: "10px 16px", borderRadius: T.radiusSm, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: T.shadowLg, maxWidth: "90vw" }}>{dndError}</div>}
     </div>
   );
 

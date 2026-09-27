@@ -51,6 +51,18 @@ const E = {
   ink: "#0f1a12", cream: "#f0ede6", gold: "#c9a84c", bg3: "#dcd8cc", terra: "#8a3a24", green: "#0d5c3a",
   // The editor chrome's own four, named rather than repeated thirty-four times.
   line: "#3a4a3e", muted: "#6b6b64", panel: "#1b2a20", preview: "#1a6b4a",
+
+  // FIX-2 C — named here once, where they were inline.
+  white: "#ffffff",
+  paper: "#faf9f6",
+  hair: "#e7e4dc",
+  editInk: "#101a13",
+  editPanel2: "#2a3a2e",
+  sage: "#8fa896",
+  terra100: "#f6e3dd",
+  editGround: "#f7f5ef",
+  editLine: "#e0dcd0",
+  body: "#1c1c1a",
 };
 const btn = { background: E.gold, color: E.ink, border: "none", borderRadius: 9, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
 const btnQuiet = { background: "transparent", color: E.cream, border: "1px solid " + E.line, borderRadius: 9, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
@@ -61,13 +73,13 @@ function varsForPs(ps) {
   const pairing = resolvePairing(ps.type_pairing);
   const cs = resolveCardStyle(ps.card_style);
   return {
-    "--pt-primary": ps.primary_color || "#1a6b4a", "--pt-primary-fg": "#ffffff",
-    "--pt-accent": ps.accent_color || "#c9a84c", "--pt-accent-fg": "#ffffff",
-    "--pt-button": ps.button_color || ps.primary_color || "#1a6b4a", "--pt-button-fg": "#ffffff",
-    "--pt-bg": ps.background_tint || "#faf9f6",
+    "--pt-primary": ps.primary_color || E.preview, "--pt-primary-fg": E.white,
+    "--pt-accent": ps.accent_color || E.gold, "--pt-accent-fg": E.white,
+    "--pt-button": ps.button_color || ps.primary_color || E.preview, "--pt-button-fg": E.white,
+    "--pt-bg": ps.background_tint || E.paper,
     "--pt-serif": pairing.serif, "--pt-sans": pairing.sans,
     "--pt-card-radius": cs.radius + "px",
-    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid #e7e4dc` : "none",
+    "--pt-card-border": cs.borderWidth ? `${cs.borderWidth}px solid ${E.hair}` : "none",
     "--pt-card-shadow": cs.shadow,
   };
 }
@@ -76,7 +88,7 @@ function varsForPs(ps) {
 // (the live one carries recurring mutations and expects a real session).
 function SampleMyGiving() {
   return (
-    <div style={{ background: "#fff", border: "var(--pt-card-border,1px solid #e7e4dc)", borderRadius: "var(--pt-card-radius,14px)", padding: "20px 22px", marginBottom: 18 }}>
+    <div style={{ background: E.white, border: "var(--pt-card-border,1px solid "+E.hair+")", borderRadius: "var(--pt-card-radius,14px)", padding: "20px 22px", marginBottom: 18 }}>
       <div style={{ fontFamily: "var(--pt-serif,Georgia,serif)", fontSize: 22, marginBottom: 12 }}>Your giving</div>
       <div style={{ display: "flex", gap: 28, flexWrap: "wrap" }}>
         <div><div style={lbl}>This year</div><div style={{ fontSize: 26, fontWeight: 700 }}>$450</div></div>
@@ -330,14 +342,14 @@ export default function PortalEditor() {
         readImageFile(e.dataTransfer?.files?.[0], dataUrl => updateWidget(w.id, { image: dataUrl }));
       } : undefined}
       style={{ position: "relative", outline: selected === w.id ? `2px solid ${E.gold}` : "1px dashed transparent", borderRadius: 8, cursor: "grab" }}
-      onMouseEnter={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed #c9a84c"; }}
+      onMouseEnter={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed "+E.gold; }}
       onMouseLeave={e => { if (selected !== w.id) e.currentTarget.style.outline = "1px dashed transparent"; }}>
       {/* floating widget controls — keyboard path first-class */}
       <div style={{ position: "absolute", top: -10, right: 6, zIndex: 5, display: "flex", gap: 4 }}>
         <span style={{ background: E.ink, color: E.cream, fontSize: 10, fontWeight: 700, borderRadius: 6, padding: "3px 8px" }}>{WIDGET_META[w.type]?.label}</span>
         <button aria-label="Move up" onClick={e => { e.stopPropagation(); move(w.id, -1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↑</button>
         <button aria-label="Move down" onClick={e => { e.stopPropagation(); move(w.id, +1); }} style={{ background: E.ink, color: E.cream, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>↓</button>
-        <button aria-label="Remove widget" onClick={e => { e.stopPropagation(); removeWidget(w.id); }} style={{ background: E.terra, color: "#fff", border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>✕</button>
+        <button aria-label="Remove widget" onClick={e => { e.stopPropagation(); removeWidget(w.id); }} style={{ background: E.terra, color: E.white, border: "none", borderRadius: 6, width: 22, height: 20, fontSize: 11, cursor: "pointer" }}>✕</button>
       </div>
       <div style={{ pointerEvents: "none" }}>{node}</div>
     </div>
@@ -367,7 +379,7 @@ export default function PortalEditor() {
   );
 
   const formBlock = surface !== "give" ? null : (
-    <div style={{ border: "2px dashed var(--pt-primary,#1a6b4a)", borderRadius: 12, padding: "18px 16px",
+    <div style={{ border: "2px dashed var(--pt-primary,"+E.preview+")", borderRadius: 12, padding: "18px 16px",
                   textAlign: "center", margin: "14px 0", background: "rgba(0,0,0,0.02)" }}>
       <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--pt-primary," + E.preview + ")" }}>
         The donation form
@@ -384,7 +396,7 @@ export default function PortalEditor() {
       <div style={{ fontSize: 13, color: E.muted, marginBottom: 14 }}>Pick a starting point — everything stays editable, and nothing is visible to donors until you publish.</div>
       {(meta?.starters || []).map(s => (
         <button key={s.key} onClick={() => applyStarter(s.key)}
-          style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e7e4dc", borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+          style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.hair, borderRadius: 10, padding: "12px 14px", marginBottom: 8, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
           {s.label}
         </button>
       ))}
@@ -399,7 +411,7 @@ export default function PortalEditor() {
   );
 
   return (
-    <div style={{ height: "100vh", background: "#101a13", fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column" }}>
+    <div style={{ height: "100vh", background: E.editInk, fontFamily: "'DM Sans',system-ui,sans-serif", display: "flex", flexDirection: "column" }}>
       {/* Desktop preview = the published page's own layout rules, scoped to the
           editor canvas (mirrors Portal.jsx PortalStyles — keep in lock-step). */}
       <style>{`
@@ -424,7 +436,7 @@ export default function PortalEditor() {
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
           {["page", "design"].map(m => (
             <button key={m} onClick={() => { setMode(m); if (m === "design") { setSelected(null); setLibOpen(false); } }}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? "#2a3a2e" : "transparent", borderColor: mode === m ? E.gold : E.line }}>
+              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: mode === m ? E.editPanel2 : "transparent", borderColor: mode === m ? E.gold : E.line }}>
               {m === "page" ? "Page" : "Design"}
             </button>
           ))}
@@ -432,7 +444,7 @@ export default function PortalEditor() {
         <div style={{ display: "flex", gap: 6, marginLeft: 8 }}>
           {["phone", "desktop"].map(d => (
             <button key={d} onClick={() => setDevice(d)}
-              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? "#2a3a2e" : "transparent", borderColor: device === d ? E.gold : E.line }}>
+              style={{ ...btnQuiet, padding: "5px 12px", fontSize: 12, background: device === d ? E.editPanel2 : "transparent", borderColor: device === d ? E.gold : E.line }}>
               {d === "phone" ? "Phone" : "Desktop"}
             </button>
           ))}
@@ -440,38 +452,38 @@ export default function PortalEditor() {
         {mode === "page" && (
           <>
           {formPositionControl}
-          <button onClick={() => setLibOpen(o => !o)} style={{ ...btnQuiet, borderColor: libOpen ? E.gold : E.line, background: libOpen ? "#2a3a2e" : "transparent", marginLeft: 8 }}>
+          <button onClick={() => setLibOpen(o => !o)} style={{ ...btnQuiet, borderColor: libOpen ? E.gold : E.line, background: libOpen ? E.editPanel2 : "transparent", marginLeft: 8 }}>
             + Add widget
           </button>
           </>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 12, color: "#8fa896" }}>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: E.sage }}>
           {saveState === "saving" ? "Saving draft…" : saveState === "dirty" ? "Unsaved edits…" : saveState === "error" ? "Save failed" : meta?.publishedAt ? "Draft autosaves · publish when ready" : "Draft autosaves"}
         </span>
         {meta?.publishedAt && <button onClick={revert} style={btnQuiet}>Revert to published</button>}
         <button onClick={publish} disabled={publishing} style={btn}>{publishing ? "Publishing…" : "Publish"}</button>
       </div>
-      {err && <div style={{ background: "#f6e3dd", color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
+      {err && <div style={{ background: E.terra100, color: E.terra, fontSize: 13, padding: "8px 16px" }}>{err}</div>}
 
       <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
         {/* ── Left rail: Design mode — the theme + page-detail controls (the
             old Settings PortalManager form, one home now). The preview to the
             right updates immediately from local ps state. ── */}
         {mode === "design" && (
-          <div style={{ width: 320, flexShrink: 0, background: "#f7f5ef", borderRight: "1px solid #2a3a2e", overflowY: "auto", padding: "16px 16px 40px" }}>
+          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
             <DesignRail ps={ps} onSet={setDesign} note={designNote} />
           </div>
         )}
         {/* ── Widget library — collapsible, not a permanent rail ── */}
         {mode === "page" && libOpen && (
-          <div style={{ width: 280, flexShrink: 0, background: "#f7f5ef", borderRight: "1px solid #2a3a2e", overflowY: "auto", padding: "16px 16px 40px" }}>
+          <div style={{ width: 280, flexShrink: 0, background: E.editGround, borderRight: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>Add a widget</div>
               <button onClick={() => setLibOpen(false)} aria-label="Close widget library" style={{ background: "none", border: "none", fontSize: 13, cursor: "pointer", color: E.muted }}>✕</button>
             </div>
             {widgetTypesHere(surface).map(type => [type, WIDGET_META[type]]).map(([type, m]) => (
               <button key={type} onClick={() => { addWidget(type); setLibOpen(false); }}
-                style={{ display: "block", width: "100%", textAlign: "left", background: "#fff", border: "1px solid #e0dcd0", borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
+                style={{ display: "block", width: "100%", textAlign: "left", background: E.white, border: "1px solid "+E.editLine, borderRadius: 10, padding: "10px 12px", marginBottom: 6, cursor: "pointer" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{m.label}</div>
                 <div style={{ fontSize: 11.5, color: E.muted }}>{m.hint}</div>
               </button>
@@ -489,21 +501,21 @@ export default function PortalEditor() {
                 viewport is shorter than the frame (flex centering would). */}
             <div style={{ margin: "auto", padding: 24 }}>
               <div style={{ background: E.ink, borderRadius: 40, padding: 10, boxShadow: "0 18px 50px rgba(0,0,0,0.45)" }}>
-                <div style={{ width: 390, maxWidth: "calc(100vw - 120px)", height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,#faf9f6)", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
-                  <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px 60px", color: "#1c1c1a", fontFamily: "var(--pt-sans)" }}>
+                <div style={{ width: 390, maxWidth: "calc(100vw - 120px)", height: "min(844px, calc(100vh - 150px))", background: "var(--pt-bg,"+E.paper+")", borderRadius: 30, overflow: "hidden", display: "flex", flexDirection: "column", ...themeVars }}>
+                  <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px 60px", color: E.body, fontFamily: "var(--pt-sans)" }}>
                     {pageHeader}
                     {pageBody}
                   </div>
                 </div>
               </div>
-              <div style={{ textAlign: "center", fontSize: 11, color: "#8fa896", marginTop: 10 }}>Phone · 390px — how donors arriving from email see it</div>
+              <div style={{ textAlign: "center", fontSize: 11, color: E.sage, marginTop: 10 }}>Phone · 390px — how donors arriving from email see it</div>
             </div>
           </div>
         ) : (
-          <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,#faf9f6)", ...themeVars }}>
+          <div className="pe-desktop" style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--pt-bg,"+E.paper+")", ...themeVars }}>
             {/* The real page: full canvas width, the published wrap ladder
                 centers the column and the ≥1280 two-track grid applies. */}
-            <div className="pe-wrap" style={{ color: "#1c1c1a", fontFamily: "var(--pt-sans)" }}>
+            <div className="pe-wrap" style={{ color: E.body, fontFamily: "var(--pt-sans)" }}>
               {pageHeader}
               {pageBody}
             </div>
@@ -512,7 +524,7 @@ export default function PortalEditor() {
 
         {/* ── Options panel — beside the canvas, only while a widget is selected ── */}
         {mode === "page" && selectedWidget && (
-          <div style={{ width: 320, flexShrink: 0, background: "#f7f5ef", borderLeft: "1px solid #2a3a2e", overflowY: "auto", padding: "16px 16px 40px" }}>
+          <div style={{ width: 320, flexShrink: 0, background: E.editGround, borderLeft: "1px solid "+E.editPanel2, overflowY: "auto", padding: "16px 16px 40px" }}>
             <WidgetOptions w={selectedWidget} funds={funds} camps={camps}
               onChange={patch => updateWidget(selectedWidget.id, patch)}
               onClose={() => setSelected(null)} />
@@ -530,7 +542,7 @@ export default function PortalEditor() {
 // here — they live on the CRM's Donor Portal tab.
 function DesignRail({ ps, onSet, note }) {
   const group = (label) => (
-    <div style={{ fontSize: 12, fontWeight: 700, color: "#1c1c1a", textTransform: "uppercase", letterSpacing: "0.08em", margin: "18px 0 2px", borderTop: "1px solid #e0dcd0", paddingTop: 14 }}>{label}</div>
+    <div style={{ fontSize: 12, fontWeight: 700, color: E.body, textTransform: "uppercase", letterSpacing: "0.08em", margin: "18px 0 2px", borderTop: "1px solid "+E.editLine, paddingTop: 14 }}>{label}</div>
   );
   const colorField = (label, key, fallback, { clearable = false, hint = null, placeholder = "" } = {}) => (
     <>
@@ -597,7 +609,7 @@ function DesignRail({ ps, onSet, note }) {
             url={headerSrc}
             crop={(() => { const c = ps.header_crop; if (!c) return null; if (typeof c === "object") return c; try { return JSON.parse(c); } catch { return null; } })()}
             focal={{ x: ps.header_focal_x, y: ps.header_focal_y }}
-            bandColor={ps.primary_color || "#1a6b4a"}
+            bandColor={ps.primary_color || E.preview}
             ratio={PORTAL_HEADER_RATIO}
             onChange={(c) => onSet("header_crop", c)}
           />
@@ -605,10 +617,10 @@ function DesignRail({ ps, onSet, note }) {
       )}
 
       {group("Colors")}
-      {colorField("Primary color", "primary_color", "#1a6b4a")}
-      {colorField("Accent color", "accent_color", "#c9a84c")}
-      {colorField("Background tint (optional)", "background_tint", "#faf9f6", { clearable: true, hint: "A soft page wash. Dark colors are lightened so text stays readable." })}
-      {colorField("Button & link color (optional)", "button_color", ps.primary_color || "#1a6b4a", { clearable: true, hint: "Left empty, buttons use your primary color.", placeholder: "primary" })}
+      {colorField("Primary color", "primary_color", E.preview)}
+      {colorField("Accent color", "accent_color", E.gold)}
+      {colorField("Background tint (optional)", "background_tint", E.paper, { clearable: true, hint: "A soft page wash. Dark colors are lightened so text stays readable." })}
+      {colorField("Button & link color (optional)", "button_color", ps.primary_color || E.preview, { clearable: true, hint: "Left empty, buttons use your primary color.", placeholder: "primary" })}
 
       {group("Type & cards")}
       <div style={lbl}>Type pairing</div>
@@ -633,7 +645,7 @@ function DesignRail({ ps, onSet, note }) {
         onChange={e => onSet("min_recurring_cents", Math.round((parseFloat(e.target.value) || 5) * 100))} />
 
       {group("Footer")}
-      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "#1c1c1a", cursor: "pointer", marginTop: 8, lineHeight: 1.5 }}>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: E.body, cursor: "pointer", marginTop: 8, lineHeight: 1.5 }}>
         <input type="checkbox" checked={ps.powered_by === true} onChange={e => onSet("powered_by", e.target.checked)} style={{ marginTop: 2 }} />
         Show a small "Powered by Steward" line in the footer (off by default — the portal is yours)
       </label>
@@ -698,7 +710,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
               <div key={i} style={{ position: "relative" }}>
                 <img src={String(u).startsWith("data:") ? u : resolveAssetUrl(u)} alt="" style={{ height: 48, borderRadius: 6 }} />
                 <button onClick={() => onChange({ images: w.images.filter((_, j) => j !== i) })}
-                  style={{ position: "absolute", top: -6, right: -6, background: E.ink, color: "#fff", border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer", lineHeight: 1 }}>✕</button>
+                  style={{ position: "absolute", top: -6, right: -6, background: E.ink, color: E.white, border: "none", borderRadius: "50%", width: 16, height: 16, fontSize: 9, cursor: "pointer", lineHeight: 1 }}>✕</button>
               </div>
             ))}
           </div>
@@ -731,10 +743,10 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
         <div style={lbl}>Heading</div><input style={inp} value={w.heading || ""} onChange={e => onChange({ heading: e.target.value })} />
         <div style={lbl}>Funds — in display order</div>
         {chosen.map((f, i) => (
-          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid #e0dcd0", borderRadius: 8, padding: "6px 8px", marginBottom: 4 }}>
+          <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 6, background: E.white, border: "1px solid "+E.editLine, borderRadius: 8, padding: "6px 8px", marginBottom: 4 }}>
             <span style={{ flex: 1, fontSize: 13, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</span>
-            <button aria-label={`Move ${f.name} up`} disabled={i === 0} onClick={() => moveFund(i, -1)} style={{ background: "none", border: "1px solid #e0dcd0", borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.35 : 1 }}>↑</button>
-            <button aria-label={`Move ${f.name} down`} disabled={i === chosen.length - 1} onClick={() => moveFund(i, +1)} style={{ background: "none", border: "1px solid #e0dcd0", borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === chosen.length - 1 ? "default" : "pointer", opacity: i === chosen.length - 1 ? 0.35 : 1 }}>↓</button>
+            <button aria-label={`Move ${f.name} up`} disabled={i === 0} onClick={() => moveFund(i, -1)} style={{ background: "none", border: "1px solid "+E.editLine, borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === 0 ? "default" : "pointer", opacity: i === 0 ? 0.35 : 1 }}>↑</button>
+            <button aria-label={`Move ${f.name} down`} disabled={i === chosen.length - 1} onClick={() => moveFund(i, +1)} style={{ background: "none", border: "1px solid "+E.editLine, borderRadius: 6, width: 24, height: 22, fontSize: 11, cursor: i === chosen.length - 1 ? "default" : "pointer", opacity: i === chosen.length - 1 ? 0.35 : 1 }}>↓</button>
             <button aria-label={`Remove ${f.name}`} onClick={() => onChange({ fundIds: (w.fundIds || []).filter(x => x !== f.id) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer" }}>✕</button>
           </div>
         ))}
@@ -771,7 +783,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <div style={lbl}>Attribution</div><input style={inp} value={w.attribution || ""} onChange={e => onChange({ attribution: e.target.value })} /></>;
     case "staff": return <>{head}
       {(w.members || []).map((m, i) => (
-        <div key={i} style={{ border: "1px solid #e0dcd0", borderRadius: 8, padding: 8, marginTop: 8 }}>
+        <div key={i} style={{ border: "1px solid "+E.editLine, borderRadius: 8, padding: 8, marginTop: 8 }}>
           <input style={inp} placeholder="Name" value={m.name} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x) })} />
           <input style={{ ...inp, marginTop: 6 }} placeholder="Role" value={m.role} onChange={e => onChange({ members: w.members.map((x, j) => j === i ? { ...x, role: e.target.value } : x) })} />
           {imgUploader(m.photo, v => onChange({ members: w.members.map((x, j) => j === i ? { ...x, photo: v } : x) }), "Photo (optional)")}
@@ -782,7 +794,7 @@ function WidgetOptions({ w, funds, camps, onChange, onClose }) {
       <div style={lbl}>Contact email</div><input style={inp} value={w.contactEmail || ""} onChange={e => onChange({ contactEmail: e.target.value })} /></>;
     case "faq": return <>{head}
       {(w.items || []).map((it, i) => (
-        <div key={i} style={{ border: "1px solid #e0dcd0", borderRadius: 8, padding: 8, marginTop: 8 }}>
+        <div key={i} style={{ border: "1px solid "+E.editLine, borderRadius: 8, padding: 8, marginTop: 8 }}>
           <input style={inp} placeholder="Question" value={it.q} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, q: e.target.value } : x) })} />
           <textarea style={{ ...inp, marginTop: 6, resize: "vertical" }} rows={2} placeholder="Answer" value={it.a} onChange={e => onChange({ items: w.items.map((x, j) => j === i ? { ...x, a: e.target.value } : x) })} />
           <button onClick={() => onChange({ items: w.items.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: E.terra, fontSize: 12, cursor: "pointer", marginTop: 6 }}>Remove</button>

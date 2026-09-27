@@ -39,7 +39,9 @@ ok(has(shared, ".click-card:hover"), "GlobalStyles gives .click-card a hover was
 
 // ── Part 2: Fundraising (the showcase) — everything clickable ───────────────
 ok(has(fund, "interactive") && /import .*interactive.* from "\.\/shared"/.test(fund), "Fundraising imports interactive");
-ok(has(fund, 'interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns", dark: true })'), "Goal card → Campaigns (dark variant)");
+// FIX-2 C (Part C: "the ground of every page is cream or white") — the goal
+// card and its chips are white now, so they take the light interactive().
+ok(has(fund, 'interactive(() => onGoto && onGoto("campaigns"), { label: "View campaigns" })'), "Goal card → Campaigns (light card)");
 ok(has(shared, ".click-card-dark:focus-visible"), "dark interactive panels get a focus ring too");
 ok(has(shared, ".click-card-dark:hover") && !/click-card-dark:hover\{background/.test(shared), "dark hover keeps the pine gradient (no bg override)");
 // StatTile forwards onClick through interactive()
@@ -99,7 +101,7 @@ ok(has(fin, "revDeltaCaption"), "Finance vs-prior-period delta surfaced on a sta
 // assertions run in tests/attribution-completeness.test.js Part 6).
 const dash = read("client/src/components/Dashboard.jsx");
 ok(/const GoalStat=\(\{label,value,valueColor,sub,onClick\}\)/.test(dash), "GoalStat accepts onClick");
-ok(has(dash, "interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:true})"), "GoalStat routes through interactive() (dark variant, keyboard-accessible)");
+ok(has(dash, "interactive(onClick,{label:onClick?`Open ${label}`:undefined})"), "GoalStat routes through interactive() (light card, keyboard-accessible)");
 ok(count(dash, 'onClick={()=>onNavigate("fundraising")}/>') >= 2, "Pace chip → Fundraising Overview (both hero branches)");
 ok(has(dash, 'onNavigate("reports",{report:"giving-summary",preset:"thisFY",yearMode:"fiscal"})'), "This-FY chip → Reports Giving Summary (current FY, fiscal)");
 ok(has(dash, 'onNavigate("reports",{report:"giving-summary",from:tw.start,to:tw.end})'), "This-week chip → Giving Summary filtered to the chip's exact week");

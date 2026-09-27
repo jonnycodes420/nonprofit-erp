@@ -53,15 +53,15 @@ export function Volunteers({data, setData, isReadOnly}) {
   return <div style={{display:"flex",flexDirection:"column",gap:14}}>
     <PageTitle main="Your" accent="volunteers."/>
     <div className="vol-metric-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
-      <MetricCard label="Total Volunteers" value={data.volunteers.length} sub={`${data.volunteers.reduce((s,v)=>s+v.hours,0)} total hours`} color="#8b5cf6"/>
-      <MetricCard label="High Convert Potential" value={data.volunteers.filter(v=>v.convertPotential==="high").length} sub="ready to cultivate" color="#f59e0b"/>
-      <MetricCard label="Converted" value={data.volunteers.filter(v=>v.convertPotential==="converted").length} sub="volunteer → donor" color="#0d5c3a"/>
+      <MetricCard label="Total Volunteers" value={data.volunteers.length} sub={`${data.volunteers.reduce((s,v)=>s+v.hours,0)} total hours`} color={T.ink}/>
+      <MetricCard label="High Convert Potential" value={data.volunteers.filter(v=>v.convertPotential==="high").length} sub="ready to cultivate" color={T.gold500}/>
+      <MetricCard label="Converted" value={data.volunteers.filter(v=>v.convertPotential==="converted").length} sub="volunteer → donor" color={T.greenDk}/>
     </div>
     <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
       <AIBtn onClick={getConvPlan} loading={convLoading} label="✦ Volunteer-to-Donor Conversion Plan"/>
       <AIBtn onClick={getBoardCandidates} loading={boardLoading} label="✦ Identify Board Candidates"/>
       <button onClick={()=>setShowAdd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-        style={{marginLeft:"auto",background:"#0d5c3a",color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+        style={{marginLeft:"auto",background:T.greenDk,color:T.white,border:"none",borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
         + Add Volunteer
       </button>
     </div>
@@ -84,7 +84,7 @@ export function Volunteers({data, setData, isReadOnly}) {
       <textarea placeholder="Notes (optional)" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} rows={2} style={{...inp,marginTop:10,resize:"vertical"}}/>
       <div style={{display:"flex",gap:8,marginTop:12}}>
         <button onClick={addVolunteer} disabled={saving||!form.name.trim()}
-          style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
+          style={{background:T.greenDk,color:T.white,border:"none",borderRadius:8,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:saving?"not-allowed":"pointer",opacity:saving?0.7:1}}>
           {saving?"Saving…":"Save Volunteer"}
         </button>
         <button onClick={()=>setShowAdd(false)}
@@ -95,14 +95,14 @@ export function Volunteers({data, setData, isReadOnly}) {
     </Card>}
     {data.volunteers.length===0&&!showAdd&&<EmptyState icon="◎" title="No volunteers yet" message="Add volunteers to track hours, skills, and conversion potential."/>}
     {data.volunteers.map(v=>{
-      const cc=v.convertPotential==="high"?"#f59e0b":v.convertPotential==="converted"?"#0d5c3a":"#6b7280";
+      const cc=v.convertPotential==="high"?T.gold500:v.convertPotential==="converted"?T.greenDk:T.ink3;
       return <Card key={v.id}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:42,height:42,borderRadius:"50%",background:cc+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:cc,flexShrink:0}}>{v.name[0]}</div>
           <div style={{flex:1}}>
             <div style={{fontSize:15,fontWeight:700,color:T.ink}}>{v.name}</div>
             <div style={{fontSize:12,color:T.ink3,marginTop:1}}>{v.employer}{v.employer&&v.email?" · ":""}{v.email}</div>
-            <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{v.skills.map(s=><Pill key={s} label={s} color="#8b5cf6"/>)}</div>
+            <div style={{display:"flex",gap:4,marginTop:5,flexWrap:"wrap"}}>{v.skills.map(s=><Pill key={s} label={s} color={T.ink}/>)}</div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
             <div style={{fontSize:20,fontWeight:800,color:cc,fontFamily:"'DM Serif Display',serif"}}>{v.hours}h</div>

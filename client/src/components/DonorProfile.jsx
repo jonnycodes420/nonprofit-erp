@@ -14,7 +14,7 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
-import { T, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
 import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./LogConversation";
 import { PlanFollowUpModal } from "./PlanFollowUp";
@@ -87,13 +87,13 @@ function FollowUpTaskModal({donor,onSave,onClose}){
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:8}}>Priority</div>
             <div style={{display:"flex",gap:6}}>
               {["high","medium","low"].map(p=>(
-                <button key={p} onClick={()=>setPriority(p)} style={{flex:1,background:priority===p?SC[p]:T.bg,border:`1px solid ${priority===p?SC[p]:T.bg3}`,borderRadius:8,padding:"8px",color:priority===p?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{p}</button>
+                <button key={p} onClick={()=>setPriority(p)} style={{flex:1,background:priority===p?SC[p]:T.bg,border:`1px solid ${priority===p?SC[p]:T.bg3}`,borderRadius:8,padding:"8px",color:priority===p?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>{p}</button>
               ))}
             </div>
           </div>
         </div>
         <div style={{display:"flex",gap:8,marginTop:20}}>
-          <button onClick={save} disabled={loading||!title.trim()} style={{flex:1,background:title.trim()?"#0d5c3a":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:title.trim()?"pointer":"not-allowed"}}>{loading?"Creating…":"Create Task"}</button>
+          <button onClick={save} disabled={loading||!title.trim()} style={{flex:1,background:title.trim()?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:title.trim()?"pointer":"not-allowed"}}>{loading?"Creating…":"Create Task"}</button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Skip</button>
         </div>
       </div>
@@ -198,7 +198,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{donor.name}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:16}}>
-          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?"#0d5c3a":T.bg2,border:`1px solid ${type===v?"#0d5c3a":T.bg3}`,borderRadius:7,padding:"5px 13px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+          {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 13px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
         <div style={{marginBottom:16}}><span style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5,display:"block"}}>Date</span><input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/></div>
         <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:20}}>
@@ -256,7 +256,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
             <TpField label="Designation">
               <input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/>
               <div style={fieldHint}>What the donor said it's for (free text). To count it toward a goal, pick a Campaign below.</div>
-              {campaignSuggestion&&<button type="button" onClick={()=>setCampaignId(campaignSuggestion.id)} style={{marginTop:6,background:T.gold100||"#f6eccf",border:"1px solid "+(T.gold500||"#c9a84c"),borderRadius:7,padding:"5px 10px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>Did you mean the campaign “{campaignSuggestion.name}”? <span style={{color:T.greenDk||"#0d5c3a",fontWeight:700}}>Attribute →</span></button>}
+              {campaignSuggestion&&<button type="button" onClick={()=>setCampaignId(campaignSuggestion.id)} style={{marginTop:6,background:T.gold100,border:"1px solid "+T.gold500,borderRadius:7,padding:"5px 10px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>Did you mean the campaign “{campaignSuggestion.name}”? <span style={{color:T.greenDk,fontWeight:700}}>Attribute →</span></button>}
             </TpField>
             {finCampaigns.length>0&&<TpField label="Campaign">
               <select value={campaignId} onChange={e=>setCampaignId(e.target.value)} style={{...inp,cursor:"pointer"}}>
@@ -284,7 +284,7 @@ function LogTouchpointModal({donor,onSave,onClose}){
           </>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?"#0d5c3a":T.bg2,border:"none",borderRadius:10,padding:"12px",color:"#fff",fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
+          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
           <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
@@ -318,7 +318,7 @@ function EditDonorModal({donor,onSave,onClose}){
   };
 
   return(
-    <Modal onClose={onClose} width={480} zIndex={400} backdrop="#000c" blur={false} padding={28}
+    <Modal onClose={onClose} width={480} zIndex={400} backdrop={T.ink+"cc"} blur={false} padding={28}
       ariaLabel="Edit donor profile" dialogStyle={{borderRadius:20,border:"1px solid "+T.bg3}}>
       <div>
         <div style={{fontSize:18,fontWeight:800,color:T.ink,marginBottom:4}}>Edit Donor Profile</div>
@@ -351,9 +351,9 @@ function EditDonorModal({donor,onSave,onClose}){
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Notes</div>
             <textarea value={form.notes} onChange={set("notes")} rows={3} style={{...inp,resize:"vertical",lineHeight:1.5}}/>
           </div>
-          {err&&<div style={{color:"#b8593f",fontSize:12}}>{err}</div>}
+          {err&&<div style={{color:T.terracotta,fontSize:12}}>{err}</div>}
           <div style={{display:"flex",gap:8,marginTop:4}}>
-            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:"#0d5c3a",border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
+            <button onClick={save} disabled={loading} style={{flex:1,background:loading?T.bg2:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:14,fontWeight:700,cursor:loading?"not-allowed":"pointer"}}>
               {loading?"Saving…":"Save Changes"}
             </button>
             <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -421,7 +421,7 @@ function GiftLinkModal({donor,orgName,onClose}){
               <button onClick={onClose} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:T.ink3}}>×</button>
             </div>
             {loading&&<div style={{padding:"24px 0",textAlign:"center",color:T.ink3,fontSize:13}}>Generating payment link…</div>}
-            {err&&<div style={{color:"#8a3a24",fontSize:13,background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
+            {err&&<div style={{color:T.terra700,fontSize:13,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"10px 12px",marginBottom:14}}>{err}</div>}
             {url&&!loading&&(
               <>
                 {/* Labeled link pattern — never a raw URL as visible text */}
@@ -430,11 +430,11 @@ function GiftLinkModal({donor,orgName,onClose}){
                     style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px",color:T.ink2,fontSize:13,fontWeight:700,textDecoration:"none"}}>
                     Open link ↗
                   </a>
-                  <button onClick={copyLink} style={{flex:1,background:copied?T.greenDk:T.bg,border:"1px solid "+(copied?T.greenDk:T.bg3),borderRadius:10,padding:"11px",color:copied?"#fff":T.ink2,fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+                  <button onClick={copyLink} style={{flex:1,background:copied?T.greenDk:T.bg,border:"1px solid "+(copied?T.greenDk:T.bg3),borderRadius:10,padding:"11px",color:copied?T.white:T.ink2,fontSize:13,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
                     {copied?"✓ Copied!":"Copy Link"}
                   </button>
                 </div>
-                {donor.email&&<button onClick={()=>setShowEmail(true)} style={{width:"100%",background:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                {donor.email&&<button onClick={()=>setShowEmail(true)} style={{width:"100%",background:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                   ✉ Send via Email
                 </button>}
               </>
@@ -454,7 +454,7 @@ function GiftLinkModal({donor,orgName,onClose}){
                 <div style={{fontSize:28,marginBottom:10}}>✓</div>
                 <div style={{fontSize:15,fontWeight:700,color:T.ink,marginBottom:6}}>Email sent!</div>
                 <div style={{fontSize:13,color:T.ink3,marginBottom:20}}>Your message to {donor.name} has been sent.</div>
-                <button onClick={onClose} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"11px 24px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
+                <button onClick={onClose} style={{background:T.greenDk,border:"none",borderRadius:10,padding:"11px 24px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Done</button>
               </div>
             ):(
               <>
@@ -469,9 +469,9 @@ function GiftLinkModal({donor,orgName,onClose}){
                       style={{...inp,resize:"vertical",lineHeight:1.55,fontSize:12}}/>
                   </div>
                 </div>
-                {sendErr&&<div style={{color:"#8a3a24",fontSize:13,background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px",marginBottom:12}}>{sendErr}</div>}
+                {sendErr&&<div style={{color:T.terra700,fontSize:13,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px",marginBottom:12}}>{sendErr}</div>}
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={sendEmail} disabled={sending} style={{flex:1,background:sending?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:"#fff",fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
+                  <button onClick={sendEmail} disabled={sending} style={{flex:1,background:sending?T.bg3:T.greenDk,border:"none",borderRadius:10,padding:"11px",color:T.white,fontSize:13,fontWeight:700,cursor:sending?"not-allowed":"pointer"}}>
                     {sending?"Sending…":"Send Email"}
                   </button>
                   <button onClick={()=>setShowEmail(false)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"11px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
@@ -743,8 +743,8 @@ function RoleChips({donor,isReadOnly}){
             title={locked?lock.reason:(isReadOnly?c.label:(on?`Remove ${c.label}`:`Add ${c.label}`))}
             style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,lineHeight:1.35,
               cursor:isReadOnly?"default":(locked?"help":"pointer"),opacity:busy===c.key?0.55:1,
-              background:on?T.bg2:T.white,color:on?T.ink:T.ink3,
-              border:`1px solid ${on?T.greenDk:T.bg3}`}}>
+              background:T.white,color:T.ink3,
+              border:"1px solid "+T.bg3,...activeMark(on,"bottom"),borderRadius:7}}>
             {on?c.label:"+ "+c.label}
             {locked&&<span style={{fontWeight:600,color:T.ink3}}> · set by giving</span>}
           </button>
@@ -1194,7 +1194,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   };
 
   const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-  const sc=donorScore(donor);const scoreColor=sc>70?"#0d5c3a":sc>45?"#a97f22":"#b8593f";
+  const sc=donorScore(donor);const scoreColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
   const urg=moveUrgency(donor);
 
   const interactionCount=donor.interactions?.length||0;
@@ -1445,7 +1445,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
               {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
               {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks — excluded from the drift list, re-engage, suggested outreach, and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
-              {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100||"#edf3ee",color:T.greenDk,border:`1px solid ${T.green200||"#dce7df"}`}}>Sustainer · not reconnected</span>}
+              {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
               <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
             </div>
             {/* FIX-1 D — the roles, under the name, one tap each. */}
@@ -1484,7 +1484,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               an emerald "Request Gift"), so nothing on it was the obvious thing
               to press. Emerald means "this is the button" and exactly one thing
               may mean that; the rest are outlines. */}
-          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} className="dph-primary" data-testid="dp-primary" style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Log a conversation
           </button>
           {/* BUILD-85 — plan forward. Offered only when there is NO open thread,
@@ -1492,10 +1492,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               that can only 409 is a button that teaches people to distrust
               buttons. */}
           {!dpThread&&<button onClick={()=>setPlanOpen(true)} disabled={isReadOnly} className="dph-desktop-act"
-            style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
+            style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>
             Plan a follow-up
           </button>}
-          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          <button onClick={()=>setShowGiftModal(true)} className="dph-desktop-act" style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
             Request Gift
           </button>
           {/* SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -1532,7 +1532,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           {/* Tab Nav */}
           <div className="dp-tabs" style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
-              <button key={id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",borderBottom:`2px solid ${dpTab===id?T.greenDk:"transparent"}`,padding:"11px 16px",color:dpTab===id?T.greenDk:T.ink3,fontSize:13,fontWeight:dpTab===id?700:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+              <button key={id} role="tab" aria-selected={dpTab===id} onClick={()=>setDpTab(id)} style={{background:"none",border:"none",padding:"11px 16px",color:T.ink3,fontSize:13,fontWeight:400,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0,...activeMark(dpTab===id,"bottom")}}>
                 {label}
                 {id==="gifts"&&giftsFull.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{giftsFull.length}</span>}
                 {id==="related"&&relationships.length>0&&<span style={{marginLeft:5,background:T.bg2,borderRadius:99,padding:"1px 6px",fontSize:10,fontWeight:700,color:T.ink3}}>{relationships.length}</span>}
@@ -1547,7 +1547,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 BUILD-88a A.2 — and every other open item for them, in ONE list,
                 ranked by the one ranking, with the count on the label. */}
             {dpItems.length>0&&(
-              <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+(dpItems.some(x=>x.overdue)?T.terracotta+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
+              <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+(dpItems.some(x=>x.overdue)?T.gold600+"66":T.gold500+"55"),borderRadius:14,padding:"14px 16px"}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                   <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>
                     {dpItems.length===1?"Open":`Open · ${dpItems.length}`}
@@ -1558,7 +1558,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 {dpItems.map(it=>(
                   <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                     <div style={{flex:"1 1 220px",minWidth:0}}>
-                      <div style={{fontSize:13.5,fontWeight:700,color:it.overdue?T.terracotta:T.ink}}>
+                      <div style={{fontSize:13.5,fontWeight:700,color:it.overdue?T.gold700:T.ink}}>
                         {it.nextStep.label} · {it.overdue?"overdue":"due"} {displayDateShort(it.nextStep.due,new Date())} · {it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
                       </div>
                       <div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.5}}>
@@ -1570,7 +1570,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     {it.kind!=="task"&&(
                       <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
                         <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly}
-                          style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
+                          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:7,padding:"6px 11px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Done</button>
                         {/* BUILD-94 Part 5 — the same three outputs as the
                             Home row, from the same builder. */}
                         {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
@@ -1600,8 +1600,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 keyboard-reachable hover BUILD-100 built for the fourth. */}
             <div className="donor-stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
               {[["Lifetime",fmtFull(donor.total),T.ink,censusById("profile.lifetime").sentence],
-                ["Last Gift",lastGiftDisplay,"#0d5c3a",censusById("profile.lastGift").sentence],
-                ["Contact",`${urg.days}d ago`,urg.urgencyColor,censusById("profile.contact").sentence]].map(([l,v,c,def])=>(
+                ["Last Gift",lastGiftDisplay,T.ink,censusById("profile.lastGift").sentence],
+                ["Contact",`${urg.days}d ago`,urg.level==="ok"?T.ink:urg.urgencyColor,censusById("profile.contact").sentence]].map(([l,v,c,def])=>(
                 <div key={l} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
                   <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:4}}>
                     {l}
@@ -1634,7 +1634,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#8a6d1f"}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
               </div>
             )}
 
@@ -1643,7 +1643,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 is surfaced on hover so this reads as informed, not magic. */}
             {donor.matchingGift&&(
               <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
-                style={{background:"#0d5c3a12",border:"1px solid #0d5c3a40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
+                style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
                 <div>
                   <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio} — ask {donor.name.split(" ")[0]} to submit a match request.</div>
                   <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed — verify current terms before outreach.</div>
@@ -1684,7 +1684,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 from listed so the number can be checked. */}
             {softCredit?.giftSoftCredits?.length>0&&(
               <div data-testid="soft-credit-panel" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:10}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.greenDk}}>Soft credit</span>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Soft credit</span>
                 <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
                   {[["Their own giving",softCredit.hardCredit,T.ink,censusById("profile.creditHard")],
                     ["With soft credit",softCredit.hardPlusGiftSoft,T.gold600,censusById("profile.creditWithSoft")]].map(([l,v,c,e])=>(
@@ -1711,7 +1711,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {/* Household & planned giving (BUILD-14) */}
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a"}}>Household</span>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household</span>
                 {household
                   ?<span style={{fontSize:12,color:T.ink,fontWeight:700}}>{household.name}</span>
                   :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
@@ -1723,18 +1723,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <>
                   <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
                     <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:"#a97f22"}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:"#0d5c3a"}}>{fmtFull(household.combined_giving)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(household.combined_giving)}</div></div>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",gap:5}}>
                     {household.members.map(m=>(
-                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?"#0d5c3a10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
                         {/* BUILD-94 Part 1 — a household is the one place a
                             row names several people at once; faces are what
                             tell them apart at a glance. */}
                         <PersonMark id={m.id} name={m.name} size={22}/>
                         <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
-                        {m.is_primary&&<span style={{background:"#c9a84c",color:"#0f1a12",borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
+                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
                         <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
                       </div>
                     ))}
@@ -1743,12 +1743,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 </>
               )}
               <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a",marginBottom:7}}>Planned giving & designations</div>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:7}}>Planned giving & designations</div>
                 <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
                     <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                       aria-pressed={on} data-designation={k} data-on={on?"1":"0"}
-                      style={{background:on?"#0d5c3a":"transparent",color:on?"#fff":T.ink3,border:"1px solid "+(on?"#0d5c3a":T.bg3),borderRadius:99,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer"}}>
+                      style={{background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 11px",fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",...activeMark(on,"bottom")}}>
                       {on?"✓ ":""}{label}
                     </button>
                   );})}
@@ -1759,30 +1759,30 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {lockMajor(
                 <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:"#0d5c3a"}}>Pipeline — moves & asks</div>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Pipeline — moves & asks</div>
                     <div style={{display:"flex",gap:6}}>
-                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":"#c9a84c",border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:"#0f1a12",cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
-                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:"#a97f22",cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
+                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
+                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
                     </div>
                   </div>
                   {askOpen&&(
                     <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
                       <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
                       <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <button onClick={addAsk} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:"#fff",cursor:"pointer"}}>Save</button>
+                      <button onClick={addAsk} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.white,cursor:"pointer"}}>Save</button>
                     </div>
                   )}
                   {opps.length>0&&(
                     <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
                       {opps.map(o=>(
-                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?"#c9a84c14":T.bg2}}>
+                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?T.gold500+"14":T.bg2}}>
                           <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
-                          <span style={{color:"#a97f22",fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
-                          {o.status==="won"&&<span style={{color:"#0d5c3a",fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
+                          <span style={{color:T.gold600,fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
+                          {o.status==="won"&&<span style={{color:T.greenDk,fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
                           {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
                           <span style={{marginLeft:"auto",display:"flex",gap:6}}>
                             {o.status==="open"&&isTeam&&!isReadOnly&&<>
-                              <button onClick={()=>closeAsk(o,"won")} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:"#fff",cursor:"pointer"}}>Won</button>
+                              <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
                               <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
                             </>}
                             {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
@@ -1817,8 +1817,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
                         const picked=hhPick.has(x.id);
                         return(
-                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?"#0d5c3a12":T.white,border:"1px solid "+(picked?"#0d5c3a55":T.bg3),cursor:"pointer"}}>
-                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:"#0d5c3a"}}/>
+                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
+                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
                             <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
                             <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
                           </label>
@@ -1827,7 +1827,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                     <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
                       <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
-                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?"#0d5c3a":T.bg3,color:"#fff",border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
+                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?T.greenDk:T.bg3,color:T.white,border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
                     </div>
                   </div>
                 </Modal>
@@ -1837,7 +1837,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div>
               <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
                 Follow-up Tasks
-                {tasks.filter(t=>!t.done).length>0&&<span style={{background:"#0d5c3a",color:"#fff",borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
+                {tasks.filter(t=>!t.done).length>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
                 {onAddTask&&<button onClick={onAddTask} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Add a follow-up task"} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 9px",color:isReadOnly?T.ink3:T.greenMid,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",letterSpacing:0,textTransform:"none",opacity:isReadOnly?0.5:1}}>+ Add task</button>}
               </div>
               {tasks.length===0
@@ -1849,10 +1849,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     // today → brass "Due today", past → terracotta "Overdue · was due X".
                     const badge=t.due&&!t.done?dueBadge(t.due):null;
                     const overdue=badge?.state==="overdue";
-                    const badgeColor=overdue?T.terracotta:badge?.state==="today"?T.gold500:T.ink3;
-                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?"#0d5c3a30":overdue?"#b8593f30":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?"#0d5c3a":SC[t.priority]}`,background:t.done?"#0d5c3a":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {t.done&&<span style={{color:"#fff",fontSize:10,lineHeight:1}}>✓</span>}
+                    const badgeColor=overdue?T.gold700:badge?.state==="today"?T.gold500:T.ink3;
+                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?T.greenDk+"30":overdue?T.gold500+"55":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?T.greenDk:SC[t.priority]}`,background:t.done?T.greenDk:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {t.done&&<span style={{color:T.white,fontSize:10,lineHeight:1}}>✓</span>}
                       </div>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
@@ -1873,7 +1873,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
-                <button onClick={onLogTouchpoint} style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"5px 12px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
+                <button onClick={onLogTouchpoint} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:7,padding:"4px 11px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
               </div>
               <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction}/>
             </div>
@@ -1884,7 +1884,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 lives in the parent deleteDonor handler. */}
             {isAdmin&&(
               <div style={{marginTop:8,paddingTop:16,borderTop:"1px solid "+T.bg3,display:"flex",justifyContent:"flex-end"}}>
-                <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:8,padding:"9px 16px",color:"#b8593f",fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete donor</button>
+                <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:8,padding:"9px 16px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete donor</button>
               </div>
             )}
           </div>}
@@ -1895,7 +1895,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div>
                 <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Gift History</div>
                 <div style={{fontSize:12,color:T.ink3,marginTop:2}}>
-                  Total: <strong style={{color:"#0d5c3a"}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
+                  Total: <strong style={{color:T.greenDk}}>{fmtFull(giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> · {giftsFull.length} gifts
                   {donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
                     <span className="dp-unitemized-note"> · lifetime {fmtFull(donor.total)} includes {fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))} of imported history not itemized below</span>
                   )}
@@ -1904,17 +1904,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <button onClick={exportGiftsCSV} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>↓ CSV</button>
                 {receiptsEnabled&&(
-                  <button onClick={()=>setShowYearEnd(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                    style={{background:showYearEnd?T.greenDk:T.bg,border:"1px solid "+(showYearEnd?T.greenDk:T.bg3),borderRadius:8,padding:"6px 12px",color:showYearEnd?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+                  <button onClick={()=>setShowYearEnd(v=>!v)} disabled={isReadOnly} aria-pressed={showYearEnd} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
+                    style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,...activeMark(showYearEnd,"bottom")}}>
                     Year-end statement
                   </button>
                 )}
-                <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
+                <button onClick={()=>setAddGiftOpen(v=>!v)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Gift</button>
               </div>
             </div>
 
             {!receiptsEnabled&&isAdmin&&(
-              <div style={{background:"#f6eccf",border:"1px solid #e7cf91",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#8a6d1f"}}>
+              <div style={{background:T.gold100,border:"1px solid "+T.gold300,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.gold700}}>
                 Tax receipts aren't set up yet — add your organization's legal info in Settings to send IRS-compliant receipts for gifts of $250+.
               </div>
             )}
@@ -1925,12 +1925,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   <span style={{fontSize:11,color:T.ink3}}>Tax year</span>
                   <input type="number" value={yearEndYear} onChange={e=>setYearEndYear(e.target.value)} style={{width:100,background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"6px 8px",color:T.ink,fontSize:12,outline:"none"}}/>
-                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
+                  <button onClick={sendYearEndStatement} disabled={yearEndBusy} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:yearEndBusy?"not-allowed":"pointer"}}>
                     {yearEndBusy?"Generating…":"Generate & email"}
                   </button>
                   <button onClick={()=>setShowYearEnd(false)} style={{background:T.bg,border:"none",borderRadius:6,padding:"7px 10px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
-                {yearEndErr&&<div style={{fontSize:11,color:"#8a3a24",marginTop:8}}>{yearEndErr}</div>}
+                {yearEndErr&&<div style={{fontSize:11,color:T.terra700,marginTop:8}}>{yearEndErr}</div>}
                 <div style={{fontSize:11,color:T.ink3,marginTop:8,lineHeight:1.5}}>Consolidates every {yearEndYear} gift into one statement, emailed to the donor and superseding any prior statement for that year.</div>
               </div>
             )}
@@ -1938,10 +1938,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {/* Recurring gift health — failed-payment recovery status */}
             {recurringSub&&(()=>{
               const RS_META={
-                active:      {label:"Active",         color:"#0d5c3a"},
+                active:      {label:"Active",         color:T.greenDk},
                 past_due:    {label:"Payment failed",  color:T.terracotta},
-                recovering:  {label:"Recovering",      color:"#c9a84c"},
-                recovered:   {label:"Card fixed",      color:"#0d5c3a"},
+                recovering:  {label:"Recovering",      color:T.gold500},
+                recovered:   {label:"Card fixed",      color:T.greenDk},
                 canceled:    {label:"Canceled",        color:T.ink3},
               };
               const meta=RS_META[recurringSub.status]||{label:recurringSub.status,color:T.ink3};
@@ -1958,7 +1958,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   {atRisk&&(
                     <button onClick={resendRecurringLink} disabled={isReadOnly||recurResendBusy||recurResendSent}
                       title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                      style={{background:meta.color,border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:(isReadOnly||recurResendBusy||recurResendSent)?"not-allowed":"pointer",opacity:(isReadOnly||recurResendBusy||recurResendSent)?0.5:1,whiteSpace:"nowrap"}}>
+                      style={{background:meta.color,border:"none",borderRadius:8,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:(isReadOnly||recurResendBusy||recurResendSent)?"not-allowed":"pointer",opacity:(isReadOnly||recurResendBusy||recurResendSent)?0.5:1,whiteSpace:"nowrap"}}>
                       {recurResendSent?"Sent ✓":recurResendBusy?"Sending…":"Send card-update link"}
                     </button>
                   )}
@@ -2014,12 +2014,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {giftErr&&<div role="alert" style={{fontSize:12,color:T.terracotta,marginBottom:8}}>{giftErr}</div>}
               <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                 <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:T.ink,cursor:"pointer"}}>
-                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#0d5c3a"}}/>
+                  <input type="checkbox" checked={addGiftForm.acknowledgement_sent} onChange={e=>setAddGiftForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:T.greenDk}}/>
                   Acknowledgement sent
                 </label>
               </div>
               <div style={{display:"flex",gap:8}}>
-                <button onClick={addGift} disabled={giftSaving} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
+                <button onClick={addGift} disabled={giftSaving} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>Save</button>
                 <button onClick={()=>setAddGiftOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"8px 14px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
               </div>
             </div>}
@@ -2027,15 +2027,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,overflow:"hidden"}}>
               {giftLoading?<div style={{padding:24,textAlign:"center",color:T.ink3,fontSize:12}}><Spin/></div>:giftsFull.length===0?(
                 <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"40px 24px",textAlign:"center",gap:0}}>
-                  <div style={{marginBottom:16,color:"#0d5c3a",opacity:0.7}}>
+                  <div style={{marginBottom:16,color:T.greenDk,opacity:0.7}}>
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                     </svg>
                   </div>
-                  <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:"#0f1a12",letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
-                  <div style={{fontSize:13,color:"#5a554f",maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
+                  <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:20,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",marginBottom:8}}>No gifts recorded yet.</div>
+                  <div style={{fontSize:13,color:T.ink3,maxWidth:260,lineHeight:1.65,marginBottom:20}}>Log your first gift to start tracking acknowledgments and giving history.</div>
                   <button onClick={()=>setAddGiftOpen(true)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-                    style={{background:"#0d5c3a",color:"#fff",border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
+                    style={{background:T.greenDk,color:T.white,border:"none",borderRadius:10,padding:"10px 22px",fontSize:13,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>
                     Record a gift →
                   </button>
                 </div>
@@ -2072,27 +2072,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                                 )
                               ))}
                               <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:T.ink,cursor:"pointer",flexShrink:0}}>
-                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:"#0d5c3a"}}/>
+                                <input type="checkbox" checked={!!giftEditForm.acknowledgement_sent} onChange={e=>setGiftEditForm(p=>({...p,acknowledgement_sent:e.target.checked}))} style={{accentColor:T.greenDk}}/>
                                 Ack
                               </label>
-                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:"#0d5c3a",border:"none",borderRadius:6,padding:"5px 10px",color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                              <button onClick={()=>saveGiftEdit(g.id)} disabled={giftSaving} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"5px 10px",color:T.white,fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
                               <button onClick={()=>setGiftEditId(null)} style={{background:T.bg,border:"none",borderRadius:6,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>Cancel</button>
                             </div>
                           </td>
                         ):(
                           <>
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{displayDate(g.date)}</td>
-                            <td style={{padding:"9px 12px",fontWeight:700,color:"#0d5c3a",whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
+                            <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
                             <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:"#0d5c3a",fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {(()=>{
                                 const r=receiptForGift(g.id);
-                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:"#0d5c3a",fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
+                                if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
                                 if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:13}}>—</span>;
                                 const busy=receiptBusyId===g.id;
-                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:"#0d5c3a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
+                                return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
                               })()}
                             </td>
                             <td style={{padding:"9px 12px",color:T.ink3,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
@@ -2100,7 +2100,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               {[g.notes,...giftCfDefs.map(d=>{const v=(g.custom_fields||{})[d.key];return (v!==null&&v!==undefined&&v!=="")?`${d.label}: ${renderCustomValue(d,v)}`:null;}).filter(Boolean)].filter(Boolean).join(" · ")}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               <button onClick={()=>{setGiftEditId(g.id);setGiftEditForm({amount:g.amount,date:g.date,type:g.type,payment_method:g.payment_method||"",notes:g.notes||"",fund_id:g.fund_id||"",acknowledgement_sent:g.acknowledgement_sent,customFields:Object.fromEntries(giftCfDefs.map(d=>[d.key,giftCfEditStr(d,(g.custom_fields||{})[d.key])]))});}} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Edit</button>
-                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
+                              <button onClick={()=>deleteGift(g.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",padding:"2px 6px"}}>Delete</button>
                             </td>
                           </>
                         )}
@@ -2139,7 +2139,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 )}
                 <input value={pledgeForm.notes} onChange={e=>setPledgeForm(p=>({...p,notes:e.target.value}))} placeholder="Notes (optional)" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={addPledge} disabled={pledgeSaving} style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={addPledge} disabled={pledgeSaving} style={{background:T.terracotta,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
                   <button onClick={()=>setAddPledgeOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
@@ -2156,7 +2156,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                             <span style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(pl.amount)}</span>
                             <span style={{background:meta.color+"15",color:meta.color,border:"1px solid "+meta.color+"40",borderRadius:99,padding:"2px 8px",fontSize:10,fontWeight:800}}>{meta.label}</span>
-                            {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.terracotta}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
+                            {isOverdue&&<span style={{fontSize:10,fontWeight:800,color:T.gold700}}>{daysOver}d overdue · reminder {Math.min(pl.reminder_step+1,4)}/4 sent</span>}
                           </div>
                           <div style={{fontSize:11,color:T.ink3,marginTop:2}}>Due {displayDate(pl.due_date)}{pl.campaign_id?(()=>{const c=campaigns.find(x=>x.id===pl.campaign_id);return c?` · counts toward ${c.name}`:"";})():""}</div>
                           {pl.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pl.notes}</div>}
@@ -2167,10 +2167,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink2,fontSize:11,fontWeight:600,cursor:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?"not-allowed":"pointer",opacity:(isReadOnly||pledgeResendBusyId===pl.id||pledgeResentIds.has(pl.id))?0.5:1}}>
                               {pledgeResentIds.has(pl.id)?"Sent ✓":pledgeResendBusyId===pl.id?"Sending…":"Resend reminder"}
                             </button>}
-                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:"#edf3ee",border:"1px solid #0d5c3a",borderRadius:6,padding:"5px 9px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
+                            <button onClick={()=>setPledgeStatus(pl.id,"fulfilled")} disabled={isReadOnly} style={{background:T.green100,border:"1px solid "+T.greenDk,borderRadius:6,padding:"5px 9px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Mark Fulfilled</button>
                             <button onClick={()=>setPledgeStatus(pl.id,"written_off")} disabled={isReadOnly} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 9px",color:T.ink3,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer"}}>Write Off</button>
                           </>}
-                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                          <button onClick={()=>deletePledge(pl.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:14,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                         </div>
                       </div>
                     );
@@ -2212,7 +2212,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                         {pg.date_indicated&&<div style={{fontSize:11,color:T.ink3,marginTop:1}}>Indicated {pg.date_indicated}</div>}
                         {pg.notes&&<div style={{fontSize:12,color:T.ink3,marginTop:3,lineHeight:1.4}}>{pg.notes}</div>}
                       </div>
-                      <button onClick={()=>deletePlannedGift(pg.id)} style={{background:"none",border:"none",color:"#b8593f",fontSize:12,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
+                      <button onClick={()=>deletePlannedGift(pg.id)} style={{background:"none",border:"none",color:T.terracotta,fontSize:12,cursor:"pointer",flexShrink:0,padding:"2px 4px"}}>×</button>
                     </div>
                   ))}
                 </div>
@@ -2241,12 +2241,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                               {f.restricted&&<span style={{marginLeft:6,fontSize:10,fontWeight:700,color:T.gold700,background:T.gold100,borderRadius:99,padding:"2px 7px"}}>Restricted</span>}
                             </div>
                             <div style={{textAlign:"right"}}>
-                              <div style={{fontSize:14,fontWeight:800,color:"#0d5c3a"}}>{fmtFull(f.total)}</div>
+                              <div style={{fontSize:14,fontWeight:800,color:T.ink}}>{fmtFull(f.total)}</div>
                               <div style={{fontSize:10,color:T.ink3}}>{f.pct}% of lifetime</div>
                             </div>
                           </div>
                           <div style={{background:T.bg3,borderRadius:99,height:6,overflow:"hidden",marginBottom:6}}>
-                            <div style={{height:"100%",background:"#0d5c3a",borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
+                            <div style={{height:"100%",background:T.greenDk,borderRadius:99,width:`${Math.round(f.total/maxFund*100)}%`,transition:"width 0.4s"}}/>
                           </div>
                           <div style={{fontSize:11,color:T.ink3}}>{f.giftCount} gift{f.giftCount!==1?"s":""} · Last: {displayDate(f.lastDate)}</div>
                         </div>
@@ -2263,19 +2263,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     return(<>
                       <div style={{height:10,borderRadius:99,overflow:"hidden",display:"flex",marginBottom:8}}>
                         <div style={{width:`${rPct}%`,background:T.gold500,transition:"width 0.4s"}}/>
-                        <div style={{flex:1,background:"#0d5c3a"}}/>
+                        <div style={{flex:1,background:T.greenDk}}/>
                       </div>
                       <div style={{display:"flex",gap:16,fontSize:12}}>
                         <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.gold500,display:"inline-block"}}/>Restricted: {fmtFull(restrictedTotal)} ({rPct}%)</div>
-                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:"#0d5c3a",display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,background:T.greenDk,display:"inline-block"}}/>Unrestricted: {fmtFull(unrestrictedTotal)} ({uPct}%)</div>
                       </div>
                     </>);
                   })():<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No giving data yet</div>}
                 </div>
 
                 {affinity.length>0&&(
-                  <div style={{background:"#c9a84c10",border:"1px solid #c9a84c40",borderRadius:12,padding:"14px 16px"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"#c9a84c",marginBottom:8}}>Suggested Asks</div>
+                  <div style={{background:T.gold500+"10",border:"1px solid "+T.gold500+"40",borderRadius:12,padding:"14px 16px"}}>
+                    <div style={{fontSize:12,fontWeight:700,color:T.gold500,marginBottom:8}}>Suggested Asks</div>
                     {affinity.slice(0,2).map(f=>(
                       <div key={f.fundId} style={{fontSize:12,color:T.ink,marginBottom:4}}>
                         This donor has given {fmtFull(f.total)} to <strong>{f.fundName}</strong>. Consider them for {f.fundName} campaign appeals.
@@ -2300,20 +2300,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"12px 16px"}}>
                 <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:T.ink3,marginBottom:4}}>Household Giving</div>
-                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:"#8a6d1f"}}>{fmtFull(householdTotal)}</strong> household total</div>
+                <div style={{fontSize:13,color:T.ink}}><strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total</div>
               </div>
             )}
 
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Linked Donors</div>
-              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:"#0d5c3a",border:"none",borderRadius:7,padding:"6px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
+              {!isReadOnly&&<button onClick={()=>{setRelPickerOpen(v=>!v);setRelErr("");}} style={{background:T.greenDk,border:"none",borderRadius:7,padding:"6px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Link to another donor</button>}
             </div>
 
             {relPickerOpen&&(
               <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:8}}>
                 <div style={{display:"flex",gap:8}}>
                   {DONOR_RELATIONSHIP_LABELS.map(([v,l])=>(
-                    <button key={v} onClick={()=>setRelType(v)} style={{background:relType===v?T.greenDk+"18":T.white,border:`1px solid ${relType===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 10px",color:relType===v?T.greenDk:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>{l}</button>
+                    <button key={v} aria-pressed={relType===v} onClick={()=>setRelType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer",...activeMark(relType===v,"bottom")}}>{l}</button>
                   ))}
                 </div>
                 <input value={relSearch} onChange={e=>setRelSearch(e.target.value)} placeholder="Search donors by name…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",color:T.ink,fontSize:13,outline:"none"}}/>
@@ -2329,7 +2329,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       ))}
                   </div>
                 )}
-                {relErr&&<div style={{color:"#b8593f",fontSize:12}}>{relErr}</div>}
+                {relErr&&<div style={{color:T.terracotta,fontSize:12}}>{relErr}</div>}
               </div>
             )}
 
@@ -2345,7 +2345,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                         <Pill label={DONOR_RELATIONSHIP_LABELS.find(([v])=>v===r.relationshipType)?.[1]||r.relationshipType}/>
-                        {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid #b8593f55",borderRadius:7,padding:"4px 9px",color:"#b8593f",fontSize:11,cursor:"pointer"}}>Remove</button>}
+                        {!isReadOnly&&<button onClick={()=>unlinkDonor(r.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:7,padding:"4px 9px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Remove</button>}
                       </div>
                     </div>
                   ))}
@@ -2374,7 +2374,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     </div>
                     <div style={{display:"flex",gap:6,flexShrink:0}}>
                       {(m.file_data||m.file_url)&&<button onClick={()=>viewMaterial(m)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>View</button>}
-                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid #b8593f30",borderRadius:7,padding:"5px 10px",color:"#b8593f",fontSize:11,cursor:"pointer"}}>Delete</button>
+                      <button onClick={()=>deleteMaterial(m.id)} style={{background:"none",border:"1px solid "+T.terracotta+"30",borderRadius:7,padding:"5px 10px",color:T.terracotta,fontSize:11,cursor:"pointer"}}>Delete</button>
                     </div>
                   </div>
                 ))}
@@ -2397,17 +2397,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {["all","call","meeting","email","gift","event","stewardship","note"].map(t=>(
-                    <button key={t} onClick={()=>setActFilter(t)} style={{background:actFilter===t?T.greenDk:"transparent",border:`1px solid ${actFilter===t?T.greenDk:T.bg3}`,borderRadius:99,padding:"4px 10px",color:actFilter===t?"#fff":T.ink3,fontSize:11,cursor:"pointer",fontWeight:actFilter===t?700:400,textTransform:"capitalize"}}>
+                    <button key={t} aria-pressed={actFilter===t} onClick={()=>setActFilter(t)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,cursor:"pointer",fontWeight:400,textTransform:"capitalize",...activeMark(actFilter===t,"bottom")}}>
                       {t}
                     </button>
                   ))}
                 </div>
                 <div style={{display:"flex",gap:6}}>
-                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:"#0d5c3a10",border:"1px solid #0d5c3a30",borderRadius:8,padding:"7px 12px",color:"#0d5c3a",fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
-                  <button onClick={onLogTouchpoint} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 12px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
+                  <button onClick={()=>setStwOpen(v=>!v)} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>Log Stewardship</button>
+                  <button onClick={onLogTouchpoint} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Log Touchpoint</button>
                 </div>
               </div>
-              {stwOpen&&<div style={{background:T.white,border:"1px solid #0d5c3a30",borderRadius:12,padding:"14px 16px"}}>
+              {stwOpen&&<div style={{background:T.white,border:"1px solid "+T.greenDk+"30",borderRadius:12,padding:"14px 16px"}}>
                 <div style={{fontSize:12,fontWeight:700,color:T.ink,marginBottom:10}}>Log Stewardship Touch</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
                   <select value={stwForm.type} onChange={e=>setStwForm(p=>({...p,type:e.target.value}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none"}}>
@@ -2418,7 +2418,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   <input value={stwForm.note} onChange={e=>setStwForm(p=>({...p,note:e.target.value}))} placeholder="Optional note" style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",gridColumn:"1/-1"}}/>
                 </div>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:"#0d5c3a",border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
+                  <button onClick={saveStewardship} disabled={stwSaving} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer"}}>Save</button>
                   <button onClick={()=>setStwOpen(false)} style={{background:T.bg,border:"none",borderRadius:8,padding:"7px 12px",color:T.ink3,fontSize:12,cursor:"pointer"}}>Cancel</button>
                 </div>
               </div>}
@@ -2479,18 +2479,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 const m=milestoneFor(g);
                 milestones.push({date:g.date,icon:m?"✦":"•",label:m||"Gift",
                   desc:`${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${m==="First gift"?" · the relationship began":""}`,
-                  color:"#c9a84c",big:!!m});
+                  color:T.gold500,big:!!m});
               }
               if(firstGiftDate){
                 const ann=new Date(firstGiftDate);ann.setFullYear(ann.getFullYear()+1);
                 const annStr=ann.toISOString().split("T")[0];
-                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:"#c9a84c",big:true});
+                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:T.gold500,big:true});
               }
               let cumulative=0;
               sortedGiftsForTimeline.forEach(g=>{
                 const prev=cumulative;cumulative+=g.amount;
                 const crossed=[10000,25000,50000,100000,250000].filter(t=>prev<t&&cumulative>=t);
-                crossed.forEach(t=>milestones.push({date:g.date,icon:"✦",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:"#c9a84c",big:true}));
+                crossed.forEach(t=>milestones.push({date:g.date,icon:"✦",label:`$${(t/1000)}k milestone`,desc:`Lifetime giving crossed $${(t/1000)}k`,color:T.gold500,big:true}));
               });
 
               const events=[
@@ -2514,13 +2514,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               if(events.length===0)return<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:24}}>No timeline events yet. Log touchpoints and gifts to build the relationship arc.</div>;
 
               return(<div style={{position:"relative",paddingLeft:28}}>
-                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, #0d5c3a, #c9a84c44)"}}/>
+                <div style={{position:"absolute",left:10,top:0,bottom:0,width:2,background:"linear-gradient(to bottom, "+T.greenDk+", "+T.gold500+"44)"}}/>
                 {events.map((ev,i)=>(
                   <div key={i} style={{position:"relative",marginBottom:ev.big?20:14}}>
                     <div style={{position:"absolute",left:-28,width:ev.big?20:16,height:ev.big?20:16,borderRadius:"50%",background:ev.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:ev.big?11:9,border:`2px solid ${T.white}`,boxShadow:`0 0 0 2px ${ev.color}44`,top:0,flexShrink:0,zIndex:1}}>
                       {ev.icon}
                     </div>
-                    <div style={{background:ev.big?"#c9a84c08":T.white,border:`1px solid ${ev.big?"#c9a84c40":T.bg3}`,borderRadius:10,padding:ev.big?"12px 14px":"9px 13px",marginLeft:4}}>
+                    <div style={{background:ev.big?T.gold500+"08":T.white,border:`1px solid ${ev.big?T.gold500+"40":T.bg3}`,borderRadius:10,padding:ev.big?"12px 14px":"9px 13px",marginLeft:4}}>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:ev.big?800:700,color:ev.color,textTransform:"capitalize"}}>{ev.label}</span>
                         <span style={{fontSize:11,color:T.ink3}}>{displayDate(ev.date)}</span>
@@ -2536,33 +2536,33 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
           {donor.stripeSubscriptionStatus==="active"&&(
-            <div style={{background:"#0d5c3a10",border:"1px solid #0d5c3a30",borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
+            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>↻</span>
               <div>
-                <div style={{fontSize:12,fontWeight:700,color:"#0d5c3a"}}>Recurring Donor</div>
-                <div style={{fontSize:11,color:"#0d5c3a",marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
+                <div style={{fontSize:12,fontWeight:700,color:T.ink}}>Recurring Donor</div>
+                <div style={{fontSize:11,color:T.ink3,marginTop:1}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</div>
               </div>
             </div>
           )}
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Relationship Owner</div>
-            <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:12,padding:"12px 14px"}}>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Relationship Owner</div>
+            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:28,height:28,borderRadius:"50%",background:T.greenDk+"44",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#0d5c3a",flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                <div style={{width:28,height:28,borderRadius:"50%",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:T.ink,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
                 {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:"#f0ede6"}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
                 {/* Reassigning a relationship owner is portfolio management → Team.
                     Core sees the owner read-only; the server 403s the assign route. */}
-                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:7,padding:"3px 10px",color:"rgba(240,237,230,0.7)",fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
+                {isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11,cursor:"pointer"}}>{showReassign?"Cancel":"Reassign"}</button>}
               </div>
               {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer"}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
                   <option value="">Select team member…</option>
                   {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
                 </select>
-                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"8px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.ink:T.bg,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:reassignId?"pointer":"not-allowed"}}>
                   {reassignLoading?"Saving…":"Confirm Reassignment"}
                 </button>
               </div>}
@@ -2571,12 +2571,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
 
           {/* BUILD-88a A.4 — sequences render ONLY with the Team flag. */}
           {isTeam&&sequences.length>0&&(<div data-testid="dp-sequences">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Sequences</div>
-            {seqToast&&<div style={{background:"#0d5c3a22",border:"1px solid #0d5c3a",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#0d5c3a",fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Sequences</div>
+            {seqToast&&<div style={{background:T.bg2,border:"1px solid "+T.greenDk,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.ink,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
             <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 12px",fontSize:12,color:"#0d5c3a",cursor:"pointer"}}>+ Enroll in sequence</button>
+              {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.greenDk,cursor:"pointer"}}>+ Enroll in sequence</button>
               :<>
-                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px 10px",color:"#f0ede6",fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
+                <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
                   <option value="">Select sequence…</option>
                   {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
@@ -2589,10 +2589,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     setSeqOpen(false);setSeqId("");
                   }catch(e){alert(errorMessage(e, "Could not enroll"));}
                   setSeqLoading(false);
-                }} style={{background:seqId?T.greenDk:"#1a2e1f",border:"none",borderRadius:8,padding:"6px 12px",color:"#f0ede6",fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
+                }} style={{background:seqId?T.ink:T.bg,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:T.ink3,fontSize:12,fontWeight:600,cursor:seqId?"pointer":"not-allowed"}}>
                   {seqLoading?"…":"Enroll"}
                 </button>
-                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>✕</button>
+                <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
               </>}
             </div>
           </div>)}
@@ -2624,46 +2624,46 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               }
             };
             return <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Custom Fields</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Custom Fields</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {shown.map(f=>(
                 <div key={f.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-                  <div style={{fontSize:12,color:"rgba(240,237,230,0.7)",fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
+                  <div style={{fontSize:12,color:T.ink3,fontWeight:600,minWidth:90,flexShrink:0}}>{f.label}</div>
                   {cfEditing===f.key?(
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.type==="checkbox"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
+                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
                           <option value="">—</option>
                           <option value="yes">Yes</option>
                           <option value="no">No</option>
                         </select>
                       ):f.type==="select"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
-                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}>
+                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}>
                           <option value="">—</option>
                           {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
                       ):f.type==="multi_select"?(
-                        <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px"}}>
+                        <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:5,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px"}}>
                           {(f.options||[]).map(o=>{
                             const cur=cfEditVal?cfEditVal.split("; ").filter(Boolean):[];
                             const on=cur.includes(o);
                             return <button key={o} onClick={()=>{
                               const next=on?cur.filter(x=>x!==o):[...cur,o];
                               setCfEditVal(next.join("; "));
-                            }} style={{background:on?T.greenDk:"transparent",border:"1px solid #2d4a35",borderRadius:12,padding:"2px 8px",fontSize:11,color:on?"#f0ede6":"rgba(240,237,230,0.7)",cursor:"pointer"}}>{o}</button>;
+                            }} aria-pressed={on} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"2px 8px",fontSize:11,color:T.ink3,cursor:"pointer",...activeMark(on,"bottom")}}>{o}</button>;
                           })}
                         </div>
                       ):f.type==="long_text"?(
                         <textarea value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} rows={3}
-                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none",resize:"vertical"}}
+                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none",resize:"vertical"}}
                           autoFocus/>
                       ):(
                         <input value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)}
                           type={f.type==="date"?"date":"text"}
                           inputMode={f.type==="number"||f.type==="money"?"decimal":undefined}
-                          style={{flex:1,background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 8px",fontSize:12,color:"#f0ede6",outline:"none"}}
+                          style={{flex:1,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 8px",fontSize:12,color:T.ink,outline:"none"}}
                           onKeyDown={e=>{
                             if(e.key==="Enter"){saveCf(f);}
                             else if(e.key==="Escape"){setCfEditing(null);setCfError("");}
@@ -2671,23 +2671,23 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                           autoFocus
                         />
                       )}
-                      <button onClick={()=>saveCf(f)} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"5px 10px",color:"#f0ede6",fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
-                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>✕</button>
+                      <button onClick={()=>saveCf(f)} style={{background:T.ink,border:"none",borderRadius:8,padding:"5px 10px",color:T.white,fontSize:11,fontWeight:700,cursor:"pointer"}}>Save</button>
+                      <button onClick={()=>{setCfEditing(null);setCfError("");}} style={{background:"transparent",border:"none",padding:"5px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
                     </div>
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
-                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?"#f0ede6":"rgba(240,237,230,0.7)",fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
+                      <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?T.ink:T.ink3,fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
                         {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
                       </span>
                       <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
-                        style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:6,padding:"3px 8px",fontSize:10,color:"#0d5c3a",cursor:"pointer"}}>Edit</button>
+                        style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"3px 8px",fontSize:10,color:T.greenDk,cursor:"pointer"}}>Edit</button>
                     </div>
                   )}
                 </div>
               ))}
-              {cfError&&<div style={{fontSize:11.5,color:"#b8593f"}}>{cfError}</div>}
+              {cfError&&<div style={{fontSize:11.5,color:T.terracotta}}>{cfError}</div>}
               {hidden>0&&(
-                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:"rgba(240,237,230,0.7)",cursor:"pointer",textAlign:"left"}}>
+                <button onClick={()=>setCfShowAll(v=>!v)} style={{background:"none",border:"none",padding:0,fontSize:11,fontWeight:600,color:T.ink3,cursor:"pointer",textAlign:"left"}}>
                   {cfShowAll?"Hide empty fields":`Show all ${cfData.length} fields (${hidden} empty)`}
                 </button>
               )}
@@ -2696,14 +2696,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           })()}
 
           {donorEvents.length>0&&<div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Events</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Events</div>
             <div style={{display:"flex",flexDirection:"column",gap:4}}>
               {donorEvents.slice(0,5).map(e=>{
                 const EVT_ICONS={gala:"•",cultivation:"•",site_visit:"•",board_meeting:"•",volunteer:"•",webinar:"•",other:"•"};
                 const EVT_COLORS={gala:T.greenDk,cultivation:T.green,site_visit:T.green500,board_meeting:T.greenDk,volunteer:T.gold600,webinar:T.gold500,other:T.ink3};
                 const ATT_COL={invited:T.ink3,confirmed:T.green500,attended:T.green,no_show:T.terracotta,cancelled:T.ink3};
                 const icon=EVT_ICONS[e.event_type]||"•";
-                const attCol=ATT_COL[e.attendee_status]||"#5a554f";
+                const attCol=ATT_COL[e.attendee_status]||T.ink3;
                 // e.date may be bare YYYY-MM-DD OR a full ISO timestamp (the
                 // sample seed writes timestamps) — blindly appending T12:00:00
                 // to the latter produced "Invalid Date" on the profile card.
@@ -2712,11 +2712,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 const _dt=_raw?(_iso?new Date(_iso[0]+"T12:00:00"):new Date(_raw)):null;
                 const d=_dt&&!isNaN(_dt)?_dt.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}):"";
                 return(
-                  <div key={e.id} style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                  <div key={e.id} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
                     <span style={{fontSize:14,flexShrink:0}}>{icon}</span>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:12,fontWeight:600,color:"#f0ede6",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
-                      <div style={{fontSize:10,color:"rgba(240,237,230,0.7)"}}>{d}</div>
+                      <div style={{fontSize:12,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</div>
+                      <div style={{fontSize:10,color:T.ink3}}>{d}</div>
                     </div>
                     <span style={{background:attCol+"22",color:attCol,border:`1px solid ${attCol}44`,borderRadius:99,padding:"2px 8px",fontSize:9,fontWeight:700,flexShrink:0,textTransform:"capitalize"}}>{(e.attendee_status||"invited").replace("_"," ")}</span>
                   </div>
@@ -2738,18 +2738,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             if(!shown.length) return null;
             return (
               <div>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"#c9a84c",marginBottom:8}}>Suggested Move</div>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.gold700,marginBottom:8}}>Suggested Move</div>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {shown.map(s=>(
-                    <div key={s.signal} style={{background:"#1a2e1f",border:"1px solid #8a6d1f",borderLeft:"3px solid #c9a84c",borderRadius:10,padding:"10px 12px"}}>
-                      <div style={{fontSize:12,color:"#f0ede6",lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                    <div key={s.signal} style={{background:T.bg,border:"1px solid "+T.gold700,borderLeft:"3px solid "+T.gold500,borderRadius:10,padding:"10px 12px"}}>
+                      <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
                       <div style={{display:"flex",gap:6}}>
                         {s.toStage&&!isReadOnly&&(
-                          <button onClick={()=>acceptSuggestion(s)} style={{background:"#c9a84c",border:"none",borderRadius:7,padding:"5px 12px",color:"#0f1a12",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                          <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
                             Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
                           </button>
                         )}
-                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid #2d4a35",borderRadius:7,padding:"5px 12px",color:"rgba(240,237,230,0.7)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                        <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
                       </div>
                     </div>
                   ))}
@@ -2764,16 +2764,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               Kanban, and showing them the strip teaches them the product is not
               for them. */}
           {isTeam&&<div data-testid="dp-move-stage">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {STAGES.map(s=>(
                 <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)}
-                  style={{background:(donor.stage||"cultivate")===s.id?stageTone(s,true)+"28":"#1a2e1f",border:`1px solid ${(donor.stage||"cultivate")===s.id?stageTone(s,true):"#2d4a35"}`,borderRadius:8,padding:"6px 12px",color:(donor.stage||"cultivate")===s.id?stageTone(s,true):"rgba(240,237,230,0.7)",fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                  aria-pressed={(donor.stage||"cultivate")===s.id} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark((donor.stage||"cultivate")===s.id,"bottom")}}>
                   {s.label}
                 </button>
               ))}
             </div>
-            <div style={{marginTop:8,fontSize:11,color:"rgba(240,237,230,0.7)",lineHeight:1.5,borderLeft:`2px solid ${stageTone(stage,true)}`,paddingLeft:8}}>
+            <div style={{marginTop:8,fontSize:11,color:T.ink3,lineHeight:1.5,borderLeft:`2px solid ${stageTone(stage,true)}`,paddingLeft:8}}>
               {STAGE_ACTION[donor.stage||"cultivate"]}
             </div>
           </div>}
@@ -2790,37 +2790,37 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               code is untouched below so that is a one-line change, not a
               rebuild. */}
           {WEALTH_SCORE_DEFINITION&&WEALTH_SCORE_SOURCE&&<div data-testid="dp-wealth-score">
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Proven capacity</div>
-            <div style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:14,padding:"16px"}}>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Proven capacity</div>
+            <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px"}}>
               {localScore!==null?(
                 <>
                   <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
                     <div style={{textAlign:"center",background:wsc+"22",border:`2px solid ${wsc}`,borderRadius:12,padding:"10px 14px",minWidth:56,flexShrink:0}}>
                       <div style={{fontSize:26,fontWeight:800,color:wsc,lineHeight:1,fontFamily:"'DM Serif Display',serif"}}>{localScore}</div>
-                      <div style={{fontSize:9,color:"rgba(240,237,230,0.7)",fontWeight:600,marginTop:2}}>/ 10</div>
+                      <div style={{fontSize:9,color:T.ink3,fontWeight:600,marginTop:2}}>/ 10</div>
                     </div>
                     <div>
                       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
-                        <span style={{background:(TIER_COLOR[localTier]||"rgba(240,237,230,0.7)")+"33",color:TIER_COLOR[localTier]||"rgba(240,237,230,0.7)",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
+                        <span style={{background:(TIER_COLOR[localTier]||T.ink3)+"33",color:TIER_COLOR[localTier]||T.ink3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:800,letterSpacing:"0.04em"}}>{localTier}</span>
                       </div>
-                      <div style={{fontSize:10,color:"rgba(240,237,230,0.7)",fontWeight:600}}>{localConf} confidence</div>
+                      <div style={{fontSize:10,color:T.ink3,fontWeight:600}}>{localConf} confidence</div>
                     </div>
                   </div>
-                  {localRationale&&<p style={{fontSize:12,color:"rgba(240,237,230,0.7)",lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid #2d4a35",paddingLeft:10}}>{localRationale}</p>}
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:"#0f1a12",border:"1px solid #2d4a35",borderRadius:8,padding:"6px",color:"#0d5c3a",fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
+                  {localRationale&&<p style={{fontSize:12,color:T.ink3,lineHeight:1.6,margin:"0 0 12px 0",fontStyle:"italic",borderLeft:"2px solid "+T.bg3,paddingLeft:10}}>{localRationale}</p>}
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:"pointer",width:"100%",textAlign:"center"}}>{scoreLoading?"Calculating…":"↻ Recalculate"}</button>
                 </>
               ):(
                 <div style={{textAlign:"center",padding:"4px 0"}}>
-                  <div style={{fontSize:12,color:"rgba(240,237,230,0.7)",marginBottom:10}}>No score yet</div>
-                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
+                  <div style={{fontSize:12,color:T.ink3,marginBottom:10}}>No score yet</div>
+                  <button onClick={recalcScore} disabled={scoreLoading} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 15px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer"}}>{scoreLoading?"Calculating…":"Calculate Score"}</button>
                 </div>
               )}
-              <div style={{fontSize:10.5,color:"rgba(240,237,230,0.7)",marginTop:10,lineHeight:1.5}}>{WEALTH_SCORE_DEFINITION} Source: {WEALTH_SCORE_SOURCE}.</div>
+              <div style={{fontSize:10.5,color:T.ink3,marginTop:10,lineHeight:1.5}}>{WEALTH_SCORE_DEFINITION} Source: {WEALTH_SCORE_SOURCE}.</div>
             </div>
           </div>}
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(240,237,230,0.7)",marginBottom:8}}>Suggested Actions</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Suggested Actions</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
@@ -2834,7 +2834,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                   client, where she can read it as the donor will. */}
               {aiMap[`${donor.id}_email`]&&(
                 <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft"
-                  style={{background:"#1a2e1f",border:"1px solid #2d4a35",borderRadius:8,padding:"5px 11px",color:"#c9a84c",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 11px",color:T.gold700,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                   {draftCopied?"Copied ✓":"Copy the draft"}
                 </button>
               )}

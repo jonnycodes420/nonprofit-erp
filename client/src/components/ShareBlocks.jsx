@@ -1,6 +1,20 @@
 import { useState } from "react";
 import QRCode from "qrcode";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  ink: "#0f1a12",
+  warmWhite: "#faf8f4",
+  white: "#ffffff",
+  ink3: "#6b6b6b",
+  codeGround: "#102418",
+  green200: "#dce7df",
+  aiGreen: "#10b981",
+  mist: "#edf3ee",
+};
+
+
 // One QR/embed mechanism, parameterized by URL — used for the org-wide
 // donation page, each Giving Page, and each peer-to-peer fundraiser's own
 // shareable link, rather than a separate QR/embed system per surface.
@@ -28,7 +42,7 @@ export function QrCodeBlock({url,filenameBase}){
     if(!url)return;
     setQrLoading(true);
     try{
-      const dataUrl=await QRCode.toDataURL(url,{width:300,margin:2,color:{dark:"#0f1a12",light:"#faf8f4"}});
+      const dataUrl=await QRCode.toDataURL(url,{width:300,margin:2,color:{dark:PAL.ink,light:PAL.warmWhite}});
       setQrDataUrl(dataUrl);
     }catch(e){console.error(e);}
     setQrLoading(false);
@@ -46,9 +60,9 @@ export function QrCodeBlock({url,filenameBase}){
     w.document.write(`<!DOCTYPE html><html><head><title>Donation QR</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
+  body{background:${PAL.white};font-family:'DM Sans',system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px}
   img{width:280px;height:280px}
-  p{font-size:16px;color:#6b6b6b;text-align:center;margin-top:16px}
+  p{font-size:16px;color:${PAL.ink3};text-align:center;margin-top:16px}
   @media print{@page{margin:0.5in}body{padding:20px}}
 </style></head><body>
 <img src="${qrDataUrl}"/>
@@ -63,13 +77,13 @@ export function QrCodeBlock({url,filenameBase}){
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {!qrDataUrl?(
           <button onClick={generateQR} disabled={qrLoading}
-            style={{background:green,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
+            style={{background:green,border:"none",borderRadius:8,padding:"9px 18px",color:PAL.white,fontSize:13,fontWeight:700,cursor:qrLoading?"not-allowed":"pointer",opacity:qrLoading?0.7:1}}>
             {qrLoading?"Generating…":"Generate QR Code"}
           </button>
         ):(
           <>
             <button onClick={downloadQR}
-              style={{background:greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              style={{background:greenDk,border:"none",borderRadius:8,padding:"9px 18px",color:PAL.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
               ↓ Download PNG
             </button>
             <button onClick={printQR}
@@ -96,11 +110,11 @@ export function EmbedCodeBlock({url}){
   }
   return(
     <div style={{position:"relative"}}>
-      <pre style={{background:"#102418",color:"#dce7df",borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+      <pre style={{background:PAL.codeGround,color:PAL.green200,borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
         {embedCode}
       </pre>
       <button onClick={copyEmbed}
-        style={{position:"absolute",top:10,right:10,background:embedCopied?"#10b98130":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?"#dce7df":"#edf3ee",fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
+        style={{position:"absolute",top:10,right:10,background:embedCopied?PAL.aiGreen+"30":"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:6,padding:"4px 10px",color:embedCopied?PAL.green200:PAL.mist,fontSize:11,fontWeight:700,cursor:"pointer",transition:"all 0.15s"}}>
         {embedCopied?"✓ Copied!":"Copy Code"}
       </button>
     </div>

@@ -3,7 +3,7 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
-import { T, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, daysUntil, SC, askClaude, Spin, Pill, Card, SectionLabel, AIBtn, AIPanel, PageTitle, EmptyState, TouchpointTimeline, interactive, Modal } from "./shared";
 
 // ── Grant Log Modal ────────────────────────────────────────────────────────
 function GrantLogModal({grant,onSave,onClose}){
@@ -28,7 +28,7 @@ function GrantLogModal({grant,onSave,onClose}){
         <div style={{fontSize:16,fontWeight:800,color:T.ink,marginBottom:2}}>Log Touchpoint</div>
         <div style={{fontSize:12,color:T.ink3,marginBottom:16}}>{grant.funder} — {grant.program}</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:14}}>
-          {TYPES.map(([v,l])=><button key={v} onClick={()=>setType(v)} style={{background:type===v?T.greenDk:T.bg2,border:`1px solid ${type===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"5px 12px",color:type===v?"#fff":T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>)}
+          {TYPES.map(([v,l])=><button key={v} aria-pressed={type===v} onClick={()=>setType(v)} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(type===v,"bottom")}}>{l}</button>)}
         </div>
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Date</div>
@@ -255,13 +255,13 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
         </div>
 
         {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:"#0f1a12"}}>
+        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400,marginBottom:8}}>Move Stage</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Move Stage</div>
             <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
               {statuses.map(s=>(
                 <button key={s} onClick={()=>changeStatus(s)}
-                  style={{background:grant.status===s?T.gold500:T.bgElevated,border:`1px solid ${grant.status===s?T.gold500:T.green650}`,borderRadius:8,padding:"6px 12px",color:grant.status===s?T.ink:T.sage400,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize"}}>
+                  aria-pressed={grant.status===s} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 12px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",textTransform:"capitalize",...activeMark(grant.status===s,"bottom")}}>
                   {s}
                 </button>
               ))}
@@ -269,7 +269,7 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
           </div>
 
           <div>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400,marginBottom:8}}>Grant Strategy</div>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8}}>Grant Strategy</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
               <AIBtn onClick={()=>getAI("analyze")} loading={loadingKey===`${grant.id}_analyze`} label="✦ Analyze Grant Fit" small/>
               {grant.status!=="closed"&&<AIBtn onClick={()=>getAI("strategy")} loading={loadingKey===`${grant.id}_strategy`} label="✦ Strategy" small/>}
@@ -281,18 +281,18 @@ function GrantProfile({grant,onClose,onUpdate,onDelete,isAdmin,org,isReadOnly=fa
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400}}>Notes</div>
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Notes</div>
               {notes!==grant.notes&&<button onClick={saveNotes} disabled={savingNotes} style={{background:T.gold500,border:"none",borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>{savingNotes?"Saving…":"Save"}</button>}
             </div>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:10,padding:"10px 12px",color:T.inkInverse,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Add notes about this grant…" style={{width:"100%",boxSizing:"border-box",background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.6,outline:"none",resize:"vertical",minHeight:90}}/>
           </div>
 
           <div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.sage400}}>Activity Timeline</div>
+              <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Activity Timeline</div>
               <button onClick={()=>setLogOpen(true)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
             </div>
-            <div style={{background:T.white,border:"1px solid "+T.green650,borderRadius:12,
+            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,
                          padding:interactions?.length?"14px 16px 2px":"4px 16px",
                          maxHeight:420,overflowY:"auto"}}>
               <TouchpointTimeline interactions={interactions}/>
@@ -504,7 +504,7 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
       <PageTitle main="Grant" accent={subTab==="findgrants"?"discovery.":subTab==="deadlines"?"deadlines.":"pipeline."}/>
       <div style={{display:"flex",gap:2,background:T.bg2,borderRadius:10,padding:3}}>
         {[["pipeline","Pipeline"],["deadlines","Deadlines"],["findgrants","Find Grants"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setSubTab(id)} style={{background:subTab===id?T.greenDk:"transparent",color:subTab===id?T.white:T.ink3,border:"none",borderRadius:8,padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5}}>
+          <button key={id} role="tab" aria-selected={subTab===id} onClick={()=>setSubTab(id)} style={{background:"transparent",color:T.ink3,border:"none",borderRadius:"8px 8px 0 0",padding:"6px 16px",fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",display:"flex",alignItems:"center",gap:5,...activeMark(subTab===id,"bottom")}}>
             {id==="findgrants"&&<span style={{fontSize:10}}>✦</span>}{label}
           </button>
         ))}
@@ -668,10 +668,10 @@ Focus on grants under $200K that match this org's size and mission. Include a mi
       </button>
     </Card>
 
-    {(loading||results)&&<Card style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid "+T.green650}}>
-      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold500,marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
-      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.sage400,fontSize:13}}><Spin/>Analyzing your org and searching grant landscape…</div>}
-      {results&&<div style={{fontSize:13,color:T.inkInverse,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
+    {(loading||results)&&<Card style={{background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500}}>
+      <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:T.gold700,marginBottom:14}}>✦ Grant Matches — Ranked by Alignment</div>
+      {loading&&!results&&<div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><Spin dark/>Analyzing your org and searching grant landscape…</div>}
+      {results&&<div style={{fontSize:13,color:T.ink,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{results}</div>}
     </Card>}
 
     {ran&&!loading&&!results&&<div style={{fontSize:13,color:T.ink3,textAlign:"center",padding:20}}>No results yet — try again.</div>}

@@ -3,6 +3,19 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../main";
 import { apiFetch } from "../api";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  panel: "#1a2e1f",
+  sageGrey: "#6b7c72",
+  mist: "#edf3ee",
+  white: "#ffffff",
+  mistEdge: "#dfe8e2",
+  terracotta: "#b8593f",
+  terraLight: "#e0a893",
+};
+
+
 // ── Live-billing plans (BUILD-24 cutover) ──────────────────────────────────
 // CHECKOUT_PLANS is the source of truth for the in-app PlanPicker's real Stripe
 // Checkout (POST /billing/create-checkout maps these ids → STRIPE_PRICE_CORE /
@@ -200,7 +213,7 @@ export default function Pricing() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
       {/* Nav */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: ink, borderBottom: "1px solid #1a2e1f", zIndex: 100 }}>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: ink, borderBottom: "1px solid "+PAL.panel, zIndex: 100 }}>
         <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
           <span style={{ fontSize: 20, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
@@ -257,12 +270,12 @@ export default function Pricing() {
                   Staffed offices
                 </div>
               )}
-              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: plan.highlight ? "#6b7c72" : sage, marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: plan.highlight ? PAL.sageGrey : sage, marginBottom: 8 }}>
                 {plan.name}
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 6 }}>
                 <span style={{ fontSize: 40, fontWeight: 800, color: plan.highlight ? ink : cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>${plan.price}</span>
-                <span style={{ fontSize: 14, color: plan.highlight ? "#6b7c72" : sage }}>/month</span>
+                <span style={{ fontSize: 14, color: plan.highlight ? PAL.sageGrey : sage }}>/month</span>
               </div>
               <div style={{ fontSize: 14, fontWeight: 600, color: plan.highlight ? ink : cream, marginBottom: 22, lineHeight: 1.45 }}>
                 {plan.forWho}
@@ -270,7 +283,7 @@ export default function Pricing() {
               <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 26, flex: 1 }}>
                 {plan.features.map(f => (
                   <div key={f.t} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? "#edf3ee" : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? PAL.mist : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke={emerald} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                     <span style={{ fontSize: 13, color: plan.highlight ? ink : sage, lineHeight: 1.45 }}>
@@ -284,7 +297,7 @@ export default function Pricing() {
                   background: plan.highlight ? green : "transparent",
                   border: plan.highlight ? "none" : `1px solid ${panelBorder}`,
                   borderRadius: 10, padding: "13px 20px",
-                  color: plan.highlight ? "#fff" : sage,
+                  color: plan.highlight ? PAL.white : sage,
                   fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
                 };
                 if (!isAuthed) {
@@ -295,7 +308,7 @@ export default function Pricing() {
                 }
                 if (isCurrentPlan(plan.id)) {
                   return (
-                    <button disabled style={{ ...base, background: plan.highlight ? "#dfe8e2" : "transparent", color: plan.highlight ? "#6b7c72" : sage, cursor: "default", opacity: 0.85 }}>
+                    <button disabled style={{ ...base, background: plan.highlight ? PAL.mistEdge : "transparent", color: plan.highlight ? PAL.sageGrey : sage, cursor: "default", opacity: 0.85 }}>
                       Current plan
                     </button>
                   );
@@ -313,7 +326,7 @@ export default function Pricing() {
                       {busy ? "Starting checkout…" : label}
                     </button>
                     {err && (
-                      <div style={{ fontSize: 12, color: plan.highlight ? "#b8593f" : "#e0a893", marginTop: 10, lineHeight: 1.45 }}>{err}</div>
+                      <div style={{ fontSize: 12, color: plan.highlight ? PAL.terracotta : PAL.terraLight, marginTop: 10, lineHeight: 1.45 }}>{err}</div>
                     )}
                   </>
                 );

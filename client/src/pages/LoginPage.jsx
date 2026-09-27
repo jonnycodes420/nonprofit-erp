@@ -27,6 +27,12 @@ const T = {
   forest: "#0d5c3a",   // greenDk — standard link/accent, WCAG AA on cream
   greenDark: "#0d5c3a",
   red:    "#8a3a24",  // deep terracotta — errors ride terracotta, never library red
+  // FIX-2 C — named here once, where they were inline.
+  white: "#ffffff",
+  mist: "#edf3ee",
+  green200: "#dce7df",
+  terra100: "#f6e3dd",
+  terra200: "#eac6b8",
 };
 
 export default function LoginPage() {
@@ -143,7 +149,7 @@ export default function LoginPage() {
 
           {/* Card */}
           <div style={{
-            background: "#fff",
+            background: T.white,
             border: `1px solid ${T.cream3}`,
             borderRadius: 16,
             padding: "32px 32px 28px",
@@ -151,8 +157,8 @@ export default function LoginPage() {
           }}>
             {notice && (
               <div style={{
-                background: "#edf3ee",
-                border: `1px solid #dce7df`,
+                background: T.mist,
+                border: `1px solid ${T.green200}`,
                 borderRadius: 8,
                 padding: "10px 14px",
                 fontSize: 13,
@@ -212,8 +218,8 @@ export default function LoginPage() {
 
               {error && (
                 <div style={{
-                  background: "#f6e3dd",
-                  border: `1px solid #eac6b8`,
+                  background: T.terra100,
+                  border: `1px solid ${T.terra200}`,
                   borderRadius: 8,
                   padding: "10px 14px",
                   fontSize: 13,

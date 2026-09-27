@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
+import { T, activeMark, askClaude, Spin, fmtFull, SectionTabs, StartHere, interactive, PersonMark, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 // BUILD-88c C.2 — the six live in shared/emailTemplates.js, so the gallery, the
 // live preview and the send all read ONE copy of the words. The server route
@@ -81,7 +81,7 @@ function CampaignBriefing({ campaign }) {
           {goalAmt > 0 && (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#0d5c3a" }}>{fmtFull(raisedAmt)} raised</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: T.greenDk }}>{fmtFull(raisedAmt)} raised</span>
                 <span style={{ fontSize: 12, color: T.ink3 }}>of {fmtFull(goalAmt)} goal · {pct}%</span>
               </div>
               <div style={{ height: 8, background: T.bg3, borderRadius: 99, overflow: "hidden" }}>
@@ -112,7 +112,7 @@ const S = {
     ghost:   { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink2, fontSize: 13, cursor: "pointer" },
     primary: { background: T.gold500, border: "none", borderRadius: 8, padding: "9px 18px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" },
     danger:  { background: "transparent", border: "1px solid " + T.terracotta, borderRadius: 8, padding: "8px 14px", color: T.terracotta, fontSize: 13, cursor: "pointer" },
-    amber:   { background: T.gold600, border: "none", borderRadius: 8, padding: "9px 18px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+    amber:   { background: T.gold600, border: "none", borderRadius: 8, padding: "9px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" },
     subtle:  { background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 13, cursor: "pointer" },
     // BUILD-88c C.2 — the one emerald action. A screen gets one of these.
     send:    { background: T.greenDk, border: "none", borderRadius: 8, padding: "9px 18px", color: T.white, fontSize: 13, fontWeight: 700, cursor: "pointer" },
@@ -124,7 +124,7 @@ const STATUS_META = {
   draft:     { label: "Draft",     color: T.ink3, bg: T.ink3 + "18" },
   scheduled: { label: "Scheduled", color: T.green500, bg: T.green500 + "18" },
   sending:   { label: "Sending",   color: T.gold600, bg: T.gold600 + "18" },
-  sent:      { label: "Sent",      color: "#fff",    bg: T.greenMid },
+  sent:      { label: "Sent",      color: T.white,    bg: T.greenMid },
 };
 function StatusBadge({ status }) {
   const m = STATUS_META[status] || STATUS_META.draft;
@@ -219,11 +219,12 @@ function SegmentPicker({ seg, onChange, allDonors }) {
           <button key={m.id} onClick={() => upd({ mode: m.id })}
             aria-pressed={mode === m.id}
             style={{
-              background: mode === m.id ? T.green100 : T.bg2,
-              border: "1px solid " + (mode === m.id ? T.greenDk : T.bg3),
-              borderRadius: 99, padding: "5px 12px", fontSize: 11,
-              color: mode === m.id ? T.greenDk : T.ink3, cursor: "pointer",
-              fontWeight: mode === m.id ? 700 : 400,
+              background: T.white,
+              border: "1px solid " + T.bg3,
+              borderRadius: 7, padding: "5px 12px", fontSize: 11,
+              color: T.ink3, cursor: "pointer",
+              fontWeight: 400,
+              ...activeMark(mode === m.id, "bottom"),
             }}>{m.label}</button>
         ))}
       </div>
@@ -241,7 +242,7 @@ function SegmentPicker({ seg, onChange, allDonors }) {
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {TIER_OPTS.map(t => (
             <button key={t} onClick={() => tog("tiers", t)}
-              style={{ background: (seg.tiers || []).includes(t) ? T.gold600 : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.tiers || []).includes(t) ? "#fff" : T.ink3, cursor: "pointer" }}>
+              style={{ background: (seg.tiers || []).includes(t) ? T.gold600 : T.bg2, border: "none", borderRadius: 99, padding: "4px 10px", fontSize: 11, color: (seg.tiers || []).includes(t) ? T.white : T.ink3, cursor: "pointer" }}>
               {t}
             </button>
           ))}
@@ -326,7 +327,7 @@ function BarChart({ data }) {
     <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 80 }}>
       {data.map((d, i) => (
         <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: "#0d5c3a", borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
+          <div style={{ width: "100%", height: Math.max(4, (d.v / max) * 64), background: T.greenDk, borderRadius: "4px 4px 0 0", opacity: 0.85 }} />
           <div style={{ fontSize: 9, color: T.ink3 }}>{d.label}</div>
         </div>
       ))}
@@ -356,7 +357,7 @@ function CampaignLinkBtn({ campaignId, campaignName }) {
   };
   return (
     <button onClick={generate} disabled={loading}
-      style={{ background: copied ? T.greenDk : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: copied ? "#fff" : T.greenDk, fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+      style={{ background: copied ? T.greenDk : T.greenDk + "14", border: "1px solid " + T.greenDk + "30", borderRadius: 8, padding: "8px 14px", color: copied ? T.white : T.greenDk, fontSize: 12, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
       {loading ? <><Spin /> Generating…</> : copied ? "✓ Link copied!" : "Copy Donation Link"}
     </button>
   );
@@ -985,7 +986,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
               <input style={inp} value={editForm.subject} onChange={e => setEditForm(f => ({ ...f, subject: e.target.value }))} placeholder="Subject" />
               <textarea style={{ ...inp, minHeight: 140, resize: "vertical" }} value={editForm.body} onChange={e => setEditForm(f => ({ ...f, body: e.target.value }))} placeholder="Body" />
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => saveEdit(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                <button onClick={() => saveEdit(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
                 <button onClick={cancelEdit} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink3, fontSize: 12, cursor: "pointer" }}>Cancel</button>
               </div>
             </div>
@@ -996,7 +997,7 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
                 <div style={{ fontSize: 13, color: T.ink2 || T.ink, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{d.body}</div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => send(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                <button onClick={() => send(d.id)} disabled={busyId === d.id} style={{ background: T.green, border: "none", borderRadius: 8, padding: "8px 14px", color: T.white, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                   {busyId === d.id ? "Sending…" : "Approve & Send"}
                 </button>
                 <button onClick={() => startEdit(d)} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 8, padding: "8px 14px", color: T.ink, fontSize: 12, cursor: "pointer" }}>Edit</button>
@@ -1290,7 +1291,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
       });
       if (editorRef.current) {
         editorRef.current.focus();
-        const linkHtml = `<p><a href="${r.url}" style="background:#0d5c3a;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
+        const linkHtml = `<p><a href="${r.url}" style="background:${T.greenDk};color:${T.white};padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block">Give Now →</a></p>`;
         document.execCommand("insertHTML", false, linkHtml);
         setLiveHtml(editorRef.current.innerHTML);
       }
@@ -1641,7 +1642,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   ].map(({ label, value }) => (
                     <div key={label} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 16px", minWidth: 132 }}>
                       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif", marginTop: 3 }}>{value}</div>
                     </div>
                   ))}
                 </div>
@@ -1682,7 +1683,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                           </div>
                           {c.status === "sent" && rate !== null && (
                             <div style={{ textAlign: "right", flexShrink: 0 }}>
-                              <div style={{ fontSize: 15, fontWeight: 800, color: T.greenMid, fontFamily: "'DM Serif Display',Georgia,serif" }}>{rate}%</div>
+                              <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',Georgia,serif" }}>{rate}%</div>
                               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: T.ink3 }}>opened</div>
                             </div>
                           )}
@@ -1793,7 +1794,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               ].map(({ label, value }) => (
                 <div key={label} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
                   <span style={{ fontSize: 11, color: T.ink3 }}>{label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 800, color: T.greenMid }}>{value}</span>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{value}</span>
                 </div>
               ))}
             </div>
@@ -1843,7 +1844,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {/* Send result toast */}
             {sendResult && (
               <div style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: T.greenDk, fontWeight: 700, fontSize: 14 }}>
+                <span style={{ color: T.ink, fontWeight: 700, fontSize: 14 }}>
                   {sendResult.queued
                     ? `✓ Queued — sending to ${sendResult.recipientCount} recipient${sendResult.recipientCount === 1 ? "" : "s"}`
                     : `✓ Sent to ${sendResult.sent} donors`}
@@ -1891,7 +1892,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         onMouseLeave={e => { e.currentTarget.style.background = "transparent"; setHoveredRowId(null); }}
                       >
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? "#0d5c3a" : T.ink, transition: "color 0.1s" }}>{c.name}</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: hoveredRowId === c.id ? T.greenDk : T.ink, transition: "color 0.1s" }}>{c.name}</div>
                           <div style={{ fontSize: 11, color: T.ink3, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>{c.subject}</div>
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
@@ -2017,17 +2018,18 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               {AUDIENCE_SEGS.map(s => {
                 const cnt = allDonors.filter(s.filter).length;
                 return (
-                  <button key={s.id} onClick={() => setAudienceSeg(s.id)}
+                  <button key={s.id} aria-pressed={audienceSeg === s.id} onClick={() => setAudienceSeg(s.id)}
                     style={{
-                      background: audienceSeg === s.id ? T.green : T.bg2,
-                      border: "1px solid " + (audienceSeg === s.id ? T.green : T.bg3),
-                      borderRadius: 99, padding: "7px 14px", cursor: "pointer",
-                      color: audienceSeg === s.id ? "#fff" : T.ink3,
-                      fontSize: 12, fontWeight: audienceSeg === s.id ? 700 : 400,
+                      background: T.white,
+                      border: "1px solid " + T.bg3,
+                      borderRadius: 8, padding: "7px 14px", cursor: "pointer",
+                      color: T.ink3,
+                      fontSize: 12, fontWeight: 400,
                       display: "flex", alignItems: "center", gap: 6,
+                      ...activeMark(audienceSeg === s.id, "bottom"),
                     }}>
                     {s.label}
-                    <span style={{ background: audienceSeg === s.id ? "#ffffff30" : T.bg3, borderRadius: 99, padding: "1px 7px", fontSize: 11, color: audienceSeg === s.id ? "#fff" : T.ink3 }}>{cnt}</span>
+                    <span style={{ background: audienceSeg === s.id ? T.white : T.bg3, borderRadius: 99, padding: "1px 7px", fontSize: 11, color: audienceSeg === s.id ? T.ink : T.ink3 }}>{cnt}</span>
                   </button>
                 );
               })}
@@ -2039,7 +2041,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div style={{ color: T.ink3, fontSize: 13, padding: 20 }}>No donors in this segment.</div>
             ) : (
               <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, overflow: "hidden" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: "#0d5c3a", fontSize: 10, fontWeight: 700, color: "#fff", textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px 110px 90px", padding: "9px 16px", background: T.bg2, fontSize: 10, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em", gap: 8 }}>
                   <span>Donor</span><span>Email</span><span>Stage</span><span>Total Giving</span>
                 </div>
                 {audDonors.slice(0, 50).map(d => (
@@ -2089,7 +2091,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               <div {...interactive(() => setNav("campaigns"), { label: `View campaign ${bestCampaign.name}` })}
                 style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 12, padding: 16, display: "flex", alignItems: "center", gap: 12 }}>
                 <div>
-                  <div style={{ fontSize: 11, color: T.green, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>
+                  <div style={{ fontSize: 11, color: T.ink3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Campaign</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginTop: 2 }}>{bestCampaign.name}</div>
                   <div style={{ fontSize: 12, color: T.ink3 }}>{bestCampaign.rate}% open rate · {bestCampaign.recipient_count} sent</div>
                 </div>

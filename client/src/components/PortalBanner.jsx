@@ -29,6 +29,15 @@ import { resolveAssetUrl } from "../lib/assetUrl";
 import { BANNER_SCRIM } from "../lib/portalScrim";
 import { ratioValue, cropFor, zoomCenterFromCrop, cropImgStyle } from "../lib/portalCrop";
 
+// FIX-2 C — this surface's colours, named once (it keeps its own palette;
+// see tests/fix2-c-hex.test.js for why a public surface does).
+const PAL = {
+  portalGreen: "#1a6b4a",
+  white: "#ffffff",
+  muted: "#6b6b64",
+};
+
+
 // Re-export the crop math (defined JSX-free in ../lib/portalCrop so the Node
 // suite can test it) for any component that imports it from here.
 export { ratioValue, cropFor, zoomCenterFromCrop, cropImgStyle };
@@ -99,7 +108,7 @@ export default function PortalBanner({ url, focal, crop, bandColor, ratio = "120
     // viewport height (maxVh) so the hero never eats the fold at large widths;
     // the aspect-ratio still reserves space (CLS 0) and object-fit:cover crops
     // into the capped box, so the render stays clean.
-    <div style={{ position: "relative", width: "100%", aspectRatio: ratio, maxHeight: maxVh ? `${maxVh}vh` : undefined, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius }}>
+    <div style={{ position: "relative", width: "100%", aspectRatio: ratio, maxHeight: maxVh ? `${maxVh}vh` : undefined, background: bandColor || "var(--pt-primary, "+PAL.portalGreen+")", overflow: "hidden", borderRadius: radius }}>
       {url && (
         <img
           src={src}
@@ -143,14 +152,14 @@ export function PortalBannerPreview({ url, focal, onFocalChange, bandColor, rati
         aria-label="Set the focal point — click the most important part of the image"
         onClick={setFromEvent}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onFocalChange && onFocalChange(fx, fy); } }}
-        style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius, cursor: "crosshair" }}
+        style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, "+PAL.portalGreen+")", overflow: "hidden", borderRadius: radius, cursor: "crosshair" }}
       >
         {url && <img src={resolveAssetUrl(url)} alt="" style={bannerImgStyle({ x: fx, y: fy })} draggable={false} />}
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: BANNER_SCRIM, pointerEvents: "none" }} />
         {/* the focal dot — where the crop centers on */}
-        <div aria-hidden="true" style={{ position: "absolute", left: `${fx * 100}%`, top: `${fy * 100}%`, width: 18, height: 18, marginLeft: -9, marginTop: -9, borderRadius: "50%", border: "2px solid #fff", boxShadow: "0 0 0 2px rgba(0,0,0,0.45)", pointerEvents: "none" }} />
+        <div aria-hidden="true" style={{ position: "absolute", left: `${fx * 100}%`, top: `${fy * 100}%`, width: 18, height: 18, marginLeft: -9, marginTop: -9, borderRadius: "50%", border: "2px solid "+PAL.white, boxShadow: "0 0 0 2px rgba(0,0,0,0.45)", pointerEvents: "none" }} />
       </div>
-      <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>
+      <div style={{ fontSize: 11, color: PAL.muted, marginTop: 4, lineHeight: 1.4 }}>
         Click the most important part of the image — the banner keeps it in view as it crops.
       </div>
     </div>
@@ -222,21 +231,21 @@ export function PortalBannerCrop({ url, crop, focal, onChange, bandColor, ratio 
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onWheel={e => { setZoomTo(zoom + (e.deltaY < 0 ? 0.2 : -0.2)); }}
-        style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, #1a6b4a)", overflow: "hidden", borderRadius: radius, cursor: dragRef.current ? "grabbing" : "grab", touchAction: "none" }}
+        style={{ position: "relative", width: "100%", aspectRatio: ratio, background: bandColor || "var(--pt-primary, "+PAL.portalGreen+")", overflow: "hidden", borderRadius: radius, cursor: dragRef.current ? "grabbing" : "grab", touchAction: "none" }}
       >
         {url && <img src={resolveAssetUrl(url)} alt="" onLoad={onImgLoad} draggable={false}
           style={cur ? cropImgStyle(cur) : bannerImgStyle(focal)} />}
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: BANNER_SCRIM, pointerEvents: "none" }} />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-        <span style={{ fontSize: 11, color: "#6b6b64" }}>Zoom</span>
+        <span style={{ fontSize: 11, color: PAL.muted }}>Zoom</span>
         <input type="range" min="1" max="5" step="0.05" value={zoom} onChange={e => setZoomTo(parseFloat(e.target.value))} style={{ flex: 1 }} aria-label="Zoom the crop" />
         <button type="button" onClick={() => { initedRef.current = true; setZoom(1); setCenter({ cx: focal?.x ?? 0.5, cy: focal?.y ?? 0.5 }); emit(null); }}
-          style={{ fontSize: 11, color: "#6b6b64", background: "none", border: "1px solid #6b6b64", borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
+          style={{ fontSize: 11, color: PAL.muted, background: "none", border: "1px solid "+PAL.muted, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
           Reset
         </button>
       </div>
-      <div style={{ fontSize: 11, color: "#6b6b64", marginTop: 4, lineHeight: 1.4 }}>
+      <div style={{ fontSize: 11, color: PAL.muted, marginTop: 4, lineHeight: 1.4 }}>
         Drag to move, scroll or use the slider to zoom. This is exactly what donors see. Reset returns to the whole picture.
       </div>
     </div>

@@ -84,8 +84,8 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
         {/* Toggle */}
         <button onClick={onToggle} disabled={isReadOnly} aria-label={w.enabled ? "Turn off" : "Turn on"}
           title={isReadOnly ? "Reactivate your subscription to make changes." : (w.enabled ? "Turn off" : "Turn on")}
-          style={{ background: w.enabled ? T.greenMid : T.bg3, border: "none", borderRadius: 99, width: 46, height: 26, position: "relative", cursor: isReadOnly ? "not-allowed" : "pointer", flexShrink: 0, transition: "background 0.15s", opacity: isReadOnly ? 0.5 : 1 }}>
-          <span style={{ position: "absolute", top: 3, left: w.enabled ? 23 : 3, width: 20, height: 20, background: "#fff", borderRadius: "50%", transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
+          style={{ background: w.enabled ? T.ink : T.bg3, border: "none", borderRadius: 99, width: 46, height: 26, position: "relative", cursor: isReadOnly ? "not-allowed" : "pointer", flexShrink: 0, transition: "background 0.15s", opacity: isReadOnly ? 0.5 : 1 }}>
+          <span style={{ position: "absolute", top: 3, left: w.enabled ? 23 : 3, width: 20, height: 20, background: T.white, borderRadius: "50%", transition: "left 0.15s", boxShadow: "0 1px 3px rgba(0,0,0,0.25)" }} />
         </button>
       </div>
 
@@ -182,7 +182,7 @@ function ConfigRow({ label, prefix, value, onSave, isReadOnly, inline }) {
         {prefix && <span style={{ fontSize: 12, color: T.ink3 }}>{prefix}</span>}
         <input value={v} disabled={isReadOnly} onChange={e => setV(e.target.value.replace(/[^0-9]/g, ""))} style={{ width: 64, border: "none", background: "transparent", fontSize: 13, color: T.ink, outline: "none" }} />
       </div>
-      {dirty && !isReadOnly && <button onClick={() => onSave(v)} style={{ background: T.greenMid, border: "none", borderRadius: 7, padding: "5px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>}
+      {dirty && !isReadOnly && <button onClick={() => onSave(v)} style={{ background: T.greenMid, border: "none", borderRadius: 7, padding: "5px 10px", color: T.white, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Save</button>}
     </div>
   );
   return inline ? body : <div style={{ marginTop: 12 }}>{body}</div>;

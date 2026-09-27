@@ -155,7 +155,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Photo URL (optional)</div>
         <input value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))} placeholder="https://…" style={{ ...inp, marginBottom: 6 }} />
 
-        {err && <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#8a3a24", marginTop: 10 }}>{err}</div>}
+        {err && <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.terra700, marginTop: 10 }}>{err}</div>}
 
         <button type="submit" disabled={saving}
           style={{ width: "100%", marginTop: 14, background: saving ? T.bg3 : th.button, border: "none", borderRadius: 12, padding: "13px", color: saving ? T.ink3 : th.buttonFg, fontSize: 14, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer" }}>
@@ -203,7 +203,7 @@ function TicketsPage({ orgSlug, eventId, th, BASE, card }) {
       window.location.href = j.url;
     } catch (e2) { setErr(errorMessage(e2, "Something went wrong. Please try again.")); setBusy(false); }
   };
-  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: "#fff" };
+  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: T.pureWhite };
   return (
     <div style={BASE}>
       <form onSubmit={buy} style={{ ...card, width: "100%", maxWidth: 520, padding: 28, display: "flex", flexDirection: "column", gap: 14 }} data-testid="tickets-page">
@@ -229,7 +229,7 @@ function TicketsPage({ orgSlug, eventId, th, BASE, card }) {
           <input placeholder="Last name" value={lastName} onChange={e => setLastName(e.target.value)} style={inp} />
         </div>
         <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} />
-        <button type="submit" disabled={busy || !lvl} style={{ background: th.primary, color: th.onPrimary || "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+        <button type="submit" disabled={busy || !lvl} style={{ background: th.primary, color: th.onPrimary || T.pureWhite, border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
           {busy ? "One moment…" : lvl ? `Buy ${qty === 1 ? "ticket" : qty + " tickets"}` : "Choose a ticket"}
         </button>
       </form>
@@ -270,7 +270,7 @@ function MembershipPage({ orgSlug, levelId, th, BASE, card }) {
       window.location.href = j.url;
     } catch (e2) { setErr(errorMessage(e2, "Something went wrong. Please try again.")); setBusy(false); }
   };
-  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: "#fff" };
+  const inp = { width: "100%", boxSizing: "border-box", border: `1px solid ${T.bg3}`, borderRadius: 10, padding: "11px 12px", fontSize: 15, color: T.ink, background: T.pureWhite };
   return (
     <div style={BASE}>
       <form onSubmit={join} style={{ ...card, width: "100%", maxWidth: 520, padding: 28, display: "flex", flexDirection: "column", gap: 14 }} data-testid="membership-page">
@@ -290,7 +290,7 @@ function MembershipPage({ orgSlug, levelId, th, BASE, card }) {
         </div>
         <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={inp} />
         {err && <div role="status" style={{ fontSize: 14, color: T.ink }}>{err}</div>}
-        <button type="submit" disabled={busy} style={{ background: th.primary, color: th.onPrimary || "#fff", border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+        <button type="submit" disabled={busy} style={{ background: th.primary, color: th.onPrimary || T.pureWhite, border: "none", borderRadius: 10, padding: "13px", fontSize: 16, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
           {busy ? "One moment…" : `Join for ${fmtMoney(l.price)}`}
         </button>
       </form>
@@ -574,7 +574,7 @@ export default function Donate() {
   if (pageError) return (
     <div style={{ ...BASE, justifyContent: "center", textAlign: "center" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      <div style={{ fontSize: 16, fontWeight: 700, color: "#8a3a24", marginBottom: 8 }}>Page not found</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: T.terra700, marginBottom: 8 }}>Page not found</div>
       <div style={{ fontSize: 13, color: T.ink3 }}>{pageError}</div>
     </div>
   );
@@ -684,7 +684,7 @@ export default function Donate() {
                   Your fundraiser is live! Check your email for a link to manage it later — bookmark it, there's no password.
                 </div>
               ) : (
-                <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: "#8a3a24", marginBottom: 14 }}>
+                <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 12, padding: "10px 14px", fontSize: 12, color: T.terra700, marginBottom: 14 }}>
                   Your fundraiser is live! We couldn't send your management email though — contact {org.name} directly if you need to update your page later.
                 </div>
               )
@@ -975,7 +975,7 @@ export default function Donate() {
         </div>
 
         {submitErr && (
-          <div style={{ background: "#f6e3dd", border: "1px solid #eac6b8", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#8a3a24" }}>{submitErr}</div>
+          <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 10, padding: "10px 14px", fontSize: 13, color: T.terra700 }}>{submitErr}</div>
         )}
 
         {/* Submit — the button STATES the commitment in full. */}

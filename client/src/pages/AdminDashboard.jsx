@@ -36,30 +36,46 @@ const A = {
   amber:      "#d97706",
   blue:       "#1e40af",
   purple:     "#6b21a8",
+
+  // FIX-2 C — named here once, where they were inline.
+  amberWash: "#fef3c7",
+  amberInk: "#92400e",
+  blueWash: "#eff6ff",
+  greenInk: "#065f46",
+  violetWash: "#faf5ff",
+  redWash: "#fee2e2",
+  redInk: "#991b1b",
+  cream3: "#d4cfc6",
+  rowHover: "#fafaf8",
+  redEdge: "#fecaca",
+  redTint: "#fff5f5",
+  amberEdge: "#fde68a",
+  blueEdge: "#bfdbfe",
+  coral: "#e07a5f",
 };
 
 const PLAN_MRR   = { trial: 0, seed: 99, growth: 249, impact: 499 };
 const PLAN_COLOR = { trial: "#d97706", seed: "#3b82f6", growth: "#10b981", impact: "#8b5cf6" };
 const PLAN_LABEL = { trial: "Trial", seed: "Seed", growth: "Growth", impact: "Impact" };
 const PLAN_BADGE = {
-  trial:  { bg: "#fef3c7", color: "#92400e" },
-  seed:   { bg: "#eff6ff", color: "#1e40af" },
-  growth: { bg: "#d1fae5", color: "#065f46" },
-  impact: { bg: "#faf5ff", color: "#6b21a8" },
+  trial:  { bg: A.amberWash, color: A.amberInk },
+  seed:   { bg: A.blueWash, color: A.blue },
+  growth: { bg: A.greenChip, color: A.greenInk },
+  impact: { bg: A.violetWash, color: A.purple },
 };
 const STATUS_BADGE = {
-  active:    { bg: "#d1fae5", color: "#065f46", label: "Active" },
-  trialing:  { bg: "#fef3c7", color: "#92400e", label: "Trialing" },
-  cancelled: { bg: "#fee2e2", color: "#991b1b", label: "Churned" },
-  past_due:  { bg: "#fee2e2", color: "#991b1b", label: "Past Due" },
+  active:    { bg: A.greenChip, color: A.greenInk, label: "Active" },
+  trialing:  { bg: A.amberWash, color: A.amberInk, label: "Trialing" },
+  cancelled: { bg: A.redWash, color: A.redInk, label: "Churned" },
+  past_due:  { bg: A.redWash, color: A.redInk, label: "Past Due" },
 };
 
 const SCROLLBAR_CSS = `
   * { box-sizing: border-box; }
   ::-webkit-scrollbar { width: 5px; height: 5px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: #d4cfc6; border-radius: 99px; }
-  :focus-visible { outline: 2px solid #10b981; outline-offset: 2px; }
+  ::-webkit-scrollbar-thumb { background: ${A.cream3}; border-radius: 99px; }
+  :focus-visible { outline: 2px solid ${A.greenLight}; outline-offset: 2px; }
 `;
 
 function fmt$(n) { return "$" + Number(n || 0).toLocaleString(); }
@@ -148,7 +164,7 @@ function Overview({ metrics, orgs }) {
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 600, color: A.ink, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmt$(g.revenue)}</span>
               </div>
-              <div style={{ height: 6, background: "#f0f0ee", borderRadius: 99, overflow: "hidden" }}>
+              <div style={{ height: 6, background: A.borderSub, borderRadius: 99, overflow: "hidden" }}>
                 <div style={{ height: "100%", width: `${(g.revenue / maxRev) * 100}%`, background: PLAN_COLOR[g.plan], borderRadius: 99, transition: "width 0.5s ease" }} />
               </div>
             </div>
@@ -199,7 +215,7 @@ function Overview({ metrics, orgs }) {
           <tbody>
             {recentOrgs.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = "#fafaf8"}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "14px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{o.name}</td>
                 <td style={{ padding: "14px 20px" }}><PlanBadge plan={o.plan} /></td>
@@ -307,8 +323,8 @@ function OrgPanel({ org, onClose, onRefresh }) {
                       <div style={{ fontSize: 12, color: A.secondary }}>{u.email}</div>
                     </div>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderRadius: 99, padding: "3px 8px",
-                      color: u.role === "admin" ? "#92400e" : A.secondary,
-                      background: u.role === "admin" ? "#fef3c7" : A.surface,
+                      color: u.role === "admin" ? A.amberInk : A.secondary,
+                      background: u.role === "admin" ? A.amberWash : A.surface,
                     }}>{u.role}</span>
                   </div>
                 ))}
@@ -373,11 +389,11 @@ function OrgPanel({ org, onClose, onRefresh }) {
           </div>
 
           {/* Danger zone */}
-          <div style={{ marginTop: 8, border: `1px solid #fecaca`, borderRadius: 10, padding: "16px 20px", background: "#fff5f5" }}>
+          <div style={{ marginTop: 8, border: `1px solid ${A.redEdge}`, borderRadius: 10, padding: "16px 20px", background: A.redTint }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: A.red, marginBottom: 12 }}>Danger Zone</div>
             {!showDelete ? (
-              <button onClick={() => setShowDelete(true)} style={{ background: "transparent", border: `1px solid #fecaca`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
-                onMouseEnter={e => { e.currentTarget.style.background = "#fee2e2"; }}
+              <button onClick={() => setShowDelete(true)} style={{ background: "transparent", border: `1px solid ${A.redEdge}`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
+                onMouseEnter={e => { e.currentTarget.style.background = A.redWash; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                 Delete org permanently
               </button>
@@ -386,7 +402,7 @@ function OrgPanel({ org, onClose, onRefresh }) {
                 <div style={{ fontSize: 13, color: A.secondary }}>Type <strong style={{ color: A.ink }}>{org.name}</strong> to confirm:</div>
                 <input value={deleteInput} onChange={e => setDeleteInput(e.target.value)} placeholder={org.name} style={{ ...INP, width: "100%" }} />
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={deleteOrg} disabled={working} style={{ flex: 1, background: A.red, border: "none", borderRadius: 6, padding: "9px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Delete everything</button>
+                  <button onClick={deleteOrg} disabled={working} style={{ flex: 1, background: A.red, border: "none", borderRadius: 6, padding: "9px", color: A.sidebar, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Delete everything</button>
                   <button onClick={() => { setShowDelete(false); setDeleteInput(""); }} style={{ ...PBTN }}
                     onMouseEnter={e => { e.currentTarget.style.borderColor = A.ink; e.currentTarget.style.color = A.ink; }}
                     onMouseLeave={e => { e.currentTarget.style.borderColor = A.border; e.currentTarget.style.color = A.secondary; }}>
@@ -483,7 +499,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
             {!loading && filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>No orgs found</td></tr>}
             {filtered.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = "#fafaf8"}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "12px 16px" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</div>
@@ -518,22 +534,22 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                     {extendOrgId === o.id ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <input type="number" value={extDays} onChange={e => setExtDays(e.target.value)} style={{ ...INP, width: 52, padding: "4px 8px", fontSize: 12 }} />
-                        <button onClick={() => quickExtend(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: "#fde68a" }}>+days</button>
+                        <button onClick={() => quickExtend(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge }}>+days</button>
                         <button onClick={() => setExtendOrgId(null)} style={{ background: "none", border: "none", color: A.muted, fontSize: 14, cursor: "pointer" }}>✕</button>
                       </div>
                     ) : (
-                      <button onClick={() => setExtendOrgId(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: "#fde68a" }}>+Trial</button>
+                      <button onClick={() => setExtendOrgId(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge }}>+Trial</button>
                     )}
                     {changePlanOrgId === o.id ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <select value={newPlan} onChange={e => setNewPlan(e.target.value)} style={{ ...INP, padding: "4px 8px", fontSize: 12 }}>
                           {["trial","seed","growth","impact"].map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
-                        <button onClick={() => quickChangePlan(o.id)} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: "#bfdbfe" }}>Set</button>
+                        <button onClick={() => quickChangePlan(o.id)} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge }}>Set</button>
                         <button onClick={() => setChangePlanOrgId(null)} style={{ background: "none", border: "none", color: A.muted, fontSize: 14, cursor: "pointer" }}>✕</button>
                       </div>
                     ) : (
-                      <button onClick={() => { setChangePlanOrgId(o.id); setNewPlan(o.plan || "trial"); }} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: "#bfdbfe" }}>Plan</button>
+                      <button onClick={() => { setChangePlanOrgId(o.id); setNewPlan(o.plan || "trial"); }} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge }}>Plan</button>
                     )}
                   </div>
                 </td>
@@ -586,7 +602,7 @@ function Metrics({ metrics, orgs }) {
                     <span style={{ fontSize: 12, color: A.secondary }}>{m}</span>
                     <span style={{ fontSize: 13, color: A.green, fontWeight: 700, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{fmt$(monthCounts[m])}</span>
                   </div>
-                  <div style={{ height: 6, background: "#f0f0ee", borderRadius: 99 }}>
+                  <div style={{ height: 6, background: A.borderSub, borderRadius: 99 }}>
                     <div style={{ height: "100%", width: `${(monthCounts[m] / maxMRR) * 100}%`, background: A.greenLight, borderRadius: 99 }} />
                   </div>
                 </div>
@@ -607,7 +623,7 @@ function Metrics({ metrics, orgs }) {
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}><PlanBadge plan={p} /><span style={{ fontSize: 12, color: A.secondary }}>{count} orgs</span></div>
                   <span style={{ fontSize: 12, color: A.ink, fontWeight: 600, fontFamily: "'JetBrains Mono','SF Mono',monospace" }}>{pct}%</span>
                 </div>
-                <div style={{ height: 6, background: "#f0f0ee", borderRadius: 99 }}>
+                <div style={{ height: 6, background: A.borderSub, borderRadius: 99 }}>
                   <div style={{ height: "100%", width: `${pct}%`, background: PLAN_COLOR[p], borderRadius: 99 }} />
                 </div>
               </div>
@@ -647,7 +663,7 @@ function Metrics({ metrics, orgs }) {
           <tbody>
             {topOrgs.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = "#fafaf8"}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "12px 20px", fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</td>
                 <td style={{ padding: "12px 20px" }}><PlanBadge plan={o.plan} /></td>
@@ -689,20 +705,20 @@ function NetworkReview() {
   };
   const chip = (on, label) => (
     <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, marginRight: 6,
-      background: on ? "rgba(52,168,83,0.15)" : "rgba(234,67,53,0.12)", color: on ? A.green : "#e07a5f" }}>{label}</span>
+      background: on ? "rgba(52,168,83,0.15)" : "rgba(234,67,53,0.12)", color: on ? A.green : A.coral }}>{label}</span>
   );
   return (
     <div>
       <div style={{ marginBottom: 14 }}>
         {["pending", "dispute", "held", "approved", "delisted", "rejected"].map(st => (
           <button key={st} onClick={() => setStatus(st)}
-            style={{ background: status === st ? A.green : "transparent", color: status === st ? "#fff" : A.muted,
+            style={{ background: status === st ? A.green : "transparent", color: status === st ? A.sidebar : A.muted,
               border: `1px solid ${status === st ? A.green : A.border}`, borderRadius: 20, padding: "5px 14px", marginRight: 8, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             {st}
           </button>
         ))}
       </div>
-      {err && <div style={{ color: "#e07a5f", fontSize: 13, marginBottom: 10 }}>{err}</div>}
+      {err && <div style={{ color: A.coral, fontSize: 13, marginBottom: 10 }}>{err}</div>}
       {!apps ? <div style={{ color: A.muted }}>Loading…</div> : apps.length === 0 ? <div style={{ color: A.muted }}>Nothing {status}.</div> :
         apps.map(a => {
           const einR = typeof a.ein_result === "string" ? JSON.parse(a.ein_result || "{}") : (a.ein_result || {});
@@ -726,11 +742,11 @@ function NetworkReview() {
               {["pending", "dispute", "held"].includes(a.status) && (
                 <div>
                   <button disabled={busyId === a.id} onClick={() => decide(a.id, "approve")}
-                    style={{ background: A.green, color: "#fff", border: "none", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginRight: 8 }}>Approve</button>
+                    style={{ background: A.green, color: A.sidebar, border: "none", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", marginRight: 8 }}>Approve</button>
                   <button disabled={busyId === a.id} onClick={() => decide(a.id, "hold")}
                     style={{ background: "transparent", color: A.muted, border: `1px solid ${A.border}`, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", marginRight: 8 }}>Hold</button>
                   <button disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}
-                    style={{ background: "transparent", color: "#e07a5f", border: "1px solid #e07a5f", borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Reject</button>
+                    style={{ background: "transparent", color: A.coral, border: "1px solid "+A.coral, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Reject</button>
                 </div>
               )}
               {decisions.length > 0 && (
@@ -887,7 +903,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
     setCreated(null); setOrgName(""); setEmail(""); setErr("");
   }
 
-  const field = { width: "100%", font: "inherit", fontSize: 14, padding: "9px 11px", border: `1px solid ${A.border}`, borderRadius: 8, background: "#fff", color: A.ink };
+  const field = { width: "100%", font: "inherit", fontSize: 14, padding: "9px 11px", border: `1px solid ${A.border}`, borderRadius: 8, background: A.sidebar, color: A.ink };
   const label = { display: "block", fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: A.muted, marginBottom: 6 };
 
   return (
@@ -944,7 +960,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
                     onClick={() => { setPlanId(p.id); setErr(""); }}
                     style={{
                       font: "inherit", textAlign: "left", cursor: "pointer", borderRadius: 9, padding: "10px 16px",
-                      border: `1px solid ${on ? A.green : A.border}`, background: on ? A.greenPale : "#fff",
+                      border: `1px solid ${on ? A.green : A.border}`, background: on ? A.greenPale : A.sidebar,
                       color: on ? A.green : A.ink, minWidth: 128,
                     }}>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{p.name}</div>
@@ -971,7 +987,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
             <button data-testid="cl-create" type="button" disabled={!canCreate} onClick={create}
               style={{
                 font: "inherit", fontSize: 14, fontWeight: 700, padding: "10px 20px", borderRadius: 8, border: "none",
-                background: A.green, color: "#fff", cursor: canCreate ? "pointer" : "default", opacity: canCreate ? 1 : 0.45,
+                background: A.green, color: A.sidebar, cursor: canCreate ? "pointer" : "default", opacity: canCreate ? 1 : 0.45,
               }}>
               {creating ? "Creating…" : "Create close link"}
             </button>
@@ -992,7 +1008,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
                 onFocus={e => e.target.select()}
                 style={{ ...field, flex: "1 1 340px", minWidth: 260, fontFamily: "'JetBrains Mono',monospace", fontSize: 12.5 }} />
               <button data-testid="cl-copy" type="button" onClick={copyLink}
-                style={{ font: "inherit", fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 8, border: "none", background: A.green, color: "#fff", cursor: "pointer" }}>
+                style={{ font: "inherit", fontSize: 13, fontWeight: 700, padding: "9px 18px", borderRadius: 8, border: "none", background: A.green, color: A.sidebar, cursor: "pointer" }}>
                 {copied ? "Copied" : "Copy"}
               </button>
             </div>
@@ -1001,7 +1017,7 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
               she finishes, and not before, so an unopened link leaves nothing behind.
             </div>
             <button data-testid="cl-another" type="button" onClick={reset}
-              style={{ font: "inherit", fontSize: 13, marginTop: 16, padding: "8px 14px", borderRadius: 8, border: `1px solid ${A.border}`, background: "#fff", color: A.ink, cursor: "pointer" }}>
+              style={{ font: "inherit", fontSize: 13, marginTop: 16, padding: "8px 14px", borderRadius: 8, border: `1px solid ${A.border}`, background: A.sidebar, color: A.ink, cursor: "pointer" }}>
               Create another
             </button>
           </div>
@@ -1109,7 +1125,7 @@ export default function AdminDashboard() {
         <div style={{ padding: "20px 16px 16px", borderBottom: `1px solid ${A.border}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
             <div style={{ width: 28, height: 28, background: A.green, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <span style={{ color: "#fff", fontSize: 13, fontWeight: 800, letterSpacing: "-0.02em" }}>S</span>
+              <span style={{ color: A.sidebar, fontSize: 13, fontWeight: 800, letterSpacing: "-0.02em" }}>S</span>
             </div>
             <span style={{ fontSize: 15, fontWeight: 700, color: A.ink, letterSpacing: "-0.01em" }}>Steward</span>
           </div>
