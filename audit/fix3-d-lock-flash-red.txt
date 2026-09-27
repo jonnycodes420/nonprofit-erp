@@ -1,0 +1,27 @@
+fix3-d-lock-flash
+
+— §1 · the source —
+  FAIL  §1 client/src/lib/entitlement.js exists
+  FAIL  §1 no plan state in client/src starts as "core" before the plan loads — ["client/src/components/DonorDirectory.jsx: tier:\"core\",single_user","client/src/components/DonorProfile.jsx: useState(\"core\")","client/src/components/Donors.jsx: useState({tier:\"core\",single_user:true})","client/src/components/Donors.jsx: tier:\"core\",single_user"]
+  FAIL  §1 App: a billing that has not loaded is PLAN_UNKNOWN, not a tier — "function planTierOf(billing){\n  if(!billing)return \"team\";\n  if(billing.planTier)return billing.planTier;\n  const p=billing.plan;\n  if(p===\"team\"||p===\"growth\"||p===\"impact\")return \"team\";\n  if(billin"
+  FAIL  §1 the profile's lockMajor draws the pending state while the plan is unknown — "const lockMajor=(children,opts={})=>isTeam?children:(\n    <LockedFeature title={opts.title||\"A Team-plan feature\"} blurb={opts.blurb} minHeight={opts.minHeight||220}\n      onCta={goToPricing}>{children}</LockedFeature>\n  );"
+  FAIL  §1 the profile's plan starts unknown
+  FAIL  §1 the directory's Core hint reads a KNOWN Core plan, not "not Team"
+  FAIL  §1 shared.jsx exports the one pending state
+
+— §2 · a slow plan, as drawn —
+  PASS  §2 @1440 the plan fetches were held (the delay is real)
+  PASS  §2 @1440 the DOM was polled through the delay
+  FAIL  §2 @1440 a Team org's profile never shows a locked marker while its plan loads — ["locked-feature","Unlock with Team"]
+  PASS  §2 @1440 …then the Team feature renders (Move Stage)
+  PASS  §2 @1440 …and no lock once the plan is known
+  PASS  §2 @1440 a Team org's directory never shows a Core hint while its plan loads
+  PASS  §2 @1440 control: a Core org's profile draws the lock once the plan is known (the poll can see one)
+  PASS  §2 @390 the plan fetches were held (the delay is real)
+  PASS  §2 @390 the DOM was polled through the delay
+  FAIL  §2 @390 a Team org's profile never shows a locked marker while its plan loads — ["locked-feature","Unlock with Team"]
+  PASS  §2 @390 …and no lock once the plan is known
+  PASS  §2 @390 a Team org's directory never shows a Core hint while its plan loads
+  PASS  §2 @390 control: a Core org's profile draws the lock once the plan is known (the poll can see one)
+
+11 passed, 9 failed
