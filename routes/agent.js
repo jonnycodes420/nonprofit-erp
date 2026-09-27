@@ -24,7 +24,7 @@ function mount(ctx) {
 const {
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
-  fireWorkflows, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
+  fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
 } = ctx;
@@ -144,7 +144,7 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
   const only = Array.isArray(ids) && ids.length ? ids.map(String) : null;
   return query(
     `SELECT d.id, d.name, d.email, d.kind, d.funder_type, d.stage, d.status, d.total_giving, d.gift_count,
-            d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample
+            d.last_gift_date, d.last_gift_amount, d.deceased, d.do_not_contact, d.is_sample, d.person_types
        FROM donors d
       WHERE d.org_id = ? AND d.deleted_at IS NULL
         AND (?::text[] IS NULL OR d.id = ANY(?::text[]))
@@ -154,16 +154,62 @@ async function agentReadPeople(orgId, { limit = 400, ids = null } = {}) {
 
 // WHO AN INSTRUCTION NAMES. Only the records whose name appears in her words
 // come back from the database (ids, names and kinds, nothing else), and
-// agentShape.scopeFromInstruction keeps the ones named by whole words. This is
-// how "the Sunrise Foundation" reads one record instead of the organisation.
-async function agentNamedIn(orgId, text) {
+// agentShape.namedIn keeps the ones named by whole words. This is how "the
+// Sunrise Foundation" reads one record instead of the organisation.
+//
+// FIX-3 B — and how "ada just became a volunteer" reads Ada: a record whose
+// FIRST name is one of her words is a candidate too, and namedIn decides (whole
+// tokens; an ordinary-word first name only when capitalised). When one name
+// matches several records (two Adas) it is `ambiguous`, and the route asks
+// which BEFORE planning. `pick` is her answer (one id, or one per ambiguous
+// name): each must be one of the records its name matched, so it cannot reach
+// another organisation's row.
+async function agentNamedIn(orgId, text, pick = null) {
   const A = await agentShapeMod();
   const candidates = await query(
     `SELECT id, name, kind, funder_type FROM donors
       WHERE org_id = ? AND deleted_at IS NULL AND length(name) >= 3
-        AND position(lower(regexp_replace(name, '^the[[:space:]]+', '', 'i')) in lower(?)) > 0
-      ORDER BY length(name) DESC LIMIT 50`, [orgId, String(text || "")]);
-  return { scope: A.scopeFromInstruction(text, candidates), candidates };
+        AND (position(lower(regexp_replace(name, '^the[[:space:]]+', '', 'i')) in lower(?)) > 0
+             OR lower(substring(btrim(name) from '^[A-Za-z0-9]+')) = ANY(?::text[]))
+      ORDER BY length(name) DESC, id LIMIT 200`, [orgId, String(text || ""), A.nameWords(text)]);
+  const n = A.namedIn(text, candidates);
+  let ids = n.ids, ambiguous = n.ambiguous, badPick = false;
+  // One pick per ambiguous name ("Margaret and Robert" may need two).
+  const picks = (Array.isArray(pick) ? pick : pick != null && pick !== "" ? [pick] : []).map(String).slice(0, 10);
+  for (const one of picks) {
+    const g = ambiguous.find(x => x.ids.includes(one));
+    if (!g) { badPick = true; break; }
+    ids = ids.filter(id => !g.ids.includes(id) || id === one);
+    ambiguous = ambiguous.filter(x => x !== g);
+  }
+  return { scope: ids.length ? ids : null, candidates, ambiguous, badPick };
+}
+
+// WHICH ONE DID SHE MEAN? A question, not a plan: nothing is written. Each
+// record says enough to tell them apart (email, last gift, roles).
+async function agentWhich(orgId, group) {
+  const V = await import("../shared/vocabulary.js");
+  const D = await import("../shared/displayDate.js");
+  const A = await agentShapeMod();
+  const today = orgToday(await orgTz(orgId));
+  const rows = await agentReadPeople(orgId, { ids: group.ids.slice(0, 12) });
+  rows.sort((a, b) => String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id)));
+  const more = group.ids.length - rows.length;
+  return {
+    said: group.said,
+    sentence: `More than one record is called ${group.said}. Which ${group.said} do you mean? Pick one and Steward will plan it for that record alone.`
+      + (more > 0 ? ` ${more} more match; write the whole name to narrow it.` : ""),
+    people: rows.map(p => {
+      const types = Array.isArray(p.person_types) ? p.person_types : [];
+      const bits = [];
+      if (p.email) bits.push(p.email);
+      bits.push(p.last_gift_date && Number(p.last_gift_amount) > 0
+        ? `last gift ${A.formatCents(Math.round(Number(p.last_gift_amount) * 100))}, ${D.displayDateShort(String(p.last_gift_date).slice(0, 10), today)}`
+        : "no gift on file");
+      if (types.includes("volunteer")) bits.push("volunteer");
+      return { id: p.id, name: p.name, giverWord: V.giverWordFor(p, null), detail: bits.join(" · ") };
+    }),
+  };
 }
 
 // Every agent write goes through HERE, so the undo ledger cannot be forgotten
@@ -265,6 +311,45 @@ const AGENT_EXECUTORS = {
     return { donorId: donor.id, tag };
   },
 
+  // FIX-3 B — the Volunteer role, on the ONE record (markVolunteer, the same
+  // write a logged shift makes). The roles it had before are the undo.
+  async mark_volunteer(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const [row] = await query("SELECT person_types FROM donors WHERE id=? AND org_id=?", [donor.id, ctx.orgId]);
+    if (!row) return { skipped: "unknown_donor" };
+    let had = row.person_types;
+    if (typeof had === "string") { try { had = JSON.parse(had); } catch { had = null; } }
+    if (Array.isArray(had) && had.includes("volunteer")) return { skipped: "already_volunteer" };
+    await markVolunteer(ctx.orgId, donor.id, ctx.client);
+    await agentWrite(ctx, { tool: "mark_volunteer", table: "donors", entityId: donor.id,
+      before: { person_types: Array.isArray(had) ? JSON.stringify(had) : null },
+      after: { person_types: "+volunteer" }, cites: step.citesRows });
+    return { donorId: donor.id };
+  },
+
+  // FIX-3 B — a volunteer INTERNAL note (volunteer_notes), the table the
+  // Volunteers hub reads and nothing on the giving side does. Never an
+  // interaction. Written only onto somebody who carries the Volunteer role by
+  // now (the step before it in the same run gives it).
+  async note_volunteer(ctx, step) {
+    const donor = ctx.donorById(step.donorId);
+    if (!donor) return { skipped: "unknown_donor" };
+    const body = String(step.note || "").trim().slice(0, 2000);
+    if (!body) return { skipped: "no_note" };
+    const kind = ["training", "background_check", "availability"].includes(step.kind) ? step.kind : "note";
+    const id = "vn_" + uuid().slice(0, 12);
+    const r = await runTx(ctx.client,
+      `INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name)
+       SELECT ?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL
+                                            AND person_types @> '["volunteer"]'::jsonb)`,
+      [id, ctx.orgId, donor.id, kind, body, ctx.today, AGENT_ACTOR.id, AGENT_ACTOR.name, donor.id, ctx.orgId]);
+    if (!r || r.changes === 0) return { skipped: "not_a_volunteer" };
+    await agentWrite(ctx, { tool: "note_volunteer", table: "volunteer_notes", entityId: id,
+      before: null, after: { person_id: donor.id, kind }, cites: step.citesRows });
+    return { id, donorId: donor.id };
+  },
+
   async open_thread(ctx, step) {
     const donor = ctx.donorById(step.donorId);
     if (!donor) return { skipped: "unknown_donor" };
@@ -290,7 +375,7 @@ const AGENT_RUNNABLE = Object.keys(AGENT_EXECUTORS);
 // Only the columns the ledger recorded are restored — never a whole-row
 // overwrite, which would also undo a HUMAN's later edit to a different field on
 // the same record.
-const AGENT_UNDO_DELETE_OK = new Set(["agent_drafts", "tasks", "interactions", "threads"]);
+const AGENT_UNDO_DELETE_OK = new Set(["agent_drafts", "tasks", "interactions", "threads", "volunteer_notes"]);
 
 async function agentUndoWrite(w, orgId) {
   const table = w.entity_table;
@@ -441,6 +526,31 @@ async function agentPreparedGiftPlan(orgId, text, donor) {
   return plan;
 }
 
+// ── FIX-3 B · SOMEBODY BECAME A VOLUNTEER ──────────────────────────────────
+// No model. Steward recognised the news (agentShape.volunteerNews) and found
+// the one record she named; the plan is the Volunteer role, her availability as
+// a volunteer internal note, and one welcome DRAFT in her voice when she has
+// taught Steward it (shared/draftNote.js). It reads that one record.
+async function agentVolunteerPlan(orgId, text, personId) {
+  const A = await agentShapeMod();
+  const D = await import("../shared/draftNote.js");
+  const [p] = await agentReadPeople(orgId, { ids: [personId] });
+  if (!p) return null;
+  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  let samples = org && org.voice_samples;
+  if (typeof samples === "string") { try { samples = JSON.parse(samples || "[]"); } catch { samples = []; } }
+  const welcome = D.volunteerWelcomeDraft({ personName: p.name, orgName: org && org.name,
+    voice: D.voiceFrom(Array.isArray(samples) ? samples : []) });
+  const steps = A.volunteerSteps(p, A.volunteerNews(text), { instruction: text, welcome });
+  const who = A.nameInSentence(p);
+  if (!steps.length) return { nothing: `${who} is already a volunteer, and Steward found nothing else in that to do.` };
+  const plan = A.compilePlan(steps, { people: [p], reads: `${who}'s record` });
+  plan.readIds = [p.id];
+  plan.readDetail = "This record only, not the whole file";
+  plan.confirmLabel = A.confirmLabel(plan);
+  return plan;
+}
+
 // ── RUNNING A CONFIRMED PLAN ───────────────────────────────────────────────
 // THE RUN IS THE PLAN. It executes the plan's own steps, in the plan's order,
 // and nothing else: there is no second model call to come up with different
@@ -482,7 +592,9 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
     .map(Number).filter(Number.isFinite);
   const SKIPPED = { already_open: "a follow-up was already open", unknown_donor: "the record is not there",
     unknown_stage: "that stage does not exist", already_there: "they were already at that stage",
-    no_tag: "there was no tag to add", already_tagged: "they already had that tag" };
+    no_tag: "there was no tag to add", already_tagged: "they already had that tag",
+    already_volunteer: "they were already a volunteer", not_a_volunteer: "they are not marked as a volunteer",
+    no_note: "there was nothing to note" };
 
   let drafted = 0, done = 0, withheld = 0, declined = 0;
   const withheldReasons = [];
@@ -631,28 +743,52 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   // drafts.
   const auth = req.body?.authorization === A.AUTH_SEND ? A.AUTH_SEND : A.AUTH_DRAFT;
 
-  // FIX-1 §A — WHO SHE NAMED decides what is read.
-  const named = await agentNamedIn(req.user.orgId, text);
+  // FIX-1 §A — WHO SHE NAMED decides what is read. FIX-3 B: `personId` is her
+  // answer to "which one?", and it must be one of the records the name matched.
+  const named = await agentNamedIn(req.user.orgId, text, req.body?.personId);
+  if (named.badPick) return res.status(400).json({ error: "not_one_of_them",
+    sentence: "That is not one of the records that name matches. Pick one from the list." });
+
+  const giftNews = kind === A.KIND_TASK && A.isGiftNews(text) && !!A.parseAmountCents(text);
+  const read = kind === A.KIND_TASK && !giftNews ? A.readIntent(text) : null;
+  // FIX-3 B — MORE THAN ONE ADA: ASK WHICH, BEFORE ANY PLAN. The walk's plan
+  // carried a task "Confirm which Ada"; the question belongs before the plan,
+  // and asking it writes nothing. A read ("find ada") lists them itself.
+  if (named.ambiguous.length && !read)
+    return res.json({ which: await agentWhich(req.user.orgId, named.ambiguous[0]) });
 
   let plan;
-  if (kind === A.KIND_TASK && A.isGiftNews(text) && A.parseAmountCents(text)) {
+  const volunteer = kind === A.KIND_TASK && !giftNews ? A.volunteerNews(text) : null;
+  if (giftNews) {
     // A GIFT SHE TELLS IT ABOUT is prepared for her to confirm. No model is
     // asked, so no key is needed: Steward parsed it and found the record.
-    const gift = A.preparedGiftFromInstruction(text, named.candidates);
-    const [donor] = gift && gift.donorId ? await agentReadPeople(req.user.orgId, { ids: [gift.donorId] }) : [];
+    const giverId = named.scope && named.scope.length === 1 ? named.scope[0] : null;
+    const [donor] = giverId ? await agentReadPeople(req.user.orgId, { ids: [giverId] }) : [];
     if (!donor) {
       return res.status(400).json({ error: "gift_needs_giver",
-        sentence: gift && gift.ambiguous
-          ? "More than one record matches that name. Say which one, as it is written on their record, and Steward will prepare the gift for you to confirm."
+        sentence: named.scope && named.scope.length > 1
+          ? "That names more than one record. Tell Steward about one gift at a time, with the giver as they are written on their record."
           : "Steward could not tell who gave it. Name the giver as they are written on their record, and Steward will prepare the gift for you to confirm." });
     }
     plan = await agentPreparedGiftPlan(req.user.orgId, text, donor);
+  } else if (volunteer) {
+    // FIX-3 B — SOMEBODY BECAME A VOLUNTEER. No model, so no key: Steward
+    // recognised the news and found the one record she named.
+    const ids = named.scope || [];
+    if (ids.length !== 1) {
+      return res.status(400).json({ error: "volunteer_needs_person",
+        sentence: ids.length > 1
+          ? "That names more than one person. Tell Steward about one new volunteer at a time."
+          : "Steward could not find who that is on file. Name them as they are written on their record, or add them to Donors first, and Steward will plan it." });
+    }
+    plan = await agentVolunteerPlan(req.user.orgId, text, ids[0]);
+    if (!plan) return res.status(400).json({ error: "volunteer_needs_person", sentence: "Steward could not find that record." });
+    if (plan.nothing) return res.status(400).json({ error: "nothing_to_do", sentence: plan.nothing });
   } else {
     // FIX-2 D — A READ NEEDS NO DRAFTING. Opening a report, finding a person,
     // counting and explaining a number are answered here, without a model and
     // without the drafting switch, and they WRITE NOTHING: no instruction row,
     // no run, no audit. The answer says so.
-    const read = kind === A.KIND_TASK ? A.readIntent(text) : null;
     if (read) {
       const answer = await agentAnswerRead(A, req.user.orgId, read, named);
       if (answer) return res.json({ read: answer });

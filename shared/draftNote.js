@@ -119,3 +119,16 @@ export function membershipRenewalDraft({ donorName, levelName, expiresOnLong, pr
   const middle = `Your ${levelName} membership runs through ${expiresOnLong}. Renewing is ${amt} for another year, and your new year starts the day this one ends, so renewing early costs you nothing. We would love to have you with us again.`;
   return { body: wrap(voice, donorName, middle, orgName), voice: voice.ready ? "org_samples" : "default", amount: amt };
 }
+
+// ── FIX-3 B — the volunteer welcome ────────────────────────────────────────
+// Somebody just joined the volunteers (the Agent's "Ada just became a
+// volunteer…"). The welcome says thank you and that the office will be in
+// touch. It names no hours, role or date: those are the coordinator's to
+// arrange, and a sentence that promises one is the org's promise made in its
+// absence. It never goes out by itself.
+export function volunteerWelcomeDraft({ personName, orgName, voice = { ready: false } } = {}) {
+  const at = orgName ? ` at ${orgName}` : "";
+  const middle = `Welcome to the volunteers${at}, and thank you for offering your time. We are glad to have you, and we will be in touch soon about where you can help first.`;
+  return { subject: "Welcome to the volunteers", body: wrap(voice, personName, middle, orgName),
+           voice: voice.ready ? "org_samples" : "default" };
+}

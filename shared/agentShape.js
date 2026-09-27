@@ -94,6 +94,17 @@ export const AGENT_TOOLS = [
     entity: "donors",
     what: "Add a tag to a donor.",
     why: "A tag is a label this office uses on its own records." },
+  // FIX-3 B — a person becoming a volunteer. The role is BUILD-94's
+  // person_types on the ONE record; the note is the coordinator's own
+  // (volunteer_notes), which never reaches the giving record or a draft.
+  { name: "mark_volunteer", needsHuman: "never", writes: true, undoable: true,
+    entity: "donors",
+    what: "Give somebody the Volunteer role on their own record.",
+    why: "A role is this office's own label on one person record, and the roles it had before are kept so they can be put back." },
+  { name: "note_volunteer", needsHuman: "never", writes: true, undoable: true,
+    entity: "volunteer_notes",
+    what: "Write an internal note in the Volunteers hub, such as when somebody can help.",
+    why: "A volunteer note stays with the coordinator: it never appears on the giving record, in Drift, or in anything drafted." },
   { name: "enrol_sequence", needsHuman: "never", writes: true, undoable: true,
     entity: "sequence_enrollments",
     what: "Enrol somebody in a sequence SHE wrote and SHE turned on.",
@@ -287,28 +298,33 @@ function whoList(ids, byId) {
   return `${names.length} people`;
 }
 
-// ONE clause per tool, written from the steps and nothing else.
-function clauseFor(tool, group, byId) {
-  const ids = group.map(s => s.donorId).filter(Boolean);
+// FIX-3 B — THE HEADLINE IS ONE SHORT SENTENCE. The walk's headline ran every
+// step into one sentence ("Steward will log a note…, tag…, create a task…, open
+// a follow-up… and then draft a note…"). Now each kind of step is ONE short
+// clause, a person is named once (in the first clause about them), at most
+// three clauses are said, and the steps list under it carries the detail.
+// `nameIt` is false once the clause's people have been named.
+function clauseFor(tool, group, byId, nameIt) {
+  const ids = [...new Set(group.map(s => s.donorId).filter(Boolean))];
   const who = ids.length ? whoList(ids, byId) : null;
+  const w = nameIt ? who : null;
   const n = group.length;
+  const s0 = group[0] || {};
   switch (tool) {
-    case "record_gift": {
-      if (n === 1) {
-        const s = group[0];
-        return `record a ${money(s.amountCents)} gift from ${who || "a giver you name"}`;
-      }
-      return `record ${n} gifts once you confirm each one`;
-    }
-    case "open_thread": return who ? `open a follow-up with ${who}` : `open ${n} follow-ups`;
-    case "draft_note": return n === 1 ? `draft a note to ${who}` : `draft notes to ${who || n + " people"}`;
-    case "create_task": return n === 1 ? (who ? `create a task about ${who}` : "create a task") : `create ${n} tasks`;
-    case "log_note": return n === 1 ? `log a note on ${who}'s record` : `log notes on ${who || n + " records"}`;
-    case "set_stage": return n === 1 ? `move ${who} to ${group[0].stage || "a new stage"}` : `move ${who || n + " people"} to a new stage`;
-    case "add_tag": return n === 1 ? `tag ${who} "${group[0].tag || ""}"` : `tag ${who || n + " people"}`;
-    case "enrol_sequence": return `enrol ${who || n + " people"} in a sequence you wrote`;
+    case "record_gift": return n === 1 ? `record a ${money(s0.amountCents)} gift${w ? ` from ${w}` : ""}` : `record ${n} gifts once you confirm each one`;
+    case "open_thread": return n === 1 ? `open a follow-up${w ? ` with ${w}` : ""}` : (w ? `open follow-ups with ${w}` : `open ${n} follow-ups`);
+    case "draft_note":
+      if (s0.purpose === "welcome" && n === 1) return `draft a welcome${w ? ` to ${w}` : ""}`;
+      return n === 1 ? `draft a note${w ? ` to ${w}` : ""}` : (w ? `draft notes to ${w}` : `draft ${n} notes`);
+    case "create_task": return n === 1 ? `create a task${w ? ` about ${w}` : ""}` : `create ${n} tasks`;
+    case "log_note": return n === 1 ? (w ? `log a note on ${w}'s record` : "log a note") : (w ? `log notes on ${w}` : `log ${n} notes`);
+    case "set_stage": return n === 1 ? `move ${who || "them"} to ${s0.stage || "a new stage"}` : `move ${w || "them"} to a new stage`;
+    case "add_tag": return w ? `tag ${w} "${s0.tag || ""}"` : `add the tag "${s0.tag || ""}"`;
+    case "enrol_sequence": return `enrol ${w || "them"} in a sequence you wrote`;
     case "queue_for_send": return `put ${n === 1 ? "a message" : n + " messages"} in your send queue`;
     case "send_email": return `send ${n === 1 ? "a message" : n + " messages"} you signed for`;
+    case "mark_volunteer": return n === 1 ? `make ${who || "them"} a volunteer` : `make ${who || n + " people"} volunteers`;
+    case "note_volunteer": return n === 1 ? `note ${w ? w + "'s " : ""}${s0.availability || "availability"}` : `note ${n} volunteers' availability`;
     default: return `${tool} (${n})`;
   }
 }
@@ -322,7 +338,9 @@ export function describeStep(step, byId = new Map()) {
     case "open_thread": return step.label
       ? `Open a follow-up: ${String(step.label).charAt(0).toLowerCase()}${String(step.label).slice(1)}`
       : `Open a follow-up with ${who}`;
-    case "draft_note": return `Draft a note to ${who}${step.subject ? ` ("${step.subject}")` : ""}.`;
+    case "draft_note": return step.purpose === "welcome"
+      ? `Draft a welcome to ${who}, for you to read and send.`
+      : `Draft a note to ${who}${step.subject ? ` ("${step.subject}")` : ""}.`;
     case "create_task": return `Create a task${p ? ` about ${who}` : ""}${step.title ? `: ${step.title}` : ""}.`;
     case "log_note": return `Log a note on ${who}'s record.`;
     case "set_stage": return `Move ${who} to ${step.stage || "a new stage"}.`;
@@ -330,14 +348,41 @@ export function describeStep(step, byId = new Map()) {
     case "enrol_sequence": return `Enrol ${who} in a sequence you wrote.`;
     case "queue_for_send": return `Put a message to ${who} in your send queue.`;
     case "send_email": return `Send a message to ${who}.`;
+    case "mark_volunteer": return `Tag ${who} Volunteer, on the same record.`;
+    case "note_volunteer": return `Note ${who}'s availability in Volunteers: ${step.availability || "as you said"}.`;
     default: return `${step.tool}.`;
   }
+}
+
+// The longest headline a person reads at a glance; past it, names give way to
+// counts, then the tail folds into "and N more steps".
+export const HEADLINE_MAX = 100;
+function joinClauses(cs) {
+  if (cs.length === 1) return cs[0];
+  if (cs.length === 2) return `${cs[0]} and ${cs[1]}`;
+  return `${cs.slice(0, -1).join(", ")}, and ${cs[cs.length - 1]}`;
+}
+function headline(order, groups, byId, { names = true } = {}) {
+  const named = new Set();
+  const clauses = order.map(t => {
+    const g = groups.get(t);
+    const key = [...new Set(g.map(s => s.donorId).filter(Boolean))].sort().join("|");
+    const nameIt = names && !!key && !named.has(key);
+    if (key) named.add(key);
+    return clauseFor(t, g, byId, nameIt);
+  });
+  const said = clauses.length > 3
+    ? [...clauses.slice(0, 2), `take ${clauses.length - 2} more steps`]
+    : clauses;
+  const s = joinClauses(said);
+  return s.charAt(0).toUpperCase() + s.slice(1) + ".";
 }
 
 // compilePlan(steps, { people, reads, withheld })
 // The headline is BUILT FROM THE STEPS. A plan with no gift step cannot say it
 // records a gift; a plan with no thread step cannot say it opens a follow-up,
-// because there is no clause to say it with.
+// because there is no clause to say it with. What was left out is counted on
+// the plan (`withheld`) and said on its own line, never in the headline.
 export function compilePlan(steps, { people = [], reads = null, withheld = 0 } = {}) {
   const byId = new Map((people || []).map(p => [p.id, p]));
   const out = (Array.isArray(steps) ? steps : []).map(s => {
@@ -351,13 +396,12 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0 } =
     if (!groups.has(s.tool)) { groups.set(s.tool, []); order.push(s.tool); }
     groups.get(s.tool).push(s);
   }
-  const clauses = order.map(t => clauseFor(t, groups.get(t), byId));
   let summary;
-  if (!clauses.length) summary = "Steward found nothing to do for this instruction.";
-  else if (clauses.length === 1) summary = `Steward will ${clauses[0]}.`;
-  else if (clauses.length === 2) summary = `Steward will ${clauses[0]}, then ${clauses[1]}.`;
-  else summary = `Steward will ${clauses.slice(0, -1).join(", ")} and then ${clauses[clauses.length - 1]}.`;
-  if (withheld) summary += ` ${withheld} ${withheld === 1 ? "step was" : "steps were"} left out because Steward could not point at the rows ${withheld === 1 ? "it" : "they"} came from.`;
+  if (!order.length) summary = "Steward found nothing to do for this instruction.";
+  else {
+    summary = headline(order, groups, byId);
+    if (summary.length > HEADLINE_MAX) summary = headline(order, groups, byId, { names: false });
+  }
   const people_ = new Set(out.map(s => s.donorId).filter(Boolean));
   return {
     steps: out,
@@ -376,37 +420,108 @@ export function compilePlan(steps, { people = [], reads = null, withheld = 0 } =
 // Matching is by WHOLE TOKENS (shared/textMatch.js's rule, re-stated here so
 // this module stays dependency-free): "Ann Lee" is not inside "Joann Leewood".
 const tok = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/gi, " ").trim().split(" ").filter(Boolean);
-function runAt(H, N) {
-  if (!N.length || N.length > H.length) return false;
+// A name that is one ordinary word ("Bob") would match any instruction that
+// says "bob"; a PERSON's whole name is two tokens. An organisation may be one
+// word ("Acme") but it has to be a real word, not "a" or "the".
+const STOP = new Set(["the", "a", "an", "of", "and", "for", "to", "in", "on", "inc", "llc", "co",
+  "at", "by", "or", "as", "is", "be", "we", "us", "me", "he", "it", "so", "do", "go", "no", "up", "my", "our", "her", "his"]);
+
+// FIX-3 B — A FIRST NAME NAMES SOMEBODY. The walk typed "ada just became a
+// volunteer…": one lower-case first name. The rule above needed a person's
+// whole name, so "ada" named nobody and the plan read all 398 people. The
+// class is a person called by their first name, in any case: that names every
+// record whose first name it is (one → that record; several → Steward asks
+// which, before planning). Three guards keep a first name from naming the
+// wrong people:
+//   · whole tokens only ("Adam" is not "Ada");
+//   · a first name that is also an ordinary word ("will", "grace", "mark")
+//     names somebody only when she wrote it as a name, capitalised;
+//   · a first name followed by a capitalised word that is not this person's
+//     surname ("Ada Smith" when the record is Ada Lovelace) is somebody else.
+// A token inside a whole name she wrote ("Ada Lovelace") belongs to that name
+// and does not also call up every other Ada.
+const WORD_NAMES = new Set([
+  "will", "may", "june", "april", "august", "grace", "hope", "joy", "faith", "mark", "bill", "sue", "pat", "art",
+  "rose", "dawn", "summer", "rich", "frank", "jack", "ray", "sky", "chase", "hunter", "don", "guy", "iris", "ivy",
+  "lily", "max", "jean", "norm", "rob", "sandy", "penny", "ruby", "jade", "amber", "crystal", "destiny", "honor",
+  "honour", "justice", "king", "lane", "page", "reed", "sunny", "star", "storm", "violet", "wade", "carol", "robin",
+  "glen", "dean", "drew", "earl", "grant", "heath", "holly", "jay", "buck", "cliff", "clay", "dale", "dash", "gale",
+  "hazel", "heather", "jewel", "lark", "laurel", "olive", "pearl", "poppy", "rain", "river", "sage", "sterling",
+  "stone", "constance", "prudence", "patience", "mercy", "felicity", "harmony", "melody", "liberty", "bonnie",
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "person", "people", "donor",
+  "donors", "member", "members", "friend", "friends", "volunteer", "volunteers", "staff", "board", "new", "just",
+  "young", "little", "major", "general", "bishop", "pastor", "doctor", "dr", "mr", "mrs", "ms", "miss", "sir",
+  "dame", "father", "mother", "sister", "brother", "uncle", "aunt", "family", "trust", "foundation", "church",
+  "fund", "team", "group", "office", "gift", "gifts", "note", "notes", "thank", "thanks", "call", "email", "text",
+  "anonymous", "unknown", "guest", "test", "sample", "happy", "early", "late", "last", "first", "next", "best",
+]);
+const rawTok = s => String(s ?? "").replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+const capitalised = w => /^[A-Z]/.test(w || "");
+function runsAt(H, N) {
+  const at = [];
+  if (!N.length || N.length > H.length) return at;
   for (let i = 0; i + N.length <= H.length; i++) {
     let hit = true;
     for (let j = 0; j < N.length; j++) if (H[i + j] !== N[j]) { hit = false; break; }
-    if (hit) return true;
+    if (hit) at.push(i);
   }
-  return false;
+  return at;
 }
-// A name that is one ordinary word ("Bob") would match any instruction that
-// says "bob"; a PERSON needs two tokens to be named. An organisation may be one
-// word ("Acme") but it has to be a real word, not "a" or "the".
-const STOP = new Set(["the", "a", "an", "of", "and", "for", "to", "in", "on", "inc", "llc", "co"]);
-export function scopeFromInstruction(text, people = []) {
-  const H = tok(text);
-  if (!H.length) return null;
-  const hits = [];
+const nameTokens = p => { const all = tok(p && p.name); return all.filter(t => !(t === "the" && all[0] === "the")); };
+
+// → { ids, ambiguous: [{ said, ids }], groups: [{ said, ids }] }. A group is one
+// name as she said it; it is ambiguous when it names more than one record.
+export function namedIn(text, people = []) {
+  const R = rawTok(text), H = R.map(w => w.toLowerCase());
+  const none = { ids: [], ambiguous: [], groups: [] };
+  if (!H.length) return none;
+  const full = [];
   for (const p of people || []) {
-    const N = tok(p && p.name).filter(t => !(t === "the" && tok(p.name)[0] === "the"));
-    const meaningful = N.filter(t => !STOP.has(t));
-    if (!meaningful.length) continue;
+    const N = nameTokens(p);
+    if (!N.filter(t => !STOP.has(t)).length) continue;
     const isOrg = p.kind === "organisation";
     if (!isOrg && N.length < 2) continue;
     if (isOrg && N.length === 1 && N[0].length < 4) continue;
-    if (runAt(H, N)) hits.push({ id: p.id, len: N.length, N });
+    const at = runsAt(H, N);
+    if (at.length) full.push({ id: p.id, N, len: N.length, at });
   }
-  if (!hits.length) return null;
   // Keep the longest: "Sunrise Foundation Trust" beats "Sunrise Foundation"
   // when the instruction says the longer one.
-  const kept = hits.filter(h => !hits.some(o => o !== h && o.len > h.len && runAt(o.N, h.N)));
-  return [...new Set(kept.map(h => h.id))];
+  const kept = full.filter(h => !full.some(o => o !== h && o.len > h.len && runsAt(o.N, h.N).length));
+  const covered = new Set();
+  const groups = new Map();
+  const add = (key, said, id) => { if (!groups.has(key)) groups.set(key, { said, ids: [] }); const g = groups.get(key); if (!g.ids.includes(id)) g.ids.push(id); };
+  for (const h of kept) {
+    for (const i of h.at) for (let j = 0; j < h.len; j++) covered.add(i + j);
+    add("full:" + h.N.join(" "), R.slice(h.at[0], h.at[0] + h.len).join(" "), h.id);
+  }
+  for (const p of people || []) {
+    if (!p || p.kind === "organisation") continue;
+    const N = nameTokens(p);
+    if (N.length < 2) continue;
+    const F = N[0];
+    if (F.length < 2 || STOP.has(F) || /^\d+$/.test(F)) continue;
+    for (let i = 0; i < H.length; i++) {
+      if (H[i] !== F || covered.has(i)) continue;
+      if (WORD_NAMES.has(F) && !capitalised(R[i])) continue;
+      if (i + 1 < H.length && capitalised(R[i + 1]) && H[i + 1] !== N[1] && !WORD_NAMES.has(H[i + 1])) continue;
+      add("first:" + F, F.charAt(0).toUpperCase() + F.slice(1), p.id);
+    }
+  }
+  const list = [...groups.values()];
+  const ids = [...new Set(list.flatMap(g => g.ids))];
+  return { ids, ambiguous: list.filter(g => g.ids.length > 1), groups: list };
+}
+
+export function scopeFromInstruction(text, people = []) {
+  const { ids } = namedIn(text, people);
+  return ids.length ? ids : null;
+}
+
+// The words of an instruction a first name could be, for the one query that
+// fetches the candidate records (routes/agent.js agentNamedIn).
+export function nameWords(text) {
+  return [...new Set(tok(text).filter(t => t.length >= 2 && !STOP.has(t) && !/^\d+$/.test(t)))].slice(0, 60);
 }
 
 // ── A GIFT SHE TELLS IT ABOUT IS PREPARED, NEVER RECORDED ──────────────────
@@ -645,6 +760,70 @@ export function readIntent(text) {
 export function looksLikeRead(text) {
   const t = String(text || "").toLowerCase();
   return !DO_WORDS.test(t) && READ_START.test(t);
+}
+
+// ── FIX-3 B · SOMEBODY BECAME A VOLUNTEER ──────────────────────────────────
+// "ada just became a volunteer and wants to do 15 hours a week" is news about
+// one person, like a gift she tells it about, and it is recognised HERE, by
+// Steward, never by a model: the model may be absent (it is, locally, and on a
+// server without a key) and the plan must still fit. The walk's plan was a
+// donor note, a task "Confirm which Ada", a follow-up and a draft. The right
+// plan is three steps on her one record:
+//   (a) the Volunteer role (person_types — one record, never a second one);
+//   (b) her availability as a volunteer INTERNAL note (volunteer_notes, which
+//       never reaches the giving record, Drift or a draft);
+//   (c) one welcome, as a DRAFT she reads and sends herself.
+const VOL_NEWS = [
+  /\b(became|become|becomes|becoming|is now|now|has become|joined|joins|joining|signed up|signs up|signing up|started|starts|starting|agreed|agrees|wants|want|would like|will be|is going|offered|offers|is keen)\b[^.?!]{0,40}\bvolunteer(s|ing)?\b/,
+  /\b(make|mark|tag|add|set)\b[^.?!]{0,40}\bas (a |an |our )?(new )?volunteer\b/,
+  /\bnew volunteer\b/,
+];
+// A question about volunteers is a read, not news about one of them.
+const VOL_ASKS = /^\s*(please\s+)?(find|show|list|who|whom|which|what|how many|how much|count)\b/;
+const NUMBER_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40 };
+const HOURS_RE = /\b(\d{1,3}(?:\.\d{1,2})?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty)\s*(?:hours?|hrs?)\b(?:\s+(?:a|an|per|each|every)\s+(week|month|day|fortnight))?/i;
+const DAYS_RE = /\b((?:mon|tues|wednes|thurs|fri|satur|sun)days?|weekends?|weekdays?)(\s+(?:mornings?|afternoons?|evenings?))?\b/i;
+export function volunteerNews(text) {
+  const raw = String(text || "");
+  const t = raw.toLowerCase().replace(/[’']/g, "'");
+  if (!VOL_NEWS.some(re => re.test(t))) return null;
+  if (SEGMENT.test(t) || VOL_ASKS.test(t)) return null;
+  const parts = [];
+  const h = raw.match(HOURS_RE);
+  if (h) {
+    const n = NUMBER_WORDS[h[1].toLowerCase()] || Number(h[1]);
+    parts.push(`${n} ${n === 1 ? "hour" : "hours"}${h[2] ? ` a ${h[2].toLowerCase()}` : ""}`);
+  }
+  const d = raw.match(DAYS_RE);
+  if (d) parts.push((d[1].charAt(0).toUpperCase() + d[1].slice(1).toLowerCase()) + (d[2] ? d[2].toLowerCase() : ""));
+  return { availability: parts.length ? parts.join(", ") : null };
+}
+
+const typesOf = p => {
+  const v = p && p.person_types;
+  if (Array.isArray(v)) return v;
+  try { const a = JSON.parse(v || "null"); return Array.isArray(a) ? a : []; } catch { return []; }
+};
+// The steps, from the one record and her words. `welcome` is the draft's
+// subject and body, written by shared/draftNote.js (her greeting and sign-off
+// when she has taught Steward her voice).
+export function volunteerSteps(person, news, { instruction = "", welcome = null } = {}) {
+  if (!person || !person.id) return [];
+  const cites = [person.id];
+  const steps = [];
+  if (!typesOf(person).includes("volunteer"))
+    steps.push({ tool: "mark_volunteer", donorId: person.id, citesRows: cites,
+      detail: "The Volunteer role, added to the same record" });
+  if (news && news.availability)
+    steps.push({ tool: "note_volunteer", donorId: person.id, citesRows: cites, kind: "availability",
+      availability: news.availability,
+      note: `${news.availability.charAt(0).toUpperCase() + news.availability.slice(1)}. As you told Steward: “${String(instruction).trim().slice(0, 1600)}”`,
+      detail: "Internal note in Volunteers · never on the giving record" });
+  if (welcome && !person.deceased && !person.do_not_contact && !person.is_sample)
+    steps.push({ tool: "draft_note", donorId: person.id, citesRows: cites, purpose: "welcome",
+      subject: welcome.subject, body: welcome.body, detail: "A draft under Waiting for you · you send it" });
+  return steps;
 }
 
 // ── FIX-2 D · DRAFTING, AND WHO CAN TURN IT ON ─────────────────────────────
