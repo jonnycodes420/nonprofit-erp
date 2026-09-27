@@ -11,7 +11,8 @@
 //       it, so there is one place the treatment lives.
 //   §2  THE BROWSER, at 1440 and 390, on a fixture org this suite creates:
 //       every rail screen (Home, Donors, Fundraising and its four sections,
-//       Volunteers, Agent, Reports, Finance, Settings, Dashboards) is visited.
+//       Volunteers, Agent, Reports, Finance, Settings, Dashboards) is visited,
+//       and a donor's record, the page those screens open most.
 //       (a) The page's content root has a cream or white ground, and none of
 //           its large children (a band, a hero card, a panel) is painted ink
 //           or a dark green. Ink belongs to the sidebar and the top bar only.
@@ -60,6 +61,9 @@ const haveBrowser = () => {
 const PENDING = {
   agent: new Set(["2a-root", "2a-dark", "2b-sel", "2b-unmarked", "2c"]),
   dashboards: new Set(["2b-sel", "2b-unmarked"]),
+  //   reports    — B rebuilds Reports.jsx (its period row draws "This FY" as a
+  //                solid emerald pill)
+  reports: new Set(["2b-sel", "2b-unmarked"]),
 };
 
 const RUN = Date.now().toString(36).slice(-6);
@@ -117,6 +121,7 @@ const PW = "loadtest1234";
     if (r.status < 300) gifts++;
   }
   ok("§2 the fixture gifts were recorded through the gift route", gifts === PEOPLE.length, gifts);
+  const PROFILE_ID = `d_fx2c_3_${RUN}`;   // Hope Presbyterian Church
   // A goal and a campaign with a goal: Home's and Fundraising's goal cards were
   // the dark pine heroes, and without a goal they do not draw at all.
   const yr = today.slice(0, 4);
@@ -135,6 +140,9 @@ const PW = "loadtest1234";
     ["fundraising-majorgifts", "Fundraising", "majorgifts"], ["fundraising-moneyin", "Fundraising", "moneyin"],
     ["volunteers", "Volunteers"], ["agent", "Agent"], ["reports", "Reports"], ["finance", "Finance"],
     ["settings", "Settings"], ["dashboards", "Dashboards"],
+    // Not a rail screen, but the page a rail screen opens most: a donor's
+    // record (its right-hand panel was the other ink room in the app).
+    ["donor-profile", "@profile"],
   ];
 
   // Runs in the page. A colour is DARK when it is mostly opaque and its
@@ -206,10 +214,12 @@ const PW = "loadtest1234";
         if (PENDING[scr] && PENDING[scr].has(id)) console.log(`  ${cond ? "pass" : "fail"}  (PENDING, not counted) ${n}` + (cond ? "" : " — " + JSON.stringify(extra).slice(0, 400)));
         else ok(n, cond, extra);
       };
-      const went = await goRail(label);
+      const went = label === "@profile"
+        ? await page.goto(`${APP}/donors/${PROFILE_ID}`, { waitUntil: "networkidle" }).then(() => true, () => false)
+        : await goRail(label);
       await page.waitForTimeout(1300);
       if (fr) { await page.locator(`[data-fr-section="${fr}"]:visible`).first().click().catch(() => {}); await page.waitForTimeout(1000); }
-      ok(`§2 ${scr} (${W}) — reached from the ${W > 768 ? "rail" : "mobile nav"}`, went);
+      ok(`§2 ${scr} (${W}) — reached ${label === "@profile" ? "by its URL" : "from the " + (W > 768 ? "rail" : "mobile nav")}`, went);
       if (SHOTS) await page.screenshot({ path: path.join(root, SHOTS, `${W}-${scr}.png`), fullPage: false });
 
       const found = await page.evaluate(src => {
@@ -243,12 +253,24 @@ const PW = "loadtest1234";
           const kids = [...parent.children].filter(k => (k.matches("button,[role=tab],a")) && F.visible(k));
           if (kids.length < 3) continue;
           const filled = kids.filter(F.ownDark);
-          if (filled.length === 1 && kids.filter(k => k !== filled[0]).every(k => alpha(k) < 0.1)) unmarked.push(F.name(filled[0]));
+          if (filled.length !== 1) continue;
+          // The rest are the unselected options: unfilled, or all dressed
+          // exactly alike (a row of white pills) and the same shape as the
+          // filled one. An action toolbar (a gold button beside a white one)
+          // is not a set of options, so it is not a finding.
+          // The options are the siblings with the filled one's tag and shape
+          // (a Download button at the end of a pill row is not an option).
+          const shape = k => k.tagName + "|" + getComputedStyle(k).borderTopLeftRadius;
+          const rest = kids.filter(k => k !== filled[0] && shape(k) === shape(filled[0]));
+          const sig = k => { const c = getComputedStyle(k); return [c.backgroundColor, c.color, c.borderTopColor, c.fontWeight].join("|"); };
+          if (rest.length >= 2 && (rest.every(k => alpha(k) < 0.1) || new Set(rest.map(sig)).size === 1)) unmarked.push(F.name(filled[0]));
         }
         // Emerald fill is the ONE primary action: count the filled emerald
         // controls the content shows.
         const EM = "rgb(13, 92, 58)";
-        const emerald = [...content.querySelectorAll("button,a,[role=button],[role=tab]")].filter(F.visible)
+        // A colour SWATCH (Settings › Branding's presets, its accent preview) is the
+        // org's data drawn as a colour, not a control dressed in emerald.
+        const emerald = [...content.querySelectorAll("button,a,[role=button],[role=tab]")].filter(F.visible).filter(b => !b.closest("[data-swatch]"))
           .filter(b => getComputedStyle(b).backgroundColor === EM || /rgb\(13, 92, 58\)/.test(getComputedStyle(b).backgroundImage)).map(F.name);
         return { rootDark: F.isDark(rootGround), rootGround, dark, sel, unmarked, emerald, nav: nav ? { el: F.name(nav), why: F.activeOk(nav) } : null };
       }, PAGE_FNS.toString());

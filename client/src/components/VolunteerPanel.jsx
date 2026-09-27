@@ -31,7 +31,7 @@ export function VolunteerPanel({ donor, isReadOnly }) {
   };
   return (
     <div data-testid="volunteer-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.greenDk }}>Volunteering</span>
+      <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Volunteering</span>
       <div title={data.sentence} aria-label={data.sentence} tabIndex={0} data-testid="volunteer-total">
         <span style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{data.totalHours}</span>
         <span style={{ fontSize: 13, color: T.ink3 }}> hours across {data.shiftCount} {data.shiftCount === 1 ? "shift" : "shifts"}</span>

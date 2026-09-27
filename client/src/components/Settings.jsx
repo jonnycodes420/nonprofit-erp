@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { T, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
+import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
 import { photoReport } from "../../../shared/photoMatch";
 import { YourWords } from "./YourWords";
 import { DonorImport } from "./Donors";
@@ -335,12 +335,12 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
                 )}
               </div>
               <div style={{display:"flex",gap:6,flexShrink:0}}>
-                <button onClick={()=>setShareOpenId(shareOpen?null:p.id)}
-                  style={{background:shareOpen?T.greenDk:T.bg,border:"1px solid "+(shareOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:shareOpen?T.white:T.ink2,cursor:"pointer"}}>
+                <button onClick={()=>setShareOpenId(shareOpen?null:p.id)} aria-pressed={shareOpen}
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",...activeMark(shareOpen,"bottom")}}>
                   Share {shareOpen?"▲":"▼"}
                 </button>
-                <button onClick={()=>toggleFundraisers(p)}
-                  style={{background:fundraisersOpen?T.greenDk:T.bg,border:"1px solid "+(fundraisersOpen?T.greenDk:T.bg3),borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:fundraisersOpen?T.white:T.ink2,cursor:"pointer"}}>
+                <button onClick={()=>toggleFundraisers(p)} aria-pressed={fundraisersOpen}
+                  style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:6,padding:"5px 10px",fontSize:11,fontWeight:600,color:T.ink2,cursor:"pointer",...activeMark(fundraisersOpen,"bottom")}}>
                   Fundraisers{fundraisersByPage[p.id]?` (${fundraisersByPage[p.id].length})`:""} {fundraisersOpen?"▲":"▼"}
                 </button>
                 {isAdmin&&<>
@@ -512,7 +512,7 @@ function GivingPagesManager({orgSlug,isAdmin,isReadOnly}){
 // server response is the source of truth (it may hand back a slightly deepened
 // color for legibility — we show a note when it does). Applied only to accent
 // moments across app/emails/receipts, never a full re-skin.
-const PRESET_ACCENTS=[T.greenDk,T.greenDk,T.terracotta,T.accentRust,T.accentSlate,T.accentPlum,T.accentOchre,T.ink];
+const PRESET_ACCENTS=[T.greenDk,T.terracotta,T.accentRust,T.accentSlate,T.accentPlum,T.accentOchre,T.ink];
 function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
   const [logo,setLogo]=useState("");        // data URI or ""
   const [accent,setAccent]=useState("");    // hex or ""
@@ -566,7 +566,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
               {accent&&!disabled&&<button onClick={()=>setAccent("")} style={{background:"none",border:"none",color:T.ink3,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>Reset to Steward gold</button>}
             </div>
             <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
-              {PRESET_ACCENTS.map(c=><button key={c} onClick={()=>!disabled&&setAccent(c)} title={c} style={{width:24,height:24,borderRadius:6,background:c,border:accent.toLowerCase()===c?"2px solid "+T.ink:"1px solid rgba(0,0,0,0.15)",cursor:disabled?"not-allowed":"pointer"}}/>)}
+              {PRESET_ACCENTS.map(c=><button key={c} data-swatch="" onClick={()=>!disabled&&setAccent(c)} title={c} style={{width:24,height:24,borderRadius:6,background:c,border:accent.toLowerCase()===c?"2px solid "+T.ink:"1px solid rgba(0,0,0,0.15)",cursor:disabled?"not-allowed":"pointer"}}/>)}
             </div>
           </div>
           {isAdmin&&<div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -585,7 +585,7 @@ function BrandingManager({orgId,isAdmin,isReadOnly,onSaved}){
             </div>
             <div style={{padding:"16px 18px",display:"flex",flexDirection:"column",gap:12}}>
               <div style={{fontSize:13,color:T.ink3}}>Dear Jordan, thank you for your generous gift…</div>
-              <button style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:12,fontWeight:700}}>Primary action</button>
+              <button data-swatch="" style={{alignSelf:"flex-start",background:effAccent,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:12,fontWeight:700}}>Primary action</button>
               <div style={{fontSize:11,color:T.ink3}}>The dashboard welcome, receipts, and donor emails use this header.</div>
             </div>
           </div>
@@ -697,7 +697,7 @@ function CoverFeesCard({orgId,isAdmin}){
         </div>
         {isAdmin&&(
           <button onClick={toggle} disabled={enabled===null||saving}
-            style={{background:enabled?T.greenDk:T.bg3,border:"none",borderRadius:99,width:46,height:26,position:"relative",cursor:"pointer",flexShrink:0,transition:"background 0.15s",opacity:enabled===null?0.5:1}}
+            style={{background:enabled?T.ink:T.bg3,border:"none",borderRadius:99,width:46,height:26,position:"relative",cursor:"pointer",flexShrink:0,transition:"background 0.15s",opacity:enabled===null?0.5:1}}
             aria-label={enabled?"Disable donor-covers-fees":"Enable donor-covers-fees"}>
             <span style={{position:"absolute",top:3,left:enabled?23:3,width:20,height:20,background:T.white,borderRadius:"50%",transition:"left 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.25)"}}/>
           </button>
@@ -847,7 +847,7 @@ function TaxReceiptsManager({orgId,isAdmin,isReadOnly}){
         {isAdmin&&(
           <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
             <button onClick={()=>save()} disabled={saving||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
-              style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:12,fontWeight:700,cursor:(saving||isReadOnly)?"not-allowed":"pointer",opacity:(saving||isReadOnly)?0.6:1}}>
+              style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"8px 15px",color:T.ink,fontSize:12,fontWeight:700,cursor:(saving||isReadOnly)?"not-allowed":"pointer",opacity:(saving||isReadOnly)?0.6:1}}>
               {saving?"Saving…":"Save settings"}
             </button>
             <button onClick={()=>save(!form.receiptsEnabled)} disabled={saving||isReadOnly||(!form.receiptsEnabled&&!canEnable)}
@@ -1405,7 +1405,7 @@ function InboundEmailCard({isReadOnly}){
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
           <code style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 12px",fontSize:13,color:T.ink}}>{state.address}</code>
           <button onClick={()=>{navigator.clipboard?.writeText(state.address);setCopied(true);setTimeout(()=>setCopied(false),1800);}}
-            style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>
             {copied?"Copied":"Copy"}
           </button>
         </div>
@@ -1439,7 +1439,7 @@ function InboundEmailCard({isReadOnly}){
               ))}
               {!isReadOnly&&!(m.candidates||[]).length&&(
                 <button disabled={busy} onClick={()=>{setOpenId(openId===m.id?null:m.id);setQ("");setResults([]);}}
-                  style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"6px 12px",color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"6px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>
                   Pick a donor
                 </button>
               )}
@@ -2504,13 +2504,13 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       {section==="org"&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <SectionLabel>Your Account</SectionLabel>
         <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:20}}>
-          <div style={{width:52,height:52,borderRadius:"50%",background:T.greenDk+"18",border:"2px solid "+T.greenDk+"40",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.greenDk,flexShrink:0}}>
+          <div style={{width:52,height:52,borderRadius:"50%",background:T.bg2,border:"2px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:700,color:T.ink,flexShrink:0}}>
             {(userName[0]||"U").toUpperCase()}
           </div>
           <div>
             <div style={{fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.01em"}}>{userName}</div>
             <div style={{fontSize:13,color:T.ink3,marginTop:2}}>{userEmail}</div>
-            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.greenDk:T.ink3}/></div>
+            <div style={{marginTop:6}}><Pill label={userRole} color={userRole==="admin"?T.ink:T.ink3}/></div>
           </div>
         </div>
         <div style={{background:T.bg,borderRadius:10,padding:"14px 16px"}}>
@@ -2540,14 +2540,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         )}
         {team.map((m,i)=>(
           <div key={m.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",borderBottom:i<team.length-1?"1px solid "+T.bg3:"none"}}>
-            <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.greenDk,flexShrink:0}}>
+            <div style={{width:36,height:36,borderRadius:"50%",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:T.ink,flexShrink:0}}>
               {(m.name?.[0]||"U").toUpperCase()}
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:T.ink}}>{m.name}{m.id===auth?.user?.id&&<span style={{fontSize:11,color:T.ink3,marginLeft:6}}>(you)</span>}</div>
               <div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.email}</div>
             </div>
-            <Pill label={m.role} color={m.role==="admin"?T.greenDk:T.ink3}/>
+            <Pill label={m.role} color={m.role==="admin"?T.ink:T.ink3}/>
             {auth?.user?.role==="admin"&&m.id!==auth?.user?.id&&(
               /* BUILD-75 C.3 — soft-detach: revokes their sessions, frees their
                  seat, unassigns their portfolio; everything they authored keeps
@@ -2674,7 +2674,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               </button>
             ) : (
               <button onClick={connectGmail}
-                style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"8px 16px",color:T.greenDk,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"8px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                 Connect Gmail →
               </button>
             )}
@@ -2721,12 +2721,18 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       )}
 
       {/* ── Customization ─────────────────────────────────────────────────── */}
+      {/* FIX-2 C — this read <Card> and <SecHead>, neither of which exists in
+          Settings, so the Your words tab threw and the error boundary took the
+          whole of Settings with it. The same card and label every other
+          Settings section draws. */}
       {section==="words"&&(
-        <Card>
-          <SecHead title="Your words"
-            sub="Steward uses these on your screens and in the emails it sends you. It never changes the words on a receipt, a year-end statement or your donor portal."/>
+        <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:16}}>
+          <SectionLabel>Your words</SectionLabel>
+          <div style={{fontSize:12.5,color:T.ink3,margin:"10px 0 14px",lineHeight:1.6}}>
+            Steward uses these on your screens and in the emails it sends you. It never changes the words on a receipt, a year-end statement or your donor portal.
+          </div>
           <YourWords mode="settings"/>
-        </Card>
+        </div>
       )}
       {section==="customization"&&<>
       {/* BUILD-80 Part 10 — kept-raw values: what the migration stored that
@@ -2765,8 +2771,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12}}>
           {["donor","gift"].map(en=>(
-            <button key={en} onClick={()=>setCfEntity(en)}
-              style={{background:cfEntity===en?T.green:T.bg,border:"1px solid "+(cfEntity===en?T.green:T.bg3),borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:cfEntity===en?T.white:T.ink2,cursor:"pointer"}}>
+            <button key={en} aria-pressed={cfEntity===en} onClick={()=>setCfEntity(en)}
+              style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"pointer",...activeMark(cfEntity===en,"bottom")}}>
               {en==="donor"?"Donor fields":"Gift fields"}
             </button>
           ))}
@@ -2820,7 +2826,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
           <SectionLabel>Impact Metrics</SectionLabel>
-          {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
+          {isAdmin&&<button onClick={openAddMetric} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"6px 13px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>+ Add Metric</button>}
         </div>
         {/* Purpose + example + payoff (BUILD-31 Part 3): make the value obvious. */}
         <div style={{fontSize:12.5,color:T.ink3,marginBottom:14,lineHeight:1.6,background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px"}}>
@@ -3144,7 +3150,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                   aria-label="The address donors should see" placeholder="ada@yourcharity.org"
                   style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",width:260}}/>
                 <button onClick={claimDomain} disabled={sdBusy} data-testid="sd-claim"
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
+                  style={{background:T.ink,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:sdBusy?"not-allowed":"pointer"}}>
                   {sdBusy?"Setting up…":"Use this address"}</button>
               </div>
             )}
@@ -3153,7 +3159,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:10}}>
                   <span style={{fontSize:13,fontWeight:700,color:T.ink}}>{sd.fromEmail}</span>
                   {sd.verified
-                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.green100,color:T.greenDk,border:"1px solid "+T.green200,borderRadius:99,padding:"2px 9px"}}>
+                    ?<span data-testid="sd-verified" style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.bg2,color:T.ink3,border:"1px solid "+T.bg3,borderRadius:99,padding:"2px 9px"}}>
                        Verified {String(sd.verifiedAt||"").slice(0,10)}</span>
                     :<span style={{fontSize:11,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",background:T.gold100,color:T.gold700,border:"1px solid "+T.gold300,borderRadius:99,padding:"2px 9px"}}>
                        Waiting for DNS</span>}
@@ -3218,7 +3224,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               ))}
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 <button onClick={saveVoice} data-testid="voice-save"
-                  style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save my voice</button>
+                  style={{background:T.ink,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Save my voice</button>
                 {voiceSaved&&<span style={{fontSize:12,color:T.ink3}}>{voiceSaved}</span>}
               </div>
             </div>

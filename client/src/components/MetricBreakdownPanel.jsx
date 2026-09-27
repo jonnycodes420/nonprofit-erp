@@ -67,7 +67,7 @@ export default function MetricBreakdownPanel({ open, onClose, title, explanation
                 </div>
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display',serif" }}>{r.value}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{r.value}</div>
                 {r.percentOfTotal != null && <div style={{ fontSize: 11, color: T.ink3 }}>{r.percentOfTotal}% of total</div>}
               </div>
             </div>

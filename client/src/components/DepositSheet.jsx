@@ -362,11 +362,11 @@ export function DepositSheetModal({ onClose, onRecorded, today }) {
                               )}
                               {Array.isArray(l.candidates) && l.candidates.map(cd => (
                                 <button key={cd.id} onClick={() => resolve(l.line, { donorId: cd.id })}
-                                  style={{ background: "transparent", border: "1px solid " + T.greenDk, borderRadius: 7, padding: "5px 10px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{cd.name}</button>
+                                  style={{ background: "transparent", border: "1px solid " + T.ink, borderRadius: 7, padding: "5px 10px", color: T.ink, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{cd.name}</button>
                               ))}
                               {Array.isArray(l.fundCandidates) && l.fundCandidates.map(fc => (
                                 <button key={fc.fundId} onClick={() => resolve(l.line, { fundId: fc.fundId })}
-                                  style={{ background: "transparent", border: "1px solid " + T.greenDk, borderRadius: 7, padding: "5px 10px", color: T.greenDk, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{fc.fundName}</button>
+                                  style={{ background: "transparent", border: "1px solid " + T.ink, borderRadius: 7, padding: "5px 10px", color: T.ink, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{fc.fundName}</button>
                               ))}
                               {l.nearInstallmentId && (<>
                                 <button onClick={() => resolve(l.line, { installmentId: l.nearInstallmentId })}

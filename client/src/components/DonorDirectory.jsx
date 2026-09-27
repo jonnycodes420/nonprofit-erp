@@ -6,9 +6,13 @@ import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { censusById } from "../../../shared/numberCensus.js";
-import { T, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, AIBtn, AIPanel, EmptyState, DriftBadge, Modal, PersonMark } from "./shared";
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS, PATTERN_META, TIER_META } from "./donorShared";
+
+// FIX-2 C — a stage is a word on a cream chip, not a green badge: emerald is
+// the one action on the screen. Lapsed alone keeps a colour, and it is brass.
+const stageChip=s=>s&&s.id==="lapsed"?{background:T.gold100,color:T.gold700}:{background:T.bg2,color:T.ink};
 // ── BUILD-88a A.4 — A NUMBER NOBODY CAN DEFINE IS NOT SHOWN ───────────────
 // The wealth score rendered a figure out of 10, a capacity tier and a
 // confidence word, with nothing on the screen saying how any of them is arrived
@@ -160,7 +164,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
               </div>
               <div className="re-col-actions" style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
                 <button onClick={e=>{e.stopPropagation();onLogTouchpoint(d);}} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink3,fontSize:11,fontWeight:600,cursor:"pointer"}}>+ Log</button>
-                <button onClick={()=>onSelectDonor(d)} style={{background:T.greenDk+"14",border:"1px solid "+T.greenDk+"40",borderRadius:7,padding:"4px 10px",color:T.greenDk,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
+                <button onClick={()=>onSelectDonor(d)} style={{background:T.bg2,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 10px",color:T.ink,fontSize:11,fontWeight:600,cursor:"pointer"}}>View →</button>
               </div>
             </div>
           );
@@ -342,7 +346,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
         <div style={{fontSize:14,color:T.ink3,maxWidth:300,lineHeight:1.65,marginBottom:24}}>Every relationship in Steward starts as one row — bring in a spreadsheet from Import above, or add a single name to begin.</div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
           {onAddDonor&&<button onClick={onAddDonor} style={{background:T.greenDk,color:T.white,border:"none",borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',system-ui,sans-serif"}}>Add a donor →</button>}
-          {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:T.greenDk,border:"1.5px solid "+T.greenDk,borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
+          {onLoadSampleData&&<button onClick={onLoadSampleData} disabled={sampleLoading} style={{background:"transparent",color:T.ink,border:"1.5px solid "+T.ink,borderRadius:12,padding:"12px 24px",fontSize:14,fontWeight:600,cursor:sampleLoading?"not-allowed":"pointer",opacity:sampleLoading?0.7:1,fontFamily:"'DM Sans',system-ui,sans-serif"}}>{sampleLoading?"Loading…":"Explore with sample data"}</button>}
         </div>
       </div>
     );
@@ -384,8 +388,8 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           filtering current page
         </span>}
         <div style={{flex:1}}/>
-        <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle"
-          style={{background:selectMode?T.ink:T.bg,border:"1px solid "+(selectMode?T.ink:T.bg3),borderRadius:8,padding:"7px 14px",color:selectMode?T.inkInverse:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center"}}>
+        <button onClick={()=>{setSelectMode(m=>{if(m)setSelIds(new Set());return !m;});}} className="dir-select-toggle" aria-pressed={selectMode}
+          style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",minHeight:40,alignItems:"center",...activeMark(selectMode,"bottom")}}>
           {selectMode?"Done":"Select"}
         </button>
         <button onClick={exportCsv} disabled={exporting||serverTotal===0} title="Download every donor matching the search/stage/owner filters as a CSV"
@@ -407,7 +411,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
           nothing (graceful, no empty "assign" clutter). */}
       {showPortfolios&&(
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"11px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:14}}>
-          <span style={{fontSize:10,fontWeight:800,color:T.greenDk,textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
+          <span style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em"}}>Officer portfolios</span>
           {/* Chip row shows only officers who actually hold donors — an officer
               with 0 assigned donors is noise here. They remain in Settings → Team
               and in every owner/assign dropdown (those read a different list). */}
@@ -527,7 +531,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               reads as its own surface instead of blurring into the Kanban
               stage headers and Home hero banner, which are both solid dark
               green. Green identity stays via text color + underline accent. */}
-          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:T.ground,borderBottom:"2px solid "+T.greenDk,alignItems:"center"}}>
+          <div className="dir-header-row" style={{display:"grid",gridTemplateColumns:colGrid,gap:0,padding:"10px 18px",background:T.ground,borderBottom:"2px solid "+T.bg3,alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
@@ -535,7 +539,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
             {["Donor","Stage","Owner","Lifetime","Last Gift",GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{fontSize:10,fontWeight:800,color:T.greenDk,textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>
+                  style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>
                   {h}
                   {h===GIVING_STRENGTH_LABEL&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
                 </div>
@@ -563,7 +567,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                       the one place she already knows who she is looking at.
                       The stage tint survives as the initials fallback. */}
                   <PersonMark id={d.id} name={d.name} kind={d.kind} size={compact?22:32}
-                    tint={stage.color+"22"} tintFg={stage.color}
+                    tint={T.bg2} tintFg={T.ink}
                     style={{transition:"width 0.12s,height 0.12s"}}/>
                   <div style={{minWidth:0}}>
                     <div style={{fontSize:compact?12:13,fontWeight:700,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
@@ -571,11 +575,11 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                       <DriftBadge drift={d.drift}/>
                     </div>
                     {!compact&&d.email&&<div style={{fontSize:11,color:T.ink3,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.email}</div>}
-                    <span className="dir-stage-mobile" style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
+                    <span className="dir-stage-mobile" style={{...stageChip(stage),borderRadius:99,padding:"2px 7px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginTop:3}}>{stage.label}</span>
                   </div>
                 </div>
                 <div className="dir-col-stage">
-                  <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
+                  <span style={{...stageChip(stage),borderRadius:99,padding:compact?"2px 8px":"4px 10px",fontSize:10,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase"}}>{stage.label}</span>
                 </div>
                 <div className="dir-col-owner" style={{display:"flex",alignItems:"center",gap:5,minWidth:0}}>
                   {(()=>{
@@ -586,7 +590,7 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                     const label = d.assignedToName || d.pendingAssigneeName || "";
                     const oc=officerColorMap[d.assignedTo];
                     return(<>
-                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.greenDk+"22"),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.greenDk),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
+                      <div title={label||"Unassigned"} style={{width:22,height:22,borderRadius:"50%",background:pending?(T.gold500+"33"):(oc?oc:T.bg2),display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:pending?T.gold600:(oc?T.white:T.ink3),flexShrink:0,boxShadow:oc&&!pending?"0 0 0 2px "+oc+"33":"none"}}>{(label||"?")[0]}</div>
                       <span style={{fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label||"—"}{pending&&<span style={{color:T.gold600,fontWeight:600}}> · pending</span>}</span>
                     </>);
                   })()}
@@ -618,11 +622,11 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
                 {selectMode&&<input type="checkbox" checked={checked} onChange={e=>{e.stopPropagation();toggleOne(d.id,e);}} onClick={e=>e.stopPropagation()}
                   style={{width:20,height:20,cursor:"pointer",accentColor:T.greenDk,flexShrink:0}}/>}
                 <PersonMark id={d.id} name={d.name} kind={d.kind} size={34}
-                  tint={stage.color+"22"} tintFg={stage.color}/>
+                  tint={T.bg2} tintFg={T.ink}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div className="dir-m-name" style={{fontSize:17,fontWeight:700,color:T.ink,lineHeight:1.25,overflowWrap:"anywhere"}}>
                     {d.name}
-                    <span style={{background:stage.color+"22",color:stage.color,borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
+                    <span style={{...stageChip(stage),borderRadius:99,padding:"2px 8px",fontSize:9.5,fontWeight:800,letterSpacing:"0.04em",textTransform:"uppercase",marginLeft:8,verticalAlign:"2px",whiteSpace:"nowrap"}}>{stage.label}</span>
                     <DriftBadge drift={d.drift} style={{marginLeft:6,verticalAlign:"2px"}}/>
                   </div>
                   <div style={{fontSize:14,color:T.ink3,marginTop:3}}>
@@ -694,7 +698,7 @@ function TeamView({donors,orgTeam,onSelectDonor}){
         return(
           <div key={member.id} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:16}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,paddingBottom:10,borderBottom:"1px solid "+T.bg3}}>
-              <div style={{width:36,height:36,borderRadius:"50%",background:T.greenDk+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.greenDk,flexShrink:0}}>{member.name[0]}</div>
+              <div style={{width:36,height:36,borderRadius:"50%",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,color:T.ink,flexShrink:0}}>{member.name[0]}</div>
               <div>
                 <div style={{fontSize:14,fontWeight:700,color:T.ink}}>{member.name}</div>
                 <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{md.length} donor{md.length!==1?"s":""} · {fmtFull(tv)}</div>
@@ -707,7 +711,7 @@ function TeamView({donors,orgTeam,onSelectDonor}){
                 return(
                   <div key={d.id} onClick={()=>onSelectDonor(d)} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 0",borderBottom:i<Math.min(md.length,10)-1?"1px solid "+T.bg3:"none",cursor:"pointer"}}>
                     <PersonMark id={d.id} name={d.name} kind={d.kind} size={28}
-                      tint={stage.color+"22"} tintFg={stage.color}/>
+                      tint={T.bg2} tintFg={T.ink}/>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:13,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                       <div style={{fontSize:11,color:T.ink3,marginTop:1}}>{stage.label} · {fmtFull(d.total)}</div>
@@ -746,7 +750,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
         <span style={lbl}>Stage</span>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {STAGES.map(s=>{const a=filters.stages.includes(s.id);return(
-            <button key={s.id} onClick={()=>tog("stages",s.id)} style={{background:a?s.color+"22":T.bg,border:`1px solid ${a?s.color:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?s.color:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{s.label}</button>
+            <button key={s.id} aria-pressed={a} onClick={()=>tog("stages",s.id)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{s.label}</button>
           );})}
         </div>
       </div>
@@ -788,7 +792,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
                   <span style={lbl}>{f.label}</span>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
                     {(f.options||[]).map(opt=>{const a=sel.includes(opt);return(
-                      <button key={opt} onClick={()=>togCfOption(f.id,opt)} style={{background:a?T.greenDk+"22":T.bg,border:`1px solid ${a?T.greenDk:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?T.greenDk:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{opt}</button>
+                      <button key={opt} aria-pressed={a} onClick={()=>togCfOption(f.id,opt)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{opt}</button>
                     );})}
                   </div>
                 </div>
@@ -801,7 +805,7 @@ function FilterBar({filters,onChange,customFields,cfFilters,onCfChange}){
                   <span style={lbl}>{f.label}</span>
                   <div style={{display:"flex",gap:5}}>
                     {["","Yes","No"].map((opt,i)=>{const a=val===opt;return(
-                      <button key={i} onClick={()=>setCf(f.id,opt)} style={{background:a?T.greenDk+"22":T.bg,border:`1px solid ${a?T.greenDk:T.bg3}`,borderRadius:7,padding:"4px 12px",color:a?T.greenDk:T.ink3,fontSize:12,fontWeight:a?700:400,cursor:"pointer"}}>{opt||"Any"}</button>
+                      <button key={i} aria-pressed={a} onClick={()=>setCf(f.id,opt)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"4px 12px",color:T.ink3,fontSize:12,fontWeight:400,cursor:"pointer",...activeMark(a,"bottom")}}>{opt||"Any"}</button>
                     );})}
                   </div>
                 </div>

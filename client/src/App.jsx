@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
 import { useAuth } from "./main";
-import { T, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
+import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
 // Code intact, re-enable by uncommenting (see showVoiceMemo state, header
 // button, and modal render below, and the matching import above:
@@ -406,15 +406,18 @@ function AppShell() {
   }
 
   // Sidebar nav button — one style for the main items and the pinned
-  // Settings item. Active = gold left accent + elevated dark green, matching
-  // the goal-card/dark-surface language (five-color palette only).
+  // Settings item. FIX-2 C — the active item is the shared light treatment
+  // (activeMark): cream's shade on the ink rail, ink text, 700, a 3px emerald
+  // rule on its left edge. It was an elevated dark-green block with a brass
+  // bar, and with the ink rail around it the green read as the whole app.
   const sideBtn=(active)=>({
     display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
-    background:active?T.bgElevated:"transparent",
-    border:"none",borderLeft:`3px solid ${active?"var(--org-accent,"+T.gold500+")":"transparent"}`,
-    borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 13px",
-    color:active?T.inkInverse:"rgba(240,237,230,0.7)",fontSize:14,fontWeight:active?700:500,
-    cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box"
+    background:"transparent",
+    border:"none",
+    borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 16px",
+    color:T.sage400,fontSize:14,fontWeight:500,
+    cursor:"pointer",transition:"color 0.15s,background 0.15s",boxSizing:"border-box",
+    ...activeMark(active,"left")
   });
 
   // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
@@ -454,8 +457,8 @@ function AppShell() {
           const navItem=(t)=>{
             const active=tab===t.id;
             const locked=TEAM_GATED.has(t.id)&&isCoreTier;
-            return <button key={t.id} className="side-nav-btn" onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
-              <span style={{fontSize:14,width:18,textAlign:"center",color:active?"var(--org-accent,"+T.gold500+")":"rgba(240,237,230,0.55)",flexShrink:0}}>{t.icon}</span>
+            return <button key={t.id} className="side-nav-btn" aria-current={active?"page":undefined} onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
+              <span style={{fontSize:14,width:18,textAlign:"center",color:active?T.ink:T.sage600,flexShrink:0}}>{t.icon}</span>
               {t.label}
               {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
               {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
@@ -475,7 +478,7 @@ function AppShell() {
               <div style={{marginTop:12}}>
                 <button onClick={()=>setNavMoreOpen(o=>{try{localStorage.setItem(NAV_MORE_KEY,o?"0":"1");}catch{/* private mode */}return !o;})}
                   aria-expanded={navMoreOpen} aria-controls="side-nav-more"
-                  className="side-nav-btn" style={{...sideBtn(false),color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 13px"}}>
+                  className="side-nav-btn" style={{...sideBtn(false),color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 16px"}}>
                   <span aria-hidden style={{fontSize:9,width:18,textAlign:"center",flexShrink:0,display:"inline-block",transform:navMoreOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▸</span>
                   More
                   {/* A count that vanishes when its tab folds away is worse
@@ -490,8 +493,8 @@ function AppShell() {
       </div>
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid "+T.bgElevated,padding:"10px 10px 12px 0",flexShrink:0}}>
-        <button className="side-nav-btn" onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
-          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?"var(--org-accent,"+T.gold500+")":"rgba(240,237,230,0.55)",flexShrink:0}}>⚙</span>
+        <button className="side-nav-btn" aria-current={tab==="settings"?"page":undefined} onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
+          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?T.ink:T.sage600,flexShrink:0}}>⚙</span>
           Settings
         </button>
       </div>
@@ -513,8 +516,8 @@ function AppShell() {
           Voice memo
         </button>
         */}
-        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <span style={{fontSize:12,fontWeight:700,color:T.inkInverse}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
+        <div className="app-avatar" style={{width:30,height:30,borderRadius:8,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontSize:12,fontWeight:700,color:T.ink}}>{(auth?.user?.name||"U")[0].toUpperCase()}</span>
         </div>
         <button onClick={logout} className="app-signout" style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"6px 12px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>
           Sign out

@@ -309,7 +309,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
           </div>
         )}
         <span style={{ fontSize: 12.5, color: T.ink3 }}>{totalCards} {canViewAll ? "on the board" : "in your portfolio"}{anyFilter ? " (filtered)" : ""}</span>
-        <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.greenMid, border: "none", borderRadius: T.radiusSm, padding: "8px 14px", fontSize: 13, fontWeight: 700, color: T.white, cursor: "pointer" }}>+ Add prospects from your donors</button>
+        <button onClick={goAddProspects} style={{ marginLeft: "auto", background: T.white, border: "1.5px solid " + T.ink, borderRadius: T.radiusSm, padding: "7px 13px", fontSize: 13, fontWeight: 700, color: T.ink, cursor: "pointer" }}>+ Add prospects from your donors</button>
       </div>
 
       {/* Filters */}

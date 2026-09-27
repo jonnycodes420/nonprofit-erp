@@ -7,7 +7,7 @@ import { apiFetch, adaptDonor } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
-import { T, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, droppedLine, plainText } from "../../../shared/suggestionGuard.js";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
@@ -545,7 +545,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {showAdd&&<Card style={{gap:10,display:"flex",flexDirection:"column"}}>
         <div style={{fontSize:14,fontWeight:700,color:T.ink}}>New Donor</div>
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {STAGES.map(s=><button key={s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:newDonor.stage===s.id?s.color+"22":T.bg,border:`1px solid ${newDonor.stage===s.id?s.color:T.bg3}`,borderRadius:7,padding:"5px 11px",color:newDonor.stage===s.id?s.color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{s.label}</button>)}
+          {STAGES.map(s=><button key={s.id} aria-pressed={newDonor.stage===s.id} onClick={()=>setNewDonor(p=>({...p,stage:s.id}))} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 11px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(newDonor.stage===s.id,"bottom")}}>{s.label}</button>)}
         </div>
         {[["name","Full Name"],["email","Email"],["phone","Phone"],["lastAmount","Gift Amount ($)"]].map(([k,pl])=>(
           <input key={k} value={newDonor[k]} onChange={e=>setNewDonor(p=>({...p,[k]:e.target.value}))} placeholder={pl} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"9px 12px",color:T.ink,fontSize:13,outline:"none"}}/>

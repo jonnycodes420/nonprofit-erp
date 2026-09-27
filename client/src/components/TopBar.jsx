@@ -221,8 +221,8 @@ export function TopBar({ auth, logout, onNavigate }) {
     <div style={{display:"flex",alignItems:"center",gap:9}}>
       <button onClick={()=>onNavigate("settings",{section:"account"})} title="Account settings"
         style={{display:"flex",alignItems:"center",gap:9,background:"transparent",border:"none",padding:"3px 5px",borderRadius:8,cursor:"pointer"}}>
-        <div style={{width:28,height:28,borderRadius:8,background:T.greenDk,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <span style={{fontSize:11,fontWeight:700,color:T.inkInverse}}>{userName[0].toUpperCase()}</span>
+        <div style={{width:28,height:28,borderRadius:8,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+          <span style={{fontSize:11,fontWeight:700,color:T.ink}}>{userName[0].toUpperCase()}</span>
         </div>
         <span style={{fontSize:12.5,fontWeight:600,color:T.inkInverse,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
       </button>

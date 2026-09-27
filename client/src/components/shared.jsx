@@ -106,6 +106,23 @@ export const T = {
   radiusLg:   "16px",
 };
 
+// FIX-2 C — THE ACTIVE TREATMENT, ONE PLACE. A selected rail item, tab or
+// segmented-control option is NOT a solid green or ink block: that read as
+// the whole app being green (the 27 September walk, finding 5), and emerald
+// fill means "this is the button". Selected is cream's shade (T.bg2) as the
+// ground, ink text at weight 700, and a 3px emerald rule on the leading edge:
+// "left" for a vertical rail or list, "bottom" for a tab, "top" for a bar at
+// the foot of the screen. Spread it LAST over the item's own style:
+//   style={{ ...base, ...activeMark(on, "bottom") }}
+// It returns {} when not selected, so the item keeps its quiet look. The
+// mobile nav's CSS (.mobile-bottom-tab.active, .mobile-more-row.active) is
+// the same treatment written as a class. tests/fix2-c-cream.test.js holds it.
+export function activeMark(on, edge = "bottom") {
+  if (!on) return {};
+  const rule = edge === "left" ? "inset 3px 0 0 " : edge === "top" ? "inset 0 3px 0 " : "inset 0 -3px 0 ";
+  return { background: T.bg2, color: T.ink, fontWeight: 700, boxShadow: rule + T.greenDk };
+}
+
 // interactive(onClick, {label}) — the ONE shared treatment for a card/row/stat
 // that navigates somewhere (BUILD-12 "everything clickable" rule). Returns
 // props that make a plain element a real, keyboard-activatable button: role,
@@ -198,7 +215,7 @@ export class ErrorBoundary extends Component {
 // blue/purple/amber pill backlog): green shades deliberately varied for
 // adjacent statuses, gold = active attention, terracotta = needs attention,
 // warm grey = closed/low. No library blue/purple/red/amber, ever.
-export const SC = { major:T.greenDk,mid:T.greenMid,new:T.gold500,lapsed:T.terracotta,converted:T.greenMid,active:T.greenMid,pending:T.gold600,prospecting:T.green500,closed:T.ink3,high:T.terracotta,medium:T.gold600,low:T.ink3 };
+export const SC = { major:T.greenDk,mid:T.greenMid,new:T.gold500,lapsed:T.gold600,converted:T.greenMid,active:T.greenMid,pending:T.gold600,prospecting:T.green500,closed:T.ink3,high:T.gold700,medium:T.gold600,low:T.ink3 };
 export const askClaude = (system, user, onChunk) => streamAI(system, user, onChunk);
 
 // ── Org Context Builder ────────────────────────────────────────────────────
@@ -244,7 +261,7 @@ export const STAGES = [
   {id:"cultivate", label:"Cultivate", color:T.greenMid, hint:"Building relationship"},
   {id:"solicit",   label:"Solicit",   color:T.green, hint:"Ready for the ask"},
   {id:"steward",   label:"Steward",   color:T.greenDk, hint:"Deepen post-gift relationship"},
-  {id:"lapsed",    label:"Lapsed",    color:T.terracotta, hint:"Needs re-engagement"},
+  {id:"lapsed",    label:"Lapsed",    color:T.gold600, hint:"Needs re-engagement"},   // FIX-2 C: overdue is brass, never red
 ];
 export const STAGE_THRESH = {prospect:[60,120],qualify:[14,30],cultivate:[30,60],solicit:[7,14],steward:[30,90],lapsed:[90,180]};
 // BUILD-88a A.4 — the voice guard reaches these: no em dashes in a rendered
@@ -327,7 +344,7 @@ export function GlobalStyles() {
     .app-topbar{user-select:none;}
     .topbar-search::placeholder{color:rgba(240,237,230,0.7);}
     .topbar-search:focus{border-color:${T.gold500}!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
-    .side-nav-btn:hover{color:${T.inkInverse}!important;}
+    .side-nav-btn:not([aria-current]):hover{color:${T.inkInverse}!important;}
     .mobile-bottom-bar,.mobile-more-drawer{user-select:none;}
     @keyframes sp{to{transform:rotate(360deg)}}
     @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -416,7 +433,6 @@ export function GlobalStyles() {
     .click-card-dark:hover{border-color:${T.gold500}!important;box-shadow:0 6px 26px rgba(0,0,0,0.28)!important;transform:translateY(-1px);}
     .click-card-dark:focus-visible{box-shadow:0 0 0 3px rgba(201,168,76,0.5)!important;border-color:${T.gold500}!important;}
     /* gold wash behind an active section tab (added by SectionTabs) */
-    .section-tab-on{background:${T.gold100}66!important;}
     .dash-row:hover{background:${T.bg}!important;box-shadow:inset 2px 0 0 ${T.greenDk};}
     /* D-1 (BUILD-45): "Needs your attention" row main is a real link. Hover
        affordance so it reads as clickable, not broken — cream-alt wash + the
@@ -473,17 +489,19 @@ export function GlobalStyles() {
     .dash-action:hover{background:${T.bg}!important;border-color:${T.greenDk}!important;transform:translateY(-1px);}
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
-    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.ink};border-top:1px solid ${T.bgElevated};box-shadow:0 -1px 0 rgba(0,0,0,.2),0 -4px 20px rgba(0,0,0,.15);padding-bottom:env(safe-area-inset-bottom,0px);}
-    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
+    .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.white};border-top:1px solid ${T.bg2};box-shadow:0 -4px 20px rgba(15,26,18,.06);padding-bottom:env(safe-area-inset-bottom,0px);}
+    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
-    .mobile-bottom-tab.active{color:${T.gold500};}
+    /* FIX-2 C — the light active treatment (activeMark's, in CSS): cream's
+       shade, ink, 700, a 3px emerald rule on the edge that meets the page. */
+    .mobile-bottom-tab.active{background:${T.bg2};color:${T.ink};font-weight:700;box-shadow:inset 0 3px 0 ${T.greenDk};}
     .mobile-more-overlay{display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.6);align-items:flex-end;}
-    .mobile-more-drawer{background:${T.ink};border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
-    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:${T.bgElevated};margin:12px auto 4px;}
-    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid ${T.bgElevated};padding:16px 24px;color:${T.inkInverse};font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
+    .mobile-more-drawer{background:${T.white};border-radius:20px 20px 0 0;width:100%;padding-bottom:env(safe-area-inset-bottom,0px);overflow:hidden;}
+    .mobile-more-handle{width:36px;height:4px;border-radius:2px;background:${T.bg3};margin:12px auto 4px;}
+    .mobile-more-row{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;border-bottom:1px solid ${T.bg2};padding:16px 24px;color:${T.ink};font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:500;cursor:pointer;text-align:left;}
     .mobile-more-row .mob-icon{font-size:20px;width:28px;text-align:center;flex-shrink:0;}
-    .mobile-more-row.active{color:${T.gold500};font-weight:700;}
-    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:rgba(240,237,230,0.7);font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
+    .mobile-more-row.active{background:${T.bg2};color:${T.ink};font-weight:700;box-shadow:inset 3px 0 0 ${T.greenDk};}
+    .mobile-more-signout{display:flex;align-items:center;gap:16px;width:100%;background:transparent;border:none;padding:16px 24px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:16px;font-weight:400;cursor:pointer;text-align:left;}
     .dir-stage-mobile{display:none;}
     /* BUILD-41 mobile donor rows + Select toggle — desktop never shows them */
     .dir-row-mobile{display:none;}
@@ -827,8 +845,8 @@ export function Modal({
     document.body);
 }
 
-export function Spin() {
-  return <span style={{display:"inline-block",width:11,height:11,border:"2px solid "+T.white+"30",borderTopColor:T.white,borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
+export function Spin({dark}={}) {
+  return <span style={{display:"inline-block",width:11,height:11,border:"2px solid "+(dark?T.ink:T.white)+"30",borderTopColor:dark?T.ink:T.white,borderRadius:"50%",animation:"sp 0.7s linear infinite",flexShrink:0}}/>;
 }
 export function Pill({label,color}) {
   return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
@@ -854,15 +872,15 @@ export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripP
       const on=active===t.id;
       return <button key={t.id} role="tab" aria-selected={on} {...(dataKey?{["data-"+dataKey]:t.id}:{})} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
         background:"transparent",border:"none",
-        borderBottom:`2px solid ${on?T.gold:"transparent"}`,
-        borderRadius:on?"7px 7px 0 0":0,
+        borderRadius:"7px 7px 0 0",
         marginBottom:-1.5,padding:"10px 14px",
-        color:on?T.ink:T.ink3,fontSize:13,fontWeight:on?700:500,
+        color:T.ink3,fontSize:13,fontWeight:500,
         cursor:"pointer",display:"flex",alignItems:"center",gap:7,whiteSpace:"nowrap",flexShrink:0,
-        transition:"color 0.15s,border-color 0.15s,background 0.15s"}}>
+        transition:"color 0.15s,box-shadow 0.15s,background 0.15s",
+        ...activeMark(on,"bottom")}}>
         {t.icon&&<span style={{fontSize:13,opacity:0.7}}>{t.icon}</span>}
         {t.label}
-        {t.badge!=null&&<span style={{fontSize:11,fontWeight:700,background:on?T.gold+"2e":T.bg3,borderRadius:99,padding:"1px 7px",color:on?T.ink:T.ink3}}>{t.badge}</span>}
+        {t.badge!=null&&<span style={{fontSize:11,fontWeight:700,background:on?T.white:T.bg3,borderRadius:99,padding:"1px 7px",color:on?T.ink:T.ink3}}>{t.badge}</span>}
       </button>;
     })}
   </div>;
@@ -870,17 +888,20 @@ export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripP
 export function SectionLabel({children}) {
   return <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:12}}>{children}</div>;
 }
+// FIX-2 C — the AI button is BRASS: brass is what the agent is doing, and
+// emerald is the one primary action on the screen, which a "Suggest" never is.
 export function AIBtn({onClick,loading,label="✦ Suggest",small}) {
-  return <button onClick={onClick} disabled={loading} style={{background:loading?T.bgElevated:"linear-gradient(135deg,"+T.greenDk+","+T.greenDk+")",border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:T.inkInverse,fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:loading?"none":"0 2px 12px rgba(13,92,58,0.35)",letterSpacing:"0.01em"}}>
-    {loading?<><Spin/>Thinking…</>:label}
+  return <button onClick={onClick} disabled={loading} style={{background:loading?T.gold100:T.gold500,border:"none",borderRadius:small?8:10,padding:small?"6px 12px":"9px 16px",color:T.ink,fontSize:small?12:13,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",gap:6,opacity:loading?0.65:1,whiteSpace:"nowrap",boxShadow:"none",letterSpacing:"0.01em"}}>
+    {loading?<><Spin dark/>Thinking…</>:label}
   </button>;
 }
 export function AIPanel({text,onClose}) {
   if(!text) return null;
-  return <div className="fade-in modal-anim" style={{background:T.ink,border:"1px solid "+T.bgElevated,borderLeft:"3px solid "+T.gold500,borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
-    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold500,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
-    <div style={{fontSize:13,color:T.bg2,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
-    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.bgElevated,border:"1px solid "+T.green650,borderRadius:6,color:T.sage400,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+  // FIX-2 C — what the agent suggests is BRASS on white, not an ink room.
+  return <div className="fade-in modal-anim" style={{background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,borderRadius:14,padding:"18px 20px",position:"relative",marginTop:12}}>
+    <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold700,marginBottom:10,display:"flex",alignItems:"center",gap:6}}><span>✦</span> Suggested</div>
+    <div style={{fontSize:13,color:T.ink,lineHeight:1.8,whiteSpace:"pre-wrap"}}>{text}</div>
+    {onClose&&<button onClick={onClose} style={{position:"absolute",top:12,right:14,background:T.white,border:"1px solid "+T.bg3,borderRadius:6,color:T.ink3,cursor:"pointer",fontSize:14,lineHeight:1,width:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
   </div>;
 }
 export function MetricCard({label,value,sub,color,trend}) {
@@ -1075,7 +1096,7 @@ export function TpField({label,children}){
 }
 export function TpYesNo({val,set}){
   return <div style={{display:"flex",gap:6}}>
-    {["yes","no"].map(v=><button key={v} onClick={()=>set(v)} style={{background:val===v?T.greenDk:T.bg,border:`1px solid ${val===v?T.greenDk:T.bg3}`,borderRadius:7,padding:"7px 20px",color:val===v?T.white:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer"}}>{v}</button>)}
+    {["yes","no"].map(v=><button key={v} aria-pressed={val===v} onClick={()=>set(v)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:7,padding:"7px 20px",color:T.ink3,fontSize:13,fontWeight:600,cursor:"pointer",...activeMark(val===v,"bottom")}}>{v}</button>)}
   </div>;
 }
 // onDelete (optional): called with the interaction after the user confirms —
@@ -1342,7 +1363,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
 
                 {(suggestedDetail||suggestedAction)&&(
                   <div style={{background:T.green100,border:"1px solid "+T.green200,borderRadius:10,padding:"12px 14px",marginBottom:14}}>
-                    <div style={{fontSize:10,fontWeight:800,color:T.greenDk,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
+                    <div style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>Worth saving? (your call)</div>
                     {suggestedDetail&&(
                       <label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:T.ink,cursor:"pointer",marginBottom:suggestedAction?8:0}}>
                         <input type="checkbox" checked={includeDetail} onChange={e=>setIncludeDetail(e.target.checked)} style={{marginTop:3,width:15,height:15,cursor:"pointer",flexShrink:0}}/>

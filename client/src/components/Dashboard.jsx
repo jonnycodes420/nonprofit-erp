@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
 import { apiFetch } from "../api";
 import { useAuth } from "../main";
-import { T, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
+import { T, activeMark, fmt, fmtFull, quietPhrase, daysUntil, daysDiff, firstNameOf, askClaude, buildContext, Spin, AIBtn, GoldMoment, interactive, SectionTabs, Modal, PersonMark } from "./shared";
 import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from "../lib/homeLayout";
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
@@ -899,11 +899,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // interactive() treatment (dark variant — hover/cursor/focus ring/keyboard);
   // a chip with no destination (e.g. Time Left) stays visibly static.
   const GoalStat=({label,value,valueColor,sub,onClick})=>(
-    <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined,dark:true})}
-      style={{background:"rgba(255,255,255,0.04)",border:"1px solid "+T.bgElevated,borderRadius:10,padding:"8px 12px"}}>
-      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:3}}>{label}</div>
+    <div {...interactive(onClick,{label:onClick?`Open ${label}`:undefined})}
+      style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"8px 12px"}}>
+      <div style={{fontSize:9,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:3}}>{label}</div>
       <div style={{fontSize:14,fontWeight:700,color:valueColor||T.inkInverse,lineHeight:1.25}}>{value}</div>
-      {sub&&<div style={{fontSize:11,color:"rgba(240,237,230,0.7)",marginTop:2}}>{sub}</div>}
+      {sub&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>{sub}</div>}
     </div>
   );
 
@@ -1098,30 +1098,30 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const {period={},many,g0,raised,goalAmt,pct,rawPct,overAmt,heroPace,heroPaceCol,deltaTxt}=heroCtx||{};
 
   const heroSection=fundOverview===undefined?(
-        <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid "+T.bgElevated,borderRadius:16,padding:"16px 22px",color:"rgba(240,237,230,0.7)",fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
+        <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink3,fontSize:13,display:"flex",alignItems:"center",gap:8}}><Spin/>Loading goals…</div>
       ):heroCtx?(<>
-          <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid "+T.bgElevated,borderRadius:16,padding:"16px 22px",color:T.inkInverse}}>
+          <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink}}>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — the roll-up (or the single goal) */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.sage400,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>{many?"Fundraising — All Active Goals":"Fundraising Goal"}</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:440,display:"flex",alignItems:"center",gap:8}}>
                   <span>{many?`${fgRollup.activeGoalCount} goals toward ${fmtFull(goalAmt)}`:g0.name}</span>
                   {isAdmin&&(
                     <button onClick={e=>{e.stopPropagation();onNavigate("fundraising");}} title="Edit goals in Fundraising"
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:"rgba(240,237,230,0.7)",display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:"pointer",color:T.ink3,display:"inline-flex",alignItems:"center",flexShrink:0}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
                   )}
                 </div>
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
-                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{rawPct}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(rawPct,overAmt)}</div>
+                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold700,lineHeight:1}}>{rawPct}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:rawPct>100?T.gold700:T.ink3}}>{goalHeadSub(rawPct,overAmt)}</div>
                 </div>
-                <div style={{background:T.ink,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
+                <div style={{background:T.bg2,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${pct}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:T.sage400}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
+                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(raised)}</strong> of {fmtFull(goalAmt)}{many?` · ${fgRollup.activeGoalCount} active goals`:""}</div>
               </div>
               {/* RIGHT — real supporting stats. Pace + the FY comparison are kept;
                   this-week giving + money at risk are the two live
@@ -1137,33 +1137,33 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           </div>
         </>
       ):(
-      <div className="dash-goal-banner" style={{background:`linear-gradient(135deg,${T.green950},${T.green800})`,border:"1px solid "+T.bgElevated,borderRadius:16,padding:"16px 22px",color:T.inkInverse}}>
+      <div className="dash-goal-banner" style={{background:T.white,border:"1px solid "+T.bg2,borderLeft:"4px solid "+T.gold500,borderRadius:16,padding:"16px 22px",color:T.ink}}>
         {goal===undefined?(
-          <div style={{display:"flex",alignItems:"center",gap:8,color:"rgba(240,237,230,0.7)",fontSize:13}}><Spin/>Loading goal…</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,color:T.ink3,fontSize:13}}><Spin/>Loading goal…</div>
         ):goal?(
           <>
             <div className="dash-goal-cols" style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               {/* LEFT — primary */}
               <div style={{flex:"2 1 300px",minWidth:260}}>
-                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:"rgba(240,237,230,0.7)",marginBottom:4}}>Fundraising Goal</div>
-                <div style={{fontSize:15,fontWeight:600,color:T.sage400,marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
+                <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Fundraising Goal</div>
+                <div style={{fontSize:15,fontWeight:600,color:T.ink3,marginBottom:10,maxWidth:420,display:"flex",alignItems:"center",gap:8}}>
                   <span>{goal.label}</span>
                   {isAdmin&&(
                     <button onClick={openEditGoal} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Edit goal"}
-                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:"rgba(240,237,230,0.7)",opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
+                      style={{background:"transparent",border:"none",padding:3,margin:0,cursor:isReadOnly?"not-allowed":"pointer",color:T.ink3,opacity:isReadOnly?0.4:1,display:"inline-flex",alignItems:"center",flexShrink:0}}>
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
                     </button>
                   )}
                 </div>
 
                 <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
-                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
-                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold:"rgba(240,237,230,0.7)"}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
+                  <div style={{fontSize:44,fontWeight:400,fontFamily:"'DM Serif Display',Georgia,serif",color:T.gold700,lineHeight:1}}>{goal.rawPercent??goal.percent}%</div>
+                  <div style={{fontSize:13,fontWeight:600,color:(goal.rawPercent??goal.percent)>100?T.gold700:T.ink3}}>{goalHeadSub(goal.rawPercent??goal.percent,goal.over||0)}</div>
                 </div>
-                <div style={{background:T.ink,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
+                <div style={{background:T.bg2,borderRadius:99,height:9,overflow:"hidden",marginBottom:8}}>
                   <div style={{height:"100%",width:`${goal.percent}%`,background:T.gold500,borderRadius:99,transition:"width 0.6s ease"}}/>
                 </div>
-                <div style={{fontSize:13,color:T.sage400}}><strong style={{fontSize:15,color:T.gold,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
+                <div style={{fontSize:13,color:T.ink3}}><strong style={{fontSize:15,color:T.gold700,fontFamily:"'DM Serif Display',serif",fontWeight:400}}>{fmtFull(goal.currentAmount)}</strong> of {fmtFull(goal.goalAmount)}</div>
               </div>
 
               {/* RIGHT — supporting stats. Pace + Time Left kept; this-week giving
@@ -1180,8 +1180,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         ):(
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
             <div>
-              <div style={{fontSize:15,fontWeight:600,color:T.inkInverse,marginBottom:2}}>No goal set for this period.</div>
-              <div style={{fontSize:12,color:"rgba(240,237,230,0.7)"}}>Set a fundraising target to track progress here.</div>
+              <div style={{fontSize:15,fontWeight:600,color:T.ink,marginBottom:2}}>No goal set for this period.</div>
+              <div style={{fontSize:12,color:T.ink3}}>Set a fundraising target to track progress here.</div>
             </div>
             {isAdmin&&<button onClick={openSetGoal} style={{background:T.gold,border:"none",borderRadius:10,padding:"9px 18px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Set a goal →</button>}
           </div>
@@ -1272,7 +1272,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,overflow:"hidden"}}>
           <button onClick={()=>setPortfolioOpen(v=>!v)} style={{width:"100%",background:"none",border:"none",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",color:T.ink}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.greenDk,background:T.greenDk+"10",padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
+              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,background:T.bg2,padding:"3px 8px",borderRadius:99}}>MY PORTFOLIO</span>
               <span style={{fontSize:12,color:T.ink3}}>FY Jul–Jun</span>
             </div>
             <span style={{fontSize:12,color:T.ink3}}>{portfolioOpen?"▲":"▼"}</span>
@@ -1816,7 +1816,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
         <button className="attn-row-action" onClick={()=>setConvoFor({donor:{id:t.donorId,name:t.donorName},thread:t})} disabled={isReadOnly}
           title={isReadOnly?"Reactivate your subscription to make changes.":"Log what happened and the next step comes back"}
-          style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
+          style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",whiteSpace:"nowrap",opacity:isReadOnly?0.45:1}}>Done</button>
         {/* BUILD-94 Part 5 — a next step is an appointment somebody has to
             keep, and hers lives in Outlook. Three links and a file; nothing
             syncs, and the menu says so. */}
@@ -1869,9 +1869,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 {threadsData?.canViewAll&&threadsData?.stat?.unowned!==undefined&&homeData?.multiOfficer&&(
                   <span style={{display:"inline-flex",border:"1px solid "+T.bg3,borderRadius:99,overflow:"hidden"}}>
                     {[["mine","Mine"],["all","Everyone"]].map(([k,lbl])=>(
-                      <button key={k} onClick={()=>{setThreadScope(k);loadThreads(k);}}
+                      <button key={k} aria-pressed={threadScope===k} onClick={()=>{setThreadScope(k);loadThreads(k);}}
                         style={{border:"none",padding:"3px 10px",fontSize:10.5,fontWeight:700,cursor:"pointer",
-                                background:threadScope===k?T.greenDk:"transparent",color:threadScope===k?T.white:T.ink3}}>{lbl}</button>
+                                background:"transparent",color:T.ink3,...activeMark(threadScope===k,"bottom")}}>{lbl}</button>
                     ))}
                   </span>
                 )}
@@ -1885,8 +1885,8 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   </span>
                 )}
                 <button onClick={()=>setPlanFor({donor:null})} disabled={isReadOnly}
-                  style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:7,padding:"4px 10px",
-                          color:T.greenDk,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
+                  style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"4px 10px",
+                          color:T.ink,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.45:1}}>
                   Plan a follow-up
                 </button>
               </span>
@@ -1993,7 +1993,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <button onClick={()=>tyCopy(d)} data-testid="ty-copy"
                     style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{tyCopied===d.id?"Copied ✓":"Copy"}</button>
                   <button onClick={()=>tyAct(d.id,"sent")} data-testid="ty-sent"
-                    style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:8,padding:"7px 14px",color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Mark sent</button>
+                    style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>Mark sent</button>
                   <button onClick={()=>tyAct(d.id,"skip")} data-testid="ty-skip"
                     style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Skip</button>
                   <span style={{fontSize:11.5,color:T.ink3,alignSelf:"center"}}>Steward does not send this. It goes from your own mail.</span>
@@ -2634,7 +2634,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Goal type</div>
             <div style={{display:"flex",gap:6,marginBottom:10}}>
               {[["total_raised","Total raised"],["lapsed_recovery","Lapsed recovery"]].map(([v,l])=>(
-                <button key={v} onClick={()=>setGoalForm(f=>({...f,goalType:v}))} style={{flex:1,background:goalForm.goalType===v?T.greenDk+"18":T.bg,border:`1px solid ${goalForm.goalType===v?T.greenDk:T.bg3}`,borderRadius:8,padding:"8px",color:goalForm.goalType===v?T.greenDk:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer"}}>{l}</button>
+                <button key={v} aria-pressed={goalForm.goalType===v} onClick={()=>setGoalForm(f=>({...f,goalType:v}))} style={{flex:1,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px",color:T.ink3,fontSize:12,fontWeight:600,cursor:"pointer",...activeMark(goalForm.goalType===v,"bottom")}}>{l}</button>
               ))}
             </div>
             <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -2669,7 +2669,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div style={{marginTop:8,fontSize:12.5,color:T.ink3,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
               <span>Steward calls them donors. What do you call them?</span>
               <button onClick={()=>setWordsOpen(true)}
-                style={{background:"transparent",border:"1px solid "+T.greenDk,borderRadius:7,padding:"3px 10px",color:T.greenDk,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:7,padding:"3px 10px",color:T.ink,fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
                 Set your words
               </button>
               <button onClick={()=>{setWordsDone(true);apiFetch("/org/vocabulary",{method:"PUT",body:JSON.stringify({skip:true})}).catch(()=>{});}}

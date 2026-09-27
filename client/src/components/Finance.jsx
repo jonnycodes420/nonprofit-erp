@@ -1,6 +1,6 @@
 import { useState, useEffect, Fragment } from "react";
 import { RestrictedView } from "./RestrictedView";
-import { T, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
@@ -8,7 +8,7 @@ import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/pa
 
 // ── Constants ──────────────────────────────────────────────────────────────
 // Account-type accents for the ledger's account badge, palette tokens only.
-const TYPE_COLOR = { asset:T.greenMid, liability:T.gold, net_asset:T.greenDk, revenue:T.green, expense:T.terracotta };
+const TYPE_COLOR = { asset:T.ink, liability:T.gold700, net_asset:T.ink, revenue:T.ink, expense:T.ink3 };   // FIX-2 C: a category is a word, not a green or a red
 
 // FIX-1 E — every number on screen has a sentence. Cash on hand is the
 // ledger's, not the bank's and not Stripe's, and it says so: the sentence is
@@ -23,13 +23,13 @@ const TYPE_COLOR = { asset:T.greenMid, liability:T.gold, net_asset:T.greenDk, re
 
 // Money in = income (gold, positive/primary); money out = expense (terracotta,
 // needs-attention). One convention used everywhere in this tab.
-const IN = T.greenMid;
+const IN = T.ink;   // FIX-2 C — money in reads ink; emerald is the one action
 const OUT = T.terracotta;
 
 // Where a ledger row came from — badged in the unified Transactions ledger.
 const SOURCE_META = {
   online: { label:"Online · Stripe", color:T.greenDk, bg:T.gold+"26" },
-  gift:   { label:"Gift",            color:T.greenMid, bg:T.greenMid+"18" },
+  gift:   { label:"Gift",            color:T.ink, bg:T.bg2 },
   import:  { label:"Import",         color:T.ink3,    bg:T.bg2 },
   manual: { label:"Manual",          color:T.ink3,    bg:T.bg2 },
   grant:  { label:"Grant · Award",   color:T.greenDk, bg:T.gold+"26" },
@@ -854,8 +854,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
             <div style={{ display:"flex", background:T.bg, border:"1px solid "+T.bg3, borderRadius:8, overflow:"hidden" }}>
               {[["fiscal","Fiscal Year"],["calendar","Calendar Year"]].map(([v,l]) => (
-                <button key={v} onClick={() => handleYearModeChange(v)}
-                  style={{ background:yearMode===v?T.greenMid:"transparent", border:"none", padding:"6px 14px", color:yearMode===v?T.white:T.ink3, fontSize:12, fontWeight:yearMode===v?700:400, cursor:"pointer", whiteSpace:"nowrap" }}>
+                <button key={v} aria-pressed={yearMode===v} onClick={() => handleYearModeChange(v)}
+                  style={{ background:"transparent", border:"none", padding:"6px 14px", color:T.ink3, fontSize:12, fontWeight:400, cursor:"pointer", whiteSpace:"nowrap", ...activeMark(yearMode===v,"bottom") }}>
                   {l}
                 </button>
               ))}
@@ -939,7 +939,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               </div>
             </div>
             <button onClick={() => onNavigate("reports")}
-              style={{ background:T.greenMid, color:T.white, border:"none", borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+              style={{ background:T.white, color:T.ink, border:"1.5px solid "+T.ink, borderRadius:8, padding:"9px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
               View giving in Reports →
             </button>
           </div>
@@ -1003,10 +1003,10 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             : finFundBalances.map((f, i) => (
               <div key={f.name} {...interactive(() => f.id ? gotoTxns({ fund: f.id }) : setSubtab("funds"), { label: `View ${f.name} fund` })}
                 style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 12px", margin:"0 -12px", borderRadius:8, borderBottom: i < finFundBalances.length - 1 ? "1px solid "+T.bg3 : "" }}>
-                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
+                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.ink3, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:13, fontWeight:600, color:T.ink }}>{f.name}</div>
-                  <div style={{ fontSize:10, color:f.restricted?T.gold:T.greenMid, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
+                  <div style={{ fontSize:10, color:f.restricted?T.gold700:T.ink3, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", marginTop:1 }}>{f.restricted ? "Restricted" : "Unrestricted"}</div>
                 </div>
                 <div style={{ fontSize:18, fontWeight:800, color:f.balance>=0?T.ink:OUT, fontFamily:"'DM Serif Display',serif" }}>{fmt(f.balance)}</div>
               </div>
@@ -1046,9 +1046,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
-                    <tr style={{ background:T.greenMid }}>
+                    <tr style={{ background:T.bg2 }}>
                       {[["date","Date"],["amount","Amount"],["description","Description"],["account_name","Account"],["fund_name","Fund"]].map(([col, label]) => (
-                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
+                        <th key={col} onClick={() => toggleSort(col)} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", cursor:"pointer", whiteSpace:"nowrap" }}>
                           {label}{sortArrow(col)}
                         </th>
                       ))}
@@ -1085,7 +1085,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                         </td>
                         <td style={{ padding:"10px 14px" }}>
                           {t.fund_name && (
-                            <span style={{ background:t.fund_restricted?T.gold+"22":T.greenMid+"18", color:t.fund_restricted?T.gold700:T.greenMid, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
+                            <span style={{ background:t.fund_restricted?T.gold+"22":T.bg2, color:t.fund_restricted?T.gold700:T.ink, borderRadius:6, padding:"2px 8px", fontSize:11, fontWeight:600 }}>
                               {t.fund_name}
                             </span>
                           )}
@@ -1130,11 +1130,11 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             const sparkVals = getFundSparkline(f.id);
             return (
               <div key={f.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "" }}>
-                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.greenMid, flexShrink:0 }}/>
+                <div style={{ width:10, height:10, borderRadius:"50%", background:f.restricted?T.gold:T.ink3, flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{f.name}</span>
-                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?T.gold:T.greenMid }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
+                    <span style={{ fontSize:10, fontWeight:600, textTransform:"uppercase", letterSpacing:".06em", color:f.restricted?T.gold700:T.ink3 }}>{f.restricted ? "Restricted" : "Unrestricted"}</span>
                   </div>
                   {f.description && <div style={{ fontSize:12, color:T.ink3, marginTop:2 }}>{f.description}</div>}
                   <div style={{ fontSize:11, color:T.ink3, marginTop:4 }}>
@@ -1179,13 +1179,13 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
               <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                 <thead>
-                  <tr style={{ background:T.greenMid }}>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
-                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
-                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.white, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
+                  <tr style={{ background:T.bg2 }}>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Account</th>
+                    <th style={{ padding:"8px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Fund</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Budget</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Actual YTD</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Variance</th>
+                    <th style={{ padding:"8px 12px", textAlign:"right", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Proj. Year-End</th>
                     <th style={{ padding:"8px 12px", width:80 }}/>
                   </tr>
                 </thead>
@@ -1284,9 +1284,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                 <div style={{ overflowX:"auto" }}>
                   <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                     <thead>
-                      <tr style={{ background:T.ink }}>
+                      <tr style={{ background:T.bg2 }}>
                         {["Timestamp","User","Action","Entity","Description"].map(h => (
-                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"rgba(240,237,230,0.7)", textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
+                          <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", whiteSpace:"nowrap" }}>{h}</th>
                         ))}
                         <th style={{ padding:"10px 14px", width:40 }}/>
                       </tr>
@@ -1297,7 +1297,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                         const changes = typeof entry.changes === "object" && entry.changes ? entry.changes : {};
                         const hasOldNew = (changes.old && Object.keys(changes.old).length > 0) || (changes.new && Object.keys(changes.new).length > 0);
                         const ACTION_STYLE = {
-                          created: { bg:T.greenMid+"18", color:T.greenDk },
+                          created: { bg:T.bg2, color:T.ink },
                           updated: { bg:T.gold+"26", color:T.gold700 },
                           deleted: { bg:OUT+"20", color:OUT },
                         };
@@ -1342,7 +1342,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
                                     )}
                                     {changes.new && Object.keys(changes.new).length > 0 && (
                                       <div>
-                                        <div style={{ fontSize:10, fontWeight:700, color:T.greenDk, marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>After</div>
+                                        <div style={{ fontSize:10, fontWeight:700, color:T.ink3, marginBottom:6, textTransform:"uppercase", letterSpacing:".06em" }}>After</div>
                                         {Object.entries(changes.new).map(([k, v]) => (
                                           <div key={k} style={{ fontSize:12, color:T.ink, marginBottom:2 }}>
                                             <span style={{ color:T.ink3 }}>{k}:</span> {String(v ?? "—")}
@@ -1386,7 +1386,7 @@ function Sparkline({ values, width = 80, height = 28 }) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   const trending = values[values.length - 1] >= values[0];
-  const color = trending ? T.greenMid : T.terracotta;
+  const color = trending ? T.ink : T.gold600;
   return (
     <svg width={width} height={height} style={{ display:"block", overflow:"visible" }}>
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"/>

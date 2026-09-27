@@ -15,7 +15,7 @@ import { detectNpsp, npspMapping, NPSP_PRESET, NPSP_OBJECT_OPPORTUNITY } from ".
 import { detectMigrationPreset, migrationMapping, MIGRATION_PRESETS } from "../../../shared/migrationPresets.js";
 import { membershipColumns, detectMembershipPreset, buildMembershipRows, MEMBERSHIP_FIELDS, MEMBERSHIP_FIELD_LABELS, MEMBERSHIP_PRESETS } from "../../../shared/membershipImport.js";
 import { coerceCustomValue, parseBoolValue, parseExclusionValue, buildMapperPlan, buildColumnLedger, summarizeColumnLedger, proposalEvidenceText, proposeCustomField, generateFieldKey, CF_TYPES } from "../../../shared/customFieldShape";
-import { T, fmt, fmtFull, Spin, Modal } from "./shared";
+import { T, activeMark, fmt, fmtFull, Spin, Modal } from "./shared";
 import { detectImportShape, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickMatchKey, linkGiftsToDonors, detectOwnerColumn, matchOwnersToUsers, applyOwnerAssignment, groupOwnerMatches, normalizeName, normalizeDate, normalizeMoney, normalizeEmail, detectFlagColumns, parseBoolFlag, classifyColumns, decodeSpreadsheetBytesDetailed, analyzeCsvText, assessAggregateCollapse, scanAmountShapedColumns, headerMatchesLabel, eitherContainsTokenRun, containsTokenRun, normalizeHeader, localCivilToday, resolveDonorIdentity, NAMEABILITY_REASON, stageAssignmentBasis, validateMappingChoice, buildGiftItemsFromLedger, buildTransactionRows, buildProposalRows, autoDetectTxMapping, inferDateConvention, extractWorkbookFromSheetJS, analyzeWorkbookSheet, classifyWorkbookSheets } from "../../../shared/importShape";
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
@@ -2488,8 +2488,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   </div>
                   <div style={{display:"flex",gap:8,marginTop:8}}>
                     {[["dmy","Day / Month / Year"],["mdy","Month / Day / Year"]].map(([v,l])=>(
-                      <button key={v} onClick={()=>setDateConventionChoice(v)}
-                        style={{background:dateConventionChoice===v?T.green600:"transparent",border:`1px solid ${dateConventionChoice===v?T.green600:T.bg3}`,borderRadius:7,padding:"6px 12px",color:dateConventionChoice===v?T.white:T.ink,fontSize:12,fontWeight:700,cursor:"pointer"}}>{l}</button>
+                      <button key={v} aria-pressed={dateConventionChoice===v} onClick={()=>setDateConventionChoice(v)}
+                        style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"6px 12px",color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",...activeMark(dateConventionChoice===v,"bottom")}}>{l}</button>
                     ))}
                   </div>
                 </div>
@@ -2687,7 +2687,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                   <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
                     {yearCols.map((yc,i)=>(
                       <span key={yc.col} onClick={()=>setYearCols(cols=>cols.map((c,j)=>j===i?{...c,enabled:!c.enabled}:c))}
-                        style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:99,cursor:"pointer",background:yc.enabled?T.green600+"22":"transparent",color:yc.enabled?T.green600:T.ink3,border:`1px solid ${yc.enabled?T.green600+"55":T.bg3}`}}>
+                        style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:7,cursor:"pointer",background:"transparent",color:T.ink3,border:"1px solid "+T.bg3,...activeMark(yc.enabled,"bottom")}}>
                         {yc.col} {yc.enabled?`→ ${yc.date}`:"(off)"}
                       </span>
                     ))}
@@ -3682,7 +3682,7 @@ function MergeDuplicatesModal({onClose,onMerged,isReadOnly}){
               <button onClick={()=>{setOpen(isOpen?null:gi);setPrimaryId(null);}}
                 style={{width:"100%",background:isOpen?T.bg:T.white,border:"none",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:10}}>
                 <span style={{fontSize:13,fontWeight:700,color:T.ink,textAlign:"left"}}>
-                  <span style={{display:"inline-block",background:g.tier==="email"?T.greenDk:T.gold,color:g.tier==="email"?T.white:T.ink,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:800,marginRight:8,verticalAlign:"middle"}}>{g.tier==="email"?"SAME EMAIL":"SIMILAR NAME"}</span>
+                  <span style={{display:"inline-block",background:g.tier==="email"?T.bg2:T.gold100,color:T.ink,borderRadius:6,padding:"2px 8px",fontSize:10,fontWeight:800,marginRight:8,verticalAlign:"middle"}}>{g.tier==="email"?"SAME EMAIL":"SIMILAR NAME"}</span>
                   {g.donors.map(d=>d.name).join("  ·  ")}
                 </span>
                 <span style={{fontSize:12,color:T.ink3,flexShrink:0}}>{isOpen?"▲":"▼"}</span>
