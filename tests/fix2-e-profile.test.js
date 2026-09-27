@@ -89,10 +89,6 @@ const ORG = "org_fx2eprof", EMAIL = "fx2eprof@example.org", PW = "loadtest1234";
 
     await page.goto(`${process.env.APP_URL}/donors/d_fx2e_stale`, { waitUntil: "networkidle" });
     await page.waitForSelector(".donor-stat-grid", { timeout: 15000 }).catch(() => {});
-    // FIX-3 finding 10 — the stage picker lives in the profile's "Owner and
-    // stage" group, closed until opened. Open it (navigation only).
-    await page.locator("[data-testid=dp-group-owner] > summary").click().catch(() => {});
-    await page.waitForTimeout(300);
     const drawn = await page.evaluate(() => {
       const tile = [...document.querySelectorAll(".donor-stat-grid > div")].find(d => /contact/i.test(d.innerText));
       const val = tile && [...tile.querySelectorAll("div")].find(d => /\d+d ago/.test(d.innerText) && !d.querySelector("div"));

@@ -82,7 +82,9 @@ const record = {
     const out = N.composeNextMove(reply, record);
     const text = out.sentences.join(" ");
     ok("§2 both off-record claims are refused", !/deadline|NYC|youth|underserved/i.test(text) && out.dropped === 2, out);
-    ok("§2 …and counted in the dropped line", /2 lines were left out/.test(out.text), out.text);
+    // HOTFIX-1 — counted for the LOG, never for the panel.
+    ok("§2 …and counted for the log, with nothing about it on the screen",
+       /^\[suggestion\] 2 lines left out: /.test(out.log) && !/left out/.test(out.text), [out.log, out.text]);
     ok("§2 the output is three sentences", out.sentences.length === 3, out.sentences);
     ok("§2 …one each: when, what to say, what it is for",
        /^Reach out now\b/.test(out.sentences[0] || "") && /^Thank them\b/.test(out.sentences[1] || "") && /^It is for the arts program\.$/.test(out.sentences[2] || ""), out.sentences);
@@ -98,13 +100,15 @@ const record = {
     ok("§2 …and what is left reads as a plain sentence", p.sentences.length === 1 && /^Say that their support kept the doors open\.$/.test(p.sentences[0]), p.sentences);
     ok("§2 …with no scaffolding", !SCAFFOLD.test(p.text), p.text);
 
+    // HOTFIX-1 — nothing left, and nothing open: the panel shows NOTHING.
     const none = N.composeNextMove("", record);
-    ok("§2 an empty reply says so plainly", none.sentences.length === 0 && /nothing it could say/.test(none.text), none);
+    ok("§2 an empty reply with nothing open shows nothing at all",
+       none.sentences.length === 0 && none.text === "", none);
   }
 
   console.log("\n— §3 · the profile builds its suggestion through the template —");
   const donors = readSource("client/src/components/Donors.jsx");
-  const getAI = (donors.match(/const getAI=async\(donor,type\)=>\{[\s\S]*?\n  \};/) || [""])[0];
+  const getAI = (donors.match(/const getAI=async\(donor,type[^)]*\)=>\{[\s\S]*?\n  \};/) || [""])[0];
   ok("§3 the next-move suggestion goes through composeNextMove", /composeNextMove\(/.test(getAI) && /nextMove\.js/.test(donors), getAI.slice(-600));
   const prompt = (getAI.match(/nextmove:`[\s\S]*?`,/) || [""])[0];
   ok("§3 the prompt no longer hands the model the field labels to echo", prompt && !/when to make it|what it is for/i.test(prompt), prompt.slice(-300));

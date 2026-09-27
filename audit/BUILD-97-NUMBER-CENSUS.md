@@ -58,7 +58,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 
 | File | Numeric sites | Claim-shaped |
 |---|---|---|
-| `Donors.jsx` | 116 | 16 |
+| `Donors.jsx` | 117 | 16 |
 | `Dashboard.jsx` | 62 | 24 |
 | `Finance.jsx` | 38 | 5 |
 | `Reports.jsx` | 40 | 25 |

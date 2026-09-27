@@ -9,8 +9,15 @@
 // on the BUILD-99 brief rule: every sentence that reaches the screen cites a
 // row Steward actually holds, and a sentence that names a person, states a
 // number or makes a claim the record does not carry is REFUSED before it
-// reaches the screen — and COUNTED, because "Steward left three lines out"
-// said out loud is honest and silence is not.
+// reaches the screen.
+//
+// HOTFIX-1 — A REFUSAL IS OURS, NOT HERS. FIX-1 printed "3 lines were left
+// out because they said something that is not on this record" under the
+// panel, on the reasoning that silence is not honest. On the screen it read
+// as Steward telling her about its own plumbing: she cannot see the lines,
+// cannot judge them and cannot act on the count. The refusals go to the
+// CONSOLE, where the person who can act on them works. What she sees is what
+// survived — and when nothing survives, nothing.
 //
 // What counts as a fact, and how it is checked:
 //   · A NUMBER (money, a percent, a bare figure, a number word) must equal a
@@ -89,6 +96,67 @@ export const CLAIM_TERMS = [
 
 const lc = s => String(s ?? "").toLowerCase();
 const tokens = s => lc(s).replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+
+// ── TIMING IS AHEAD, NEVER BEHIND ──────────────────────────────────────────
+// HOTFIX-1. On 27 September the Sunrise panel said "mid-August". Every word
+// of it was on the record — August is a month, and a month is always allowed
+// — so the validator kept it, and she was told to do something five weeks
+// ago. A suggestion is an instruction about what to do NEXT: a date it names
+// has to still be ahead of today.
+//
+// Only a sentence in the FORWARD voice is checked. A sentence reporting the
+// past ("Their last gift was in March") is history, and its facts are already
+// checked against the record above. `today` comes from the caller — this
+// module still has no clock of its own.
+// "last week" is deliberately NOT here: as history it always arrives with a
+// past-tense verb ("their last gift was last week"), and on its own in an
+// instruction it is exactly the fault this rule exists to catch.
+const PAST_VOICE = /\b(was|were|had|gave|given|giving|received|since|ago|lapsed|renewed|has not|have not|hasn't|haven't|last gift)\b/i;
+const PART_OF_MONTH = { early: 5, mid: 15, late: 25 };
+const MONTH_NUMBER = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7,
+  august: 8, september: 9, october: 10, november: 11, december: 12, jan: 1, feb: 2, mar: 3,
+  apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+const BEHIND_WORDS = /\b(yesterday|last\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+const lastDayOf = (mo, y) => [31, (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28,
+  31, 30, 31, 30, 31, 31, 30, 31, 30, 31][mo - 1];
+
+// pastTiming(sentence, today) → the reason it is behind, or null.
+// A month with no day is read as its LAST day, so "September" on the 27th of
+// September is still ahead; "mid-August" is the 15th and is not.
+export function pastTiming(sentence, today) {
+  const s = String(sentence || "");
+  const t = parts(today);
+  if (!t) return null;                                 // no clock, no rule
+  if (PAST_VOICE.test(s)) return null;
+  const behind = s.match(BEHIND_WORDS);
+  if (behind) return `"${behind[0]}" is in the past`;
+  const MON = "(?:" + MONTHS.join("|") + ")";
+  const re = new RegExp(`(?:\\b(early|mid|late)[\\s-]+)?\\b(${MON})\\.?\\s*(\\d{1,2})?(?:st|nd|rd|th)?(?:,?\\s*(\\d{4}))?\\b`, "gi");
+  let m;
+  while ((m = re.exec(s))) {
+    if (/\bnext\s+$/i.test(s.slice(0, m.index))) continue;   // "next March" is ahead
+    const mo = MONTH_NUMBER[m[2].toLowerCase()];
+    const year = m[4] ? Number(m[4]) : t.y;
+    const day = m[3] ? Number(m[3])
+      : (m[1] ? PART_OF_MONTH[m[1].toLowerCase()] : lastDayOf(mo, year));
+    if (!(day >= 1 && day <= lastDayOf(mo, year))) continue;
+    if (year * 10000 + mo * 100 + day < t.y * 10000 + t.mo * 100 + t.d)
+      return `"${m[0].trim()}" is in the past`;
+  }
+  return null;
+}
+
+function parts(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value == null ? "" : value));
+  if (!m) return null;
+  return { y: +m[1], mo: +m[2], d: +m[3] };
+}
+
+// ── A SUGGESTION MAY NOT SAY NOTHING IS OPEN WHEN SOMETHING IS ─────────────
+// HOTFIX-1. The record knows what is open; the model is guessing. When the
+// caller hands over open work, a sentence claiming there is none is refused
+// like any other statement the record contradicts.
+const NOTHING_OPEN = /\b(nothing (?:is )?open|no open (?:step|steps|item|items|proposal|proposals|follow[- ]?ups?|threads?)|nothing (?:is )?outstanding|nothing to follow up|no follow[- ]?up is open|there is nothing (?:to do|pending))\b/i;
 
 // Every number on the record, and every word of every name on it.
 function groundOf(record) {
@@ -222,6 +290,10 @@ export function guardSuggestion(input, record = {}) {
     for (const a of f.acronyms) if (!ground.words.has(a.toLowerCase())) why.push(`${a} is not on the record`);
     for (const c of f.claims) if (!claimGrounded(c, ground)) why.push(`"${c}" is not on the record`);
     for (const c of f.capacity) why.push(`"${c}" is a claim about money nobody recorded`);
+    const late = pastTiming(it.text, record && record.today);
+    if (late) why.push(late);
+    if (((record && record.openItems) || []).length && NOTHING_OPEN.test(it.text))
+      why.push("says nothing is open while the record holds open work");
     // A citation the model offers must be a row Steward handed over — a
     // reference that looks checkable and is not is worse than none.
     const offered = (it.cites || []).map(String);
@@ -235,8 +307,10 @@ export function guardSuggestion(input, record = {}) {
   return { kept, dropped, reasons };
 }
 
-// The line the panel says about what it left out. Never silent.
-export function droppedLine(dropped) {
+// What a refusal says — to the LOG, never to the screen (HOTFIX-1). The
+// caller writes this line to the console so a refused suggestion can still be
+// read back by whoever is fixing the prompt.
+export function dropLog(dropped, reasons = []) {
   if (!dropped) return "";
-  return `${dropped} ${dropped === 1 ? "line was" : "lines were"} left out because ${dropped === 1 ? "it" : "they"} said something that is not on this record.`;
+  return `[suggestion] ${dropped} ${dropped === 1 ? "line" : "lines"} left out: ${reasons.filter(Boolean).join(" · ")}`;
 }
