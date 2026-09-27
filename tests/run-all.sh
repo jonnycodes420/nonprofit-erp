@@ -157,6 +157,8 @@ CORE=(
   fix1-finance
   fix1-institutional
   fix2-codeql
+  fix2-a-dashboards
+  fix2-a-footing
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
