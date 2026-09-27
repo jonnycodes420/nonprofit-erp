@@ -8,14 +8,16 @@ each rule was learned lives in `docs/HISTORY.md`.
 
 A retention and stewardship CRM for small nonprofits. It notices patterns in donor data and
 drafts or suggests the next move, and a human always reviews and sends. It started as an
-11-tab ERP. Events, Volunteers, Board, Tasks and Finance are hidden from the nav, not deleted.
+11-tab ERP. The rail is Home, Donors, Fundraising, Volunteers, Agent, Reports and Finance
+(FIX-1); Events and Board are hidden from the nav, not deleted.
 
 - Frontend: React 18 + Vite, deployed on Vercel. Backend: Node + Express (`server.js`,
   `db.js`, `routes/`, `shared/`), deployed on Railway. Database: PostgreSQL.
 - Email through Resend. Donations through Stripe Connect Express. Platform billing is a
   separate Stripe client. AI through the Anthropic SDK, for narrow tasks only (no chat).
 - App: https://www.stewardapp.dev · API: https://nonprofit-erp-production.up.railway.app
-- Repo: github.com/jonnycodes420/nonprofit-erp · demo login admin@creoarts.org (org_creo)
+- Repo: github.com/jonnycodes420/nonprofit-erp · the demo is Harborlight Youth Collective,
+  director@harborlight.demo (`org_b72demo`), seeded only by `scripts/seed-demo.js`
 - What is live: `GET /health` → `buildSha` (backend) and `<meta name="build-sha">` on
   www.stewardapp.dev (frontend). Never guess from route probes.
 - Only what physically needs Jonathan (a credential, a payment, a signature, a real
@@ -51,8 +53,9 @@ drafts or suggests the next move, and a human always reviews and sends. It start
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
-- **Never write to org_creo.** It's the demo org, and its legal identity is fabricated. A real
-  CREO onboards as a fresh org, never by renaming org_creo.
+- **The demo is its own org.** Only `scripts/seed-demo.js` writes `org_b72demo`; no suite logs
+  in to it or names it. `org_creo` is the boot-seed fixture org with a fabricated legal
+  identity: never write to it on prod, and a real CREO onboards as a fresh org.
 - **Separate database per worktree.** Each worktree gets its own database on the scratch
   Postgres (:5544) and its own port block. Never share a database or a suite-log folder with
   another session. Pass `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag>`.
