@@ -809,7 +809,7 @@ export function volunteerSteps(person, news, { instruction = "", welcome = null 
       detail: "Internal note in Volunteers · never on the giving record" });
   if (welcome && !person.deceased && !person.do_not_contact && !person.is_sample)
     steps.push({ tool: "draft_note", donorId: person.id, citesRows: cites, purpose: "welcome",
-      subject: welcome.subject, body: welcome.body, detail: "Waits for you in Waiting · you send it" });
+      subject: welcome.subject, body: welcome.body, detail: "A draft under Waiting for you · you send it" });
   return steps;
 }
 

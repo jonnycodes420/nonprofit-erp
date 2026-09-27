@@ -354,9 +354,12 @@ function others(n) {
           ? Math.abs(bar.top - barBox.top) < 30 && bar.left >= barBox.right - 2
           : bar.top >= barBox.bottom - 2 && bar.top - barBox.bottom < 24), { bar, barBox });
         await page.fill('[data-testid="agent-ask-bar"]', "show me ada");
+        await page.waitForTimeout(400); // buttons carry a 0.15s transition (shared.jsx)
         const bar2 = await visibleButton(page, '[data-testid="agent-ask-bar-go"]');
         ok(`§4 (${W}) Plans: with text it is enabled and filled with the action colour`, bar2.disabled === false && bar2.bg === "rgb(13, 92, 58)", bar2);
         await page.fill('[data-testid="agent-ask-bar"]', "");
+        await page.locator('[data-testid="agent-ask-bar"]').blur();
+        await page.waitForTimeout(400);
         await shot(page, `plans-empty-${W}.png`);
 
         // ASK: the box, and its go button beside it.
@@ -371,6 +374,7 @@ function others(n) {
           : go.top >= inBox.bottom - 2 && go.top - inBox.bottom < 24), { go, inBox });
         await shot(page, `ask-empty-${W}.png`);
         await page.fill('[data-testid="agent-ask-input"]', "ada just became a volunteer");
+        await page.waitForTimeout(400);
         const go2 = await visibleButton(page, '[data-testid="agent-ask-submit"]');
         ok(`§4 (${W}) …enabled with text, filled with the action colour`, go2.disabled === false && go2.bg === "rgb(13, 92, 58)", go2);
         // Shift+Enter is a new line; it does not submit.
@@ -405,6 +409,27 @@ function others(n) {
           ok("§4 after the run the list counts every row the sheet shows (Done · 4 of 4 steps)", /Done · 4 of 4 steps/.test(item), item);
           await shot(page, `ada-done-${W}.png`);
         }
+        // TWO ADAS, ON SCREEN: the question comes before any plan, and her pick plans.
+        await mk("d_fx3b_ada2", "Ada King");
+        await page.locator('[data-testid="agent-tab-plans"]').click();
+        await page.waitForTimeout(400);
+        await page.fill('[data-testid="agent-ask-bar"]', ADA);
+        await page.locator('[data-testid="agent-ask-bar"]').press("Enter");
+        await page.waitForSelector('[data-testid="agent-which"]', { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(400);
+        const picks = await page.locator('[data-testid="agent-which-person"]').allInnerTexts().catch(() => []);
+        ok(`§6 (${W}) two Adas on screen: "Which Ada?" with both to pick from`, picks.length === 2
+          && picks.some(t => /Ada Lovelace/.test(t)) && picks.some(t => /Ada King/.test(t)), picks);
+        ok(`§6 (${W}) …and no plan on the sheet yet`, await page.locator('[data-testid="agent-which"] ~ [data-testid="agent-sheet"], [data-testid="agent-view-plans"] [data-testid="agent-sheet"]').count() === 0);
+        ok(`§6 (${W}) no sideways scroll`, await noSideways(page));
+        await shot(page, `which-ada-${W}.png`);
+        await page.locator('[data-testid="agent-which-person"]:has-text("Ada King")').click();
+        await page.waitForSelector('[data-testid="agent-sheet"]', { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(400);
+        const kingSheet = await page.locator('[data-testid="agent-sheet"]').innerText().catch(() => "");
+        ok(`§6 (${W}) her pick plans for Ada King alone`, /Make Ada King a volunteer/.test(kingSheet) && /read one record/i.test(kingSheet), kingSheet.slice(0, 200));
+        await q(`DELETE FROM agent_instructions WHERE org_id=$1 AND status='planned'`, [ORG]);
+        await q(`DELETE FROM donors WHERE id='d_fx3b_ada2' AND org_id=$1`, [ORG]);
         await page.close();
         await q(`DELETE FROM agent_writes WHERE org_id=$1`, [ORG]); await q(`DELETE FROM agent_drafts WHERE org_id=$1`, [ORG]);
         await q(`DELETE FROM volunteer_notes WHERE org_id=$1`, [ORG]);

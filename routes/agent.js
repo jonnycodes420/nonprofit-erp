@@ -544,9 +544,8 @@ async function agentVolunteerPlan(orgId, text, personId) {
   const who = A.nameInSentence(p);
   if (!steps.length) return { nothing: `${who} is already a volunteer, and Steward found nothing else in that to do.` };
   const plan = A.compilePlan(steps, { people: [p], reads: `${who}'s record` });
-  const types = Array.isArray(p.person_types) ? p.person_types : [];
   plan.readIds = [p.id];
-  plan.readDetail = types.includes("volunteer") ? "Already a volunteer" : "Not a volunteer yet";
+  plan.readDetail = "This record only, not the whole file";
   plan.confirmLabel = A.confirmLabel(plan);
   return plan;
 }
