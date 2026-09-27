@@ -157,8 +157,8 @@ async function seed(h) {
   for (const [id, name] of people)
     await q(`INSERT INTO donors (id,org_id,name,email,stage,total_giving,gift_count,last_gift_date)
              VALUES ($1,$2,$3,$4,'steward',250,1,'2026-09-20')`, [id, ORG, name, id + "@example.org"]);
-  const today = new Date().toISOString().slice(0, 10);
-  const threeAgo = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+  const today = h.civilToday();
+  const threeAgo = h.civilPlusDays(-3);
   for (const [i, [id]] of people.slice(0, 3).entries())
     await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name,created_by,created_by_name)
              VALUES ($1,$2,$3,'call','Call to say thank you',$4,$5,'u_fx3ahome','Hana Home','u_fx3ahome','Hana Home')`,
