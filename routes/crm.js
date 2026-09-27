@@ -11859,11 +11859,16 @@ app.get("/drift", requireAuth, wrap(async (req, res) => {
   });
   // BUILD-80 Part 7 — "Institutional giving": organisations get their own
   // list with grant-cycle language, never a Re-engage button.
+  // FIX-1 — each row says what that organisation gave: a grant from a
+  // foundation or DAF, a gift from anyone else (shared/institutional.js), and
+  // the date as it reads, computed once here for Home to print.
+  const INST = await import("../shared/institutional.js");
   const institutional = (await query(
-    `SELECT id, name, total_giving, last_gift_date, gift_count FROM donors
+    `SELECT id, name, kind, funder_type, donor_type, total_giving, last_gift_date, gift_count FROM donors
       WHERE org_id = ? AND deleted_at IS NULL AND kind = 'organisation' AND COALESCE(gift_count,0) > 0
       ORDER BY total_giving DESC NULLS LAST LIMIT 50`, [orgId]))
-    .map(r => ({ donorId: r.id, name: r.name, totalGiving: r.total_giving, lastGiftDate: r.last_gift_date, giftCount: r.gift_count }));
+    .map(r => ({ donorId: r.id, name: r.name, totalGiving: r.total_giving, lastGiftDate: r.last_gift_date, giftCount: r.gift_count,
+                 lastWord: INST.lastGiftWord(r), lastGiftLabel: INST.shortCivilDate(r.last_gift_date) }));
 
   const { caveat: importCaveat } = await importHealth(orgId);
   res.json({

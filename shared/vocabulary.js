@@ -211,6 +211,11 @@ const ORG_WORD_BY_FUNDER_TYPE = {
 const ORG_WORD_BY_TOKEN = [
   [["foundation", "trust", "endowment"], "foundation"],
   [["church", "parish", "ministries", "ministry", "chapel", "congregation", "umc", "diocese", "synagogue", "temple", "mosque"], "church"],
+  // FIX-1 — the donor-advised fund sponsors carry "Charitable" in their names
+  // (Fidelity, Schwab, Vanguard Charitable); after church, so "X Charitable
+  // Ministries" stays a church, and after foundation, so a charitable trust
+  // stays a foundation.
+  [["charitable", "daf"], "donor-advised fund"],
   [["inc", "llc", "ltd", "corp", "corporation", "company", "co", "business", "bank"], "business"],
 ];
 const wordsOf = s => String(s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
