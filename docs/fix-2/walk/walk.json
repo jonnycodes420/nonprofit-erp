@@ -1,0 +1,732 @@
+{
+  "figures": [
+    {
+      "dash": "board",
+      "label": "Giving this year",
+      "kind": "money",
+      "value": 336457,
+      "rowsValue": 336457,
+      "totalRows": 176
+    },
+    {
+      "dash": "board",
+      "label": "Same point last year",
+      "kind": "money",
+      "value": 341963,
+      "rowsValue": 341963,
+      "totalRows": 166
+    },
+    {
+      "dash": "board",
+      "label": "Change on last year",
+      "kind": "percent",
+      "value": -2,
+      "rowsValue": -2,
+      "totalRows": 0
+    },
+    {
+      "dash": "board",
+      "label": "People who gave",
+      "kind": "count",
+      "value": 176,
+      "rowsValue": 176,
+      "totalRows": 176
+    },
+    {
+      "dash": "board",
+      "label": "Retention",
+      "kind": "percent",
+      "value": 85,
+      "rowsValue": 85,
+      "totalRows": 0
+    },
+    {
+      "dash": "board",
+      "label": "Restricted",
+      "kind": "money",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "board",
+      "label": "Unrestricted",
+      "kind": "money",
+      "value": 336457,
+      "rowsValue": 336457,
+      "totalRows": 176
+    },
+    {
+      "dash": "board",
+      "label": "No fund named",
+      "kind": "money",
+      "value": 336457,
+      "rowsValue": 336457,
+      "totalRows": 176
+    },
+    {
+      "dash": "board",
+      "label": "Monthly givers",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "board",
+      "label": "Stopped this quarter",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "board",
+      "label": "Recovered this quarter",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "fundraising",
+      "label": "Annual Fund 2026",
+      "kind": "money",
+      "value": 1630111.56,
+      "rowsValue": 1630111.56,
+      "totalRows": 756
+    },
+    {
+      "dash": "fundraising",
+      "label": "Pledged, not yet paid",
+      "kind": "money",
+      "value": 6000,
+      "rowsValue": 6000,
+      "totalRows": 1
+    },
+    {
+      "dash": "fundraising",
+      "label": "Pledged and paid",
+      "kind": "money",
+      "value": 9750,
+      "rowsValue": 9750,
+      "totalRows": 2
+    },
+    {
+      "dash": "fundraising",
+      "label": "Steward",
+      "kind": "count",
+      "value": 59,
+      "rowsValue": 59,
+      "totalRows": 59
+    },
+    {
+      "dash": "fundraising",
+      "label": "Cultivate",
+      "kind": "count",
+      "value": 47,
+      "rowsValue": 47,
+      "totalRows": 47
+    },
+    {
+      "dash": "fundraising",
+      "label": "Solicit",
+      "kind": "count",
+      "value": 12,
+      "rowsValue": 12,
+      "totalRows": 12
+    },
+    {
+      "dash": "fundraising",
+      "label": "Lapsed",
+      "kind": "count",
+      "value": 3,
+      "rowsValue": 3,
+      "totalRows": 3
+    },
+    {
+      "dash": "people",
+      "label": "Conversations logged",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "Gifts received",
+      "kind": "count",
+      "value": 14,
+      "rowsValue": 14,
+      "totalRows": 14
+    },
+    {
+      "dash": "people",
+      "label": "Given this week",
+      "kind": "money",
+      "value": 21374,
+      "rowsValue": 21374,
+      "totalRows": 14
+    },
+    {
+      "dash": "people",
+      "label": "Thank-yous marked sent",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "Follow-ups closed by outcome",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "Follow-ups dismissed",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "Share of this year's givers who carry 90% of the giving",
+      "kind": "percent",
+      "value": 25,
+      "rowsValue": 25,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "What those givers gave this year",
+      "kind": "money",
+      "value": 302881,
+      "rowsValue": 302881,
+      "totalRows": 44
+    },
+    {
+      "dash": "people",
+      "label": "Beatrix Ironvale",
+      "kind": "money",
+      "value": 40570,
+      "rowsValue": 40570,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Cordelia Applewhite",
+      "kind": "money",
+      "value": 39732,
+      "rowsValue": 39732,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Casper Stonebridge",
+      "kind": "money",
+      "value": 34358,
+      "rowsValue": 34358,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Osric Yarrowdale",
+      "kind": "money",
+      "value": 28876,
+      "rowsValue": 28876,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Henrietta Fairweather",
+      "kind": "money",
+      "value": 16093,
+      "rowsValue": 16093,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Isolde Ashgrove",
+      "kind": "money",
+      "value": 5907,
+      "rowsValue": 5907,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Barnaby Oakhampton",
+      "kind": "money",
+      "value": 5876,
+      "rowsValue": 5876,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Leopold Yarrowdale",
+      "kind": "money",
+      "value": 5738,
+      "rowsValue": 5738,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Casper Netherfield",
+      "kind": "money",
+      "value": 5723,
+      "rowsValue": 5723,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Fenwick Ironvale",
+      "kind": "money",
+      "value": 5602,
+      "rowsValue": 5602,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Barnaby Jessamine",
+      "kind": "money",
+      "value": 5521,
+      "rowsValue": 5521,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Rosalind Jessamine",
+      "kind": "money",
+      "value": 5361,
+      "rowsValue": 5361,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Drusilla Stonebridge",
+      "kind": "money",
+      "value": 5260,
+      "rowsValue": 5260,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Clementine Marchbanks",
+      "kind": "money",
+      "value": 5048,
+      "rowsValue": 5048,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Rosalind Braithwaite",
+      "kind": "money",
+      "value": 5014,
+      "rowsValue": 5014,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Clementine Pemberton",
+      "kind": "money",
+      "value": 4994,
+      "rowsValue": 4994,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Perpetua Elmsworth",
+      "kind": "money",
+      "value": 4658,
+      "rowsValue": 4658,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Verity Ziegler",
+      "kind": "money",
+      "value": 4643,
+      "rowsValue": 4643,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Isolde Vanterpool",
+      "kind": "money",
+      "value": 4449,
+      "rowsValue": 4449,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Ansel Glasswick",
+      "kind": "money",
+      "value": 4388,
+      "rowsValue": 4388,
+      "totalRows": 1
+    },
+    {
+      "dash": "people",
+      "label": "Drifting, among them",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "people",
+      "label": "Crossed a milestone this quarter",
+      "kind": "count",
+      "value": 5,
+      "rowsValue": 5,
+      "totalRows": 5
+    },
+    {
+      "dash": "people",
+      "label": "Gifts not yet thanked",
+      "kind": "count",
+      "value": 221,
+      "rowsValue": 221,
+      "totalRows": 221
+    },
+    {
+      "dash": "recurring",
+      "label": "Card failing",
+      "kind": "count",
+      "value": 1,
+      "rowsValue": 1,
+      "totalRows": 1
+    },
+    {
+      "dash": "recurring",
+      "label": "Monthly giving",
+      "kind": "money",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "recurring",
+      "label": "Change this month",
+      "kind": "money",
+      "value": 150,
+      "rowsValue": 150,
+      "totalRows": 1
+    },
+    {
+      "dash": "recurring",
+      "label": "Failures caught",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "recurring",
+      "label": "Recovered",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "recurring",
+      "label": "Average months on file",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "recurring",
+      "label": "Monthly through connected sources",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    },
+    {
+      "dash": "recurring",
+      "label": "Looks monthly, unconfirmed",
+      "kind": "count",
+      "value": 0,
+      "rowsValue": 0,
+      "totalRows": 0
+    }
+  ],
+  "checks": [
+    {
+      "name": "every dashboard figure answers its rows endpoint (57/57)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "every figure's rows foot to it in cents",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 Dashboards reached",
+      "ok": true
+    },
+    {
+      "name": "1440 board: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 board: figures drawn with a source",
+      "ok": true,
+      "extra": 29
+    },
+    {
+      "name": "1440 board: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "1440 board: every figure opened (29/29)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 fundraising: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 fundraising: figures drawn with a source",
+      "ok": true,
+      "extra": 11
+    },
+    {
+      "name": "1440 fundraising: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "1440 fundraising: every figure opened (11/11)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 people: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 people: figures drawn with a source",
+      "ok": true,
+      "extra": 33
+    },
+    {
+      "name": "1440 people: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "1440 people: every figure opened (33/33)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 recurring: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 recurring: figures drawn with a source",
+      "ok": true,
+      "extra": 8
+    },
+    {
+      "name": "1440 recurring: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "1440 recurring: every figure opened (8/8)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "1440 Reports reached",
+      "ok": true
+    },
+    {
+      "name": "1440 SYBUNT from the rail: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "1440 SYBUNT: no tab row on Reports",
+      "ok": true
+    },
+    {
+      "name": "1440 Agent reached",
+      "ok": true
+    },
+    {
+      "name": "1440 the LYBUNT instruction answers with LYBUNT, not a dead end",
+      "ok": true,
+      "extra": "Agent\nPlans\nAsk\nWorkflows\nWaiting for you\nGuardrails\nEVERYTHING YOU HAVE ASKED\nNothing planned yet. Every instruction you give will be listed here with what its run did. A question about your file, like a report, is answered without being kept.\nREAD · A REPORT\nLYBUNT\n\n446 people gave last year and h"
+    },
+    {
+      "name": "1440 Open LYBUNT lands on LYBUNT",
+      "ok": true
+    },
+    {
+      "name": "1440 no page errors",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 Dashboards reached",
+      "ok": true
+    },
+    {
+      "name": "390 board: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 board: figures drawn with a source",
+      "ok": true,
+      "extra": 29
+    },
+    {
+      "name": "390 board: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "390 board: every figure opened (29/29)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 fundraising: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 fundraising: figures drawn with a source",
+      "ok": true,
+      "extra": 11
+    },
+    {
+      "name": "390 fundraising: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "390 fundraising: every figure opened (11/11)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 people: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 people: figures drawn with a source",
+      "ok": true,
+      "extra": 33
+    },
+    {
+      "name": "390 people: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "390 people: every figure opened (33/33)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 recurring: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 recurring: figures drawn with a source",
+      "ok": true,
+      "extra": 8
+    },
+    {
+      "name": "390 recurring: no figure without a source",
+      "ok": true,
+      "extra": 0
+    },
+    {
+      "name": "390 recurring: every figure opened (8/8)",
+      "ok": true,
+      "extra": []
+    },
+    {
+      "name": "390 Reports reached",
+      "ok": true
+    },
+    {
+      "name": "390 SYBUNT from the rail: no sideways scroll, no NaN/ISO/undefined",
+      "ok": true,
+      "extra": {
+        "sideways": false,
+        "bad": []
+      }
+    },
+    {
+      "name": "390 SYBUNT: no tab row on Reports",
+      "ok": true
+    },
+    {
+      "name": "390 Agent reached",
+      "ok": true
+    },
+    {
+      "name": "390 the LYBUNT instruction answers with LYBUNT, not a dead end",
+      "ok": true,
+      "extra": "Agent\nPlans\nAsk\nWorkflows\nWaiting for you\nGuardrails\nEVERYTHING YOU HAVE ASKED\nNothing planned yet. Every instruction you give will be listed here with what its run did. A question about your file, like a report, is answered without being kept.\nREAD · A REPORT\nLYBUNT\n\n446 people gave last year and h"
+    },
+    {
+      "name": "390 Open LYBUNT lands on LYBUNT",
+      "ok": true
+    },
+    {
+      "name": "390 no page errors",
+      "ok": true,
+      "extra": []
+    }
+  ]
+}

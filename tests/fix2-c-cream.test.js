@@ -157,12 +157,13 @@ const PW = "loadtest1234";
       + (el.getAttribute("data-testid") ? `[${el.getAttribute("data-testid")}]` : "") + " “" + (el.innerText || "").trim().replace(/\s+/g, " ").slice(0, 40) + "”");
     const EMERALD = "rgb(13, 92, 58)";
     // The light active treatment, measured.
+    const reEsc = t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");   // every regex metacharacter, not just the parentheses
     const activeOk = el => {
       const cs = getComputedStyle(el);
       const ground = effective(el);
       const ink = parse(cs.color);
       const rule = ["Left", "Bottom", "Top", "Right"].some(s => parseFloat(cs["border" + s + "Width"]) >= 3 && cs["border" + s + "Color"] === EMERALD && cs["border" + s + "Style"] !== "none")
-        || new RegExp(EMERALD.replace(/[()]/g, "\\$&") + "[^,]*inset|inset[^,]*" + EMERALD.replace(/[()]/g, "\\$&")).test(cs.boxShadow) && /(^|\s)-?3px/.test(cs.boxShadow);
+        || new RegExp(reEsc(EMERALD) + "[^,]*inset|inset[^,]*" + reEsc(EMERALD)).test(cs.boxShadow) && /(^|\s)-?3px/.test(cs.boxShadow);
       const why = [];
       if (lum(ground) < 0.6) why.push("ground " + cs.backgroundColor);
       if (!ink || lum(ink) > 0.03) why.push("text " + cs.color);

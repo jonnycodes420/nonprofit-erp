@@ -20,6 +20,9 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 > decided". Do not create a new `BLOCKED-*.md`: decide it, or put it in
 > `NEEDS-JONATHAN.md` if it genuinely cannot be decided without him.
 
+## FIX-2 — EVERY NUMBER OPENS (2026-09-27)
+Jonathan walked FIX-1 and found the dashboards thin and unopenable, Reports with two navigations, the app too green and the Agent a dead end. FIX-2 made every dashboard figure a `<Figure>` with a `source` whose rows foot to it in cents (`figureSources.js`, `GET /figures/:source/rows`, guarded by the census and a footing suite); Reports became one rail with footed, human results; colour became tokens only with one active treatment; the Agent became the Direction 2 run sheet that can be turned on and answers reads without drafting; and one display-date formatter replaced ISO everywhere. It also closed the four CodeQL warnings FIX-1 left (three fixed in code, `hashApiKey` dismissed as a false positive). Five workstreams in parallel worktrees; the merged battery caught two ratchets no single workstream tripped, and the end walk found two defects no suite saw (a chart point hidden under another, a column clipped by an undrawn scrollbar). Merged `7c18bac`, PR #17. Handoff: `docs/fix2-lead-handoff.md`.
+
 ## BUILD-99 (major gifts) — MOVES MANAGEMENT ON THE STAGES WE ALREADY HAD (2026-09-25)
 **The BUILD-99 label was already used** by a one-off fix (`tests/build99-grant-timeline.test.js`, "a touchpoint you cannot read is not a record"), the way BUILD-98's was used twice — so this build is **BUILD-99 (major gifts)** everywhere, brief committed at `claude/BUILD-99-major-gifts.md`. Built in worktree `~/steward-99`, branch `build-99`, ports 5661/4203. Suites `build99-proposals` (103, browser leg) · `build99-portfolios` (65) · `build99-plans` (69) · `build99-brief` (73) · `build99-dashboard` (46) · `build99-import` (76), all in run-all. Walk `scripts/build99-walk.js` (36, ALL GREEN).
 
