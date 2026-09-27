@@ -8,7 +8,7 @@ const PAL = {
   warmWhite: "#faf8f4",
   white: "#ffffff",
   ink3: "#6b6b6b",
-  tone_102418: "#102418",
+  codeGround: "#102418",
   green200: "#dce7df",
   aiGreen: "#10b981",
   mist: "#edf3ee",
@@ -110,7 +110,7 @@ export function EmbedCodeBlock({url}){
   }
   return(
     <div style={{position:"relative"}}>
-      <pre style={{background:PAL.tone_102418,color:PAL.green200,borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+      <pre style={{background:PAL.codeGround,color:PAL.green200,borderRadius:10,padding:"14px 16px",fontSize:12,lineHeight:1.7,overflowX:"auto",margin:0,fontFamily:"'Fira Code',monospace,monospace",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
         {embedCode}
       </pre>
       <button onClick={copyEmbed}

@@ -13,6 +13,17 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
   or an opaque loader is not a modal. Do not count it as one to move a number. (BUILD-87 F.1)
 - **Keep `pages/Landing.jsx` and `ProductMark.jsx` free of any `shared.jsx` import.** Landing is the eager
   entry chunk. `Landing.jsx` and `Donate.jsx` are named exclusions in the modal guard. (BUILD-81, BUILD-87 F.1)
+- **A selected item is `activeMark(on, edge)` from `shared.jsx`, never a solid green or ink block.** Cream's shade
+  (`T.bg2`), ink text, weight 700 and a 3px emerald rule on the leading edge: left for a rail or list, bottom
+  for a tab or segmented option, top for the mobile bottom bar. Mark it `aria-current`, `aria-selected` or
+  `aria-pressed`. (FIX-2 C)
+- **Ink is a ground only for the sidebar and the top bar** (and the Agent room's margin). Pages, panels, heroes
+  and table headers are cream or white; what the agent is doing (AIBtn, AIPanel) is brass on white. Emerald
+  fills ONE control per screen: a second action is ink or an ink outline, and a label, figure, badge or band
+  is never emerald. `tests/fix2-c-cream.test.js` walks every rail screen at 1440 and 390 for it. (FIX-2 C)
+- **Zero hex literals outside the token definitions** (`tests/fix2-c-hex.test.js`, an AST scan). The app reads
+  `T`; a public or white-label surface names each colour once in its own palette (`publicTheme`'s `T`, the
+  landing's `C`, the portal's `PAL`, the ops console's `A`) and never inline in a style. (FIX-2 C)
 - **Give each row one emerald action.** Put secondary verbs such as Dismiss in a "…" menu. A reason line or
   label is never emerald, because on these screens emerald means "this is the button". (BUILD-87 F.3, BUILD-88d)
 - **When four or more sibling action buttons appear, show one primary and a labelled menu.** (BUILD-33)
@@ -78,6 +89,7 @@ Read this when you touch anything that reaches a screen: colours, tokens, modals
 - `branding.js` — `normalizeAccent`, `contrast`; `App.jsx` sets `--org-accent` and holds `PRIMARY_NAV`/`MORE_NAV`
 - `client/src/components/ProductMark.jsx` — the one pill for the named products, with no dependencies
 - `tests/brand-allowlist.test.js`, `palette.test.js`, `palette-census.test.js` — value guard, contrast guard, the ratchet
+- `tests/fix2-c-cream.test.js`, `fix2-c-hex.test.js` — cream grounds, the active treatment and one emerald per screen (browser); zero hex outside tokens
 - `tests/modal-shell.test.js`, `no-emoji.test.js`, `brand-glyph.test.js`, `vocabulary.test.js` — the other design guards
 
 ---

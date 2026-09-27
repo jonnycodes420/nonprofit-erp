@@ -37,36 +37,36 @@ const A = {
   purple:     "#6b21a8",
 
   // FIX-2 C — named here once, where they were inline.
-  tone_fef3c7: "#fef3c7",
-  tone_92400e: "#92400e",
-  tone_eff6ff: "#eff6ff",
-  tone_065f46: "#065f46",
-  tone_faf5ff: "#faf5ff",
-  tone_fee2e2: "#fee2e2",
-  tone_991b1b: "#991b1b",
+  amberWash: "#fef3c7",
+  amberInk: "#92400e",
+  blueWash: "#eff6ff",
+  greenInk: "#065f46",
+  violetWash: "#faf5ff",
+  redWash: "#fee2e2",
+  redInk: "#991b1b",
   cream3: "#d4cfc6",
-  tone_fafaf8: "#fafaf8",
-  tone_fecaca: "#fecaca",
-  tone_fff5f5: "#fff5f5",
-  tone_fde68a: "#fde68a",
-  tone_bfdbfe: "#bfdbfe",
-  tone_e07a5f: "#e07a5f",
+  rowHover: "#fafaf8",
+  redEdge: "#fecaca",
+  redTint: "#fff5f5",
+  amberEdge: "#fde68a",
+  blueEdge: "#bfdbfe",
+  coral: "#e07a5f",
 };
 
 const PLAN_MRR   = { trial: 0, seed: 99, growth: 249, impact: 499 };
 const PLAN_COLOR = { trial: "#d97706", seed: "#3b82f6", growth: "#10b981", impact: "#8b5cf6" };
 const PLAN_LABEL = { trial: "Trial", seed: "Seed", growth: "Growth", impact: "Impact" };
 const PLAN_BADGE = {
-  trial:  { bg: A.tone_fef3c7, color: A.tone_92400e },
-  seed:   { bg: A.tone_eff6ff, color: A.blue },
-  growth: { bg: A.greenChip, color: A.tone_065f46 },
-  impact: { bg: A.tone_faf5ff, color: A.purple },
+  trial:  { bg: A.amberWash, color: A.amberInk },
+  seed:   { bg: A.blueWash, color: A.blue },
+  growth: { bg: A.greenChip, color: A.greenInk },
+  impact: { bg: A.violetWash, color: A.purple },
 };
 const STATUS_BADGE = {
-  active:    { bg: A.greenChip, color: A.tone_065f46, label: "Active" },
-  trialing:  { bg: A.tone_fef3c7, color: A.tone_92400e, label: "Trialing" },
-  cancelled: { bg: A.tone_fee2e2, color: A.tone_991b1b, label: "Churned" },
-  past_due:  { bg: A.tone_fee2e2, color: A.tone_991b1b, label: "Past Due" },
+  active:    { bg: A.greenChip, color: A.greenInk, label: "Active" },
+  trialing:  { bg: A.amberWash, color: A.amberInk, label: "Trialing" },
+  cancelled: { bg: A.redWash, color: A.redInk, label: "Churned" },
+  past_due:  { bg: A.redWash, color: A.redInk, label: "Past Due" },
 };
 
 const SCROLLBAR_CSS = `
@@ -214,7 +214,7 @@ function Overview({ metrics, orgs }) {
           <tbody>
             {recentOrgs.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = A.tone_fafaf8}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "14px 20px", fontSize: 13, color: A.ink, fontWeight: 600 }}>{o.name}</td>
                 <td style={{ padding: "14px 20px" }}><PlanBadge plan={o.plan} /></td>
@@ -322,8 +322,8 @@ function OrgPanel({ org, onClose, onRefresh }) {
                       <div style={{ fontSize: 12, color: A.secondary }}>{u.email}</div>
                     </div>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", borderRadius: 99, padding: "3px 8px",
-                      color: u.role === "admin" ? A.tone_92400e : A.secondary,
-                      background: u.role === "admin" ? A.tone_fef3c7 : A.surface,
+                      color: u.role === "admin" ? A.amberInk : A.secondary,
+                      background: u.role === "admin" ? A.amberWash : A.surface,
                     }}>{u.role}</span>
                   </div>
                 ))}
@@ -388,11 +388,11 @@ function OrgPanel({ org, onClose, onRefresh }) {
           </div>
 
           {/* Danger zone */}
-          <div style={{ marginTop: 8, border: `1px solid ${A.tone_fecaca}`, borderRadius: 10, padding: "16px 20px", background: A.tone_fff5f5 }}>
+          <div style={{ marginTop: 8, border: `1px solid ${A.redEdge}`, borderRadius: 10, padding: "16px 20px", background: A.redTint }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: A.red, marginBottom: 12 }}>Danger Zone</div>
             {!showDelete ? (
-              <button onClick={() => setShowDelete(true)} style={{ background: "transparent", border: `1px solid ${A.tone_fecaca}`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
-                onMouseEnter={e => { e.currentTarget.style.background = A.tone_fee2e2; }}
+              <button onClick={() => setShowDelete(true)} style={{ background: "transparent", border: `1px solid ${A.redEdge}`, borderRadius: 6, padding: "7px 14px", color: A.red, fontSize: 12, fontWeight: 500, cursor: "pointer", transition: "all 0.15s ease" }}
+                onMouseEnter={e => { e.currentTarget.style.background = A.redWash; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
                 Delete org permanently
               </button>
@@ -498,7 +498,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
             {!loading && filtered.length === 0 && <tr><td colSpan={9} style={{ padding: 28, textAlign: "center", color: A.muted, fontSize: 13 }}>No orgs found</td></tr>}
             {filtered.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = A.tone_fafaf8}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "12px 16px" }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</div>
@@ -533,22 +533,22 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                     {extendOrgId === o.id ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <input type="number" value={extDays} onChange={e => setExtDays(e.target.value)} style={{ ...INP, width: 52, padding: "4px 8px", fontSize: 12 }} />
-                        <button onClick={() => quickExtend(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.tone_fde68a }}>+days</button>
+                        <button onClick={() => quickExtend(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge }}>+days</button>
                         <button onClick={() => setExtendOrgId(null)} style={{ background: "none", border: "none", color: A.muted, fontSize: 14, cursor: "pointer" }}>✕</button>
                       </div>
                     ) : (
-                      <button onClick={() => setExtendOrgId(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.tone_fde68a }}>+Trial</button>
+                      <button onClick={() => setExtendOrgId(o.id)} style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge }}>+Trial</button>
                     )}
                     {changePlanOrgId === o.id ? (
                       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                         <select value={newPlan} onChange={e => setNewPlan(e.target.value)} style={{ ...INP, padding: "4px 8px", fontSize: 12 }}>
                           {["trial","seed","growth","impact"].map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
-                        <button onClick={() => quickChangePlan(o.id)} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.tone_bfdbfe }}>Set</button>
+                        <button onClick={() => quickChangePlan(o.id)} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge }}>Set</button>
                         <button onClick={() => setChangePlanOrgId(null)} style={{ background: "none", border: "none", color: A.muted, fontSize: 14, cursor: "pointer" }}>✕</button>
                       </div>
                     ) : (
-                      <button onClick={() => { setChangePlanOrgId(o.id); setNewPlan(o.plan || "trial"); }} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.tone_bfdbfe }}>Plan</button>
+                      <button onClick={() => { setChangePlanOrgId(o.id); setNewPlan(o.plan || "trial"); }} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge }}>Plan</button>
                     )}
                   </div>
                 </td>
@@ -662,7 +662,7 @@ function Metrics({ metrics, orgs }) {
           <tbody>
             {topOrgs.map(o => (
               <tr key={o.id} style={{ borderBottom: `1px solid ${A.borderSub}`, transition: "background 0.15s ease" }}
-                onMouseEnter={e => e.currentTarget.style.background = A.tone_fafaf8}
+                onMouseEnter={e => e.currentTarget.style.background = A.rowHover}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "12px 20px", fontSize: 13, fontWeight: 600, color: A.ink }}>{o.name}</td>
                 <td style={{ padding: "12px 20px" }}><PlanBadge plan={o.plan} /></td>
@@ -704,7 +704,7 @@ function NetworkReview() {
   };
   const chip = (on, label) => (
     <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, marginRight: 6,
-      background: on ? "rgba(52,168,83,0.15)" : "rgba(234,67,53,0.12)", color: on ? A.green : A.tone_e07a5f }}>{label}</span>
+      background: on ? "rgba(52,168,83,0.15)" : "rgba(234,67,53,0.12)", color: on ? A.green : A.coral }}>{label}</span>
   );
   return (
     <div>
@@ -717,7 +717,7 @@ function NetworkReview() {
           </button>
         ))}
       </div>
-      {err && <div style={{ color: A.tone_e07a5f, fontSize: 13, marginBottom: 10 }}>{err}</div>}
+      {err && <div style={{ color: A.coral, fontSize: 13, marginBottom: 10 }}>{err}</div>}
       {!apps ? <div style={{ color: A.muted }}>Loading…</div> : apps.length === 0 ? <div style={{ color: A.muted }}>Nothing {status}.</div> :
         apps.map(a => {
           const einR = typeof a.ein_result === "string" ? JSON.parse(a.ein_result || "{}") : (a.ein_result || {});
@@ -745,7 +745,7 @@ function NetworkReview() {
                   <button disabled={busyId === a.id} onClick={() => decide(a.id, "hold")}
                     style={{ background: "transparent", color: A.muted, border: `1px solid ${A.border}`, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer", marginRight: 8 }}>Hold</button>
                   <button disabled={busyId === a.id} onClick={() => decide(a.id, "reject")}
-                    style={{ background: "transparent", color: A.tone_e07a5f, border: "1px solid "+A.tone_e07a5f, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Reject</button>
+                    style={{ background: "transparent", color: A.coral, border: "1px solid "+A.coral, borderRadius: 7, padding: "7px 16px", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Reject</button>
                 </div>
               )}
               {decisions.length > 0 && (

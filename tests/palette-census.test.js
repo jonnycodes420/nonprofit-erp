@@ -116,7 +116,7 @@ const SAGE_CEILING = 4;
 // cream adds no colour at all. That answer IS an rgba, so 107 of them arrived
 // with it. The tokens sage400/sage600 hold the two canonical values; the
 // literals duplicating them are the next thing to fall.
-const RGB_CEILING = 232;
+const RGB_CEILING = 169;          // FIX-2 C: 232 → 169, the dark panels' cream-at-opacity text became ink/ink3 when the panels became white
 
 const hex = countIn(files, /#[0-9a-fA-F]{6}\b/g);
 const sage = countIn(files, /#8fa896/gi);
