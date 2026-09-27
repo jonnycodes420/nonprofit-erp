@@ -70,6 +70,23 @@ export const CAPACITY_PHRASES = [
   /\bcould (give|afford)\b/i, /\bcan afford\b/i, /\bdeep pockets\b/i, /\bassets?\b/i,
 ];
 
+// FIX-3 finding 11 — CLAIMS. The walk's Sunrise suggestion spoke of
+// "underserved NYC youth" and "the cycle deadline approaching". Neither is a
+// name (one is lowercase, "NYC" is all capitals) nor a number, so neither was
+// ever checked. A claim about WHO the work serves, or a DATE THE WORLD SET
+// (a deadline, a cycle, a match, a gala), must be on the record like a name:
+// every word of the term appears somewhere Steward handed over, or the line
+// is refused and counted. An acronym is a name ("NYC" must be on the record).
+export const CLAIM_TERMS = [
+  // who is served
+  "youth", "young", "kids", "children", "child", "students", "teens", "teenagers", "families",
+  "seniors", "elderly", "veterans", "underserved", "under-served", "low-income", "disadvantaged",
+  "at-risk", "homeless", "refugees", "immigrants", "patients", "girls", "boys", "orphans",
+  // a date the world set
+  "deadline", "deadlines", "cycle", "anniversary", "gala", "match", "matching", "expires",
+  "expiring", "closes", "closing",
+];
+
 const lc = s => String(s ?? "").toLowerCase();
 const tokens = s => lc(s).replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
 
@@ -91,6 +108,9 @@ function groundOf(record) {
                    "total", "gifts", "lastAmount"]) if (d[k] != null) addNum(d[k]);
   for (const k of ["last_gift_date", "first_gift_date", "lastGift"]) addDate(d[k]);
   for (const k of ["name", "contact_name", "email"]) if (d[k]) addWords(d[k]);
+  // Her own notes on the person are the record too (FIX-3 finding 11): a
+  // claim they carry is grounded; a claim they do not is refused.
+  if (d.notes) addWords(d.notes);
   if (record && record.orgName) addWords(record.orgName);
   for (const n of (record && record.names) || []) addWords(n);
   for (const r of (record && record.rows) || []) {
@@ -142,7 +162,11 @@ export function factsIn(sentence) {
   }
   flush();
   const capacity = CAPACITY_PHRASES.filter(re => re.test(s)).map(re => (s.match(re) || [""])[0]);
-  return { numbers, names, capacity };
+  // Acronyms (two or more capitals): the capitalised-word pass above skips
+  // them, so a place like "NYC" was never looked at.
+  const acronyms = [...new Set((s.match(/\b[A-Z]{2,}\b/g) || []).filter(a => !ALWAYS_OK.has(a.toLowerCase())))];
+  const claims = CLAIM_TERMS.filter(t => new RegExp(`(^|[^a-z-])${t.replace(/-/g, "[- ]")}($|[^a-z-])`, "i").test(s));
+  return { numbers, names, capacity, acronyms, claims };
 }
 
 // Which rows stand behind a sentence: the rows whose number or name it states.
@@ -160,6 +184,13 @@ function supportingRows(sentence, record, facts) {
   // cites the person row, which is the record it was written from.
   if (!cites.size && d.id) cites.add(d.id);
   return [...cites];
+}
+
+// A claim term is grounded when every word of it (or its singular/plural)
+// is a word on the record.
+const variants = w => [w, w + "s", w.replace(/s$/, ""), w === "child" ? "children" : w === "children" ? "child" : w];
+function claimGrounded(term, ground) {
+  return tokens(term).every(w => variants(w).some(v => ground.words.has(v)));
 }
 
 // guardSuggestion(text | [{text, cites}], record)
@@ -188,6 +219,8 @@ export function guardSuggestion(input, record = {}) {
       const ts = tokens(name);
       if (!ts.every(t => ground.words.has(t) || ALWAYS_OK.has(t))) why.push(`${name} is not on the record`);
     }
+    for (const a of f.acronyms) if (!ground.words.has(a.toLowerCase())) why.push(`${a} is not on the record`);
+    for (const c of f.claims) if (!claimGrounded(c, ground)) why.push(`"${c}" is not on the record`);
     for (const c of f.capacity) why.push(`"${c}" is a claim about money nobody recorded`);
     // A citation the model offers must be a row Steward handed over — a
     // reference that looks checkable and is not is worse than none.

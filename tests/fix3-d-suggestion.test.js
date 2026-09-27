@@ -60,6 +60,12 @@ const record = {
   const dl2 = G.guardSuggestion("Call them now, with the cycle deadline approaching.", onRecord);
   ok("§1 the same words are kept when the record carries them (a check, not a blanket ban)",
      nyc2.kept.length === 1 && dl2.kept.length === 1, [nyc2, dl2]);
+  // Sunrise as it really is on the fixture org: its note says the next grant
+  // cycle opens in September. That is on the record; a deadline is not.
+  const withNote = { ...record, donor: { ...record.donor, notes: "Next grant cycle opens September." } };
+  const cy = G.guardSuggestion("Call them before the grant cycle opens in September. The cycle deadline is approaching.", withNote);
+  ok("§1 her note grounds \"the grant cycle opens in September\"; \"the cycle deadline\" is still refused",
+     cy.kept.length === 1 && /opens in September/.test(cy.kept[0].text) && cy.dropped === 1, cy);
   const plain = G.guardSuggestion("Thank them for the $25,000 gift to the Arts Program.", record);
   ok("§1 a true line still survives", plain.kept.length === 1 && plain.dropped === 0, plain);
 
