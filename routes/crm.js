@@ -21,6 +21,9 @@ const routers = {
   r1: express.Router(),
 };
 const giftHooks = {};
+// FIX-2 D — the one way another module runs a report: the SAME handler and
+// params GET /reports/:key uses, so Agent's count is the report's count.
+const reportHooks = {};
 
 function mount(ctx) {
 const {
@@ -1680,6 +1683,10 @@ app.patch("/org/ai-settings", requireAuth, requireAdmin, wrap(async (req, res) =
   if (typeof enabled !== "boolean") return res.status(400).json({ error: "enabled (boolean) required" });
   await run("UPDATE orgs SET ai_enabled=? WHERE id=?", [enabled, req.user.orgId]);
   console.log(`[ai-settings] ${req.user.orgId} ai_enabled=${enabled} by ${req.user.email || req.user.userId}`);
+  // FIX-2 D — the same switch is in Settings → Data and Agent → Guardrails, and
+  // both write HERE; the audit log says who turned drafting on or off.
+  const [who] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  await writeAuditLog(req.user.orgId, actor(req).id, (who && who.name) || actor(req).name, enabled ? "turned_on" : "turned_off", "ai_drafting", req.user.orgId, { enabled });
   res.json({ ok: true, enabled, configured: !!process.env.ANTHROPIC_API_KEY });
 }));
 
@@ -18484,6 +18491,7 @@ const namedOrGivingSql = (a = "d") =>
 // functions exist; the gift form above calls them directly.
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
 giftHooks.calcWealthScore = calcWealthScore;
+reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgTz(orgId)));   // ORG_TZ_SEAM_OK
 }
 
-module.exports = { routers, mount, giftHooks };
+module.exports = { routers, mount, giftHooks, reportHooks };
