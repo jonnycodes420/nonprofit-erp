@@ -50,16 +50,19 @@ const REDUCED_MOTION = typeof window !== "undefined" && window.matchMedia && win
 // and still says what was checked; it is one click away instead of always on.
 // NB the detail is UNMOUNTED when closed, not hidden with CSS: text that is
 // present but invisible is how an empty state quietly lies to a test.
-function OneLineEmpty({line,detail,testId}){
+// FIX-3 A — `flush` inside Home's panel: the line starts on its section
+// heading's left edge (the panel's sections carry no padding of their own), and
+// "why" is a quiet emerald word, never an underlined link.
+function OneLineEmpty({line,detail,testId,flush=false}){
   const [open,setOpen]=useState(false);
   return(
-    <div data-testid={testId} className="dash-cpad" style={{padding:"24px 32px"}}>
+    <div data-testid={testId} className={flush?undefined:"dash-cpad"} style={{padding:flush?"16px 0 8px":"24px 32px"}}>
       <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
         <span style={{fontSize:14,color:T.ink}}>{line}</span>
         {detail&&(
           <button data-testid={testId?testId+"-why":undefined} onClick={()=>setOpen(o=>!o)}
             aria-expanded={open}
-            style={{background:"none",border:"none",padding:0,fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",textDecoration:"underline"}}>
+            style={{background:"none",border:"none",padding:0,fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer"}}>
             {open?"less":"why"}
           </button>
         )}
@@ -1564,7 +1567,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
         </div>
         {driftRows.length===0&&driftEmptyState&&(
-          <OneLineEmpty testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
+          <OneLineEmpty flush={onPanel} testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
         )}
         {driftRows.length>0&&(
         <ul className="attn-list" style={{listStyle:"none",margin:0,padding:0}}>
@@ -1653,7 +1656,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             is not a person's giving cadence. Their own list, grant-cycle
             language, and never a Re-engage button. */}
         {driftData.institutional?.length > 0 && (
-          <div style={{...cPad,borderTop:"1px solid "+T.bg3}}>
+          <div style={{...cPad,...(onPanel?{marginTop:12,paddingTop:14}:{}),borderTop:"1px solid "+T.bg3}}>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
               Institutional giving — foundations, DAFs, churches and businesses
             </div>
@@ -1894,9 +1897,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             </div>
             {threadsData&&threadList.length===0&&(
               threadsData.hasAny
-                ?<OneLineEmpty testId="thread-empty-state" line="Nothing waiting."
+                ?<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="Nothing waiting."
                     detail={`Every conversation has its next step scheduled${threadStat?.snoozed>0?`, and ${threadStat.snoozed} are set aside to revisit later`:""}.`}/>
-                :<OneLineEmpty testId="thread-empty-state" line="No conversations logged yet."
+                :<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="No conversations logged yet."
                     detail="Log your first call from a donor's record and the next step will come back to you."/>
             )}
             {threadList.length>0&&(
@@ -1963,31 +1966,49 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // and no fourth: Copy, Mark sent, Skip. A draft must be OPENED before "Mark
   // all as sent" is offered, because a bulk action over letters nobody read is
   // what turns a thank-you queue into a lie.
+  // FIX-3 A (finding 2) — ONE ROW PER DRAFT, AND A BUTTON. "One thank-you
+  // ready" read as broken: an indented grey explainer with a rule that did not
+  // line up, a name, "$1", an underlined "Read the draft" link and a large gap.
+  // Each draft is now one row (the person, the amount, the gift's date, then a
+  // real button, never an underlined link); the explainer is one quiet line
+  // under the heading, on the heading's own left edge; and the footer renders
+  // only when it has something in it, so a single row has nothing under it.
+  const TY_WORDS=["no","one","two","three","four","five","six","seven","eight","nine"];
+  const tyFooter=!!thankYous&&(thankYous.drafts.length>6||thankYous.allOpened||!!tyErr);
   const thankYouSection=(thankYous&&thankYous.count>0)?(
     <div style={{...cardWrap}} data-testid="thank-you-queue">
       <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <span style={sSerif}>{thankYous.headline}</span>
+        <div style={{minWidth:0,display:"flex",flexDirection:"column",alignItems:"flex-start",gap:8}}>
+          <span style={sSerif}>{thankYous.headline}</span>
+          {thankYous.voice&&!thankYous.voice.ready&&(
+            <div data-testid="ty-voice-line" style={{fontSize:12,lineHeight:1.5,color:T.ink3}}>
+              Plain for now. Paste {TY_WORDS[thankYous.voice.needs]||thankYous.voice.needs} of your own thank-yous and Steward will write like you.
+            </div>
+          )}
+        </div>
         {thankYous.voice&&!thankYous.voice.ready&&(
-          <button onClick={()=>onNavigate("settings")} style={sLink}>Teach Steward your voice →</button>
+          <button onClick={()=>onNavigate("settings")} style={{...sLink,whiteSpace:"nowrap"}}>Teach Steward your voice →</button>
         )}
       </div>
-      {thankYous.voice&&!thankYous.voice.ready&&(
-        <div style={{padding:"10px 20px 0",fontSize:11.5,color:T.ink3,lineHeight:1.5}}>
-          These are one plain sentence for now. Paste {thankYous.voice.needs} more thank-you{thankYous.voice.needs===1?"":"s"} you have
-          already written into Settings and Steward will open and close them the way you do.
-        </div>
-      )}
       <div style={{display:"flex",flexDirection:"column"}}>
         {thankYous.drafts.slice(0,tyShowAll?thankYous.drafts.length:6).map(d=>(
-          <div key={d.id} data-thank-you={d.id} style={{padding:"12px 20px",borderTop:"1px solid "+T.bg3}}>
-            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <button onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}
-                style={{background:"none",border:"none",padding:0,font:"inherit",fontWeight:700,color:T.ink,cursor:"pointer"}}>{d.donorName}</button>
-              <span style={{fontSize:12.5,color:T.ink3}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
-              {d.opened&&<span style={{fontSize:11,color:T.ink3}}>opened</span>}
+          <div key={d.id} data-thank-you={d.id} style={{padding:onPanel?"12px 0":"12px 24px",borderTop:"1px solid "+T.bg2}}>
+            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              <PersonMark id={d.donorId} name={d.donorName} size={30}/>
+              <div style={{flex:"1 1 180px",minWidth:0,display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <button onClick={()=>onNavigate("donors",{selectDonorId:d.donorId})}
+                  style={{background:"none",border:"none",padding:0,font:"inherit",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer",textAlign:"left"}}>{d.donorName}</button>
+                <span style={{fontSize:13,color:T.ink2,fontVariantNumeric:"tabular-nums"}}>{fmtFull(d.amount)}{d.fundName?` · ${d.fundName}`:""}</span>
+                {d.giftDate&&<span style={{fontSize:12.5,color:T.ink3}}>{displayDateShort(d.giftDate,new Date())}</span>}
+                {d.opened&&<span style={{fontSize:11.5,color:T.ink3}}>opened</span>}
+              </div>
+              <button onClick={()=>tyOpen===d.id?setTyOpen(null):tyOpenDraft(d)} data-testid="ty-open" aria-expanded={tyOpen===d.id}
+                style={{flexShrink:0,background:T.white,border:"1px solid "+T.ink,borderRadius:8,padding:"7px 14px",color:T.ink,fontSize:12.5,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                {tyOpen===d.id?"Close":"Read the draft"}
+              </button>
             </div>
-            {tyOpen===d.id?(
-              <div style={{marginTop:8}}>
+            {tyOpen===d.id&&(
+              <div style={{marginTop:10}}>
                 <textarea readOnly value={d.body} aria-label={`Thank-you for ${d.donorName}`}
                   style={{width:"100%",minHeight:130,background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,lineHeight:1.55,fontFamily:"inherit",resize:"vertical",boxSizing:"border-box"}}/>
                 <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
@@ -2000,14 +2021,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   <span style={{fontSize:11.5,color:T.ink3,alignSelf:"center"}}>Steward does not send this. It goes from your own mail.</span>
                 </div>
               </div>
-            ):(
-              <button onClick={()=>tyOpenDraft(d)} data-testid="ty-open"
-                style={{background:"none",border:"none",padding:0,marginTop:4,color:T.greenDk,fontSize:12.5,fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>Read the draft</button>
             )}
           </div>
         ))}
       </div>
-      <div style={{padding:"10px 20px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+      {tyFooter&&(
+      <div style={{padding:onPanel?"10px 0 0":"10px 24px 14px",display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
         {thankYous.drafts.length>6&&(
           <button onClick={()=>setTyShowAll(v=>!v)} style={sLink}>{tyShowAll?"Show fewer":`and ${thankYous.drafts.length-6} more`}</button>
         )}
@@ -2017,6 +2036,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         )}
         {tyErr&&<span role="alert" style={{fontSize:12,color:T.terracotta}}>{tyErr}</span>}
       </div>
+      )}
     </div>
   ):null;
 
@@ -2027,43 +2047,50 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // supposed to run without her; Home's whole job here is to prove it is
   // running, and to say so immediately when an email could not be sent.
   // ── BUILD-97 Part 3 — "TELL STEWARD WHAT TO DO" ──────────────────────────
-  // One box on Home. She types an instruction in her own words; Steward shows
-  // her the PLAN before anything happens; she confirms once.
+  // FIX-3 A (findings 3 and 4) — ONE LINE, NOT A SECOND ASK. The Agent is where
+  // a plan is read, run and undone (FIX-1 §A); Home had kept a full ask of its
+  // own (a title, "Nothing happens until you say so", a pale button). It is now
+  // the daily line, when there is something true to say, over one input and
+  // one emerald Go button. The button is always there and disabled until there
+  // is text; Enter submits; the words are carried into Agent and asked on
+  // arrival (agentAsk → onNavigate("agent",{agentText,autoAsk:true})).
+  const agentWaiting=(agentDaily&&agentDaily.waiting)||0;
+  const agentEmpty=!agentText.trim();
   const agentSection=(
     <div style={{...cardWrap}} data-testid="agent-box">
-      <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-        <span style={sTitle}>Tell Steward what to do</span>
-        <button onClick={()=>onNavigate("agent")} style={sLink}>Open Agent →</button>
-      </div>
-      <div style={{padding:"4px 20px 16px"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {/* BUILD-96 Part 3 — A GATED ORG GETS A SENTENCE, NOT AN INPUT.
             The agent sends this organisation's rows and vocabulary to
             Anthropic, and there are two reasons it may not: no key is
             configured on Steward's side, or this org turned it off. Either
-            way she gets the reason instead, and nothing to press. */}
+            way she gets the reason instead, and nothing to type into. */}
         {agentDaily&&agentDaily.available===false?(
-          <div data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
-            {agentDaily.message||"Not enabled for this organization yet."}
+          <div style={{display:"flex",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
+            <span data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
+              {agentDaily.message||"Not enabled for this organization yet."}
+            </span>
+            <button onClick={()=>onNavigate("agent")} style={sLink}>Open Agent →</button>
           </div>
         ):(<>
         {agentDaily&&agentDaily.line&&(
-          <div data-testid="agent-daily-line" style={{fontSize:13.5,lineHeight:1.55,color:T.ink,marginBottom:10}}>
+          <div data-testid="agent-daily-line"
+            {...interactive(()=>onNavigate("agent",{agentView:agentWaiting>0?"waiting":"guardrails"}),{label:agentDaily.line+" Open it in Agent."})}
+            style={{alignSelf:"flex-start",fontSize:13.5,lineHeight:1.5,color:T.ink,borderRadius:6}}>
             {agentDaily.line}
           </div>
         )}
-        <form onSubmit={e=>{e.preventDefault();agentAsk();}} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <form onSubmit={e=>{e.preventDefault();agentAsk();}} style={{display:"flex",gap:8,alignItems:"center"}}>
           <input data-testid="agent-input" value={agentText} onChange={e=>setAgentText(e.target.value)}
-            placeholder="Tell Steward what to do, in your own words…"
-            style={{flex:"1 1 240px",minWidth:0,boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,
-                    padding:"9px 12px",fontSize:13.5,fontFamily:"inherit",color:T.ink}}/>
-          <button data-testid="agent-ask" type="submit" disabled={!agentText.trim()}
-            style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,
-                    fontSize:13,fontWeight:700,cursor:!agentText.trim()?"not-allowed":"pointer",
-                    opacity:!agentText.trim()?0.55:1}}>
-            Show me the plan
+            aria-label="Tell Steward what to do. Enter opens it in Agent."
+            placeholder="Tell Steward what to do…"
+            style={{flex:"1 1 auto",minWidth:0,boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,background:T.white,
+                    padding:"10px 12px",fontSize:14,fontFamily:"inherit",color:T.ink}}/>
+          <button data-testid="agent-ask" type="submit" disabled={agentEmpty} aria-label="Go. Open this in Agent."
+            style={{flexShrink:0,background:T.greenDk,border:"1px solid "+T.greenDk,borderRadius:10,padding:"10px 20px",color:T.white,
+                    fontSize:14,fontWeight:700,cursor:agentEmpty?"not-allowed":"pointer"}}>
+            Go
           </button>
         </form>
-        <div style={{fontSize:12,color:T.ink3,marginTop:6}}>Nothing happens until you say so. The plan opens in Agent.</div>
         </>)}
       </div>
     </div>
@@ -2351,6 +2378,156 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const impactSection=impactVisible?<ImpactLine impact={impact}/>:null;
 
 
+  // FIX-3 A (finding 1) — THE SECTION STACK, SPLIT IN TWO. Home's panel is a
+  // two-column TOP (the work beside the Today rail) over a full-width LOWER half.
+  // The rail is three numbers tall; beside Drift's institutional list, the
+  // thank-you queue and the entry it was a tall blank column. Everything up to
+  // and including the Thread sits beside the rail (the rail's detail state opens
+  // from a Thread row, so the two stay side by side); every section after the
+  // Thread runs the full width of the panel below it. The board is not split.
+  // Computed here, above the return, so both halves can be placed in the shell.
+  const sectionStack=layout!==undefined?(()=>{
+        // BUILD-35: the setup card renders only while the org is genuinely
+        // un-activated (and not explicitly hidden). On the completion
+        // TRANSITION — complete now, but previously seen incomplete — it
+        // renders one GoldMoment (self-gated once-per-org), then nothing,
+        // forever. An always-been-complete org never sees any of it.
+        const setupSection=(()=>{
+          if(!setupStatus)return null;
+          if(setupStatus.cardState==="hidden")return null;
+          if(setupStatus.complete){
+            if(!setupCelebrate)return null;
+            return <GoldMoment moment="setup_complete" title="Steward is set up."
+              line="Donors in, giving connected, automations watching. This card retires itself — everything it linked to lives in Settings."/>;
+          }
+          return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
+        })();
+        // ── BUILD-86 — THE FAILING MONTHLY GIFTS, WITH NAMES ────────────
+        // These were a COUNT inside the retention/pipeline card, next to a
+        // retention rate and a funnel. A failing gift is the most actionable
+        // thing on this screen and the least like a board metric, so it is its
+        // own row group beside the other two lists of people. Every row is a
+        // person, an amount, how long it has been failing, and one action.
+        const atRisk=recurringHealth?.atRisk||[];
+        const recurringSection=atRisk.length>0?(
+          <div id="dash-recurring" style={{...cardWrap,scrollMarginTop:64}}>
+            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
+              <span style={sTitle}>{capitalize(t("monthly_giver",2))} that need you</span>
+              <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
+            </div>
+            <ul style={{listStyle:"none",margin:0,padding:0}}>
+              {atRisk.map((r,i)=>{
+                const days=r.first_failed_at?Math.max(0,Math.floor((Date.now()-new Date(r.first_failed_at).getTime())/86400000)):null;
+                return(
+                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.gold500,
+                                         borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
+                    <PersonMark id={r.donor_id} name={r.donor_name} size={34}/>
+                    <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
+                      onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
+                      <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
+                      <div style={{fontSize:11.5,color:T.gold700,marginTop:3,fontWeight:600}}>
+                        {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
+                        {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
+                      </div>
+                    </a>
+                    <button onClick={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
+                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
+                      Open
+                    </button>
+                  </li>);
+              })}
+            </ul>
+          </div>
+        ):null;
+
+        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
+        // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
+        // stay a single per-user list (so BUILD-34's merge rule, its
+        // stale-config guarantee and move-to-top all keep working untouched);
+        // the surface is a filter over it at render time.
+        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null&&surfaceOf(r.id)===surface);
+        const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
+        const hiddenRows=layout.filter(r=>!r.visible&&surfaceOf(r.id)===surface);
+        const renderRow=(row,idx)=>{
+            const content=sections[row.id];
+            const toggle=!editMode&&row.id===firstScopedId?scopeToggle:null;
+            if(!editMode)return <Fragment key={row.id}>{toggle}<div className="home-block">{content}</div></Fragment>;
+            const meta=sectionMeta(row.id);
+            const dragging=dragSectionId===row.id;
+            return(
+              <div key={row.id} draggable
+                onDragStart={e=>onSectionDragStart(e,row.id)}
+                onDragEnd={onSectionDragEnd}
+                onDragOver={e=>onSectionDragOver(e,row.id)}
+                onDrop={onSectionDrop}
+                style={{position:"relative",borderRadius:16,cursor:"grab",
+                  outline:`1.5px dashed ${dragging?T.gold:T.bg3}`,outlineOffset:4,
+                  boxShadow:dragging?T.shadowLg:"none",
+                  transform:dragging&&!REDUCED_MOTION?"translateY(-2px)":"none",
+                  transition:REDUCED_MOTION?"none":"box-shadow .15s ease,transform .15s ease"}}>
+                <div style={{opacity:0.55,pointerEvents:"none"}} aria-hidden>{content}</div>
+                <div style={{position:"absolute",top:8,right:8,display:"flex",gap:6,zIndex:5}}>
+                  <button
+                    onKeyDown={e=>{
+                      if(e.key==="ArrowUp"){e.preventDefault();moveSection(row.id,-1);}
+                      else if(e.key==="ArrowDown"){e.preventDefault();moveSection(row.id,1);}
+                      else if(e.key==="Enter"){e.preventDefault();saveEdit();}
+                    }}
+                    aria-label={`Reorder ${meta?.label||row.id} — position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
+                    title="Drag, or focus and use arrow keys, to reorder"
+                    style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
+                    <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
+                  </button>
+                  {moveToTop(layout,row.id)!==layout&&(
+                    <button onClick={()=>moveSectionToTop(row.id)}
+                      aria-label={`Move ${meta?.label||row.id} to the top`}
+                      title="Send this section to the top"
+                      style={{display:"flex",alignItems:"center",gap:4,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",boxShadow:T.shadow}}>
+                      <span aria-hidden="true">↑</span>Top
+                    </button>
+                  )}
+                  {meta?.hideable===false?(
+                    <span title="Home always shows the fundraising hero" style={{display:"flex",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink3,boxShadow:T.shadow}}>Always shown</span>
+                  ):(
+                    <button onClick={()=>setSectionVisible(row.id,false)}
+                      aria-label={`Hide ${meta?.label||row.id}`}
+                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.terracotta,cursor:"pointer",boxShadow:T.shadow}}>Hide</button>
+                  )}
+                </div>
+              </div>
+            );
+        };
+        const threadAt=rendered.findIndex(r=>r.id==="thread");
+        const splitAt=surface!=="home"?rendered.length:threadAt>=0?threadAt+1:Math.min(1,rendered.length);
+        const topRows=rendered.slice(0,splitAt),lowerRows=rendered.slice(splitAt);
+        const tail=(<>
+          {editMode&&(
+            <span role="status" aria-live="polite" style={{position:"absolute",width:1,height:1,padding:0,margin:-1,overflow:"hidden",clip:"rect(0 0 0 0)",whiteSpace:"nowrap",border:0}}>{layoutLiveMsg}</span>
+          )}
+          {editMode&&hiddenRows.length>0&&(
+            <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
+              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden — not shown on your Home</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {hiddenRows.map(r=>{
+                  const m=sectionMeta(r.id);
+                  return(
+                    <button key={r.id} onClick={()=>setSectionVisible(r.id,true)}
+                      aria-label={`Show ${m?.label||r.id} again`}
+                      style={{display:"inline-flex",alignItems:"baseline",gap:7,background:T.white,border:"1px solid "+T.bg3,borderRadius:99,padding:"6px 12px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"pointer"}}>
+                      {m?.label||r.id}<span style={{color:T.greenDk}}>Show</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>);
+        return{
+          top:<>{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
+          lower:lowerRows.length?<>{lowerRows.map((row,i)=>renderRow(row,splitAt+i))}{tail}</>:null,
+        };
+  })():null;
+
   // NB: no `fade-in` on the dash-root below. `.fade-in`'s final keyframe retains
   // `transform: translateY(0)` (animation-fill-mode:both), which would make
   // dash-root the containing block for every position:fixed descendant —
@@ -2377,6 +2554,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           block separated by air and a rule — no card carries its own border,
           because the panel already drew it. */}
       <div className={surface==="home"?"home-shell":""}>
+      <div className={surface==="home"?"home-shell-top":""}>
       <div className={surface==="home"?"home-shell-main":""}>
 
       {/* Greeting lives on the page's own cream background, between the nav
@@ -2485,140 +2663,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           mode; explicitly hidden ones collect in the tray below. Edit-mode
           chrome is absolutely positioned (outline + floating pill) so
           entering/leaving edit mode causes zero layout shift. */}
-      {layout!==undefined&&(()=>{
-        // BUILD-35: the setup card renders only while the org is genuinely
-        // un-activated (and not explicitly hidden). On the completion
-        // TRANSITION — complete now, but previously seen incomplete — it
-        // renders one GoldMoment (self-gated once-per-org), then nothing,
-        // forever. An always-been-complete org never sees any of it.
-        const setupSection=(()=>{
-          if(!setupStatus)return null;
-          if(setupStatus.cardState==="hidden")return null;
-          if(setupStatus.complete){
-            if(!setupCelebrate)return null;
-            return <GoldMoment moment="setup_complete" title="Steward is set up."
-              line="Donors in, giving connected, automations watching. This card retires itself — everything it linked to lives in Settings."/>;
-          }
-          return <SetupChecklist status={setupStatus} onNavigate={onNavigate} isAdmin={isAdmin} onSetCardState={setSetupCardState}/>;
-        })();
-        // ── BUILD-86 — THE FAILING MONTHLY GIFTS, WITH NAMES ────────────
-        // These were a COUNT inside the retention/pipeline card, next to a
-        // retention rate and a funnel. A failing gift is the most actionable
-        // thing on this screen and the least like a board metric, so it is its
-        // own row group beside the other two lists of people. Every row is a
-        // person, an amount, how long it has been failing, and one action.
-        const atRisk=recurringHealth?.atRisk||[];
-        const recurringSection=atRisk.length>0?(
-          <div id="dash-recurring" style={{...cardWrap,scrollMarginTop:64}}>
-            <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
-              <span style={sTitle}>{capitalize(t("monthly_giver",2))} that need you</span>
-              <button onClick={()=>onNavigate("fundraising",{frSection:"recurring"})} style={sLink}>Open Recurring Giving →</button>
-            </div>
-            <ul style={{listStyle:"none",margin:0,padding:0}}>
-              {atRisk.map((r,i)=>{
-                const days=r.first_failed_at?Math.max(0,Math.floor((Date.now()-new Date(r.first_failed_at).getTime())/86400000)):null;
-                return(
-                  <li key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 20px",borderLeft:"3px solid "+T.gold500,
-                                         borderBottom:i<atRisk.length-1?"1px solid "+T.bg3:"none"}}>
-                    <PersonMark id={r.donor_id} name={r.donor_name} size={34}/>
-                    <a href={`/donors/${r.donor_id}`} style={{flex:1,minWidth:0,textDecoration:"none",color:"inherit"}}
-                      onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();onNavigate("donors",{selectDonorId:r.donor_id});}}>
-                      <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{r.donor_name}</div>
-                      <div style={{fontSize:11.5,color:T.gold700,marginTop:3,fontWeight:600}}>
-                        {fmtFull(parseFloat(r.amount)||0)} {r.interval==="year"?"a year":"a month"} stopped
-                        {days!=null?` · failing ${days} day${days===1?"":"s"}`:""}
-                      </div>
-                    </a>
-                    <button onClick={()=>onNavigate("donors",{selectDonorId:r.donor_id})}
-                      style={{background:T.greenDk,border:"none",borderRadius:7,padding:"7px 12px",color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",flexShrink:0}}>
-                      Open
-                    </button>
-                  </li>);
-              })}
-            </ul>
-          </div>
-        ):null;
-
-        const sections={hero:heroSection,setup:setupSection,thread:threadSection,monthly:monthlySection,drift:driftHomeSection,recurring:recurringSection,thankYous:thankYouSection,sequences:sequencesSection,agent:agentSection,retentionPipeline:<>{retentionPipelineSection}{threadHealthLine}</>,myPortfolio:myPortfolioSection,impact:impactSection};
-        // BUILD-86 — ONE layout, TWO surfaces. The saved order and visibility
-        // stay a single per-user list (so BUILD-34's merge rule, its
-        // stale-config guarantee and move-to-top all keep working untouched);
-        // the surface is a filter over it at render time.
-        const rendered=layout.filter(r=>r.visible&&sections[r.id]!=null&&surfaceOf(r.id)===surface);
-        const firstScopedId=rendered.find(r=>SCOPED_SECTION_IDS.includes(r.id))?.id;
-        const hiddenRows=layout.filter(r=>!r.visible&&surfaceOf(r.id)===surface);
-        return(<>
-          {rendered.map((row,idx)=>{
-            const content=sections[row.id];
-            const toggle=!editMode&&row.id===firstScopedId?scopeToggle:null;
-            if(!editMode)return <Fragment key={row.id}>{toggle}<div className="home-block">{content}</div></Fragment>;
-            const meta=sectionMeta(row.id);
-            const dragging=dragSectionId===row.id;
-            return(
-              <div key={row.id} draggable
-                onDragStart={e=>onSectionDragStart(e,row.id)}
-                onDragEnd={onSectionDragEnd}
-                onDragOver={e=>onSectionDragOver(e,row.id)}
-                onDrop={onSectionDrop}
-                style={{position:"relative",borderRadius:16,cursor:"grab",
-                  outline:`1.5px dashed ${dragging?T.gold:T.bg3}`,outlineOffset:4,
-                  boxShadow:dragging?T.shadowLg:"none",
-                  transform:dragging&&!REDUCED_MOTION?"translateY(-2px)":"none",
-                  transition:REDUCED_MOTION?"none":"box-shadow .15s ease,transform .15s ease"}}>
-                <div style={{opacity:0.55,pointerEvents:"none"}} aria-hidden>{content}</div>
-                <div style={{position:"absolute",top:8,right:8,display:"flex",gap:6,zIndex:5}}>
-                  <button
-                    onKeyDown={e=>{
-                      if(e.key==="ArrowUp"){e.preventDefault();moveSection(row.id,-1);}
-                      else if(e.key==="ArrowDown"){e.preventDefault();moveSection(row.id,1);}
-                      else if(e.key==="Enter"){e.preventDefault();saveEdit();}
-                    }}
-                    aria-label={`Reorder ${meta?.label||row.id} — position ${idx+1} of ${rendered.length}. Arrow keys move it, Enter saves.`}
-                    title="Drag, or focus and use arrow keys, to reorder"
-                    style={{display:"flex",alignItems:"center",gap:6,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"grab",boxShadow:T.shadow}}>
-                    <span aria-hidden="true">{"⠿"}</span>{meta?.label||row.id}
-                  </button>
-                  {moveToTop(layout,row.id)!==layout&&(
-                    <button onClick={()=>moveSectionToTop(row.id)}
-                      aria-label={`Move ${meta?.label||row.id} to the top`}
-                      title="Send this section to the top"
-                      style={{display:"flex",alignItems:"center",gap:4,background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.greenDk,cursor:"pointer",boxShadow:T.shadow}}>
-                      <span aria-hidden="true">↑</span>Top
-                    </button>
-                  )}
-                  {meta?.hideable===false?(
-                    <span title="Home always shows the fundraising hero" style={{display:"flex",alignItems:"center",background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:11,fontWeight:700,color:T.ink3,boxShadow:T.shadow}}>Always shown</span>
-                  ):(
-                    <button onClick={()=>setSectionVisible(row.id,false)}
-                      aria-label={`Hide ${meta?.label||row.id}`}
-                      style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,padding:"5px 10px",fontSize:12,fontWeight:700,color:T.terracotta,cursor:"pointer",boxShadow:T.shadow}}>Hide</button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {editMode&&(
-            <span role="status" aria-live="polite" style={{position:"absolute",width:1,height:1,padding:0,margin:-1,overflow:"hidden",clip:"rect(0 0 0 0)",whiteSpace:"nowrap",border:0}}>{layoutLiveMsg}</span>
-          )}
-          {editMode&&hiddenRows.length>0&&(
-            <div style={{background:T.bg,border:"1.5px dashed "+T.bg3,borderRadius:14,padding:"12px 16px"}}>
-              <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",color:T.ink3,marginBottom:8}}>Hidden — not shown on your Home</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {hiddenRows.map(r=>{
-                  const m=sectionMeta(r.id);
-                  return(
-                    <button key={r.id} onClick={()=>setSectionVisible(r.id,true)}
-                      aria-label={`Show ${m?.label||r.id} again`}
-                      style={{display:"inline-flex",alignItems:"baseline",gap:7,background:T.white,border:"1px solid "+T.bg3,borderRadius:99,padding:"6px 12px",fontSize:12,fontWeight:700,color:T.ink2,cursor:"pointer"}}>
-                      {m?.label||r.id}<span style={{color:T.greenDk}}>Show</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </>);
-      })()}
+      {sectionStack&&sectionStack.top}
       {layoutError&&<div role="alert" style={{position:"fixed",bottom:20,left:"50%",transform:"translateX(-50%)",background:T.terracotta,color:T.white,padding:"10px 16px",borderRadius:8,fontSize:13,fontWeight:600,zIndex:500,boxShadow:T.shadowLg,maxWidth:"90vw"}}>{layoutError}</div>}
 
       {/* Set-goal modal */}
@@ -2662,6 +2707,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // so the stack renders straight into it.
       return cardsBlock;
       })()}
+      </div>{/* /home-shell-main */}
+      {surface==="home"&&todayRail}
+      </div>{/* /home-shell-top */}
+      {/* FIX-3 A (finding 1) — the lower half runs the full width of the
+          panel, below the Thread and the rail (see sectionStack). */}
+      {surface==="home"&&(sectionStack?.lower||(wordsOffer&&!editMode))&&(
+      <div className="home-shell-lower">
+      {sectionStack?.lower}
       {/* BUILD-89 — BUILD-86 Part B's one line, once, at the FOOT of the
           panel. It used to sit between the day and the first card, so the
           second thing anybody read on their own Home was Steward asking a
@@ -2674,13 +2727,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 Set your words
               </button>
               <button onClick={()=>{setWordsDone(true);apiFetch("/org/vocabulary",{method:"PUT",body:JSON.stringify({skip:true})}).catch(()=>{});}}
-                style={{background:"none",border:"none",color:T.ink3,fontSize:11.5,cursor:"pointer",textDecoration:"underline"}}>
+                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 10px",color:T.ink3,fontSize:11.5,fontWeight:600,cursor:"pointer"}}>
                 Keep Steward's words
               </button>
             </div>
           )}
-      </div>{/* /home-shell-main */}
-      {surface==="home"&&todayRail}
+      </div>
+      )}
       </div>{/* /home-shell */}
       </div>{/* /dash-col */}
 

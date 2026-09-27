@@ -466,11 +466,17 @@ export function GlobalStyles() {
        rail goes FIRST (order:-1) — three numbers are the right thing to meet
        on a phone, and the work follows. minmax/min-width:0 everywhere: a long
        donor name in a flex child otherwise refuses to shrink. */
+    /* FIX-3 A (finding 1) — the two columns are the panel's TOP (the Thread
+       beside the rail); every section after the Thread runs the full width of
+       the panel in .home-shell-lower, so the rail never stands as a tall blank
+       column beside the lower half. */
     .home-shell{background:${T.white};border:1px solid ${T.bg2};border-radius:16px;display:flex;flex-direction:column;overflow:hidden;}
+    .home-shell-top{display:flex;flex-direction:column;min-width:0;}
     .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
+    .home-shell-lower{min-width:0;padding:0 40px 40px;display:flex;flex-direction:column;border-top:1px solid ${T.bg2};}
     .home-rail{min-width:0;padding:32px;border-top:1px solid ${T.bg2};order:-1;}
     @media (min-width:1100px){
-      .home-shell{flex-direction:row;align-items:stretch;}
+      .home-shell-top{flex-direction:row;align-items:stretch;}
       .home-shell-main{flex:1;}
       .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
     }
@@ -556,6 +562,11 @@ export function GlobalStyles() {
       /* BUILD-89 — the panel's own padding on a phone. */
       .home-shell{border-radius:12px!important;}
       .home-shell-main{padding:20px!important;}
+      .home-shell-lower{padding:0 20px 20px!important;}
+      /* FIX-3 A — inside the panel a section header has no side padding of its
+         own (cPad is 0 there); the phone's 16px card padding put every Home
+         heading 16px right of the rows it labels. */
+      .home-shell .dash-cpad{padding-left:0!important;padding-right:0!important;padding-top:0!important;}
       .home-rail{padding:20px!important;}
       .home-rail-date{display:none!important;}
       /* BUILD-88d — a card header is a title and a link, and at 390px they run

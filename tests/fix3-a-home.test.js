@@ -203,6 +203,8 @@ async function atWidth(browser, APP, auth, W, H) {
     const railContentBottom = rail ? Math.max(...[...rail.querySelectorAll("*")].map(e => e.getBoundingClientRect().bottom + window.scrollY)) : 0;
     const queue = q('[data-testid="thank-you-queue"]');
     const rows = queue ? [...queue.querySelectorAll("[data-thank-you]")] : [];
+    const lowerEl = q(".home-shell-lower");
+    const lowerUnderlined = lowerEl ? [...lowerEl.querySelectorAll("*")].filter(e => getComputedStyle(e).textDecorationLine.includes("underline")).map(e => e.innerText.slice(0, 40)) : null;
     const underlined = queue ? [...queue.querySelectorAll("*")].filter(e => getComputedStyle(e).textDecorationLine.includes("underline")).map(e => e.innerText.slice(0, 40)) : null;
     const tyBtn = rows[0] ? rows[0].querySelector('[data-testid="ty-open"]') : null;
     const agent = q('[data-testid="agent-box"]');
@@ -215,7 +217,7 @@ async function atWidth(browser, APP, auth, W, H) {
       drift: box(q("#dash-drifting")), institutional: /Institutional giving/i.test((q("#dash-drifting") || {}).textContent || ""),
       queue: box(queue), queueText: queue ? queue.innerText : "", rows: rows.map(box), rowText: rows.map(r => r.innerText.replace(/\s+/g, " ")),
       lastRowBottom: rows.length ? Math.round(rows[rows.length - 1].getBoundingClientRect().bottom + window.scrollY) : 0,
-      underlined,
+      underlined, lowerUnderlined,
       tyBtn: tyBtn ? { tag: tyBtn.tagName, text: tyBtn.innerText, box: box(tyBtn), deco: cs(tyBtn).textDecorationLine,
                        border: parseFloat(cs(tyBtn).borderTopWidth), bg: cs(tyBtn).backgroundColor.replace(/\s/g, "") } : null,
       explainer: explainer ? { box: box(explainer), lh: parseFloat(cs(explainer).lineHeight), border: cs(explainer).borderBottomWidth, text: explainer.innerText } : null,
@@ -253,6 +255,11 @@ async function atWidth(browser, APP, auth, W, H) {
      m.explainer && m.heading && (W < 1100 || m.explainer.box.h <= m.explainer.lh * 1.6) && Math.abs(m.explainer.box.x - m.heading.x) <= 2 && parseFloat(m.explainer.border) === 0,
      { explainer: m.explainer, heading: m.heading });
 
+  ok(`§3 ${tag} finding 2: the heading, the explainer and the row share one left edge`,
+     m.heading && m.rows[0] && Math.abs(m.heading.x - m.rows[0].x) <= 2, { heading: m.heading, row: m.rows[0] });
+  ok(`§3 ${tag} nothing in the lower half is an underlined link (the CRM's standing rule)`,
+     Array.isArray(m.lowerUnderlined) && m.lowerUnderlined.length === 0, m.lowerUnderlined);
+
   // FINDINGS 3 and 4 — one line, carried into Agent.
   ok(`§3 ${tag} finding 3: the entry is not a second ask (no title, no promise sentence)`,
      !/Tell Steward what to do\n|Nothing happens until you say so/i.test(m.agentText), m.agentText.slice(0, 200));
@@ -271,9 +278,6 @@ async function atWidth(browser, APP, auth, W, H) {
     await page.evaluate(y => window.scrollTo(0, y), y);
     await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(process.env.SHOTS_DIR, `home-bottom-${W}.png`) });
-    await page.evaluate(y => window.scrollTo(0, y), Math.max(0, m.queue.y - 80));
-    await page.waitForTimeout(300);
-    await page.screenshot({ path: path.join(process.env.SHOTS_DIR, `home-bottom-queue-${W}.png`) });
     await page.evaluate(() => window.scrollTo(0, 0));
   }
 
