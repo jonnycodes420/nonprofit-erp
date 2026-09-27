@@ -826,7 +826,11 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
       {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 8 }}>{err}</div>}
       {!brief && !err && (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
-          One page from {donorName ? donorName.split(" ")[0] + "'s" : "this"} own record — giving, who they are to you, the open ask,
+          {/* PROFILE-1 — the em dash went. The profile's voice guard
+              (tests/build88a-profile §6) bans them on this screen, and moving
+              this panel into the rail put it inside the block the guard
+              reads. The sentence is better without it. */}
+          One page from {donorName ? donorName.split(" ")[0] + "'s" : "this"} own record: giving, who they are to you, the open ask,
           the last five conversations, and what you wrote. Every line rests on a row you can open.
         </div>
       )}

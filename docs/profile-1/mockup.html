@@ -1,0 +1,362 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sunrise Profile Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap">
+</head><body>
+<style>
+:root{
+  color-scheme: light;
+  --ink:#0F1A12; --ink2:#1B2A1F; --cream:#F0EDE6; --cream2:#E8E4DB; --white:#FFFFFF;
+  --brass:#C9A84C; --brass-soft:#F6EFD9; --em:#0D5C3A; --em-soft:#E3EEE7;
+  --text:#1D211E; --muted:#5A554F; --line:#DCD6CA; --warn:#8A5A12;
+  --serif:"DM Serif Display", Georgia, "Times New Roman", serif;
+  --sans:"DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--cream);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5}
+button{font:inherit;cursor:pointer}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100%}
+.nav{background:var(--ink);color:#DDE3DD;padding:20px 12px;display:flex;flex-direction:column;gap:4px}
+.brand{font-family:var(--serif);font-size:24px;color:#fff;padding:0 10px 18px}
+.nav a{color:#C9D1C9;text-decoration:none;padding:9px 12px;border-radius:8px;display:block}
+.nav a.on{background:#E8E4DB;color:var(--ink);font-weight:700}
+.nav .more{margin-top:14px;font-size:11px;letter-spacing:.14em;color:#8E9A90;padding:0 12px 4px}
+
+.page{display:grid;grid-template-columns:1fr 340px;min-width:0}
+.main{padding:0 32px 48px;min-width:0}
+.rail{background:var(--ink);color:#E7ECE7;padding:24px 22px 48px;min-width:0}
+.rail .rsec{border-color:#243528}
+.rail .rsec h4,.rail .rsec h4 button,.rail .small,.rail .kv dt{color:#9FAEA2}
+.rail .owner{background:#1B2A1F}
+.rail .owner strong{color:#fff}
+.rail .stages button{background:#1B2A1F;border-color:#2E4133;color:#D6DDD6}
+.rail .stages button.on{background:var(--em);border-color:var(--em);color:#fff}
+.rail .qa button{background:var(--brass);border-color:var(--brass);color:var(--ink)}
+.rail .btn{background:var(--cream);border-color:var(--cream);color:var(--ink)}
+.rail .chip.add{background:transparent;color:#C9D1C9;border-color:#3A4F3F}
+
+.head{background:var(--white);margin:0 -32px;padding:20px 32px 0;border-bottom:1px solid var(--line)}
+.who{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.back{border:1px solid var(--line);background:var(--cream);border-radius:8px;padding:8px 12px;color:var(--muted)}
+.av{width:56px;height:56px;border-radius:50%;background:var(--brass);color:var(--ink);display:grid;place-items:center;font-weight:700;font-size:20px;flex:none}
+.id{flex:1;min-width:220px}
+.id h1{font-family:var(--serif);font-weight:400;font-size:28px;line-height:1.1;margin:0 0 6px;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--muted)}
+.chip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700;background:var(--white);color:var(--text)}
+.chip.stage{background:var(--em-soft);border-color:transparent;color:var(--em)}
+.chip.role{background:var(--cream)}
+.chip.add{color:var(--muted);font-weight:500;border-style:dashed}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--line);background:var(--white);border-radius:9px;padding:9px 14px;font-weight:700;color:var(--text)}
+.btn.primary{background:var(--em);border-color:var(--em);color:#fff}
+.menu{position:relative}
+.menu-list{position:absolute;right:0;top:44px;background:var(--white);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(15,26,18,.12);padding:6px;min-width:200px;z-index:5}
+.menu-list button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px}
+.menu-list button:hover{background:var(--cream)}
+
+.figs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0 0}
+.fig{background:var(--cream);border:1px solid var(--line);border-radius:10px;padding:12px 14px;text-align:left;color:inherit}
+.fig:hover{border-color:var(--brass)}
+.fig .lbl{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.fig .val{font-family:var(--serif);font-size:24px;line-height:1.2;margin-top:2px;border-bottom:1px dotted var(--brass);display:inline-block}
+.fig .sub{font-size:12px;color:var(--muted)}
+.fig.warn .val{color:var(--warn)}
+
+.tabs{display:flex;gap:4px;margin-top:18px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:3px solid transparent;padding:10px 14px;color:var(--muted);font-weight:500;white-space:nowrap}
+.tab.on{color:var(--ink);font-weight:700;border-color:var(--em)}
+.tab .n{background:var(--cream2);border-radius:999px;padding:0 7px;font-size:12px;margin-left:4px}
+
+.sec{margin-top:26px}
+.eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:0 0 10px}
+.next{background:var(--white);border:1px solid var(--line);border-left:4px solid var(--em);border-radius:10px;padding:16px 18px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.next .what{flex:1;min-width:220px}
+.next h3{margin:0 0 4px;font-size:17px}
+.next p{margin:0;color:var(--muted)}
+.due{font-weight:700;color:var(--em)}
+.sugg{margin-top:12px;background:var(--brass-soft);border:1px solid #E7D9AE;border-radius:10px;padding:14px 18px}
+.sugg .eyebrow{color:var(--warn);margin-bottom:6px}
+.sugg p{margin:0 0 6px;max-width:68ch}
+.cite{font-size:12px;color:var(--muted)}
+.cite button{background:none;border:0;padding:0;color:var(--em);font-weight:700;text-decoration:underline dotted}
+
+.card{background:var(--white);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.row{display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center}
+.row + .row{border-top:1px solid var(--cream2);margin-top:10px;padding-top:10px}
+.pill{border-radius:999px;padding:3px 10px;font-size:12px;font-weight:700}
+.pill.asked{background:var(--brass-soft);color:var(--warn)}
+.small{font-size:12px;color:var(--muted)}
+.amt{font-family:var(--serif);font-size:18px}
+
+.chart{width:100%;height:auto;display:block}
+.chart text{font-family:var(--sans);font-size:11px;fill:var(--muted)}
+
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:grid;grid-template-columns:92px 1fr;gap:12px;padding:10px 0;border-top:1px solid var(--cream2)}
+.tl li:first-child{border-top:0}
+.tl .when{color:var(--muted);font-size:12px}
+
+.rsec{border-top:1px solid var(--cream2);padding:16px 0}
+.rsec:first-child{border-top:0;padding-top:0}
+.rsec h4{margin:0 0 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.rsec h4 button{background:none;border:0;color:var(--muted);font-size:12px;letter-spacing:0;text-transform:none}
+.owner{display:flex;gap:10px;align-items:center;background:var(--cream);border-radius:10px;padding:10px}
+.owner .av{width:32px;height:32px;font-size:13px}
+.stages{display:flex;flex-wrap:wrap;gap:6px}
+.stages button{border:1px solid var(--line);background:var(--white);border-radius:8px;padding:6px 10px;font-weight:500}
+.stages button.on{background:var(--em-soft);border-color:var(--em);color:var(--em);font-weight:700}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.qa{display:flex;flex-wrap:wrap;gap:6px}
+.qa button{border:1px solid #E7D9AE;background:var(--brass-soft);border-radius:8px;padding:6px 10px;font-weight:700;color:var(--ink)}
+
+.drawer{position:fixed;inset:0;background:rgba(15,26,18,.35);display:flex;justify-content:flex-end;z-index:20}
+.drawer .panel{background:var(--white);width:min(440px,100%);height:100%;padding:24px;overflow:auto;padding-top:calc(24px + env(safe-area-inset-top,0px))}
+.drawer h3{font-family:var(--serif);font-weight:400;font-size:24px;margin:0 0 4px}
+.drawer table{width:100%;border-collapse:collapse;margin-top:14px}
+.drawer td,.drawer th{padding:8px 4px;border-bottom:1px solid var(--cream2);text-align:left}
+.drawer th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.drawer td.r,.drawer th.r{text-align:right}
+.note{margin:28px 0 0;padding:12px 14px;border:1px dashed var(--line);border-radius:10px;color:var(--muted);font-size:13px;background:rgba(255,255,255,.5)}
+
+@media (max-width:1100px){.page{grid-template-columns:1fr}.rail{border-left:0;border-top:1px solid var(--line)}}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr}.nav{display:none}
+  .main{padding:0 16px 32px}.head{margin:0 -16px;padding:16px 16px 0}
+  .rail{padding:20px 16px 40px}
+  .figs{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row{grid-template-columns:1fr auto}
+}
+@media (prefers-reduced-motion:no-preference){.drawer .panel{animation:in .18s ease-out}@keyframes in{from{transform:translateX(24px);opacity:.6}}}
+</style>
+
+<div class="app">
+  <nav class="nav" aria-label="Main">
+    <div class="brand">Steward</div>
+    <a href="#">Home</a><a href="#" class="on">Donors</a><a href="#">Fundraising</a><a href="#">Volunteers</a><a href="#">Agent</a><a href="#">Reports</a><a href="#">Finance</a>
+    <div class="more">MORE</div>
+    <a href="#">Dashboards</a><a href="#">Grants</a><a href="#">Communications</a><a href="#">Tasks</a>
+  </nav>
+
+  <div class="page">
+    <main class="main">
+      <header class="head">
+        <div class="who">
+          <button class="back">← Back</button>
+          <div class="av">SF</div>
+          <div class="id">
+            <h1>Sunrise Foundation</h1>
+            <div class="meta">
+              <span class="chip stage">Solicit</span>
+              <span>Foundation · grants@sunrisefdn.org</span>
+            </div>
+            <div class="meta" style="margin-top:8px">
+              <span class="chip role">Donor · set by giving</span>
+              <button class="chip add">+ Volunteer</button>
+              <button class="chip add">+ Staff and board</button>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn primary">Log a conversation</button>
+            <button class="btn">Plan a follow-up</button>
+            <div class="menu">
+              <button class="btn" id="moreBtn" aria-expanded="false">More ▾</button>
+              <div class="menu-list" id="moreList" hidden>
+                <button>Request a gift</button><button>Impact summary</button><button>Enroll in a sequence</button><button>Edit record</button><button>Merge duplicates</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="figs">
+          <button class="fig" data-open="lifetime"><div class="lbl">Lifetime</div><div class="val num">$151,500</div><div class="sub">8 gifts since 2019</div></button>
+          <button class="fig" data-open="last"><div class="lbl">Last gift</div><div class="val num">$1,500</div><div class="sub">Jun 16, 2026</div></button>
+          <button class="fig warn" data-open="contact"><div class="lbl">Last contact</div><div class="val num">70 days</div><div class="sub">Jul 19 · a call</div></button>
+          <button class="fig" data-open="ask"><div class="lbl">Open ask</div><div class="val num">$32,500</div><div class="sub">Due Oct 22</div></button>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab on" data-tab="overview">Overview</button>
+          <button class="tab" data-tab="gifts">Gifts &amp; Pledges <span class="n">8</span></button>
+          <button class="tab" data-tab="x">Funds</button>
+          <button class="tab" data-tab="x">Related</button>
+          <button class="tab" data-tab="x">Materials</button>
+          <button class="tab" data-tab="activity">Activity</button>
+        </div>
+      </header>
+
+      <div id="overview">
+        <section class="sec">
+          <p class="eyebrow">What do I do next</p>
+          <div class="next">
+            <div class="what">
+              <h3>Follow up on the $32,500 FY26 ask</h3>
+              <p>Asked on Sep 2. Their board meets in October. <span class="due">Due Oct 22</span></p>
+            </div>
+            <button class="btn primary">Mark done</button>
+            <button class="btn">Snooze</button>
+          </div>
+          <div class="sugg">
+            <p class="eyebrow">+ Suggested</p>
+            <p>Call Maria Lopez, their program officer, before their October board meeting. They funded Youth Arts Access three years running, so open with this year's numbers. Ask whether $32,500 fits their fall cycle.</p>
+            <div class="cite">From <button data-open="contact">3 rows on this record</button></div>
+          </div>
+        </section>
+
+        <section class="sec">
+          <p class="eyebrow">Proposals</p>
+          <div class="card">
+            <div class="row">
+              <div><strong>FY26 major gift ask</strong><div class="small">Youth Arts Access · owner Admin</div></div>
+              <span class="amt num">$32,500</span>
+              <span class="small">Oct 22, 2026</span>
+              <span class="pill asked">Asked</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="sec">
+          <p class="eyebrow">Giving by year</p>
+          <div class="card">
+            <svg class="chart" viewBox="0 0 640 170" role="img" aria-label="Giving by year, 2019 to 2026">
+              <line x1="40" y1="140" x2="620" y2="140" stroke="#DCD6CA"/>
+              <line x1="40" y1="90" x2="620" y2="90" stroke="#EFEBE3"/>
+              <line x1="40" y1="40" x2="620" y2="40" stroke="#EFEBE3"/>
+              <text x="0" y="144">$0</text><text x="0" y="94">$15k</text><text x="0" y="44">$30k</text>
+              <!-- 2019 10k,2020 15k,2021 20k,2022 25k,2023 25k,2024 30k,2025 25k,2026 1.5k -->
+              <g fill="#0D5C3A">
+                <rect x="58" y="106.7" width="44" height="33.3" rx="3"/>
+                <rect x="130" y="90" width="44" height="50" rx="3"/>
+                <rect x="202" y="73.3" width="44" height="66.7" rx="3"/>
+                <rect x="274" y="56.7" width="44" height="83.3" rx="3"/>
+                <rect x="346" y="56.7" width="44" height="83.3" rx="3"/>
+                <rect x="418" y="40" width="44" height="100" rx="3"/>
+                <rect x="490" y="56.7" width="44" height="83.3" rx="3"/>
+              </g>
+              <rect x="562" y="135" width="44" height="5" rx="2" fill="#C9A84C"/>
+              <g text-anchor="middle">
+                <text x="80" y="160">2019</text><text x="152" y="160">2020</text><text x="224" y="160">2021</text><text x="296" y="160">2022</text>
+                <text x="368" y="160">2023</text><text x="440" y="160">2024</text><text x="512" y="160">2025</text><text x="584" y="160">2026</text>
+                <text x="584" y="128" style="fill:#8A5A12;font-weight:700">$1.5k</text>
+              </g>
+            </svg>
+            <div class="small">2026 so far is well under their usual year. That's why the ask matters.</div>
+          </div>
+        </section>
+
+        <section class="sec">
+          <p class="eyebrow">Recent conversations</p>
+          <div class="card">
+            <ul class="tl">
+              <li><span class="when">Jul 19</span><span>Call with Maria Lopez. Interested in a larger gift if we show youth outcomes.</span></li>
+              <li><span class="when">Jun 16</span><span>$1,500 gift received. Thank-you sent Jun 18.</span></li>
+              <li><span class="when">May 2</span><span>Site visit to the Saturday studio.</span></li>
+            </ul>
+          </div>
+        </section>
+      </div>
+
+      <div id="gifts" hidden>
+        <section class="sec"><div class="card">
+          <div class="row"><div><strong>Jun 16, 2026</strong><div class="small">Youth Arts Access</div></div><span class="amt num">$1,500</span><span class="small">Check</span><span class="small">Thanked</span></div>
+          <div class="row"><div><strong>Dec 10, 2025</strong><div class="small">Youth Arts Access</div></div><span class="amt num">$25,000</span><span class="small">ACH</span><span class="small">Thanked</span></div>
+          <div class="row"><div><strong>Dec 12, 2024</strong><div class="small">General Operating</div></div><span class="amt num">$30,000</span><span class="small">ACH</span><span class="small">Thanked</span></div>
+          <div class="small" style="margin-top:12px">Showing 3 of 8 gifts.</div>
+        </div></section>
+      </div>
+
+      <div id="activity" hidden>
+        <section class="sec"><div class="card"><ul class="tl">
+          <li><span class="when">Sep 2</span><span>Proposal "FY26 major gift ask" moved to Asked.</span></li>
+          <li><span class="when">Jul 19</span><span>Conversation logged by Admin.</span></li>
+          <li><span class="when">Jun 18</span><span>Thank-you letter printed.</span></li>
+        </ul></div></section>
+      </div>
+
+      <div id="x" hidden><section class="sec"><div class="card small">This tab keeps what it shows today. The mockup only reorganizes Overview and the rail.</div></section></div>
+
+      <p class="note">Mockup for the profile reorganization. The dark green right rail stays, framing the cream main column like the sidebar on the left. Every number opens the rows behind it (click one). Sample data.</p>
+    </main>
+
+    <aside class="rail" aria-label="How we manage them">
+      <div class="rsec">
+        <h4>Relationship owner <button>Reassign</button></h4>
+        <div class="owner"><div class="av">A</div><strong>Admin</strong></div>
+      </div>
+      <div class="rsec">
+        <h4>Stage</h4>
+        <div class="stages">
+          <button>Prospect</button><button>Qualify</button><button>Cultivate</button><button class="on">Solicit</button><button>Steward</button><button>Lapsed</button>
+        </div>
+        <p class="small" style="margin:8px 0 0">Solicit: book the gift conversation and make the ask.</p>
+      </div>
+      <div class="rsec">
+        <h4>Quick actions</h4>
+        <div class="qa"><button>+ Next move</button><button>+ Outreach</button><button>+ Draft email</button><button>+ Call script</button></div>
+      </div>
+      <div class="rsec">
+        <h4>Contact</h4>
+        <dl class="kv">
+          <dt>Program officer</dt><dd>Maria Lopez</dd>
+          <dt>Email</dt><dd>grants@sunrisefdn.org</dd>
+          <dt>Grant cycle</dt><dd>Fall, board in October</dd>
+        </dl>
+      </div>
+      <div class="rsec">
+        <h4>Sequences <button data-toggle="seq">Show</button></h4>
+        <div id="seq" hidden><p class="small" style="margin:0">Not enrolled. <button class="chip add">+ Enroll</button></p></div>
+      </div>
+      <div class="rsec">
+        <h4>Custom fields <button data-toggle="cf">Show 1</button></h4>
+        <div id="cf" hidden><dl class="kv"><dt>Funder type</dt><dd>Private foundation</dd></dl></div>
+      </div>
+      <div class="rsec">
+        <h4>Cultivation plan <button data-toggle="plan">Show</button></h4>
+        <div id="plan" hidden><p class="small" style="margin:0">No plan applied yet.</p></div>
+      </div>
+      <div class="rsec">
+        <h4>Before you go</h4>
+        <button class="btn" style="width:100%">Brief me</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="drawer" id="drawer" hidden>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <button class="btn" id="dClose" style="float:right">Close</button>
+    <h3 id="dTitle"></h3>
+    <p class="small" id="dDef"></p>
+    <table><thead><tr><th>Date</th><th>What</th><th class="r">Amount</th></tr></thead><tbody id="dRows"></tbody></table>
+    <p class="small" id="dFoot"></p>
+  </div>
+</div>
+
+<script>
+const DATA={
+  lifetime:{t:"Lifetime $151,500",d:"Every gift Sunrise has made, in cents, since their first.",rows:[["Jun 16, 2026","Youth Arts Access","$1,500"],["Dec 10, 2025","Youth Arts Access","$25,000"],["Dec 12, 2024","General Operating","$30,000"],["Dec 8, 2023","Youth Arts Access","$25,000"],["Dec 9, 2022","Youth Arts Access","$25,000"],["Dec 10, 2021","Studio Scholarships","$20,000"],["Dec 11, 2020","Studio Scholarships","$15,000"],["Dec 13, 2019","General Operating","$10,000"]],f:"8 gifts · total $151,500"},
+  last:{t:"Last gift $1,500",d:"The most recent gift recorded for Sunrise.",rows:[["Jun 16, 2026","Youth Arts Access · check","$1,500"]],f:"1 gift"},
+  contact:{t:"Last contact 70 days ago",d:"The most recent conversation logged with anyone at Sunrise.",rows:[["Jul 19, 2026","Call with Maria Lopez",""],["May 2, 2026","Site visit",""],["Jun 18, 2026","Thank-you letter",""]],f:"Last logged Jul 19"},
+  ask:{t:"Open ask $32,500",d:"Proposals that are open for Sunrise.",rows:[["Sep 2, 2026","FY26 major gift ask · Asked · due Oct 22","$32,500"]],f:"1 open proposal · total $32,500"}
+};
+const $=s=>document.querySelector(s);
+function openD(k){const x=DATA[k];if(!x)return;$('#dTitle').textContent=x.t;$('#dDef').textContent=x.d;
+  $('#dRows').innerHTML=x.rows.map(r=>`<tr><td class="num">${r[0]}</td><td>${r[1]}</td><td class="r num">${r[2]}</td></tr>`).join('');
+  $('#dFoot').textContent=x.f;$('#drawer').hidden=false;$('#dClose').focus();}
+document.querySelectorAll('[data-open]').forEach(b=>b.addEventListener('click',()=>openD(b.dataset.open)));
+$('#dClose').onclick=()=>$('#drawer').hidden=true;
+$('#drawer').addEventListener('click',e=>{if(e.target.id==='drawer')$('#drawer').hidden=true;});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){$('#drawer').hidden=true;$('#moreList').hidden=true;}});
+$('#moreBtn').onclick=()=>{const l=$('#moreList');l.hidden=!l.hidden;$('#moreBtn').setAttribute('aria-expanded',String(!l.hidden));};
+document.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{const el=document.getElementById(b.dataset.toggle);el.hidden=!el.hidden;b.textContent=el.hidden?(b.dataset.toggle==='cf'?'Show 1':'Show'):'Hide';}));
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  ['overview','gifts','activity','x'].forEach(id=>document.getElementById(id).hidden=(id!==t.dataset.tab));
+}));
+</script>
+</body></html>

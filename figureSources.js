@@ -44,6 +44,13 @@ class FigureParamError extends Error {}
 
 let _dd = null;
 async function displayDateMod() { return _dd || (_dd = await import("./shared/displayDate.js")); }
+// PROFILE-1 — what "open" means for a proposal is defined ONCE, in
+// shared/proposalShape.js (OPEN_STAGE_KEYS). This module is CommonJS and that
+// one is ESM, so it comes in the same way displayDate does: lazily, memoised.
+// A source that wants it declares `sql` as an async builder (plainFigure
+// awaits it), which is why nothing here has to copy a stage list.
+let _ps = null;
+async function proposalShapeMod() { return _ps || (_ps = await import("./shared/proposalShape.js")); }
 
 // ── PARAMETERS ─────────────────────────────────────────────────────────────
 // A source names the parameters it reads and their shape. Anything else is
@@ -80,6 +87,23 @@ const STATUS_WORD = `CASE s.status WHEN 'active' THEN 'Giving' WHEN 'recovered' 
   WHEN 'past_due' THEN 'Card failing' WHEN 'recovering' THEN 'Card being retried' WHEN 'paused' THEN 'Paused'
   WHEN 'canceled' THEN 'Ended' WHEN 'cancelled' THEN 'Ended' ELSE INITCAP(REPLACE(s.status,'_',' ')) END`;
 const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
+// PROFILE-1 — how much conversation history the "last contact" figure opens.
+// The figure is ONE number (days since the most recent one); the rows are the
+// history behind it, and a record with hundreds of them does not need to send
+// them all to answer "when did we last speak".
+const CONTACT_ROWS_MAX = 50;
+
+// One gift, as a person's own record reads it: the fund it went to is the line
+// ("Unrestricted" when none was named, exactly as the `gifts` source says it),
+// and how it was paid is the detail. The amount is the gift's own amount and
+// nothing else — a refund is a gift with a negative amount and comes off the
+// total here, the same as it does in `gifts`.
+const DONOR_GIFT_SELECT = `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(f.name, 'Unrestricted') AS name, g.date,
+              ROUND(g.amount::numeric, 2) AS amount,
+              COALESCE(NULLIF(g.payment_method, ''), INITCAP(NULLIF(g.type, ''))) AS detail
+         FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+         LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.donor_id = ?`;
 
 function giftsWhere(p, args) {
   let w = "";
@@ -231,6 +255,144 @@ const SOURCES = {
              WHERE m.org_id = ? AND m.created_at >= ?::date`,
       args: [orgId, p.since],
     }),
+  },
+
+  // ── ONE PERSON'S RECORD (PROFILE-1) ─────────────────────────────────────
+  // The four numbers at the top of a person's profile. Each is a source like
+  // any other, so the number on the record and the rows in its drawer are the
+  // same query and cannot disagree. Every one of them is scoped to the org by
+  // its first argument AND to one person by a required `donor`.
+  // LIFETIME GIVING — THE TRUE LIFETIME, AND THE GAP GETS A ROW.
+  //
+  // A person's lifetime is not always the gifts you can list. When a
+  // nonprofit's history arrives as an imported AGGREGATE TOTAL, the import
+  // writes `donors.total_giving` with NO gift rows behind it (BUILD-57 §2c) —
+  // so the column is the real lifetime and the itemized gifts are only the
+  // part of it Steward can name. Summing the gifts alone under-reports every
+  // donor who came in with history, which is worse than the number this
+  // replaced.
+  //
+  // So the difference is a ROW, at the end, in the oldest position — not a
+  // footnote. It used to be a sentence under the tiles that only appeared on
+  // the Overview tab; as a row it is IN the drawer, it is part of the total
+  // that foots, and somebody who clicks the number to check it sees exactly
+  // where the difference comes from instead of being told about it somewhere
+  // else on the screen.
+  //
+  // The other direction is NOT symmetrical. When the itemized gifts come to
+  // MORE than the column, the column is the stale one: it is a rollup that
+  // `recalcDonorSummary` maintains, while the gift rows are the primary
+  // record. A negative row would subtract real, visible money from a person's
+  // lifetime on the word of a cache — and would read in the drawer as a
+  // refund that nobody made. So no row is emitted and the figure is the
+  // itemized sum, which is the number every gift on file can be pointed at.
+  "donor-lifetime": {
+    label: "Lifetime giving",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "Every gift this person has ever given, added up to the cent. A refund is a gift with a negative amount and comes off the total, exactly as it does everywhere else in Steward. Giving that arrived as an imported total, with no individual gifts behind it, is one row of its own at the end.",
+    js: async (orgId, p) => {
+      const rows = await query(`${DONOR_GIFT_SELECT} ORDER BY g.date DESC NULLS LAST, g.id DESC`, [orgId, p.donor]);
+      const [d] = await query(
+        `SELECT total_giving, first_gift_date FROM donors WHERE org_id = ? AND id = ? AND deleted_at IS NULL`,
+        [orgId, p.donor]);
+      if (!d) return rows;
+      // Both sides in CENTS, by the one conversion, so the comparison is not
+      // decided by binary floating point.
+      const itemized = rows.reduce((s, r) => s + (money.toCents(String(r.amount ?? "0")) ?? 0), 0);
+      const unitemized = (money.toCents(String(d.total_giving ?? "0")) ?? 0) - itemized;
+      if (unitemized <= 0) return rows;
+      // The date is the person's first known gift date, and only when it is
+      // genuinely older than anything itemized — otherwise this row claims a
+      // day it has no evidence for, and no date is the honest answer.
+      const oldest = rows.length ? String(rows[rows.length - 1].date || "").slice(0, 10) : null;
+      const first = d.first_gift_date ? String(d.first_gift_date).slice(0, 10) : null;
+      return [...rows, {
+        id: `${p.donor}:imported-total`,
+        type: "imported_total",
+        donor_id: p.donor,
+        name: "Giving before Steward",
+        date: first && (!oldest || first < oldest) ? first : null,
+        amount: money.toDollars(unitemized),
+        detail: "Imported as a total, with no individual gifts behind it",
+      }];
+    },
+  },
+  "donor-last-gift": {
+    label: "Last gift",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "The most recent gift this person gave, on its own: what it was, when it came in, what it went to and how it was paid.",
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} ORDER BY g.date DESC, g.id DESC LIMIT 1`,
+      args: [orgId, p.donor],
+    }),
+  },
+  "donor-open-ask": {
+    label: "Open ask",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "What this person is being asked for right now: every proposal still in flight — identified, cultivating or asked — at the amount it asks for. A proposal they have said yes or no to is no longer open and is not counted.",
+    // Async: what counts as open is OPEN_STAGE_KEYS in shared/proposalShape.js,
+    // and the stage's words are that file's labels, so neither is retyped here.
+    sql: async (orgId, p) => {
+      const P = await proposalShapeMod();
+      const label = `CASE o.proposal_stage ${P.PROPOSAL_STAGES.map(s => `WHEN '${s.key}' THEN '${s.label}'`).join(" ")}
+                       ELSE INITCAP(REPLACE(COALESCE(o.proposal_stage, ''), '_', ' ')) END`;
+      return {
+        sql: `SELECT o.id, 'proposal' AS type, o.donor_id, COALESCE(NULLIF(o.name, ''), 'A proposal') AS name,
+                     TO_CHAR(o.expected_close, 'YYYY-MM-DD') AS date,
+                     ROUND(COALESCE(o.target_amount, 0)::numeric, 2) AS amount, ${label} AS detail
+                FROM opportunities o JOIN donors d ON d.id = o.donor_id AND d.org_id = o.org_id
+               WHERE o.org_id = ? AND o.donor_id = ? AND d.deleted_at IS NULL
+                 AND o.proposal_stage = ANY(?::text[])`,
+        args: [orgId, p.donor, P.OPEN_STAGE_KEYS],
+        order: "date ASC NULLS LAST, id",
+      };
+    },
+  },
+  // LAST CONTACT — a figure whose value is a NUMBER OF DAYS, not money.
+  //
+  // Two things have to be true at once: the number is the gap since the most
+  // recent conversation, and the drawer shows the conversation history. They
+  // are reconciled by putting the whole gap on the FIRST row and nothing on
+  // the rest, so the sum over the rows IS the gap — the drill-through still
+  // foots, and nobody has to invent a second kind of total.
+  //
+  // `today` is a REQUIRED PARAMETER, never the machine clock. This module has
+  // no way to reach orgTz (it lives in server.js, which requires the route
+  // file that requires this one), and a figure must be reproducible from its
+  // own URL, so the caller — which does know the organisation's timezone —
+  // passes the org's civil today in. Same discipline as every dated source
+  // here: the window comes from the caller, computed once, in the org's zone.
+  "donor-contact-gap": {
+    label: "Last contact",
+    measure: () => "sum",
+    amountKind: "days",
+    params: { donor: "id:required", today: "date:required" },
+    sentence: (p, dd) => `Every call, meeting, email, ask and note logged with this person, most recent first. The figure is the whole days from the most recent one to ${dd(p.today)}; only that conversation carries the count, so the rows still add to it.`,
+    js: async (orgId, p) => {
+      const rows = await query(
+        `SELECT i.id, i.donor_id, i.type, i.note, i.date, i.logged_by_name
+           FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+          WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL
+            AND i.type = ANY(?) AND i.date IS NOT NULL AND i.date <> ''
+          ORDER BY i.date DESC, i.id DESC LIMIT ?`,
+        [orgId, p.donor, CONVERSATION_TYPES, CONTACT_ROWS_MAX]);
+      return rows.map((r, i) => {
+        const date = String(r.date).slice(0, 10);
+        // A conversation logged for a date still to come is not a negative
+        // gap; it is today.
+        const gap = Math.max(0, orgTime.daysBetween(date, p.today) ?? 0);
+        const word = String(r.type || "");
+        return {
+          id: r.id, type: "interaction", donor_id: r.donor_id, name: r.note || "", date,
+          amount: i === 0 ? gap : null,
+          detail: [word ? word.charAt(0).toUpperCase() + word.slice(1) : null,
+                   r.logged_by_name ? `logged by ${r.logged_by_name}` : null].filter(Boolean).join(" · ") || null,
+        };
+      });
+    },
   },
 
   // ── MONTHLY GIVING ───────────────────────────────────────────────────────
@@ -647,7 +809,10 @@ async function plainFigure(orgId, def, key, p, deps, { page, pageSize, rows: wan
     agg = { n: all.length, s: String(money.toDollars(sum)), a: avg };
     pageRows = wantRows ? all.slice((page - 1) * pageSize, page * pageSize) : [];
   } else {
-    const { sql, args, order } = def.sql(orgId, p);
+    // `sql` may be an async builder: a source whose SQL needs something only
+    // an ESM module knows (the open proposal stages) awaits it here. Awaiting
+    // a plain object is a no-op, so every existing source is untouched.
+    const { sql, args, order } = await def.sql(orgId, p);
     const [a] = await query(`SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::text AS s, AVG(amount) AS a FROM (${sql}) x`, args);
     agg = a;
     pageRows = wantRows
@@ -713,7 +878,11 @@ function blankShortOf(blank) {
 async function figureValue(orgId, source, deps = {}) {
   const f = await figure(orgId, source, deps, { rows: false });
   if (!f) throw new Error(`figureSources: unknown source "${source && source.key}"`);
-  return { value: f.value, cents: f.cents, blank: f.blank || null, blankShort: f.blankShort || null };
+  // `totalRows` comes back too: a caller that must tell "nothing there" from
+  // "there and it is zero" (a record with no gifts at all, against one whose
+  // gift and its refund cancel) needs the count, and the count is already in
+  // hand — asking for it separately would be a second computation.
+  return { value: f.value, cents: f.cents, blank: f.blank || null, blankShort: f.blankShort || null, totalRows: f.totalRows || 0 };
 }
 
 module.exports = { SOURCES, figure, figureValue, sourceDef, FigureParamError, addYears, CONVERSATION_TYPES };

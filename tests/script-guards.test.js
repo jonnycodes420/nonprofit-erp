@@ -71,6 +71,10 @@ const SELF_REFUSING = [
   "fix2-b-capture-exports",
   // FIX-3 D — captures the donor profile and its mockups on the LOCAL stack (seeds a fixture org).
   "fix3-d-profile-capture",
+  // PROFILE-1 — the profile walk: drives a fixture org's record at 1440 and
+  // 390 beside the approved mockup. Loopback only, by an explicit refusal at
+  // the top of the file.
+  "profile1-capture",
   // BUILD-75 B.1 — the route-inventory walker. BOOTS server.js (schema init
   // runs), so it hard-refuses any non-loopback DATABASE_URL outright.
   "build75-route-inventory","loadtest", "seed-loadtest", "seed-build46-network-demo", "build58-stripe-drill",

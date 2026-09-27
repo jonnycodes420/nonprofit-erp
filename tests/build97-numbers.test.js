@@ -63,7 +63,7 @@ async function reset() {
 // screen is a change to what the product tells somebody, and it has to be
 // written down either way.
 const EXPECTED = {
-  "components/Donors.jsx": 117,   // BUILD-98 Part 1: +2, the soft-credit pair (profile.creditHard / creditWithSoft)
+  "components/Donors.jsx": 118,   // BUILD-98 Part 1: +2, the soft-credit pair (profile.creditHard / creditWithSoft) · PROFILE-1: +1, the open ask's amount on the next-step row (the same quantity as the Open ask figure, which carries the definition)
   "components/Dashboard.jsx": 62,
   // FIX-1 E: 43 → 38. Out: the manual Accounts tab (its per-account balances,
   // the drill-down ledger and its balance footer) and the "Last payout" tile.
@@ -126,7 +126,7 @@ const EXPECTED = {
   "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
   "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 411;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above) · FIX-2 A: +4 (Dashboards -2, panel +5, Figure +1) · FIX-3 E: -2 (Reports, above)
+const EXPECTED_TOTAL = 412;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above) · FIX-2 A: +4 (Dashboards -2, panel +5, Figure +1) · FIX-3 E: -2 (Reports, above) · PROFILE-1: +1 (Donors, above)
 const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline) · FIX-2 B: -2 (Reports: the 3-year y0 cell and the retention sentence's two percentages no longer sit beside a table-header label; +1 the bookkeeper fund "Total") · FIX-3 E: +2 (Reports, above)
 
 (async () => {

@@ -392,7 +392,11 @@ const cents = v => Math.round(Number(v) * 100);
     const panel = page.locator('[data-testid="donor-proposals-panel"]');
     ok("§8 the profile carries a Proposals panel", await panel.count() === 1);
     const pBox = await panel.boundingBox().catch(() => null);
-    const gBox = await page.locator("text=Giving History").first().boundingBox().catch(() => null);
+    // PROFILE-1 renamed the chart "Giving by year" (one bar per calendar
+    // year, each opening its gifts) and moved Proposals directly under the
+    // next step. The fact this asserts is unchanged: the ask is above the
+    // evidence for it.
+    const gBox = await page.locator('[data-testid="dp-giving-by-year"]').first().boundingBox().catch(() => null);
     ok("§8 …and it sits ABOVE giving history", !!pBox && !!gBox && pBox.y < gBox.y, { panel: pBox && pBox.y, giving: gBox && gBox.y });
     const pTxt = await panel.innerText().catch(() => "");
     ok("§8 the panel lists her proposals with their stage", /Capital|Annual|Scholarship/i.test(pTxt), pTxt.slice(0, 300));

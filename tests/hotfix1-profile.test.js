@@ -142,8 +142,15 @@ async function seed() {
      /console\.info\(/.test(donors) && /dropLog\(/.test(donors) && !/droppedLine/.test(donors), "");
   ok("§2 no source anywhere still composes the on-screen dropped line",
      !/lines? (?:was|were) left out because/.test(donors + readSource("shared/nextMove.js") + readSource("shared/suggestionGuard.js")));
+  // PROFILE-1 moved the panels out of the rail and into Suggested on the
+  // Overview; the property is unchanged and so is what it is worth — a panel
+  // is drawn ONLY when there is text for it, so "nothing survived the
+  // checker" renders nothing rather than an empty brass box.
+  const dpSrc = readSource("client/src/components/DonorProfile.jsx");
   ok("§2 the panel renders only when there is text",
-     /aiMap\[`\$\{donor\.id\}_\$\{t\}`\]\?<AIPanel/.test(readSource("client/src/components/DonorProfile.jsx")));
+     /SUGGEST_KINDS\.map\(t=>aiMap\[`\$\{donor\.id\}_\$\{t\}`\]\?\(/.test(dpSrc)
+     && /<AIPanel text=\{aiMap\[`\$\{donor\.id\}_\$\{t\}`\]\}/.test(dpSrc)
+     && /\):null\)\}/.test(dpSrc), "");
 
   // ── §3 · timing is ahead, never behind ──────────────────────────────────
   console.log("\n— §3 · timing in a suggestion is in the future —");
@@ -272,6 +279,7 @@ async function seed() {
         railBox: { x: rb.x, w: rb.width, h: rb.height },
         mainBox: { x: mb.x, w: mb.width, h: mb.height },
         railBg: getComputedStyle(rail).backgroundColor,
+        railText: getComputedStyle(rail).color,
         mainBg: getComputedStyle(main).backgroundColor };
     });
     ok("§1 the rail is on the page", geom.rail === true, geom);
@@ -285,6 +293,19 @@ async function seed() {
          opaque(geom.railBg) && opaque(geom.mainBg) && !/rgba\([^)]*,\s*0\)/.test(geom.railBg + geom.mainBg), geom);
       ok("§1 the rail's ground CONTRASTS with the main column's",
          geom.railBg !== geom.mainBg, { railBg: geom.railBg, mainBg: geom.mainBg });
+      // PROFILE-1 — and the contrast is the approved one: the rail is INK and
+      // the column is light. "Different" was true of the white-on-cream rail
+      // too, and a build could satisfy it by nudging a shade; this says which
+      // way round they go. The numbers come from the tokens, not from taste:
+      // T.ink is #0F1A12 and the column is T.bg.
+      const lum = c => { const m = c.match(/\d+/g) || [0,0,0];
+        const f = v => { const x = Number(v)/255; return x <= 0.04045 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4); };
+        return 0.2126*f(m[0]) + 0.7152*f(m[1]) + 0.0722*f(m[2]); };
+      ok("§1 the rail is the DARK side of that contrast (ink), the column the light one",
+         lum(geom.railBg) < 0.05 && lum(geom.mainBg) > 0.5, { railBg: geom.railBg, mainBg: geom.mainBg });
+      ok("§1 …and the rail's own text is light enough to read on it (AA at body size)",
+         geom.railText && (lum(geom.railText) + 0.05) / (lum(geom.railBg) + 0.05) >= 4.5,
+         { railText: geom.railText, ratio: geom.railText ? ((lum(geom.railText)+0.05)/(lum(geom.railBg)+0.05)).toFixed(2) : null });
     }
     // The label is the button's first text node; the count badge beside it is
             // a separate element and is not part of the name.
