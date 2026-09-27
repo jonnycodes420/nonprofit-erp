@@ -1,0 +1,27 @@
+— §1 · what makes a gift online —
+  PASS  §1 the giving summary counts a gift online when it carries a Stripe payment id
+  FAIL  §1 the seed exports the ranges it asserts (online share, monthly givers, the gala) — {"SHAPE":{"driftedCount":11,"driftingHighMin":11,"driftingHighMax":20,"topDecileShareMin":0.62,"topDecileShareMax":0.82,"top200ShareMin":0.82,"top200ShareMax":0.93,"donorsMin":1000,"donorsMax":1150}}
+
+— §2 · the online share of the last twelve months —
+  FAIL  §2 online is 0.0% of the year's dollars ($0 of $1,652,415) — inside [30.0%, 45.0%] — {"n":753,"total":1652414.56,"online_n":0,"online_total":0}
+  FAIL  §2 ...and 0.0% of its gifts (0 of 753) — well over half (≥ 60.0%) — {"n":753,"total":1652414.56,"online_n":0,"online_total":0}
+  PASS  §2 every online gift looks like the webhook's (payment_method Card, type cash)
+  PASS  §2 every Stripe id in the demo is one the seed minted (pi_demo_…), never a real charge
+  FAIL  §2 every offline gift says how it came (Check, ACH, Stock, DAF, Cash) — {"bad_online":0,"unminted":0,"bad_offline":2610}
+  FAIL  §2 the channel follows the gift size: small 0.0% online > mid 0.0% > major 0.0% — {"major":0,"small":0,"mid":0}
+
+— §3 · monthly givers, charged every month —
+  FAIL  §3 at least undefined active monthly givers (0) — 0
+  FAIL  §3 each is monthly, with a card on file and a subscription id — []
+  PASS  §3 every monthly gift is a Stripe charge
+  PASS  §3 one charge every month, no month skipped
+  PASS  §3 ...through this month (each last charged within the past month)
+  PASS  §3 most have given a year or more (0 of 0)
+
+— §4 · the gala —
+  FAIL  §4 the demo has a gala, and it has happened
+
+— §5 · no gift dated after today —
+  FAIL  §5 no gift is dated after 2026-09-27 (166) — {"n":166,"amt":373280}
+
+7 passed, 9 failed
