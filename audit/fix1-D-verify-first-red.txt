@@ -1,0 +1,38 @@
+fix1-people
+  PASS  setup: Dee's gift recorded
+  FAIL  §1 role=donor lists the donors, the legacy row, and the volunteer who gives — ["fd_both","fd_brd","fd_dee","fd_leg","fd_oth","fd_vol"]
+  FAIL  §1 the list's count equals the people carrying the donor role — [6,3]
+  PASS  §1 without role, the list is everyone (search and older callers unchanged)
+  FAIL  §1 an unknown role is refused, never ignored — 200
+  FAIL  §1 the Directory asks the server for donors only
+  FAIL  §2 tagging a donor as Volunteer succeeds — {"error":"Not found"}
+  FAIL  §2 …and the answer carries both roles
+  FAIL  §2 Dee is on the volunteer roster that moment — []
+  FAIL  §2 the roster is exactly the volunteers — []
+  PASS  §2 …on ONE record, never a second row
+  FAIL  §2 turning a role on twice is a no-op
+  FAIL  §2 a role turns off — {"error":"Not found"}
+  FAIL  §2 'other' is not a role a chip can set — 404
+  FAIL  §2 a person with nothing left is Other, never nothing — {"error":"Not found"}
+  PASS  §2 …and turning volunteer back on replaces Other
+  FAIL  §3 removing Donor from somebody with gifts is refused — {"error":"Not found"}
+  FAIL  §3 …with the reason, in a sentence
+  PASS  §3 …and nothing changed
+  FAIL  §3 the older PUT /donors/:id path refuses it too — 200
+  FAIL  §3 …before it writes anything
+  FAIL  §3 a donor with no gifts on file may stop being one — {"error":"Not found"}
+  FAIL  §3 the roster says who also gives
+  FAIL  §3 adding Donor to a prospect is allowed
+  FAIL  §3 a person read says whether Donor can be removed, and why not — {"error":"Not found"}
+  FAIL  §4 the staff and board list — {"error":"Not found"}
+  FAIL  §4 Settings → Organization reads it
+  PASS  §5 search finds a board member
+  PASS  §5 …and anyone else, carrying what they are
+  FAIL  §5 the search row says what they are
+  FAIL  §6 the paragraph appears nowhere in the client — ["/Users/jonathanatkinson/steward-fix1-d/client/src/components/Communications.jsx"]
+  PASS  §7 another org cannot change a role
+  PASS  §7 …or read the person
+  FAIL  §7 …and its lists hold only its own people — {"error":"Not found"}
+  PASS  §7 …and Dee is untouched
+
+10 passed, 25 failed

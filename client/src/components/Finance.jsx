@@ -1,22 +1,19 @@
 import { useState, useEffect, Fragment } from "react";
 import { RestrictedView } from "./RestrictedView";
-import { T, fmt, fmtFull, askClaude, Card, AIBtn, AIPanel, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
-import { apiFetch } from "../api";
+import { T, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
+import { apiFetch, API, getToken } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
 import { errorMessage } from "../lib/domainError";
+import { CASH_ON_HAND_SENTENCE, stripeBalanceSentence } from "../../../shared/payoutReconcile.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────
-// Account-type accents, five-color palette only (dark-green shades + gold +
-// terracotta) — deliberately varied per the five-color rule so adjacent
-// categories stay visually distinct without reaching outside the set.
-const ACCT_TYPES = [
-  { id:"asset",     label:"Asset",     color:T.greenMid },
-  { id:"liability", label:"Liability", color:T.gold },
-  { id:"net_asset", label:"Net Asset", color:T.greenDk },
-  { id:"revenue",   label:"Revenue",   color:T.green },
-  { id:"expense",   label:"Expense",   color:T.terracotta },
-];
-const TYPE_COLOR = Object.fromEntries(ACCT_TYPES.map(t => [t.id, t.color]));
+// Account-type accents for the ledger's account badge, palette tokens only.
+const TYPE_COLOR = { asset:T.greenMid, liability:T.gold, net_asset:T.greenDk, revenue:T.green, expense:T.terracotta };
+
+// FIX-1 E — every number on screen has a sentence. Cash on hand is the
+// ledger's, not the bank's and not Stripe's, and it says so: the sentence is
+// CASH_ON_HAND_SENTENCE in shared/payoutReconcile.js, one string for the
+// screen and the suite.
 
 // (BUILD-12) The Overview narrative headline was removed as page-subtitle
 // clutter — it duplicated the stat cards. Its one non-duplicated number, the
@@ -52,56 +49,6 @@ const writeBtn = (isReadOnly, style) => ({
   ...style,
   ...(isReadOnly ? { opacity:0.5, cursor:"not-allowed" } : {}),
 });
-
-// ── AccountModal ───────────────────────────────────────────────────────────
-function AccountModal({ account, onSave, onClose }) {
-  const [form, setForm] = useState(
-    account
-      ? { code: account.code, name: account.name, type: account.type, subtype: account.subtype || "", active: account.active !== false }
-      : { code:"", name:"", type:"revenue", subtype:"", active:true }
-  );
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-  return (
-    <Modal onClose={onClose} width={420} backdrop="rgba(0,0,0,0.4)" blur={false} zIndex={1000} padding={28}
-      dialogStyle={{borderRadius:16}}>
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{account ? "Edit account" : "New account"}</div>
-        <div style={{ display:"flex", gap:8 }}>
-          <div style={{ flex:"0 0 90px" }}>
-            <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Code</div>
-            <input value={form.code} onChange={set("code")} placeholder="4010" style={inp} disabled={!!account}/>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Name</div>
-            <input value={form.name} onChange={set("name")} placeholder="Account name" style={inp}/>
-          </div>
-        </div>
-        <div style={{ display:"flex", gap:8 }}>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Type</div>
-            <select value={form.type} onChange={set("type")} style={{ ...inp, cursor:"pointer" }} disabled={!!account}>
-              {ACCT_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-          </div>
-          <div style={{ flex:1 }}>
-            <div style={{ fontSize:11, color:T.ink3, marginBottom:4 }}>Subtype (optional)</div>
-            <input value={form.subtype} onChange={set("subtype")} placeholder="e.g. grants" style={inp}/>
-          </div>
-        </div>
-        {account && (
-          <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:T.ink, cursor:"pointer" }}>
-            <input type="checkbox" checked={form.active} onChange={e => setForm(p => ({ ...p, active: e.target.checked }))}/>
-            Active
-          </label>
-        )}
-        <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
-          <button style={ghostBtn} onClick={onClose}>Cancel</button>
-          <button style={btn()} onClick={() => onSave(form)}>Save</button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
 
 // ── FundModal ──────────────────────────────────────────────────────────────
 function FundModal({ fund, onSave, onClose }) {
@@ -389,24 +336,22 @@ function TransactionModal({ accounts, funds, onSave, onRouted, onClose }) {
 }
 
 // ── Money in — Stripe status/balance/payouts strip (Overview) ───────────────
-function MoneyInStrip({ onNavigate }) {
+const PAYOUT_STATUS = { paid:IN, in_transit:T.gold, pending:T.gold, canceled:OUT, failed:OUT };
+const fmtDate = (iso, year) => iso ? new Date(iso).toLocaleDateString("en-US", year ? { month:"short", day:"numeric", year:"numeric" } : { month:"short", day:"numeric" }) : "—";
+const useStripeSummary = () => {
   const [s, setS] = useState(null);
-  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let alive = true;
     apiFetch("/finance/stripe-summary")
-      .then(r => { if (alive) { setS(r); setLoading(false); } })
-      .catch(() => { if (alive) { setS({ connected:false }); setLoading(false); } });
+      .then(r => { if (alive) setS(r); })
+      .catch(() => { if (alive) setS({ connected:false }); });
     return () => { alive = false; };
   }, []);
+  return s;
+};
 
-  if (loading) return (
-    <Card><div style={{ fontSize:12, color:T.ink3 }}>Checking your Stripe balance…</div></Card>
-  );
-
-  // Not connected — warm connect prompt that deep-links to the existing
-  // Settings → Giving Pages flow (never duplicate the onboarding here).
-  if (!s?.connected) return (
+function ConnectStripeCard({ onNavigate }) {
+  return (
     <Card style={{ borderLeft:`3px solid ${T.gold}` }}>
       <div style={{ display:"flex", alignItems:"center", gap:14, flexWrap:"wrap" }}>
         <div style={{ flex:"1 1 280px" }}>
@@ -418,60 +363,229 @@ function MoneyInStrip({ onNavigate }) {
       </div>
     </Card>
   );
+}
 
-  const avail = s.balance?.available || 0;
-  const pending = s.balance?.pending || 0;
-  const payouts = s.payouts || [];
-  const last = payouts[0];
-  const PAYOUT_STATUS = { paid:IN, in_transit:T.gold, pending:T.gold, canceled:OUT, failed:OUT };
+function PayoutRow({ p, first, onOpen }) {
+  return (
+    <div {...interactive(() => onOpen(p.id), { label: `Open the payout of ${fmtFull(p.amount)}` })} data-testid="payout-row"
+      style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 8px", margin:"0 -8px", borderRadius:8, borderTop: first ? "" : "1px solid "+T.bg3, minHeight:44 }}>
+      <span style={{ width:8, height:8, borderRadius:"50%", background:PAYOUT_STATUS[p.status]||T.ink3, flexShrink:0 }}/>
+      <span style={{ fontSize:13, fontWeight:700, color:T.ink, minWidth:90 }}>{fmtFull(p.amount)}</span>
+      <span style={{ flex:1, fontSize:12, color:T.ink3 }}>{fmtDate(p.arrival_date, true)}</span>
+      <span style={{ fontSize:11, fontWeight:600, color:PAYOUT_STATUS[p.status]||T.ink3, textTransform:"capitalize" }}>{(p.status||"").replace(/_/g," ")}</span>
+      <span style={{ fontSize:12, color:T.greenMid, fontWeight:700 }}>Open →</span>
+    </div>
+  );
+}
+
+function MoneyInStrip({ onNavigate, onOpenPayout, cashOnHand }) {
+  const s = useStripeSummary();
+  if (!s) return <Card><div style={{ fontSize:12, color:T.ink3 }}>Checking your Stripe balance…</div></Card>;
+  if (!s.connected) return <ConnectStripeCard onNavigate={onNavigate}/>;
+  const payouts = (s.payouts || []).slice(0, 5);
   return (
     <Card>
       <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between", gap:10, marginBottom:12, flexWrap:"wrap" }}>
         <SectionLabel>Money in · Stripe</SectionLabel>
-        <span style={{ fontSize:11, color:IN, fontWeight:700, display:"flex", alignItems:"center", gap:5 }}>
-          <span style={{ width:7, height:7, borderRadius:"50%", background:IN, display:"inline-block" }}/> Connected
-        </span>
+        <span style={{ fontSize:11, color:IN, fontWeight:700 }}>Connected</span>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12, marginBottom:payouts.length?16:0 }}>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))", gap:12 }}>
         <div>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Available</div>
-          <div style={{ fontSize:24, fontWeight:800, color:IN, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(avail)}</div>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Available in Stripe</div>
+          <div style={{ fontSize:24, fontWeight:800, color:IN, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(s.balance?.available || 0)}</div>
         </div>
         <div>
-          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Pending</div>
-          <div style={{ fontSize:24, fontWeight:800, color:T.gold, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(pending)}</div>
+          <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>On its way</div>
+          <div style={{ fontSize:24, fontWeight:800, color:T.gold, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(s.balance?.pending || 0)}</div>
         </div>
-        {last && (
-          <div>
-            <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>Last payout</div>
-            <div style={{ fontSize:16, fontWeight:700, color:T.ink }}>{fmtFull(last.amount)}</div>
-            <div style={{ fontSize:11, color:T.ink3, marginTop:2 }}>{last.arrival_date ? new Date(last.arrival_date).toLocaleDateString("en-US",{month:"short",day:"numeric"}) : "—"} · {last.status}</div>
-          </div>
-        )}
+      </div>
+      {/* A $0 Stripe balance beside a large cash-on-hand figure is not a
+          discrepancy, and the screen says so rather than leaving it to worry. */}
+      <div data-testid="stripe-balance-sentence" style={{ fontSize:12, color:T.ink2, marginTop:10, lineHeight:1.55 }}>
+        {stripeBalanceSentence({
+          availableCents: Math.round((s.balance?.available || 0) * 100),
+          pendingCents: Math.round((s.balance?.pending || 0) * 100),
+          cashOnHandText: cashOnHand == null ? "" : fmt(cashOnHand),
+        })}
       </div>
       {payouts.length > 0 && (
-        <>
-          <div style={{ fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", margin:"4px 0 8px" }}>Recent payouts</div>
-          <div style={{ display:"flex", flexDirection:"column" }}>
-            {payouts.map((p, i) => (
-              <div key={p.id || i} style={{ display:"flex", alignItems:"center", gap:12, padding:"9px 0", borderTop: i>0 ? "1px solid "+T.bg3 : "" }}>
-                <span style={{ width:8, height:8, borderRadius:"50%", background:PAYOUT_STATUS[p.status]||T.ink3, flexShrink:0 }}/>
-                <span style={{ fontSize:13, fontWeight:700, color:T.ink, minWidth:90 }}>{fmtFull(p.amount)}</span>
-                <span style={{ flex:1, fontSize:12, color:T.ink3 }}>{p.arrival_date ? new Date(p.arrival_date).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}) : "—"}</span>
-                <span style={{ fontSize:11, fontWeight:600, color:PAYOUT_STATUS[p.status]||T.ink3, textTransform:"capitalize" }}>{(p.status||"").replace(/_/g," ")}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize:11, color:T.ink3, marginTop:10, lineHeight:1.6 }}>Payouts are what Stripe deposited to your bank. Gift-level reconciliation is coming — for now, match against the online gifts in your ledger.</div>
-        </>
+        <div style={{ marginTop:14 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", margin:"4px 0 6px" }}>Recent payouts</div>
+          {payouts.map((p, i) => <PayoutRow key={p.id || i} p={p} first={i === 0} onOpen={onOpenPayout}/>)}
+        </div>
       )}
     </Card>
   );
 }
 
+// ── Payouts — which gifts made up this payout (FIX-1 E) ────────────────────
+const KIND_LABEL = { charge:"Gift", refund:"Refund", fee:"Stripe fee", adjustment:"Adjustment", other:"Other" };
+function PayoutsView({ onNavigate, openId, onOpen }) {
+  const s = useStripeSummary();
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!openId) { setD(null); return; }
+    let alive = true; setD(null); setErr("");
+    apiFetch(`/finance/payout-lines?payout=${encodeURIComponent(openId)}`)
+      .then(r => { if (alive) setD(r); })
+      .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not open that payout.")); });
+    return () => { alive = false; };
+  }, [openId]);
+
+  if (!s) return <Card><div style={{ fontSize:12, color:T.ink3 }}>Checking your Stripe payouts…</div></Card>;
+  if (!s.connected) return <ConnectStripeCard onNavigate={onNavigate}/>;
+  const payouts = s.payouts || [];
+  if (!openId) return (
+    <Card>
+      <SectionLabel>Payouts</SectionLabel>
+      <div style={{ fontSize:12, color:T.ink3, marginBottom:10, lineHeight:1.6 }}>
+        Each payout is one deposit in your bank. Open one to see the gifts, refunds and fees inside it.
+      </div>
+      {payouts.length === 0
+        ? <div style={{ fontSize:13, color:T.ink3 }}>Stripe has not paid anything out yet. The first payout will appear here the day it is sent to your bank.</div>
+        : payouts.map((p, i) => <PayoutRow key={p.id} p={p} first={i === 0} onOpen={onOpen}/>)}
+    </Card>
+  );
+  return (
+    <div data-testid="payout-detail"><Card>
+      <button onClick={() => onOpen(null)} style={{ ...ghostBtn, marginBottom:12 }}>← All payouts</button>
+      {err && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{err}</div>}
+      {!d && !err && <div style={{ fontSize:12, color:T.ink3 }}>Opening the payout…</div>}
+      {d && <>
+        <div style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap" }}>
+          <div style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif" }}>{fmtFull(d.payoutCents / 100)}</div>
+          <div style={{ fontSize:12, color:T.ink3 }}>reached your bank {fmtDate(d.arrivalDate, true)}</div>
+        </div>
+        {/* A payout that does not add up is a finding, not an error: brass, the
+            attention colour, never red (red is only a destructive confirm). */}
+        <div data-testid="payout-sentence" style={{ fontSize:13, color:T.ink, marginTop:6, lineHeight:1.55,
+          ...(d.reconciled ? {} : { background:T.gold100, border:"1px solid "+T.gold, borderRadius:8, padding:"8px 10px", fontWeight:600 }) }}>
+          {d.sentence}
+        </div>
+        <div className="reports-table-wrap" style={{ overflowX:"auto", marginTop:14 }}>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ textAlign:"left", color:T.ink3, fontSize:11, textTransform:"uppercase", letterSpacing:".05em" }}>
+                <th style={{ padding:"6px 8px" }}>Line</th><th style={{ padding:"6px 8px" }}>Donor</th>
+                <th style={{ padding:"6px 8px", textAlign:"right" }}>Amount</th><th style={{ padding:"6px 8px", textAlign:"right" }}>Fee</th>
+                <th style={{ padding:"6px 8px", textAlign:"right" }}>Net</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.rows.map(r => (
+                <tr key={r.id} data-testid="payout-line" style={{ borderTop:"1px solid "+T.bg3 }}>
+                  <td style={{ padding:"8px" }}>{KIND_LABEL[r.kind] || r.kind}</td>
+                  <td style={{ padding:"8px" }}>
+                    {r.donorId
+                      ? <span {...interactive(() => onNavigate && onNavigate("donors", { selectDonorId: r.donorId }), { label: `Open ${r.donorName}` })}
+                          data-testid="payout-donor" style={{ color:T.greenMid, fontWeight:700 }}>{r.donorName}</span>
+                      : <span style={{ color:T.ink3 }}>{r.kind === "fee" ? "Stripe" : "Not a gift on file"}</span>}
+                  </td>
+                  <td style={{ padding:"8px", textAlign:"right" }}>{fmtFull(r.grossCents / 100)}</td>
+                  <td style={{ padding:"8px", textAlign:"right", color:T.ink3 }}>{r.feeCents ? fmtFull(-r.feeCents / 100) : ""}</td>
+                  <td style={{ padding:"8px", textAlign:"right", fontWeight:700 }}>{fmtFull(r.netCents / 100)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ borderTop:"2px solid "+T.bg3 }}>
+                <td colSpan={4} style={{ padding:"8px", fontSize:12, color:T.ink3 }}>The lines add up to</td>
+                <td style={{ padding:"8px", textAlign:"right", fontWeight:800 }}>{fmtFull(d.sumNetCents / 100)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </>}
+    </Card></div>
+  );
+}
+
+// ── Monthly close — what goes to the bookkeeper this month (FIX-1 E) ───────
+// The BUILD-87 bookkeeper export, asked for one month. There is no second
+// export path: this is /reports/bookkeeper with the month's first and last
+// day, and a month that does not foot REFUSES to become a file (409), which
+// this screen says in the server's own words.
+const monthBounds = ym => {
+  const [y, m] = ym.split("-").map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { from: `${ym}-01`, to: `${ym}-${String(last).padStart(2, "0")}` };
+};
+const lastMonth = () => {
+  const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+};
+function MonthlyClose() {
+  const [ym, setYm] = useState(lastMonth);
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const { from, to } = monthBounds(ym);
+  useEffect(() => {
+    let alive = true; setD(null); setErr("");
+    apiFetch(`/reports/bookkeeper?from=${from}&to=${to}`)
+      .then(r => { if (alive) setD(r); })
+      .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not build that month.")); });
+    return () => { alive = false; };
+  }, [from, to]);
+  const monthName = new Date(from + "T12:00:00").toLocaleDateString("en-US", { month:"long", year:"numeric" });
+  const download = async () => {
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(`${API}/reports/bookkeeper?from=${from}&to=${to}&format=csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || e.error || "Download failed"); }
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = `bookkeeper-${ym}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { setErr(errorMessage(e, "The file did not download.")); }
+    setBusy(false);
+  };
+  return (
+    <div data-testid="monthly-close"><Card>
+      <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", marginBottom:12 }}>
+        <SectionLabel>Monthly close</SectionLabel>
+        <input type="month" value={ym} onChange={e => e.target.value && setYm(e.target.value)} aria-label="Month to close" style={{ ...inp, width:170 }}/>
+      </div>
+      <div style={{ fontSize:12, color:T.ink3, marginBottom:12, lineHeight:1.6 }}>
+        One row per gift received in {monthName}, for the person who reconciles the bank. Steward checks that the rows, the fund totals and its own sum agree to the cent before it will write the file.
+      </div>
+      {err && <div role="alert" style={{ fontSize:13, color:T.terra700, marginBottom:10 }}>{err}</div>}
+      {!d && !err && <div style={{ fontSize:12, color:T.ink3 }}>Adding up {monthName}…</div>}
+      {d && <>
+        <div data-testid="close-sentence" style={{ fontSize:14, color:d.balanced ? T.ink : T.terra700, marginBottom:12, lineHeight:1.55 }}>
+          {d.giftCount === 0
+            ? `No gifts were received in ${monthName}, so there is nothing to send the bookkeeper.`
+            : d.balanced
+              ? `${d.giftCount} gift${d.giftCount === 1 ? "" : "s"} totalling ${fmtFull(d.totalCents / 100)}. It foots: the rows, the fund totals and the database agree to the cent.`
+              : d.exportRefused}
+        </div>
+        {d.byFund.length > 0 && (
+          <div style={{ marginBottom:14 }}>
+            {d.byFund.map((f, i) => (
+              <div key={f.name} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0", borderTop: i ? "1px solid "+T.bg3 : "" }}>
+                <span style={{ fontSize:13, color:T.ink }}>{f.name} <span style={{ color:T.ink3 }}>· {f.giftCount} gift{f.giftCount === 1 ? "" : "s"}</span></span>
+                <span style={{ fontSize:13, fontWeight:700, color:T.ink }}>{fmtFull(f.cents / 100)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={download} disabled={busy || !d.balanced || d.giftCount === 0}
+          style={{ ...btn(), ...((busy || !d.balanced || d.giftCount === 0) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
+          {busy ? "Preparing…" : `Download ${monthName} for the bookkeeper`}
+        </button>
+      </>}
+    </Card></div>
+  );
+}
+
 // ── Finance ────────────────────────────────────────────────────────────────
 export function Finance({ data, setData, isReadOnly, onNavigate }) {
-  const [subtab, setSubtab] = useState("overview");
+  // FIX-1 E: restricted money leads Finance — the first question a treasurer
+  // asks Steward that the books cannot answer.
+  const [subtab, setSubtab] = useState("restricted");
+  const [openPayout, setOpenPayout] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [funds, setFunds] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -487,14 +601,9 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const [txnSource, setTxnSource] = useState("");  // "" | online | gift | manual | import
   const [txnFund, setTxnFund] = useState("");      // "" | fundId
   const [showTxnModal, setShowTxnModal] = useState(false);
-  const [showAcctModal, setShowAcctModal] = useState(false);
-  const [editAcct, setEditAcct] = useState(null);
   const [showFundModal, setShowFundModal] = useState(false);
   const [editFund, setEditFund] = useState(null);
-  const [forecastAI, setForecastAI] = useState(""); const [forecastLoading, setForecastLoading] = useState(false);
-  const [riskAI, setRiskAI] = useState(""); const [riskLoading, setRiskLoading] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [drillAcct, setDrillAcct] = useState(null);
   const [auditLog, setAuditLog] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditActionFilter, setAuditActionFilter] = useState("");
@@ -536,16 +645,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
 
   // ── Reports & derived views (fund balances, monthly breakdown) ──
   const allTxns = transactions; // already loaded for current year
-  const incomeByAcct = {};
-  allTxns.filter(t => t.type === "income").forEach(t => {
-    const k = t.account_name || "Uncategorized";
-    incomeByAcct[k] = (incomeByAcct[k] || 0) + parseFloat(t.amount);
-  });
-  const expenseByAcct = {};
-  allTxns.filter(t => t.type === "expense").forEach(t => {
-    const k = t.account_name || "Uncategorized";
-    expenseByAcct[k] = (expenseByAcct[k] || 0) + parseFloat(t.amount);
-  });
 
   // Fund balances are cumulative (all-time) — a fund balance means nothing
   // per-calendar-year. The server computes them in /finance/summary so they
@@ -561,39 +660,24 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   const finFundBalances = summary?.fundBalances
     || Object.values(_fbMap).map(f => ({ ...f, balance: f.income - f.expense }));
 
-  const totalRev = Object.values(incomeByAcct).reduce((s, v) => s + v, 0);
-  const totalExp = Object.values(expenseByAcct).reduce((s, v) => s + v, 0);
   const monthsElapsed = new Date().getMonth() + 1;
-
-  // ── AI (reuse live finance data) ──
-  const ytdRev = summary?.ytdRevenue || 0;
-  const ytdExp = summary?.ytdExpenses || 0;
-  const getForecast = async () => {
-    setForecastLoading(true); setForecastAI("");
-    await askClaude("You are a nonprofit CFO. Specific, data-driven. Max 200 words.",
-      `Generate a 6-month revenue forecast.\nYTD Revenue: ${fmtFull(ytdRev)} | YTD Expenses: ${fmtFull(ytdExp)} | Net: ${fmtFull(ytdRev - ytdExp)}\nActive grants: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder} ${fmtFull(g.amount)} ends ${g.deadline}`).join(", ")}\nFund balances: ${finFundBalances.map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\n\nQ3-Q4 projection, 3 financial risks, 2 opportunities.`,
-      chunk => setForecastAI(chunk));
-    setForecastLoading(false);
-  };
-  const getRisks = async () => {
-    setRiskLoading(true); setRiskAI("");
-    await askClaude("You are a nonprofit financial auditor. Direct, specific. Max 150 words.",
-      `Identify financial risks.\nYTD Net: ${fmtFull(ytdRev - ytdExp)}\nRestricted funds: ${finFundBalances.filter(f => f.restricted).map(f => `${f.name}: ${fmtFull(f.balance)}`).join(", ")}\nGrant concentration: ${data.grants.filter(g => g.status === "active").map(g => `${g.funder}: ${fmtFull(g.amount)}`).join(", ")}\nLapsed donors: ${data.donors.filter(d => d.status === "lapsed").length}\n\nTop 3 risks with severity and mitigation.`,
-      chunk => setRiskAI(chunk));
-    setRiskLoading(false);
-  };
 
   // ── Donor lookup for transactions ──
   const donorById = Object.fromEntries((data.donors || []).map(d => [d.id, d]));
 
   // ── Sub-tabs (SectionTabs) ──
+  // FIX-1 E — the three questions come first: where restricted money sits,
+  // which gifts made up a payout, what goes to the bookkeeper this month. The
+  // manual Accounts tab is gone (the chart of accounts is still provisioned
+  // and still read by Budgets and the transaction form).
   const SUBTABS = [
+    { id:"restricted",   label:"Restricted" },
+    { id:"payouts",      label:"Payouts" },
+    { id:"close",        label:"Monthly close" },
     { id:"overview",     label:"Overview" },
     { id:"transactions", label:"Transactions" },
     { id:"funds",        label:"Funds" },
-    { id:"restricted",   label:"Restricted" },
     { id:"budgets",      label:"Budgets" },
-    { id:"accounts",     label:"Accounts" },
     { id:"audit",        label:"Audit Log" },
   ];
 
@@ -647,22 +731,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       await apiFetch(`/finance/transactions/${id}`, { method:"DELETE" });
       setTransactions(prev => prev.filter(t => t.id !== id));
       await Promise.all([reloadSummary(), reloadBudgets(budgetYear)]);
-    } catch(e) { console.error(e); }
-  };
-
-  const handleSaveAcct = async (form) => {
-    try {
-      if (editAcct) {
-        const updated = await apiFetch(`/finance/accounts/${editAcct.id}`, { method:"PUT", body: JSON.stringify(form) });
-        setAccounts(prev => prev.map(a => a.id === editAcct.id ? updated : a));
-      } else {
-        const created = await apiFetch("/finance/accounts", { method:"POST", body: JSON.stringify(form) });
-        setAccounts(prev => [...prev, created].sort((a,b) => a.code.localeCompare(b.code)));
-        if (created.type === "revenue" || created.type === "expense") {
-          setBudgets(prev => [...prev, { accountId:created.id, accountCode:created.code, accountName:created.name, accountType:created.type, subtype:created.subtype||"", budget:0, actual:0, variance:0 }]);
-        }
-      }
-      setShowAcctModal(false); setEditAcct(null);
     } catch(e) { console.error(e); }
   };
 
@@ -803,40 +871,58 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
 
       {/* Modals */}
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onRouted={handleRouted} onClose={() => setShowTxnModal(false)}/>}
-      {(showAcctModal || editAcct) && <AccountModal account={editAcct} onSave={handleSaveAcct} onClose={() => { setShowAcctModal(false); setEditAcct(null); }}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
-
-      {summary && (
-        <>
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
-            {[
-              // Cash on Hand is ALL-TIME (Σ income − Σ expense over the whole ledger);
-              // the other three are the selected period. The captions make the scope
-              // explicit so a treasurer never reads cash and period revenue as the
-              // same kind of number.
-              ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, "All-time · income − expenses", () => gotoTxns({ type: "" })],
-              [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
-              [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel, () => gotoTxns({ type: "expense" })],
-              ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel, () => gotoTxns({ type: "" })],
-            ].map(([label, value, color, caption, onClick]) => (
-              <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })}
-                style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
-                <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
-                <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
-                {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
 
       <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar"/>
 
       {/* ── Restricted (BUILD-100 Part 7) ── */}
-      {subtab === "restricted" && <RestrictedView isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
+      {/* FIX-1 E: where restricted money sits is the first thing Finance shows,
+          with cash on hand beneath it in one line and its defining sentence. */}
+      {subtab === "restricted" && <>
+        <RestrictedView isReadOnly={isReadOnly} onNavigate={onNavigate}/>
+        {summary && (
+          <Card>
+            <div data-testid="cash-on-hand-line" style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap" }}>
+              <span style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em" }}>Cash on hand</span>
+              <span style={{ fontSize:18, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif" }}>{fmt(summary.cashOnHand)}</span>
+            </div>
+            <div style={{ fontSize:12, color:T.ink3, marginTop:4, lineHeight:1.55 }}>{CASH_ON_HAND_SENTENCE}</div>
+          </Card>
+        )}
+      </>}
+
+      {/* ── Payouts (FIX-1 E): which gifts made up this payout ── */}
+      {subtab === "payouts" && <PayoutsView onNavigate={onNavigate} openId={openPayout} onOpen={setOpenPayout}/>}
+
+      {/* ── Monthly close (FIX-1 E): what goes to the bookkeeper this month ── */}
+      {subtab === "close" && <MonthlyClose/>}
 
       {/* ── Overview ── */}
       {subtab === "overview" && <>
+        {/* FIX-1 E — the period figures live on Overview now; Restricted leads. */}
+        {summary && (
+          <>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:10 }}>
+              {[
+                // Cash on Hand is ALL-TIME (Σ income − Σ expense over the whole ledger);
+                // the other three are the selected period. The captions make the scope
+                // explicit so a treasurer never reads cash and period revenue as the
+                // same kind of number.
+                ["Cash on Hand", fmt(summary.cashOnHand), summary.cashOnHand >= 0 ? IN : OUT, CASH_ON_HAND_SENTENCE, () => gotoTxns({ type: "" })],
+                [yearMode==="fiscal" ? "FY Revenue" : "YTD Revenue", fmt(summary.ytdRevenue), IN, revDeltaCaption || summary.periodLabel, () => gotoTxns({ type: "income" })],
+                [yearMode==="fiscal" ? "FY Expenses" : "YTD Expenses", fmt(summary.ytdExpenses), OUT, summary.periodLabel, () => gotoTxns({ type: "expense" })],
+                ["Net Surplus", fmt(summary.netSurplus), summary.netSurplus >= 0 ? IN : OUT, summary.periodLabel, () => gotoTxns({ type: "" })],
+              ].map(([label, value, color, caption, onClick]) => (
+                <div key={label} {...interactive(onClick, { label: `View ${label} in transactions` })}
+                  style={{ background:T.white, border:"1px solid "+T.bg3, borderRadius:12, padding:"14px 16px" }}>
+                  <div style={{ fontSize:11, color:T.ink3, textTransform:"uppercase", letterSpacing:".06em", marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:22, fontWeight:800, color, fontFamily:"'DM Serif Display',serif" }}>{value}</div>
+                  {caption && <div style={{ fontSize:10, color:T.ink3, marginTop:4 }}>{caption}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         {/* B1 — never let Finance read as "$0 raised" next to a Reports page
             showing years of giving. When imported historical giving lives in
             Reports but not the ledger, say so plainly and cross-link, so a
@@ -858,13 +944,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             </button>
           </div>
         )}
-        <MoneyInStrip onNavigate={onNavigate}/>
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-          <AIBtn onClick={getForecast} loading={forecastLoading} label="✦ 6-Month Forecast"/>
-          <AIBtn onClick={getRisks} loading={riskLoading} label="✦ Risk Analysis"/>
-        </div>
-        {(forecastLoading || forecastAI) && <AIPanel text={forecastAI} onClose={() => setForecastAI("")}/>}
-        {(riskLoading || riskAI) && <AIPanel text={riskAI} onClose={() => setRiskAI("")}/>}
+        <MoneyInStrip onNavigate={onNavigate} cashOnHand={summary ? summary.cashOnHand : null} onOpenPayout={id => { setOpenPayout(id); setSubtab("payouts"); }}/>
         <Card>
           {/* Follows the selected year basis (server-supplied, Jul-first under
               fiscal) and collapses empty months into a single line instead of a
@@ -1085,7 +1165,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
         </div>
         {budgetErr && <div role="alert" style={{ fontSize:12.5, color:T.terra700 }}>{budgetErr}</div>}
         {budgets.length === 0 && (
-          <Card><EmptyState title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts. Add a few revenue and expense accounts under the Accounts tab and they'll appear here to budget against."/></Card>
+          <Card><EmptyState title="No revenue or expense accounts yet" message="Budgets are built from your chart of accounts, which Steward sets up when your organization starts. Once it has revenue and expense accounts they appear here to budget against."/></Card>
         )}
         {["revenue","expense"].map(section => {
           const rows = budgets.filter(b => b.accountType === section);
@@ -1174,104 +1254,6 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
             </Card>
           );
         })}
-      </>}
-
-      {/* ── Accounts ── */}
-      {subtab === "accounts" && <>
-        {drillAcct ? (
-          <>
-            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-              <button style={ghostBtn} onClick={() => setDrillAcct(null)}>← Back</button>
-              <span style={{ fontSize:14, fontWeight:700, color:T.ink }}>{drillAcct.code} {drillAcct.name}</span>
-            </div>
-            <Card style={{ padding:0, overflow:"hidden" }}>
-              {transactions.filter(t => t.account_id === drillAcct.id).length === 0
-                ? <EmptyState title="Nothing posted here yet" message="No transactions have been posted to this account. As you log gifts and expenses against it, they'll appear here."/>
-                : (
-                  <div style={{ overflowX:"auto" }}>
-                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
-                      <thead>
-                        <tr style={{ background:T.greenMid }}>
-                          {["Date","Amount","Description","Fund"].map(h => (
-                            <th key={h} style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:"#fff", textTransform:"uppercase", letterSpacing:".06em" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transactions.filter(t => t.account_id === drillAcct.id)
-                          .sort((a,b) => b.date.localeCompare(a.date))
-                          .map((t, i) => (
-                          <tr key={t.id} style={{ borderTop:"1px solid "+T.bg3, background:i%2===0?T.white:"#faf9f6" }}>
-                            <td style={{ padding:"10px 14px", color:T.ink3, whiteSpace:"nowrap" }}>{t.date}</td>
-                            <td style={{ padding:"10px 14px", fontWeight:700, color:t.type==="income"?IN:OUT, textAlign:"right" }}>
-                              {t.type==="income"?"+":"−"}{fmtFull(parseFloat(t.amount))}
-                            </td>
-                            <td style={{ padding:"10px 14px" }}>
-                              <div style={{ fontWeight:600, color:T.ink }}>{t.description}</div>
-                              {t.vendor_donor && <div style={{ fontSize:11, color:T.ink3 }}>{t.vendor_donor}</div>}
-                            </td>
-                            <td style={{ padding:"10px 14px" }}>
-                              {t.fund_name && <span style={{ fontSize:11, fontWeight:600, color:t.fund_restricted?"#8a6d1f":T.greenMid }}>{t.fund_name}</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr style={{ borderTop:"2px solid "+T.bg3, background:T.bg2 }}>
-                          <td style={{ padding:"10px 14px", fontWeight:700, fontSize:12 }}>Balance</td>
-                          <td style={{ padding:"10px 14px", textAlign:"right", fontWeight:800, color:
-                            (transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
-                            transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)) >= 0 ? IN : OUT
-                          }}>
-                            {fmtFull(
-                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0) -
-                              transactions.filter(t=>t.account_id===drillAcct.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0)
-                            )}
-                          </td>
-                          <td colSpan={2}/>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )
-              }
-            </Card>
-          </>
-        ) : (
-          <>
-            <div style={{ display:"flex", justifyContent:"flex-end" }}>
-              <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowAcctModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add account</button>
-            </div>
-            {accounts.length === 0 && (
-              <Card><EmptyState title="No chart of accounts yet" message="Your chart of accounts is the backbone of every report. Add revenue and expense accounts here — a new org usually seeds these during onboarding."/></Card>
-            )}
-            {ACCT_TYPES.map(type => {
-              const group = accounts.filter(a => a.type === type.id);
-              if (!group.length) return null;
-              return (
-                <Card key={type.id}>
-                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
-                    <div style={{ width:8, height:8, borderRadius:2, background:type.color }}/>
-                    <SectionLabel>{type.label === "Liability" ? "Liabilities" : type.label + "s"}</SectionLabel>
-                  </div>
-                  {group.map((a, i) => {
-                    const acctBal = transactions.filter(t=>t.account_id===a.id&&t.type==="income").reduce((s,t)=>s+parseFloat(t.amount),0)
-                      - transactions.filter(t=>t.account_id===a.id&&t.type==="expense").reduce((s,t)=>s+parseFloat(t.amount),0);
-                    return (
-                      <div key={a.id} onClick={() => setDrillAcct(a)} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 0", borderTop: i > 0 ? "1px solid "+T.bg3 : "", cursor:"pointer" }}>
-                        <span style={{ fontSize:12, fontWeight:700, color:T.ink3, minWidth:40 }}>{a.code}</span>
-                        <span style={{ flex:1, fontSize:13, fontWeight:600, color:a.active===false?T.ink3:T.ink, textDecoration:a.active===false?"line-through":"none" }}>{a.name}</span>
-                        {a.active === false && <span style={{ fontSize:11, color:OUT, background:OUT+"1a", borderRadius:5, padding:"2px 7px" }}>Inactive</span>}
-                        <span style={{ fontSize:13, fontWeight:700, color:acctBal>=0?IN:OUT, minWidth:80, textAlign:"right" }}>{fmtFull(acctBal)}</span>
-                        <button style={ghostBtn} onClick={e => { e.stopPropagation(); setEditAcct(a); }}>Edit</button>
-                      </div>
-                    );
-                  })}
-                </Card>
-              );
-            })}
-          </>
-        )}
       </>}
 
       {/* ── Audit Log ── */}

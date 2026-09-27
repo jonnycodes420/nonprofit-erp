@@ -18,11 +18,12 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } };
-const read = p => fs.readFileSync(path.join(root, p), "utf8");
+const read = p => readSource(path.join(root, p));
 
 // The distinctive substring of the retired hexagon/diamond logo path.
 const HEX = "M8 2L13 5v6";
@@ -43,7 +44,7 @@ const scanned = [
   path.join(root, "client", "index.html"),
   path.join(root, "server.js"),
 ];
-const offenders = scanned.filter(f => fs.readFileSync(f, "utf8").includes(HEX));
+const offenders = scanned.filter(f => readSource(f).includes(HEX));
 ok(offenders.length === 0,
   "hexagon/diamond logo path absent everywhere — offenders: " +
   offenders.map(f => path.relative(root, f)).join(", "));
@@ -55,7 +56,7 @@ ok(!/[◇◈♦]/.test(emptyStateBlock), "EmptyState body carries no diamond gly
 ok(/background:\s*T\.gold500/.test(emptyStateBlock), "EmptyState ornament is an on-palette gold rule");
 // And no call site still passes an equals-form diamond icon prop.
 const callSiteDiamond = scanned.filter(f =>
-  /\.jsx$/.test(f) && /icon="[◇◈♦]"/.test(fs.readFileSync(f, "utf8")));
+  /\.jsx$/.test(f) && /icon="[◇◈♦]"/.test(readSource(f)));
 ok(callSiteDiamond.length === 0,
   "no EmptyState call site still passes a diamond icon= prop — offenders: " +
   callSiteDiamond.map(f => path.relative(root, f)).join(", "));

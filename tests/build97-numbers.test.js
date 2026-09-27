@@ -38,6 +38,7 @@ const APP = process.env.APP_URL || "http://localhost:4173";
 const PW_DIR = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const haveBrowser = () => { try { require(path.join(PW_DIR, "node_modules", "playwright")); } catch { return false; } return fs.existsSync(DIST); };
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
 
@@ -64,7 +65,14 @@ async function reset() {
 const EXPECTED = {
   "components/Donors.jsx": 117,   // BUILD-98 Part 1: +2, the soft-credit pair (profile.creditHard / creditWithSoft)
   "components/Dashboard.jsx": 62,
-  "components/Finance.jsx": 43,
+  // FIX-1 E: 43 → 38. Out: the manual Accounts tab (its per-account balances,
+  // the drill-down ledger and its balance footer) and the "Last payout" tile.
+  // In: a payout's amount on each payout row, the opened payout's headline, a
+  // payout line's amount and net and the lines' total, and the monthly close's
+  // foot sentence and per-fund totals. Each payout figure sits under the
+  // reconcile sentence (shared/payoutReconcile.js); the close's are the
+  // bookkeeper export's own (BUILD-87). Claim-shaped 3 → 5 (see below).
+  "components/Finance.jsx": 38,
   "components/Reports.jsx": 41,
   "components/Fundraising.jsx": 31,   // BUILD-98 Part 2: +1, a gift amount in the acknowledgment backlog row (a cell, not a claim)
   "components/Communications.jsx": 20,
@@ -104,8 +112,8 @@ const EXPECTED = {
   "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
   "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 413;   // BUILD-100 Part 7: +5
-const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total)
+const EXPECTED_TOTAL = 408;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above)
+const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline)
 
 (async () => {
   console.log("build97-numbers");
@@ -188,7 +196,7 @@ const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, t
   // The component must READ the registry, never hold a second copy. A grep for
   // the sentence text in the components would pass on a copy; a grep for the
   // registry CALL is what proves there is only one.
-  const donorsSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Donors.jsx"), "utf8");
+  const donorsSrc = readSource("client/src/components/Donors.jsx");
   const pipeSrc = fs.readFileSync(path.join(root, "client", "src", "components", "Pipeline.jsx"), "utf8");
   const recSrc = fs.readFileSync(path.join(root, "client", "src", "components", "RecurringGiving.jsx"), "utf8");
   ok("the donor profile reads its sentences from the registry",
@@ -244,7 +252,7 @@ const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, t
   // real one moves and this table does not, the check starts refusing the
   // product's own sentences.
   const driftEngine = require("../drift.js");
-  const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
   const val = (name) => (TH.THRESHOLDS.find(t => t.name === name) || {}).value;
   ok("MIN_OVERDUE_DAYS still matches drift.js", val("MIN_OVERDUE_DAYS") === driftEngine.DRIFT.MIN_OVERDUE_DAYS,
      { table: val("MIN_OVERDUE_DAYS"), live: driftEngine.DRIFT.MIN_OVERDUE_DAYS });

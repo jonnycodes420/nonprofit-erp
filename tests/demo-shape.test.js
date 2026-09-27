@@ -10,25 +10,27 @@
 // nobody would see it again. This asserts it, so it cannot quietly regress.
 //
 // The contract is a set of RANGES, exported from the seed itself
-// (scripts/seed-build72-demo.js SHAPE) rather than duplicated here — a copy
+// (scripts/seed-demo.js SHAPE) rather than duplicated here — a copy
 // would drift from the seed the first time either changed. Ranges, not exact
 // numbers, because the tail is randomly generated on purpose: a test demanding
 // an exact percentage would be pinning the random seed, not the shape.
 //
-// Skips cleanly when the demo org is not seeded, so run-all stays portable.
-// Seed it with:
-//   BASE=http://localhost:5606 node scripts/seed-build72-demo.js
+// FIX-1 §11 — it NEVER skips. It used to pass as "0 passed, 0 failed" on any
+// database the demo had not been seeded into, which was every CI run: the
+// guard on the pitch was green by not running. CI and tests/run-all.sh now
+// seed the demo before the battery (scripts/seed-demo.js), so a missing demo
+// is a failure of the environment, reported as one.
 
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
-const { DRIFTED, SHAPE, ORG, ADMIN_EMAIL, ADMIN_PASSWORD } = require("../scripts/seed-build72-demo.js");
+const { DRIFTED, SHAPE, ORG, ADMIN_EMAIL, ADMIN_PASSWORD } = require("../scripts/seed-demo.js");
 
 const pct = n => (n * 100).toFixed(1) + "%";
 
 (async () => {
   const [present] = await q(`SELECT COUNT(*)::int AS n FROM donors WHERE org_id=$1`, [ORG]);
   if (!present || present.n === 0) {
-    console.log("  SKIP — demo org not seeded (run scripts/seed-build72-demo.js)\n\n0 passed, 0 failed (suite skipped)");
-    await closeDb(); process.exit(0);
+    console.log("  FAIL — the demo org is not seeded. Run scripts/seed-demo.js (run-all.sh does this first).");
+    await closeDb(); process.exit(1);
   }
 
   // ── 1 · the file's shape ────────────────────────────────────────────────
@@ -119,8 +121,15 @@ const pct = n => (n * 100).toFixed(1) + "%";
   const tok = await login(ADMIN_EMAIL, ADMIN_PASSWORD);
   const impact = (await api("GET", "/impact", tok)).body;
 
-  ok("the home hero leads with money AT RISK", typeof impact.atRiskAmount === "number" && impact.atRiskAmount > 0,
-     impact.atRiskAmount);
+  // FIX-1 §11 — this section had not run since BUILD-83 (the whole suite was skipped on
+  // every database the demo was not seeded into, CI included). BUILD-83 Parts
+  // 3.3 + 4 deleted /impact's quiet-donor cohort (atRiskAmount /
+  // quietDonorCount / atRiskDonors) on purpose: Home's at-risk headline is
+  // Drift's, the sum of each drifting donor's USUAL gift. The three assertions
+  // below ask the same questions of the headline Home actually shows.
+  const drift = (await api("GET", "/drift", tok)).body;
+  ok("the home hero leads with money AT RISK", typeof drift.atRiskAmount === "number" && drift.atRiskAmount > 0,
+     drift.atRiskAmount);
   ok("the at-risk threshold is the 180-day GOING-QUIET line, not the 365-day lapse line",
      impact.quietSinceDays === 180, impact.quietSinceDays);
 
@@ -132,18 +141,24 @@ const pct = n => (n * 100).toFixed(1) + "%";
   ok("the eleven are INSIDE the at-risk figure the demo opens on", elevenAreQuiet,
      rows.map(r => `${r.name}: ${r.last_gift}`));
 
-  const [lapsedCount] = await q(
-    `SELECT COUNT(*)::int AS n FROM donors d
+  // About drift, not recapture: the headline is the NEXT gift of the donors
+  // past their own pattern, so it is far smaller than what the lapsed donors
+  // once gave in their lifetimes — the number every other tool leads with.
+  const [lapsedLifetime] = await q(
+    `SELECT COALESCE(SUM(d.total_giving),0)::float AS amt, COUNT(*)::int AS n FROM donors d
       WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.total_giving > 0
         AND d.last_gift_date::date < (CURRENT_DATE - 365)`, [ORG]);
-  ok(`the at-risk donor count (${impact.quietDonorCount}) is LARGER than the lapsed-only count (${lapsedCount.n}) — the figure is about drift, not recapture`,
-     impact.quietDonorCount > lapsedCount.n, { atRisk: impact.quietDonorCount, lapsedOnly: lapsedCount.n });
+  ok(`the at-risk figure (${drift.atRiskAmount}) is the next gift of ${drift.counts && drift.counts.driftingHigh} drifting donors, not the lapsed file's lifetime (${lapsedLifetime.amt} across ${lapsedLifetime.n})`,
+     drift.atRiskBasis === "usualGift" && drift.atRiskAmount < lapsedLifetime.amt
+       && drift.counts.driftingHigh >= SHAPE.driftingHighMin && drift.counts.driftingHigh <= SHAPE.driftingHighMax,
+     { atRisk: drift.atRiskAmount, basis: drift.atRiskBasis, driftingHigh: drift.counts && drift.counts.driftingHigh, lapsedLifetime });
 
-  // And the drill-down agrees with the headline, as every aggregate must.
-  ok("the at-risk drill-down is populated and ordered by lifetime giving",
-     (impact.atRiskDonors || []).length > 0
-     && impact.atRiskDonors.every((r, i, a) => i === 0 || a[i - 1].amount >= r.amount),
-     (impact.atRiskDonors || []).slice(0, 3));
+  // And the drill-down agrees with the headline, as every aggregate must: the
+  // list is populated and ordered by the figure each row displays.
+  ok("the at-risk drill-down is populated and ordered by the usual gift it shows",
+     (drift.list || []).length > 0
+     && drift.list.every((r, i, a) => i === 0 || a[i - 1].usualGift >= r.usualGift),
+     (drift.list || []).slice(0, 3).map(r => [r.donorName, r.usualGift]));
 
   // ── 4 · THE ENGINE'S VERDICT (BUILD-76 follow-up) ───────────────────────
   // §2's day-count checks are the old intuition; this section asks the real

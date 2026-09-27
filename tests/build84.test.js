@@ -19,6 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const http = require("http");
 const { BASE, ok, summary, login, api, q, closeDb, civilToday, SINK_PORT } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 // The mail sink — the same pattern thread-nudge uses, so the REAL bytes of the
 // reminder can be read and every link in them fetched.
@@ -270,18 +271,18 @@ async function reset() {
     ["client/src/components/WorkbookImport.jsx", "workbook build failed"],
   ];
   for (const [rel, marker] of PURE_CATCHES) {
-    const src = fs.readFileSync(path.join(__dirname, "..", rel), "utf8");
+    const src = readSource(rel);
     const at = src.indexOf(marker);
     const before = at > 0 ? src.slice(Math.max(0, at - 700), at) : "";
     ok(`the catch around “${marker}” re-throws a bug before returning anything`,
       at > 0 && /rethrowProgrammerError\(e\)/.test(before), rel);
   }
   ok("every tab is inside an ErrorBoundary, so a re-thrown bug becomes an honest crash screen and not a white page",
-    /<ErrorBoundary label=\{tab\}/.test(fs.readFileSync(path.join(__dirname, "..", "client/src/App.jsx"), "utf8")));
+    /<ErrorBoundary label=\{tab\}/.test(readSource("client/src/App.jsx")));
 
   // And the copy that shipped the defect is gone: nameability includes an
   // organization now, and a build FAILURE says it is not the user's file.
-  const donorsSrc = fs.readFileSync(path.join(__dirname, "..", "client/src/components/Donors.jsx"), "utf8");
+  const donorsSrc = readSource("client/src/components/Donors.jsx");
   ok("the empty-payload sentence names all three ways a row can be nameable",
     !/map at least one column to <em>name<\/em> or <em>email<\/em>/.test(donorsSrc)
     && /organization<\/em>\./.test(donorsSrc), null);
@@ -362,7 +363,7 @@ async function reset() {
   ok("a date-only task sends nothing of its own", threads.stepReminderDue(dateOnly, "2026-09-14", "09:00") === false);
   ok("the weekend rule INVERTS for a timed step, and that is stated in the module",
     threads.TIMED_STEPS_IGNORE_WEEKEND_TOGGLE === true);
-  const srvSrc = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const srvSrc = readSource("server.js");
   ok("…and the timed sender has NO weekday gate (threadNudgeDayOk is the digest's alone)",
     (srvSrc.match(/threadNudgeDayOk/g) || []).length > 0
     && !/processStepReminders[\s\S]{0,1500}threadNudgeDayOk/.test(srvSrc));

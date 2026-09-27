@@ -189,7 +189,10 @@ const addDays = (d, n) => { const t = new Date(d + "T00:00:00Z"); t.setUTCDate(t
     ok("§10 the profile shows the membership she holds, and lists it once", /Family/.test(before) && (before.match(/Active/g) || []).length === 1, before);
     await page.locator("[data-testid=membership-renew]").click();
     await page.locator("[data-testid=membership-save]").click();
-    await page.waitForFunction(() => /renewing early cost no time/.test(document.querySelector("[data-testid=membership-panel]")?.innerText || ""), null, { timeout: 15000 });
+    // FIX-1 — wait for the history to reload too, not only the sentence: the
+    // sentence can land a render before the Renewed row (a battery-load flake).
+    await page.waitForFunction(() => { const t = document.querySelector("[data-testid=membership-panel]")?.innerText || "";
+      return /renewing early cost no time/.test(t) && /Renewed/.test(t); }, null, { timeout: 15000 }).catch(() => {});
     const after = await panel();
     ok("§10 renewing from the profile says the new term starts after the old one", /cost no time/.test(after), after);
     ok("§10 …shows the old term as Renewed, and the current one once", /Renewed/.test(after) && (after.match(/Active/g) || []).length === 1, after);

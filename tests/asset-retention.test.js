@@ -33,6 +33,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 const bcrypt = require("bcryptjs");
 const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource, splitParts } = require("../scripts/lib/readSource");
+const SPLIT_PARTS = splitParts(); // pieces of server.js: readSource("server.js") reads them
 
 const ORG = "org_ar_a", SLUG = "assetret-a";
 const ORG_B = "org_ar_b", SLUG_B = "assetret-b";
@@ -254,11 +256,11 @@ async function fixture() {
 
   // ═══ 8) THE BATTERY — one destruction seam, every call site classified ══
   console.log("\n— battery: destruction primitives live ONLY in the seam; call sites are enumerated —");
-  const read = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
+  const read = (p) => readSource(p);
   const SRC = ["server.js", "db.js", "auth.js", "branding.js", "assetStore.js"];
   for (const d of ["routes", "scripts", "scripts/lib"]) {
     const dir = path.join(__dirname, "..", d);
-    if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) if (f.endsWith(".js")) SRC.push(path.join(d, f));
+    if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) if (f.endsWith(".js") && !SPLIT_PARTS.has(path.join(d, f))) SRC.push(path.join(d, f));
   }
   const store = read("assetStore.js");
   const seamStart = store.indexOf("── DESTRUCTION SEAM"), seamEnd = store.indexOf("── END DESTRUCTION SEAM");

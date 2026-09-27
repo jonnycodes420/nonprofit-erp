@@ -15,9 +15,10 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
-const read = f => fs.readFileSync(path.join(root, f), "utf8");
+const read = f => readSource(path.join(root, f));
 // A comment is not code — a file explaining the rule must not satisfy it.
 const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 

@@ -21,6 +21,7 @@
 const { ok, summary, api, q, closeDb, BASE } = require("./helpers");
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
 
@@ -156,7 +157,7 @@ const uniq = () => Math.random().toString(36).slice(2, 8);
   // ── §7 source pins: the client wiring can't quietly regress ──────────────
   console.log("\n§7 client wiring pins");
   {
-    const donorsSrc = fs.readFileSync(path.join(__dirname, "..", "client", "src", "components", "Donors.jsx"), "utf8");
+    const donorsSrc = readSource("client/src/components/Donors.jsx");
     // The RECOMMENDED menu entry must open the magical DonorImport path (the
     // one with shape detection + the Import-both CTA), not the legacy
     // CombinedImport whose multi-sheet picker forces one sheet.

@@ -9,11 +9,12 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } };
-const read = p => fs.readFileSync(path.join(root, p), "utf8");
+const read = p => readSource(path.join(root, p));
 
 const uploader = read("client/src/components/Uploader.jsx");
 const settings = read("client/src/components/Settings.jsx");

@@ -547,6 +547,15 @@ export function GlobalStyles() {
          name, and the buttons take the row below it. */
       .attn-row{flex-wrap:wrap!important;}
       .attn-row .attn-row-main{flex:1 1 100%!important;}
+      /* FIX-1 walk — on Home the "how late" badge sits INSIDE the row's link,
+         beside the name, so its 100% basis crushed the text to one word a
+         line. The link wraps, and the badge takes its own line under the
+         text, indented past the face (38px mark + 14px gap). */
+      .attn-row .attn-row-main{flex-wrap:wrap!important;}
+      .attn-row .attn-row-main>.attn-row-next{padding-left:52px!important;}
+      /* …and the Thread header's toggle, count and "Plan a follow-up" wrap
+         rather than running the button off the right edge. */
+      .thread-hdr-tools{flex-wrap:wrap!important;flex-shrink:1!important;}
       .attn-row .attn-clause{flex-wrap:wrap!important;}
       .attn-row .attn-meta{flex-basis:100%!important;white-space:normal!important;}
       .attn-row .attn-row-next{flex:1 1 100%!important;text-align:left!important;margin-top:6px!important;}
@@ -637,6 +646,10 @@ export function GlobalStyles() {
 
       /* Finance now uses SectionTabs (.section-tabbar) which scrolls
          horizontally on its own — no finance-specific override needed. */
+
+      /* FIX-1 §B — Fundraising is four tabs and they FIT at 390: no sideways
+         scroll on the strip, the thing the walk found at 1440. */
+      .fr-tabbar>button{padding:10px 7px!important;font-size:12.5px!important;gap:5px!important;}
 
       /* Grants pipeline + profile */
       .grants-pipeline-grid{grid-template-columns:repeat(2,1fr)!important;}
@@ -825,11 +838,14 @@ export function Card({children,selected,accent,onClick,style={},variant}) {
 // in-section counterpart of the app sidebar (Communications, Reports,
 // Settings). tabs: [{id,label,icon?,badge?}]. Scrolls horizontally when it
 // doesn't fit (base style; no media query needed).
-export function SectionTabs({tabs,active,onSelect,className,style}) {
-  return <div className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
+// FIX-1 §B — `dataKey` names a data attribute each tab carries (its id), and
+// `stripProps` go on the strip itself, so a suite can find a tab by id and
+// measure the strip; every tab says whether it is the selected one.
+export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripProps}) {
+  return <div role="tablist" {...(stripProps||{})} className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
-      return <button key={t.id} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
+      return <button key={t.id} role="tab" aria-selected={on} {...(dataKey?{["data-"+dataKey]:t.id}:{})} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
         background:"transparent",border:"none",
         borderBottom:`2px solid ${on?T.gold:"transparent"}`,
         borderRadius:on?"7px 7px 0 0":0,
@@ -960,7 +976,7 @@ export function PageTitle({main,accent,sub}) {
       <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:32,fontWeight:400,letterSpacing:"-0.02em",margin:0,lineHeight:1.15}}>
         <span style={{color:T.ink}}>{main}{" "}</span><span style={{color:T.ink,borderBottom:"3px solid "+T.gold500,paddingBottom:2}}>{accent}</span>
       </h1>
-      {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:6,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
+      {sub&&<div style={{fontSize:14,color:T.ink3,marginTop:12,fontFamily:"'DM Sans',sans-serif"}}>{sub}</div>}
     </div>
   );
 }

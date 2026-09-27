@@ -19,6 +19,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 const root = path.join(__dirname, "..");
 
 let pass = 0, fail = 0;
@@ -26,7 +27,7 @@ const ok = (name, cond, extra) => {
   if (cond) { pass++; console.log("  PASS  " + name); }
   else { fail++; console.log("  FAIL  " + name + (extra !== undefined ? " — " + String(JSON.stringify(extra)).slice(0, 500) : "")); }
 };
-const read = rel => fs.readFileSync(path.join(root, rel), "utf8");
+const read = rel => readSource(path.join(root, rel));
 // A guard that greps source for a forbidden string must strip COMMENTS first,
 // or the file that explains WHY the string was removed fails the rule it
 // documents. Same stripper the palette census and the legal-entity guard use.

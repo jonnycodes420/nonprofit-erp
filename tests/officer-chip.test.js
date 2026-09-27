@@ -8,11 +8,12 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) pass++; else { fail++; console.error("  ✗ " + name); } };
 
-const src = fs.readFileSync(path.join(__dirname, "..", "client/src/components/Donors.jsx"), "utf8");
+const src = readSource("client/src/components/Donors.jsx");
 
 // Locate the Officer portfolios chip row and inspect just that block.
 const i = src.indexOf("Officer portfolios</span>");

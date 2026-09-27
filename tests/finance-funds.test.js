@@ -84,7 +84,11 @@ async function testMoneyHelpers() {
   ok("no bare .0 survives anywhere", ![fmt(1000), fmt(3000000), fmt(999999), fmt(1200)].some(x => /\.0\D/.test(x)),
      [fmt(1000), fmt(3000000), fmt(999999), fmt(1200)]);
   ok("fmtFull renders cents ($140.50 not $140.5)", fmtFull(140.5) === "$140.50", fmtFull(140.5));
-  ok("fmtFull renders a negative", fmtFull(-4200) === "$-4,200", fmtFull(-4200));
+  // REVIEWED CONTRACT CHANGE (FIX-1 E): this used to pin "$-4,200". The 25
+  // September walk found a Stripe payout reading "$-1.33" — money is written
+  // sign-first, and the old shape forced RestrictedView to prepend its own sign.
+  ok("fmtFull renders a negative sign-first", fmtFull(-4200) === "-$4,200", fmtFull(-4200));
+  ok("fmtFull renders a negative cents amount sign-first", fmtFull(-1.33) === "-$1.33", fmtFull(-1.33));
   ok("fmtFull renders zero", fmtFull(0) === "$0", fmtFull(0));
 }
 

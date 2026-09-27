@@ -33,10 +33,15 @@ export const fmt = n => {
 
 // Full: whole dollars stay clean ($1,200); cents-carrying amounts render as
 // money ($140.50, never "$140.5"). Non-finite → $0.
+// FIX-1 E: negatives are SIGN-FIRST, the way money is written ("-$1.33"). It
+// used to render "$-1.33" — the Stripe payout the 25 September walk found — and
+// RestrictedView wrote the sign at its render site to work around it.
 export const fmtFull = n => {
   const v = Number(n);
   if (!Number.isFinite(v)) return "$0";
-  return `$${v.toLocaleString(undefined, Number.isInteger(v) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const a = Math.abs(v);
+  const body = a.toLocaleString(undefined, Number.isInteger(a) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${v < 0 ? "-" : ""}$${body}`;
 };
 
 // BUILD-64 Part 4 — the ONE human date formatter for every donor-facing

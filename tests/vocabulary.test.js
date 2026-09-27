@@ -20,6 +20,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b86v", ORG2 = "org_b86v2";
 const root = path.join(__dirname, "..");
@@ -84,7 +85,7 @@ const TABLES = ["threads", "recurring_subscriptions", "digest_sends", "tasks", "
 
   // ── §3 · NEVER what a donor receives ─────────────────────────────────────
   console.log("\n— §3 · a receipt is a legal document —");
-  const server = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const server = readSource("server.js");
   const receiptFns = ["renderReceiptPdf", "sendReceiptEmail", "issueYearEndStatement"];
   for (const fn of receiptFns) {
     const i = server.indexOf(`function ${fn}`);

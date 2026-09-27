@@ -137,7 +137,9 @@ const VALUE_BANDS = [["", "Any value"], ["1000", "$1k+"], ["10000", "$10k+"], ["
 const SORTS = [["value", "Value"], ["last_gift", "Last gift"], ["stage_age", "Time in stage"]];
 const COL_PAGE = 30; // render this many cards/column at a time (never hundreds)
 
-export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
+// FIX-1 §B — `embedded`: the board renders inside Fundraising → Major gifts,
+// under that page's title, so it drops its own. Nothing else changes.
+export function Pipeline({ isReadOnly, onNavigate, initialScope, embedded }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState(initialScope === "all" ? "all" : "mine");
@@ -263,7 +265,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   const board = (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
-        <PageTitle main="Prospect" accent="Pipeline" />
+        {embedded ? <span /> : <PageTitle main="Prospect" accent="Pipeline" />}
         {/* D-2 Fix A (BUILD-45): a board can hold a $100k donor while no asks
             have been logged yet. Render "—" (not a misleading $0) for an empty
             tile, and one explainer line when the whole ask side is empty —
@@ -386,7 +388,7 @@ export function Pipeline({ isReadOnly, onNavigate, initialScope }) {
   if (locked) {
     return (
       <div>
-        <PageTitle main="Prospect" accent="Pipeline" />
+        {!embedded && <PageTitle main="Prospect" accent="Pipeline" />}
         <LockedFeature
           title="Manage a major-gifts pipeline"
           blurb="Move prospects through Identification → Qualification → Cultivation → Solicitation → Stewardship, log every move with a note, track asks against the gifts they close, and see each officer's portfolio at a glance. This preview shows your own donors — unlock the board to work it."

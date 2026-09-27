@@ -12,13 +12,12 @@ import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
 import { Reports } from "./components/Reports";
-import { Volunteers } from "./components/Volunteers";
+import { VolunteersHub } from "./components/VolunteersHub";
 import { Board } from "./components/Board";
 import { Finance } from "./components/Finance";
 import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
-import { Workflows } from "./components/Workflows";
-import { Pipeline } from "./components/Pipeline";
+import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
@@ -26,79 +25,7 @@ import { Events } from "./components/Events";
 import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
-
-// ── Tabs ───────────────────────────────────────────────────────────────────
-const TABS=[
-  {id:"dashboard",label:"Home",icon:"◈"},
-  // BUILD-86 — Home is hers at 7:40 in the morning; Dashboard is the board
-  // meeting. The `dashboard` id KEEPS its route and its "Home" label so every
-  // deep link, navigateTo("dashboard") call and the morning email's links
-  // work unchanged; the board is a new id beside it. Renaming the old one
-  // would have been ~40 call sites for no user-visible gain.
-  {id:"board",label:"Dashboards",icon:"▤"},
-  {id:"donors",label:"Donors",icon:"♦"},
-  {id:"pipeline",label:"Pipeline",icon:"◫"},
-  {id:"fundraising",label:"Fundraising",icon:"↗"},
-  {id:"grants",label:"Grants",icon:"◉"},
-  {id:"communications",label:"Communications",icon:"◑"},
-  {id:"portal",label:"Donor Portal",icon:"◫"},
-  {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"◧"},
-  {id:"reports",label:"Reports",icon:"▤"},
-  {id:"finance",label:"Finance",icon:"◇"},
-  {id:"settings",label:"Settings",icon:"⚙"},
-  // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-  // {id:"events",label:"Events",icon:"◎"},
-  // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
-  // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
-];
-const BOTTOM_TABS=[
-  {id:"dashboard",label:"Home",icon:"◉"},
-  {id:"donors",label:"Donors",icon:"♦"},
-  {id:"grants",label:"Grants",icon:"◉"},
-  {id:"settings",label:"Settings",icon:"⚙"},
-];
-const MORE_TABS=[
-  {id:"board",label:"Dashboards",icon:"▤"},
-  {id:"pipeline",label:"Pipeline",icon:"◫"},
-  {id:"fundraising",label:"Fundraising",icon:"↗"},
-  {id:"communications",label:"Communications",icon:"◑"},
-  {id:"portal",label:"Donor Portal",icon:"◫"},
-  {id:"tasks",label:"Tasks",icon:"◻"},
-  {id:"workflows",label:"Workflows",icon:"◧"},
-  {id:"reports",label:"Reports",icon:"▤"},
-  {id:"finance",label:"Finance",icon:"◇"},
-  // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-  // {id:"events",label:"Events",icon:"◎"},
-  // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
-  // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
-];
-
-// ── BUILD-87 F.3.5 — SIX THINGS, THEN THE REST ─────────────────────────────
-// The sidebar had eleven items in three labeled groups (BUILD-20 Part 3), and
-// every one of them was equally loud. Five stay on the rail — Home, Dashboards,
-// Donors, Fundraising, Reports — with Settings pinned at the bottom where it
-// already was; the other six fold into ONE collapsible "More", shut by default
-// and remembered per browser. Nothing is hidden and nothing is deleted: the
-// group opens on click, and opens ITSELF whenever the surface you are on lives
-// inside it, so you can never be standing somewhere the nav does not show.
-//
-// MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
-// and four slots is a different constraint from a 220px rail.
-const PRIMARY_NAV=["dashboard","board","donors","fundraising","reports"];
-const MORE_NAV=["pipeline","grants","communications","tasks","workflows","finance","portal"];
-const NAV_MORE_KEY="steward_nav_more";
-const TEAM_GATED=new Set(["pipeline"]);
-// BUILD-88a A.3 — FINANCE IS BEHIND THE TEAM FLAG. Cowork's recommendation,
-// and Jonathan's to overturn in one line by emptying this set: a ledger, a
-// chart of accounts and a budget are a bookkeeper's tools, and a one-person
-// shop that opens Finance meets an empty set of books it did not ask for and
-// cannot fill. Unlike the Pipeline this is not a locked PREVIEW — there is
-// nothing of the org's own to show behind glass, and an empty ledger under a
-// padlock is an advertisement, not a feature (BUILD-87's rule about showing
-// somebody a screen that is not for them). No customer is on Core with books
-// today, so nothing is taken away from anyone.
-const CORE_HIDDEN_TABS=new Set(["finance"]);
+import { TABS, BOTTOM_TABS, MORE_TABS, PRIMARY_NAV, MORE_NAV, NAV_MORE_KEY, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS } from "./lib/tabRegistry";
 // The tier rule, as a module-level function rather than a value computed
 // halfway down the component: `navigateTo` is declared above it and needs it,
 // and a `const` read from a closure that could run first is a TDZ crash
@@ -117,29 +44,6 @@ function planTierOf(billing){
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
 const DUE_BADGE={background:"#b8593f",color:"#fff",fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
-
-// BUILD-58 W-2 — the Portal tier is NOT the CRM, and its shell says so
-// honestly: only the surfaces the tier's own capabilities live on (gift
-// recording + import in Donors, the portal hub/editor + impact updates in
-// Donor Portal, receipts + giving in Settings). First login lands on the
-// portal hub, never an error screen. The server's portal_tier gate is
-// unchanged — this is the UI finally matching it.
-const PORTAL_TIER_TABS=new Set(["donors","portal","settings"]);
-
-// ── HIDDEN FROM THE CRM's NAVIGATION (2026-09-10) ──────────────────────────
-// The same "hidden, not deleted" move as Events / Volunteers / Board: the tab
-// comes out of the navigation and every route, table, component and test
-// behind it stays intact, re-enabled by deleting an id from this set.
-//
-// GIVING PAGES ARE NOT AFFECTED and are a different surface entirely: they
-// live in Settings → Giving Pages, along with Stripe Connect, donor-covers-
-// fees, the org's timezone and the public /give page. None of that moves.
-//
-// NOT hidden for a `plan === "portal"` org, whose ENTIRE product is this tab
-// (PORTAL_TIER_TABS above) — hiding it globally would leave those orgs
-// navigating to something that is not there, which is the one case that has to
-// keep working. `tabAllowed` below is where the two rules meet.
-const CRM_HIDDEN_TABS=new Set(["portal"]);
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
@@ -242,6 +146,8 @@ function AppShell() {
   // BUILD-30: the Home Tasks/Pipeline cards pass their scope so the destination
   // opens on the SAME scope — the count you clicked lands on exactly that view.
   const [tasksIntent,setTasksIntent]=useState(null);
+  // FIX-1 §A — Agent opens on a view, and Home's one-line entry carries her words in.
+  const [agentIntent,setAgentIntent]=useState(null);
   const [pipelineIntent,setPipelineIntent]=useState(null);
   // Attribution FIX — the Home hero chips deep-link into Reports (This FY →
   // Giving Summary current FY; This week → Giving Summary custom week range),
@@ -264,6 +170,10 @@ function AppShell() {
   // on the Grants tab). Plain nav (no opts) never remounts.
   const [navNonce,setNavNonce]=useState(0);
   const navigateTo=(t,opts)=>{
+    // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
+    // activity (the thirty-day undo list). Every old way in lands there.
+    if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
+    if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
     // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
     // one lands on the portal hub instead of a locked/broken view.
     if(data?.org?.plan==="portal"&&!PORTAL_TIER_TABS.has(t))t="portal";
@@ -274,6 +184,10 @@ function AppShell() {
     // deep link to Finance from a Core org lands on Home, never on a screen
     // whose nav entry it cannot see.
     if(planTierOf(billing)==="core"&&CORE_HIDDEN_TABS.has(t))t="dashboard";
+    // FIX-1 §B — the Pipeline is no longer a tab: it folded into Fundraising →
+    // Major gifts. Every navigateTo("pipeline") (Home's portfolio card, an older
+    // link) lands on that part, carrying its scope.
+    if(t==="pipeline"){t="fundraising";opts={...(opts||{}),frSection:"pipeline"};}
     if(t!==tab&&!confirmIfDirty())return;   // BUILD-54 §6 — unsaved-state guard
     setCommsInitialNav(opts?.subtab||null);
     setCommsHighlightDraftId(opts?.highlightDraftId||null);
@@ -285,9 +199,10 @@ function AppShell() {
     // then making the user hunt for the fix is half a fix.
     setSettingsIntent(opts?.section?{section:opts.section,focus:opts.focus||null}:null);
     setTasksIntent(opts?.scope&&t==="tasks"?{scope:opts.scope}:null);
-    setPipelineIntent(opts?.scope&&t==="pipeline"?{scope:opts.scope}:null);
+    setPipelineIntent(opts?.scope&&opts?.frSection==="pipeline"?{scope:opts.scope}:null);
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
+    setAgentIntent(t==="agent"&&(opts?.agentView||opts?.agentText)?{view:opts.agentView||null,text:opts.agentText||"",autoAsk:!!opts.autoAsk}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
   };
@@ -311,6 +226,14 @@ function AppShell() {
     // that opens the report and changes nothing.
     if(params.get("report")){
       navigateTo("reports",{savedReport:params.get("report")});
+      window.history.replaceState({},"","/dashboard");
+    }
+    // FIX-1 §B — /dashboard?fr=<id> opens Fundraising on that section or part.
+    // Any old sub-tab id works, and `pipeline` goes through navigateTo("pipeline")
+    // exactly as the old sidebar item did. A GET that changes nothing.
+    if(params.get("fr")){
+      if(params.get("fr")==="pipeline")navigateTo("pipeline");
+      else navigateTo("fundraising",{frSection:params.get("fr")});
       window.history.replaceState({},"","/dashboard");
     }
     if(params.get("stripe_connected")==="true"){
@@ -510,7 +433,7 @@ function AppShell() {
     {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:tab==="agent"?T.bgDark:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
@@ -709,10 +632,12 @@ function AppShell() {
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
-      {tab==="pipeline"&&<Pipeline key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={pipelineIntent?.scope}/>}
-      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section}/>}
+      {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} isCoreTier={isCoreTier}/>}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
-      {tab==="volunteers"&&<Volunteers data={data} setData={setData} isReadOnly={isReadOnly}/>}
+      {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
+          volunteer_shifts. The old Volunteers.jsx (its own table) is not
+          revived: the file stays, unimported, like Events and Board. */}
+      {tab==="volunteers"&&<VolunteersHub key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {/* BUILD-86 C.3 — BOARD MANAGEMENT IS REMOVED. It was deprioritised out of
           the nav in 2026-07-12 but its render stayed, keyed on the tab id
           `board` — which C.3 reused for Dashboards, so BOTH drew on the same
@@ -722,7 +647,7 @@ function AppShell() {
           its routes and its table are untouched, like Events and Volunteers. */}
       {tab==="finance"&&<Finance data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="tasks"&&<Tasks key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialScope={tasksIntent?.scope}/>}
-      {tab==="workflows"&&<Workflows isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="agent"&&<Agent key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={agentIntent?.view} initialText={agentIntent?.text} autoAsk={agentIntent?.autoAsk}/>}
       {tab==="portal"&&<DonorPortalHub auth={auth} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
       {tab==="settings"&&<Settings key={navNonce} auth={auth} logout={logout} initialSection={settingsIntent?.section} initialFocus={settingsIntent?.focus} onNavigate={navigateTo}/>}
     </ErrorBoundary>

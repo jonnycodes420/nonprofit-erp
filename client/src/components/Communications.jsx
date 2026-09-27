@@ -1631,26 +1631,6 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                 </div>
               </div>
 
-              {/* WHERE EVERYONE IS KEPT, said once, in words.
-                  Volunteers, staff and donors share one table — which is the
-                  right design and is completely invisible on a screen that
-                  only shows counts. This is the paragraph that stops somebody
-                  hunting through tabs for a "Volunteers" page that does not
-                  exist because it should not exist. */}
-              <div style={{ background: T.bg2, border: "1px solid " + T.bg3, borderLeft: "3px solid " + T.greenMid,
-                            borderRadius: 12, padding: "13px 16px" }}>
-                <div style={{ fontSize: 12.5, color: T.ink2, lineHeight: 1.55, maxWidth: "62ch" }}>
-                  <strong style={{ color: T.ink }}>Everyone is on one list.</strong>{" "}
-                  Donors, volunteers, staff and board all live under{" "}
-                  <button onClick={() => onNavigate && onNavigate("donors", {})}
-                    style={{ background: "transparent", border: "none", padding: 0, font: "inherit",
-                             color: T.greenMid, fontWeight: 700, cursor: "pointer" }}>Donors</button>{" "}
-                  — one person, one record, even when they are two of those things.
-                  An audience below is a way of looking at that list, not a separate place.
-                  Only the people marked as donors count toward money.
-                </div>
-              </div>
-
               {/* the three numbers that describe sending, not people */}
               {hub && (
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>

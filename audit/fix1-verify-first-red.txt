@@ -1,0 +1,27 @@
+  FAIL  §1 agentShape exports compilePlan
+  FAIL  §1 agentShape exports preparedGiftFromInstruction
+  FAIL  §1 the Sunrise instruction is a prepared gift of 500000 cents — "null"
+  FAIL  §1 ...on the Sunrise Foundation's record
+  PASS  §1 the Sunrise instruction is NOT refused outright (it is prepared, not refused)
+  FAIL  §1 compiled plan keeps exactly the steps — "compilePlan missing"
+  FAIL  §1 money step prepared — "compilePlan missing"
+  FAIL  §1 headline names gift+follow-up — "compilePlan missing"
+  FAIL  §1 no gift step never says gift — "compilePlan missing"
+  FAIL  §1 no thread step never says follow-up — "compilePlan missing"
+  FAIL  §1 the model's plan schema carries no free-text summary
+  FAIL  §2 agentShape exports scopeFromInstruction
+  FAIL  §2 an instruction about one organisation reads that organisation — "null"
+  FAIL  §2 an instruction naming nobody is whole-org (null), not a guess — "\"missing\""
+  FAIL  §2 the run no longer reads the whole org unconditionally
+  FAIL  §3 agentShape exports runIsLive
+  FAIL  §3 the server answers a run's state by id
+  FAIL  §4 shared/suggestionGuard.js exists with guardSuggestion + plainText — "Cannot find module '/Users/jonathanatkinson/steward-fix1/shared/suggestionGuard.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-walk.test.js"
+  FAIL  §5 vocabulary exports giverWordFor
+  FAIL  §6 fundraisingSections exists — "Cannot find module '/Users/jonathanatkinson/steward-fix1/client/src/lib/fundraisingSections.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-wa"
+  FAIL  §7 the 'Everyone is on one list' paragraph appears nowhere in the client — "client/src/components/Communications.jsx"
+  FAIL  §8 fmtFull(-1.33) is -$1.33 — "$-1.33"
+  FAIL  §8 fmtFull(-4200) is -$4,200 — "$-4,200"
+  PASS  §8 fmtFull(1.5) is still $1.50
+  PASS  §8 no client source writes a literal "$-"
+
+3 passed, 22 failed

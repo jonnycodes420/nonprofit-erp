@@ -337,7 +337,15 @@ const rendersMoney = (text, n) => text.includes(fmtFull(n)) || text.includes(fmt
     // no asks are logged. The fixture is a fresh Team org with zero
     // opportunities → all three tiles empty + the explainer line. ──
     {
-      const reachable = await goTab("Pipeline");
+      // FIX-1 §B — the sidebar Pipeline folded into Fundraising → Major gifts;
+      // reach it the way every old link now does (?fr=pipeline), or this
+      // section's two checks would pass as "not reachable" and never run.
+      let reachable = await goTab("Pipeline");
+      if (!reachable) {
+        await page.goto(`${FRONT}/dashboard?fr=pipeline`, { waitUntil: "networkidle" });
+        await page.waitForTimeout(1200);
+        reachable = await page.evaluate(() => /Pipeline/.test(document.body.innerText));
+      }
       if (reachable) {
         await page.waitForTimeout(1400);
         const pf = (await api("GET", "/pipeline?scope=all", token)).body?.forecast || {};

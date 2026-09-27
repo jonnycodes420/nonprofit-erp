@@ -26,6 +26,7 @@
 
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, civilToday } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_cd93", TZ = "America/New_York";
 const ADMIN = "cd93admin@example.org";
@@ -145,7 +146,7 @@ async function reset() {
   // ── §6 · the rule, stated against the source ─────────────────────────────
   console.log("\n— §6 · the two readers that were wrong now read the org's calendar —");
   const fs = require("fs"), path = require("path");
-  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   const homeRoute = src.slice(src.indexOf('app.get("/dashboard/home"'), src.indexOf('app.get("/dashboard/home"') + 1200);
   ok("GET /dashboard/home buckets on the org's civil date",
      /orgToday\(await orgTz\(orgId\)\)/.test(homeRoute) && !/new Date\(\)\.toISOString\(\)\.split/.test(homeRoute));

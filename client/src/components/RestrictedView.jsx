@@ -17,10 +17,10 @@ const quietBtn = { background: T.white, border: "1px solid " + T.bg3, borderRadi
 const primaryBtn = { background: T.greenDk, border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 700, color: T.white, cursor: "pointer", minHeight: 36 };
 const LABELS = { awarded: "Awarded", received: "Received", outstanding: "Still owed", spent: "Spent", remaining: "Remaining to spend" };
 const KEYS = ["awarded", "received", "outstanding", "spent", "remaining"];
-// Sign FIRST: fmtFull reads "$-5,500" (pinned elsewhere), and an overspent
-// balance is the one figure on this screen that is meant to be negative, so it
-// is written the way a treasurer writes it. The formatter stays INLINE at the
-// render site so the number census (build97) can see it.
+// An overspent balance is the one figure on this screen that is meant to be
+// negative. fmtFull writes it sign-first ("-$5,500") since FIX-1 E, so the
+// render-site sign this component used to prepend is gone. The formatter stays INLINE at the render site so the
+// number census (build97) can see it.
 
 function Figure({ k, value, def, big }) {
   const neg = k === "remaining" && Number(value) < 0;
@@ -28,7 +28,7 @@ function Figure({ k, value, def, big }) {
     <div title={def || ""} data-testid={"restricted-" + k} style={{ minWidth: 0 }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: T.ink3 }}>{LABELS[k]}</div>
       <div style={{ fontSize: big ? 22 : 15, fontWeight: 700, color: neg ? T.terracotta : T.ink, fontFamily: big ? "'DM Serif Display', Georgia, serif" : undefined }}>
-        {Number(value) < 0 && "-"}{fmtFull(Math.abs(Number(value)))}
+        {fmtFull(Number(value))}
       </div>
     </div>
   );

@@ -33,6 +33,7 @@
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
 const t = require("../orgTime");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG_NY = "org_tz_ny", ORG_IN = "org_tz_in";
 
@@ -309,7 +310,7 @@ const UTC = { timezone: "UTC" };
   // produced it; this fails everywhere, always.
   // Comments are STRIPPED first — the explanation of this very bug names the
   // defective call, and a guard that its own docstring can trip is not a guard.
-  const rawSrv = require("fs").readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const rawSrv = readSource("server.js");
   const srv = rawSrv.split("\n").map(l => l.replace(/\/\/.*$/, "")).join("\n");
   const drift = srv.slice(srv.indexOf("async function portalDriftAlert"));
   const driftBody = drift.slice(0, drift.indexOf("\n}\n") + 1);

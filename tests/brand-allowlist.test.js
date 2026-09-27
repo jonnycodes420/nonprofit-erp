@@ -13,6 +13,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 let pass = 0, fail = 0;
 function ok(name, cond, extra) {
@@ -21,7 +22,7 @@ function ok(name, cond, extra) {
 }
 
 const ROOT = path.join(__dirname, "..", "client");
-const read = p => fs.readFileSync(path.join(ROOT, p), "utf8");
+const read = p => readSource(path.join(ROOT, p));
 
 // ── 1) The token set — read live from shared.jsx's T object + publicTheme ──
 const shared = read("src/components/shared.jsx");

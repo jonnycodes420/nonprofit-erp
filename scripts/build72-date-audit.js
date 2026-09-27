@@ -23,6 +23,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("./lib/readSource");
 
 const ROOT = path.join(__dirname, "..");
 const FILES = ["server.js", "db.js", "drift.js"];   // drift.js added BUILD-76 — pure module, must stay at zero sites
@@ -75,7 +76,7 @@ function scan() {
   const found = {};
   let routed = 0;
   for (const f of FILES) {
-    const lines = fs.readFileSync(path.join(ROOT, f), "utf8").split("\n");
+    const lines = readSource(path.join(ROOT, f)).split("\n");
     lines.forEach((raw, i) => {
       const line = raw.replace(/\/\/.*$/, "");           // ignore comments
       if (!line.trim()) return;
@@ -149,7 +150,7 @@ function bodyOf(lines, start) {
 // the repo. date-seam §8 uses this to PROVE the guard fails on a tree where
 // the defect exists — a guard never seen failing is not known to guard.
 function scanHelpers(sources = null) {
-  const srcs = sources || FILES.map(f => ({ f, lines: fs.readFileSync(path.join(ROOT, f), "utf8").split("\n") }));
+  const srcs = sources || FILES.map(f => ({ f, lines: readSource(path.join(ROOT, f)).split("\n") }));
   const helpers = [];
   for (const { f, lines } of srcs)
     lines.forEach((raw, i) => {
@@ -220,7 +221,7 @@ function scanTodayFallbacks() {
   for (const f of TODAY_STAMP_FILES) {
     const p2 = path.join(__dirname, "..", f);
     if (!fs.existsSync(p2)) continue;
-    const lines = fs.readFileSync(p2, "utf8").split("\n");
+    const lines = readSource(p2).split("\n");
     lines.forEach((line, i) => {
       const code = line.replace(/\/\/.*$/, "");
       if (TODAY_STAMP_RE.test(code) && !TODAY_ALLOWED.test(line)) {

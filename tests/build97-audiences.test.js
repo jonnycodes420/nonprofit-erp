@@ -20,6 +20,7 @@
 const bcrypt = require("bcryptjs");
 const fs = require("fs"), path = require("path");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b97", OTHER = "org_b97b";
 const ME = "b97@example.org", THEM = "b97-other@example.org";
@@ -65,7 +66,7 @@ const mkPerson = (id, org, name, email, types, opts = {}) => q(
   // ── §1 · THE REGISTRY AND THE RESOLVER CANNOT DRIFT ──────────────────────
   console.log("\n— §1 · every built-in resolves to something the server knows —");
   const reg = await import("../shared/audiences.js");
-  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   const filterFn = src.slice(src.indexOf("function filterBySegment("), src.indexOf("async function resolveCampaignRecipients("));
   for (const a of reg.BUILT_IN_AUDIENCES) {
     ok(`built-in "${a.name}" has a branch in filterBySegment`,

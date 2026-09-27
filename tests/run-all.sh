@@ -106,7 +106,7 @@ CORE=(
   date-seam donor-merge drift email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
   finance-reintegration fundraising gift-attribution goals home home-layout households impact
   import-assign import-both import-combined import-messy import-reconciliation import-shape import-stage invitation landing-reveal
-  locked-features migc
+  locked-features migc fix1-people
   brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
   report-truth
   session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation tenant-matrix actor-stamp user-removal trial-end upgrade-checkout workflows workflows-e2e
@@ -144,7 +144,8 @@ CORE=(
   build99-grant-timeline
   build100-score-names
   build97-part0 build97-npsp build97-numbers build97-agent build97-observability
-  build98-credit build98-letters build98-reports build98-events build98-volunteers build98-api mail-block
+  fix1-agent
+  build98-credit build98-letters build98-reports build98-events build98-volunteers fix1-volunteers build98-api mail-block
   build99-proposals build99-portfolios build99-plans build99-brief build99-dashboard build99-import
   build100-funders build100-deadlines build100-documents build100-restricted
   build100-reports build100-import build100-screens
@@ -152,6 +153,9 @@ CORE=(
   build98-migration email-footer build98-security build101-memberships build101-renewals build101-lapsed build101-online build101-reports build101-import
   build102-form-config build102-steps-upsell build102-extras build102-embed build102-attribution build102-funnel
   test-clock-seam
+  fix1-fundraising
+  fix1-finance
+  fix1-institutional
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
@@ -185,6 +189,23 @@ rm -f "$LOGDIR"/*.log 2>/dev/null || true
 
 pass=0; fail=0; failed=()
 total_start=$(date +%s)
+
+# FIX-1 §11 — THE DEMO IS SEEDED BEFORE THE BATTERY, so demo-shape never skips.
+# scripts/seed-demo.js drops and recreates ONLY the demo org, against the
+# server at $BASE (default :5601) and $DATABASE_URL; it refuses any database
+# that is not an allowlisted scratch name. CI seeds it in its own step and
+# passes DEMO_SEEDED=1. A seed that fails is a red battery, never a skip.
+want_demo=0
+for name in "${RUN[@]}"; do [ "$name" = "demo-shape" ] && want_demo=1; done
+if [ "$want_demo" -eq 1 ] && [ "${DEMO_SEEDED:-}" != "1" ]; then
+  if node scripts/seed-demo.js >"$LOGDIR/seed-demo.log" 2>&1; then
+    echo "  seeded the demo org (scripts/seed-demo.js)"
+  else
+    echo "  FAIL  seed-demo: the demo did not seed ($LOGDIR/seed-demo.log)"
+    cat "$LOGDIR/seed-demo.log"
+    fail=$((fail+1)); failed+=("seed-demo")
+  fi
+fi
 for name in "${RUN[@]}"; do
   file="tests/${name}.test.js"
   [ -f "$file" ] || { echo "  SKIP  $name (missing)"; continue; }

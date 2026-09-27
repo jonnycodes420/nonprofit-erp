@@ -15,6 +15,7 @@
 const fs = require("fs");
 const path = require("path");
 const { billingConfigError, otherBillingMode, billingStripeMode } = require("../stripeKeys");
+const { readSource } = require("../scripts/lib/readSource");
 
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } };
@@ -66,7 +67,7 @@ eq(billingStripeMode("sk_live_abc"), "live", "sk_live → live");
 eq(billingStripeMode("rk_live_abc"), "live", "rk_live → live");
 
 // 8 — server.js is WIRED to the typed handling (source grep guard).
-const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+const server = readSource("server.js");
 ok(/handleBillingConfigError\(err, res, \{ plan, surface: "create-checkout" \}\)/.test(server),
   "create-checkout wraps the Stripe call in handleBillingConfigError");
 ok(/handleBillingConfigError\(err, res, \{ surface: "create-portal" \}\)/.test(server),

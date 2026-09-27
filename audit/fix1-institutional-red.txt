@@ -1,0 +1,19 @@
+fix1-institutional
+
+— §1 · the word and the date, pure —
+  FAIL  §1 shared/institutional.js exports lastGiftWord and shortCivilDate — "Cannot find module '/Users/jonathanatkinson/steward-fix1/shared/institutional.js' imported from /Users/jonathanatkinson/"
+
+— §2 · /drift's institutional rows —
+  PASS  §2 all four organisations are on the list
+  FAIL  §2 the foundation's row says last grant — {"donorId":"fi_fdn","name":"Ridgeline Family Foundation","totalGiving":"5000.00","lastGiftDate":"2026-01-14","giftCount":1}
+  FAIL  §2 the DAF's row says last grant — {"donorId":"fi_daf","name":"Schwab Charitable","totalGiving":"2500.00","lastGiftDate":"2025-12-31","giftCount":1}
+  FAIL  §2 the church's row says last gift — {"donorId":"fi_chu","name":"Grace Chapel","totalGiving":"1200.00","lastGiftDate":"2026-03-02","giftCount":1}
+  FAIL  §2 the business's row says last gift — {"donorId":"fi_biz","name":"Saltbox Printing","totalGiving":"750.00","lastGiftDate":"2026-02-09","giftCount":1}
+  FAIL  §2 each row carries the date as it reads — [null,null]
+
+— §3 · Home —
+  FAIL  §3 Home no longer calls every organisation's gift a grant
+  FAIL  §3 Home prints the server's word and the short date
+  FAIL  §3 the list's heading names churches and businesses too
+
+1 passed, 9 failed

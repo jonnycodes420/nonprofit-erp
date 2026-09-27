@@ -31,10 +31,11 @@ let pass = 0, fail = 0;
 const ok = (cond, msg, detail) => {
   if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg + (detail ? ` — ${detail}` : "")); }
 };
-const read = p => fs.readFileSync(path.join(root, p), "utf8");
+const read = p => readSource(path.join(root, p));
 
 // ── 1. The pure resolver ──
 const { CANONICAL_APP_URL, resolvePublicAppUrl } = require(path.join(root, "publicUrl"));
+const { readSource } = require("../scripts/lib/readSource");
 
 ok(CANONICAL_APP_URL === "https://www.stewardapp.dev", "canonical URL is https://www.stewardapp.dev");
 

@@ -29,6 +29,7 @@
 const fs = require("fs"), path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
 const ORG_DEMO = "org_b97obs_demo", ORG_REAL = "org_b97obs_real";
@@ -48,7 +49,7 @@ async function reset() {
 
 (async () => {
   console.log("build97-observability");
-  const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+  const serverSrc = readSource("server.js");
 
   await reset();
   // A DEMO org (mail off, marked fiction) and an ordinary one.

@@ -23,9 +23,10 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const root = path.join(__dirname, "..");
-const read = p => fs.readFileSync(path.join(root, p), "utf8");
+const read = p => readSource(path.join(root, p));
 
 // The rendered strings of a JSX file: what a human would actually read. Comments
 // are stripped first, because a comment is not a screen (CLAUDE.md's own

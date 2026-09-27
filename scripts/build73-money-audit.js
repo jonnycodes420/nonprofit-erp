@@ -19,6 +19,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("./lib/readSource");
 
 const root = path.join(__dirname, "..");
 const FILES = ["server.js", "db.js"];
@@ -52,7 +53,7 @@ const ALLOW = [
 
 const findings = [];
 for (const rel of FILES) {
-  const src = fs.readFileSync(path.join(root, rel), "utf8");
+  const src = readSource(path.join(root, rel));
   const lines = src.split("\n");
   lines.forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, "");        // a comment naming Math.round is not a call
@@ -65,7 +66,7 @@ for (const rel of FILES) {
 }
 
 // The seam must be the only converter, and it must actually be wired in.
-const serverSrc = fs.readFileSync(path.join(root, "server.js"), "utf8");
+const serverSrc = readSource("server.js");
 // Strip line comments before the wiring checks: server.js documents what each
 // former rounding site used to say, and a comment quoting `Math.round(...)` is
 // not a call to it.

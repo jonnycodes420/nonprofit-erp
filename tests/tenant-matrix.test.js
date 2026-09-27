@@ -342,6 +342,7 @@ function bResolver(routePath, param) {
     "api-keys": `ak_${B}`,           // BUILD-98 Part 6 — org A cannot revoke org B's key
     "membership-levels": `mbl_${B}`, // BUILD-101 — org A cannot edit or remove org B's levels
     "memberships": `mb_${B}`,        // BUILD-101 — org A cannot cancel org B's member
+    people: `d_${B}`,                // FIX-1 D — a person IS a donors row; org A cannot read or re-role org B's
   };
   // BUILD-92 A3 — the duplicate questions live UNDER /giving-sources, so the
   // first segment would resolve them to a SOURCE id and the probe would 404
@@ -360,6 +361,8 @@ function bResolver(routePath, param) {
   if (routePath.startsWith("/plans/")) return `cp_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;
   if (routePath.startsWith("/agent/writes/")) return `aw_${B}`;
+  // FIX-1 §A — a run's state, read by id: org A's token on org B's run reaches nothing.
+  if (routePath.startsWith("/agent/runs/")) return `arun_${B}`;
   if (routePath.startsWith("/giving-sources/duplicates/")) return `gdq_${B}`;
   if (routePath.startsWith("/fundraising/campaigns")) return `c_${B}`;
   if (routePath.startsWith("/reports/board")) return `br_${B}`;

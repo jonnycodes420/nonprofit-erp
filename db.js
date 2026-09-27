@@ -4184,6 +4184,27 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_person ON volunteer_shifts (org_id, person_id, date DESC)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_shifts_import ON volunteer_shifts (org_id, import_key) WHERE import_key IS NOT NULL`);
 
+  // ── FIX-1 C — THE COORDINATOR'S OWN NOTES ────────────────────────────────
+  // Training, a background-check date, availability: things that are about
+  // VOLUNTEERING, not about giving. They live here and NOT in interactions, so
+  // they can never reach the donor timeline, Drift, a thank-you draft or the
+  // agent's rows — those all read interactions, and this table is not it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_notes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('training','background_check','availability','note')),
+      body TEXT NOT NULL,
+      note_date TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_notes_person ON volunteer_notes (org_id, person_id, created_at DESC)`);
+  // FIX-1 — the volunteer sign-up link's version. It is signed into the link,
+  // so "make a new link" bumps it and every older link stops verifying.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_link_version INTEGER NOT NULL DEFAULT 0`);
+
   // ── BUILD-98 (switch) Part 6 — A KEY THAT OPENS ONE ORG, READ ONLY ─────
   // A key is shown ONCE and stored as its SHA-256; the prefix is kept so a
   // list can say which key is which. Revoked keys stay as rows (who made

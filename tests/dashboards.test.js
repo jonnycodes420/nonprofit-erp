@@ -17,6 +17,7 @@ const path = require("path");
 const zlib = require("zlib");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, BASE } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b86d", ORG2 = "org_b86d2";
 const root = path.join(__dirname, "..");
@@ -187,7 +188,7 @@ const cents = n => Math.round((Number(n) || 0) * 100);
      fundCore.metrics.filter(m => m.key !== "pipelineFunnel").length === fundTeam.metrics.length - 1);
 
   // The removals, read off the client source.
-  const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");
+  const app = readSource("client/src/App.jsx");
   ok("the tab is Dashboards, plural", /\{id:"board",label:"Dashboards"/.test(app));
   ok("…and renders the four, not the old single board screen", /tab==="board"&&<Dashboards/.test(app));
   // COMMENTS ARE NOT A SCREEN — the note explaining what was removed names it.

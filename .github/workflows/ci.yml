@@ -139,8 +139,15 @@ jobs:
           done
           echo "server failed to start"; cat /tmp/server.log; exit 1
 
+      # FIX-1 §11 — the demo org is seeded before the battery, so demo-shape
+      # asserts the pitch on every run instead of skipping it.
+      - name: Seed the demo
+        run: node scripts/seed-demo.js
+
       - name: Full verification suite
         run: bash tests/run-all.sh
+        env:
+          DEMO_SEEDED: "1"
 
       - name: Server log on failure
         if: failure()

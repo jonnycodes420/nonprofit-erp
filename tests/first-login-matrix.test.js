@@ -19,6 +19,7 @@
 const { ok, summary, api, q, closeDb, BASE } = require("./helpers");
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("../scripts/lib/readSource");
 
 const uniq = () => Math.random().toString(36).slice(2, 8);
 
@@ -91,7 +92,7 @@ async function mintOrg(row) {
   // ── §2 totality — a new plan value must join the matrix ──────────────────
   console.log("\n§2 plan-value totality");
   {
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    const src = readSource("server.js");
     const covered = new Set(MATRIX.map(r => r.plan));
     // Every plan literal the tier authority (orgPlanTier + TEAM_PLANS +
     // SOFT_BAND_PLANS) knows about must have a matrix row.
@@ -109,7 +110,7 @@ async function mintOrg(row) {
   // ── §3 the client no longer treats the portal tier as an outage ──────────
   console.log("\n§3 client shell handles the portal tier");
   {
-    const app = fs.readFileSync(path.join(__dirname, "..", "client", "src", "App.jsx"), "utf8");
+    const app = readSource("client/src/App.jsx");
     ok("App.jsx knows the portal_tier error code (tolerated, not fatal)", /portal_tier/.test(app), null);
     ok("App.jsx has a portal-tier tab set (PORTAL_TIER_TABS)", /PORTAL_TIER_TABS/.test(app), null);
     ok("initial load survives partial failure (allSettled, not all-or-nothing)", /allSettled/.test(app), null);

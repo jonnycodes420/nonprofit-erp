@@ -23,6 +23,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb, SINK_PORT } = require("./helpers");
 const MB = require("../mailBlock");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_mailblock";
 const PW = "loadtest1234";
@@ -71,7 +72,7 @@ async function reset() {
 
   // ── §3 · every exit checks it ────────────────────────────────────────────
   const strip = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
-  const server = strip(fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8"));
+  const server = strip(readSource("server.js"));
   const migc = strip(fs.readFileSync(path.join(__dirname, "..", "routes", "migc.js"), "utf8"));
   const proxy = server.slice(server.indexOf("const resend = new Proxy(_rawResend"), server.indexOf("const resend = new Proxy(_rawResend") + 5000);
   ok("§3 the client proxy refuses before calling the provider", /blockedRecipientIn\(opts\)[\s\S]*?return \{ data: null, error:[\s\S]*?eTarget\.send\((opts|wire)\)/.test(proxy));

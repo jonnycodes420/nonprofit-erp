@@ -19,6 +19,7 @@ const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG_T = "org_su_team", ORG_C = "org_su_core";
 
@@ -191,7 +192,7 @@ const item = (body, key) => (body.items || []).find(i => i.key === key);
 
   // ── Client-source guard: exact deep links + layout integration ───────────
   const root = path.join(__dirname, "..");
-  const read = p => fs.readFileSync(path.join(root, p), "utf8");
+  const read = p => readSource(path.join(root, p));
   const layoutSrc = read("client/src/lib/homeLayout.js");
   ok("setup is a HOME_SECTIONS entry (hideable — normal layout rules)", /id:\s*"setup",\s*label:\s*"Set up Steward",\s*hideable:\s*true/.test(layoutSrc));
   const dash = read("client/src/components/Dashboard.jsx");

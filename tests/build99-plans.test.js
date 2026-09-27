@@ -19,6 +19,7 @@ const bcrypt = require("bcryptjs");
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, login, api, q, closeDb, civilPlusDays } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "b99_pl", OTHER = "b99_pl2";
 const ME = "b99pl@example.org", THEM = "b99pl-other@example.org";
@@ -208,7 +209,7 @@ const civilPlus = (n) => civilPlusDays(n);
   const planSrc = fs.readFileSync(path.join(__dirname, "..", "shared", "planShape.js"), "utf8");
   ok("§5 the pure module names no email, subject, body or send",
      !/\b(sendEmail|resend|subject|emailBody|mailto|send\()/i.test(planSrc.replace(/\/\/[^\n]*/g, "")));
-  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const server = readSource("server.js");
   const planBlock = server.slice(server.indexOf("// ── BUILD-99 (major gifts) Part 3 — CULTIVATION PLANS"),
                                 server.indexOf("app.post(\"/plans/:id/stop\""));
   ok("§5 the routes call no mail sender",

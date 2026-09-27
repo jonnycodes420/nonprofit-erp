@@ -1,0 +1,9 @@
+  PASS  §9 asking for the link twice gives the same link (a GET changes nothing)
+  FAIL  §9 staff can make a new link — {"error":"Not found"}
+  FAIL  §9 ...and it says the old one stopped working — {"error":"Not found"}
+  FAIL  §9 the old link's page is gone
+  FAIL  §9 the old link's form writes nothing
+  FAIL  §9 the new link works
+  FAIL  §9 the hub now shows the new link
+  FAIL  §9 who made the new link is recorded
+  FAIL  §9 another org making a new link does not touch this org's

@@ -30,6 +30,7 @@ const PW = process.env.PLAYWRIGHT_DIR || (process.env.HOME + "/steward-qa");
 const DIST = path.join(__dirname, "..", "client", "dist", "index.html");
 const SRC = path.join(__dirname, "..", "client", "src");
 const haveDeps = () => { try { require(path.join(PW, "node_modules", "playwright")); } catch { return false; } return fs.existsSync(DIST); };
+const { readSource } = require("../scripts/lib/readSource");
 
 // A 1x1 is not enough — the server resizes and re-encodes, so give it a real image.
 async function realJpeg() {
@@ -59,7 +60,7 @@ async function realJpeg() {
   // `volunteers` and `board_members` are their own tables too.
   const HANDROLLED = /borderRadius:\s*"50%"[^}]*\}\}\s*>\s*\{\s*\(?\s*(?:d|donor|p|person|r|t)\b[^}]{0,40}\.name[^}]{0,30}\[0\]/;
   for (const f of DONOR_SURFACES) {
-    const src = fs.readFileSync(path.join(SRC, f), "utf8");
+    const src = readSource(path.join(SRC, f));
     const hit = src.match(HANDROLLED);
     ok(`${f} renders no hand-rolled donor initials circle`, !hit, hit && hit[0].slice(0, 120));
   }
@@ -69,7 +70,7 @@ async function realJpeg() {
   ok("…and does not fire on a PersonMark",
     !HANDROLLED.test('<PersonMark id={d.id} name={d.name} size={32}/>'), null);
 
-  const donorsSrc = fs.readFileSync(path.join(SRC, "components/Donors.jsx"), "utf8");
+  const donorsSrc = readSource(path.join(SRC, "components/Donors.jsx"));
   ok("the donor DIRECTORY rows render a PersonMark",
     /<PersonMark[^>]*id=\{d\.id\}/.test(donorsSrc), null);
 

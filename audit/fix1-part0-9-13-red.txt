@@ -1,0 +1,43 @@
+  FAIL  §1 agentShape exports compilePlan
+  FAIL  §1 agentShape exports preparedGiftFromInstruction
+  FAIL  §1 the Sunrise instruction is a prepared gift of 500000 cents — "null"
+  FAIL  §1 ...on the Sunrise Foundation's record
+  PASS  §1 the Sunrise instruction is NOT refused outright (it is prepared, not refused)
+  FAIL  §1 compiled plan keeps exactly the steps — "compilePlan missing"
+  FAIL  §1 money step prepared — "compilePlan missing"
+  FAIL  §1 headline names gift+follow-up — "compilePlan missing"
+  FAIL  §1 no gift step never says gift — "compilePlan missing"
+  FAIL  §1 no thread step never says follow-up — "compilePlan missing"
+  FAIL  §1 the model's plan schema carries no free-text summary
+  FAIL  §2 agentShape exports scopeFromInstruction
+  FAIL  §2 an instruction about one organisation reads that organisation — "null"
+  FAIL  §2 an instruction naming nobody is whole-org (null), not a guess — "\"missing\""
+  FAIL  §2 the run no longer reads the whole org unconditionally
+  FAIL  §3 agentShape exports runIsLive
+  FAIL  §3 the server answers a run's state by id
+  FAIL  §4 shared/suggestionGuard.js exists with guardSuggestion + plainText — "Cannot find module '/Users/jonathanatkinson/steward-fix1/shared/suggestionGuard.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-walk.test.js"
+  FAIL  §5 vocabulary exports giverWordFor
+  FAIL  §6 fundraisingSections exists — "Cannot find module '/Users/jonathanatkinson/steward-fix1/client/src/lib/fundraisingSections.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-wa"
+  FAIL  §7 the 'Everyone is on one list' paragraph appears nowhere in the client — "client/src/components/Communications.jsx"
+  FAIL  §8 fmtFull(-1.33) is -$1.33 — "$-1.33"
+  FAIL  §8 fmtFull(-4200) is -$4,200 — "$-4,200"
+  PASS  §8 fmtFull(1.5) is still $1.50
+  PASS  §8 no client source writes a literal "$-"
+  FAIL  §9 shared/threadFigures.js exports threadFigures — "Cannot find module '/Users/jonathanatkinson/steward-fix1/shared/threadFigures.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-walk.test.js"
+  FAIL  §9 the server's Thread header reads threadFigures
+  FAIL  §9 ...and no longer takes 'oldest' from daysOpen on its own
+  FAIL  §9 the Home sentence reads the same computation
+  FAIL  §10 the sentence never says 12 when the header says 24 overdue — "12 people are waiting on you; Petrossian has been waiting three weeks."
+  FAIL  §10 ...and if it counts people, the count is the header's 24 — "12 people are waiting on you; Petrossian has been waiting three weeks."
+  FAIL  §11 the demo org has its own seed, scripts/seed-demo.js
+  FAIL  §11 the demo seed says nothing the test fixtures say
+  FAIL  §11 no suite logs in to or writes the demo org — "build100-score-names.test.js, build98-photos.test.js, build99-grant-timeline.test.js"
+  FAIL  §11 demo-shape has no skip path (the demo is always seeded where it runs)
+  FAIL  §11 CI seeds the demo before the battery
+  FAIL  §12 the sidebar is Home, Donors, Fundraising, Volunteers, Agent, Reports, Finance — "Cannot find module '/Users/jonathanatkinson/steward-fix1/client/src/lib/tabRegistry.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-walk.test."
+  FAIL  §12 ...and everything else is under More — "Cannot find module '/Users/jonathanatkinson/steward-fix1/client/src/lib/tabRegistry.js' imported from /Users/jonathanatkinson/steward-fix1/tests/fix1-walk.test."
+  FAIL  §13 vocabulary exports giverCountWord
+  FAIL  §13 eleven quiet givers, three of them organisations, are not 'sponsors' — "11 sponsors have gone quiet."
+  FAIL  §13 the failed-card tile names its rows by what they are, not by the bare word
+
+3 passed, 38 failed

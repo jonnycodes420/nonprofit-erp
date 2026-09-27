@@ -1,0 +1,42 @@
+fix1-volunteers
+  seed shift failed 404 { error: 'Not found' }
+  seed shift failed 404 { error: 'Not found' }
+  seed shift failed 404 { error: 'Not found' }
+  seed shift failed 404 { error: 'Not found' }
+  FAIL  §1 the roster answers — 404
+  FAIL  §1 the roster is exactly the people with the volunteer role — ""
+  FAIL  §1 hours this year are this year's shifts only (5.75)
+  FAIL  §1 the last shift is the latest one
+  FAIL  §1 Vera does not give
+  FAIL  §1 Bea gives, and the roster says so
+  FAIL  §1 the roster carries its sentence
+  FAIL  §2 a volunteer who has not given is not in the Donors list — "c_both,c_don,c_staff,c_vol"
+  PASS  §2 a volunteer who gave is
+  PASS  §2 a donor is
+  FAIL  §2 staff are not
+  FAIL  §2 the count is people with the donor role — 4
+  FAIL  §3 c_vol: roster hundredths equal the record's, as integers — "undefined vs undefined"
+  FAIL  §3 c_both: roster hundredths equal the record's, as integers — "undefined vs undefined"
+  FAIL  §3 Vera's lifetime is exactly 9.75 hours
+  FAIL  §4 a note is written — 404
+  FAIL  §4 an unknown kind is refused
+  FAIL  §4 a note on somebody who is not a volunteer is refused — 404
+  FAIL  §4 the note is on the hub
+  FAIL  §4 the note carries who wrote it
+  PASS  §4 the interactions table did not move
+  PASS  §4 no interaction row carries the note
+  PASS  §4 the donor record (and its timeline) never carries it
+  PASS  §4 Drift never carries it
+  FAIL  §4 a note can be removed
+  FAIL  §5 the conversion list is exactly the volunteers who give — ""
+  FAIL  §5 each row carries lifetime giving
+  FAIL  §6 org B's roster is org B's only
+  PASS  §6 org B cannot note org A's volunteer
+  PASS  §6 org B cannot read org A's notes
+  FAIL  §7 the hub component exists
+  FAIL  §7 Volunteers is a live tab
+  FAIL  §7 ...on the desktop rail
+  FAIL  §7 ...and in the mobile More drawer
+  FAIL  §7 the tab renders the new hub, not the old Volunteers.jsx
+
+8 passed, 27 failed

@@ -11,7 +11,8 @@
 
 const fs = require("fs");
 const path = require("path");
-const read = p => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
+const { readSource } = require("../scripts/lib/readSource");
+const read = p => readSource(p);
 let pass = 0, fail = 0;
 const ok = (cond, msg) => { if (cond) { pass++; } else { fail++; console.error("  ✗ " + msg); } };
 const has = (s, n) => s.includes(n);

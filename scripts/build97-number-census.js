@@ -36,6 +36,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { readSource } = require("./lib/readSource");
 
 const root = path.join(__dirname, "..");
 const SRC = path.join(root, "client", "src");
@@ -60,6 +61,7 @@ const SURFACES = [
   "components/Finance.jsx",
   "components/Tasks.jsx",
   "components/Workflows.jsx",
+  "components/Agent.jsx",           // FIX-1 §A — Steward Agent (its figures are sentences the server compiled)
   "components/Settings.jsx",
   "components/DepositSheet.jsx",
   "components/DonorMap.jsx",
@@ -85,6 +87,7 @@ const SURFACES = [
   "components/ReportBuilder.jsx",  // BUILD-98 (switch) Part 3 — Reports → Your reports
   "components/EventsDesk.jsx",     // BUILD-98 (switch) Part 4 — Fundraising → Events
   "components/VolunteerPanel.jsx", // BUILD-98 (switch) Part 5 — hours on the profile, and the hours import
+  "components/VolunteersHub.jsx",  // FIX-1 C — the Volunteers hub (hours as plain hundredths, each defined; no money drawn)
   "components/ApiKeysPanel.jsx",   // BUILD-98 (switch) Part 6 — API keys (dates and a prefix; no figures)
   "components/Memberships.jsx",    // BUILD-101 Part 1 — Fundraising → Members, and the profile panel
   "components/MajorGifts.jsx",     // BUILD-99 (major gifts) — Fundraising → Major gifts / Proposals / Portfolios / Plans, and three profile panels
@@ -98,6 +101,15 @@ const SURFACES = [
 
 // Surfaces deliberately OUT of scope, each with its reason — named here rather
 // than silently absent, which is the same rule the ignored-column list follows.
+// FIX-1 — Donors.jsx was split into these files. They ARE scanned: as
+// components/Donors.jsx, which scanFile reads through readSource and which is
+// rebuilt from them (scripts/lib/readSource.js). Named here so the scope check
+// sees every screen file accounted for.
+const SCANNED_AS_DONORS = [
+  "components/donorShared.jsx", "components/DonorImport.jsx",
+  "components/DonorProfile.jsx", "components/DonorDirectory.jsx",
+];
+
 const OUT_OF_SCOPE = {
   "components/Events.jsx": "hidden from the nav since the 2026-07-12 pivot",
   "components/Volunteers.jsx": "hidden from the nav since the 2026-07-12 pivot",
@@ -170,7 +182,7 @@ const isNoise = (line) => {
 function scanFile(rel) {
   const full = path.join(SRC, rel);
   if (!fs.existsSync(full)) return null;
-  const lines = fs.readFileSync(full, "utf8").split("\n");
+  const lines = readSource(full).split("\n");
   const sites = [];
   lines.forEach((line, i) => {
     if (isNoise(line)) return;
@@ -234,7 +246,7 @@ function census() {
   return { byFile, total, claims: claims.length, claimSites: claims, sites: all, outOfScope: OUT_OF_SCOPE };
 }
 
-module.exports = { census, SURFACES, OUT_OF_SCOPE, PATTERNS };
+module.exports = { census, SURFACES, OUT_OF_SCOPE, SCANNED_AS_DONORS, PATTERNS };
 
 if (require.main === module) {
   const r = census();

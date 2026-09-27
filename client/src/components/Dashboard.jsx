@@ -6,7 +6,8 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from 
 // BUILD-86 C.2 — the NOTE. shared/homeNote.js replaces the Part A sentence,
 // which read like a log line ("Chen is at day 7.").
 import { homeNote, agoPhrase } from "../../../shared/homeNote";
-import { makeT, capitalize } from "../../../shared/vocabulary";
+import { rowFigure } from "../../../shared/threadFigures";
+import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
 import FunnelChart from "./FunnelChart";
@@ -447,36 +448,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // by design: the agent being unavailable must never blank her Home screen.
   const [agentDaily,setAgentDaily]=useState(null);
   const [agentText,setAgentText]=useState("");
-  const [agentPlan,setAgentPlan]=useState(null);
-  const [agentBusy,setAgentBusy]=useState(false);
-  const [agentErr,setAgentErr]=useState("");
-  const [agentResult,setAgentResult]=useState(null);
   const loadAgentDaily=()=>apiFetch("/agent/daily-line")
     .then(setAgentDaily).catch(()=>setAgentDaily(null));
   useEffect(()=>{loadAgentDaily();},[]);
-  async function agentAsk(){
+  // FIX-1 §A — Home keeps ONE LINE. The plan, the run and the confirm live in
+  // Agent now, so her words are carried there and planned on arrival: one
+  // place where a plan is read, run and undone, not two that can disagree.
+  function agentAsk(){
     const text=agentText.trim();
-    if(!text||agentBusy)return;
-    setAgentBusy(true);setAgentErr("");setAgentPlan(null);setAgentResult(null);
-    try{
-      const r=await apiFetch("/agent/instructions",{method:"POST",body:JSON.stringify({text})});
-      setAgentPlan(r);
-    }catch(e){
-      // A MONEY INSTRUCTION IS REFUSED WITH ITS SENTENCE, not with an error
-      // code. She asked for something reasonable and is owed a reason.
-      setAgentErr(e&&e.sentence?e.sentence:errorMessage(e,"Steward could not plan that just now."));
-    }
-    setAgentBusy(false);
-  }
-  async function agentConfirm(){
-    if(!agentPlan||agentBusy)return;
-    setAgentBusy(true);setAgentErr("");
-    try{
-      const r=await apiFetch(`/agent/instructions/${agentPlan.id}/confirm`,{method:"POST",body:"{}"});
-      setAgentResult(r);setAgentPlan(null);setAgentText("");
-      loadAgentDaily();
-    }catch(e){ setAgentErr(errorMessage(e,"Steward could not run that.")); }
-    setAgentBusy(false);
+    if(!text)return;
+    onNavigate("agent",{agentText:text,autoAsk:true});
   }
   const [planFor,setPlanFor]=useState(null);      // {donor} → the plan-a-follow-up modal
   const loadThreads=(sc=threadScope)=>apiFetch(`/threads?scope=${sc}`).then(r=>setThreadsData(r)).catch(()=>{});
@@ -1673,17 +1654,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {driftData.institutional?.length > 0 && (
           <div style={{...cPad,borderTop:"1px solid "+T.bg3}}>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-              Institutional giving — foundations, DAFs and corporations
+              Institutional giving — foundations, DAFs, churches and businesses
             </div>
             {driftData.institutional.slice(0,8).map(inst=>(
               <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
                 <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",color:T.ink}}>{inst.name}</span>
                 <span style={{flexShrink:0,fontVariantNumeric:"tabular-nums",color:T.ink3}}>
-                  {fmtFull(inst.totalGiving)}{inst.lastGiftDate?` · last grant ${String(inst.lastGiftDate).slice(0,10)}`:""}
+                  {/* FIX-1 — the server's word (a grant only from a foundation or DAF) and the date as it reads */}
+                  {fmtFull(inst.totalGiving)}{inst.lastGiftLabel?` · ${inst.lastWord||"last gift"} ${inst.lastGiftLabel}`:""}
                 </span>
               </div>
             ))}
-            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Grant cycles run on their own calendars — review these when planning applications, not as lapsed donors.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Organisations give on their own calendars (a foundation's grant cycle, a church's budget year), so review these when planning, not as lapsed donors.</div>
           </div>
         )}
       </div>
@@ -1820,10 +1802,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             in the sentence any more. */}
         <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
           <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:t.overdue?T.gold700:T.ink}}>
-            {t.overdue?`${t.overdueDays||0} day${(t.overdueDays||0)===1?"":"s"}`:(t.band==="today"?"Today":String(t.nextStep.due).slice(5))}
+            {/* FIX-1 §9 — the badge, the header's "oldest" and the Home
+                sentence read ONE figure (shared/threadFigures.js). When the
+                row has been open longer than it has been late, the figure is
+                how long it has waited, and the label says so. */}
+            {t.overdue?`${rowFigure(t)} day${rowFigure(t)===1?"":"s"}`:(t.band==="today"?"Today":String(t.nextStep.due).slice(5))}
           </div>
           <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
-            {t.overdue?"overdue":(t.band==="today"?"due":"due on")}
+            {t.overdue?(rowFigure(t)>(t.overdueDays||0)?"waiting":"overdue"):(t.band==="today"?"due":"due on")}
           </div>
         </div>
       </a>
@@ -1876,7 +1862,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   </span>
                 )}
               </span>
-              <span style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+              <span className="thread-hdr-tools" style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
                 {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
                     shop with more than one officer (the BUILD-32 standing rule:
                     hide a picker whose options all resolve to the same view). */}
@@ -2046,87 +2032,37 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     <div style={{...cardWrap}} data-testid="agent-box">
       <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
         <span style={sTitle}>Tell Steward what to do</span>
-        <button onClick={()=>onNavigate("settings",{section:"agent"})} style={sLink}>Activity →</button>
+        <button onClick={()=>onNavigate("agent")} style={sLink}>Open Agent →</button>
       </div>
       <div style={{padding:"4px 20px 16px"}}>
         {/* BUILD-96 Part 3 — A GATED ORG GETS A SENTENCE, NOT AN INPUT.
             The agent sends this organisation's rows and vocabulary to
             Anthropic, and there are two reasons it may not: no key is
             configured on Steward's side, or this org turned it off. Either
-            way, a textarea and a "Show me the plan" button that answer 503
-            when pressed teach her the product is broken. She gets the reason
-            instead, and nothing to press. */}
+            way she gets the reason instead, and nothing to press. */}
         {agentDaily&&agentDaily.available===false?(
           <div data-testid="agent-unavailable" style={{fontSize:13,lineHeight:1.55,color:T.ink3}}>
             {agentDaily.message||"Not enabled for this organization yet."}
           </div>
         ):(<>
-        {/* THE DAILY LINE, which is what this section replaced. It says nothing
-            at all when there is nothing to say, rather than rendering a
-            template with holes in it (the BUILD-86 C.2 rule). */}
         {agentDaily&&agentDaily.line&&(
           <div data-testid="agent-daily-line" style={{fontSize:13.5,lineHeight:1.55,color:T.ink,marginBottom:10}}>
             {agentDaily.line}
           </div>
         )}
-        <textarea data-testid="agent-input" value={agentText} rows={2}
-          onChange={e=>setAgentText(e.target.value)}
-          placeholder="Find everyone who gave last October and hasn't this year, and draft me a note to each."
-          style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,
-                  padding:"10px 12px",fontSize:13.5,fontFamily:"inherit",color:T.ink,resize:"vertical"}}/>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:8,flexWrap:"wrap"}}>
-          <button data-testid="agent-ask" onClick={agentAsk} disabled={agentBusy||!agentText.trim()}
-            style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 16px",color:"#fff",
-                    fontSize:13,fontWeight:700,cursor:agentBusy||!agentText.trim()?"not-allowed":"pointer",
-                    opacity:agentBusy||!agentText.trim()?0.55:1}}>
-            {agentBusy?"Thinking…":"Show me the plan"}
+        <form onSubmit={e=>{e.preventDefault();agentAsk();}} style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <input data-testid="agent-input" value={agentText} onChange={e=>setAgentText(e.target.value)}
+            placeholder="Tell Steward what to do, in your own words…"
+            style={{flex:"1 1 240px",minWidth:0,boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,
+                    padding:"9px 12px",fontSize:13.5,fontFamily:"inherit",color:T.ink}}/>
+          <button data-testid="agent-ask" type="submit" disabled={!agentText.trim()}
+            style={{background:T.greenDk,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,
+                    fontSize:13,fontWeight:700,cursor:!agentText.trim()?"not-allowed":"pointer",
+                    opacity:!agentText.trim()?0.55:1}}>
+            Show me the plan
           </button>
-          <span style={{fontSize:12,color:T.ink3}}>Nothing happens until you say so.</span>
-        </div>
-        {agentErr&&(
-          <div data-testid="agent-refusal" style={{marginTop:10,background:T.gold100,border:"1px solid "+T.gold300,
-                borderRadius:10,padding:"10px 12px",fontSize:13,lineHeight:1.55,color:T.ink}}>
-            {agentErr}
-          </div>
-        )}
-        {/* THE PLAN SHE READS BEFORE IT RUNS. */}
-        {agentPlan&&agentPlan.plan&&(
-          <div data-testid="agent-plan" style={{marginTop:12,background:T.bg,border:"1px solid "+T.bg3,
-                borderRadius:10,padding:"12px 14px"}}>
-            <div style={{fontSize:13.5,lineHeight:1.6,color:T.ink,marginBottom:8}}>{agentPlan.plan.summary}</div>
-            <ul style={{margin:"0 0 10px 0",paddingLeft:18,fontSize:13,color:T.ink2,lineHeight:1.6}}>
-              {(agentPlan.plan.steps||[]).map((st,i)=><li key={i}>{st.describes}</li>)}
-            </ul>
-            <div data-testid="agent-plan-sends" style={{fontSize:12.5,color:agentPlan.plan.sends>0?T.gold700:T.ink3,marginBottom:10}}>
-              {agentPlan.plan.sends>0
-                ? `${agentPlan.plan.sends} message${agentPlan.plan.sends===1?"":"s"} would be sent.`
-                : "Nothing sends."}
-            </div>
-            {agentPlan.retroactive&&(
-              <div style={{fontSize:12.5,color:T.ink3,marginBottom:10}}>{agentPlan.retroactive.sentence}</div>
-            )}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <button data-testid="agent-confirm" onClick={agentConfirm} disabled={agentBusy}
-                style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 14px",color:"#fff",
-                        fontSize:13,fontWeight:700,cursor:agentBusy?"not-allowed":"pointer"}}>
-                {agentBusy?"Running…":"Do it"}
-              </button>
-              <button onClick={()=>setAgentPlan(null)}
-                style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 14px",
-                        color:T.ink2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                No, leave it
-              </button>
-            </div>
-          </div>
-        )}
-        {agentResult&&(
-          <div data-testid="agent-result" style={{marginTop:12,fontSize:13,lineHeight:1.6,color:T.ink2}}>
-            {`Steward did ${agentResult.done||0}, drafted ${agentResult.drafted||0}, sent ${agentResult.sent||0}.`}
-            {agentResult.withheld>0&&(
-              <span style={{color:T.gold700}}>{` ${agentResult.withheld} withheld — Steward could not point at the rows those came from.`}</span>
-            )}
-          </div>
-        )}
+        </form>
+        <div style={{fontSize:12,color:T.ink3,marginTop:6}}>Nothing happens until you say so. The plan opens in Agent.</div>
         </>)}
       </div>
     </div>
@@ -2253,10 +2189,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // 1100. Every one of them is a count this page already carried buried in a
   // card header ("12 open · 3 overdue"), which is where a number goes to be
   // skipped. Each tile is the link to its own list.
-  const railFailedThisWeek=(recurringHealth?.atRisk||[]).filter(r=>{
+  const railFailedRows=(recurringHealth?.atRisk||[]).filter(r=>{
     if(!r.first_failed_at)return false;
     return (Date.now()-new Date(r.first_failed_at).getTime())<=7*86400000;
-  }).length;
+  });
+  const railFailedThisWeek=railFailedRows.length;
   const railDueToday=(threadsData?.bands||[]).find(b=>b.key==="today")?.count||0;
   // A jump to a card on this page when the card is here, and the tab that owns
   // BUILD-89 — a tile no longer scrolls the page to a card; it opens the list
@@ -2296,7 +2233,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
      definition:"Every donor with a next step planned and not yet done."},
     {key:"today",n:railDueToday,label:"Due today",
      definition:"Next steps whose date is today, in your organization's timezone."},
-    {key:"failed",n:railFailedThisWeek,label:`${capitalize(t("monthly_giver",2))} whose card failed this week`,
+    {key:"failed",n:railFailedThisWeek,label:`${capitalize(giverCountWord(railFailedRows,data.org?.vocabulary,{pair:"monthly_giver"}))} whose card failed this week`,
      definition:"A recurring card that declined in the last seven days and has not gone through since."},
   ];
   const railListFor=(key)=>{
@@ -2313,7 +2250,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // a date already past is genuinely overdue and genuinely zero days old,
       // so the meta says how LATE it is, or the day it is due.
       rows:list.map(x=>({id:x.id,label:x.donorName,
-        meta:x.overdue?`overdue ${x.overdueDays||0}d`:(x.band==="today"?"today":String(x.nextStep?.due||"").slice(5)),
+        meta:x.overdue?`${rowFigure(x)>(x.overdueDays||0)?"waiting":"overdue"} ${rowFigure(x)}d`:(x.band==="today"?"today":String(x.nextStep?.due||"").slice(5)),
         onOpen:()=>openRailDonor(x.donorId,x.id)})),
       empty:key==="today"?"Nothing is due today.":"Nothing is waiting.",
     };

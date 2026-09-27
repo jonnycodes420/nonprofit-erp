@@ -21,7 +21,9 @@ const ACTION_LABEL = {
 };
 const fmtWhen = ts => { if (!ts) return "never"; const d = new Date(ts); const mins = Math.floor((Date.now() - d) / 60000); if (mins < 1) return "just now"; if (mins < 60) return `${mins}m ago`; if (mins < 1440) return `${Math.floor(mins / 60)}h ago`; return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
 
-export function Workflows({ isReadOnly, onNavigate }) {
+// FIX-1 §A — the recipes live in Agent → Workflows now; `embedded` drops the
+// page title, because the Agent room already has one.
+export function Workflows({ isReadOnly, onNavigate, embedded = false }) {
   const [rows, setRows] = useState(null);
   const [expanded, setExpanded] = useState(null); // workflow id whose run log is open
   const [runs, setRuns] = useState({});           // id → runs[]
@@ -47,8 +49,8 @@ export function Workflows({ isReadOnly, onNavigate }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <PageTitle main="Automations that do the" accent="quiet work." />
-      <div style={{ fontSize: 13.5, color: T.ink3, marginTop: -8, maxWidth: 620, lineHeight: 1.6 }}>
+      {!embedded && <PageTitle main="Automations that do the" accent="quiet work." />}
+      <div style={{ fontSize: 13.5, color: T.ink3, marginTop: embedded ? 0 : -8, maxWidth: 620, lineHeight: 1.6 }}>
         Turn on a recipe and Steward watches for the moment, then acts in your name — a task, a branded email, a tag. Everything is logged, nothing double-sends, and a human always stays in the loop. <strong style={{ color: T.ink }}>{activeCount} of {rows.length} active.</strong>
       </div>
 
@@ -68,7 +70,7 @@ export function Workflows({ isReadOnly, onNavigate }) {
 function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, runs, onNavigate }) {
   const accent = w.enabled ? T.greenMid : T.bg3;
   return (
-    <div style={{ background: T.white, border: `1px solid ${w.enabled ? T.greenMid + "55" : T.bg3}`, borderLeft: `3px solid ${accent}`, borderRadius: 14, padding: "18px 20px", boxShadow: w.enabled ? T.shadow : "none", transition: "border-color 0.15s" }}>
+    <div data-testid="workflow-recipe" style={{ background: T.white, border: `1px solid ${w.enabled ? T.greenMid + "55" : T.bg3}`, borderLeft: `3px solid ${accent}`, borderRadius: 14, padding: "18px 20px", boxShadow: w.enabled ? T.shadow : "none", transition: "border-color 0.15s" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: T.ink, lineHeight: 1.3 }}>{w.name}</div>

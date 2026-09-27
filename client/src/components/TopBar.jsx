@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
+import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -102,8 +103,11 @@ export function TopBar({ auth, logout, onNavigate }) {
   // concern only.
   const flat = useMemo(()=>{
     const out = [];
+    // FIX-1 D — search finds ANYONE (donor, volunteer, staff and board, or
+    // not yet known), so the group is People and each row says what they are.
     (results?.donors||[]).forEach(d=>out.push({
-      group:"Donors", key:"d_"+d.id, title:d.name, sub:d.email||fmtMoney(d.total_giving)+" lifetime",
+      group:"People", key:"d_"+d.id, title:d.name,
+      sub:[typeLabels(d).join(" · "), d.email||(personIsDonor(d)?fmtMoney(d.total_giving)+" lifetime":null)].filter(Boolean).join(" · "),
       drift:d.drift||null,   // BUILD-76 — server-computed badge field rides the search payload
       personId:d.id, personName:d.name, personKind:d.kind||null,  // BUILD-94 Part 1 — the face on the row
       onSelect:()=>onNavigate("donors",{selectDonorId:d.id}),

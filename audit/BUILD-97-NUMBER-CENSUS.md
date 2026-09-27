@@ -60,7 +60,7 @@ things that matter, and a census nobody can read is a census nobody checks.
 |---|---|---|
 | `Donors.jsx` | 117 | 16 |
 | `Dashboard.jsx` | 62 | 24 |
-| `Finance.jsx` | 43 | 3 |
+| `Finance.jsx` | 38 | 5 |
 | `Reports.jsx` | 41 | 25 |
 | `Fundraising.jsx` | 31 | 16 |
 | `Communications.jsx` | 20 | 6 |
@@ -202,6 +202,20 @@ under "Report definitions (LOCKED)". No change.
 Cash on Hand carries its own caption — *"All-time · income − expenses"* — which
 is the reconciliation a treasurer can do by hand, and Σ fund balances equals it
 exactly. The rest is a ledger. No change.
+
+**FIX-1 E (26 Sep 2026): 43 → 38 sites, 3 → 5 claims.** The manual Accounts tab
+is gone (its per-account balances and drill-down ledger) and so is the "Last
+payout" tile. Cash on Hand's caption is now `CASH_ON_HAND_SENTENCE`
+(shared/payoutReconcile.js): *everything your ledger has taken in, minus
+everything it has paid out, since you started using Steward — the ledger's
+figure, not a bank balance and not Stripe's.* The Stripe Available / On its way
+pair sits above `stripeBalanceSentence`, which says why a $0 balance is $0 and
+names cash on hand beside it. New: **Payouts** — each payout's amount (a claim:
+one deposit in the bank), the opened payout's headline (a claim, under the
+reconcile sentence: the lines add up to it to the cent, or it does not
+reconcile by $X), and its lines (cells: amount, fee, net, total). **Monthly
+close** — the BUILD-87 bookkeeper export for one month: the foot sentence and
+the per-fund totals, the export's own figures.
 
 ### Fundraising · **thermometers, already explained**
 

@@ -15,6 +15,7 @@ const sharp = require("sharp");
 const crypto = require("crypto");
 const { BASE, ok, summary, login, api, q, closeDb } = require("./helpers");
 const fs = require("fs");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b65", SLUG = "build65-arts";
 const ORG_NOLOGO = "org_b65_nl", SLUG_NL = "build65-nologo";
@@ -128,7 +129,7 @@ async function fixture() {
   const snap = typeof yeRow?.snapshot === "string" ? JSON.parse(yeRow.snapshot) : (yeRow?.snapshot || {});
   ok("Part5: PDF snapshot carries NO giving-account CTA", snap.givingAccountUrl == null, snap.givingAccountUrl);
   // The email CTA must survive (kept, per Part 5) — pinned as a source guard.
-  const src = fs.readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8");
+  const src = readSource("server.js");
   ok("Part5: the account CTA is still in the receipt EMAIL", /create your free giving account/.test(src));
 
   // ── PART 6 — guardsOk + null-when-unchecked + accountsWithStripe ─────────

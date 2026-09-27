@@ -20,6 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_b86", ORG2 = "org_b86two";
 const root = path.join(__dirname, "..");
@@ -218,7 +219,7 @@ const root = path.join(__dirname, "..");
      /className="thread-note"/.test(dash) && !/className="home-note"/.test(dash));
   ok("the board says what it is and as of when", /Numbers a board can read/.test(dash));
 
-  const app = fs.readFileSync(path.join(root, "client/src/App.jsx"), "utf8");
+  const app = readSource("client/src/App.jsx");
   ok("the board is a NEW tab id — `dashboard` keeps its route, its label and every deep link",
      /\{id:"board",label:"Dashboards"/.test(app) && /\{id:"dashboard",label:"Home"/.test(app));
   ok("Home renders the section surface; the board tab renders the four dashboards",
@@ -227,8 +228,11 @@ const root = path.join(__dirname, "..");
   // this reads the rail's own order rather than the two call sites it used to
   // pin. The property is the same one and it is now stated more directly:
   // Dashboards is the SECOND thing on the rail and is not behind a disclosure.
-  ok("Dashboard sits directly under Home in the sidebar, not buried in a group",
-     /const PRIMARY_NAV=\["dashboard","board"/.test(app) && !/const MORE_NAV=\[[^\]]*"board"/.test(app));
+  // REVIEWED CONTRACT CHANGE (FIX-1 §12, approved by Jonathan 27 Sep): the
+  // rail is the seven questions, and Dashboards moved under More. Was:
+  // "Dashboard sits directly under Home in the sidebar, not buried in a group".
+  ok("Dashboards is on the desktop rail's More, not a primary item",
+     /const MORE_NAV=\[[^\]]*"board"/.test(app) && !/const PRIMARY_NAV=\[[^\]]*"board"/.test(app));
   ok("…and is reachable on mobile", /const MORE_TABS=\[\s*\n\s*\{id:"board"/.test(app));
 
   // ── §4 · names on the at-risk count (live) ───────────────────────────────

@@ -19,6 +19,7 @@
 //     and make it permanent ninety days later.
 const bcrypt = require("bcryptjs");
 const { ok, summary, login, api, q, closeDb } = require("./helpers");
+const { readSource } = require("../scripts/lib/readSource");
 
 const ORG = "org_gpb", ORG_B = "org_gpb2";
 
@@ -133,7 +134,7 @@ async function fixture() {
   console.log("— THE RETENTION SWEEP READS EVERY PAGE OF THE ORG —");
   // The survey's own finding: portal_pages is org-keyed, giving pages are many.
   const fs = require("fs");
-  const src = fs.readFileSync(require("path").join(__dirname, "..", "server.js"), "utf8")
+  const src = readSource("server.js")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const sweep = src.slice(src.indexOf("async function pruneWidgetAssets"), src.indexOf("async function pruneWidgetAssets") + 900);
   ok("it reads giving_pages, not only portal_pages",
