@@ -20,6 +20,7 @@ import { detectExclusionColumn, proposeCustomField, proposalEvidenceText } from 
 import { importLeadSentence, decisionsFromSubmission } from "../../../shared/importSentence";
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
+import { displayDate } from "../../../shared/displayDate";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? (T.green600 || "#1e6b45") : r === "pledges" || r === "recurring" ? (T.gold600 || "#a97f22") : T.ink3;
@@ -647,7 +648,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
 
         <SectionHead>Largest gifts about to land</SectionHead>
         <div style={{ background: T.bg, borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 12.5, color: T.ink }}>
-          {s.largestGifts.map((g, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>{g.name}</span><span>{fmt$(g.dollars)} · {g.date}</span></div>)}
+          {s.largestGifts.map((g, i) => <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0" }}><span>{g.name}</span><span>{fmt$(g.dollars)} · {displayDate(g.date)||g.date}</span></div>)}
         </div>
 
         {s.merges.length > 0 && (<>

@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 9px", fontSize: 13, color: T.ink };
 
@@ -38,7 +39,7 @@ export function VolunteerPanel({ donor, isReadOnly }) {
       </div>
       {data.shifts.slice(0, 6).map(s => (
         <div key={s.id} style={{ display: "flex", gap: 8, fontSize: 12, color: T.ink }}>
-          <span style={{ color: T.ink3, minWidth: 84 }}>{s.date}</span><span>{s.hours} h</span><span style={{ color: T.ink3 }}>{s.role || ""}</span>
+          <span style={{ color: T.ink3, minWidth: 84 }}>{displayDate(s.date)}</span><span>{s.hours} h</span><span style={{ color: T.ink3 }}>{s.role || ""}</span>
           {s.via === "self" && <span style={{ color: T.ink3, marginLeft: "auto" }}>logged by them</span>}
         </div>))}
       {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

@@ -184,14 +184,16 @@ async function browserLeg() {
     if (!hit.length) return false; hit[0].click(); return true;
   }, [label, scope]);
   const tabLabels = () => page.evaluate(() => [...document.querySelectorAll("main [role=tab], [role=tab]")]
-    .filter(b => b.offsetParent).map(b => b.innerText.trim().split("\n")[0]).filter(Boolean));
+    .filter(b => b.offsetParent).map(b => b.innerText.replace(/\s+/g, " ").trim()).filter(Boolean));
+  // Every tab on the screen, and every tab those reveal (two levels), each
+  // named after its screen: "Finance › Transactions".
   const walkTabs = async (screen, depth, done) => {
     for (const t of await tabLabels()) {
-      const key = screen + " › " + t;
+      const key = screen.split(" › ")[0] + " › " + t;
       if (done.has(t)) continue; done.add(t);
       if (!(await click(t))) continue;
       await check(key);
-      if (depth < 2) await walkTabs(key, depth + 1, done);
+      if (depth < 2) await walkTabs(screen, depth + 1, done);
     }
   };
 

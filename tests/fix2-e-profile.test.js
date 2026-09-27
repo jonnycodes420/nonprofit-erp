@@ -94,7 +94,9 @@ const ORG = "org_fx2eprof", EMAIL = "fx2eprof@example.org", PW = "loadtest1234";
       const val = tile && [...tile.querySelectorAll("div")].find(d => /\d+d ago/.test(d.innerText) && !d.querySelector("div"));
       const pill = [...document.querySelectorAll(".donor-profile-header span")].find(s => s.innerText.trim() === "Lapsed");
       const cs = el => el ? getComputedStyle(el) : null;
+      const picker = [...document.querySelectorAll("button")].find(b => b.innerText.trim() === "Lapsed" && b.offsetParent);
       return {
+        picker: picker ? [cs(picker).color, cs(picker).borderTopColor, cs(picker).backgroundColor] : null,
         contact: val ? val.innerText : null, contactColor: val ? cs(val).color : null,
         pill: !!pill, pillColor: pill ? cs(pill).color : null, pillBg: pill ? cs(pill).backgroundColor : null,
         pillBorder: pill ? cs(pill).borderTopColor : null,
@@ -105,6 +107,10 @@ const ORG = "org_fx2eprof", EMAIL = "fx2eprof@example.org", PW = "loadtest1234";
     ok(`§2 @${w} the Lapsed pill is on the header`, drawn.pill, drawn);
     ok(`§2 @${w} the Lapsed pill is not red (text, ground or edge)`,
        drawn.pill && ![drawn.pillColor, drawn.pillBg, drawn.pillBorder].some(c => String(c).startsWith("rgb(184, 89, 63") || String(c).startsWith("rgba(184, 89, 63")), drawn);
+    // The stage picker's Lapsed (the rail at 1440) is the same stage, drawn
+    // the same way: brass, never terracotta.
+    if (drawn.picker) ok(`§2 @${w} the stage picker's Lapsed is not red either`,
+       !drawn.picker.some(c => /^rgba?\(184, 89, 63/.test(String(c))), drawn.picker);
     await page.screenshot({ path: path.join(shots, `${w}-profile-lapsed-stale.png`) });
     await page.close();
   }

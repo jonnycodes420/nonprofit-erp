@@ -14,6 +14,7 @@ import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const STATUS_LABEL = { active: "Active", grace: "Grace", lapsed: "Lapsed", cancelled: "Cancelled", renewed: "Renewed" };
 const STATUS_COLOR = { active: T.greenDk, grace: T.gold500, lapsed: T.ink3, cancelled: T.ink3, renewed: T.ink3 };
@@ -73,7 +74,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
           <span style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>{cur.level_name}</span>{" "}
           <StatusPill status={cur.status} />
           <div style={{ fontSize: 12, color: T.ink3 }}>
-            Member since {cur.joined_on}{cur.expires_on ? ` · through ${cur.expires_on}` : " · lifetime"}
+            Member since {displayDate(cur.joined_on)}{cur.expires_on ? ` · through ${displayDate(cur.expires_on)}` : " · lifetime"}
           </div>
         </div>
       ) : (
@@ -84,7 +85,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
       {data.memberships.filter(m => !cur || m.id !== cur.id).slice(0, 4).map(m => (
         <div key={m.id} style={{ display: "flex", gap: 8, fontSize: 12, color: T.ink }}>
           <span>{m.level_name}</span><StatusPill status={m.status} />
-          <span style={{ color: T.ink3, marginLeft: "auto" }}>{m.starts_on}{m.expires_on ? ` to ${m.expires_on}` : ""}</span>
+          <span style={{ color: T.ink3, marginLeft: "auto" }}>{displayDate(m.starts_on)}{m.expires_on ? ` to ${displayDate(m.expires_on)}` : ""}</span>
         </div>))}
       {!isReadOnly && !cur && levels.length > 0 && !form && (
         <button style={{ ...quietBtn, alignSelf: "flex-start" }} data-testid="membership-add"
@@ -108,7 +109,7 @@ export function MembershipPanel({ donor, isReadOnly, onChanged }) {
             </select>
           </div>
           {chosen && <div style={{ fontSize: 12, color: T.ink3 }}>{chosen.fmvSentence} It is recorded as a {usd(chosen.price)} gift.
-            {form.renew && cur?.expires_on ? ` The new term starts the day after ${cur.expires_on}.` : ""}</div>}
+            {form.renew && cur?.expires_on ? ` The new term starts the day after ${displayDate(cur.expires_on)}.` : ""}</div>}
           <div style={{ display: "flex", gap: 6 }}>
             <button style={primaryBtn} onClick={join} data-testid="membership-save">{form.renew ? "Record renewal" : "Record membership"}</button>
             <button style={quietBtn} onClick={() => setForm(null)}>Cancel</button>
@@ -251,9 +252,9 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
                         style={{ color: T.ink, fontWeight: 600, textDecoration: "none" }}>{m.donor_name}</a>
                     </td>
                     <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>
-                    <td style={{ padding: "8px", color: T.ink3 }}>{m.lapsed_on}</td>
+                    <td style={{ padding: "8px", color: T.ink3 }}>{displayDate(m.lapsed_on)}</td>
                     <td style={{ padding: "8px", color: T.ink }}>{m.membership_years}</td>
-                    <td style={{ padding: "8px", color: T.ink3 }}>{m.lastGiftDate ? `Yes, last gift ${m.lastGiftDate}` : "No"}</td>
+                    <td style={{ padding: "8px", color: T.ink3 }}>{m.lastGiftDate ? `Yes, last gift ${displayDate(m.lastGiftDate)}` : "No"}</td>
                   </tr>))}</tbody>
               </table>)}
           </div>)}
@@ -273,7 +274,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
                   </td>
                   <td style={{ padding: "8px", color: T.ink }}>{m.level_name}</td>
                   <td style={{ padding: "8px" }}><StatusPill status={m.status} /></td>
-                  <td style={{ padding: "8px", color: T.ink3 }}>{m.joined_on}</td>
+                  <td style={{ padding: "8px", color: T.ink3 }}>{displayDate(m.joined_on)}</td>
                   <td style={{ padding: "8px", color: T.ink3 }}>{m.expires_on || "Lifetime"}</td>
                 </tr>))}</tbody>
             </table>)}

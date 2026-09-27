@@ -20,6 +20,7 @@ import { detectImportShape, shapeLabel, YEAR_HDR_PAT, detectWorkbookRoles, pickM
 import { WorkbookImport } from "./WorkbookImport";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { NEGATOR_PHRASES, STAGE_COLORS, inferStage, normalizeStage } from "./donorShared";
+import { displayDate } from "../../../shared/displayDate";
 
 // ── CSV Import helpers ─────────────────────────────────────────────────────
 // ── Import field registry ──────────────────────────────────────────────────
@@ -2013,7 +2014,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               {result.largestGifts.map((g,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,color:T.ink2}}>
                   <span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${g.date}` : ""}
+                    <strong style={{color:T.ink}}>{g.name}</strong>{g.date ? ` — ${displayDate(g.date)||g.date}` : ""}
                   </span>
                   <span style={{color:T.ink,flexShrink:0,fontVariantNumeric:"tabular-nums"}}>
                     {"$" + Number(g.dollars).toLocaleString(undefined,{maximumFractionDigits:2})}<span style={{color:T.ink3}}> · line {g.line}</span>
@@ -2688,7 +2689,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     {yearCols.map((yc,i)=>(
                       <span key={yc.col} onClick={()=>setYearCols(cols=>cols.map((c,j)=>j===i?{...c,enabled:!c.enabled}:c))}
                         style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:99,cursor:"pointer",background:yc.enabled?T.green600+"22":"transparent",color:yc.enabled?T.green600:T.ink3,border:`1px solid ${yc.enabled?T.green600+"55":T.bg3}`}}>
-                        {yc.col} {yc.enabled?`→ ${yc.date}`:"(off)"}
+                        {yc.col} {yc.enabled?`→ ${displayDate(yc.date)||yc.date}`:"(off)"}
                       </span>
                     ))}
                   </div>
@@ -3484,7 +3485,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
                     <div key={i} style={{background:ov?.action==="skip"?T.bg:"#fdfaf2",border:`1px solid ${ov?.action==="skip"?T.bg3:"#e7cf91"}`,borderRadius:10,padding:"10px 12px",opacity:ov?.action==="skip"?0.55:1}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5,flexWrap:"wrap"}}>
                         <span style={{fontSize:13,fontWeight:700,color:T.ink}}>${g.amount.toLocaleString()}</span>
-                        <span style={{fontSize:12,color:T.ink3}}>{g.date}</span>
+                        <span style={{fontSize:12,color:T.ink3}}>{displayDate(g.date)||g.date}</span>
                         <span style={{fontSize:12,color:T.ink}}>· {g.rawName||g.rawEmail}</span>
                         <span style={{fontSize:11,color:T.ink3}}>({g.rawSource})</span>
                       </div>
@@ -3580,7 +3581,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
               <div style={{background:"#f6e3dd",border:"1px solid #eac6b8",borderRadius:8,padding:"8px 12px"}}>
                 {matchedGifts.filter(g=>g.confidence==="unmatched").slice(0,8).map((g,i)=>(
                   <div key={i} style={{fontSize:12,color:"#8a3a24",padding:"2px 0"}}>
-                    · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {g.date}
+                    · {g.rawName||g.rawEmail} — ${g.amount.toLocaleString()} on {displayDate(g.date)||g.date}
                   </div>
                 ))}
                 {stats.unmatched>8&&<div style={{fontSize:12,color:"#8a3a24",marginTop:4}}>…and {stats.unmatched-8} more</div>}

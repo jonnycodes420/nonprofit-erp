@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull, interactive, EmptyState, Modal } from "./shared";
 import { censusById } from "../../../shared/numberCensus.js";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 // BUILD-57 Part 1 — the recurring-giving surface a development office manages
 // from. Two exports: RecurringView (the full Fundraising → Recurring page:
@@ -23,7 +24,8 @@ const STATUS_META = {
   canceled: { label: "Canceled", color: T.ink3, bg: T.bg2, border: T.bg3 },
 };
 
-const fmtDate = iso => iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+// FIX-2 finding 10 — the one formatter, never a Date in some timezone.
+const fmtDate = iso => (iso && displayDate(iso)) || "—";
 const per = interval => interval === "year" ? "/yr" : "/mo";
 const money = n => n == null ? "—" : fmtFull(n);
 

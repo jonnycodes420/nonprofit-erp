@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, Component, createContext, useContext } fro
 import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
+import { displayDate } from "../../../shared/displayDate";
 
 // ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
 // This `T` object is the one place brand color is defined for the whole
@@ -294,7 +295,9 @@ export function moveUrgency(d) {
   const days=lastContact?daysDiff(lastContact):999;
   const [warn,crit]=STAGE_THRESH[d.stage||"cultivate"]||[30,60];
   const level=days>crit?"critical":days>warn?"due":"ok";
-  const urgencyColor={critical:T.terracotta,due:T.gold600,ok:T.greenMid}[level];
+  // FIX-2 finding 11 — an overdue contact is brass, not red (red is only for a
+  // destructive confirm).
+  const urgencyColor={critical:T.gold700,due:T.gold600,ok:T.greenMid}[level];
   const contactTextColor=days>365?T.terracotta:days>180?T.gold600:T.ink3;
   return{days,level,urgencyColor,contactTextColor};
 }
@@ -1047,7 +1050,7 @@ export function GivingHistoryChart({gifts}) {
       {sorted.map((g,i)=>(
         <g key={i}>
           <circle cx={xs[i]} cy={ys[i]} r={4} fill="#0d5c3a" stroke={T.white} strokeWidth={1.5}/>
-          <title>${g.amount.toLocaleString()} · {g.date}</title>
+          <title>${g.amount.toLocaleString()} · {displayDate(g.date)}</title>
         </g>
       ))}
       <text x={pad.l-4} y={pad.t+7} textAnchor="end" fontSize={9} fill={T.ink3}>{fmt(maxAmt)}</text>
@@ -1115,7 +1118,7 @@ export function TouchpointTimeline({interactions,onDelete}){
                   </span>
                 )}
                 {meta?.gmail_message_id&&<span style={{fontSize:10,color:T.ink3,fontWeight:500}}>via Gmail</span>}
-                <span style={{fontSize:11,color:T.ink3}}>{int.date}</span>
+                <span style={{fontSize:11,color:T.ink3}}>{displayDate(int.date)}</span>
                 <span style={{fontSize:11,color:T.ink3,opacity:0.6}}>({when})</span>
               </div>
               {emailSubject?(

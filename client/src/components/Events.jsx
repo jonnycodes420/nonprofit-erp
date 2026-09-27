@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { displayDate } from "../../../shared/displayDate";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: "#8b5cf6" },
@@ -26,7 +27,7 @@ const ATT_LABELS = {
 
 function fmtDate(d) {
   if (!d) return "—";
-  return new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return displayDate(d) || "—"; // FIX-2 finding 10 — the one formatter
 }
 
 function StatusBadge({ status, small }) {

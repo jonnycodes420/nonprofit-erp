@@ -17,6 +17,7 @@ import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { displayDateShort } from "../../../shared/displayDate";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -1785,7 +1786,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
           <div className="attn-meta" style={{marginTop:3,fontSize:11,color:T.ink3}}>
             {TOUCH_WORD[t.lastTouch?.type]||(t.lastTouch?.kind==="none"?"Planned":"Logged")}
-            {(t.lastTouch?.date||t.openedOn)?` · ${String(t.lastTouch?.date||t.openedOn).slice(0,10)}`:""}
+            {(t.lastTouch?.date||t.openedOn)?` · ${displayDateShort(t.lastTouch?.date||t.openedOn,new Date())}`:""}
             {/* Who logged it, then who owns it — and one name when they are
                 the same person, which in a one-officer shop they always are.
                 "Mike · Mike" is the software talking to itself. */}
