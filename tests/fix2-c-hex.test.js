@@ -33,12 +33,7 @@ const SRC = path.join(root, "client/src");
 const { parse } = require(path.join(root, "client/node_modules/@babel/parser"));
 
 // EMPTY THIS AT MERGE (see the header). file → the most hex it may hold.
-const OWNED_ELSEWHERE = {
-  "components/Dashboards.jsx": 2,     // A
-  "components/Reports.jsx": 5,        // B
-  "components/ReportBuilder.jsx": 0,  // B
-  "components/Agent.jsx": 0,          // D
-};
+const OWNED_ELSEWHERE = {};   // emptied at the FIX-2 merge: A, B and D landed with zero hex
 
 // Public and white-label surfaces: their own palettes, named once.
 const PUBLIC = new Set([

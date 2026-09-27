@@ -475,7 +475,11 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   );
 
   return (
-    <div data-testid="agent-room" style={{ color: T.bg, minWidth: 0, maxWidth: "100%" }}>
+    // FIX-2 — the ink is the room's own margin (data-agent-margin), laid over
+    // the page's cream ground to the content's edges, so no page root is ink.
+    <div data-testid="agent-room" data-agent-margin style={{ color: T.bg, minWidth: 0, background: T.bgDark,
+      margin: wide ? "-20px -32px -28px" : "-20px -16px 0", padding: wide ? "20px 32px 28px" : "20px 16px 24px",
+      minHeight: "calc(100vh - 52px)", boxSizing: "border-box" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: wide ? 18 : 14 }}>
         <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 32 : 26, margin: 0, color: T.bg }}>Agent</h1>
         {activity && <div data-testid="agent-activity" style={{ fontSize: 13.5, color: T.gold, fontWeight: 700 }}>{activity}</div>}

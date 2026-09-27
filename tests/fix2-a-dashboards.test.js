@@ -213,7 +213,7 @@ const qs = params => Object.entries(params || {}).map(([k, v]) => `${encodeURICo
   ok("§2 the screen shows the as-of date through shared/displayDate or the server's label, never the ISO string",
     !/As of \{board\?\.asOf/.test(dashSrc) && /asOfLabel|displayDate\(/.test(dashSrc));
   ok("§2 the rail's active item is not a solid green block",
-    !/background:\s*key\s*===\s*d\.key\s*\?\s*T\.greenDk/.test(dashSrc) && /3px solid " \+ T\.greenDk/.test(dashSrc));
+    !/background:\s*key\s*===\s*d\.key\s*\?\s*T\.greenDk/.test(dashSrc) && /3px solid " \+ T\.greenDk|activeMark\(on, "left"\)/.test(dashSrc));
 
   for (const k of ["board", "fundraising"]) {
     const r = await fetch(`${BASE}/dashboards/${k}/pdf`, { headers: { Authorization: "Bearer " + tok } });

@@ -58,13 +58,7 @@ const haveBrowser = () => {
 //   agent      — D rebuilds Agent.jsx (the room's ground, its tabs, its buttons)
 //   dashboards — A rebuilds Dashboards.jsx (its left list draws the selected
 //                dashboard as a solid emerald block)
-const PENDING = {
-  agent: new Set(["2a-root", "2a-dark", "2b-sel", "2b-unmarked", "2c"]),
-  dashboards: new Set(["2b-sel", "2b-unmarked"]),
-  //   reports    — B rebuilds Reports.jsx (its period row draws "This FY" as a
-  //                solid emerald pill)
-  reports: new Set(["2b-sel", "2b-unmarked"]),
-};
+const PENDING = {};   // emptied at the FIX-2 merge: A, B and D landed
 
 const RUN = Date.now().toString(36).slice(-6);
 const ORG = "org_fx2c_" + RUN;

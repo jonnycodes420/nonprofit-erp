@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
-import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing } from "./shared";
+import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN } from "../lib/reportsRail";
@@ -277,9 +277,9 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const byId = r => r.id || null;
 
   // ── Controls ──────────────────────────────────────────────────────────────
-  const chipStyle = on => ({ background: on ? T.bg2 : T.white, color: T.ink, border: `1.5px solid ${on ? T.greenDk : T.bg3}`, borderRadius: 99, padding: "6px 14px", fontSize: 12, fontWeight: on ? 700 : 600, cursor: "pointer", whiteSpace: "nowrap" });
+  const chipStyle = on => ({ background: T.white, color: T.ink, border: `1.5px solid ${T.bg3}`, borderRadius: 99, padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", ...activeMark(on) });
   const selStyle = { padding: "7px 10px", borderRadius: 8, fontSize: 12, fontFamily: "'DM Sans',sans-serif", maxWidth: 180 };
-  const segStyle = on => ({ background: on ? T.bg2 : T.white, color: on ? T.ink : T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" });
+  const segStyle = on => ({ background: T.white, color: T.ink3, border: "none", padding: "6px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", ...activeMark(on) });
 
   const yearModeToggle = <div style={{ display: "flex", border: `1.5px solid ${T.bg3}`, borderRadius: 99, overflow: "hidden" }}>
     {["fiscal", "calendar"].map(m => <button key={m} onClick={() => setYearMode(m)} aria-pressed={yearMode === m} style={segStyle(yearMode === m)}>

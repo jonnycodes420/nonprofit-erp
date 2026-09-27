@@ -18,7 +18,7 @@
 // is why "stewardship debt" is not on any of them.
 import { useEffect, useState } from "react";
 import { apiFetch, API } from "../api";
-import { T, Spin } from "./shared";
+import { T, Spin, activeMark } from "./shared";
 import { makeT } from "../../../shared/vocabulary";
 import { displayDate } from "../../../shared/displayDate";
 import { Figure, FigureContext } from "./Figure";
@@ -320,9 +320,8 @@ export function Dashboards({ data, onNavigate }) {
             const on = key === d.key;
             return (
               <button key={d.key} data-dash-key={d.key} aria-current={on ? "page" : undefined} onClick={() => setKey(d.key)}
-                style={{ textAlign: "left", padding: "10px 12px", borderRadius: 8, cursor: "pointer", border: "none",
-                         borderLeft: on ? "3px solid " + T.greenDk : "3px solid transparent",
-                         background: on ? T.bg2 : "transparent", color: T.ink }}>
+                style={{ textAlign: "left", padding: "10px 12px 10px 15px", borderRadius: 8, cursor: "pointer", border: "none",
+                         background: "transparent", color: T.ink, fontWeight: 400, ...activeMark(on, "left") }}>
                 <div style={{ fontSize: 13.5, fontWeight: on ? 700 : 600 }}>{d.label}</div>
                 <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 1 }}>{d.question}</div>
               </button>
