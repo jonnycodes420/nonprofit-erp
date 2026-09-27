@@ -73,7 +73,10 @@ function figuresOf(board) {
   for (const p of (board.answer?.parts || [])) if (p.figure) out.push({ where: `${board.key} sentence`, ...p.figure });
   for (const m of board.metrics || []) {
     if (m.kind === "breakdown") {
-      for (const r of (Array.isArray(m.value) ? m.value : [])) out.push({ where: `${board.key}.${m.key} · ${r.label}`, ...r });
+      for (const r of (Array.isArray(m.value) ? m.value : [])) {
+        out.push({ where: `${board.key}.${m.key} · ${r.label}`, ...r });
+        for (const a of (r.also || [])) out.push({ where: `${board.key}.${m.key} · ${r.label} · ${a.label}`, ...a });
+      }
     } else if (m.kind === "series") {
       for (const pt of (Array.isArray(m.value) ? m.value : [])) {
         if (pt.thisYear) out.push({ where: `${board.key}.${m.key} · ${pt.month} this year`, ...pt.thisYear });
@@ -81,6 +84,7 @@ function figuresOf(board) {
       }
     } else {
       out.push({ where: `${board.key}.${m.key}`, ...m });
+      for (const a of (m.also || [])) out.push({ where: `${board.key}.${m.key} · ${a.label}`, ...a });
     }
   }
   return out;
@@ -286,6 +290,7 @@ const qs = params => Object.entries(params || {}).map(([k, v]) => `${encodeURICo
       const tileCents = await tile.getAttribute("data-cents");
       await tile.click();
       await page.waitForSelector("[data-figure-total]", { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(700);   // the sheet's entrance animation, before the capture
       const totalCents = await page.locator("[data-figure-total]").first().getAttribute("data-cents").catch(() => null);
       ok(`§4 @${w}: Giving this year opens, and its rows' total equals it to the cent`,
         tileCents != null && totalCents === tileCents, { tileCents, totalCents });

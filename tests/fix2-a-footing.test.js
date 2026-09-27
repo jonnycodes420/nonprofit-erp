@@ -43,13 +43,19 @@ function figuresOf(board) {
   for (const p of (board.answer?.parts || [])) if (p.figure) out.push({ where: `${board.key} sentence`, ...p.figure });
   for (const m of board.metrics || []) {
     if (m.kind === "breakdown") {
-      for (const r of (Array.isArray(m.value) ? m.value : [])) out.push({ where: `${board.key}.${m.key} · ${r.label}`, ...r });
+      for (const r of (Array.isArray(m.value) ? m.value : [])) {
+        out.push({ where: `${board.key}.${m.key} · ${r.label}`, ...r });
+        for (const a of (r.also || [])) out.push({ where: `${board.key}.${m.key} · ${r.label} · ${a.label}`, ...a });
+      }
     } else if (m.kind === "series") {
       for (const pt of (Array.isArray(m.value) ? m.value : [])) {
         if (pt.thisYear) out.push({ where: `${board.key}.${m.key} · ${pt.month} this year`, ...pt.thisYear });
         if (pt.lastYear) out.push({ where: `${board.key}.${m.key} · ${pt.month} last year`, ...pt.lastYear });
       }
-    } else out.push({ where: `${board.key}.${m.key}`, ...m });
+    } else {
+      out.push({ where: `${board.key}.${m.key}`, ...m });
+      for (const a of (m.also || [])) out.push({ where: `${board.key}.${m.key} · ${a.label}`, ...a });
+    }
   }
   return out;
 }
@@ -143,9 +149,9 @@ async function foots(tok, fig) {
   const gift = async (donor, amount, date, fund = null, extra = {}) => {
     n++;
     await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,fund_id,campaign_id,pledge_id,acknowledgement_sent,acknowledgement_sent_at,cover_fee_amount)
-             VALUES ($1,$2,$3,$4,$5,'cash',$6,$7,$8,$9,$10,$11)`,
+             VALUES ($1,$2,$3,$4,$5,'cash',$6,$7,$8,$9,CASE WHEN $9 THEN NOW() END,$10)`,
       [`g_fx2af_${n}`, ORG, donor, amount, date, fund, extra.campaign || null, extra.pledge || null,
-       !!extra.ack, extra.ack ? new Date() : null, extra.fee || 0]);
+       !!extra.ack, extra.fee || 0]);
     return `g_fx2af_${n}`;
   };
   const prevCal = `${Y - 1}-03-15`;
@@ -177,16 +183,16 @@ async function foots(tok, fig) {
   await gift(donors[2][0], 1250.25, today, null, { pledge: "p_fx2af_1" });
   await gift(donors[3][0], 300, today, null, { pledge: "p_fx2af_3" });
   // Monthly gifts in every state.
-  const long = new Date(Date.now() - 400 * 86400000), now = new Date();
-  const sub = (id, donor, amount, interval, status, { created = long, recovered = null, canceled = null } = {}) => q(
+  // Instants from the database clock, never the machine's (test-clock-seam).
+  const sub = (id, donor, amount, interval, status, { daysAgo = 400, recovered = false, canceled = false } = {}) => q(
     `INSERT INTO recurring_subscriptions (id,org_id,donor_id,stripe_subscription_id,amount,interval,status,created_at,recovered_at,canceled_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [id, ORG, donor, "sub_" + id, amount, interval, status, created, recovered, canceled]);
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW() - make_interval(days => $8::int),CASE WHEN $9 THEN NOW() END,CASE WHEN $10 THEN NOW() END)`,
+    [id, ORG, donor, "sub_" + id, amount, interval, status, daysAgo, recovered, canceled]);
   await sub("rs_fx2af_a", donors[4][0], 25, "month", "active");
   await sub("rs_fx2af_y", donors[5][0], 120, "year", "active");
-  await sub("rs_fx2af_new", donors[6][0], 40.5, "month", "active", { created: now });
-  await sub("rs_fx2af_r", donors[7][0], 30, "month", "recovered", { recovered: now });
-  await sub("rs_fx2af_c", donors[8][0], 15, "month", "canceled", { canceled: now });
+  await sub("rs_fx2af_new", donors[6][0], 40.5, "month", "active", { daysAgo: 0 });
+  await sub("rs_fx2af_r", donors[7][0], 30, "month", "recovered", { recovered: true });
+  await sub("rs_fx2af_c", donors[8][0], 15, "month", "canceled", { canceled: true });
   await sub("rs_fx2af_p", donors[9][0], 10, "month", "past_due");
   await q(`INSERT INTO payment_recovery_events (id,org_id,donor_id,subscription_id,type) VALUES
            ('pre_fx2af_1',$1,$2,'rs_fx2af_r','payment_failed'),('pre_fx2af_2',$1,$3,'rs_fx2af_p','payment_failed'),
@@ -210,14 +216,14 @@ async function foots(tok, fig) {
   const keys = ["board", "fundraising", "people", "recurring"];
   let figuresSeen = 0;
   const bad = [];
-  const sources = new Set();
+  const sources = new Set(), sourceObjs = [];
   for (const k of keys) {
     const board = (await api("GET", `/dashboards/${k}`, tok)).body || {};
     const figs = figuresOf(board);
     figuresSeen += figs.length;
     for (const f of figs) {
       if (!f.source || typeof f.source.key !== "string") { bad.push(`${f.where}: no source`); continue; }
-      sources.add(f.source.key);
+      sources.add(f.source.key); sourceObjs.push(f.source);
       const [good, why] = await foots(tok, f);
       if (!good) bad.push(`${f.where}: ${why}`);
     }
@@ -256,7 +262,7 @@ async function foots(tok, fig) {
       + (SELECT COUNT(*) FROM metric_snapshots)::int + (SELECT COUNT(*) FROM fin_audit_log)::int
       + (SELECT COUNT(*) FROM interactions)::int + (SELECT COUNT(*) FROM threads)::int AS n`))[0].n;
   const before = await counts();
-  for (const s of sources) await api("GET", `/figures/${s}/rows`, tok);
+  for (const s of sourceObjs) await api("GET", `/figures/${s.key}/rows?${qs(s.params)}`, tok);
   ok("§2 a GET for rows writes nothing", (await counts()) === before, { before, after: await counts() });
   const theirs = await api("GET", `/figures/gifts/rows?${qs({ from: "2000-01-01", to: today, donor: donors[0][0] })}`, tok2);
   ok("§2 org B asking for org A's donor gets nothing of org A's", theirs.status === 200 && theirs.body.rows.length === 0 && theirs.body.value === 0, theirs.body);

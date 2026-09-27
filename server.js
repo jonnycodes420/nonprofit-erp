@@ -196,6 +196,8 @@ const { toCents, toDollars, parseMoneyOrThrow, hasCents } = require("./money");
 // The same seam, as a namespace — BUILD-87 Part 1's stored-import invariant
 // reads several of its helpers at once and naming them one by one buys nothing.
 const money = require("./money");
+// FIX-2 A — the one definition of every figure that opens (the rows behind it).
+const figureSources = require("./figureSources");
 // BUILD-87 Part 4 — the one rule that gates the bookkeeper's file, stated as
 // a pure function so it can be proven able to fire without a database.
 const { bookkeeperRefusals, bookkeeperRefusalMessage } = require("./bookkeeper");
@@ -4107,54 +4109,34 @@ function monthBounds(offset = 0, org = null, atInstant = new Date()) {
 async function composeActivityReport(orgId, win, userId = null) {
   const { start, end } = win;
   const byUser = !!userId;
-  // A conversation is a TOUCH, not every interaction: an automatic timeline
-  // entry (a gift landing, a stage change) is not something a person did.
-  const CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
-  const [conv, gifts, thanks, closed] = await Promise.all([
-    query(
-      `SELECT COUNT(*)::int AS n FROM interactions i
-         JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
-        WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.date >= ? AND i.date <= ?
-          AND i.type = ANY(?) ${byUser ? "AND i.created_by = ?" : ""}`,
-      byUser ? [orgId, start, end, CONVERSATION_TYPES, userId] : [orgId, start, end, CONVERSATION_TYPES]),
-    query(
-      `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount),0) AS v FROM gifts g
-         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
-          ${byUser ? "AND d.assigned_to = ?" : ""}`,
-      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
-    // The stamp, not the flag: a gift acknowledged before A.5 carries no date
-    // and belongs to no week rather than to this one.
-    query(
-      `SELECT COUNT(*)::int AS n FROM gifts g
-         JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-        WHERE g.org_id = ? AND d.deleted_at IS NULL
-          AND g.acknowledgement_sent_at IS NOT NULL
-          AND g.acknowledgement_sent_at >= ?::date AND g.acknowledgement_sent_at < (?::date + 1)
-          ${byUser ? "AND d.assigned_to = ?" : ""}`,
-      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
-    query(
-      `SELECT t.close_kind, COUNT(*)::int AS n FROM threads t
-         JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-        WHERE t.org_id = ? AND d.deleted_at IS NULL AND t.closed_at IS NOT NULL
-          AND t.closed_at >= ?::date AND t.closed_at < (?::date + 1)
-          ${byUser ? "AND t.owner_id = ?" : ""}
-        GROUP BY 1`,
-      byUser ? [orgId, start, end, userId] : [orgId, start, end]),
+  // FIX-2 A — every figure here is read THROUGH its source (figureSources.js),
+  // the same sources the People dashboard's "This week" opens. A conversation
+  // is a TOUCH, not every interaction: an automatic timeline entry (a gift
+  // landing, a stage change) is not something a person did (CONVERSATION_TYPES).
+  // The thank-yous are counted by the stamp, not the flag: a gift acknowledged
+  // before A.5 carries no date and belongs to no week rather than to this one.
+  const w = { from: start, to: end };
+  const v = source => figureSources.figureValue(orgId, source).then(r => r.value);
+  const [conversations, giftsN, giftDollars, thanks, outcome, dismissed] = await Promise.all([
+    v({ key: "conversations", params: { ...w, ...(byUser ? { by: userId } : {}) } }),
+    v({ key: "gifts", params: { ...w, measure: "count", ...(byUser ? { assigned: userId } : {}) } }),
+    v({ key: "gifts", params: { ...w, ...(byUser ? { assigned: userId } : {}) } }),
+    v({ key: "thanks-marked", params: { ...w, ...(byUser ? { assigned: userId } : {}) } }),
+    v({ key: "threads-closed", params: { ...w, kind: "outcome", ...(byUser ? { owner: userId } : {}) } }),
+    v({ key: "threads-closed", params: { ...w, kind: "dismissed", ...(byUser ? { owner: userId } : {}) } }),
   ]);
-  const byKind = Object.fromEntries(closed.map(r => [r.close_kind, r.n]));
   // CENTS, through the one money seam. The week is compared against the sum of
   // its days and floats do not survive that comparison.
-  const giftCents = money.toCents(gifts[0]?.v) ?? 0;
+  const giftCents = money.toCents(giftDollars) ?? 0;
   return {
     window: { start, end }, scope: byUser ? "user" : "org", userId: userId || null,
-    conversationsLogged: conv[0]?.n || 0,
-    giftsReceived: gifts[0]?.n || 0,
+    conversationsLogged: conversations || 0,
+    giftsReceived: giftsN || 0,
     giftCents,
     giftDollars: money.toDollars(giftCents),
-    thankYousMarkedSent: thanks[0]?.n || 0,
-    threadsClosedByOutcome: byKind.outcome || 0,
-    threadsDismissed: byKind.dismissed || 0,
+    thankYousMarkedSent: thanks || 0,
+    threadsClosedByOutcome: outcome || 0,
+    threadsDismissed: dismissed || 0,
   };
 }
 
