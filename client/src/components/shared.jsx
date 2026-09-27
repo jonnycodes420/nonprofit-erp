@@ -466,14 +466,32 @@ export function GlobalStyles() {
        rail goes FIRST (order:-1) — three numbers are the right thing to meet
        on a phone, and the work follows. minmax/min-width:0 everywhere: a long
        donor name in a flex child otherwise refuses to shrink. */
+    /* FIX-3 A (finding 1) — the two columns are the panel's TOP (the Thread
+       beside the rail); every section after the Thread runs the full width of
+       the panel in .home-shell-lower, so the rail never stands as a tall blank
+       column beside the lower half. */
     .home-shell{background:${T.white};border:1px solid ${T.bg2};border-radius:16px;display:flex;flex-direction:column;overflow:hidden;}
+    .home-shell-top{display:flex;flex-direction:column;min-width:0;}
     .home-shell-main{min-width:0;padding:40px;display:flex;flex-direction:column;}
+    .home-shell-lower{min-width:0;padding:0 40px 40px;display:flex;flex-direction:column;border-top:1px solid ${T.bg2};}
     .home-rail{min-width:0;padding:32px;border-top:1px solid ${T.bg2};order:-1;}
     @media (min-width:1100px){
-      .home-shell{flex-direction:row;align-items:stretch;}
+      .home-shell-top{flex-direction:row;align-items:stretch;}
       .home-shell-main{flex:1;}
       .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
     }
+    /* FIX-3 finding 10 — the donor profile's four questions. The groups under
+       "how we manage them" are <details>: no browser marker, a caret that
+       turns when open. The next step pinned in the band shows only where the
+       band itself stays put (desktop). */
+    .dp-group>summary::-webkit-details-marker{display:none;}
+    .dp-group[open]>summary .dp-group-caret{transform:rotate(90deg);}
+    /* Closed means not drawn: a control in a closed group is not on the screen
+       (so it is not the screen's second emerald, and not in its text). */
+    .dp-group:not([open])>div{display:none;}
+    .dp-group>summary:focus-visible,.dp-figure:focus-visible{outline:2px solid ${T.ink};outline-offset:2px;}
+    .dp-figure:hover{border-color:${T.ink3}!important;}
+    @media (max-width:1100px){.dph-pinned-next{display:none!important;}}
     /* A row in the rail is pressable and says so quietly. */
     .home-rail-row{cursor:pointer;transition:background 0.12s ease;}
     .home-rail-row+.home-rail-row{border-top:1px solid ${T.bg2};}
@@ -556,6 +574,11 @@ export function GlobalStyles() {
       /* BUILD-89 — the panel's own padding on a phone. */
       .home-shell{border-radius:12px!important;}
       .home-shell-main{padding:20px!important;}
+      .home-shell-lower{padding:0 20px 20px!important;}
+      /* FIX-3 A — inside the panel a section header has no side padding of its
+         own (cPad is 0 there); the phone's 16px card padding put every Home
+         heading 16px right of the rows it labels. */
+      .home-shell .dash-cpad{padding-left:0!important;padding-right:0!important;padding-top:0!important;}
       .home-rail{padding:20px!important;}
       .home-rail-date{display:none!important;}
       /* BUILD-88d — a card header is a title and a link, and at 390px they run
@@ -641,7 +664,14 @@ export function GlobalStyles() {
       .dph-primary{flex:1!important;min-height:48px!important;font-size:14px!important;}
       .dph-desktop-act{display:none!important;}
       .dph-more{display:flex!important;align-items:center!important;justify-content:center!important;min-width:48px!important;min-height:48px!important;}
-      .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .donor-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important;flex:1 1 100%!important;}
+      .dp-figure{padding:7px 8px!important;}
+      /* FIX-3 finding 10 — on a phone the band scrolls WITH the page (pinned,
+         it would take half the screen): the takeover is the one scroller. */
+      .dp-root{overflow-y:auto!important;}
+      .dp-root .donor-profile-body{flex:none!important;overflow:visible!important;}
+      .dph-row{flex-wrap:wrap!important;gap:8px!important;}
+      .dp-column{padding:16px 14px 40px!important;gap:22px!important;}
       /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
          not a color fill — the §9 gradient ban is about bars/thermometers). */
       /* mask stops only use ALPHA — ink stands in for opaque (allowlist-clean) */
@@ -1051,6 +1081,18 @@ export function LockedFeature({title,blurb,cta="See plans",onCta,children,minHei
           {onCta&&<button onClick={onCta} style={{marginTop:18,background:T.gold500||T.gold,border:"none",borderRadius:T.radiusSm||8,padding:"10px 20px",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer"}}>Unlock with Team — {cta} →</button>}
         </div>
       </div>
+    </div>
+  );
+}
+// PlanPending — what a Team surface shows while the org's plan is still
+// unknown (FIX-3 finding 9). Never the lock: a plan that has not loaded is not
+// a plan without the feature (client/src/lib/entitlement.js). `failed` says
+// so when the plan fetch itself failed, instead of spinning for ever.
+export function PlanPending({failed=false,minHeight=120}){
+  return (
+    <div data-testid="plan-pending" role="status" aria-live="polite"
+      style={{minHeight,display:"flex",alignItems:"center",justifyContent:"center",gap:9,background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",color:T.ink3,fontSize:13}}>
+      {failed?"Couldn't check your plan. Reload the page to try again.":<><Spin dark/>Loading…</>}
     </div>
   );
 }

@@ -24,6 +24,18 @@ Read this when you touch anything a model or an automation does: drafts, the Ant
   `{ read }`, writing NOTHING (no instruction row, no run, no audit). A sentence that asks Steward to DO
   something to people (draft, send, tag…) is never a read. A count is the report's own (`reportHooks.run`,
   the handler `GET /reports/:key` runs). (FIX-2 D)
+- **An instruction that names one person reads that person, and a first name names somebody.** `agentShape.namedIn`
+  matches whole tokens in any case; a first name that is an ordinary word ("will", "grace") only when capitalised; a
+  token inside a whole name she wrote belongs to that name. One name matching several records answers `{ which }`
+  BEFORE any plan and writes nothing; `personId` (one per ambiguous name) must be one of those records. Never a plan
+  with a "Confirm which" task. (FIX-3 B)
+- **News about one person is recognised by Steward, not a model.** A gift she tells it about, and "X became a
+  volunteer (and wants N hours a week)" (`agentShape.volunteerNews`): the Volunteer role (`mark_volunteer` →
+  `markVolunteer`), her availability as a volunteer internal note (`note_volunteer` → `volunteer_notes`, never
+  `interactions`), and one welcome draft. (FIX-3 B)
+- **A plan's headline is one short sentence** (`compilePlan`): a clause per kind of step, a person named once, at most
+  three clauses (the rest fold into "and take N more steps"), at most `HEADLINE_MAX` characters. The steps list carries
+  the detail, and the withheld count is its own line. (FIX-3 B)
 - **Say which gate is shut.** `agentShape.draftingState` orders the causes: no `ANTHROPIC_API_KEY` first
   (one line that names the key, never the organisation's permission), then `orgs.ai_enabled`, then pause.
   Drafting off says what still works, what drafting adds, and shows Turn on drafting to an admin (it opens

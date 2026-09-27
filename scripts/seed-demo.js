@@ -41,6 +41,7 @@ const guard = require("./lib/prodGuard");
 const { Client } = require("pg");
 const bcrypt = require("bcryptjs");
 const orgTime = require("../orgTime");
+const { findRealPeople } = require("./lib/demoRealPeople");
 
 // Resolved INSIDE main(), not at module load. BUILD-73 Part 3 requires this
 // file for its DRIFTED/SHAPE exports (tests/demo-shape.test.js), and
@@ -53,6 +54,9 @@ const DB = process.env.DATABASE_URL || "postgres://steward@localhost:5544/stewar
 const ORG = "org_b72demo";
 const ADMIN_EMAIL = "director@harborlight.demo";
 const ADMIN_PASSWORD = "demo-harbor-2026";
+// The only users this seed creates. Anyone else in the demo org is a real
+// account holder (FIX-3 C, finding 8), and the seed removes them.
+const SEEDED_USER_EMAILS = [ADMIN_EMAIL, "officer@harborlight.demo"];
 const TZ = process.env.DEMO_TZ || "America/New_York";
 
 // ── Layer 3: an explicit allowlist of database names this may write to.
@@ -173,6 +177,27 @@ const SHAPE = {
   topDecileShareMin: 0.62, topDecileShareMax: 0.82,   // top 10% of donors, share of lifetime revenue
   top200ShareMin: 0.82,    top200ShareMax: 0.93,      // the FEP figure the seed prints
   donorsMin: 1000,         donorsMax: 1150,
+  // FIX-3 C, finding 14 — a real mid-sized nonprofit's channel mix, by the
+  // Reports rule (a gift is online when it carries a Stripe payment id),
+  // over the trailing twelve months: 30–45% of dollars, well over half of
+  // gifts (the small gifts come in online, the large ones by cheque, stock and
+  // DAF), and a monthly-giving programme.
+  onlineShareMin: 0.30,    onlineShareMax: 0.45,
+  onlineCountShareMin: 0.60,
+  monthlyGiversMin: 50,
+};
+
+// FIX-3 C, finding 14 — THE GALA. One night, about five months back, with
+// ticket and sponsorship levels, a guest list that mostly came, and a paddle
+// raise for the scholarship fund on the night. Tickets are bought online in
+// the weeks before; sponsors pay by cheque; paddle-raise gifts are charged to
+// a card at the table. Every gift carries the gala's name as its campaign, and
+// the event's revenue is their sum.
+const GALA = {
+  name: "Harbor Lights Gala",
+  venue: "Lanternside Hall, Salem",
+  ticketBuyersMin: 60,
+  paddleGiftsMin: 30,
 };
 
 async function main() {
@@ -207,6 +232,11 @@ async function main() {
 
   const q = (sql, params = []) => client.query(sql, params).then(r => r.rows);
 
+  // ── FIX-3 C, finding 8 — a real person in the demo is named and removed
+  // FIRST, by the same rule the prod check reads, so the run's log says who
+  // was in the pitch org before the teardown takes everything else.
+  await removeRealPeople(q, ORG, { seededUserEmails: SEEDED_USER_EMAILS, log: console.log });
+
   // ── TEARDOWN — idempotent by dropping, never by importing over ──────────
   console.log("[teardown] removing any previous demo org…");
   await q(`UPDATE pledges SET fulfilled_gift_id=NULL WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -215,7 +245,7 @@ async function main() {
     "fin_transactions","interactions","gifts","milestone_drafts","note_reminders","donor_materials",
     "households","donors","campaigns","fin_funds","accounts","budgets","users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
-  await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
+  await teardownOrg(q, ORG);
 
   // ── The organization ────────────────────────────────────────────────────
   await q(`INSERT INTO orgs (id,name,org_slug,onboarding_complete,subscription_status,plan,timezone,mission,emails_enabled,is_demo_org)
@@ -247,8 +277,11 @@ async function main() {
     if (o.pin) pinnedStage.push(id);
     return id;
   };
-  const addGift = (donorId, amount, date, o = {}) =>
-    gifts.push({ id: `g_b72_${String(++gid).padStart(4, "0")}`, donorId, amount, date, ...o });
+  const addGift = (donorId, amount, date, o = {}) => {
+    const id = `g_b72_${String(++gid).padStart(4, "0")}`;
+    gifts.push({ id, donorId, amount, date, ...o });
+    return id;
+  };
 
   // ── THE ELEVEN. The thesis, and the first thing on the day view. ────────
   // Consistent multi-year giving at a real mid-level number, then NOTHING this
@@ -326,6 +359,7 @@ async function main() {
   // the two-interval variability quirk). Most run through THIS year; a
   // deterministic handful (~1 in 100) stopped last year — the file's
   // bounded, realistic organic drift.
+  const tail = [];   // FIX-3 C — who in the tail is still giving (monthly givers and gala guests come from here)
   for (let i = 0; i < 810; i++) {
     const [name, email] = mkName();
     const id = addDonor(name, email, { status: "new", stage: i % 7 === 0 ? "qualify" : "prospect",
@@ -344,6 +378,7 @@ async function main() {
     // can reach $2,000 — Margaret Chen (the weakest of the eleven by value
     // at risk) is then guaranteed a place on the capped home drift list.
     const lastYear = i % 101 === 0 ? YEAR - 1 : YEAR - churnOffset;
+    tail.push({ id, giving: lastYear === YEAR });
     for (let k = 0; k < n; k++)
       addGift(id, between(40, 450), dateIn(lastYear - k, m, between(1, 28)));
   }
@@ -443,6 +478,151 @@ async function main() {
                                         { campaign: "Annual Fund " + orgTime.addDays(TODAY, -(40 + (amounts.length - 1 - k) * 365)).slice(0, 4) }));
   }
 
+
+  // ── FIX-3 C, finding 14 — HOW THE MONEY CAME IN ─────────────────────────
+  // The walk: Reports read "Online $2 (2)" against $433,215 offline, because
+  // every seeded gift was a cheque with no Stripe id, and the report's rule
+  // for online is `stripe_payment_id IS NOT NULL`. A real mid-sized nonprofit
+  // takes most of its GIFTS online and a third or so of its DOLLARS: the small
+  // gifts come through the giving page, the large ones by cheque, stock and
+  // DAF. Everything below is appended AFTER the file above was generated, so
+  // the PRNG stream that shapes the eleven and the FEP distribution is
+  // untouched.
+
+  // No gift from the future. Annual givers were generated "every year through
+  // THIS year" in their own month, which put this year's October–December
+  // gifts in the future (166 gifts, $373k on 27 Sep): Reports' fiscal year
+  // then counted money nobody has given yet. A donor whose season is still to
+  // come simply has not given yet this year; a donor whose ONLY gift was in
+  // the future gave it last year instead.
+  {
+    const hasPast = new Set(gifts.filter(g => g.date <= TODAY).map(g => g.donorId));
+    for (let k = gifts.length - 1; k >= 0; k--) {
+      const g = gifts[k];
+      if (g.date <= TODAY) continue;
+      if (hasPast.has(g.donorId)) gifts.splice(k, 1);
+      else g.date = `${Number(g.date.slice(0, 4)) - 1}${g.date.slice(4)}`;
+    }
+  }
+
+  // MONTHLY GIVERS — a programme, not one donor. Twenty who came in as
+  // monthly donors, and about fifty of the small tail who moved to monthly
+  // (their annual gifts before the switch stay; after it, one charge a month
+  // on the same day, through this month). Each charge is what the Stripe
+  // webhook writes: a payment id, payment_method Card, the subscription id.
+  console.log("[seed] monthly givers…");
+  const monthly = [];   // { subId, donorId, amount, start }
+  const MONTHLY_AMOUNTS = [10, 15, 20, 25, 25, 25, 35, 50, 50, 75, 100, 150];
+  const monthlySeries = (donorId, subId, amount, start) => {
+    let [y, m] = [Number(start.slice(0, 4)), Number(start.slice(5, 7))];
+    const day = Number(start.slice(8, 10));
+    for (let date = dateIn(y, m, day); date <= TODAY; date = dateIn(y, m, day)) {
+      addGift(donorId, amount, date, { online: true, sub: subId, notes: "Monthly gift via the giving page" });
+      if (++m > 12) { m = 1; y++; }
+    }
+  };
+  const newMonthly = (donorId, { minDays, maxDays }) => {
+    const subId = `rs_b72m_${pad(monthly.length + 1)}`;
+    const s = orgTime.addDays(TODAY, -between(minDays, maxDays));
+    const start = dateIn(Number(s.slice(0, 4)), Number(s.slice(5, 7)), Math.min(28, Number(s.slice(8, 10))));
+    const amount = pick(MONTHLY_AMOUNTS);
+    monthly.push({ subId, donorId, amount, start });
+    return { subId, start, amount };
+  };
+  for (let i = 0; i < 20; i++) {
+    const [name, email] = mkName();
+    const id = addDonor(name, email, { status: "new", stage: "steward" });
+    const { subId, start, amount } = newMonthly(id, { minDays: 120, maxDays: 1000 });
+    monthlySeries(id, subId, amount, start);
+  }
+  const switched = new Set();
+  tail.filter(t => t.giving).forEach((t, k) => {
+    if (k % 11 !== 5) return;
+    const { subId, start, amount } = newMonthly(t.id, { minDays: 200, maxDays: 900 });
+    for (let j = gifts.length - 1; j >= 0; j--) if (gifts[j].donorId === t.id && gifts[j].date >= start) gifts.splice(j, 1);
+    monthlySeries(t.id, subId, amount, start);
+    switched.add(t.id);
+  });
+  // Ondine's monthly history was a card charge too — on the subscription that
+  // later failed (it is attached below, after the write).
+  for (const g of gifts) if (g.donorId === recurDonor) Object.assign(g, { online: true, sub: "rs_b72demo", notes: "Monthly gift via the giving page" });
+
+  // THE GALA — see GALA at the top.
+  console.log("[seed] the gala…");
+  let galaDate = orgTime.addDays(TODAY, -140);
+  while (new Date(galaDate + "T12:00:00Z").getUTCDay() !== 6) galaDate = orgTime.addDays(galaDate, -1);   // a Saturday night
+  const gala = { id: "ev_b72_gala", campaignId: "camp_b72gala", name: `${GALA.name} ${galaDate.slice(0, 4)}`, date: galaDate,
+                 levels: [], guests: [] };
+  const galaGift = { campaign: gala.name, campaignId: gala.campaignId };
+  const level = (id, kind, name, price, fmv, recognition = null) => { const l = { id, kind, name, price, fmv, recognition }; gala.levels.push(l); return l; };
+  const DINNER = level("evl_b72_dinner", "ticket", "Dinner ticket", 250, 95);
+  const SPONSOR = [
+    level("evl_b72_presenting", "sponsor", "Presenting sponsor", 15000, 950, "Presenting sponsor"),
+    level("evl_b72_lighthouse", "sponsor", "Lighthouse sponsor", 7500, 570, "Lighthouse sponsor"),
+    level("evl_b72_harbor", "sponsor", "Harbor sponsor", 2500, 190, "Harbor sponsor"),
+  ];
+  // Sponsors: two local businesses new to the file, the printer who already
+  // gives, and a household that stretched. They pay by cheque, weeks ahead.
+  const newSponsors = [
+    ["Halyard & Pike Architects", "office@halyardpike.example.demo", SPONSOR[0]],
+    ["Brinewood Hardware", "owner@brinewoodhardware.example.demo", SPONSOR[1]],
+  ].map(([name, email, lvl]) => {
+    const id = addDonor(name, email, { status: "mid", stage: "steward", pin: true, officer: "u_b72demo" });
+    orgDonors.push([id, "corporate"]);
+    return [id, lvl];
+  });
+  for (const [id, lvl] of [...newSponsors, [orgDonors[2][0], SPONSOR[2]], [hh1, SPONSOR[2]]]) {
+    const giftId = addGift(id, lvl.price, orgTime.addDays(galaDate, -between(20, 60)),
+      { ...galaGift, online: false, method: ["check", "Check"], qpq: lvl.fmv,
+        qpqDesc: `${lvl.name} sponsorship benefits to ${gala.name}`, notes: `1 × ${lvl.name}, ${gala.name}` });
+    gala.guests.push({ donorId: id, level: lvl, qty: 1, giftId, amount: lvl.price, status: "attended", recognition: lvl.recognition });
+  }
+  // Ticket buyers: fifty of the small tail who are still giving (not the
+  // monthly switchers), and twenty guests new to the file — the gala is how a
+  // lot of people meet an organisation. Bought online in the five weeks
+  // before; most bought a pair.
+  const buyers = tail.filter(t => t.giving && !switched.has(t.id)).filter((t, k) => k % 7 === 2).slice(0, 50).map(t => t.id);
+  for (let i = 0; i < 20; i++) { const [name, email] = mkName(); buyers.push(addDonor(name, email, { status: "new", stage: "steward" })); }
+  for (const id of buyers) {
+    const qty = rnd() < 0.6 ? 2 : 1;
+    const giftId = addGift(id, DINNER.price * qty, orgTime.addDays(galaDate, -between(3, 35)),
+      { ...galaGift, online: true, qpq: DINNER.fmv * qty,
+        qpqDesc: `${qty === 1 ? "one" : qty} ${DINNER.name} ${qty === 1 ? "ticket" : "tickets"} to ${gala.name}`,
+        notes: `${qty} × ${DINNER.name}, ${gala.name}` });
+    gala.guests.push({ donorId: id, level: DINNER, qty, giftId, amount: DINNER.price * qty, status: rnd() < 0.9 ? "attended" : "no_show" });
+  }
+  // The paddle raise for the scholarship fund, on the night, charged to a
+  // card at the table.
+  const PADDLE = [100, 250, 250, 500, 500, 1000, 1000, 1000, 2500, 2500, 5000];
+  const inRoom = gala.guests.filter(g => g.status === "attended" && g.level.kind === "ticket");
+  inRoom.filter((g, k) => k % 3 !== 1).slice(0, 45).forEach(g =>
+    addGift(g.donorId, pick(PADDLE), galaDate, { ...galaGift, online: true, notes: `Paddle raise for the scholarship fund, ${gala.name}` }));
+
+  // THE CHANNEL. Per donor (people keep the way they give): the story donors
+  // above are cheques by design (the eleven's "cheque every spring" is the
+  // pitch); otherwise a major donor gives online 8% of the time, a mid-level
+  // donor 55%, a small donor 80%, and offline money comes by cheque, ACH,
+  // stock or DAF by band.
+  const fixedOffline = new Set([...driftedIds, lapsedMajor, twoAddr, twoAddrB, hh1, hh2, centsDonor,
+                                pledgeDonorA, pledgeDonorB, ...orgDonors.map(([id]) => id)]);
+  const ONLINE_P = { major: 0.08, mid: 0.55, new: 0.8 };
+  const OFFLINE = {
+    major: [["check", "Check"], ["check", "Check"], ["stock", "Stock"], ["daf", "DAF"], ["ach", "ACH"]],
+    mid: [["check", "Check"], ["check", "Check"], ["check", "Check"], ["ach", "ACH"], ["daf", "DAF"]],
+    new: [["check", "Check"], ["check", "Check"], ["check", "Check"], ["cash", "Cash"]],
+  };
+  const channel = new Map();
+  for (const d of donors) {
+    const band = ONLINE_P[d.status] !== undefined ? d.status : "new";
+    const online = fixedOffline.has(d.id) ? false : rnd() < ONLINE_P[band];
+    channel.set(d.id, { online, method: fixedOffline.has(d.id) ? ["check", "Check"] : pick(OFFLINE[band]) });
+  }
+  for (const g of gifts) {
+    const c = channel.get(g.donorId);
+    if (g.online === undefined) g.online = c.online;
+    if (!g.online && !g.method) g.method = c.method;
+  }
+
   await writeAll(client, donors, gifts);
   for (const [id, funderType] of orgDonors)
     await q(`UPDATE donors SET kind='organisation', funder_type=$3 WHERE id=$1 AND org_id=$2`, [id, ORG, funderType]);
@@ -453,15 +633,18 @@ async function main() {
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,status)
            VALUES ($1,$2,$3,10000,$4,'Capital pledge — three-year commitment','camp_b72demo','open')`,
           [plPartial, ORG, pledgeDonorA, dateIn(YEAR, 12, 31)]);
-  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,pledge_id,campaign)
-           VALUES ('g_b72_pl1',$1,$2,4000,$3,'check',$4,'Annual Fund ' || $5)`,
-          [ORG, pledgeDonorA, dateIn(YEAR, 2, 20), plPartial, String(YEAR)]);
+  // FIX-3 C — a payment dated after today moves back a year (a January run
+  // used to seed May's payment in the future).
+  const pastOr = d => (d <= TODAY ? d : `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,pledge_id,campaign,created_by,created_by_name)
+           VALUES ('g_b72_pl1',$1,$2,4000,$3,'check','Check',$4,'Annual Fund ' || $5,'u_b72demo','Dana Reyes')`,
+          [ORG, pledgeDonorA, pastOr(dateIn(YEAR, 2, 20)), plPartial, String(YEAR)]);
   await q(`INSERT INTO pledges (id,org_id,donor_id,amount,due_date,notes,campaign_id,status)
            VALUES ($1,$2,$3,5000,$4,'Scholarship pledge','camp_b72demo','open')`,
           [plOver, ORG, pledgeDonorB, dateIn(YEAR, 9, 30)]);
-  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,pledge_id)
-           VALUES ('g_b72_pl2',$1,$2,5750,$3,'check',$4)`,
-          [ORG, pledgeDonorB, dateIn(YEAR, 5, 6), plOver]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,pledge_id,created_by,created_by_name)
+           VALUES ('g_b72_pl2',$1,$2,5750,$3,'check','Check',$4,'u_b72demo','Dana Reyes')`,
+          [ORG, pledgeDonorB, pastOr(dateIn(YEAR, 5, 6)), plOver]);
 
   // BUILD-72 Part 3 — the pledges were written directly, so derive their status
   // and surplus exactly as recalcPledgePayment() would. Without this the
@@ -497,6 +680,42 @@ async function main() {
     await q(`INSERT INTO recurring_subscriptions (id,org_id,donor_id,amount,status)
              VALUES ('rs_b72demo',$1,$2,150,'past_due')`, [ORG, recurDonor]).catch(() => {});
   });
+
+  // ── FIX-3 C — the monthly givers' subscriptions, and the gala ──────────
+  console.log(`[seed] ${monthly.length} monthly subscriptions, the gala's levels and guest list…`);
+  const BRANDS = ["visa", "visa", "visa", "mastercard", "mastercard", "amex", "discover"];
+  for (const [k, m] of monthly.entries()) {
+    const d = Number(m.start.slice(8, 10));
+    const next = dateIn(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), d) > TODAY
+      ? dateIn(Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)), d)
+      : dateIn(Number(TODAY.slice(5, 7)) === 12 ? Number(TODAY.slice(0, 4)) + 1 : Number(TODAY.slice(0, 4)), Number(TODAY.slice(5, 7)) % 12 + 1, d);
+    await q(`INSERT INTO recurring_subscriptions
+               (id,org_id,donor_id,amount,interval,status,stripe_subscription_id,stripe_customer_id,fund_id,created_at,updated_at,
+                current_period_end,card_brand,card_last4,card_exp_month,card_exp_year,card_checked_at)
+             VALUES ($1,$2,$3,$4,'month','active',$5,$6,'fund_b72demo_gen',$7::date,NOW(),$8::date,$9,$10,$11,$12,NOW())`,
+            [m.subId, ORG, m.donorId, m.amount, `sub_demo_b72_${pad(k + 1)}`, `cus_demo_b72_${pad(k + 1)}`, m.start, next,
+             BRANDS[k % BRANDS.length], String(1000 + ((k * 7919) % 9000)).slice(-4), 1 + (k * 5) % 12, YEAR + 1 + (k % 4)]);
+  }
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
+           VALUES ($1,$2,$3,'event','completed',$4,$5,$6)`,
+          [gala.campaignId, ORG, gala.name, 100000, orgTime.addDays(gala.date, -75), gala.date]);
+  const galaRevenue = gifts.filter(g => g.campaignId === gala.campaignId).reduce((t, g) => t + g.amount, 0);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,created_by,created_by_name)
+           VALUES ($1,$2,$3,'gala',$4,$4,$5,$6,220,'completed',$7,$8,'u_b72demo','Dana Reyes')`,
+          [gala.id, ORG, gala.name, gala.date, GALA.venue,
+           "Our annual gala: dinner, a student showcase, and a paddle raise for the scholarship fund.", galaRevenue, 41500]);
+  for (const [k, l] of gala.levels.entries())
+    await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,recognition,position,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'u_b72demo','Dana Reyes')`,
+            [l.id, ORG, gala.id, l.kind, l.name, l.price, l.fmv, l.recognition, k]);
+  const donorById = new Map(donors.map(d => [d.id, d]));
+  for (const [k, g] of gala.guests.entries()) {
+    const d = donorById.get(g.donorId);
+    await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,registration_gift_id,recognition,gift_amount,table_label)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [`att_b72_${pad(k + 1)}`, gala.id, ORG, g.donorId, d.name, d.email || "", g.status, g.level.id, g.qty, g.giftId,
+             g.recognition ? `${d.name}, ${g.recognition}` : null, g.amount, `Table ${1 + Math.floor(k / 5)}`]);
+  }
 
   // ── Derived state: totals, stages, ledger stamps ───────────────────────
   console.log("[seed] recomputing donor summaries…");
@@ -581,12 +800,13 @@ async function main() {
 
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(
-    `SELECT COALESCE(SUM(amount),0)::float d FROM gifts WHERE org_id=$1 AND date >= $2`,
+    `SELECT COALESCE(SUM(amount),0)::float d FROM gifts WHERE org_id=$1 AND date >= $2 AND campaign_id IS NULL`,
     [ORG, dateIn(YEAR, 1, 1)]);
   const goal = Math.round((raisedThisYear.d / 0.85) / 5000) * 5000;
   await q(`UPDATE campaigns SET goal_amount=$2 WHERE id='camp_b72demo' AND org_id=$1`, [ORG, goal]);
+  // (The gala's gifts keep the gala's campaign — FIX-3 C.)
   await q(`UPDATE gifts SET campaign_id='camp_b72demo', campaign='Annual Fund ' || $2
-            WHERE org_id=$1 AND date >= $3`, [ORG, String(YEAR), dateIn(YEAR, 1, 1)]);
+            WHERE org_id=$1 AND date >= $3 AND campaign_id IS NULL`, [ORG, String(YEAR), dateIn(YEAR, 1, 1)]);
 
   // The activation checklist is for a NEW org. On a 1,000-donor demo it reads
   // as unfinished setup — dismiss it.
@@ -606,6 +826,22 @@ async function main() {
              // drift LIST — the first run of the fixed seed hid one of the
              // eleven exactly this way.
              orgTime.addDays(TODAY, -(35 + i * 9))]);
+  }
+
+  // ── FIX-3 C — three thank-yous waiting, for the week's newest one-time
+  // online gifts from people (the queue a real office opens on a Monday).
+  // Written by the same template the server's queue uses; she sends them.
+  const draftMod = await import("../shared/draftNote.js");
+  const recentOnline = await q(
+    `SELECT g.id, g.donor_id, g.amount::float amount, d.name FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=$1 AND g.stripe_payment_id IS NOT NULL AND g.recurring_subscription_id IS NULL
+        AND g.quid_pro_quo_value IS NULL AND d.kind IS NULL AND g.date <= $2
+      ORDER BY g.date DESC, g.id DESC LIMIT 3`, [ORG, TODAY]);
+  for (const [k, g] of recentOnline.entries()) {
+    const t = draftMod.thankYouDraft({ donorName: g.name, giftCents: Math.round(g.amount * 100), fundName: null,
+                                       orgName: "Harborlight Youth Collective", voice: { ready: false } });
+    await q(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [`ty_b72_${k + 1}`, ORG, g.donor_id, g.id, t.body, t.voice]);
   }
 
   // ── THE SHAPE ASSERTION ON THE GENERATED FILE (BUILD-76 follow-up) ──────
@@ -644,12 +880,51 @@ async function main() {
   const decileShare = parseFloat(decile[0]?.share) || 0;
   if (decileShare < SHAPE.topDecileShareMin || decileShare > SHAPE.topDecileShareMax)
     shapeFail.push(`top-decile revenue share ${(decileShare * 100).toFixed(1)}% outside [${SHAPE.topDecileShareMin * 100}%, ${SHAPE.topDecileShareMax * 100}%]`);
+  // FIX-3 C, finding 14 — the channel mix, the monthly programme, the gala.
+  // Same rule as the Reports giving summary: online = a Stripe payment id.
+  const yearAgo = orgTime.addDays(TODAY, -365);
+  const [mix] = await q(
+    `SELECT COUNT(*)::int n, COALESCE(SUM(amount),0)::float total,
+            COUNT(*) FILTER (WHERE stripe_payment_id IS NOT NULL)::int online_n,
+            COALESCE(SUM(amount) FILTER (WHERE stripe_payment_id IS NOT NULL),0)::float online_total,
+            COUNT(*) FILTER (WHERE date > $3)::int future
+       FROM gifts WHERE org_id=$1 AND (date > $2 OR date > $3)`, [ORG, yearAgo, TODAY]);
+  const onlineShare = mix.total ? mix.online_total / mix.total : 0;
+  const onlineCountShare = mix.n ? mix.online_n / mix.n : 0;
+  if (onlineShare < SHAPE.onlineShareMin || onlineShare > SHAPE.onlineShareMax)
+    shapeFail.push(`online share of the year's dollars ${(onlineShare * 100).toFixed(1)}% outside [${SHAPE.onlineShareMin * 100}%, ${SHAPE.onlineShareMax * 100}%]`);
+  if (onlineCountShare < SHAPE.onlineCountShareMin)
+    shapeFail.push(`online share of the year's gifts ${(onlineCountShare * 100).toFixed(1)}% below ${SHAPE.onlineCountShareMin * 100}%`);
+  if (mix.future) shapeFail.push(`${mix.future} gift(s) dated after ${TODAY}`);
+  const [subs] = await q(
+    `SELECT COUNT(*)::int n, COUNT(*) FILTER (WHERE last >= $2)::int current
+       FROM (SELECT rs.id, MAX(g.date) last FROM recurring_subscriptions rs
+               LEFT JOIN gifts g ON g.org_id = rs.org_id AND g.recurring_subscription_id = rs.id
+              WHERE rs.org_id=$1 AND rs.status='active' GROUP BY rs.id) x`, [ORG, orgTime.addDays(TODAY, -32)]);
+  if (subs.n < SHAPE.monthlyGiversMin) shapeFail.push(`${subs.n} active monthly givers, fewer than ${SHAPE.monthlyGiversMin}`);
+  if (subs.current !== subs.n) shapeFail.push(`${subs.n - subs.current} monthly giver(s) not charged in the past month`);
+  const [gl] = await q(
+    `SELECT (SELECT COUNT(*) FROM event_attendees a JOIN event_levels l ON l.id=a.level_id WHERE a.event_id=$2 AND l.kind='ticket')::int tickets,
+            (SELECT COUNT(*) FROM gifts WHERE org_id=$1 AND date=$3 AND campaign_id=$4 AND quid_pro_quo_value IS NULL)::int paddle,
+            (SELECT revenue FROM events WHERE id=$2)::float revenue,
+            (SELECT COALESCE(SUM(amount),0) FROM gifts WHERE org_id=$1 AND campaign_id=$4)::float gifts`,
+    [ORG, gala.id, gala.date, gala.campaignId]);
+  if (gl.tickets < GALA.ticketBuyersMin || gl.paddle < GALA.paddleGiftsMin || Math.abs(gl.revenue - gl.gifts) > 0.005)
+    shapeFail.push(`the gala: ${gl.tickets} ticket buyers (≥${GALA.ticketBuyersMin}), ${gl.paddle} paddle-raise gifts (≥${GALA.paddleGiftsMin}), revenue ${gl.revenue} vs its gifts ${gl.gifts}`);
+  // FIX-3 C, finding 8 — the finished demo holds no real person.
+  const stillReal = await findRealPeople(q, ORG, { seededUserEmails: SEEDED_USER_EMAILS });
+  if (stillReal.length) {
+    console.error("\nREFUSED: the seeded demo org holds a real person:");
+    stillReal.forEach(r => console.error(`  ${r.table} ${r.id} ${r.name} <${r.email}> — ${r.reason}`));
+    process.exit(1);
+  }
   if (shapeFail.length) {
     console.error("\nSHAPE ASSERTION FAILED — the generated file does not tell the story:");
     shapeFail.forEach(e => console.error("  " + e));
     process.exit(1);
   }
   console.log(`[assert] drifting/high ${driftingHigh} (range ${SHAPE.driftingHighMin}–${SHAPE.driftingHighMax}) · top-decile share ${(decileShare * 100).toFixed(1)}% — shape holds`);
+  console.log(`[assert] the year online: ${(onlineShare * 100).toFixed(1)}% of dollars, ${(onlineCountShare * 100).toFixed(1)}% of gifts · ${subs.n} monthly givers · ${gala.name} on ${gala.date}: ${gl.tickets} ticket buyers, ${gl.paddle} paddle gifts, $${Math.round(gl.revenue).toLocaleString()} · no real person`);
 
   // ── Report ──────────────────────────────────────────────────────────────
   const [sum] = await q(`SELECT COUNT(DISTINCT d.id)::int donors,
@@ -691,20 +966,115 @@ async function writeAll(client, donors, gifts) {
       `INSERT INTO donors (id,org_id,name,email,status,stage,city,state,assigned_to,assigned_to_name)
        VALUES ${vals.join(",")}`, params);
   }
+  // FIX-3 C — each gift says how it came, in the fields the real writers
+  // use: an online gift is what the Stripe webhook writes (type cash, Card,
+  // a payment id — the seed's are all pi_demo_…, never a real charge — and
+  // the webhook's actor); an offline gift is the director's cheque, ACH,
+  // stock or DAF entry.
+  const COLS = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "campaign_id", "payment_method",
+                "stripe_payment_id", "recurring_subscription_id", "notes", "quid_pro_quo_value", "quid_pro_quo_desc",
+                "created_by", "created_by_name"];
   for (let i = 0; i < gifts.length; i += B) {
     const batch = gifts.slice(i, i + B);
     const vals = [], params = [];
     batch.forEach((g, k) => {
-      const o = k * 7;
-      vals.push(`($${o+1},$${o+2},$${o+3},$${o+4},$${o+5},$${o+6},$${o+7})`);
-      params.push(g.id, ORG, g.donorId, g.amount, g.date, "check", g.campaign || null);
+      const o = k * COLS.length;
+      vals.push(`(${COLS.map((_, c) => `$${o + c + 1}`).join(",")})`);
+      const method = g.online ? ["cash", "Card"] : (g.method || ["check", "Check"]);
+      params.push(g.id, ORG, g.donorId, g.amount, g.date, method[0], g.campaign || null, g.campaignId || null, method[1],
+                  g.online ? `pi_demo_${g.id}` : null, g.sub || null,
+                  g.notes || (g.online ? "Online gift via the giving page" : null),
+                  g.qpq || null, g.qpqDesc || null,
+                  g.online ? "system:stripe-webhook" : "u_b72demo", g.online ? "Stripe (online)" : "Dana Reyes");
     });
-    await client.query(
-      `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign) VALUES ${vals.join(",")}`, params);
+    await client.query(`INSERT INTO gifts (${COLS.join(",")}) VALUES ${vals.join(",")}`, params);
   }
 }
 
-module.exports = { DRIFTED, SHAPE, ORG, ADMIN_EMAIL, ADMIN_PASSWORD };
+// ── FIX-3 C, finding 8 — REMOVE EVERY REAL PERSON FROM THE DEMO ORG ────────
+// The walk found "Jonathan Atkinson $1" in the demo's thank-you list on prod:
+// a real Stripe charge through the demo org's give page. The rule for "real"
+// is scripts/lib/demoRealPeople.js (shared with the read-only prod check).
+// This removes exactly the rows it matches — the person, their gifts and
+// every row that hangs off them in `orgId` — and PRINTS each one, so a prod
+// run says out loud what it took away. Every DELETE is pinned to org_id.
+// Exported so tests/fix3-c-demo-people.test.js drives it on a FIXTURE org.
+async function removeRealPeople(q, orgId, { seededUserEmails = SEEDED_USER_EMAILS, log = console.log } = {}) {
+  const found = await findRealPeople(q, orgId, { seededUserEmails });
+  if (!found.length) { log(`[real-people] no real person in ${orgId}`); return []; }
+  log(`[real-people] ${found.length} row(s) in ${orgId} are real people — removing them:`);
+  for (const r of found) log(`[real-people]   ${r.table} ${r.id}  ${r.name || "(no name)"} <${r.email || "no email"}>  — ${r.reason}`);
+  const ids = t => found.filter(r => r.table === t).map(r => r.id);
+  const donorIds = ids("donors"), guestIds = ids("event_attendees"), userIds = ids("users");
+  const giftIds = donorIds.length
+    ? (await q(`SELECT id FROM gifts WHERE org_id=$1 AND donor_id = ANY($2)`, [orgId, donorIds])).map(r => r.id) : [];
+  // Every org-scoped table that points at one of those people or gifts.
+  const cols = await q(
+    `SELECT c.table_name, array_agg(c.column_name::text) AS cols
+       FROM information_schema.columns c JOIN information_schema.tables t
+         ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+      WHERE c.table_schema = current_schema() AND c.column_name IN ('org_id','donor_id','person_id','gift_id')
+      GROUP BY c.table_name`);
+  let pending = [];
+  for (const { table_name: t, cols: cs } of cols) {
+    if (!cs.includes("org_id") || t === "donors") continue;
+    if (cs.includes("donor_id") && donorIds.length) pending.push([t, "donor_id", donorIds]);
+    if (cs.includes("person_id") && donorIds.length) pending.push([t, "person_id", donorIds]);
+    if (cs.includes("gift_id") && giftIds.length && t !== "gifts") pending.push([t, "gift_id", giftIds]);
+  }
+  if (guestIds.length) pending.push(["event_attendees", "id", guestIds]);
+  if (userIds.length) pending.push(["users", "id", userIds]);
+  const removed = {};
+  // Foreign keys decide the order; a table that refuses goes round again.
+  for (let pass = 0; pass < 8 && pending.length; pass++) {
+    const retry = [];
+    for (const [t, col, list] of pending) {
+      try {
+        const n = (await q(`DELETE FROM "${t}" WHERE org_id=$1 AND "${col}" = ANY($2) RETURNING 1`, [orgId, list])).length;
+        if (n) removed[t] = (removed[t] || 0) + n;
+      } catch (e) { retry.push([t, col, list, e.message]); }
+    }
+    if (retry.length === pending.length) {
+      throw new Error(`removeRealPeople: could not clear ${retry.map(r => `${r[0]}.${r[1]} (${r[3]})`).join("; ")}`);
+    }
+    pending = retry.map(r => r.slice(0, 3));
+  }
+  if (donorIds.length) {
+    const n = (await q(`DELETE FROM donors WHERE org_id=$1 AND id = ANY($2) RETURNING 1`, [orgId, donorIds])).length;
+    if (n) removed.donors = n;
+  }
+  log(`[real-people] removed: ${Object.entries(removed).map(([t, n]) => `${n} ${t}`).join(", ") || "nothing"}`);
+  return found;
+}
+
+// IDEMPOTENT BY TEARDOWN — every org-scoped table, not a hand-kept list.
+// FIX-3 C: the old list missed tables a live donation writes to, so a real
+// charge left rows the teardown never looked at (and, when one of them held
+// a foreign key, the org row survived and the re-seed crashed on its INSERT).
+// Every DELETE is pinned to org_id = orgId; the org row goes last, and a
+// teardown that cannot remove it refuses rather than seeding over it.
+async function teardownOrg(q, orgId) {
+  const tables = (await q(
+    `SELECT DISTINCT c.table_name FROM information_schema.columns c JOIN information_schema.tables t
+        ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+      WHERE c.table_schema = current_schema() AND c.column_name = 'org_id' AND c.table_name <> 'orgs'
+      ORDER BY 1`)).map(r => r.table_name);
+  let pending = tables;
+  for (let pass = 0; pass < 10 && pending.length; pass++) {
+    const retry = [];
+    for (const t of pending) { try { await q(`DELETE FROM "${t}" WHERE org_id=$1`, [orgId]); } catch { retry.push(t); } }
+    if (retry.length === pending.length) break;
+    pending = retry;
+  }
+  await q(`DELETE FROM orgs WHERE id=$1`, [orgId]).catch(() => {});
+  const [left] = await q(`SELECT COUNT(*)::int AS n FROM orgs WHERE id=$1`, [orgId]);
+  if (left.n) {
+    console.error(`\nREFUSED: the teardown could not remove org ${orgId}; still refusing: ${pending.join(", ") || "(the orgs row itself)"}\n`);
+    process.exit(1);
+  }
+}
+
+module.exports = { DRIFTED, SHAPE, GALA, ORG, ADMIN_EMAIL, ADMIN_PASSWORD, SEEDED_USER_EMAILS, removeRealPeople };
 
 // Only run when invoked directly — tests/demo-shape.test.js requires this file
 // for DRIFTED/SHAPE and must not trigger a seed by importing it.

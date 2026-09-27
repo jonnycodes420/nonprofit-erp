@@ -1,0 +1,34 @@
+— §1 · what counts as a real person —
+  FAIL  §1 scripts/lib/demoRealPeople.js exports realReason + findRealPeople — "Cannot find module '../scripts/lib/demoRealPeople.js'\nRequire stack:\n- /Users/jonathanatkinson/steward-fix3-c/tests/fix3-c-demo-people.test.js"
+  PASS  §1 caught: the founder's name (Jonathan Atkinson <>)
+  PASS  §1 caught: the founder's name, any case and spacing (jonathan  ATKINSON <null>)
+  PASS  §1 caught: the founder's address (J. Donor <xjca2006@gmail.com>)
+  PASS  §1 caught: a plus-tagged founder address (J. Donor <XJCA2006+demo@gmail.com>)
+  PASS  §1 caught: FOUNDER_EMAIL (J. Donor <jonathan@stewardapp.dev>)
+  PASS  §1 caught: any stewardapp.dev address (J. Donor <support@stewardapp.dev>)
+  PASS  §1 caught: the duplicate staff user's address (J. Donor <jonathan.atkinson@asbury.edu>)
+  PASS  §1 caught: a mail-blocked address (Allie <Hello@JustinsPlaceKY.com>)
+  PASS  §1 caught: a users row, by email (Someone <priya.staff@someorg.example>)
+  PASS  §1 caught: a users row, by full name (priya staffmember <p@elsewhere.example>)
+  FAIL  §1 not flagged: the canonical drifted donor — "no-lib"
+  FAIL  §1 not flagged: the failed-card donor — "no-lib"
+  FAIL  §1 not flagged: a one-word users name is not a full-name match — "no-lib"
+  FAIL  §1 not flagged: a first name alone is not the founder — "no-lib"
+  FAIL  §1 a real Stripe charge marks its donor real; a seed-minted one does not
+
+— §2 · the seeded demo org holds no real person —
+  PASS  §2 the demo is seeded on this database (run-all seeds it before the battery)
+  FAIL  §2 finder available
+
+— §3 · the remover takes the matching rows and only those —
+  FAIL  §3 finder available
+  FAIL  §3 scripts/seed-demo.js exports removeRealPeople
+
+— §4 · the prod check prints the rows, exits 1, and writes nothing —
+  FAIL  §4 scripts/demo-real-people-check.js exists
+
+— §5 · the seed removes before it tears down, and re-asserts after —
+  FAIL  §5 main() calls removeRealPeople on the demo org before the teardown — {"iRemove":-1,"iTeardown":13026}
+  FAIL  §5 ...and fails the seed if the finished org still holds a real person
+
+11 passed, 12 failed

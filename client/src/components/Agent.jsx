@@ -80,6 +80,11 @@ const OUTLINE_BTN = { background: "transparent", color: T.ink, border: "1.5px so
 const YES_BTN = { background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "12px 20px",
   fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" };
 const REFUSAL = { fontSize: 13.5, color: T.ink, borderLeft: "3px solid " + T.gold, paddingLeft: 10, lineHeight: 1.5 };
+// FIX-3 B — THE GO BUTTON. Always drawn beside the box, so there is never a
+// question of how to send it: emerald (the one action colour) once there are
+// words to plan, and a quiet disabled button until then.
+const GO_OFF = { background: T.bg2, color: T.ink3, border: "1px solid " + T.bg3, borderRadius: 10, padding: "12px 20px",
+  fontSize: 15, fontWeight: 700, cursor: "default", fontFamily: "inherit" };
 // The tool table speaks about "her"; this screen speaks to her.
 const toHer = s => String(s || "").replace(/\bSHE\b/g, "you").replace(/\bher (send )?queue\b/g, "your $1queue");
 const localYmd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -116,8 +121,10 @@ function planState(p) {
   if (p.kind === "standing" && p.status === "active") return { word: "Standing · on", brass: false };
   if (run && run.status === "failed") return { word: "Did not finish", brass: false };
   if (run) {
-    const done = (run.steps || []).filter(s => s.outcome === OUTCOME_DONE || s.outcome === OUTCOME_WAITING).length;
-    return { word: `Done · ${done} of ${(run.steps || []).length} steps`, brass: false };
+    // The sheet lists the read first, and it is always done: count it, so the
+    // list and the sheet agree (FIX-2 handoff §6: "2 of 2" beside three rows).
+    const done = (run.steps || []).filter(s => s.outcome === OUTCOME_DONE || s.outcome === OUTCOME_WAITING).length + 1;
+    return { word: `Done · ${done} of ${(run.steps || []).length + 1} steps`, brass: false };
   }
   return { word: "Done", brass: false };
 }
@@ -265,6 +272,34 @@ function readPanel({ read, wide, onNavigate, onClose }) {
   );
 }
 
+// ── WHICH ONE? ─────────────────────────────────────────────────────────────
+// FIX-3 B — one name, several records (two Adas). Steward asks BEFORE it plans;
+// nothing has been written. Her pick plans for that record alone.
+function whichPanel({ which, wide, busy, isReadOnly, onPick, onClose }) {
+  return (
+    <section data-testid="agent-which" style={{ ...PANEL, padding: wide ? "26px 28px" : "18px 16px", minWidth: 0 }}>
+      <div style={EYEBROW}>Before Steward plans</div>
+      <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 26 : 22, lineHeight: 1.2, margin: "6px 0 8px", overflowWrap: "anywhere" }}>
+        Which {which.said}?
+      </h2>
+      <p style={{ fontSize: 14.5, lineHeight: 1.55, margin: "0 0 12px", color: T.ink2 }}>{which.sentence}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, margin: "0 0 14px" }}>
+        {(which.people || []).map(p => (
+          <button key={p.id} data-testid="agent-which-person" onClick={() => onPick(p.id)} disabled={busy || isReadOnly}
+            style={{ ...OUTLINE_BTN, borderWidth: 1, textAlign: "left", display: "flex", flexDirection: "column", gap: 2, cursor: busy ? "default" : "pointer" }}>
+            <span style={{ fontSize: 15 }}>{p.name}</span>
+            <span style={{ fontSize: 12.5, fontWeight: 400, color: T.ink3, overflowWrap: "anywhere" }}>{p.detail}</span>
+          </button>
+        ))}
+      </div>
+      <p style={{ fontSize: 13, color: T.ink3, margin: "0 0 10px" }}>Steward has not written anything yet.</p>
+      <button onClick={onClose} style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "10px 6px" }}>
+        Never mind
+      </button>
+    </section>
+  );
+}
+
 // ── DRAFTING OFF: WHAT, WHO, WHERE ─────────────────────────────────────────
 function draftingNotice({ status, isReadOnly, onTurnOn, onGuardrails }) {
   if (!status || status.on) return null;
@@ -313,6 +348,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const [askErr, setAskErr] = useState("");
   const [askedId, setAskedId] = useState(null);
   const [read, setRead] = useState(null);
+  const [which, setWhich] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [sheetErr, setSheetErr] = useState("");
   const [status, setStatus] = useState(null);
@@ -369,13 +405,16 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     return () => clearInterval(h);
   }, [anyLive, loadPlans]);
 
-  const ask = useCallback(async (words) => {
+  const ask = useCallback(async (words, picks) => {
     const said = String(words || "").trim();
     if (!said || asking) return;
-    setAsking(true); setAskErr(""); setAskedId(null); setRead(null);
+    setAsking(true); setAskErr(""); setAskedId(null); setRead(null); setWhich(null);
     try {
-      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify({ text: said }) });
+      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify(picks && picks.length ? { text: said, personId: picks } : { text: said }) });
       if (r && r.read) { setRead({ ...r.read, text: said }); setText(""); }
+      // One name, several records: ask which, and keep her words for the pick.
+      // Her earlier picks ride along, one per name ("Margaret and Robert").
+      else if (r && r.which) { setWhich({ ...r.which, text: said, picks: picks || [] }); setText(""); }
       else {
         await loadPlans(); loadWaiting();
         setAskedId(r.id); setOpenId(r.id); setText("");
@@ -433,16 +472,25 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
       onConfirm: () => confirm(item.id), onDiscard: () => discard(item.id) })
   ) : null;
   const readFor = () => read ? readPanel({ read, wide, onNavigate, onClose: () => setRead(null) }) : null;
+  const whichFor = () => which ? whichPanel({ which, wide, busy: asking, isReadOnly,
+    onPick: id => ask(which.text, [...(which.picks || []), id]), onClose: () => setWhich(null) }) : null;
+  const canGo = !!text.trim() && !asking && !isReadOnly;
+  const goStyle = { ...(canGo ? YES_BTN : GO_OFF), whiteSpace: "nowrap", flexShrink: 0, width: wide ? "auto" : "100%" };
+  const goLabel = asking ? "Planning…" : "Show me the plan";
   const notice = draftingNotice({ status, isReadOnly,
     onTurnOn: () => { setFocusDrafting(true); setView("guardrails"); },
     onGuardrails: () => setView("guardrails") });
 
+  // FIX-3 B — the one-line bar has its go button beside it (under it at phone
+  // width), always drawn; Enter submits the form.
   const askBar = (
-    <form onSubmit={e => { e.preventDefault(); ask(text); }} style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+    <form onSubmit={e => { e.preventDefault(); ask(text); }}
+      style={{ display: "flex", gap: 10, marginBottom: 18, flexDirection: wide ? "row" : "column", alignItems: wide ? "stretch" : "stretch" }}>
       <input value={text} onChange={e => setText(e.target.value)} data-testid="agent-ask-bar"
-        placeholder="Tell Steward what to do, in your own words…"
+        aria-label="Tell Steward what to do" placeholder="Tell Steward what to do, in your own words…"
         style={{ flex: 1, minWidth: 0, border: "1px solid " + T.bg3, background: T.white, color: T.ink,
           borderRadius: 12, padding: "14px 16px", fontSize: 15, fontFamily: "inherit", outline: "none" }} />
+      <button type="submit" data-testid="agent-ask-bar-go" disabled={!canGo} style={goStyle}>{goLabel}</button>
     </form>
   );
 
@@ -511,7 +559,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
               <div style={{ display: "grid", gridTemplateColumns: wide ? "300px minmax(0,1fr)" : "minmax(0,1fr)", gap: wide ? 28 : 18, alignItems: "start" }}>
                 {instructionList}
                 <div style={{ order: 1, minWidth: 0 }}>
-                  {read ? readFor() : open ? sheetFor(open) : (
+                  {read ? readFor() : which ? whichFor() : open ? sheetFor(open) : (
                     <section style={{ ...PANEL, padding: "22px 24px" }}>
                       <div style={{ fontFamily: SERIF, fontSize: 22, marginBottom: 6 }}>Nothing planned yet.</div>
                       <div style={{ color: T.ink3, fontSize: 14, lineHeight: 1.55 }}>Tell Steward what to do above, or open Ask for three examples. Ask for a report, a person or a count and it answers at once.</div>
@@ -527,17 +575,17 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
           <div data-testid="agent-view-ask">
             {notice}
             <div style={{ ...EYEBROW, marginBottom: 10 }}>Ask · in your own words</div>
-            <textarea data-testid="agent-ask-input" value={text} onChange={e => setText(e.target.value)} rows={wide ? 5 : 4}
-              placeholder="Tell Steward what to do, in your own words…"
-              style={{ width: "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, background: T.white, color: T.ink,
-                borderRadius: 12, padding: "14px 16px", fontSize: 16, lineHeight: 1.5, fontFamily: "inherit", resize: "vertical" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
-              <button data-testid="agent-ask-submit" onClick={() => ask(text)} disabled={asking || !text.trim() || isReadOnly}
-                style={{ ...OUTLINE_BTN, cursor: asking || !text.trim() ? "default" : "pointer", opacity: asking || !text.trim() ? 0.55 : 1 }}>
-                {asking ? "Planning…" : "Show me the plan"}
-              </button>
-              <span style={{ fontSize: 13, color: T.ink3 }}>Nothing happens until you say so.</span>
+            {/* FIX-3 B — the box and its go button, side by side (the button
+                under the box at phone width). Enter plans; Shift+Enter is a new line. */}
+            <div style={{ display: "flex", gap: 12, flexDirection: wide ? "row" : "column", alignItems: wide ? "flex-end" : "stretch" }}>
+              <textarea data-testid="agent-ask-input" value={text} onChange={e => setText(e.target.value)} rows={wide ? 5 : 4}
+                aria-label="Tell Steward what to do" placeholder="Tell Steward what to do, in your own words…"
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (canGo) ask(text); } }}
+                style={{ flex: 1, minWidth: 0, width: wide ? "auto" : "100%", boxSizing: "border-box", border: "1px solid " + T.bg3, background: T.white, color: T.ink,
+                  borderRadius: 12, padding: "14px 16px", fontSize: 16, lineHeight: 1.5, fontFamily: "inherit", resize: "vertical" }} />
+              <button data-testid="agent-ask-submit" onClick={() => ask(text)} disabled={!canGo} style={goStyle}>{goLabel}</button>
             </div>
+            <div style={{ fontSize: 13, color: T.ink3, marginTop: 8 }}>Enter shows you the plan; Shift+Enter starts a new line. Nothing happens until you say so.</div>
             <div style={{ ...EYEBROW, marginTop: 20 }}>For example</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8, marginBottom: 20 }}>
               {examples.map(x => (
@@ -549,7 +597,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
               ))}
             </div>
             {askErr && <div data-testid="agent-refusal" style={{ ...REFUSAL, marginBottom: 16 }}>{askErr}</div>}
-            {read ? readFor() : asked ? sheetFor(asked) : null}
+            {read ? readFor() : which ? whichFor() : asked ? sheetFor(asked) : null}
           </div>
         )}
 

@@ -10,6 +10,7 @@ import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, droppedLine, plainText } from "../../../shared/suggestionGuard.js";
+import { composeNextMove } from "../../../shared/nextMove.js";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
 // profile button, and modal render below, and add `VoiceMemoModal` back to
@@ -19,6 +20,7 @@ import { AssignModal, DirectoryView, FilterBar, ReEngageView, TeamView } from ".
 import { DonorImport, GiftHistoryImport, MergeDuplicatesModal, parseFileToSheets } from "./DonorImport";
 import { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal } from "./DonorProfile";
 import { PATTERN_META, TIER_META } from "./donorShared";
+import { PLAN_UNKNOWN } from "../lib/entitlement";
 export { DonorImport } from "./DonorImport";
 
 class ErrorBoundary extends Component {
@@ -71,7 +73,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirAssignee,setDirAssignee]=useState("");
   const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
-  const[portfolioMeta,setPortfolioMeta]=useState({tier:"core",single_user:true});
+  const[portfolioMeta,setPortfolioMeta]=useState({tier:PLAN_UNKNOWN,single_user:true}); // unknown until it loads, never "core" (FIX-3 finding 9)
   const[pendingInvites,setPendingInvites]=useState([]); // [{id:"invite:<id>",name,email,pending}] — bulk assign-owner to a not-yet-accepted officer (B2)
   const[assignTarget,setAssignTarget]=useState(null);
   const[sampleStatus,setSampleStatus]=useState(null);
@@ -184,7 +186,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     .filter(matchesCf);
   const dirPageRows=(dirRows||[]).filter(matchesAdvanced).filter(matchesCf);
 
-  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||"core",single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
+  const loadOfficers=()=>apiFetch("/portfolio/officers").then(r=>{setOfficers(r.officers||[]);setPortfolioMeta({tier:r.tier||PLAN_UNKNOWN,single_user:!!r.single_user});setPendingInvites((r.invites||[]).map(i=>({id:"invite:"+i.id,name:i.name,email:i.email,pending:true})));}).catch(()=>{});
   useEffect(()=>{
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/team").then(setOrgTeam).catch(()=>{});
@@ -261,7 +263,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       // last contact against that stage's own thresholds, and it is on the
       // Contact tile beside this panel already. The model is asked for the move,
       // the timing and the words, which is what it is good for.
-      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nIn four short plain sentences: the move to make, when to make it, what to say, and what it is for.`,
+      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nReply with JSON only, in this shape: {"when": "...", "say": "...", "for": "..."}. Each value is ONE short plain sentence she could say out loud, using only the facts above: "when" says when and how to reach out, "say" says what to tell them, "for" says what the gift would be for. Start each with a verb or with "It", never with a label.`,
       outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
       email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
@@ -281,16 +283,23 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     try{
       await askClaude(sys,prompts[type],chunk=>{full=chunk;});
       const record={
-        donor:{id:donor.id,name:donor.name,email:donor.email,contact_name:donor.contactName||donor.contact_name,
+        donor:{id:donor.id,name:donor.name,email:donor.email,contact_name:donor.contactName||donor.contact_name,notes:donor.notes,
                total:donor.total,gifts:donor.gifts,lastAmount:donor.lastAmount,lastGift:donor.lastGift},
         orgName:[data.org?.name,data.org?.mission].filter(Boolean).join(" "),
         names:[stage.label,...(donor.tags||[])],
         rows:[{id:"contact",count:urg.days},
               ...(donor.interactions||[]).slice(0,20).map((i,n)=>({id:i.id||("int"+n),amount:i.amount,date:i.date,label:i.note,type:i.type}))],
       };
-      const g=guardSuggestion(full,record);
-      const kept=g.kept.map(k=>plainText(k.text)).join(" ");
-      const out=[kept||"Steward had nothing it could say from this record.",droppedLine(g.dropped)].filter(Boolean).join("\n\n");
+      // FIX-3 finding 11 — the next move is three fields, and composeNextMove
+      // (shared/nextMove.js) turns them into three plain sentences, each
+      // through the same validator. Every other kind stays prose.
+      let out;
+      if(type==="nextmove")out=composeNextMove(full,record).text;
+      else{
+        const g=guardSuggestion(full,record);
+        const kept=g.kept.map(k=>plainText(k.text)).join(" ");
+        out=[kept||"Steward had nothing it could say from this record.",droppedLine(g.dropped)].filter(Boolean).join("\n\n");
+      }
       setAiMap(p=>({...p,[key]:out}));
     }
     catch(e){setAiMap(p=>({...p,[key]:errorMessage(e,"No suggestion is available right now.")}));}
