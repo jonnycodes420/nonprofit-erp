@@ -151,7 +151,7 @@ const PLAN_ROUTES = /\/(billing\/status|portfolio\/officers)(\?|$)/;
     ok(`§2 @${w} a Team org's profile never shows a locked marker while its plan loads`, t.seen.length === 0, t.seen);
     ok(`§2 @${w} …it shows the loading state instead`, t.pending);
     if (w === 1440) {
-      const feature = await t.page.waitForSelector("[data-testid=dp-move-stage]", { timeout: 10000 }).then(() => true).catch(() => false);
+      const feature = await t.page.waitForSelector("[data-testid=dp-move-stage]", { state: "attached", timeout: 10000 }).then(() => true).catch(() => false);
       ok(`§2 @${w} …then the Team feature renders (Move Stage)`, feature);
     }
     const lockedAfter = (await t.page.evaluate(probe)).filter(x => x !== "pending");

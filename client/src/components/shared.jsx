@@ -474,6 +474,18 @@ export function GlobalStyles() {
       .home-shell-main{flex:1;}
       .home-rail{order:0;width:340px;flex-shrink:0;border-top:none;border-left:1px solid ${T.bg2};}
     }
+    /* FIX-3 finding 10 — the donor profile's four questions. The groups under
+       "how we manage them" are <details>: no browser marker, a caret that
+       turns when open. The next step pinned in the band shows only where the
+       band itself stays put (desktop). */
+    .dp-group>summary::-webkit-details-marker{display:none;}
+    .dp-group[open]>summary .dp-group-caret{transform:rotate(90deg);}
+    /* Closed means not drawn: a control in a closed group is not on the screen
+       (so it is not the screen's second emerald, and not in its text). */
+    .dp-group:not([open])>div{display:none;}
+    .dp-group>summary:focus-visible,.dp-figure:focus-visible{outline:2px solid ${T.ink};outline-offset:2px;}
+    .dp-figure:hover{border-color:${T.ink3}!important;}
+    @media (max-width:1100px){.dph-pinned-next{display:none!important;}}
     /* A row in the rail is pressable and says so quietly. */
     .home-rail-row{cursor:pointer;transition:background 0.12s ease;}
     .home-rail-row+.home-rail-row{border-top:1px solid ${T.bg2};}
@@ -641,7 +653,14 @@ export function GlobalStyles() {
       .dph-primary{flex:1!important;min-height:48px!important;font-size:14px!important;}
       .dph-desktop-act{display:none!important;}
       .dph-more{display:flex!important;align-items:center!important;justify-content:center!important;min-width:48px!important;min-height:48px!important;}
-      .donor-stat-grid{grid-template-columns:repeat(2,1fr)!important;}
+      .donor-stat-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:4px!important;flex:1 1 100%!important;}
+      .dp-figure{padding:7px 8px!important;}
+      /* FIX-3 finding 10 — on a phone the band scrolls WITH the page (pinned,
+         it would take half the screen): the takeover is the one scroller. */
+      .dp-root{overflow-y:auto!important;}
+      .dp-root .donor-profile-body{flex:none!important;overflow:visible!important;}
+      .dph-row{flex-wrap:wrap!important;gap:8px!important;}
+      .dp-column{padding:16px 14px 40px!important;gap:22px!important;}
       /* Profile tab row: right-edge fade = "there's more" affordance (a MASK,
          not a color fill — the §9 gradient ban is about bars/thermometers). */
       /* mask stops only use ALPHA — ink stands in for opaque (allowlist-clean) */

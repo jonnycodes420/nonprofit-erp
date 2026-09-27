@@ -2,7 +2,7 @@
 // directions, at 1440 and 390, into docs/fix-3/profile/.
 //
 //   BASE=http://localhost:5941 APP_URL=http://localhost:4541 DATABASE_URL=… \
-//   NODE_PATH=~/steward-qa/node_modules node scripts/fix3-d-profile-capture.js [today|mockups|all]
+//   NODE_PATH=~/steward-qa/node_modules node scripts/fix3-d-profile-capture.js [today|built|mockups|all]
 //
 // Today's profile is drawn on a fixture org it creates (org_fx3dprof), never
 // the demo: a major-gift prospect with an open proposal, a cultivation plan,
@@ -16,7 +16,7 @@ const ORG = "org_fx3dprof", EMAIL = "fx3dprof@example.org", PW = "loadtest1234",
 
 async function seedToday(h) {
   const bcrypt = require("bcryptjs");
-  for (const t of ["sequence_enrollments", "proposals", "cultivation_plans", "cultivation_templates", "threads", "interactions", "gifts", "tasks", "donors", "custom_field_defs", "fin_audit_log", "users"])
+  for (const t of ["sequence_enrollments", "opportunities", "proposals", "cultivation_plans", "cultivation_templates", "threads", "interactions", "gifts", "tasks", "donors", "custom_field_defs", "fin_audit_log", "users"])
     await h.q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
   await h.q(`DELETE FROM sequences WHERE org_id=$1`, [ORG]).catch(() => {});
   await h.q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
@@ -54,7 +54,7 @@ async function seedToday(h) {
   say("cf values", await h.api("PUT", `/donors/${DONOR}/custom-fields`, tok, { values: vals }));
 }
 
-async function captureToday(browser, h) {
+async function captureToday(browser, h, prefix = "today") {
   const lr = await h.api("POST", "/auth/login", null, { email: EMAIL, password: PW });
   for (const [w, hgt] of [[1440, 900], [390, 844]]) {
     const ctx = await browser.newContext({ viewport: { width: w, height: hgt }, serviceWorkers: "block" });
@@ -64,7 +64,21 @@ async function captureToday(browser, h) {
     await page.goto(`${process.env.APP_URL}/donors/${DONOR}`, { waitUntil: "networkidle" });
     await page.waitForSelector(".donor-stat-grid", { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: path.join(OUT, `today-${w}.png`) });
+    await page.screenshot({ path: path.join(OUT, `${prefix}-${w}.png`) });
+    if (prefix === "built") {
+      // The built profile with More open, then with every group expanded and
+      // the page scrolled to "how we manage them" — viewport captures.
+      await page.click("[data-testid=dp-more]");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(OUT, `${prefix}-${w}-more-open.png`) });
+      await page.click("[data-testid=dp-more]");
+      await page.evaluate(() => { document.querySelectorAll("details.dp-group").forEach(d => { d.open = true; });
+        const m = document.getElementById("dp-manage"); if (m) m.scrollIntoView({ block: "start" }); });
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(OUT, `${prefix}-${w}-groups-open.png`) });
+      await page.evaluate(() => { document.querySelectorAll("details.dp-group").forEach(d => { d.open = false; });
+        const b = document.querySelector(".donor-profile-body"); if (b) b.scrollTo(0, 0); const r = document.querySelector(".dp-root"); if (r) r.scrollTo(0, 0); });
+    }
     // "Full page": the profile is a fixed takeover with its own scrolling
     // panes, so let every pane run to its full height and grow the viewport.
     const full = await page.evaluate(() => {
@@ -77,7 +91,7 @@ async function captureToday(browser, h) {
     });
     await page.setViewportSize({ width: w, height: Math.min(Math.max(full, hgt), 9000) });
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(OUT, `today-${w}-full.png`), fullPage: true });
+    await page.screenshot({ path: path.join(OUT, `${prefix}-${w}-full.png`), fullPage: true });
     await ctx.close();
   }
 }
@@ -116,6 +130,12 @@ async function captureMockups(browser) {
     const h = require("../tests/helpers");
     await seedToday(h);
     await captureToday(browser, h);
+    await h.closeDb();
+  }
+  if (what === "built") {
+    const h = require("../tests/helpers");
+    await seedToday(h);
+    await captureToday(browser, h, "built");
     await h.closeDb();
   }
   if (what === "mockups" || what === "all") await captureMockups(browser);

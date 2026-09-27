@@ -1,7 +1,7 @@
 # The donor profile — two directions (FIX-3 finding 10)
 
-Mockups only. Nothing in `DonorProfile.jsx` has changed. **Jonathan picks one, and
-then it gets built.**
+**Jonathan picked Direction 1, and it is built.** See `built-*.png` and the section
+"Built" at the end. The mockups below are what he chose from.
 
 Every screenshot shows the same invented major-gift prospect on a fixture org:
 Eleanor Whitcombe at Riverbend Music School. She has six gifts ($41,500 in total),
@@ -69,3 +69,15 @@ one idea: at 1440, pin the next step inside the top band, so it does not scroll 
   build, or earlier.
 - The Suggested panel reads "Stream failed: 503" locally, because this stack has no
   Anthropic key. That is expected.
+
+## Built (Direction 1, with the pinned next step)
+
+| | 1440 | 390 |
+|---|---|---|
+| Built | `built-1440.png`, `built-1440-more-open.png`, `built-1440-groups-open.png`, `built-1440-full.png` | `built-390.png`, `built-390-more-open.png`, `built-390-groups-open.png`, `built-390-full.png` |
+
+- The band, the next step, the history and the groups are as mocked.
+- Two differences from the mockup:
+  - The last-contact figure keeps its existing "Nd ago" form, because a suite pins it.
+  - The suggestion shows the panel it has always used.
+- The ProposalRow / plan-step wrap noted above is fixed.

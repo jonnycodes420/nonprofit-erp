@@ -139,6 +139,10 @@ async function reset() {
     await page.evaluate(d => { localStorage.setItem("npe_token", d.token); localStorage.setItem("npe_user", JSON.stringify(d.user)); localStorage.setItem("npe_org", JSON.stringify(d.org)); }, lj);
     await page.goto(`${APP}/donors/v98_ann`, { waitUntil: "networkidle" });
     await page.waitForTimeout(2500);
+    // FIX-3 finding 10 — hours live in the profile's "Volunteering, membership
+    // and events" group, closed until opened. Open it (navigation only).
+    await page.locator("[data-testid=dp-group-people] > summary").click().catch(() => {});
+    await page.waitForTimeout(300);
     const total = await page.locator('[data-testid="volunteer-total"]').innerText().catch(() => "");
     ok("§7 the profile shows her hours and shifts", /55\s*hours across 12 shifts/.test(total.replace(/\n/g, " ")), total);
     ok("§7 …with the sentence that says what they count", /Every shift logged/.test(await page.locator('[data-testid="volunteer-total"]').getAttribute("title").catch(() => "") || ""));

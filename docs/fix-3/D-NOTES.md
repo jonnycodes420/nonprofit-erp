@@ -61,6 +61,39 @@
   Planting the claims check off gave 7 FAILs. Planting the scaffold strip off failed the five
   scaffold assertions.
 
+## 10 · Built: Direction 1 (Jonathan's pick)
+- **Layout.** `DonorProfile.jsx` now renders in four parts. 1) The white band: name, stage, flags,
+  roles and three figures, each of which opens its rows (Lifetime and Last gift open "Gifts &
+  Pledges", Contact opens "Activity"). The band has ONE emerald ("Log a conversation") and a quiet
+  **More** menu holding Plan a follow-up, Request Gift, the four Suggest kinds (Team only),
+  Impact Summary, Edit and Export gifts (CSV). 2) **What do I do next**: the open items, the
+  suggestion, Proposals, the cultivation plan and Brief me. 3) **What has happened**: one filter
+  row (Everything · Gifts & Pledges · Funds · Activity). 4) **How we manage them**: eight
+  `<details>` groups, closed by default, each with a one-line summary.
+- **The Direction 2 borrowing.** At 1100px and wider, the next step is pinned in the band
+  (`dp-pinned-next`). The band stays put and only the body scrolls. On a phone the band scrolls
+  with the page instead: the takeover (`.dp-root`) is the one scroller.
+- **Nothing dropped.** The inventory above is the contract, and `tests/fix3-d-profile.test.js`
+  walks it at 1440 and 390. Every element is reached in its place: the band, a section, behind
+  More, on a filter, or inside a group once opened. The elements a record only sometimes has
+  (flags, drift, matching gift, soft credit, recurring, events, membership, funder panel) are
+  checked at source level to sit in their question's part of the page. An organisation's
+  funder panel is checked in the browser to sit above "what do I do next".
+  **Planted proof:** with the "Export gifts (CSV)" menu item deleted, the suite fails at both
+  widths (`audit/fix3-d-profile-planted.txt`, 142 passed / 2 failed).
+- **Fixed on the way.** ProposalRow and the plan steps wrap on a person's record instead of
+  holding fixed columns, which ended the one-letter-per-line wrap at 390 and the date running
+  under the stage chip at 1440. The Proposals screen table (`showDonor`) keeps its grid.
+- **Screenshot fixes.** Two emerald buttons became ink outlines ("Won" in the pipeline, "+ Link
+  to another donor"): the screen keeps one emerald even with every group open. Em dashes came
+  out of four panel sentences that now sit on the default view. A closed group's body is
+  `display:none`, so it is off the screen and out of the page text. The group titles replace
+  the duplicate "Sequences" and "Custom Fields" eyebrows.
+- **Materials** load with the record, because the group summary counts them. Before, they
+  loaded only when their tab opened.
+- **Captures.** `docs/fix-3/profile/built-{1440,390}.png` (viewport), `-more-open.png`,
+  `-groups-open.png`, and `-full.png`.
+
 ## 10 · Mockups (stopped for Jonathan)
 Everything is in `docs/fix-3/profile/`. The README has the directions, the trade-off and the
 recommendation (Direction 1). Captures come from `scripts/fix3-d-profile-capture.js` (the
@@ -126,6 +159,19 @@ happened · 4 = how we manage them.
 | Rail: Wealth score (hidden until defined) | 4 | Manage → Owner and stage, still hidden until defined | Same |
 | Funder panel (organisations: type, EIN, grants, documents) | 1/4 | Under the band for an organisation | Left pane for an organisation |
 | Photo adjust / remove | 4 | On the face | On the face |
+
+## Test changes for the build (navigation, wait and census only)
+- `tests/build98-volunteers.test.js`: opens the "Volunteering, membership and events" group
+  before reading `volunteer-total`. Navigation only; no assertion text changed.
+- `tests/build101-renewals.test.js`: opens the same group before waiting for
+  `membership-panel`. Navigation and wait only.
+- `tests/fix3-d-lock-flash.test.js` (mine): waits for Move Stage to be attached, not visible,
+  because it is in a closed group.
+- `tests/build97-numbers.test.js` census: `Donors.jsx` 117 → 116 and the total 413 → 412, plus
+  the same row in `audit/BUILD-97-NUMBER-CENSUS.md`. The header's "$X lifetime · N gifts" line
+  repeated the Lifetime figure beside it, so it went, and the gift count moved under that
+  figure.
+- No existing assertion text changed.
 
 ## Suites run
 The battery on my stack covered every CORE suite that reads a file I touched (34 suites):

@@ -1,0 +1,151 @@
+fix3-d-profile
+
+— §1 · the source —
+  PASS  §1 the four parts are in the order of the questions: band, next, history, manage
+  PASS  §1 Drift badge + reason sits in the band
+  PASS  §1 Deceased flag sits in the band
+  PASS  §1 Do-not-contact flag sits in the band
+  PASS  §1 Do-not-solicit flag sits in the band
+  PASS  §1 Imported-sustainer flag sits in the band
+  PASS  §1 Source-recurring sentence sits in the band
+  PASS  §1 Pinned next step (desktop) sits in the band
+  PASS  §1 Plan a follow-up (when nothing is open) sits in the band
+  PASS  §1 Funder panel (organisations) sits in the stand
+  PASS  §1 Unitemized-total note sits in the stand
+  PASS  §1 Household total banner sits in the stand
+  PASS  §1 Matching-gift employer sits in the next
+  PASS  §1 Nothing-open line sits in the next
+  PASS  §1 Copy the draft sits in the next
+  PASS  §1 Soft credit sits in the history
+  PASS  §1 Recurring gift health sits in the history
+  PASS  §1 Recurring donor sits in the manage
+  PASS  §1 Suggested move sits in the manage
+  PASS  §1 Wealth score (hidden until defined) sits in the manage
+  PASS  §1 Events sits in the manage
+  PASS  §1 Membership (when the org has levels) sits in the manage
+  PASS  §1 a management group is a <details> with no open attribute (closed until opened)
+  PASS  §1 how we manage them: owner, pipeline, sequences, fields, household, people, files, record
+  PASS  §1 the band carries ONE filled emerald control (Log a conversation)
+  PASS  §1 the old tab row is gone: Related and Materials live in groups now
+
+— §2 · every element reached, as drawn —
+  PASS  §2 fixture: a conversation with a next step
+  PASS  §2 fixture: an open proposal
+  PASS  §2 fixture: a plan template
+  PASS  §2 fixture: a cultivation plan
+  PASS  §2 fixture: a sequence
+  PASS  §2 fixture: a custom field
+  PASS  §2 fixture: its value
+  PASS  §2 @1440 every management group opens closed
+  PASS  §2 @1440 Back button — band
+  PASS  §2 @1440 Photo / face — band
+  PASS  §2 @1440 Name — band
+  PASS  §2 @1440 Stage pill — band
+  PASS  §2 @1440 Email — band
+  PASS  §2 @1440 Role chips — band
+  PASS  §2 @1440 Lifetime figure (with its definition) — band
+  PASS  §2 @1440 Last gift figure (with its definition) — band
+  PASS  §2 @1440 Last contact figure (with its definition) — band
+  PASS  §2 @1440 Gift count under lifetime — band
+  PASS  §2 @1440 Log a conversation (the primary) — band
+  PASS  §2 @1440 More menu — band
+  PASS  §2 @1440 Request Gift — more
+  PASS  §2 @1440 Impact Summary — more
+  PASS  §2 @1440 Edit — more
+  FAIL  §2 @1440 Export gifts (CSV) — more — {"ok":false,"why":"text"}
+  PASS  §2 @1440 Suggest the next move — more
+  PASS  §2 @1440 Suggest outreach — more
+  PASS  §2 @1440 Draft an email — more
+  PASS  §2 @1440 Call script — more
+  PASS  §2 @1440 Open items (the next step, Done) — next
+  PASS  §2 @1440 The suggestion — next
+  PASS  §2 @1440 Proposals — next
+  PASS  §2 @1440 Cultivation plan — next
+  PASS  §2 @1440 Before you go / Brief me — next
+  PASS  §2 @1440 Giving history chart — history:Everything
+  PASS  §2 @1440 Tags — history:Everything
+  PASS  §2 @1440 Notes — history:Everything
+  PASS  §2 @1440 Touchpoint timeline — history:Everything
+  PASS  §2 @1440 Gifts & Pledges: gift history — history:Gifts & Pledges
+  PASS  §2 @1440 Gifts & Pledges: pledges — history:Gifts & Pledges
+  PASS  §2 @1440 Gifts & Pledges: planned giving — history:Gifts & Pledges
+  PASS  §2 @1440 Funds — history:Funds
+  PASS  §2 @1440 Activity: stewardship log — history:Activity
+  PASS  §2 @1440 Relationship owner — group:owner
+  PASS  §2 @1440 Reassign (Team) — group:owner
+  PASS  §2 @1440 Move stage (Team) — group:owner
+  PASS  §2 @1440 Pipeline — moves & asks — group:pipeline
+  PASS  §2 @1440 Sequences (enroll) — group:sequences
+  PASS  §2 @1440 Custom fields — group:fields
+  PASS  §2 @1440 Household — group:household
+  PASS  §2 @1440 Planned giving & designations — group:household
+  PASS  §2 @1440 Linked donors (Related) — group:household
+  PASS  §2 @1440 Volunteering (hours, log a shift) — group:people
+  PASS  §2 @1440 Materials — group:files
+  PASS  §2 @1440 Follow-up tasks — group:files
+  PASS  §2 @1440 Edit details — group:record
+  PASS  §2 @1440 Delete donor — group:record
+  PASS  §2 @1440 the contact figure opens the conversations (Activity)
+  PASS  §2 @1440 the lifetime figure opens the gifts
+  PASS  §2 @1440 the next step is pinned in the band at desktop
+  PASS  §2 @1440 …and it stays on screen when the page scrolls to the bottom
+  PASS  §2 @1440 the page never scrolls sideways
+  PASS  §2 @1440 an organisation's funder panel is on its record, above "what do I do next"
+  PASS  §2 @1440 no page errors
+  PASS  §2 @390 every management group opens closed
+  PASS  §2 @390 Back button — band
+  PASS  §2 @390 Photo / face — band
+  PASS  §2 @390 Name — band
+  PASS  §2 @390 Stage pill — band
+  PASS  §2 @390 Email — band
+  PASS  §2 @390 Role chips — band
+  PASS  §2 @390 Lifetime figure (with its definition) — band
+  PASS  §2 @390 Last gift figure (with its definition) — band
+  PASS  §2 @390 Last contact figure (with its definition) — band
+  PASS  §2 @390 Gift count under lifetime — band
+  PASS  §2 @390 Log a conversation (the primary) — band
+  PASS  §2 @390 More menu — band
+  PASS  §2 @390 Request Gift — more
+  PASS  §2 @390 Impact Summary — more
+  PASS  §2 @390 Edit — more
+  FAIL  §2 @390 Export gifts (CSV) — more — {"ok":false,"why":"text"}
+  PASS  §2 @390 Suggest the next move — more
+  PASS  §2 @390 Suggest outreach — more
+  PASS  §2 @390 Draft an email — more
+  PASS  §2 @390 Call script — more
+  PASS  §2 @390 Open items (the next step, Done) — next
+  PASS  §2 @390 The suggestion — next
+  PASS  §2 @390 Proposals — next
+  PASS  §2 @390 Cultivation plan — next
+  PASS  §2 @390 Before you go / Brief me — next
+  PASS  §2 @390 Giving history chart — history:Everything
+  PASS  §2 @390 Tags — history:Everything
+  PASS  §2 @390 Notes — history:Everything
+  PASS  §2 @390 Touchpoint timeline — history:Everything
+  PASS  §2 @390 Gifts & Pledges: gift history — history:Gifts & Pledges
+  PASS  §2 @390 Gifts & Pledges: pledges — history:Gifts & Pledges
+  PASS  §2 @390 Gifts & Pledges: planned giving — history:Gifts & Pledges
+  PASS  §2 @390 Funds — history:Funds
+  PASS  §2 @390 Activity: stewardship log — history:Activity
+  PASS  §2 @390 Relationship owner — group:owner
+  PASS  §2 @390 Reassign (Team) — group:owner
+  PASS  §2 @390 Move stage (Team) — group:owner
+  PASS  §2 @390 Pipeline — moves & asks — group:pipeline
+  PASS  §2 @390 Sequences (enroll) — group:sequences
+  PASS  §2 @390 Custom fields — group:fields
+  PASS  §2 @390 Household — group:household
+  PASS  §2 @390 Planned giving & designations — group:household
+  PASS  §2 @390 Linked donors (Related) — group:household
+  PASS  §2 @390 Volunteering (hours, log a shift) — group:people
+  PASS  §2 @390 Materials — group:files
+  PASS  §2 @390 Follow-up tasks — group:files
+  PASS  §2 @390 Edit details — group:record
+  PASS  §2 @390 Delete donor — group:record
+  PASS  §2 @390 the contact figure opens the conversations (Activity)
+  PASS  §2 @390 the lifetime figure opens the gifts
+  PASS  §2 @390 the next step is pinned in the band — not on a phone
+  PASS  §2 @390 the page never scrolls sideways
+  PASS  §2 @390 an organisation's funder panel is on its record, above "what do I do next"
+  PASS  §2 @390 no page errors
+
+142 passed, 2 failed
