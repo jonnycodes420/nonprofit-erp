@@ -568,3 +568,95 @@ export function dailyLine({ did = 0, sent = 0, waiting = 0 } = {}) {
 export const UNDO_DAYS = 30;
 // How long a prompt and its response are kept, per org.
 export const PROMPT_RETENTION_DAYS = 30;
+
+// ── FIX-2 D · A READ NEEDS NO DRAFTING ─────────────────────────────────────
+// Opening a report, finding a person, counting and explaining a number touch
+// no donor and move no money, so they need no model and no drafting switch.
+// The 27 September walk typed "build a report for my donors that gave last
+// year but not this year" and was told drafting was off. These are routed
+// HERE, deterministically: no model is needed to send "last year but not this
+// year" to LYBUNT. A read writes nothing (the route inserts no instruction).
+//
+// A sentence that asks Steward to DO something to people (draft, send, email,
+// call, tag, thank…) is never a read, even when it names the LYBUNT people:
+// "draft a note to everyone who gave last year but not this year" is a plan.
+const DO_WORDS = /\b(draft|drafts|write|send|sends|email|e-mail|mail|call|phone|text|thank|thanks|note|notes|letter|letters|tag|assign|remind|follow[- ]?up|record|log|enter|add|task|tasks|delete|remove|merge|update|change|pause|cancel|refund|enrol|enroll|invite|schedule)\b/;
+const READ_START = /^\s*(please\s+)?(find|show|list|who|whom|which|what|how many|how much|open|build|create|make|give me|pull|run|get|see|report|count|explain|where)\b/;
+// Each report the room can open, by the id Reports already deep-links
+// (navigateTo("reports", { report })), with its name and the one sentence that
+// defines it. The saved-report id is the everyday copy in Your reports.
+export const READ_REPORTS = [
+  { report: "lybunt", name: "LYBUNT", savedReport: "std:lybunt",
+    test: t => /\blybunt\b/.test(t) || /\blast (fiscal )?year\b[^.?!]{0,60}\b(not|n't|never|no)\b[^.?!]{0,40}\bthis (fiscal )?year\b/.test(t),
+    sentence: "LYBUNT is everyone who gave last year and has not yet given this year: the people to ask first." },
+  { report: "sybunt", name: "SYBUNT", savedReport: "std:sybunt",
+    test: t => /\bsybunt\b/.test(t) || /\b(some|an|any) (earlier|previous|past|prior) year\b[^.?!]{0,60}\bnot\b[^.?!]{0,40}\bthis year\b/.test(t),
+    sentence: "SYBUNT is everyone who gave in some earlier year, but not last year and not yet this year." },
+  { report: "retention", name: "Retention", savedReport: "std:retention",
+    test: t => /\bretention\b|\bretained\b|\bgave again\b/.test(t),
+    sentence: "Retention is the share of one year's donors who gave again the next year." },
+  { report: "top-donors", name: "Top Donors", savedReport: "std:top-50",
+    test: t => /\btop (\d+ )?(donors|givers|supporters)\b|\bbiggest (donors|givers)\b|\b(gave|given|give) the most\b/.test(t),
+    sentence: "Top Donors lists the people who gave the most in the period, largest first." },
+  { report: "giving-summary", name: "Giving Summary", savedReport: null,
+    test: t => /\bgiving summary\b|\bhow much\b[^.?!]{0,30}\brais(e|ed)\b/.test(t),
+    sentence: "The Giving Summary is every gift in the period: how much, how many, and from how many people." },
+  { report: "three-year", name: "3-Year Comparison", savedReport: null,
+    test: t => /\b(three|3)[- ]year\b/.test(t),
+    sentence: "The 3-Year Comparison sets this year's giving beside the two years before it." },
+  { report: "annual", name: "Annual Report", savedReport: null,
+    test: t => /\bannual report\b/.test(t),
+    sentence: "The Annual Report is the year's giving, as a board reads it." },
+  { report: "by-group", name: "Gifts by Fund", savedReport: "std:by-fund",
+    test: t => /\bgifts by fund\b|\bby (fund|designation)\b/.test(t),
+    sentence: "Gifts by Fund is the period's giving, split by the fund each gift was given to." },
+];
+const EXPLAIN = /^\s*(please\s+)?(what('s| is| are| does| do)|explain|define|meaning of)\b/;
+
+// → null (not a read), or { kind: "report"|"count"|"explain"|"find", … }.
+export function readIntent(text) {
+  const t = String(text || "").toLowerCase().replace(/[’']/g, "'").trim();
+  if (!t || DO_WORDS.test(t) || isGiftNews(t)) return null;
+  const rep = READ_REPORTS.find(r => r.test(t)) || null;
+  const pick = r => ({ report: r.report, name: r.name, savedReport: r.savedReport, sentence: r.sentence });
+  if (rep && EXPLAIN.test(t) && /\b(mean|means|meaning|explain|define|is|are)\b/.test(t) && !/\bwho\b/.test(t))
+    return { kind: "explain", ...pick(rep) };
+  if (rep && /\bhow many\b|\bcount\b|\bnumber of\b/.test(t)) return { kind: "count", ...pick(rep) };
+  if (rep) return { kind: "report", ...pick(rep) };
+  if (/^\s*(please\s+)?(find|show( me)?|open|look up|pull up|where is|go to)\b/.test(t)) return { kind: "find" };
+  return null;
+}
+// A sentence that reads like a question but that Steward cannot route without
+// a model ("which donors live near the river"). Used only to word the answer
+// when drafting is off; it never decides what runs.
+export function looksLikeRead(text) {
+  const t = String(text || "").toLowerCase();
+  return !DO_WORDS.test(t) && READ_START.test(t);
+}
+
+// ── FIX-2 D · DRAFTING, AND WHO CAN TURN IT ON ─────────────────────────────
+// One place states whether drafting is on, and when it is not, WHY, in the
+// order the causes are true: Steward's missing key first (no organisation can
+// fix that, so the room must not blame hers), then the organisation's own
+// switch, then pause. When it is off the room says what it can still do, what
+// drafting would add, and who may turn it on and where.
+export const DRAFTING_WHERE = "Agent → Guardrails → Drafting";
+export const DRAFTING_CAN_NOW = "Without drafting, Steward still opens and builds reports, finds people, counts, explains a number, and prepares a gift you tell it about for you to confirm.";
+export const DRAFTING_ADDS = "Drafting adds plans that draft thank-yous, notes and follow-ups from your records, through Anthropic. Nothing is sent or recorded until you say so.";
+export const KEY_MISSING_SENTENCE = "Drafting is not set up on this server: ANTHROPIC_API_KEY is not set. Reports, finding people and gifts you tell it about still work.";
+export function namesInSentence(names = []) {
+  const n = (names || []).filter(Boolean);
+  if (n.length <= 1) return n[0] || "";
+  return n.slice(0, -1).join(", ") + " and " + n[n.length - 1];
+}
+export function draftingState({ configured = false, enabled = true, paused = false, isAdmin = false, admins = [] } = {}) {
+  const reason = !configured ? "ai_no_key" : enabled === false ? "ai_disabled" : paused ? "agent_paused" : null;
+  const who = namesInSentence(admins);
+  const whoCan = who ? `Only an admin can turn drafting on: ${who}.` : "Only an admin can turn drafting on.";
+  const sentence = reason === "ai_no_key" ? KEY_MISSING_SENTENCE
+    : reason === "ai_disabled" ? "Drafting is turned off here."
+    : reason === "agent_paused" ? "Steward is paused. Turn it back on in Guardrails."
+    : "Drafting is on.";
+  return { on: reason === null, reason, sentence, canNow: DRAFTING_CAN_NOW, adds: DRAFTING_ADDS,
+           where: DRAFTING_WHERE, canTurnOn: reason === "ai_disabled" && !!isAdmin, whoCan };
+}

@@ -417,18 +417,21 @@ async function agentPreparedGiftPlan(orgId, text, donor) {
     "SELECT name FROM fin_funds WHERE org_id = ? AND restricted = false ORDER BY created_at ASC LIMIT 1", [orgId]);
   const method = A.methodFromInstruction(text);
   const day = agentCivil(today), due = agentCivil(today, 2);
+  // FIX-2 — the one display format: "Sep 25" this year, "Sep 25, 2025" before.
+  const D = await import("../shared/displayDate.js");
+  const say = c => D.displayDateShort(c.ymd, today);
   const who = A.nameInSentence(donor);
   const gift = A.preparedGiftFromInstruction(text, [donor]);
   const steps = [
     { tool: "record_gift", donorId: donor.id, amountCents: gift.amountCents, preparedBy: "steward",
       method, date: day.ymd, citesRows: [donor.id],
-      detail: [(fund && fund.name) || "General Operating", method || "method: you fill it in", day.long].join(" · ") },
+      detail: [(fund && fund.name) || "General Operating", method || "method: you fill it in", say(day)].join(" · ") },
     { tool: "open_thread", donorId: donor.id, label: "Thank " + who, after: "record_gift", due: due.ymd,
-      citesRows: [donor.id], detail: `Due ${due.long} · you` },
+      citesRows: [donor.id], detail: `Due ${say(due)} · you` },
   ];
   const plan = A.compilePlan(steps, { people: [donor], reads: `${who}'s record` });
   const last = donor.last_gift_date && Number(donor.last_gift_amount) > 0
-    ? `Last gift ${A.formatCents(Math.round(Number(donor.last_gift_amount) * 100))}, ${agentCivil(donor.last_gift_date).long}`
+    ? `Last gift ${A.formatCents(Math.round(Number(donor.last_gift_amount) * 100))}, ${say(agentCivil(donor.last_gift_date))}`
     : "No gift on file yet";
   plan.readIds = [donor.id];
   plan.readDetail = last;
@@ -550,6 +553,54 @@ async function agentRunPlan(orgId, instruction, { userId, confirmed = {} }) {
            steps: outcomes, withheldReason: withheldReasons.slice(0, 5) };
 }
 
+// ── FIX-2 D · THE READS ────────────────────────────────────────────────────
+// A report is opened by the id Reports already deep-links; its count is the
+// report's own (the same handler GET /reports/:key runs), never a second
+// computation. A person is found by the same naming rule the plans use.
+async function agentAnswerRead(A, orgId, read, named) {
+  const note = "Steward read this and wrote nothing.";
+  if (read.kind === "find") {
+    const ids = named.scope || [];
+    if (!ids.length) return null;
+    const people = await agentReadPeople(orgId, { ids });
+    if (!people.length) return null;
+    if (people.length === 1) return { kind: "person", donorId: people[0].id, name: people[0].name,
+      sentence: `${people[0].name}'s record.`, note };
+    return { kind: "people", people: people.slice(0, 8).map(p => ({ id: p.id, name: p.name })),
+      sentence: `${people.length} records match that name. Open the one you meant.`, note };
+  }
+  const out = { kind: read.kind === "explain" ? "explain" : "report", report: read.report, name: read.name,
+    savedReport: read.savedReport, sentence: read.sentence, count: null, note };
+  if (read.kind !== "explain" && (read.report === "lybunt" || read.report === "sybunt")) {
+    const { reportHooks } = require("./crm");
+    const data = await reportHooks.run(orgId, read.report, { yearMode: "fiscal" });
+    const n = ((data && data.rows) || []).length;
+    out.count = n;
+    out.answer = read.report === "lybunt"
+      ? `${n} ${n === 1 ? "person gave" : "people gave"} last year and ${n === 1 ? "has" : "have"} not yet given this year.`
+      : `${n} ${n === 1 ? "person has" : "people have"} given in an earlier year and not yet this year.`;
+  }
+  return out;
+}
+
+// WHETHER DRAFTING IS ON, AND IF NOT, WHY AND WHO CAN TURN IT ON. A read: the
+// room draws its drafting line from this, and a GET changes nothing.
+app.get("/agent/status", requireAuth, wrap(async (req, res) => {
+  const A = await agentShapeMod();
+  const orgId = req.user.orgId;
+  const [org] = await query("SELECT ai_enabled, agent_paused_at FROM orgs WHERE id=?", [orgId]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const admins = (await query(
+    `SELECT name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL ORDER BY created_at ASC, id ASC LIMIT 12`,
+    [orgId])).map(u => u.name || u.email).filter(Boolean);
+  const configured = !!process.env.ANTHROPIC_API_KEY;
+  const enabled = org.ai_enabled !== false;
+  const isAdmin = !!(me && me.role === "admin");
+  res.json({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins,
+    ...A.draftingState({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins }) });
+}));
+
 // ── ROUTES ─────────────────────────────────────────────────────────────────
 // THE PLAN. Writes an instruction and a plan; runs NOTHING.
 app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -597,8 +648,27 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
     }
     plan = await agentPreparedGiftPlan(req.user.orgId, text, donor);
   } else {
+    // FIX-2 D — A READ NEEDS NO DRAFTING. Opening a report, finding a person,
+    // counting and explaining a number are answered here, without a model and
+    // without the drafting switch, and they WRITE NOTHING: no instruction row,
+    // no run, no audit. The answer says so.
+    const read = kind === A.KIND_TASK ? A.readIntent(text) : null;
+    if (read) {
+      const answer = await agentAnswerRead(A, req.user.orgId, read, named);
+      if (answer) return res.json({ read: answer });
+    }
     const gate = await agentGate(req.user.orgId);
-    if (!gate.ok) return res.status(503).json({ error: gate.reason });
+    if (!gate.ok) {
+      // The reason says WHICH: Steward's missing key is never told to her as
+      // her organisation's setting (agentGate calls it agent_unavailable; the
+      // error keeps that name, the reason says what it is).
+      const reason = gate.reason === "agent_unavailable" ? "ai_no_key" : gate.reason;
+      const st = A.draftingState({ configured: reason !== "ai_no_key", enabled: reason !== "ai_disabled", paused: reason === "agent_paused" });
+      const lead = A.looksLikeRead(text)
+        ? "Steward needs drafting to answer that one; without it, it opens reports by name (LYBUNT, SYBUNT, Retention, Top Donors), finds a person by name, counts and explains. "
+        : "";
+      return res.status(503).json({ error: gate.reason, reason, sentence: lead + st.sentence });
+    }
     let built;
     try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId }); }
     catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }

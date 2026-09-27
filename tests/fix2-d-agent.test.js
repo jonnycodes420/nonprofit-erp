@@ -239,7 +239,7 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
     const browser = await chromium.launch();
     const errors = [];
     async function open(email, width, height, statusOverride) {
-      const page = await browser.newPage({ viewport: { width, height } });
+      const page = await browser.newPage({ viewport: { width, height }, serviceWorkers: "block" });
       page.on("pageerror", e => { if (!/Unexpected token '<'/.test(e.message)) errors.push(e.message.slice(0, 160)); });
       if (statusOverride) {
         await page.route("**/agent/status", async route => {
