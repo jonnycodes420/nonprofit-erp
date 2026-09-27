@@ -89,6 +89,10 @@ function realStripeCharge(stripePaymentId) {
 //                       they are real by 1–3 (the seed's own users are
 //                       invented; anyone else signed in to the demo is not)
 // Returns [{ table, id, name, email, reason }].
+// A LIKE pattern matching strings that start with `s`: escape the escape
+// character first, then LIKE's two wildcards.
+const likePrefix = s => String(s).replace(/[\\%_]/g, c => "\\" + c) + "%";
+
 async function findRealPeople(q, orgId, { seededUserEmails = [] } = {}) {
   const users = await q(`SELECT email, name FROM users WHERE email IS NOT NULL OR name IS NOT NULL`);
   const out = [];
@@ -96,7 +100,7 @@ async function findRealPeople(q, orgId, { seededUserEmails = [] } = {}) {
   const charged = new Map((await q(
     `SELECT donor_id, MIN(stripe_payment_id) AS pi FROM gifts
       WHERE org_id=$1 AND stripe_payment_id IS NOT NULL AND stripe_payment_id NOT LIKE $2
-      GROUP BY donor_id`, [orgId, SEED_STRIPE_PREFIX.replace(/_/g, "\\_") + "%"])).map(r => [r.donor_id, r.pi]));
+      GROUP BY donor_id`, [orgId, likePrefix(SEED_STRIPE_PREFIX)])).map(r => [r.donor_id, r.pi]));
   for (const d of donors) {
     const why = realReason(d, users) || (charged.has(d.id) ? `a real Stripe charge (${charged.get(d.id)})` : null);
     if (why) out.push({ table: "donors", id: d.id, name: d.name, email: d.email, reason: why });
