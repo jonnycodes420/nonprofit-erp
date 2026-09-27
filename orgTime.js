@@ -261,7 +261,36 @@ function orgReportYear(org, yearMode, atInstant = new Date()) {
   return c.y;
 }
 
+// FIX-3 E — "THE SAME POINT LAST YEAR", the one definition. Given a window
+// [from, to] and today, the stretch a year earlier that compares like for like:
+//   · a window still running (to is after today) is cut at today, and last
+//     year's stretch runs from the same first day, a year back, for the same
+//     number of days — the Board's rule, which it has always used;
+//   · a finished window compares with the same dates a year earlier;
+//   · the earlier stretch never reaches into the window itself;
+//   · a window that has not begun has nothing to compare (null).
+// The Board's "Same point last year" and the giving summary's comparison both
+// read their window from here (routes/crm.js samePointLastYearSource).
+function shiftYearBack(dateStr) {
+  const c = parseCivil(dateStr);
+  if (!c) return null;
+  const dim = new Date(Date.UTC(c.y - 1, c.m, 0)).getUTCDate();
+  return ymd(c.y - 1, c.m, Math.min(c.d, dim));
+}
+function samePointLastYear(from, to, today) {
+  if (!parseCivil(from) || !parseCivil(to) || !parseCivil(today)) return null;
+  const running = compareCivil(to, today) > 0;
+  const end = running ? today : to;
+  if (compareCivil(end, from) < 0) return null;
+  const prevFrom = shiftYearBack(from);
+  let prevTo = running ? addDays(prevFrom, daysBetween(from, end)) : shiftYearBack(end);
+  const dayBefore = addDays(from, -1);
+  if (compareCivil(prevTo, dayBefore) > 0) prevTo = dayBefore;
+  return { from: prevFrom, to: prevTo, through: end };
+}
+
 module.exports = {
+  samePointLastYear,
   DEFAULT_TZ, FISCAL_START_MONTH, PERIODS,
   isValidTimezone, normalizeTimezone,
   orgToday, orgClock, orgIsOverdue, orgDaysOverdue,

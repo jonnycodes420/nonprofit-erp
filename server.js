@@ -3949,10 +3949,15 @@ const REPORT_KEYS = ["giving-summary", "by-group", "lybunt", "sybunt", "retentio
 // Fiscal year N = Jul 1 (N-1) through Jun 30 N — same July-1 boundary as
 // /dashboard/my-stats and /finance/summary. A gift on 2025-12-15 is FY2026
 // and CY2025.
-function reportYearBounds(year, yearMode) {
-  return yearMode === "fiscal"
-    ? { from: `${year - 1}-07-01`, to: `${year}-06-30` }
-    : { from: `${year}-01-01`, to: `${year}-12-31` };
+// FIX-3 E — the fiscal year starts in the ORG's month (vocabulary_json's
+// fiscal_year_start_month, read by orgTime like the Board reads it), labelled
+// by the year it ends in, as orgReportYear labels it. July is the default, and
+// a July org's bounds are the same strings they always were.
+function reportYearBounds(year, yearMode, startMonth = 7) {
+  if (yearMode !== "fiscal") return { from: `${year}-01-01`, to: `${year}-12-31` };
+  const m = Number.isInteger(startMonth) && startMonth >= 1 && startMonth <= 12 ? startMonth : 7;
+  const mm = String(m).padStart(2, "0");
+  return { from: `${year - 1}-${mm}-01`, to: orgTime.addDays(`${year}-${mm}-01`, -1) };
 }
 // The year currently in progress (fiscal label year is the June-30 end year).
 // ORG_TZ_SEAM_OK — which year a report calls "current" is a civil-calendar

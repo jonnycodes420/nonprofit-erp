@@ -995,6 +995,27 @@ const RECURRING_STATUS_WORDS = {
 };
 const recurringStatusWord = s => RECURRING_STATUS_WORDS[s] || String(s || "Unknown").replace(/_/g, " ").replace(/^./, c => c.toUpperCase());
 
+// FIX-3 E — THE SAME POINT LAST YEAR, ONCE. The Board's "Same point last year"
+// and the giving summary's comparison are one figure: the gifts source over
+// the window orgTime.samePointLastYear draws. Both screens call this; neither
+// draws its own window. Filters (a fund, a campaign) narrow it the way they
+// narrow the summary.
+function samePointLastYearSource(from, to, today, filters = {}) {
+  const w = orgTime.samePointLastYear(from, to, today);
+  if (!w) return null;
+  const params = { from: w.from, to: w.to };
+  if (filters.fund) params.fund = filters.fund;
+  if (filters.campaign) params.campaign = filters.campaign;
+  return { key: "gifts", params };
+}
+
+// The org as the year arithmetic needs it: its timezone and the fiscal start
+// month it chose (vocabulary_json), which orgTz alone does not carry.
+async function orgForYears(orgId) {
+  const [row] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  return { ...(await orgTz(orgId)), vocabulary_json: row ? row.vocabulary_json : null };
+}
+
 async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   const D = await dashboardsMod();
   const def = D.dashboardByKey(key);
@@ -1002,14 +1023,15 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
   const DD = await import("../shared/displayDate.js");
   // The ORG's year: its timezone and the fiscal start month it chose
   // (orgPeriodBounds reads vocabulary_json), never the July default alone.
-  const [orgRowTz] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
-  const org = { ...(await orgTz(orgId)), vocabulary_json: orgRowTz ? orgRowTz.vocabulary_json : null };
+  const org = await orgForYears(orgId);
   const today = orgToday(org);                                  // ORG_TZ_SEAM_OK
   const fy = orgTime.orgPeriodBounds(org, "fiscal_year", 0);     // the ORG's year
   const fyPrev = orgTime.orgPeriodBounds(org, "fiscal_year", -1);
   // "The same point last year" — the equivalent stretch, so the comparison is
-  // like for like rather than a full year against a part of one.
-  const prevSamePoint = orgTime.addDays(fyPrev.start, orgTime.daysBetween(fy.start, today) ?? 0);
+  // like for like rather than a full year against a part of one. Drawn by the
+  // one function the giving summary reads too (FIX-3 E).
+  const lastYearSource = samePointLastYearSource(fy.start, fy.end, today);
+  const prevSamePoint = lastYearSource.params.to;
   const qtr = orgTime.orgPeriodBounds(org, "quarter", 0);
   const yr = { from: fy.start, to: today };
   const deps = { computeRetentionRate, computeDriftForDonors };
@@ -1048,7 +1070,7 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
     const seriesDef = D.dashboardByKey("board").metrics.find(m => m.key === "givingByMonth");
     const [, , , diff, , , , , , desRows, series] = await Promise.all([
       put("revenueThisYear", { key: "gifts", params: yr }),
-      put("revenueLastYear", { key: "gifts", params: { from: fyPrev.start, to: prevSamePoint } }),
+      put("revenueLastYear", lastYearSource),
       put("revenueChangePct", { key: "giving-change", params: cmp }),
       fig({ key: "giving-difference", params: cmp }),
       put("donorCount", { key: "givers", params: yr }),
@@ -14759,23 +14781,31 @@ function parseReportParams(q, org = null) {   // ORG_TZ_SEAM_OK
 
   p.yearMode = q.yearMode || "fiscal";
   if (!["fiscal", "calendar"].includes(p.yearMode)) throw bad("yearMode must be 'fiscal' or 'calendar'");
+  // FIX-3 E — the org's own fiscal start month and today, so a report's year
+  // is the Board's year and "the same point last year" is the Board's point.
+  p.org = org || {};
+  p.fiscalStartMonth = orgTime.orgFiscalStartMonth(p.org);
+  p.today = orgToday(p.org);
 
   const isDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s + "T00:00:00Z"));
 
   if (q.year !== undefined) {
     p.year = parseInt(q.year, 10);
     if (!Number.isInteger(p.year) || p.year < 1970 || p.year > 2100) throw bad("year must be an integer between 1970 and 2100");
-    const b = reportYearBounds(p.year, p.yearMode);
+    const b = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
     p.from = b.from; p.to = b.to;
+    p.period = p.yearMode;
   } else if (q.from || q.to) {
     if (!q.from || !isDate(q.from)) throw bad("from must be YYYY-MM-DD");
     if (!q.to || !isDate(q.to)) throw bad("to must be YYYY-MM-DD");
     p.from = q.from; p.to = q.to;
     p.year = reportCurrentYear(p.yearMode, org); // for reports that need a year anyway
+    p.period = "custom";
   } else {
     p.year = reportCurrentYear(p.yearMode, org);
-    const b = reportYearBounds(p.year, p.yearMode);
+    const b = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
     p.from = b.from; p.to = b.to;
+    p.period = p.yearMode;
   }
   if (p.from > p.to) throw bad("from must be on or before to");
   if (Date.parse(p.to) - Date.parse(p.from) > 10 * 366 * 86400000) throw bad("Date range too large — 10 years max");
@@ -14840,7 +14870,29 @@ async function reportGivingSummary(orgId, p) {
             COALESCE(SUM(g.amount),0) AS total, COUNT(DISTINCT g.donor_id)::int AS donors
      ${REPORT_GIFT_FROM} ${mWhere} GROUP BY 1 ORDER BY 1`, mParams);
 
-  // Prior period of equal length, for the narrative compare line.
+  // FIX-3 E — THE COMPARISON: the same point last year, the Board's figure,
+  // through the one function the Board reads (samePointLastYearSource). A
+  // period still running is cut at today and compared with the same stretch
+  // a year back; a finished one with the same dates a year earlier.
+  const cmpSource = samePointLastYearSource(p.from, p.to, p.today || orgToday(p.org || {}), { fund: p.fundId, campaign: p.campaignId });
+  let comparison = null;
+  if (cmpSource) {
+    const D = await dashboardsMod();
+    const f = await figureSources.figureValue(orgId, cmpSource);
+    comparison = {
+      basis: "same-point", label: "Same point last year",
+      from: cmpSource.params.from, to: cmpSource.params.to,
+      value: f.value, cents: f.cents, source: cmpSource,
+      // A fiscal year compares with the Board's sentence, word for word.
+      definition: p.period === "fiscal"
+        ? D.dashboardByKey("board").metrics.find(m => m.key === "revenueLastYear").definition
+        : "Gifts received in the same stretch a year earlier, so the comparison is like for like.",
+    };
+  }
+
+  // The whole period of equal length before this one. NOT the comparison the
+  // screen states: kept for the low-volume default (Reports opens on last year
+  // while this one is nearly empty), and named for what it is.
   const spanDays = Math.round((Date.parse(p.to) - Date.parse(p.from)) / 86400000) + 1;
   const dayShift = (iso, days) => new Date(Date.parse(iso + "T00:00:00Z") + days * 86400000).toISOString().slice(0, 10);
   const prior = { ...p, from: dayShift(p.from, -spanDays), to: dayShift(p.from, -1) };
@@ -14863,7 +14915,11 @@ async function reportGivingSummary(orgId, p) {
     onlineCount: totals.online_count,
     offlineTotal: Number(totals.total) - Number(totals.online_total),
     offlineCount: totals.gift_count - totals.online_count,
-    prior: { from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
+    year: p.year, yearMode: p.yearMode, fiscalStartMonth: p.fiscalStartMonth,
+    // The total opens too: the same gifts, through the same source.
+    totalSource: { key: "gifts", params: { from: p.from, to: p.to, ...(p.fundId ? { fund: p.fundId } : {}), ...(p.campaignId ? { campaign: p.campaignId } : {}) } },
+    comparison,
+    prior: { basis: "full-period", label: "The whole period before this one", from: prior.from, to: prior.to, total: Number(priorTotals.total), giftCount: priorTotals.gift_count },
     monthly: monthly.map(m => ({ month: m.month, gifts: m.gifts, total: Number(m.total), donors: m.donors })),
   };
 }
@@ -14901,8 +14957,8 @@ async function reportByGroup(orgId, p) {
 // SYBUNT = any gift ever before the selected year, none in the selected year.
 // Both predicates live here in SQL and nowhere else.
 async function reportBuntList(orgId, p, kind) {
-  const cur = reportYearBounds(p.year, p.yearMode);
-  const prior = reportYearBounds(p.year - 1, p.yearMode);
+  const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
+  const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
   const gaveBeforeSql = kind === "lybunt"
     ? "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date >= ? AND g.date <= ?)"
     : "EXISTS (SELECT 1 FROM gifts g WHERE g.org_id = d.org_id AND g.donor_id = d.id AND g.date < ?)";
@@ -14933,12 +14989,12 @@ async function reportRetention(orgId, p) {
   // who gave in Y-1 and gave again in Y; dollar retention = Y dollars from
   // those retained donors / total Y-1 dollars; first-year retention = the
   // same, restricted to donors whose first-ever gift was in Y-1.
-  const lastCompleted = reportCurrentYear(p.yearMode) - 1;
+  const lastCompleted = reportCurrentYear(p.yearMode, p.org) - 1;
   const years = [lastCompleted - 2, lastCompleted - 1, lastCompleted];
   const rows = [];
   for (const y of years) {
-    const cur = reportYearBounds(y, p.yearMode);
-    const prior = reportYearBounds(y - 1, p.yearMode);
+    const cur = reportYearBounds(y, p.yearMode, p.fiscalStartMonth);
+    const prior = reportYearBounds(y - 1, p.yearMode, p.fiscalStartMonth);
     const [r] = await query(
       `WITH prior AS (SELECT g.donor_id, SUM(g.amount) AS amt FROM gifts g JOIN donors d ON d.id = g.donor_id
                       WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ? GROUP BY g.donor_id),
@@ -15021,9 +15077,9 @@ async function reportTopDonors(orgId, p) {
 // vs prior (YoYoY), plus the org-level 3-year trend. Reuses reportYearBounds /
 // yearMode — one FY definition with the rest of Reports/Finance.
 async function reportThreeYear(orgId, p) {
-  const y0 = reportYearBounds(p.year, p.yearMode);       // most recent (selected) year
-  const y1 = reportYearBounds(p.year - 1, p.yearMode);
-  const y2 = reportYearBounds(p.year - 2, p.yearMode);   // oldest
+  const y0 = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);       // most recent (selected) year
+  const y1 = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
+  const y2 = reportYearBounds(p.year - 2, p.yearMode, p.fiscalStartMonth);   // oldest
   const label = y => p.yearMode === "fiscal" ? `FY${y}` : String(y);
   const rows = await query(
     `SELECT d.id, d.name, d.email, d.assigned_to_name,
@@ -15065,8 +15121,8 @@ async function reportThreeYear(orgId, p) {
 // new vs returning, growth vs prior year, donor retention for the year, and
 // the by-fund / by-campaign breakdown — one page a board wants at year end.
 async function reportAnnual(orgId, p) {
-  const cur = reportYearBounds(p.year, p.yearMode);
-  const prior = reportYearBounds(p.year - 1, p.yearMode);
+  const cur = reportYearBounds(p.year, p.yearMode, p.fiscalStartMonth);
+  const prior = reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth);
   const [totals] = await query(
     `SELECT COUNT(*)::int AS gift_count, COALESCE(SUM(g.amount),0) AS total,
             COUNT(DISTINCT g.donor_id)::int AS unique_donors,
@@ -15570,7 +15626,8 @@ async function reportMembersDirectory(orgId) {
   return { rows, sentence: "Everyone who holds a membership now, active or in grace." };
 }
 async function reportMembersByLevel(orgId) {
-  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const yo = await orgForYears(orgId);
+  const fy = reportYearBounds(reportCurrentYear("fiscal", yo), "fiscal", orgTime.orgFiscalStartMonth(yo));   // ORG_TZ_SEAM_OK
   const rows = await query(
     `SELECT l.id, l.name, l.price,
             (SELECT COUNT(*)::int FROM memberships m WHERE m.org_id=l.org_id AND m.level_id=l.id AND m.status IN ('active','grace')) AS current,
@@ -15627,7 +15684,8 @@ async function reportMembersNewRenewed(orgId) {
 // Membership revenue BESIDE donation revenue: two columns, this fiscal year
 // by month, and never summed into one figure.
 async function reportMembershipRevenue(orgId) {
-  const fy = reportYearBounds(reportCurrentYear("fiscal", await orgTz(orgId)), "fiscal");   // ORG_TZ_SEAM_OK
+  const yo = await orgForYears(orgId);
+  const fy = reportYearBounds(reportCurrentYear("fiscal", yo), "fiscal", orgTime.orgFiscalStartMonth(yo));   // ORG_TZ_SEAM_OK
   const rows = await query(
     `SELECT LEFT(g.date, 7) AS month,
             COALESCE(SUM(round(g.amount::numeric*100)) FILTER (WHERE ${MB_GIFT_SQL}),0)::bigint AS membership_cents,
@@ -15675,7 +15733,7 @@ const TEAM_ONLY_REPORTS = new Set(["solicitations"]);
 // Gifts by month, this year beside last year, from the giving-summary handler
 // itself — the Reports tab's monthly figures, twice, aligned by fiscal month.
 async function reportByMonthVsLastYear(orgId, p) {
-  const prev = { ...p, year: p.year - 1, ...reportYearBounds(p.year - 1, p.yearMode) };
+  const prev = { ...p, year: p.year - 1, ...reportYearBounds(p.year - 1, p.yearMode, p.fiscalStartMonth) };
   const [cur, last] = await Promise.all([reportGivingSummary(orgId, p), reportGivingSummary(orgId, prev)]);
   const idx = (ym, start) => (Number(ym.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(ym.slice(5, 7)) - Number(start.slice(5, 7));
   const rows = [];
@@ -15711,7 +15769,7 @@ const STD_PERSON = {
 
 async function runStandardReport(orgId, std) {
   if (std.kind === "builder") return runBuilderDef(orgId, std.def);
-  const p = parseReportParams({ ...std.params }, await orgTz(orgId));   // ORG_TZ_SEAM_OK
+  const p = parseReportParams({ ...std.params }, await orgForYears(orgId));   // ORG_TZ_SEAM_OK
   if (std.handler === "by-month-vs-last-year") {
     const d = await reportByMonthVsLastYear(orgId, p);
     return { columns: [{ key: "month", label: "Month", type: "text", display: "month" }, { key: "thisYear", label: "This year", type: "money" }, { key: "lastYear", label: "Last year", type: "money" }],
@@ -15918,7 +15976,7 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
       return res.status(403).json({ error: "plan_required", requiredPlan: "team", message: "The solicitations report is available on the Team plan." });
   }
   let p;
-  try { p = parseReportParams(req.query, await orgTz(req.user.orgId)); }   // ORG_TZ_SEAM_OK
+  try { p = parseReportParams(req.query, await orgForYears(req.user.orgId)); }   // ORG_TZ_SEAM_OK
   catch (e) { return res.status(e.status === 400 ? 400 : 500).json({ error: e.message }); }
   const data = await REPORT_HANDLERS[key](req.user.orgId, p);
   if (reportLocked && data && typeof data === "object" && !Array.isArray(data)) data.locked = true;
@@ -18671,7 +18729,7 @@ const namedOrGivingSql = (a = "d") =>
 // functions exist; the gift form above calls them directly.
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
 giftHooks.calcWealthScore = calcWealthScore;
-reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgTz(orgId)));   // ORG_TZ_SEAM_OK
+reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
 }
 
 module.exports = { routers, mount, giftHooks, reportHooks };

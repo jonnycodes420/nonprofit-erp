@@ -77,7 +77,12 @@ const EXPECTED = {
   // one results table now formats every money cell). In: the bookkeeper
   // narrative's total (was a raw "$26100.50") and the "Total" under its
   // totals-by-fund table (was "TOTAL $26100.50"). Claim-shaped 25 → 23.
-  "components/Reports.jsx": 42,
+  // FIX-3 E: 42 → 40. The giving summary's sentence draws its total and its
+  // comparison as <Figure>s (each opens onto its gifts), not {fmtFull(…)};
+  // the comparison is now the same point last year. Claim-shaped 23 → 25: the
+  // figures' `label` props mark the median gift beside them, and the org's
+  // fiscal presets (label:) now sit within three lines of pctStr.
+  "components/Reports.jsx": 40,
   "components/Fundraising.jsx": 31,   // BUILD-98 Part 2: +1, a gift amount in the acknowledgment backlog row (a cell, not a claim)
   "components/Communications.jsx": 20,
   "components/Grants.jsx": 13,
@@ -121,8 +126,8 @@ const EXPECTED = {
   "components/RestrictedView.jsx": 2,  // the five metrics (one render site) and a spending line's amount
   "components/GrantImport.jsx": 1,     // open requests in the preview, from the server's plan
 };
-const EXPECTED_TOTAL = 413;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above) · FIX-2 A: +4 (Dashboards -2, panel +5, Figure +1)
-const EXPECTED_CLAIMS = 121;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline) · FIX-2 B: -2 (Reports: the 3-year y0 cell and the retention sentence's two percentages no longer sit beside a table-header label; +1 the bookkeeper fund "Total")
+const EXPECTED_TOTAL = 411;   // BUILD-100 Part 7: +5 · FIX-1 E: -5 (Finance, above) · FIX-2 B: +1 (Reports, above) · FIX-2 A: +4 (Dashboards -2, panel +5, Figure +1) · FIX-3 E: -2 (Reports, above)
+const EXPECTED_CLAIMS = 123;   // BUILD-100 Part 7: +2 (the restricted figure, the import preview total) · FIX-1 E: +2 (a payout row's amount under its label, the opened payout's headline) · FIX-2 B: -2 (Reports: the 3-year y0 cell and the retention sentence's two percentages no longer sit beside a table-header label; +1 the bookkeeper fund "Total") · FIX-3 E: +2 (Reports, above)
 
 (async () => {
   console.log("build97-numbers");
