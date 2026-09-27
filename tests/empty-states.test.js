@@ -116,9 +116,10 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
       // BUILD-86 — "Dashboard" is the board surface, a real screen of its own
       // and therefore in the empty-org sweep like every other tab.
       // FIX-1 §B — "Pipeline" is no longer a sidebar item (it folded into
-      // Fundraising → Major gifts), so there is no nav button to sweep.
+      // Fundraising → Major gifts); the sweep reaches it by its deep link
+      // (?fr=pipeline) below, so the empty board is still swept.
       // FIX-1 §A — Workflows moved into Agent (Agent → Workflows); Agent is the rail item.
-      ? ["Home", "Dashboards", "Donors", "Fundraising", "Grants", "Communications", "Tasks", "Agent", "Reports", "Finance", "Settings"]
+      ? ["Home", "Dashboards", "Donors", "Pipeline", "Fundraising", "Grants", "Communications", "Tasks", "Agent", "Reports", "Finance", "Settings"]
       : ["Home", "Donors", "Grants", "Settings", "More"]; // mobile bottom bar (+ drawer peek)
     const found = {};
     // nav labels carry monochrome icon glyphs ("◈\nHome") — match contains,
@@ -137,7 +138,11 @@ const BAD = [/\bNaN\b/, /\$NaN/, /Invalid Date/i, /\bundefined\b/, /\bInfinity\b
       // drawer has always had. The sweep opens it and carries on: the property
       // this suite guards is that EVERY surface is reachable and renders
       // honestly at zero, not that every surface is one click from Home.
-      let clicked = await clickNav(t);
+      let clicked = t === "Pipeline" ? false : await clickNav(t);
+      if (!clicked && t === "Pipeline") {
+        await page.goto(`${FRONT}/dashboard?fr=pipeline`, { waitUntil: "networkidle" });
+        clicked = true;
+      }
       if (!clicked && t !== "More") {
         if (await clickNav("More")) { await page.waitForTimeout(500); clicked = await clickNav(t); }
       }
