@@ -75,7 +75,13 @@ const PLAN_ROUTES = /\/(billing\/status|portfolio\/officers)(\?|$)/;
 
   console.log("\n— §2 · a slow plan, as drawn —");
   let chromium;
-  try { ({ chromium } = require("playwright")); } catch { console.log("  SKIP  §2 browser: Playwright is not installed here (CI has none)"); return done(); }
+  // HOTFIX-1 — resolve Playwright the way every other browser leg does. A bare
+  // require("playwright") never finds it (it is not a project dep; it lives at
+  // PLAYWRIGHT_DIR), so this leg SKIPPED on every machine as well as in CI, and
+  // the lock-flash fix it exists to prove was never actually drawn.
+  const PW_DIR = process.env.PLAYWRIGHT_DIR || path.join(process.env.HOME || "", "steward-qa");
+  try { module.paths.unshift(path.join(PW_DIR, "node_modules")); ({ chromium } = require("playwright")); }
+  catch { console.log("  SKIP  §2 browser: Playwright is not installed here (CI has none)"); return done(); }
   if (!process.env.APP_URL) { console.log("  SKIP  §2 browser: APP_URL is not set"); return done(); }
   const h = require("./helpers");
   const bcrypt = require("bcryptjs");

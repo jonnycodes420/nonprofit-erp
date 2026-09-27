@@ -184,14 +184,20 @@ const stripComments = s => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`
   // ── §4 · A SUGGESTION MAY ONLY SAY WHAT THE RECORD SAYS ─────────────────
   console.log("\n— §4 · a suggestion naming someone not on the record is refused —");
   const G = await import("../shared/suggestionGuard.js").catch(() => ({
-    guardSuggestion: () => ({ kept: [], dropped: -1 }), droppedLine: () => "" }));
+    guardSuggestion: () => ({ kept: [], dropped: -1 }), dropLog: () => "" }));
   const record = { donor: { id: "d_fx1_sun", name: "Sunrise Foundation", total_giving: 1500, gift_count: 1,
     last_gift_amount: 1500, last_gift_date: "2026-03-02" }, rows: [{ id: "g1", amount: 1500, date: "2026-03-02", fund: "Youth Arts" }] };
   const r = G.guardSuggestion("Call Marisol Vega at the foundation this week. Their last gift was $1,500.", record);
   ok("a sentence naming somebody the record does not carry is refused",
      !r.kept.some(k => /Marisol/.test(k.text)) && r.dropped === 1, r);
   ok("…and the true sentence survives", r.kept.some(k => /\$1,500/.test(k.text)), r.kept);
-  ok("…and the page says a line was left out", /left out/.test(G.droppedLine(r.dropped)), G.droppedLine(r.dropped));
+  // HOTFIX-1 — the refusal goes to the LOG, never to the panel. She cannot
+  // see the refused line, judge it or act on the count; the person who can is
+  // reading the console.
+  ok("…and the refusal is written for the log, not the screen",
+     /^\[suggestion\] 1 line left out: /.test(G.dropLog(r.dropped, r.reasons)), G.dropLog(r.dropped, r.reasons));
+  ok("…and nothing that reaches the screen says lines were left out",
+     !/left out/.test(r.kept.map(k => k.text).join(" ")), r.kept);
   const donorsSrc = readSource("client/src/components/Donors.jsx");
   ok("the profile's Suggested panel runs every line through the guard",
      /guardSuggestion\(/.test(donorsSrc) && /suggestionGuard/.test(donorsSrc));

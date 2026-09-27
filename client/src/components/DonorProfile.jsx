@@ -2,7 +2,7 @@
 //
 // FIX-1 split: moved VERBATIM out of Donors.jsx. Nothing in it changed.
 // Tests read it through readSource("client/src/components/Donors.jsx").
-import { useState, useEffect, useRef, useContext } from "react";
+import { useState, useEffect, useRef, useContext, useMemo } from "react";
 import { FunderPanel } from "./FunderPanel";
 import { VolunteerPanel } from "./VolunteerPanel";
 import { MembershipPanel } from "./Memberships";
@@ -774,11 +774,16 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // The profile showed the thread and nothing else, so a task created by
   // "+ Add task", a pipeline move or a workflow recipe was an open promise to
   // this person that their own record did not mention.
+  // HOTFIX-1 — the open work is loaded before the next move is asked for, so
+  // "what do I do next" can never answer with nothing while a follow-up or a
+  // proposal sits open on the same screen.
+  const [dpItemsLoaded,setDpItemsLoaded]=useState(false);
+  const [openProposals,setOpenProposals]=useState([]);
   const loadDpThread=()=>apiFetch(`/threads?donorId=${donor.id}`).then(r=>{
     setDpItems(Array.isArray(r.list)?r.list:[]);
     setDpThread((r.list||[]).find(x=>x.kind!=="task")||null);
-  }).catch(()=>{});
-  useEffect(()=>{loadDpThread();
+  }).catch(()=>{}).finally(()=>setDpItemsLoaded(true));
+  useEffect(()=>{setDpItemsLoaded(false);setOpenProposals([]);loadDpThread();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[donor.id]);
 
@@ -1418,9 +1423,31 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
     const a=document.createElement("a");a.href=url;a.download=`${donor.name}-gifts.csv`;a.click();
   };
 
+  // HOTFIX-1 — the open threads, tasks and proposals this screen already
+  // holds, shaped for shared/nextMove.js: a label and a date that is already
+  // a person's date, most urgent first (the list arrives due-date ascending).
+  const openForNextMove=useMemo(()=>{
+    const today=new Date();
+    const steps=dpItems.map(it=>({
+      kind:it.kind,
+      label:(it.nextStep&&it.nextStep.label)||"",
+      dueLabel:it.nextStep&&it.nextStep.due?displayDateShort(it.nextStep.due,today):"",
+      overdue:!!it.overdue,
+    }));
+    const props=openProposals.map(p=>({
+      kind:"proposal",
+      label:p.purpose||"",
+      dueLabel:p.expectedClose?displayDateShort(p.expectedClose,today):"",
+      overdue:false,
+    }));
+    return [...steps,...props].filter(x=>x.label);
+  },[dpItems,openProposals]);
+
   useEffect(()=>{
-    if(!aiMap[`${donor.id}_nextmove`])getAI(donor,"nextmove");
-  },[donor.id]);
+    if(!dpItemsLoaded)return;
+    if(aiMap[`${donor.id}_nextmove`]===undefined)getAI(donor,"nextmove",openForNextMove);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[donor.id,dpItemsLoaded]);
 
   const sortedGifts=[...gifts].sort((a,b)=>new Date(b.date)-new Date(a.date));
   const lastGiftDisplay=giftLoading?"…":sortedGifts.length>0?fmtFull(sortedGifts[0].amount):fmtFull(donor.lastAmount);
@@ -1533,8 +1560,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
       </div>
 
       <div className="donor-profile-body" style={{flex:1,display:"grid",gridTemplateColumns:"minmax(0,1.25fr) minmax(0,0.75fr)",overflow:"hidden"}}>
-        {/* LEFT */}
-        <div style={{overflowY:"auto",borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
+        {/* LEFT — the main column. HOTFIX-1: its ground is named here rather
+            than inherited, because the rail beside it is defined as being on a
+            CONTRASTING ground and a contrast between two inherited values is
+            not a contrast anybody can check. See docs/decisions/design-system.md. */}
+        <div data-testid="dp-main-column" style={{overflowY:"auto",background:T.bg,borderRight:"1px solid "+T.bg3,display:"flex",flexDirection:"column"}}>
           {/* Tab Nav */}
           <div className="dp-tabs" style={{display:"flex",background:T.white,borderBottom:"1px solid "+T.bg3,flexShrink:0,overflowX:"auto"}}>
             {[["overview","Overview"],["gifts","Gifts & Pledges"],["funds","Funds"],["related","Related"],["materials","Materials"],["activity","Activity"]].map(([id,label])=>(
@@ -1667,7 +1697,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 open ask is what an officer came to this record to look at and the
                 history is the evidence behind it. Team-locked for Core along with
                 the rest of the major-gifts layer (the 2026-07-19 split). */}
-            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>)}
+            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}/>)}
 
             {/* BUILD-99 Part 3 — the cultivation plan, beside the proposals it
                 is there to make possible. */}
@@ -2541,8 +2571,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </div>}
         </div>
 
-        {/* RIGHT */}
-        <div style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
+        {/* RIGHT — THE RAIL. It is never removed: the donor profile always has
+            it, on a contrasting ground to the main column (a never-crossed rule
+            in CLAUDE.md, pinned by tests/hotfix1-profile.test.js at 1440). */}
+        <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"22px 24px 24px 20px",display:"flex",flexDirection:"column",gap:18,background:T.white,borderLeft:"1px solid "+T.bg2}}>
           {donor.stripeSubscriptionStatus==="active"&&(
             <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px",display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>↻</span>
@@ -2828,7 +2860,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <div>
             <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:T.ink3,marginBottom:8}}>Suggested Actions</div>
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-              <AIBtn onClick={()=>getAI(donor,"nextmove")} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
+              <AIBtn onClick={()=>getAI(donor,"nextmove",openForNextMove)} loading={loadingKey===`${donor.id}_nextmove`} label="✦ Next Move" small/>
               <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="✦ Outreach" small/>
               <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="✦ Draft Email" small/>
               <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="✦ Call Script" small/>

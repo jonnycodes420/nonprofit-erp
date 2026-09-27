@@ -1,0 +1,19 @@
+HOTFIX-1 — proof the rail guard can fail.
+
+Plant: `data-testid="dp-right-rail"` renamed to `dp-right-rail-PLANTED` in
+client/src/components/DonorProfile.jsx (the rail itself still rendered — this
+is the weakest possible plant, and the guard still catches it), client rebuilt,
+suite re-run at 1440.
+
+  — §1 · the donor profile always has its right rail at 1440 —
+    PASS  §1 CLAUDE.md carries the rule in its never-crossed list
+    PASS  §1 …and docs/decisions/design-system.md carries it too
+    PASS  §1 login ok
+    FAIL  §1 the rail is on the page — {"rail":false,"main":true}
+    PASS  §1 the main column is on the page
+    PASS  §1 the six tabs are Overview · Gifts & Pledges · Funds · Related · Materials · Activity
+    PASS  §1 the header still carries its own buttons
+
+  42 passed, 1 failed
+
+Reverted, rebuilt: 47 passed, 0 failed.

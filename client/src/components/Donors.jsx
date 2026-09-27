@@ -9,7 +9,7 @@ import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
 import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
 import { LogConversationModal } from "./LogConversation";
-import { guardSuggestion, droppedLine, plainText } from "../../../shared/suggestionGuard.js";
+import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
 // SHELVED — voice capture works but unproven adoption assumption, revisit
 // later. Code intact, re-enable by uncommenting (see showVoiceMemo state,
@@ -241,7 +241,16 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     catch(e){console.error(e);}
   };
 
-  const getAI=async(donor,type)=>{
+  // HOTFIX-1 — the civil day the suggestion is written on, read from the
+  // machine's local calendar parts (never toISOString, which has already
+  // turned over after 8pm Eastern). The validator refuses timing that is
+  // already behind this day.
+  const localToday=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;};
+
+  // `openItems` is what the profile already loaded: the open threads, tasks
+  // and proposals for this person, most urgent first. It is passed in so the
+  // next move can NAME the open step instead of answering with nothing.
+  const getAI=async(donor,type,openItems=[])=>{
     const key=`${donor.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
     const urg=moveUrgency(donor);
@@ -287,18 +296,26 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
                total:donor.total,gifts:donor.gifts,lastAmount:donor.lastAmount,lastGift:donor.lastGift},
         orgName:[data.org?.name,data.org?.mission].filter(Boolean).join(" "),
         names:[stage.label,...(donor.tags||[])],
+        today:localToday(),
+        openItems:Array.isArray(openItems)?openItems:[],
         rows:[{id:"contact",count:urg.days},
               ...(donor.interactions||[]).slice(0,20).map((i,n)=>({id:i.id||("int"+n),amount:i.amount,date:i.date,label:i.note,type:i.type}))],
       };
       // FIX-3 finding 11 — the next move is three fields, and composeNextMove
       // (shared/nextMove.js) turns them into three plain sentences, each
       // through the same validator. Every other kind stays prose.
+      // HOTFIX-1 — a refused line is DROPPED SILENTLY and logged. The panel
+      // shows what survived; when nothing survives it shows nothing at all,
+      // rather than a sentence about Steward's own plumbing.
       let out;
-      if(type==="nextmove")out=composeNextMove(full,record).text;
-      else{
+      if(type==="nextmove"){
+        const c=composeNextMove(full,record);
+        if(c.log)console.info(c.log);
+        out=c.text;
+      } else {
         const g=guardSuggestion(full,record);
-        const kept=g.kept.map(k=>plainText(k.text)).join(" ");
-        out=[kept||"Steward had nothing it could say from this record.",droppedLine(g.dropped)].filter(Boolean).join("\n\n");
+        if(g.dropped)console.info(dropLog(g.dropped,g.reasons));
+        out=g.kept.map(k=>plainText(k.text)).join(" ");
       }
       setAiMap(p=>({...p,[key]:out}));
     }

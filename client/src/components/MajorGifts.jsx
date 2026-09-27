@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { apiFetch, API } from "../api";
 import { T, fmtFull, EmptyState, interactive, Modal, Spin } from "./shared";
 import { errorMessage } from "../lib/domainError";
+import { OPEN_STAGE_KEYS as OPEN_PROPOSAL_STAGES } from "../../../shared/proposalShape.js";
 
 // ── Major gifts (BUILD-99) ──────────────────────────────────────────────────
 // Moves management on top of the stages Steward already has, for the
@@ -358,7 +359,7 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
 // ── THE PROFILE PANEL (above giving history) ───────────────────────────────
 // The brief puts proposals above giving history because an open ask is what an
 // officer is here to look at; the history is the evidence behind it.
-export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite }) {
+export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals }) {
   const [d, setD] = useState(null);
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState(null);
@@ -367,10 +368,17 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite }) {
     apiFetch(`/donors/${donorId}/proposals`).then(setD).catch(e => console.error("[proposals]", e));
   }, [donorId]);
   useEffect(() => { load(); }, [load]);
+  // HOTFIX-1 — the open proposals go up to the profile, so "what do I do
+  // next" can name one instead of saying nothing is open. One fetch, one
+  // owner; the profile does not fetch this route a second time.
+  useEffect(() => {
+    if (!onOpenProposals) return;
+    onOpenProposals(d ? d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage)) : []);
+  }, [d, onOpenProposals]);
   if (!d) return null;
 
   const meta = { stages: d.stages, probabilities: d.probabilities, declineReasons: d.declineReasons, funds: [], officers: [] };
-  const openOnes = d.proposals.filter(p => ["identified", "cultivating", "asked"].includes(p.stage));
+  const openOnes = d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage));
 
   return (
     <div data-testid="donor-proposals-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>

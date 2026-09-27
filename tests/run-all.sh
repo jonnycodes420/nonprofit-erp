@@ -173,6 +173,7 @@ CORE=(
   fix3-b-agent
   fix3-d-lock-flash
   fix3-d-suggestion
+  hotfix1-profile
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —

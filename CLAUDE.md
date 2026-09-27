@@ -43,6 +43,7 @@ drafts or suggests the next move, and a human always reviews and sends. It start
   behind it, footing to the cent (`figureSources.js`). See `docs/decisions/home-and-reports.md`.
 - **A GET never changes state.** Every link in an email must survive GET and HEAD with zero
   writes. A change of state takes a POST from a page the person sees.
+- **The donor profile always has the right rail, on a contrasting ground to the main column. No build removes it.** A redesign may move what is IN the rail; it may not delete the rail (`tests/hotfix1-profile.test.js` at 1440).
 - **Four colours reach a screen:** ink `#0F1A12`, white `#FFFFFF` (cream `#F0EDE6` is its
   shade), emerald `#0D5C3A` (the one action colour), brass `#C9A84C`. Overdue is brass,
   not red. Red is only for a destructive confirm.

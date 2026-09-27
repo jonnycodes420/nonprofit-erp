@@ -11,10 +11,20 @@
 // them into three short plain sentences: the label scaffolding is cut, a
 // fragment gets the few words that make it a sentence, and every sentence
 // goes through the FIX-1 validator (shared/suggestionGuard.js) against the
-// record. A refused line is left out and counted, as everywhere else.
+// record.
 //
-// Pure: no DB, no network, no clock, no JSX.
-import { guardSuggestion, droppedLine, plainText, sentencesOf } from "./suggestionGuard.js";
+// HOTFIX-1 changed two things about what comes out.
+//   · A REFUSED LINE IS SILENT. It is counted and its reason is returned for
+//     the log; it never becomes a sentence on the screen. When nothing
+//     survives and nothing is open, the text is EMPTY and the panel does not
+//     render — an empty answer is better than an answer about itself.
+//   · THE OPEN WORK LEADS. The walk's profile answered "what do I do next"
+//     with nothing while a proposal and a follow-up sat open on the same
+//     screen. The record knows the next real step, so the record says it
+//     first, and the model's surviving sentences follow.
+//
+// Pure: no DB, no network, no clock, no JSX. `record.today` is the caller's.
+import { guardSuggestion, dropLog, plainText, sentencesOf } from "./suggestionGuard.js";
 
 export const NEXT_MOVE_FIELDS = ["when", "say", "for"];
 
@@ -77,10 +87,30 @@ export function parseNextMove(reply) {
   return fields;
 }
 
-// composeNextMove(reply, record) → { sentences, dropped, reasons, text }
-//   sentences — at most three: when, what to say, what it is for, each the
-//               first sentence of its field the record supports.
-//   text      — what the panel shows: the sentences, then the dropped line.
+// openStepSentence(record) → the next real step, as one sentence, or "".
+//
+// `record.openItems` is what the screen already has: the open threads, tasks
+// and proposals for this person, most urgent first, each with a `label` and
+// an optional `dueLabel` already formatted by the caller (this module has no
+// clock and no date formatter). Nothing is invented — every word comes from
+// a row.
+export function openStepSentence(record) {
+  const open = ((record && record.openItems) || []).filter(Boolean);
+  if (!open.length) return "";
+  const it = open[0];
+  const what = plainText(it.label || "").replace(/\s+/g, " ").trim();
+  if (!what) return "";
+  const when = it.dueLabel ? `, ${it.overdue ? "overdue since" : "due"} ${String(it.dueLabel).trim()}` : "";
+  const whose = it.kind === "proposal" ? "The open proposal: " : "";
+  return endStop(capital(`${whose}${what}${when}`));
+}
+
+// composeNextMove(reply, record) → { sentences, dropped, reasons, text, log }
+//   sentences — the open step from the record first (when there is one), then
+//               at most three of the model's: when, what to say, what it is
+//               for, each the first sentence of its field the record supports.
+//   text      — what the panel shows, or "" when there is nothing to show.
+//   log       — the one console line about what was refused, or "".
 export function composeNextMove(reply, record = {}) {
   const f = parseNextMove(reply);
   const move = f.move ? labelOf(plainText(f.move).trim())[1].replace(/^to\s+/i, "") : "";
@@ -98,7 +128,9 @@ export function composeNextMove(reply, record = {}) {
     reasons.push(...g.reasons);
     if (g.kept.length) sentences.push(g.kept[0].text);
   }
-  const text = [sentences.join(" ") || "Steward had nothing it could say from this record.", droppedLine(dropped)]
-    .filter(Boolean).join("\n\n");
-  return { sentences, dropped, reasons, text };
+  // The record's own open step leads, and never repeats a sentence the model
+  // already wrote.
+  const open = openStepSentence(record);
+  if (open && !sentences.some(s => s.toLowerCase() === open.toLowerCase())) sentences.unshift(open);
+  return { sentences, dropped, reasons, text: sentences.join(" "), log: dropLog(dropped, reasons) };
 }
