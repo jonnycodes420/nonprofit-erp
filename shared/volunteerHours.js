@@ -76,7 +76,46 @@ export const HOURS_PRESETS = {
     },
     signal: ["event date", "event name", "hours served", "volunteer hours", "user group"],
   },
+  // VOL-1 — SignUpGenius. Its report export is a SIGN-UP sheet rather than an
+  // hours sheet: one row per person per slot, with a start and an end time
+  // and often no "hours" column at all. `startTime`/`endTime` are read when
+  // `hours` is missing and the difference becomes the hours, which is the
+  // only honest reading of a file that does not carry the number.
+  signupgenius: {
+    label: "SignUpGenius",
+    confidence: "documented-not-walked",
+    columns: {
+      name: ["name", "full name"],
+      firstName: ["first name", "firstname"], lastName: ["last name", "lastname"],
+      email: ["email", "email address"],
+      date: ["date", "sign up date", "slot date", "event date"],
+      hours: ["hours", "duration", "total hours"],
+      startTime: ["start time", "from", "time"],
+      endTime: ["end time", "to"],
+      role: ["item", "slot", "sign up item", "signup", "title", "event title"],
+    },
+    signal: ["sign up item", "signup", "item", "slot date", "start time", "end time"],
+  },
 };
+
+// A start and an end where a file has no hours column. Returns hundredths, or
+// null when either side will not read as a clock time.
+export function hoursFromTimes(start, end) {
+  const t = v => {
+    const m = /^\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i.exec(String(v || ""));
+    if (!m) return null;
+    let h = Number(m[1]);
+    const ap = (m[3] || "").toLowerCase();
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+    return h * 60 + Number(m[2]);
+  };
+  const a = t(start), b = t(end);
+  if (a === null || b === null) return null;
+  const mins = b > a ? b - a : (24 * 60 - a) + b;
+  if (mins <= 0 || mins > MAX_SHIFT_HOURS * 60) return null;
+  return Math.round((mins / 60) * 100);
+}
 
 export function detectHoursPreset(headers) {
   const hs = new Set((headers || []).map(norm));

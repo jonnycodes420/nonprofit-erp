@@ -106,6 +106,7 @@ CORE=(
   org-blindness
   session-privilege
   permissions-matrix
+  vol1-coordinator-scope
   script-guards
   build96-ai-gate
   incident-mail-gate

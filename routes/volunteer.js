@@ -99,7 +99,17 @@ app.post("/volunteer-hours/import", requireAuth, checkWriteAccess, wrap(async (r
   const out = { imported: 0, alreadyThere: 0, peopleCreated: 0, refused: [] };
   const cache = new Map();
   for (const [i, r] of rows.entries()) {
-    const v = VH.validateShift(r);
+    // VOL-1 — a SignUpGenius export is a SIGN-UP sheet: one row per person
+    // per slot, with a start and an end and often no hours column at all.
+    // The times become the hours when, and only when, the row does not
+    // carry a number of its own. The server re-derives it rather than
+    // trusting the browser, because this is the number a grant report is
+    // built from.
+    const withHours = (r && (r.hours === undefined || r.hours === null || String(r.hours).trim() === ""))
+      && (r.startTime || r.endTime)
+      ? { ...r, hours: (VH.hoursFromTimes(r.startTime, r.endTime) ?? 0) / 100 }
+      : r;
+    const v = VH.validateShift(withHours);
     const name = String(r?.name || "").trim().slice(0, 200), email = String(r?.email || "").trim().toLowerCase().slice(0, 200);
     if (!v.ok || (!name && !email)) { out.refused.push({ line: r?.line || i + 2, why: v.ok ? "no name or email" : v.errors.join("; ") }); continue; }
     const ck = email || "n:" + name.toLowerCase();
@@ -249,14 +259,26 @@ const spell = n => ["no", "one", "two", "three", "four", "five", "six", "seven",
 const cap = w => w.charAt(0).toUpperCase() + w.slice(1);
 const hoursWords = h => { const v = h / 100; return `${Number.isInteger(v) ? v : String(v)} hour${h === 100 ? "" : "s"}`; };
 
+// VOL-1 — A COORDINATOR DOES NOT SEE GIVING. The allowlist in auth.js lets
+// this role reach the roster; this is the other half of the same boundary,
+// because a roster that carries `lifetimeGiving` would hand over exactly
+// what the allowlist refused. One helper, used by every hub read.
+const COORD = "volunteer_coordinator";
+const stripGiving = (req, people) => req.user.role !== COORD ? people
+  : people.map(({ lifetimeGiving, lastGiftDate, alsoGives, ...rest }) => rest);
+
 app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
   const { people, year } = await rosterRows(req.user.orgId);
   const total = people.reduce((a, p) => a + p.hundredthsThisYear, 0);
   const givers = people.filter(p => p.alsoGives).length;
   const parts = [`${cap(spell(people.length))} ${people.length === 1 ? "volunteer" : "volunteers"} on the roster`];
   if (total) parts.push(`${hoursWords(total)} given so far in ${year}`);
-  if (givers) parts.push(`${spell(givers)} of them also ${givers === 1 ? "gives" : "give"}`);
-  res.json({ people, year, hundredthsThisYear: total,
+  // "…and three of them also give" is a COUNT OF DONORS. It belongs on this
+  // sentence for an admin and not on a coordinator's screen, where the whole
+  // point of the role is that giving is not theirs to see. The walk caught
+  // this: the rows were stripped and the summary of the rows was not.
+  if (givers && req.user.role !== COORD) parts.push(`${spell(givers)} of them also ${givers === 1 ? "gives" : "give"}`);
+  res.json({ people: stripGiving(req, people), year, hundredthsThisYear: total,
     sentence: people.length ? parts.join(", ") + "."
       : "Nobody is marked as a volunteer yet. Tag someone Volunteer on their record, log a shift, import hours, or share the sign-up link, and they join the roster.",
     definitions: {
@@ -264,11 +286,18 @@ app.get("/volunteer-hub/roster", requireAuth, wrap(async (req, res) => {
       hoursThisYear: `Hours from shifts dated ${year}-01-01 or later, in your organization's time zone.`,
       hours: HOURS_DEFINITION,
       lastShift: "The date of the most recent shift logged for this person.",
-      alsoGives: "Yes when at least one gift is on this person's record.",
+      ...(req.user.role === COORD ? {} : { alsoGives: "Yes when at least one gift is on this person's record." }),
     } });
 }));
 
 app.get("/volunteer-hub/givers", requireAuth, wrap(async (req, res) => {
+  // This view IS giving, so there is nothing to strip: a coordinator is
+  // refused it, with the sentence that says why rather than an empty list
+  // that would read as "no volunteer has ever given".
+  if (req.user.role === COORD) {
+    return res.status(403).json({ error: "coordinator_scope",
+      message: "Your account covers volunteers and hours. Which volunteers also give is part of giving, and an admin can see it." });
+  }
   const { people } = await rosterRows(req.user.orgId, { onlyGivers: true });
   people.sort((a, b) => b.lifetimeGiving - a.lifetimeGiving || String(a.name).localeCompare(String(b.name)));
   res.json({ people,

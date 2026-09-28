@@ -68,10 +68,64 @@ async function requireAuth(req, res, next) {
         return res.status(403).json({ error: "mfa_setup_required", message: "Set up two-step sign-in to continue." });
       }
     }
+    // ── VOL-1 · THE VOLUNTEER COORDINATOR ─────────────────────────────────
+    // A coordinator sees volunteers and hours and does not see giving. That
+    // is a SECURITY boundary, not a UI preference, so it is decided here —
+    // the one place every authenticated request passes through, reading the
+    // LIVE role rather than the JWT's, so a change of role takes effect on
+    // the next request rather than in up to seven days.
+    //
+    // AN ALLOWLIST, DELIBERATELY. A deny-list of money routes is a list
+    // somebody forgets to add to, and the thing they forget is a donor's
+    // giving history. This names what a coordinator MAY reach; everything
+    // else is refused, including every route added after today.
+    if (req.user.role === VOLUNTEER_COORDINATOR) {
+      const path = String(req.originalUrl || "").split("?")[0];
+      if (!coordinatorMayReach(path)) {
+        return res.status(403).json({
+          error: "coordinator_scope",
+          message: "Your account covers volunteers and hours. Giving, grants and finance are not part of it. "
+            + "An admin can change your role in Settings.",
+        });
+      }
+    }
     next();
   } catch (err) {
     next(err);
   }
+}
+
+// ── VOL-1 · WHAT A VOLUNTEER COORDINATOR MAY REACH ────────────────────────
+// Everything a volunteer programme runs on, their own account, and the
+// shell's own chrome. Nothing that carries a gift, a pledge, a grant, a
+// balance or a donor's giving history.
+//
+// Matched on the path only. `/people/:id` is here because the roster opens a
+// person's record; the ROUTE strips the money half of that record for this
+// role (routes/volunteer*.js), so the allowlist and the payload agree.
+const VOLUNTEER_COORDINATOR = "volunteer_coordinator";
+const COORDINATOR_EXACT = new Set([
+  "/health", "/me", "/org", "/org/welcome", "/org/welcome/seen", "/org/sample-data-status",
+  "/billing/status", "/people/photos", "/auth/logout",
+]);
+// MATCHED ON THE FIRST PATH SEGMENT, not on a string prefix. A raw prefix
+// list let `/volunteer` match `/volunteers-of-other-things`, which is the
+// whole failure mode an allowlist exists to avoid: a route added tomorrow
+// whose name happens to start with an allowed word would be open. The first
+// segment is the thing that names the surface, so that is what is checked.
+const COORDINATOR_SEGMENTS = new Set([
+  "volunteer",          // the public pages and the volunteer's own page
+  "volunteers",         // the legacy roster read
+  "volunteer-hub",      // everything the coordinator's hub calls
+  "volunteer-shifts",   // one logged shift
+  "volunteer-hours",    // the hours import
+  "me",                 // their own account, password and two-step
+  "people",             // one person's record; the money half is stripped
+]);
+function coordinatorMayReach(path) {
+  if (COORDINATOR_EXACT.has(path)) return true;
+  const first = String(path || "").split("?")[0].split("/")[1] || "";
+  return COORDINATOR_SEGMENTS.has(first);
 }
 
 function requireSuperAdmin(req, res, next) {
@@ -79,4 +133,4 @@ function requireSuperAdmin(req, res, next) {
   next();
 }
 
-module.exports = { signToken, requireAuth, requireSuperAdmin };
+module.exports = { signToken, requireAuth, requireSuperAdmin, VOLUNTEER_COORDINATOR, coordinatorMayReach };

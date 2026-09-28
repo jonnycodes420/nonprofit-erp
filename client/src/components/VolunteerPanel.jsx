@@ -37,6 +37,25 @@ export function VolunteerPanel({ donor, isReadOnly }) {
         <span style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>{data.totalHours}</span>
         <span style={{ fontSize: 13, color: T.ink3 }}> hours across {data.shiftCount} {data.shiftCount === 1 ? "shift" : "shifts"}</span>
       </div>
+      {/* ── VOL-1 · THE CROSSOVER, ON THE RECORD ────────────────────────
+          One person, one record. The sentence says which of the two things
+          this person is, because a coordinator looking at hours and a
+          fundraiser looking at gifts are looking at the SAME row and each
+          of them should be able to see it. It is a sentence, not a badge:
+          "never been asked" is a fact worth reading, not a label. */}
+      <div data-testid="volunteer-crossover" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>
+        {Number(donor.total || donor.total_giving || 0) > 0
+          ? "Gives and volunteers. Their hours and their giving are on this one record."
+          : "Volunteers, and has never given. They already say yes with their time."}
+      </div>
+      {/* Their upcoming shifts, so the person looking at this record knows
+          they are about to see them on Saturday. */}
+      {!!(data.upcoming || []).length && (
+        <div data-testid="volunteer-upcoming" style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 700 }}>Coming up: </span>
+          {data.upcoming.map(u => u.when).join(" · ")}
+        </div>
+      )}
       {data.shifts.slice(0, 6).map(s => (
         <div key={s.id} style={{ display: "flex", gap: 8, fontSize: 12, color: T.ink }}>
           <span style={{ color: T.ink3, minWidth: 84 }}>{displayDate(s.date)}</span><span>{s.hours} h</span><span style={{ color: T.ink3 }}>{s.role || ""}</span>

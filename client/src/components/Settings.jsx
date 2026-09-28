@@ -3416,8 +3416,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
                 <div style={{fontSize:12,fontWeight:600,color:T.ink3,marginBottom:4}}>Role</div>
                 <select value={invRole} onChange={e=>setInvRole(e.target.value)}
                   style={{width:"100%",boxSizing:"border-box",border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 12px",fontSize:14,color:T.ink,background:T.bg,outline:"none",marginBottom:16}}>
-                  <option value="staff">Staff — can view and edit data</option>
-                  <option value="admin">Admin — full access including settings</option>
+                  <option value="staff">Staff, can view and edit data</option>
+                  <option value="volunteer_coordinator">Volunteer coordinator, volunteers and hours only</option>
+                  <option value="admin">Admin, full access including settings</option>
                 </select>
                 {invErr&&<div style={{marginBottom:12,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:8,padding:"8px 12px"}}>{invErr}</div>}
                 <div style={{display:"flex",gap:10}}>

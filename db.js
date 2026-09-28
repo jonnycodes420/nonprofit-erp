@@ -4309,6 +4309,146 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_notes_person ON volunteer_notes (org_id, person_id, created_at DESC)`);
+
+  // ── VOL-1 · SCHEDULING, CAPACITY, WAITLISTS, CREDENTIALS ────────────────
+  // See shared/volunteerShifts.js for the vocabulary. In one line: an
+  // OPPORTUNITY is a standing thing to do, a SLOT is one dated occurrence of
+  // it with a capacity, a SIGN-UP is one person on one slot, and a SHIFT
+  // (volunteer_shifts, above) is hours that were actually worked. A slot
+  // becomes a shift at CHECK-OUT and never before, because a sign-up nobody
+  // attended is not hours anybody gave.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_opportunities (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      description TEXT,
+      location TEXT,
+      program TEXT,
+      is_public BOOLEAN NOT NULL DEFAULT TRUE,
+      requires_waiver BOOLEAN NOT NULL DEFAULT FALSE,
+      requires_background_check BOOLEAN NOT NULL DEFAULT FALSE,
+      archived_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_opp_slug ON volunteer_opportunities (org_id, slug)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_opp_org ON volunteer_opportunities (org_id, archived_at)`);
+
+  // A slot is a CIVIL date and two clock times in the org's own timezone,
+  // never a UTC instant: a 9am shift is 9am where the volunteers are, and an
+  // org either side of a DST change must not find Saturday morning moved.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_slots (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      opportunity_id TEXT NOT NULL REFERENCES volunteer_opportunities(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      capacity INTEGER,                        -- NULL = no limit; 0 = closed
+      notes TEXT,
+      cancelled_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_slots_org_date ON volunteer_slots (org_id, date, start_time)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_slots_opp ON volunteer_slots (opportunity_id, date)`);
+
+  // A group is a LABEL on a set of sign-ups: a church group, a company day.
+  // Never a person, never a second roster — every member is still their own
+  // record with their own hours.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_groups (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'other',
+      contact_person_id TEXT REFERENCES donors(id) ON DELETE SET NULL,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_groups_org ON volunteer_groups (org_id, name)`);
+
+  // ONE SIGN-UP PER PERSON PER SLOT, decided by the database. Capacity that
+  // is only checked by an if-statement is capacity that is advisory, and the
+  // failure mode is four people driving across town to a full shift.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_signups (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      slot_id TEXT NOT NULL REFERENCES volunteer_slots(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      group_id TEXT REFERENCES volunteer_groups(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'confirmed'
+        CHECK (status IN ('confirmed','waitlisted','cancelled','no_show','completed')),
+      position INTEGER,                        -- waitlist order
+      checked_in_at TIMESTAMPTZ,
+      checked_out_at TIMESTAMPTZ,
+      hours_shift_id TEXT,                     -- the volunteer_shifts row check-out wrote
+      source TEXT NOT NULL DEFAULT 'staff',    -- public | self | staff | kiosk | group
+      note TEXT,
+      cancelled_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_vol_signup_open
+                      ON volunteer_signups (org_id, slot_id, person_id) WHERE status <> 'cancelled'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_signups_slot ON volunteer_signups (slot_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_signups_person ON volunteer_signups (org_id, person_id, status)`);
+
+  // Waivers and background checks: the same shape (a thing done on a date
+  // that stops being true on another date), so one table and one set of
+  // rules. Steward records that a background check happened and the org's own
+  // reference; it never holds the report.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_credentials (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK (kind IN ('waiver','background_check')),
+      signed_on TEXT NOT NULL,
+      expires_on TEXT,
+      reference TEXT,
+      signature_name TEXT,                     -- what they typed, for an online waiver
+      signature_ip TEXT,
+      waiver_text_sha256 TEXT,                 -- WHICH words they agreed to
+      superseded_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_creds_person ON volunteer_credentials (org_id, person_id, kind, signed_on DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_creds_expiry ON volunteer_credentials (org_id, kind, expires_on) WHERE superseded_at IS NULL`);
+
+  // The volunteer's own page, by magic link. A SEPARATE family from the
+  // donor portal's (portal_magic_links) on purpose: a volunteer is not a
+  // donor account, the two must not share a session, and a link that opens a
+  // roster must never open a giving history.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_magic_links (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_magic_person ON volunteer_magic_links (org_id, person_id)`);
+
+  // Shift reminders are OFF BY DEFAULT, per org, and never on the demo org.
+  // Turning them on is an org's decision about mail reaching its volunteers,
+  // and a default of ON would make that decision for them.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_reminders_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_waiver_text TEXT`);
+  // The highest hour milestone a thank-you draft has been written for, so
+  // crossing 25 writes one draft and not one per shift thereafter.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS volunteer_milestone_hours INTEGER`);
+  // Which sign-up a reminder has already gone out for. One row, one send.
+  await pool.query(`ALTER TABLE volunteer_signups ADD COLUMN IF NOT EXISTS reminded_at TIMESTAMPTZ`);
   // FIX-1 — the volunteer sign-up link's version. It is signed into the link,
   // so "make a new link" bumps it and every older link stops verifying.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS volunteer_link_version INTEGER NOT NULL DEFAULT 0`);

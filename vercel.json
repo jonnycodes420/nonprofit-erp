@@ -55,6 +55,22 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/join"
     },
     {
+      "source": "/volunteer/me",
+      "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/me"
+    },
+    {
+      "source": "/volunteer/me/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/me/:path*"
+    },
+    {
+      "source": "/volunteer/:slug/signup",
+      "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/:slug/signup"
+    },
+    {
+      "source": "/volunteer/:slug",
+      "destination": "https://nonprofit-erp-production.up.railway.app/volunteer/:slug"
+    },
+    {
       "source": "/billing/cancel/:token",
       "destination": "https://nonprofit-erp-production.up.railway.app/billing/cancel/:token"
     },

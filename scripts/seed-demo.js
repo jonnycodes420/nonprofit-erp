@@ -83,7 +83,13 @@ const TZ = process.env.DEMO_TZ || "America/New_York";
 // read as a product defect when it was this allowlist. The pattern still
 // pins both ends: it must start `steward_` and end `shard_<digits>`, so it
 // widens to sharded scratch databases and to nothing else.
-const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+|steward_gtm\w+|steward_\w*shard_\d+)$/;
+// VOL-1 — the prefix list had grown one entry per build family (build, fix,
+// chore, gtm), so every new family met the same refusal and read as a product
+// defect. It is one pattern now: `steward_` plus letters, digits and
+// underscores, which is every scratch database this repo has ever created and
+// is still incapable of matching `postgres`, a `kb_`/`kingdom` database, or
+// anything with a hyphen or a dot in it. The two ends are still pinned.
+const ALLOWED_DB = /^steward_[a-z0-9_]+$/;
 const KB_DB = /^(kb_|kingdom)/i;
 const PROD_DB = "postgres";
 
@@ -1012,6 +1018,170 @@ async function main() {
   await q(`UPDATE fin_transactions ft SET date = g.date FROM gifts g
             WHERE ft.gift_id = g.id AND ft.org_id=$1 AND g.donor_id = ANY($2)`, [ORG, jIds])
     .catch(() => {});
+
+  // ── VOL-1 · THE VOLUNTEER PROGRAMME ───────────────────────────────────
+  // What a coordinator's week actually looks like, so the demo answers the
+  // questions a coordinator asks rather than the ones a fundraiser does:
+  // three opportunities, shifts in the past AND the future, one of them FULL
+  // with somebody on the waiting list, a company group, hours from
+  // check-outs, waivers (one lapsed, one about to), and SIX people who both
+  // give and volunteer — the crossing that is the whole point.
+  console.log("[seed] the volunteer programme…");
+  const VOL_OPPS = [
+    { id: "vo_b72_shore", name: "Saturday harbour clean-up", slug: "saturday-harbour-clean-up",
+      description: "Two hours on the shoreline with gloves, bags and a flask of something hot.",
+      location: "Pier 4, Harborlight", program: "Shoreline", waiver: true, check: false },
+    { id: "vo_b72_tutor", name: "After-school tutoring", slug: "after-school-tutoring",
+      description: "One hour a week with the same young person, term time.",
+      location: "The Annexe, 14 Mill Street", program: "Youth programs", waiver: true, check: true },
+    { id: "vo_b72_gala", name: "Gala night crew", slug: "gala-night-crew",
+      description: "Setting up, welcoming guests and clearing away afterwards.",
+      location: "Harborlight Hall", program: "Events", waiver: false, check: false },
+  ];
+  for (const o of VOL_OPPS) {
+    await q(`INSERT INTO volunteer_opportunities (id,org_id,name,slug,description,location,program,is_public,requires_waiver,requires_background_check,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,$9,'u_b72demo','Dana Reyes')`,
+      [o.id, ORG, o.name, o.slug, o.description, o.location, o.program, o.waiver, o.check]);
+  }
+
+  // Thirty volunteers. SIX of them are people who ALREADY GIVE — picked off
+  // the real donor rows rather than invented, because the crossover is only
+  // interesting when it is the same record.
+  const givers = (await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
+      ORDER BY total_giving DESC OFFSET 12 LIMIT 6`, [ORG])).map(r => r.id);
+  for (const id of givers) {
+    await q(`UPDATE donors SET person_types = CASE
+               WHEN person_types @> '["volunteer"]'::jsonb THEN person_types
+               ELSE COALESCE(person_types,'["donor"]'::jsonb) || '["volunteer"]'::jsonb END
+             WHERE id=$1 AND org_id=$2`, [id, ORG]);
+  }
+  const VOL_FIRST = ["Marisol","Dev","Aiko","Tomas","Nell","Rufus","Priya","Odin","Clara","Bertie",
+                     "Ines","Kofi","Saoirse","Milo","Freya","Hassan","Juno","Emeka","Lotte","Arjun",
+                     "Wren","Ottoline","Cassius","Maeve"];
+  const VOL_LAST = ["Vance","Okonjo","Brightwater","Mendel","Ashcroft","Iyer","Fairweather","Quill",
+                    "Rosewood","Delacroix","Northcote","Abara","Winterbourne","Sallow"];
+  const volOnly = [];
+  for (let i = 0; i < 24; i++) {
+    const id = `d_b72_vol${i}`;
+    const name = `${VOL_FIRST[i]} ${VOL_LAST[i % VOL_LAST.length]}`;
+    await q(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,'prospect','active','[]','["volunteer"]'::jsonb,'system:volunteer-signup','The volunteer, from the sign-up link')`,
+      [id, ORG, name, `${VOL_FIRST[i].toLowerCase()}.${VOL_LAST[i % VOL_LAST.length].toLowerCase()}@example.org`,
+       `555-01${String(10 + i).padStart(2, "0")}`]);
+    volOnly.push(id);
+  }
+  const allVols = [...givers, ...volOnly];
+
+  // A company day. One group, eight of the volunteers on it, every one of
+  // them still their own record with their own hours.
+  const GROUP = "vg_b72_meridian";
+  await q(`INSERT INTO volunteer_groups (id,org_id,name,kind,created_by,created_by_name)
+           VALUES ($1,$2,'Meridian Bank, community day','company','u_b72demo','Dana Reyes')`, [GROUP, ORG]);
+
+  // Shifts: four in the past (so there are hours and a report), three ahead
+  // (so there is a schedule), and the next Saturday is FULL with two people
+  // waiting — the state a coordinator most needs to recognise on sight.
+  const dAdd = (iso, n) => {
+    const t = Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n);
+    return new Date(t).toISOString().slice(0, 10);
+  };
+  const VOL_SLOTS = [
+    { id: "vsl_b72_p1", opp: "vo_b72_shore", date: dAdd(TODAY, -35), s: "09:00", e: "13:00", cap: 12 },
+    { id: "vsl_b72_p2", opp: "vo_b72_shore", date: dAdd(TODAY, -21), s: "09:00", e: "13:00", cap: 12 },
+    { id: "vsl_b72_p3", opp: "vo_b72_tutor", date: dAdd(TODAY, -14), s: "16:00", e: "17:00", cap: 6 },
+    { id: "vsl_b72_p4", opp: "vo_b72_gala", date: dAdd(TODAY, -7),  s: "17:00", e: "23:00", cap: 20 },
+    { id: "vsl_b72_f1", opp: "vo_b72_shore", date: dAdd(TODAY, 5),  s: "09:00", e: "13:00", cap: 8,
+      notes: "Gloves and bags provided. Wear boots you do not mind ruining." },
+    { id: "vsl_b72_f2", opp: "vo_b72_tutor", date: dAdd(TODAY, 9),  s: "16:00", e: "17:00", cap: 6 },
+    { id: "vsl_b72_f3", opp: "vo_b72_gala", date: dAdd(TODAY, 30),  s: "17:00", e: "23:00", cap: 20 },
+  ];
+  for (const sl of VOL_SLOTS) {
+    await q(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time,capacity,notes,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'u_b72demo','Dana Reyes')`,
+      [sl.id, ORG, sl.opp, sl.date, sl.s, sl.e, sl.cap, sl.notes || null]);
+  }
+
+  // Who is on what. The FULL one takes exactly its capacity and then two
+  // more, who are waitlisted in order.
+  let vsu = 0;
+  const putOn = async (slotId, personId, status, opts = {}) => {
+    vsu++;
+    await q(`INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,group_id,status,position,source,checked_in_at,checked_out_at,hours_shift_id,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [`vsu_b72_${vsu}`, ORG, slotId, personId, opts.groupId || null, status, opts.position || null,
+       opts.source || "public", opts.in || null, opts.out || null, opts.shiftId || null,
+       "system:volunteer-public", "The volunteer, from the sign-up page"]);
+  };
+
+  // The past shifts produce HOURS, through the same table the total is
+  // summed from — a checked-out slot and a hand-logged shift are one number.
+  let vsh = 0;
+  const logHours = async (personId, date, hours, role) => {
+    vsh++;
+    const id = `vs_b72_${vsh}`;
+    await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role,via,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'staff','u_b72demo','Dana Reyes')`,
+      [id, ORG, personId, date, hours, role]);
+    return id;
+  };
+  const past = [
+    { slot: VOL_SLOTS[0], who: allVols.slice(0, 11), hours: 4, role: "Saturday harbour clean-up" },
+    { slot: VOL_SLOTS[1], who: allVols.slice(4, 14), hours: 4, role: "Saturday harbour clean-up" },
+    { slot: VOL_SLOTS[2], who: allVols.slice(0, 5),  hours: 1, role: "After-school tutoring" },
+    { slot: VOL_SLOTS[3], who: allVols.slice(8, 22), hours: 6, role: "Gala night crew" },
+  ];
+  for (const p of past) {
+    for (const person of p.who) {
+      const shiftId = await logHours(person, p.slot.date, p.hours, p.role);
+      await putOn(p.slot.id, person, "completed", {
+        source: "public", shiftId,
+        in: `${p.slot.date}T${p.slot.s}:00Z`, out: `${p.slot.date}T${p.slot.e}:00Z`,
+        groupId: p.slot.id === "vsl_b72_p4" ? GROUP : null,
+      });
+    }
+  }
+  // Four of the tutors have been at it every week, so somebody is over 25
+  // hours and somebody is over 50 — the milestones have something to find.
+  for (const [i, person] of allVols.slice(0, 4).entries()) {
+    for (let w = 1; w <= 12 + i * 8; w++) await logHours(person, dAdd(TODAY, -(7 * w)), 1, "After-school tutoring");
+  }
+
+  // The full one, and the two waiting.
+  for (const [i, person] of allVols.slice(0, 8).entries()) await putOn("vsl_b72_f1", person, "confirmed", { source: i < 3 ? "public" : "staff" });
+  await putOn("vsl_b72_f1", allVols[8], "waitlisted", { position: 1 });
+  await putOn("vsl_b72_f1", allVols[9], "waitlisted", { position: 2 });
+  for (const person of allVols.slice(2, 7)) await putOn("vsl_b72_f2", person, "confirmed");
+  for (const person of allVols.slice(10, 20)) await putOn("vsl_b72_f3", person, "confirmed", { groupId: GROUP, source: "group" });
+
+  // Waivers and background checks: mostly current, one LAPSED and one
+  // expiring inside the thirty-day window, because the screen is only worth
+  // looking at when it has something to say.
+  let vc = 0;
+  const cred = async (personId, kind, signedOn, expiresOn) => {
+    vc++;
+    await q(`INSERT INTO volunteer_credentials (id,org_id,person_id,kind,signed_on,expires_on,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'u_b72demo','Dana Reyes')`,
+      [`vc_b72_${vc}`, ORG, personId, kind, signedOn, expiresOn]);
+  };
+  for (const [i, person] of allVols.slice(0, 14).entries()) {
+    await cred(person, "waiver", dAdd(TODAY, -300 + i), dAdd(TODAY, 65 + i * 3));
+  }
+  for (const [i, person] of allVols.slice(0, 5).entries()) {
+    await cred(person, "background_check", dAdd(TODAY, -700 + i * 10), dAdd(TODAY, 120 + i * 30));
+  }
+  await cred(allVols[15], "background_check", dAdd(TODAY, -740), dAdd(TODAY, -12));   // LAPSED twelve days ago
+  await cred(allVols[16], "waiver", dAdd(TODAY, -350), dAdd(TODAY, 11));              // expires in eleven days
+
+  const [volCount] = await q(
+    `SELECT COUNT(*)::int c FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND person_types @> '["volunteer"]'::jsonb`, [ORG]);
+  const [volHours] = await q(
+    `SELECT COALESCE(SUM(hours),0)::float h FROM volunteer_shifts WHERE org_id=$1`, [ORG]);
+  console.log(`[assert] volunteers ${volCount.c} · ${Math.round(volHours.h)} hours on file · ${givers.length} of them also give`);
+  if (volCount.c < 30) {
+    console.error(`\nREFUSED: the volunteer programme needs at least 30 volunteers and made ${volCount.c}.`);
+    process.exit(1);
+  }
 
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(
