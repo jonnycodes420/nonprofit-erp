@@ -41,6 +41,7 @@ const fmtPct = v => (v === null || v === undefined ? "—" : v + "%");
 export default function LostAndFound() {
   const [state, setState] = useState("idle");   // idle | reading | done | error
   const [result, setResult] = useState(null);
+  const [sample, setSample] = useState(false);   // true when the results come from the built-in sample file
   const [error, setError] = useState("");
   const [openSection, setOpenSection] = useState(null);
   const [form, setForm] = useState({ name: "", email: "", organization: "", benchmark: false });
@@ -133,7 +134,16 @@ export default function LostAndFound() {
     }
   }
 
-  const reset = () => { setState("idle"); setResult(null); setError(""); setFormState(""); };
+  const reset = () => { setState("idle"); setResult(null); setError(""); setFormState(""); setSample(false); };
+
+  // No export handy: run the audit on a built-in sample file. The CSV is
+  // generated in this tab from synthetic names, and it travels the exact
+  // same path a real upload takes: FileReader to ArrayBuffer to the worker.
+  // Nothing about it ever leaves the browser.
+  const useSample = useCallback(() => {
+    setSample(true);
+    handleFile(new File([sampleCsv()], "sample-donor-export.csv", { type: "text/csv" }));
+  }, [handleFile]);
 
   return (
     <div style={{ minHeight: "100vh", background: GROUND, color: INK, fontFamily: "'DM Sans',system-ui,sans-serif" }}>
@@ -192,31 +202,53 @@ export default function LostAndFound() {
               onDragLeave={() => setDrag(false)}
               onDrop={e => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files && e.dataTransfer.files[0]); }}
               style={{ background: WHITE, border: `2px dashed ${drag ? EMERALD : EDGE}`, borderRadius: 18,
-                       padding: "38px 24px", textAlign: "center", transition: "border-color .15s" }}>
-              <div style={{ fontFamily: SERIF, fontSize: 26, marginBottom: 8 }}>
-                {state === "reading" ? "Reading your file…" : "Drop your donor export here"}
+                       overflow: "hidden", transition: "border-color .15s", opacity: state === "reading" ? .75 : 1 }}>
+              {/* app chrome */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "13px 20px", borderBottom: `1px solid ${EDGE}` }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, letterSpacing: "1.2px", textTransform: "uppercase" }}>
+                  Lost &amp; Found
+                </span>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: GREY }}>Free audit · No account</span>
               </div>
-              <p style={{ fontSize: 15, color: GREY, margin: "0 0 18px", lineHeight: 1.55 }}>
-                A CSV or an Excel file with a donor, an amount and a date on each row. Whatever your
-                database already exports is fine; nothing needs tidying first.
-              </p>
-              <input ref={fileRef} data-testid="lf-file" type="file" accept=".csv,.xlsx,.xls,text/csv"
-                onChange={e => handleFile(e.target.files && e.target.files[0])} style={{ display: "none" }}/>
-              <button data-testid="lf-choose" onClick={() => fileRef.current && fileRef.current.click()}
-                disabled={state === "reading"}
-                style={{ background: EMERALD, color: WHITE, border: "none", borderRadius: 12, padding: "15px 30px",
-                         fontSize: 16, fontWeight: 700, cursor: state === "reading" ? "wait" : "pointer", fontFamily: "inherit" }}>
-                {state === "reading" ? "Working…" : "Choose a file"}
-              </button>
-              <div data-testid="lf-privacy" style={{ display: "inline-flex", alignItems: "center", gap: 8,
-                marginTop: 18, fontSize: 14, fontWeight: 600, color: WASH_INK, background: WASH,
-                borderRadius: 99, padding: "8px 16px" }}>
-                <LockGlyph/> {PRIVACY_LINE}
+              <div style={{ padding: "32px 28px 26px", textAlign: "center" }}>
+                <UploadGlyph/>
+                <div style={{ fontFamily: SERIF, fontSize: 27, margin: "12px 0 8px", lineHeight: 1.2 }}>
+                  {state === "reading" ? "Reading your file…" : "Drop your donor export here"}
+                </div>
+                <p style={{ fontSize: 15, color: GREY, margin: "0 0 6px", lineHeight: 1.55 }}>
+                  {state === "reading"
+                    ? "The audit runs in this tab. This usually takes under a minute."
+                    : <>or <button type="button" data-testid="lf-choose" onClick={() => fileRef.current && fileRef.current.click()}
+                        style={{ background: "none", border: "none", padding: 0, color: EMERALD, fontSize: 15,
+                                 fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}>
+                        choose a file</button> from your computer</>}
+                </p>
+                <p style={{ fontSize: 13, color: GREY, margin: 0, lineHeight: 1.55 }}>
+                  CSV or Excel. A donor, an amount and a date on each row. Whatever your database
+                  already exports is fine; nothing needs tidying first.
+                </p>
+                <input ref={fileRef} data-testid="lf-file" type="file" accept=".csv,.xlsx,.xls,text/csv"
+                  onChange={e => handleFile(e.target.files && e.target.files[0])} style={{ display: "none" }}/>
+                {state === "reading" && (
+                  <div style={{ height: 6, borderRadius: 99, background: EDGE, marginTop: 18, overflow: "hidden" }}>
+                    <div className="lf-bar" style={{ height: "100%", width: "40%", borderRadius: 99, background: EMERALD }} />
+                  </div>
+                )}
               </div>
-              <p style={{ fontSize: 13, color: GREY, margin: "12px 0 0", lineHeight: 1.55 }}>
-                The whole audit runs in this browser tab. Your results are free and complete with no
-                email address. We only ask who you are if you want the board-ready PDF.
-              </p>
+              {/* footer strip */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                flexWrap: "wrap", padding: "12px 20px", borderTop: `1px solid ${EDGE}` }}>
+                <span data-testid="lf-privacy" style={{ display: "inline-flex", alignItems: "center", gap: 7,
+                  fontSize: 13, fontWeight: 600, color: GREY }}>
+                  <LockGlyph/> {PRIVACY_LINE}
+                </span>
+                <button type="button" data-testid="lf-sample" onClick={useSample} disabled={state === "reading"}
+                  style={{ background: "none", border: "none", padding: 0, color: EMERALD, fontSize: 13,
+                           fontWeight: 700, cursor: state === "reading" ? "wait" : "pointer", fontFamily: "inherit" }}>
+                  No export handy? Try the sample file
+                </button>
+              </div>
             </div>
             {state === "error" && (
               <div role="alert" data-testid="lf-error" style={{ background: "#f6ece8", border: "1px solid #e0a893",
@@ -231,6 +263,18 @@ export default function LostAndFound() {
         {/* ── THE RESULTS ──────────────────────────────────────────── */}
         {state === "done" && result && (
           <div data-testid="lf-results" style={{ marginTop: 40 }}>
+            {sample && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                flexWrap: "wrap", background: WASH, borderRadius: 12, padding: "12px 18px", marginBottom: 16 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: WASH_INK }}>
+                  You are looking at sample data. Upload your own export to see your real numbers.
+                </span>
+                <button onClick={reset} style={{ background: "none", border: "none", padding: 0, fontSize: 14,
+                  fontWeight: 700, color: WASH_INK, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>
+                  Use my file
+                </button>
+              </div>
+            )}
             <Headline result={result} onAnother={reset}/>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 14, marginTop: 20 }}>
               {result.sections.map(s => (
@@ -406,6 +450,11 @@ export default function LostAndFound() {
       </section>
 
       <style>{`
+        @keyframes lf-slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+        .lf-bar { animation: lf-slide 1.1s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce){
+          .lf-bar { animation: none; }
+        }
         @media (max-width: 760px){
           .lf-h1{ font-size: 40px !important; letter-spacing: -0.8px !important; }
           .lf-nav{ padding: 0 16px !important; }
@@ -462,6 +511,78 @@ function LockGlyph() {
       <path d="M3.6 6V4.2a2.9 2.9 0 0 1 5.8 0V6" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   );
+}
+
+function UploadGlyph() {
+  return (
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+      <path d="M17 22V8M17 8l-6 6M17 8l6 6" stroke="#0d5c3a" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M6 24v3.5A2.5 2.5 0 0 0 8.5 30h17a2.5 2.5 0 0 0 2.5-2.5V24" stroke="#0d5c3a" strokeWidth="2.2" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+// ── THE SAMPLE FILE ──────────────────────────────────────────────────
+// A synthetic donor export, generated in the tab, so anyone can watch the
+// audit work before finding their own export. Deterministic on purpose: the
+// same seed, the same story every time. Names are invented, emails use the
+// reserved example.org domain, and the mix is built to exercise every
+// section of the report: active donors, lapsed, drifting, quiet and new.
+function sampleCsv() {
+  let seed = 20260928;
+  const rnd = () => {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const first = ["Maya","Jordan","Priya","Samuel","Elena","Marcus","Tessa","David","Amara","Ruth","Kenji","Laura","Omar","Grace","Victor","Nadia","Peter","Hannah","Cole","June","Silas","Wren","Ellis","Noor","Clara"];
+  const last = ["Ellis","Nair","Okafor","Reyes","Lindqvist","Thornton","Adeyemi","Kowalski","Bennett","Castillo","Delaney","Osborne","Quill","Rivas","Sato","Turner","Vance","Whitfield","Holloway","Briggs","Calloway","Dunmore","Ellery","Frost","Grady"];
+  const used = new Set();
+  const donor = () => {
+    let n;
+    do { n = pick(first) + " " + pick(last); } while (used.has(n));
+    used.add(n);
+    const [f, l] = n.split(" ");
+    return { name: n, email: (f + "." + l + "@example.org").toLowerCase() };
+  };
+  const giftDate = (year) => {
+    const m = String(1 + Math.floor(rnd() * 12)).padStart(2, "0");
+    const d = String(1 + Math.floor(rnd() * 28)).padStart(2, "0");
+    return `${year}-${m}-${d}`;
+  };
+  const amt = (lo, hi) => (lo + rnd() * (hi - lo)).toFixed(2);
+  const rows = [["name", "email", "amount", "date"]];
+  const give = (d, years, lo, hi, perYear = [1, 3]) => {
+    for (const y of years) {
+      const n = perYear[0] + Math.floor(rnd() * (perYear[1] - perYear[0] + 1));
+      for (let i = 0; i < n; i++) rows.push([d.name, d.email, amt(lo, hi), giftDate(y)]);
+    }
+  };
+  // Active: giving every recent year, including this one.
+  for (let i = 0; i < 50; i++) give(donor(), [2023, 2024, 2025, 2026], 25, 1200);
+  // Lapsed: generous not long ago, nothing since 2023.
+  for (let i = 0; i < 30; i++) give(donor(), [2021, 2022, 2023], 50, 2500);
+  // Drifting: still giving, but far below their best years.
+  for (let i = 0; i < 25; i++) {
+    const d = donor();
+    give(d, [2021, 2022], 400, 2000);
+    give(d, [2024, 2025], 40, 300, [1, 2]);
+  }
+  // Quiet: gave years ago, silent since.
+  for (let i = 0; i < 25; i++) give(donor(), [2020, 2021, 2022], 25, 800);
+  // New: first gifts this year or last.
+  for (let i = 0; i < 12; i++) give(donor(), pick([[2025], [2026], [2025, 2026]]), 25, 500, [1, 2]);
+  // Recurring: monthly, still going.
+  for (let i = 0; i < 8; i++) {
+    const d = donor(), monthly = amt(25, 150);
+    for (const y of [2024, 2025, 2026]) for (let m = 1; m <= 12; m++) {
+      if (y === 2026 && m > 9) break;
+      rows.push([d.name, d.email, monthly, `${y}-${String(m).padStart(2, "0")}-15`]);
+    }
+  }
+  return rows.map(r => r.join(",")).join("\n");
 }
 
 const LBL = { display: "block", fontSize: 12.5, fontWeight: 700, color: "rgba(240,237,230,0.78)", marginBottom: 5 };
