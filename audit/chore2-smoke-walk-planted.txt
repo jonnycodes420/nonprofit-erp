@@ -1,0 +1,37 @@
+CHORE-2 — proof the smoke walk can fail.
+
+The walk is the ONLY screen coverage left after 238 suites were retired, so
+it has to be able to fail, and the first two drafts of it could not.
+
+── PLANT 1 (found a defect in the suite, not the app) ────────────────────
+The first draft walked the tabs as URLs (/tasks, /reports, …). Only
+/dashboard and /donors/:id are real routes; every other path falls through
+the router's catch-all and renders the dashboard. So the walk opened the
+SAME screen fifteen times and reported 98 passed. Rewritten to click the nav
+and assert the nav actually moved:
+
+  PASS  tab reports — the nav moved to it
+  ok("the walk visited a DIFFERENT screen each time", new Set(seen).size === seen.length)
+
+── PLANT 2 (found a second defect in the suite) ──────────────────────────
+It measured `.app-content` while the walk was stuck on the dashboard, read
+4,864 characters, and concluded every screen drew something. With real
+navigation a screen's own body is 189 characters and 21 nodes, and a blank
+one is 0 and 0.
+
+── PLANT 3 — the real proof ──────────────────────────────────────────────
+`client/src/components/Tasks.jsx`, one line at the component's return:
+
+    if (String(data).length >= 0) return null;   // PLANTED
+
+rebuilt, re-run:
+
+    PASS  tab tasks — the nav moved to it
+    FAIL  tab tasks — draws something — {"text":0,"nodes":0,"boundary":false}
+    PASS  tab tasks — no error boundary
+    PASS  tab tasks — nothing on fire
+
+    103 passed, 1 failed
+
+Reverted: 104 passed, 0 failed, one documented SKIP (the Donor Portal tab is
+hidden from the CRM by tabRegistry's CRM_HIDDEN_TABS).

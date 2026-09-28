@@ -226,6 +226,16 @@ const EXEMPT = {
   "create-billing-products": "writes to STRIPE, not the app; has its own refuse-live-without---live guard",
   "build95-cheque-drill": "BUILD-95 — the cheque-reading boundary drill: reads local image files, calls the Anthropic API directly and prints what came back. No BASE, no DATABASE_URL, no Steward server, no app write of any kind; it refuses to run under NODE_ENV=production",
   "audit-gate": "BUILD-75 B.6 — runs `npm audit --json` on the local package and compares against audit/npm-audit-allowlist.json; no BASE, no DB, no app writes",
+  // ── CHORE-2 — the sharded battery's four helpers. None of them has a BASE,
+  // a DATABASE_URL or any notion of an app: they read a suite list, a plan, a
+  // set of shard results and a timings file, and write files under audit/ and
+  // a temp directory. The thing that DOES touch a database is tests/shard.sh,
+  // which is a test file rather than a script, and it only ever creates and
+  // drops `steward_shard_<n>` on the loopback scratch Postgres.
+  "shard-plan": "CHORE-2 — pure scheduling: reads audit/suite-timings.json and a list of suite NAMES, writes a plan JSON. No BASE, no DB, no network",
+  "shard-report": "CHORE-2 — reads the shard result files a local run wrote and prints one summary; its only write is audit/suite-timings.json. No BASE, no DB, no network",
+  "shard-combine": "CHORE-2 — CI-side: reads the shard artifacts and audit/suite-counts.json and decides whether the battery passed. Its only write is that baseline file. No BASE, no DB, no app calls",
+  "tree-already-passed": "CHORE-2 — asks the GitHub Actions API whether this exact git TREE already passed, and writes two job outputs. Read-only against GitHub, no BASE, no DB, no app writes; every failure mode falls back to running the battery",
 };
 
 // ── 1. Every script file is classified ──────────────────────────────────────

@@ -71,7 +71,12 @@ const TZ = process.env.DEMO_TZ || "America/New_York";
 // that org id.
 // FIX-1: the per-worktree scratch databases (steward_fix1_a, steward_chore1…)
 // are scratch too, and run-all.sh seeds the demo on whichever one it runs.
-const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+)$/;
+// CHORE-2: and the per-SHARD ones. `steward_shard_<n>` is created by
+// tests/shard.sh at the start of a shard and dropped at the end of it, on the
+// loopback scratch Postgres; the shard holding demo-shape seeds the demo into
+// its own. The pattern is deliberately narrow — a digit, nothing else — so it
+// cannot match anything a person would name by hand.
+const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+|steward_shard_\d+)$/;
 const KB_DB = /^(kb_|kingdom)/i;
 const PROD_DB = "postgres";
 
