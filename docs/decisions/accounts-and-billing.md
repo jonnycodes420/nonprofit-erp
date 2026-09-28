@@ -123,6 +123,22 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Make the first login a non-dead-end for every tier.** `tests/first-login-matrix.test.js` is a data
   table, and a plan literal without a row fails. (BUILD-58 W-2)
 
+### FIX-AUTH — a revoked session is refused, and the client acts on it
+- **A 401 on a request that CARRIED a token is an unusable token, whatever the server calls
+  the reason.** `client/src/api.js` decides on the status and the token, never on a list of
+  codes. It held an allowlist of three and `requireAuth` returns six, so `session_revoked`,
+  `user_not_found` and `account_deactivated` cleared nothing and redirected nowhere: the app
+  sat on "Failed to connect" with a Retry that could not work. The codes now choose only the
+  WORDING, and an unknown one falls through to a general sentence. (FIX-AUTH)
+- **A sign-out is not an outage, and `leavingForLogin()` is checked BEFORE the
+  `loadErr||!data` branch in `App.jsx`.** The 401 starts the navigation to `/login` and then
+  throws; that throw landed in `loadData`'s catch and painted the outage screen over a
+  redirect already on its way. (FIX-AUTH)
+- **`sessions_valid_after` is a security control, so the client honouring it is pinned**
+  (`tests/auth-revocation.test.js`): every 401 `auth.js` can return is typed and reachable, a
+  revoked session and a removed account really are refused end to end, and there is no
+  allowlist left to fall behind. (FIX-AUTH)
+
 ## Gotchas
 - **`ADD COLUMN IF NOT EXISTS … DEFAULT x` does nothing when the column exists, including the default.**
   Follow it with `ALTER COLUMN … SET DEFAULT`. (BUILD-94)

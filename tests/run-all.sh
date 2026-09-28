@@ -105,6 +105,7 @@ CORE=(
   tenant-matrix
   org-blindness
   session-privilege
+  auth-revocation
   permissions-matrix
   vol1-coordinator-scope
   lf1-no-donor-data-leaves
