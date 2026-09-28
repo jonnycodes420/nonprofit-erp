@@ -138,7 +138,7 @@ export default function Landing() {
         <div className="lostfound-card">
           <div>
             <p className="eyebrow">Lost &amp; Found</p>
-            <h2>A $1,500 donor audit. Free.</h2>
+            <h2>A paid-caliber donor audit. Free.</h2>
             <p className="lf-copy">Consultants charge $500 to $2,000 to tell you which donors are slipping away. Upload your donor file and see who has gone quiet, who is drifting and how much is at risk, before your year-end appeal goes out.</p>
           </div>
           <div className="lostfound-side">
