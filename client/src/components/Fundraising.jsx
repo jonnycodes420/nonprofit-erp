@@ -160,7 +160,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       </div>
       {sec.parts.length > 1 && (
         <div data-fr-parts="" role="navigation" aria-label={sec.label}
-          style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2 }}>
+          style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2, width: "fit-content", maxWidth: "100%" }}>
           {sec.parts.map(p => {
             const on = subtab === p.id;
             return (

@@ -58,6 +58,44 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   above the price is refused. The fair-market value is the org's number to enter, and Steward never
   estimates it. (BUILD-98)
 - **Record an unpaid sponsor as a pledge with one instalment, never as money.** (BUILD-98)
+- **A volunteer file is FOUR column families, not one.** `shared/volunteerImport.js` reads people,
+  contact details, hours history, and the two dated things that decide whether somebody may work
+  (waiver, background check) out of one file. Five presets: VolunteerHub, SignUpGenius, Wranglr,
+  Bloomerang Volunteer, and a plain spreadsheet, which is what a small organisation usually has.
+  The vendor preset maps first and the plain reader FILLS WHAT IT DID NOT NAME, because a real
+  export has been edited: a "Waiver Signed" column somebody added to a SignUpGenius report was
+  silently dropped until it did. A credential cell that is a TICK ("yes", "signed") and not a date
+  is refused by line and reason, never given today's date: what a screening is worth is its date.
+  A shift dated in the future is a sign-up, not hours worked, and is refused too. (VOL-2)
+- **The preview writes nothing and the import re-plans.** Same shape as the donor and grant
+  imports: the browser parses with `parseFileToSheets`, the SERVER decides everything in
+  `POST /volunteer-hub/import/preview`, and `POST /volunteer-hub/import` re-plans from the rows
+  rather than trusting the screen. People are matched by EMAIL FIRST, then by name when exactly
+  one person has it, so a volunteer who already gives is linked to the record they already have.
+  (VOL-2)
+- **The undo is exact, by import id.** Every row an import creates is stamped with its
+  `imports.id` (`volunteer_shifts.import_id`, `volunteer_credentials.import_id`,
+  `donors.volunteer_import_id`), and the undo deletes by that id alone: a "remove everything from
+  the last five minutes" undo would take the shift a coordinator logged by hand while it ran. A
+  person the import merely MATCHED has no stamp and is never removed. A person it created but who
+  has given, or has a shift it did not write, is KEPT and named with the reason. (VOL-2)
+- **Nobody who arrives through Volunteers is a donor.** Add and import both write
+  `person_types ["volunteer"]`, no gift, no donor tag. The record says donor when they give and
+  not before, and the screens say so in words. (VOL-2)
+- **Opened from Volunteers, a person is a volunteer first.** `GET /volunteer-hub/person/:id`
+  answers with upcoming shifts, hours, waivers and checks, and groups; GIVING is the last field,
+  present only when they have actually given, and absent from the payload entirely for the
+  volunteer coordinator role. The role is a security boundary, so the server decides it rather
+  than the screen choosing what to draw. (VOL-2)
+- **The shift-reminder sweep has a timer.** Hourly, in server.js beside the other ticks and off
+  under `DISABLE_BACKGROUND_TICKS`. Nothing about who gets mail changed: the sweep still reads
+  only orgs with `volunteer_reminders_enabled = TRUE` (off for every org until one turns it on),
+  refuses the demo org outright, and claims each row before sending. Hourly rather than daily
+  because "tomorrow" is a different instant in every org's timezone. (VOL-2)
+- **A group signs up on a screen now.** Volunteers → Schedule → Groups. A group is a LABEL on a
+  set of sign-ups, never a person: every member is their own record with their own hours, and
+  capacity is still decided by the database, so a group of twelve at an eight-place shift gets
+  eight confirmed and four waitlisted. (VOL-2)
 - **Count volunteer hours in integer hundredths.** A shift must be more than 0 and at most 24 hours, enforced
   by the route and a CHECK. An imported shift is unique on (person, day, hours, role). (BUILD-98)
 - **Staff copy the volunteer self-log link; Steward never sends it.** It is an HMAC over org, person and a

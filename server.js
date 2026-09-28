@@ -805,6 +805,34 @@ function registerJourneyEngine(fn) { _journeyEngine = fn; }
 // at mount time, for the same reason the journey engine is: that file is
 // required after this one's body has run.
 let _volunteerReminders = null;
+// ── VOL-2 item 5 · THE SWEEP HAS A TIMER NOW ─────────────────────────────
+// VOL-1 shipped the sweep and its admin route and left it driven by hand,
+// which means a reminder the day before a shift only went out if somebody
+// remembered to press something the day before a shift. That is not a
+// reminder, it is a second thing to remember.
+//
+// NOTHING ABOUT WHO GETS MAIL CHANGES. The sweep itself is the gate and it is
+// unchanged: it reads only orgs with `volunteer_reminders_enabled = TRUE`
+// (OFF for every org until one turns it on), refuses the demo org outright,
+// asks `orgMaySendEmail` after that, and CLAIMS each row before sending so a
+// second pass cannot mail anybody twice. This adds the clock and nothing else.
+//
+// Hourly, not daily: the sweep sends for TOMORROW in each org's own timezone,
+// and orgs are in different ones. An hourly pass is the cheapest way for every
+// org to get its own "tomorrow" right, and the per-row claim makes the extra
+// passes free.
+async function runVolunteerRemindersTick() {
+  if (typeof _volunteerReminders !== "function") return;
+  try {
+    const out = await _volunteerReminders();
+    if (out && out.sent) console.log(`[volunteer] reminders: ${out.sent} sent, ${out.skipped || 0} skipped`);
+  } catch (e) { console.error("[volunteer] reminder sweep:", e.message); }
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => runVolunteerRemindersTick(), 60000);
+  setInterval(() => runVolunteerRemindersTick(), 60 * 60 * 1000);
+}
+
 async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
   if (typeof _journeyEngine !== "function") return { started: false, reason: "engine_not_mounted" };
   try { return await _journeyEngine(orgId, donorId, trigger, opts); }
