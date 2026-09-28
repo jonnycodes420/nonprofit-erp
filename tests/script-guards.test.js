@@ -127,6 +127,11 @@ const SELF_REFUSING = [
   // to run with NODE_ENV production. There is no read-only mode for a walk
   // whose point is that the writes land.
   "vol2-walk",
+  // FIX-6 — the walk. It approves and skips real items in the approval queue
+  // through the real routes, so it refuses a non-loopback BASE or APP_URL
+  // outright and refuses to run with NODE_ENV production. There is no
+  // read-only mode for a walk whose point is that the writes land.
+  "fix6-walk",
   // BUILD-102 (Steward Give) — the walk. It writes a form, a gift, a tribute draft
   // and a match pledge through the real routes, so a non-loopback BASE or APP_URL is
   // refused outright rather than guarded: there is no read-only mode for a walk

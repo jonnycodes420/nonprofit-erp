@@ -3,6 +3,12 @@
 Read this when you touch anything that reaches a screen: colours, tokens, modals, mobile layout, vocabulary, empty states, org branding or emoji.
 
 ## Rules
+- **A full-screen takeover starts where the content starts, not at x=0.** `.fullscreen-takeover`
+  is `position: fixed; z-index: 200` and the sidebar is `z-index: 120`, so `left: 0` painted the
+  donor profile and the grant profile over the ENTIRE nav: every item visible through the
+  transparent gutter and none of them clickable, while the keyboard still worked. It reads
+  `--sidebar-w`, published on `.app-root`, so it follows the sidebar when it collapses, and the
+  mobile block resets it to 0 where there is no sidebar. (FIX-6)
 - **The rule under a tab bar ends where the tabs end.** `SectionTabs` and the second-level part
   rows are `width: fit-content; max-width: 100%`, so the border-bottom is the underline of a set
   of tabs rather than a bare bar running to the right edge of the content. At 1440 on Volunteers

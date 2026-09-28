@@ -125,6 +125,7 @@ CORE=(
   gtm1a-internal-price
   gtm1b-band-notice
   thread2a-no-send
+  fix6-approval
   import-reconciliation
   webhook-manifest
   webhook-ordering

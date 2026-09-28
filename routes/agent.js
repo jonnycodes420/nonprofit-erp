@@ -1175,6 +1175,151 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
     definition: "Everything Steward prepared that waits on a person, oldest first. Nothing here has been sent or recorded." });
 }));
 
+// ── FIX-6 item 1 · APPROVE AND SKIP, ON EVERY KIND ───────────────────────
+//
+// THE DEFECT: the queue showed each item's words, "Why this matters" and
+// "What Steward changed", and then the only control was "Open the record".
+// Everything except a gift to confirm was a dead end. Five kinds reach this
+// queue and only one of them could be acted on, and two of the other four had
+// no server route at all.
+//
+// THE SHAPE OF THE FIX: one dispatcher, and it DOES NOT CONTAIN A SEND. Each
+// kind is handed to the path that already exists for it, so there is no second
+// place a thank-you can be marked sent and no new way for words to reach a
+// donor. What this route adds is the door, not the thing behind it.
+//
+// WHAT "APPROVE" MEANS PER KIND, said out loud because it differs:
+//   thank_you      — the existing mark-sent path: it LOGS that she sent it and
+//                    closes the thank-you thread. Steward does not mail it.
+//   tribute_notice — the existing mark-sent path, same reasoning.
+//   renewal_note   — the drafted note becomes a logged interaction in HER
+//                    name, and the thread closes as an outcome.
+//   agent_draft    — marked approved. It is a note SHE will send; approving it
+//                    is her saying the words are right.
+//   gift_to_confirm— refused here. A gift is confirmed through the instruction
+//                    route, which runs a plan, and routing money through a
+//                    generic approve button is exactly the shortcut that rule
+//                    exists to prevent.
+//
+// NOTHING HERE MAILS ANYBODY. Every branch writes a row that says a human did
+// something; not one of them calls Resend. tests/fix6-approval.test.js is the
+// guard, and it asserts the sink stayed empty across the whole queue.
+const WAITING_KINDS = new Set(["thank_you", "tribute_notice", "renewal_note", "agent_draft"]);
+
+async function approveWaitingItem(req, kind, id) {
+  const orgId = req.user.orgId, who = actor(req);
+  const today = orgToday(await orgTz(orgId));                        // ORG_TZ_SEAM_OK
+  // Her NAME on the row, not her email: a colleague reading the timeline is
+  // reading about a person.
+  const [me] = await query("SELECT name FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const actorName = (me && me.name) || who.name;
+
+  if (kind === "thank_you") {
+    const [d] = await query("SELECT * FROM thank_you_drafts WHERE id=? AND org_id=?", [id, orgId]);
+    if (!d) return { status: 404, body: { error: "Not found" } };
+    if (d.sent_at) return { status: 200, body: { ok: true, alreadyDone: true, sentence: "That thank-you was already marked as sent." } };
+    const intId = "int_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,gift_id,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [intId, orgId, d.donor_id, "stewardship", "Thank-you sent.", today, who.id, actorName, d.gift_id,
+       JSON.stringify({ via: "approval_queue", draftId: d.id })]);
+    await run("UPDATE thank_you_drafts SET sent_at=NOW(), opened_at=COALESCE(opened_at,NOW()) WHERE id=? AND org_id=?", [d.id, orgId]);
+    await run("UPDATE gifts SET acknowledgement_sent=true, acknowledgement_sent_at=COALESCE(acknowledgement_sent_at, NOW()) WHERE id=? AND org_id=?", [d.gift_id, orgId]);
+    await query(
+      `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+        WHERE org_id=? AND donor_id=? AND closed_at IS NULL AND next_step_type IN ('thank','thank_you_note') RETURNING id`,
+      [intId, orgId, d.donor_id]);
+    return { status: 200, body: { ok: true, sentence: "Marked as sent, and logged on their record in your name." } };
+  }
+
+  if (kind === "tribute_notice") {
+    const { changes } = await run(
+      `UPDATE tribute_notices SET status='sent', sent_at=NOW(), sent_by=?, sent_by_name=?
+        WHERE id=? AND org_id=? AND status='waiting'`, [who.id, actorName, id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+    return { status: 200, body: { ok: true, sentence: "Marked as sent." } };
+  }
+
+  if (kind === "renewal_note") {
+    const [t] = await query(
+      "SELECT id, donor_id, next_step_label, draft_note FROM threads WHERE id=? AND org_id=? AND closed_at IS NULL", [id, orgId]);
+    if (!t) return { status: 404, body: { error: "Not found" } };
+    const intId = "int_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name,metadata)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
+      [intId, orgId, t.donor_id, "stewardship", t.draft_note, today, who.id, actorName,
+       JSON.stringify({ via: "approval_queue", threadId: t.id })]);
+    await run(
+      `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=? WHERE id=? AND org_id=?`,
+      [intId, t.id, orgId]);
+    return { status: 200, body: { ok: true, sentence: "Logged on their record in your name, and the follow-up is closed." } };
+  }
+
+  if (kind === "agent_draft") {
+    const { changes } = await run(
+      `UPDATE agent_drafts SET status='approved', reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=?
+        WHERE id=? AND org_id=? AND status='pending'`, [who.id, actorName, id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+    return { status: 200, body: { ok: true, sentence: "Approved. It is yours to send, and Steward will not send it for you." } };
+  }
+  return { status: 400, body: { error: "unknown_kind" } };
+}
+
+async function skipWaitingItem(req, kind, id, reason) {
+  const orgId = req.user.orgId, who = actor(req);
+  const why = String(reason || "").replace(/\s+/g, " ").trim().slice(0, 300) || null;
+  if (kind === "thank_you") {
+    const { changes } = await run(
+      "UPDATE thank_you_drafts SET skipped_at=NOW() WHERE id=? AND org_id=? AND sent_at IS NULL", [id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+  } else if (kind === "tribute_notice") {
+    const { changes } = await run(
+      "UPDATE tribute_notices SET status='skipped' WHERE id=? AND org_id=? AND status='waiting'", [id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+  } else if (kind === "renewal_note") {
+    // The THREAD stays open and only the DRAFT goes. Skipping the words
+    // Steward wrote is not the same as deciding the follow-up does not need
+    // doing, and closing it here would silently do the second.
+    const { changes } = await run(
+      "UPDATE threads SET draft_note=NULL WHERE id=? AND org_id=? AND closed_at IS NULL", [id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+    return { status: 200, body: { ok: true,
+      sentence: "The draft is gone. The follow-up itself is still open on their record." } };
+  } else if (kind === "agent_draft") {
+    const { changes } = await run(
+      `UPDATE agent_drafts SET status='skipped', reviewed_at=NOW(), reviewed_by=?, skip_reason=?
+        WHERE id=? AND org_id=? AND status='pending'`, [who.id, why, id, orgId]);
+    if (!changes) return { status: 404, body: { error: "Not found" } };
+  } else {
+    return { status: 400, body: { error: "unknown_kind" } };
+  }
+  return { status: 200, body: { ok: true, sentence: why ? `Skipped: ${why}` : "Skipped." } };
+}
+
+app.post("/agent/waiting/:kind/:id/approve", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const kind = String(req.params.kind || "");
+  if (kind === "gift_to_confirm") {
+    return res.status(400).json({ error: "wrong_door",
+      message: "A gift is confirmed by running its plan, not by a general approval. Open it and press the confirm button on the plan." });
+  }
+  if (!WAITING_KINDS.has(kind)) return res.status(400).json({ error: "unknown_kind", message: "There is nothing of that kind in the queue." });
+  const r = await approveWaitingItem(req, kind, String(req.params.id || ""));
+  res.status(r.status).json(r.body);
+}));
+
+app.post("/agent/waiting/:kind/:id/skip", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const kind = String(req.params.kind || "");
+  if (kind === "gift_to_confirm") {
+    return res.status(400).json({ error: "wrong_door",
+      message: "A gift is set aside on its own plan, not here." });
+  }
+  if (!WAITING_KINDS.has(kind)) return res.status(400).json({ error: "unknown_kind", message: "There is nothing of that kind in the queue." });
+  const r = await skipWaitingItem(req, kind, String(req.params.id || ""), (req.body || {}).reason);
+  res.status(r.status).json(r.body);
+}));
+
 // The drafts the agent wrote, waiting for her.
 app.get("/agent/drafts", requireAuth, wrap(async (req, res) => {
   const rows = await query(

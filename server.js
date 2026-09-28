@@ -2054,10 +2054,36 @@ async function queueThankYouDraft(orgId, { giftId, donorId, cents, fundId = null
   const [fund] = fundId ? await query("SELECT name FROM fin_funds WHERE id=? AND org_id=?", [fundId, orgId]) : [];
   const draftMod = await import("./shared/draftNote.js");
   const voice = draftMod.voiceFrom(samples);
+  // ── FIX-6 follow-up 8 · THE FACTS THE DRAFT MAY REST ON ─────────────────
+  // Read here and passed in, because shared/draftNote.js invents nothing: a
+  // fact it is not given is a fact the letter does not mention. This is the
+  // whole difference between three identical thank-yous and three that sound
+  // like somebody looked at the record, and it needs no AI at all.
+  //
+  // `giftId` is EXCLUDED from the history so the gift being thanked for is not
+  // counted as one that came before it.
+  const [hist] = await query(
+    `SELECT COUNT(*)::int AS before,
+            MAX(date) FILTER (WHERE date IS NOT NULL) AS last_date
+       FROM gifts WHERE org_id=? AND donor_id=? AND id <> ? AND amount > 0`,
+    [orgId, donorId, giftId || ""]);
+  const [thisGift] = giftId
+    ? await query("SELECT date, recurring_subscription_id, campaign FROM gifts WHERE id=? AND org_id=?", [giftId, orgId])
+    : [];
+  const monthsSince = hist && hist.last_date && thisGift && thisGift.date
+    ? Math.max(0, Math.round((new Date(thisGift.date) - new Date(hist.last_date)) / (1000 * 60 * 60 * 24 * 30.44)))
+    : null;
+  const facts = {
+    giftCountBefore: hist ? Number(hist.before) : null,
+    isFirstGift: hist ? Number(hist.before) === 0 : null,
+    isRecurring: thisGift ? !!thisGift.recurring_subscription_id : null,
+    monthsSinceLastGift: monthsSince,
+    campaignName: (thisGift && thisGift.campaign) || null,
+  };
   const draft = reason === "pledge_completed"
     ? (() => { const t = draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
                return { ...t, body: t.body.replace("Thank you for your gift of", "Thank you for finishing your pledge of") }; })()
-    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice });
+    : draftMod.thankYouDraft({ donorName: d.name, giftCents: cents, fundName: fund?.name || null, orgName: org?.name, voice, ...facts });
   // ONE DRAFT PER GIFT. `replace` is for the one case where Steward has a
   // better thing to say about a gift it has already drafted (a final pledge
   // payment that COMPLETED the pledge) — and it never overwrites a letter she

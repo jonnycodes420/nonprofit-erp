@@ -19291,7 +19291,19 @@ app.get("/org/export/csv", requireAuth, requireAdmin, wrap(async (req, res) => {
   // Headers go on only after every query has succeeded, so a DB error still
   // returns a clean JSON 500 instead of a half-written zip.
   res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="steward-export-${orgSlug}-${date}.zip"`);
+  const filename = `steward-export-${orgSlug}-${date}.zip`;
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  // ── FIX-6 item 4 · THE SCREEN CAN SAY WHAT LEFT ──────────────────────────
+  // The export worked and said nothing: the button read "Building export…",
+  // the browser saved a file somewhere, and the button went back to its label.
+  // Whether anything had happened was unknowable from the screen. The counts
+  // already exist here for the README, so they ride out on a header and the
+  // screen reports the same numbers the zip contains. Exposed for CORS, or the
+  // browser hands the page a response it cannot read the header of.
+  res.setHeader("X-Steward-Export-Counts", JSON.stringify(
+    Object.fromEntries(Object.entries(counts).map(([k, rows]) => [k, rows.length]))));
+  res.setHeader("X-Steward-Export-Filename", filename);
+  res.setHeader("Access-Control-Expose-Headers", "X-Steward-Export-Counts, X-Steward-Export-Filename");
   const archive = new ZipArchive({ zlib: { level: 9 } });
   archive.on("error", err => { console.error("[export/csv] archive error:", err); res.destroy(err); });
   archive.pipe(res);

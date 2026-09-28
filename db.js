@@ -4027,11 +4027,22 @@ async function initSchema() {
       -- The rows this draft came from. A draft that cannot cite one is never
       -- written, so this is never empty on a committed row.
       cites JSONB NOT NULL DEFAULT '[]'::jsonb,
-      status TEXT NOT NULL DEFAULT 'pending',   -- pending | sent | dismissed
+      status TEXT NOT NULL DEFAULT 'pending',   -- pending | approved | skipped | sent | dismissed
       sent_at TIMESTAMPTZ, dismissed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_drafts_org ON agent_drafts (org_id, status, created_at DESC)`);
+  // ── FIX-6 item 1 · WHO LOOKED AT IT, AND WHAT THEY DECIDED ──────────────
+  // The approval queue had no way to approve or skip anything, so a draft's
+  // only states were the two Steward could put it in. `approved` is HER
+  // saying the words are right; it is deliberately NOT `sent`, because Steward
+  // does not send a drafted note and a status that said sent would be a claim
+  // that it had left the building. These ALTERs sit below the CREATE they
+  // alter (VOL-2 learned that the hard way on a fresh database).
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by_name TEXT`);
+  await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS skip_reason TEXT`);
 
   // ── BUILD-97 Part 5 — EVERY MESSAGE THAT LEFT THE BUILDING ──────────────
   // Written by the ONE wrapper around the Resend client (server.js), so every

@@ -363,6 +363,12 @@ function bResolver(routePath, param) {
   // BUILD-99 (major gifts) Part 3 — the plan's three shapes, resolved by PATH
   // because all three use `:id` and their first segments differ.
   if (routePath.startsWith("/cultivation-templates/")) return `ct_${B}`;
+  // FIX-6 item 1 — the approval queue's two doors. `:kind` is a WORD, not a
+  // row, so it resolves to a real kind; `:id` is org B's own thank-you draft.
+  // Probing with a kind the route refuses outright would 404 for the wrong
+  // reason and never touch the org wall (the trap VOL-2 hit with a
+  // workbook-shaped import row).
+  if (/^\/agent\/waiting\//.test(routePath)) return param === "kind" ? "thank_you" : `ty_${B}`;
   // VOL-2 — two routes under /volunteer-hub, both on `:id`, needing different
   // rows: the undo takes an IMPORT and the person view takes a PERSON, and a
   // person is a `donors` row (the one-person-one-record rule).

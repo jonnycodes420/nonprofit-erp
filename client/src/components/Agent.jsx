@@ -353,6 +353,10 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const [sheetErr, setSheetErr] = useState("");
   const [status, setStatus] = useState(null);
   const [focusDrafting, setFocusDrafting] = useState(false);
+  // FIX-6 item 1 — what the queue has decided this visit, and anything that
+  // refused. Held by the room, because the view is drawn and never mounted.
+  const [settled, setSettled] = useState({});
+  const [waitErr, setWaitErr] = useState("");
   const loadPlans = useCallback(() => apiFetch("/agent/plans").then(r => {
     setPlans(r.plans || []);
     return r.plans || [];
@@ -446,6 +450,27 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   async function discard(id) {
     try { await apiFetch(`/agent/instructions/${id}/discard`, { method: "POST", body: "{}" }); } catch { /* the list says what is true */ }
     await loadPlans(); loadWaiting();
+  }
+
+  // ── FIX-6 item 1 · APPROVE AND SKIP ─────────────────────────────────────
+  // The result STAYS ON THE ROW. Reloading the queue makes the item vanish,
+  // which is the one outcome that does not tell her whether the press worked:
+  // a row that disappears and a row that was never there look the same. So the
+  // row is settled in place with the server's own sentence, the count is
+  // refreshed from the server, and the row goes on the next full load.
+  async function actOnWaiting(it, action, reason) {
+    const key = it.kind + it.id;
+    if (busyId) return;
+    setBusyId(key); setWaitErr("");
+    try {
+      const r = await apiFetch(`/agent/waiting/${it.kind}/${it.id}/${action}`,
+        { method: "POST", body: JSON.stringify(reason ? { reason } : {}) });
+      setSettled(m => ({ ...m, [key]: { item: it, sentence: (r && r.sentence) || (action === "approve" ? "Approved." : "Skipped.") } }));
+      loadWaiting();
+    } catch (e) {
+      setWaitErr(e && e.message ? e.message : "That did not go through. Nothing was changed.");
+    }
+    setBusyId(null);
   }
 
   const list = plans || [];
@@ -615,7 +640,8 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
         )}
 
         {view === "waiting" && (
-          waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm: confirm, onDiscard: discard })
+          waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm: confirm, onDiscard: discard,
+                        settled, waitErr, onAct: actOnWaiting })
         )}
 
         {view === "guardrails" && guardrails({ wide, isReadOnly, data: guardData, instr: guardInstr, busy: guardBusy, err: guardErr,
@@ -625,15 +651,100 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   );
 }
 
+// ── FIX-6 item 1 · THE CONTROLS ON ONE WAITING ITEM ───────────────────────
+//
+// Every item gets APPROVE and SKIP. Before this, everything except a gift to
+// confirm had exactly one control, "Open the record", so the queue could be
+// read and not acted on: the count never moved and the only way to clear
+// anything was to go somewhere else and do it there.
+//
+// APPROVE IS THE PRIMARY ACTION and it is the one emerald on the row. SKIP is
+// quiet and takes an optional reason, asked inline rather than in a dialog,
+// because a queue that makes you justify a skip is a queue that stops being
+// used. Neither is red: nothing here destroys anything.
+//
+// THE RESULT STAYS ON THE ROW. A row that vanishes and a row that was never
+// there look the same, so the server's own sentence replaces the buttons and
+// the row is visibly settled.
+function WaitingActions({ it, wide, isReadOnly, busyId, settledText, onNavigate, onConfirm, onDiscard, onAct }) {
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const key = it.kind + it.id;
+  const busy = busyId === key || busyId === it.id;
+  const box = { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: wide ? "flex-end" : "flex-start", alignItems: "center" };
+  const quiet = { background: "transparent", border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 12px", color: T.ink2, fontSize: 13, fontWeight: 700, cursor: "pointer" };
+
+  if (settledText) return (
+    <div style={box}>
+      <span role="status" data-testid="agent-waiting-result"
+        style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5, textAlign: wide ? "right" : "left" }}>{settledText}</span>
+    </div>
+  );
+
+  // A gift keeps its own two controls: money is confirmed by running its plan,
+  // and a general approve button is exactly the shortcut that rule exists to
+  // prevent. The server refuses it too, so this is the courtesy half.
+  if (it.kind === "gift_to_confirm") return (
+    <div style={box}>
+      <button onClick={() => onDiscard(it.id)} disabled={isReadOnly || !!busyId}
+        style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Not this one</button>
+      <button onClick={() => onConfirm(it.id)} disabled={isReadOnly || !!busyId}
+        style={{ ...YES_BTN, borderRadius: 9, padding: "9px 14px", fontSize: 13 }}>
+        {busy ? "Running…" : it.confirmLabel}
+      </button>
+    </div>
+  );
+
+  if (asking) return (
+    <div style={{ ...box, justifyContent: wide ? "flex-end" : "flex-start" }}>
+      <input data-testid="agent-skip-reason" value={reason} autoFocus placeholder="Why, if you want to say"
+        onChange={e => setReason(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") onAct(it, "skip", reason); if (e.key === "Escape") setAsking(false); }}
+        style={{ border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", fontSize: 13, color: T.ink,
+                 background: T.white, fontFamily: "inherit", width: wide ? 200 : "100%" }} />
+      <button data-testid="agent-skip-confirm" onClick={() => onAct(it, "skip", reason)} disabled={isReadOnly || !!busyId} style={quiet}>
+        {busy ? "Skipping…" : "Skip it"}
+      </button>
+      <button onClick={() => { setAsking(false); setReason(""); }}
+        style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Never mind</button>
+    </div>
+  );
+
+  return (
+    <div style={box}>
+      {it.donorId && (
+        <button onClick={() => onNavigate && onNavigate("donors", { selectDonorId: it.donorId })}
+          style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          Open the record
+        </button>
+      )}
+      <button data-testid="agent-skip" onClick={() => setAsking(true)} disabled={isReadOnly || !!busyId} style={quiet}>Skip</button>
+      <button data-testid="agent-approve" onClick={() => onAct(it, "approve")} disabled={isReadOnly || !!busyId}
+        style={{ ...YES_BTN, borderRadius: 9, padding: "9px 16px", fontSize: 13 }}>
+        {busy ? "Working…" : "Approve"}
+      </button>
+    </div>
+  );
+}
+
 // ── WAITING FOR YOU ────────────────────────────────────────────────────────
-function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm, onDiscard }) {
-  const items = (waiting && waiting.items) || [];
+function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm, onDiscard, settled = {}, waitErr = "", onAct }) {
+  const live = (waiting && waiting.items) || [];
+  // WHAT THE SERVER STILL HAS, PLUS WHAT THIS VISIT SETTLED. Approving an item
+  // takes it out of the server's list, so rendering the server's list alone
+  // made the row vanish the instant it was acted on, and a row that disappears
+  // is indistinguishable from a press that did nothing. The settled rows stay,
+  // showing the server's own sentence, until the next full load of the screen.
+  const liveKeys = new Set(live.map(i => i.kind + i.id));
+  const ghosts = Object.entries(settled).filter(([k]) => !liveKeys.has(k)).map(([, v]) => v.item).filter(Boolean);
+  const items = [...live, ...ghosts].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   return (
     <div data-testid="agent-view-waiting">
       <div style={EYEBROW}>Waiting for you · oldest first</div>
       <div style={{ fontSize: 14, color: T.ink3, margin: "6px 0 14px", lineHeight: 1.5 }}>
         {waiting ? waiting.definition : "Loading…"}
       </div>
+      {waitErr && <div role="alert" data-testid="agent-waiting-error" style={{ ...REFUSAL, marginBottom: 12 }}>{waitErr}</div>}
       {waiting && !items.length && <div style={{ fontFamily: SERIF, fontSize: 20 }}>Nothing is waiting on you.</div>}
       {items.map(it => (
         <div key={it.kind + it.id} data-testid="agent-waiting-item" data-kind={it.kind}
@@ -649,21 +760,9 @@ function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm,
             {it.body && <div style={{ fontSize: 13.5, color: T.ink2, marginTop: 6, lineHeight: 1.5, whiteSpace: "pre-wrap",
               overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>{it.body}</div>}
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: wide ? "flex-end" : "flex-start" }}>
-            {it.kind === "gift_to_confirm" ? (<>
-              <button onClick={() => onDiscard(it.id)} disabled={isReadOnly || !!busyId}
-                style={{ background: "transparent", border: "none", color: T.ink3, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Not this one</button>
-              <button onClick={() => onConfirm(it.id)} disabled={isReadOnly || !!busyId}
-                style={{ ...YES_BTN, borderRadius: 9, padding: "9px 14px", fontSize: 13 }}>
-                {busyId === it.id ? "Running…" : it.confirmLabel}
-              </button>
-            </>) : it.donorId ? (
-              <button onClick={() => onNavigate && onNavigate("donors", { selectDonorId: it.donorId })}
-                style={{ background: "transparent", border: "1px solid " + T.ink3, borderRadius: 9, padding: "8px 12px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                Open the record
-              </button>
-            ) : null}
-          </div>
+          <WaitingActions it={it} wide={wide} isReadOnly={isReadOnly} busyId={busyId}
+            settledText={(settled[it.kind + it.id] || {}).sentence} onNavigate={onNavigate}
+            onConfirm={onConfirm} onDiscard={onDiscard} onAct={onAct} />
         </div>
       ))}
     </div>
