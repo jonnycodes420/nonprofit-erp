@@ -240,8 +240,15 @@ jobs:
       - name: Install Playwright + Chromium
         run: |
           mkdir -p .playwright
+          # The package.json is WRITTEN, not `npm init -y`-ed: npm derives the
+          # name from the directory and refuses a leading dot ("Invalid name:
+          # '.playwright'"), which failed the whole job. `private` keeps npm
+          # from ever treating it as publishable.
+          if [ ! -f .playwright/package.json ]; then
+            printf '{"name":"steward-ci-playwright","version":"1.0.0","private":true}\n' > .playwright/package.json
+          fi
           if [ ! -d .playwright/node_modules/playwright ]; then
-            (cd .playwright && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.61.1)
+            (cd .playwright && npm i --no-audit --no-fund playwright@1.61.1)
           fi
           # --with-deps installs the shared libraries Chromium needs on the
           # runner image; it is a no-op when they are already present, and it
