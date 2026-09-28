@@ -417,6 +417,11 @@ export const STANDARD_REPORTS = [
   { key: "members-lapsed", name: "Lapsed members", question: "Who let their membership lapse?", kind: "handler", handler: "members-lapsed", params: {} },
   { key: "members-new-renewed", name: "New and renewed members by month", question: "How many joined, and how many renewed, each month?", kind: "handler", handler: "members-new-renewed", params: {} },
   { key: "membership-revenue", name: "Membership and donation revenue", question: "What came in from memberships, beside what came in as donations?", kind: "handler", handler: "membership-revenue", params: {} },
+  // BUILD-103 Part 6 — peer-to-peer. Both are HANDLERS, over the same gift
+  // rows the P2P screen and the public page sum, so a saved report and the
+  // screen can never show different figures.
+  { key: "p2p-fundraisers", name: "Fundraisers by campaign", question: "Who is raising for us, and how much has each of them brought in?", kind: "handler", handler: "p2p-fundraisers", params: {} },
+  { key: "p2p-teams", name: "Teams by campaign", question: "How is each team doing against its goal?", kind: "handler", handler: "p2p-teams", params: {} },
 ];
 export const STANDARD_KEYS = STANDARD_REPORTS.map(r => r.key);
 

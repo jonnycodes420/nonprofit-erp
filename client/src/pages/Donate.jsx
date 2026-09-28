@@ -107,16 +107,31 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const inp = { ...baseInp };
+  // BUILD-103 Part 1 — JOIN A TEAM, OR START ONE. One screen: the teams on
+  // this campaign come back from a public read, and "on my own" is the first
+  // option because most people are.
+  const [teams, setTeams] = useState([]);
+  const [teamChoice, setTeamChoice] = useState("");     // "" solo · id · "new"
+  const [newTeam, setNewTeam] = useState({ name: "", goalAmount: "" });
+  useEffect(() => {
+    fetch(`${API}/org/${orgSlug}/giving-page/${pageSlug}/teams`)
+      .then(r => r.ok ? r.json() : { teams: [] })
+      .then(d => setTeams(d.teams || []))
+      .catch(() => setTeams([]));
+  }, [orgSlug, pageSlug]);
 
   async function submit(e) {
     e.preventDefault();
     if (!form.name.trim() || !form.email.trim()) { setErr("Please enter your name and email."); return; }
     setSaving(true); setErr("");
     try {
+      const body = { ...form };
+      if (teamChoice === "new") { body.teamName = newTeam.name; body.teamGoalAmount = newTeam.goalAmount; }
+      else if (teamChoice) body.teamId = teamChoice;
       const r = await fetch(`${API}/org/${orgSlug}/giving-page/${pageSlug}/fundraisers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not start your fundraiser.");
@@ -145,6 +160,17 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Your email</div>
         <div style={{ fontSize: 11, color: T.ink3, marginBottom: 4 }}>We'll send your "manage fundraiser" link here — keep it, there's no password.</div>
         <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} style={{ ...inp, marginBottom: 12 }} required />
+
+        <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>A team (optional)</div>
+        <select value={teamChoice} onChange={e => setTeamChoice(e.target.value)} style={{ ...inp, marginBottom: teamChoice === "new" ? 8 : 12 }}>
+          <option value="">On my own</option>
+          {teams.map(t => <option key={t.id} value={t.id}>Join {t.name}</option>)}
+          <option value="new">Start a new team…</option>
+        </select>
+        {teamChoice === "new" && <>
+          <input value={newTeam.name} onChange={e => setNewTeam(t => ({ ...t, name: e.target.value }))} placeholder="Team name" style={{ ...inp, marginBottom: 8 }} />
+          <input type="number" value={newTeam.goalAmount} onChange={e => setNewTeam(t => ({ ...t, goalAmount: e.target.value }))} placeholder="Team goal ($, optional)" style={{ ...inp, marginBottom: 12 }} />
+        </>}
 
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Personal goal ($, optional)</div>
         <input type="number" value={form.personalGoalAmount} onChange={e => setForm(f => ({ ...f, personalGoalAmount: e.target.value }))} placeholder="e.g. 500" style={{ ...inp, marginBottom: 12 }} />
@@ -327,6 +353,9 @@ export default function Donate() {
   const [isCustom, setIsCustom] = useState(false);
   const [fundId, setFundId] = useState("");
   const [coverFees, setCoverFees] = useState(false); // always opt-in, never pre-checked
+  // BUILD-103 — a donor's own choice about their first name reaching the
+  // fundraiser. Unticked by default, and the default IS the decision.
+  const [showNameToFundraiser, setShowNameToFundraiser] = useState(false);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -511,6 +540,7 @@ export default function Donate() {
           ...payload,
           reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
+          showNameToFundraiser: !!(peerFundraiser && showNameToFundraiser),
         }),
       });
       const data = await r.json();
@@ -537,6 +567,7 @@ export default function Donate() {
           amount: effectiveAmount, fundId, frequency, firstName, lastName, email,
           reconnectToken: reconnectToken || undefined,
           givingPageId: givingPage?.id, peerFundraiserId: peerFundraiser?.id,
+          showNameToFundraiser: !!(peerFundraiser && showNameToFundraiser),
           coverFees: showCoverFees && coverFees,
         }),
       });
@@ -947,6 +978,22 @@ export default function Donate() {
               Add <strong>${(feeCents / 100).toFixed(2)}</strong> to help cover card-processing costs
               {isRecurring ? ` on each ${frequency === "monthly" ? "monthly" : "annual"} gift` : ""},
               so {org.name} receives your full ${effectiveAmount.toFixed(2)}.
+            </span>
+          </label>
+        )}
+
+        {/* BUILD-103 — WHETHER THE FUNDRAISER MAY SEE YOUR FIRST NAME. Off
+            unless the donor ticks it. A gift through a friend's page is still
+            a gift to the organisation, and the friend is not entitled to a
+            list of who gave: the organisation has the record either way. */}
+        {peerFundraiser && (
+          <label style={{ ...card, padding: "16px 20px", display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={showNameToFundraiser} onChange={e => setShowNameToFundraiser(e.target.checked)}
+              data-testid="show-name-to-fundraiser"
+              style={{ marginTop: 3, width: 16, height: 16, accentColor: th.primary, cursor: "pointer", flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.55 }}>
+              Let {peerFundraiser.name.split(" ")[0]} see my first name, so they can thank me.
+              {" "}Leave it unticked and they see the gift without a name. {org.name} has the full record either way.
             </span>
           </label>
         )}

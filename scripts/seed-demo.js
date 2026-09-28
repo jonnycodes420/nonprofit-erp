@@ -1432,6 +1432,94 @@ async function main() {
     process.exit(1);
   }
 
+  // ── BUILD-103 · THE 5K AS A PEER-TO-PEER CAMPAIGN ──────────────────────
+  // A giving page with the switch on, two teams, five fundraisers and a dozen
+  // gifts through their own pages — including one the donor gave anonymously
+  // to the fundraiser, which is the default and therefore the common case.
+  //
+  // Every gift here carries BOTH the fundraiser and the parent page, which is
+  // what makes rollup free: the page's own SUM already includes every one of
+  // them, and the fundraiser's is the identical pattern one level down.
+  const P2P_PAGE = "gp_b72_run";
+  await q(`INSERT INTO giving_pages (id,org_id,slug,title,goal_amount,story,status,campaign_id,p2p_enabled)
+           VALUES ($1,$2,'harbor-run','Harbor Run',25000,$3,'active','camp_b72_5k',true)`,
+    [P2P_PAGE, ORG,
+     "Five kilometres along the shore, and every runner raising for the scholarship fund. Start your own page and ask the people who would want to know."]);
+
+  const P2P_TEAMS = [
+    ["pt_b72_meridian", "Meridian Bank", "meridian-bank", 6000],
+    ["pt_b72_harbour", "The Shore Striders", "the-shore-striders", 4000],
+  ];
+  for (const [id, name, slug, goal] of P2P_TEAMS)
+    await q(`INSERT INTO p2p_teams (id,org_id,giving_page_id,name,slug,goal_amount,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'system:p2p-signup','The fundraiser, from the sign-up page')`,
+      [id, ORG, P2P_PAGE, name, slug, goal]);
+
+  // Five fundraisers. THREE are people who already exist in the CRM, matched
+  // by exact email, so their soft credits land on the record the office
+  // already knows; TWO are strangers, who become people typed VOLUNTEER —
+  // never donors, because they have not given a penny.
+  const p2pPeople = await q(
+    `SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
+       AND email IS NOT NULL AND email <> '' ORDER BY total_giving DESC OFFSET 7 LIMIT 3`, [ORG]);
+  const P2P_STRANGERS = [
+    ["Rosalind Quillfeather", "rosalind.quillfeather@example.org"],
+    ["Emeka Beaumaris", "emeka.beaumaris@example.org"],
+  ];
+  const fundraisers = [];
+  const tokenHash = t => require("crypto").createHash("sha256").update(t).digest("hex");
+  const mkFundraiser = async (i, name, email, personId, teamId, goal) => {
+    const id = `pf_b72_${i}`;
+    const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,personal_goal_amount,story,image_url,status,edit_token,edit_token_hash,team_id,person_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'','active',NULL,$9,$10,$11)`,
+      [id, ORG, P2P_PAGE, name, email, slug, goal,
+       "I have watched what this programme does for the kids on this shore. Five kilometres is the least I can do.",
+       tokenHash(`demo-p2p-${i}-${Date.now()}`), teamId, personId]);
+    fundraisers.push({ id, name, email, personId, teamId });
+    return id;
+  };
+  for (const [i, p] of p2pPeople.entries())
+    await mkFundraiser(i, p.name, p.email, p.id, P2P_TEAMS[i % 2][0], [1500, 1000, 750][i]);
+  for (const [j, [name, email]] of P2P_STRANGERS.entries()) {
+    const personId = `d_b72_p2p${j}`;
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,'prospect','active','[]','["volunteer"]'::jsonb,'system:p2p-signup','The fundraiser, from the sign-up page')`,
+      [personId, ORG, name, email]);
+    await mkFundraiser(3 + j, name, email, personId, j === 0 ? P2P_TEAMS[0][0] : null, [500, 300][j]);
+  }
+
+  // A dozen gifts through their pages, from people who already give. One is
+  // anonymous to the fundraiser (the default), the rest chose to be seen.
+  const p2pDonors = await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
+       AND id <> ALL($2::text[]) ORDER BY created_at LIMIT 12`,
+    [ORG, fundraisers.map(f => f.personId).filter(Boolean)]);
+  const P2P_AMOUNTS = [250, 100, 50, 500, 75, 100, 25, 150, 200, 50, 100, 300];
+  let p2pRaised = 0, p2pSoft = 0;
+  for (const [i, dn] of p2pDonors.entries()) {
+    // The LAST fundraiser deliberately receives nothing: "who has not raised
+    // anything yet" is the list an org actually does something about, and a
+    // demo where everybody has raised something never shows it.
+    const f = fundraisers[i % (fundraisers.length - 1)];
+    const amount = P2P_AMOUNTS[i];
+    const giftId = `g_b72_p2p${i}`;
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,payment_method,giving_page_id,peer_fundraiser_id,campaign_id,show_name_to_fundraiser,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,'cash','Card',$6,$7,'camp_b72_5k',$8,'system:stripe','Stripe (online gift)')`,
+      [giftId, ORG, dn.id, amount, dAdd(TODAY, -(i + 2)), P2P_PAGE, f.id, i !== 3]);
+    p2pRaised += amount;
+    // The soft credit: the fundraiser brought it in. Hard credit stays on the
+    // donor, and nothing that totals money reads this table unless asked.
+    if (f.personId && f.personId !== dn.id) {
+      await q(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
+               VALUES ($1,$2,$3,$4,$5,100,'peer_fundraiser','system:stripe','Their own fundraiser page')
+               ON CONFLICT (gift_id, donor_id) DO NOTHING`,
+        [`gsc_b72_p2p${i}`, ORG, giftId, f.personId, amount]);
+      p2pSoft += amount;
+    }
+  }
+  console.log(`[assert] peer-to-peer: ${P2P_TEAMS.length} teams, ${fundraisers.length} fundraisers (2 of them new people typed volunteer), $${p2pRaised.toLocaleString()} raised through their pages, $${p2pSoft.toLocaleString()} of it soft-credited, one gift anonymous to its fundraiser`);
+
   // ── MEMBERS-2 · THE MEMBER SIDE ────────────────────────────────────────
   // Three levels an org this size would really sell, and four people whose
   // "Your page" each shows a DIFFERENT set of sections — which is the whole
