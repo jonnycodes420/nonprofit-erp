@@ -5,7 +5,7 @@ import {
   money, benchmarkPayload, REPORT_FOOTER, PRIVACY_LINE, TOP_AT_RISK,
 } from "../../../shared/lostAndFound.js";
 
-// ── LOST & FOUND · A $1,500 DONOR AUDIT, FREE ─────────────────────────────
+// ── LOST & FOUND · A PAID-CALIBER DONOR AUDIT, FREE ─────────────────────
 //
 // Steward's best salesperson. A development director uploads the export her
 // database already makes, and two minutes later she knows which donors are
@@ -160,17 +160,20 @@ export default function LostAndFound() {
           </span>
           <h1 className="lf-h1" data-testid="lf-hero"
             style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.04, fontWeight: 600, letterSpacing: "-1.4px", margin: "18px 0 20px" }}>
-            A $1,500 donor audit. Free.
+            A paid-caliber donor audit. Free.
           </h1>
           <p style={{ fontSize: 19, lineHeight: 1.55, color: GREY, margin: "0 auto", maxWidth: 640 }}>
             Consultants charge $500 to $2,000 to tell you which donors are slipping away.
             Upload the export your database already makes and know in two minutes.
             Free forever. No account. Your file never leaves your computer.
           </p>
+        </div>
 
-          {/* What she is about to learn: the prize, previewed. */}
-          <div className="lf-trio" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12,
-            marginTop: 36, textAlign: "left" }}>
+        {/* ── THE RAILS: what you learn (left) · the upload (right) ── */}
+        {state !== "done" && (
+        <div className="lf-rails" style={{ display: "grid", gridTemplateColumns: "minmax(300px, 380px) 1fr",
+          gap: 20, alignItems: "start", marginTop: 44, maxWidth: 1000, marginLeft: "auto", marginRight: "auto" }}>
+          <div className="lf-rail-left" style={{ display: "grid", gap: 12 }}>
             {[
               ["01", "The dollars walking away", "The exact figure your lapsed and drifting donors represent."],
               ["02", "Your real retention rate", "What share of last year's donors gave again. Most orgs guess wrong."],
@@ -183,11 +186,7 @@ export default function LostAndFound() {
               </div>
             ))}
           </div>
-        </div>
-
-        {/* ── THE UPLOAD ───────────────────────────────────────────── */}
-        <div style={{ maxWidth: 620, margin: "44px auto 0" }}>
-          {state !== "done" && (
+          <div className="lf-rail-right">
             <div data-testid="lf-drop"
               onDragOver={e => { e.preventDefault(); setDrag(true); }}
               onDragLeave={() => setDrag(false)}
@@ -219,14 +218,15 @@ export default function LostAndFound() {
                 email address. We only ask who you are if you want the board-ready PDF.
               </p>
             </div>
-          )}
-          {state === "error" && (
-            <div role="alert" data-testid="lf-error" style={{ background: "#f6ece8", border: "1px solid #e0a893",
-              borderRadius: 12, padding: "14px 16px", fontSize: 14.5, lineHeight: 1.55, marginTop: 14 }}>
-              {error}
-            </div>
-          )}
+            {state === "error" && (
+              <div role="alert" data-testid="lf-error" style={{ background: "#f6ece8", border: "1px solid #e0a893",
+                borderRadius: 12, padding: "14px 16px", fontSize: 14.5, lineHeight: 1.55, marginTop: 14 }}>
+                {error}
+              </div>
+            )}
+          </div>
         </div>
+        )}
 
         {/* ── THE RESULTS ──────────────────────────────────────────── */}
         {state === "done" && result && (
@@ -410,7 +410,8 @@ export default function LostAndFound() {
           .lf-h1{ font-size: 40px !important; letter-spacing: -0.8px !important; }
           .lf-nav{ padding: 0 16px !important; }
           .lf-hide-sm{ display: none !important; }
-          .lf-trio{ grid-template-columns: 1fr !important; }
+          .lf-rails{ grid-template-columns: 1fr !important; }
+          .lf-rail-right{ order: -1 !important; }
         }
       `}</style>
     </div>
