@@ -89,7 +89,11 @@ ok(!has(fin, "sub={narrative}") && !has(fin, "You're operating on ${fmtFull"), "
 // PageTitle for these three renders title only (no sub= prop)
 ok(/<PageTitle main="Your" accent="fundraising." \/>/.test(fund), "Fundraising PageTitle = title only");
 ok(/<PageTitle main="Your" accent="Reports" \/>/.test(reports), "Reports PageTitle = title only");
-ok(/<PageTitle main="Your" accent="finances."\/>/.test(fin.replace(/\n/g, " ")) || fin.includes('<PageTitle main="Your" accent="finances."/>'), "Finance PageTitle = title only");
+// FIN-1 — Finance is "Your money." now. The assertion is the same one it
+// always was (a title with no `sub=` blurb); only the word changed, because
+// "finances" is what an accountant calls it and "money" is what everybody
+// else does.
+ok(/<PageTitle main="Your" accent="money\."\/>/.test(fin.replace(/\n/g, " ")) || fin.includes('<PageTitle main="Your" accent="money."/>'), "Finance PageTitle = title only");
 // Part 1 information-not-lost: the one unique number (vs-prior delta) survives
 ok(has(fin, "revDeltaCaption"), "Finance vs-prior-period delta surfaced on a stat card caption (not dropped)");
 
