@@ -35,6 +35,9 @@ const {
   resend, retryFailedNotifications, run, sampleDataMod, sessionCache, signToken,
   stripeChargesEnabled, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink,
   validateOrgClose, wrap,
+  // GTM-1a — the pricing catalogue, the plan-amount helpers, the click-through
+  // agreement and the founder address public signup reports to.
+  PRICING, planAmountUsd, planInterval, SELLABLE_CLOSE_PLANS, customerAgreement,
 } = ctx;
 let app = routers.r0;
 // BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
@@ -894,8 +897,17 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     growth:   process.env.STRIPE_PRICE_GROWTH,
     impact:   process.env.STRIPE_PRICE_IMPACT,
   };
+  // GTM-1a — the six tier prices, monthly and yearly. Built from the
+  // catalogue, so the plan the pricing page offers is the plan this route can
+  // sell, always. The INTERNAL $1 price is deliberately absent: it is not in
+  // TIERS, so it cannot be named here by anyone, super-admin included. The one
+  // door to it is POST /admin/orgs/:id/internal-test-price.
+  for (const t of PRICING.TIERS) {
+    priceMap[`${t.id}_monthly`] = process.env[t.envMonthly];
+    priceMap[`${t.id}_yearly`] = process.env[t.envYearly];
+  }
   // Validation ordered BEFORE any Stripe API call so it's testable without keys.
-  if (!(plan in priceMap)) return res.status(400).json({ error: "Invalid plan. Must be core or team." });
+  if (!(plan in priceMap)) return res.status(400).json({ error: "Invalid plan.", message: `Plan must be one of: ${Object.keys(priceMap).join(", ")}.` });
   if (plan === "founding" && !req.user.isSuperAdmin) {
     return res.status(403).json({ error: "founding_forbidden", message: "The founding-partner plan is assigned privately." });
   }
@@ -1090,19 +1102,20 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   // bans them from this file, comments included.)
   try {
     const price = await billingStripe.prices.retrieve(priceId);
-    const expected = plan.monthlyUsd * 100;
-    const monthly = price.recurring && price.recurring.interval === "month" && price.recurring.interval_count === 1;
+    const expected = planAmountUsd(plan) * 100;
+    const wantInterval = planInterval(plan);
+    const monthly = price.recurring && price.recurring.interval === wantInterval && price.recurring.interval_count === 1;
     if (price.unit_amount !== expected || price.currency !== "usd" || !monthly) {
       const actual = price.unit_amount != null ? `$${(price.unit_amount / 100).toFixed(2)} ${String(price.currency).toUpperCase()}` : "an unreadable amount";
       const cadence = price.recurring ? `every ${price.recurring.interval_count || 1} ${price.recurring.interval}` : "not recurring";
       console.error(
         `[close-link] PRICE MISMATCH: ${plan.env} (${priceId}) is ${actual}, ${cadence}, ` +
-        `but the ${plan.name} plan is $${plan.monthlyUsd}/month. Refusing to mint a link that would ` +
+        `but the ${plan.name} plan is $${planAmountUsd(plan)} every ${planInterval(plan)}. Refusing to mint a link that would ` +
         `quote one number and charge another. Run scripts/create-billing-products.js and update ${plan.env}.`
       );
       return res.status(400).json({
         error: "plan_price_mismatch",
-        message: `${plan.env} points at a Stripe price of ${actual} ${cadence}, but ${plan.name} is $${plan.monthlyUsd}/month. `
+        message: `${plan.env} points at a Stripe price of ${actual} ${cadence}, but ${plan.name} is $${planAmountUsd(plan)} every ${planInterval(plan)}. `
                + `Create the price at the right amount and update ${plan.env} before closing anyone.`,
       });
     }
@@ -1150,6 +1163,284 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
   }
 }));
 
+// ── GTM-1a 1-5 · PUBLIC SIGNUP, AND IT IS A CLOSE LINK ────────────────────
+//
+// Signup was closed in BUILD-87 because the form contradicted the product it
+// signed you up for: a price that no longer existed, a self-serve door the
+// product had shut, and a promise nothing kept. It reopens here with the
+// opposite property — it is the SAME path a close link takes. Same
+// `close_links` row, same Stripe Checkout, same thirty days from signing, same
+// seven-day reminder, same two-click cancel, same webhook that mints the org.
+// There is exactly one way an organisation comes into being, and this is a
+// second person allowed to press the button on it.
+//
+// WHAT THIS ROUTE DOES NOT DO: create anything. No org, no user, no Stripe
+// customer. It writes a close_links row and a terms_acceptances row and hands
+// back a Checkout URL. Someone who opens the page and never pays has left two
+// rows saying so, which is a record of interest, not an organisation.
+
+// The public catalogue. Served rather than baked into the bundle so a price
+// can be corrected without a frontend deploy, and so the page and the route
+// that takes the money are reading the same list on the same day.
+app.get("/public/pricing", wrap(async (req, res) => {
+  const agr = customerAgreement.agreement();
+  res.json({
+    tiers: PRICING.TIERS.map(t => ({
+      id: t.id, band: t.band, maxDonors: t.maxDonors,
+      monthlyUsd: t.monthlyUsd, yearlyUsd: t.yearlyUsd,
+    })),
+    talkToUs: PRICING.TALK_TO_US,
+    included: PRICING.INCLUDED,
+    termsStrip: PRICING.TERMS_STRIP,
+    yearlyNote: PRICING.YEARLY_NOTE,
+    activeDonorSentence: PRICING.ACTIVE_DONOR_SENTENCE,
+    agreement: { version: agr.version, sha256: agr.sha256, available: !!agr.ok },
+  });
+}));
+
+// The agreement itself, as markdown, so the signup page renders the exact
+// words it is about to record an acceptance of. A GET, and it writes nothing.
+app.get("/public/agreement", wrap(async (req, res) => {
+  const agr = customerAgreement.agreement();
+  if (!agr.ok) return res.status(503).json({ error: agr.error, message: agr.message });
+  res.json({ version: agr.version, sha256: agr.sha256, markdown: agr.text });
+}));
+
+const SIGNUP_ACTOR_ID = "system:public-signup";
+const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.post("/public/signup", registerLimiter, wrap(async (req, res) => {
+  const b = req.body || {};
+  const orgName = String(b.orgName || "").trim();
+  const contactName = String(b.contactName || "").trim();
+  const contactEmail = String(b.contactEmail || "").trim().toLowerCase();
+  const interval = String(b.interval || "monthly").trim();
+  const estimateRaw = b.estimatedDonors;
+
+  if (!orgName) return res.status(400).json({ error: "org_name_required", message: "Your organization's name is required." });
+  if (!contactName) return res.status(400).json({ error: "contact_name_required", message: "Your name is required — it goes on the agreement." });
+  if (!EMAIL_SHAPE.test(contactEmail)) return res.status(400).json({ error: "contact_email_invalid", message: "A valid email address is required." });
+  if (!PRICING.BILLING_INTERVALS.includes(interval))
+    return res.status(400).json({ error: "interval_invalid", message: "Choose monthly or yearly." });
+
+  const estimate = Number(estimateRaw);
+  if (!Number.isFinite(estimate) || estimate < 0 || !Number.isInteger(estimate))
+    return res.status(400).json({ error: "estimate_required", message: `How many active donors do you work? ${PRICING.ACTIVE_DONOR_SENTENCE}` });
+
+  // ABOVE THE TOP BAND THERE IS NO PRICE. Selling the biggest tier to an org
+  // that is larger than it is quoting a number that is wrong on the day it is
+  // quoted, so this is a refusal with a door, not a fallback.
+  const tier = PRICING.tierForDonorCount(estimate);
+  if (!tier) {
+    return res.status(409).json({
+      error: "talk_to_us",
+      message: `${PRICING.TALK_TO_US.band} is a conversation, not a checkout. Write to ${process.env.FOUNDER_EMAIL || "jonathan@stewardapp.dev"} and we will size it with you.`,
+      band: PRICING.TALK_TO_US.band,
+    });
+  }
+
+  // ── THE AGREEMENT ────────────────────────────────────────────────────────
+  // Accepting is explicit and it names a VERSION. A page left open across a
+  // deploy would otherwise record an acceptance of words that are no longer
+  // the words; this refuses and tells the visitor to reload, which costs one
+  // click and is the difference between evidence and a guess.
+  const agr = customerAgreement.agreement();
+  if (!agr.ok) return res.status(503).json({ error: agr.error, message: agr.message });
+  if (b.acceptTerms !== true)
+    return res.status(400).json({ error: "terms_not_accepted", message: "You have to accept the customer agreement to continue." });
+  if (String(b.termsVersion || "") !== agr.version) {
+    return res.status(409).json({
+      error: "terms_version_stale",
+      message: "The customer agreement was updated while this page was open. Reload and read the current one before accepting.",
+      currentVersion: agr.version,
+    });
+  }
+
+  // The same refusal the close link gives, for the same reason: users.email is
+  // globally unique and this path mints the first admin.
+  const clash = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [contactEmail]);
+  if (clash.length) {
+    return res.status(409).json({
+      error: "email_in_use",
+      message: "That email already has a Steward account. Sign in instead, or use a different address.",
+    });
+  }
+
+  const plan = closePlan(`${tier.id}_${interval}`);
+  if (!plan) return res.status(500).json({ error: "plan_missing", message: "That band is not configured. Nothing has been created." });
+
+  const priceId = process.env[plan.env];
+  if (!priceId) {
+    // Said plainly to the visitor and LOUDLY in the log: a band on the public
+    // page with no Stripe price behind it is a page selling something that
+    // cannot be bought, and the founder needs to know within the minute.
+    console.error(`[signup] ${plan.env} is not set — the public page offers ${tier.band} ${interval} and Checkout cannot be started.`);
+    return res.status(503).json({
+      error: "plan_not_configured",
+      message: "That plan is not available to buy online yet. Write to us and we will set it up by hand — nothing has been created.",
+    });
+  }
+  if (!billingStripe) return res.status(503).json({ error: "stripe_not_configured", message: "Checkout is not available right now. Nothing has been created." });
+
+  // THE PRICE ON THE PAGE MUST BE THE PRICE IN STRIPE — the BUILD-90 rule,
+  // applied to a door that is now open to the public rather than held by
+  // Jonathan. A mismatch here would quote one number on the page and charge
+  // another on the card.
+  try {
+    const price = await billingStripe.prices.retrieve(priceId);
+    const expected = planAmountUsd(plan) * 100;
+    const wantInterval = planInterval(plan);
+    const cadenceOk = price.recurring && price.recurring.interval === wantInterval && (price.recurring.interval_count || 1) === 1;
+    if (price.unit_amount !== expected || price.currency !== "usd" || !cadenceOk) {
+      console.error(`[signup] PRICE MISMATCH: ${plan.env} (${priceId}) is ${price.unit_amount} ${price.currency}, `
+        + `but ${plan.name} is $${planAmountUsd(plan)} every ${wantInterval}. Refusing to sell it.`);
+      return res.status(503).json({
+        error: "plan_price_mismatch",
+        message: "We cannot take a card for that plan right now. Write to us — nothing has been created.",
+      });
+    }
+  } catch (err) {
+    if (handleBillingConfigError(err, res, { plan: plan.id, surface: "public signup price check" })) return;
+    throw err;
+  }
+
+  const closeLinkId = "cl_" + uuid().slice(0, 8);
+  const params = checkoutSessionParams({
+    plan, orgName, contactEmail, closeLinkId, priceId,
+    successUrl: publicAppUrl() + "/login?welcome=1",
+    cancelUrl: publicAppUrl() + "/pricing",
+  });
+
+  let session;
+  try {
+    session = await billingStripe.checkout.sessions.create(params);
+  } catch (err) {
+    if (handleBillingConfigError(err, res, { plan: plan.id, surface: "public signup" })) return;
+    throw err;
+  }
+
+  await run(
+    `INSERT INTO close_links (id, org_name, contact_email, contact_name, plan, stripe_session_id, checkout_url,
+                              created_by, created_by_name, signup_source, estimated_donors, billing_interval)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [closeLinkId, orgName, contactEmail, contactName, plan.id, session.id, session.url,
+     SIGNUP_ACTOR_ID, contactName, "public", estimate, interval]
+  );
+
+  // The acceptance is written BEFORE the card, deliberately. She read the
+  // words and ticked the box; whether Stripe then succeeds is a separate fact,
+  // and losing the acceptance because a card was declined would lose the only
+  // evidence of the one thing she actually did.
+  await run(
+    `INSERT INTO terms_acceptances (id, close_link_id, email, name, doc_version, doc_sha256, ip, user_agent)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    ["ta_" + uuid().slice(0, 10), closeLinkId, contactEmail, contactName, agr.version, agr.sha256,
+     String(req.ip || "").slice(0, 60), String(req.get("user-agent") || "").slice(0, 300)]
+  );
+
+  console.log(`[signup] ${closeLinkId} — ${orgName} (${contactEmail}) chose ${plan.id}, ${estimate} active donors, `
+    + `agreement ${agr.version}`);
+
+  // EVERY SIGNUP REACHES JONATHAN. Not a digest, not a dedupe: one message per
+  // signup, because two organisations starting in the same hour is exactly the
+  // case a deduped alert would hide.
+  notifyFounderOfSignup({ closeLinkId, orgName, contactName, contactEmail, plan, estimate, interval,
+                          agreementVersion: agr.version })
+    .catch(e => console.error("[signup] founder notification failed:", e.message));
+
+  res.status(201).json({
+    url: session.url,
+    tier: tier.id, band: tier.band, interval,
+    amountUsd: planAmountUsd(plan),
+    firstChargeAt: computeTrialEnd(Date.now()).toISOString(),
+    notice: params.custom_text.submit.message,
+    agreementVersion: agr.version,
+  });
+}));
+
+// One message, to the founder, per signup. Not `opsAlert`: that dedupes by
+// kind and hour, which is right for an incident and wrong here — a second
+// organisation signing up in the same hour is news, not a repeat.
+async function notifyFounderOfSignup({ closeLinkId, orgName, contactName, contactEmail, plan, estimate, interval, agreementVersion }) {
+  const to = process.env.FOUNDER_EMAIL;
+  if (!to) { console.warn("[signup] FOUNDER_EMAIL is not set — nobody was told about", closeLinkId); return; }
+  if (!process.env.RESEND_API_KEY) { console.warn("[signup] RESEND_API_KEY not set — founder not told about", closeLinkId); return; }
+  const from = process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
+  const lines = [
+    `${orgName}`,
+    `${contactName} · ${contactEmail}`,
+    `${plan.name} · ${interval} · $${planAmountUsd(plan)}`,
+    `They said about ${estimate.toLocaleString("en-US")} active donors.`,
+    `Agreement ${agreementVersion} accepted.`,
+    `Close link ${closeLinkId}. Nothing exists until they finish Checkout.`,
+  ];
+  await resend.emails.send({
+    from, to, replyTo: to,
+    subject: `New Steward signup — ${orgName}`,
+    html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">`
+      + lines.map(l => `<div>${String(l).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</div>`).join("")
+      + `</div>`,
+  });
+}
+
+// ── GTM-1a 4 · THE $1 PRICE, AND THE ONE DOOR TO IT ───────────────────────
+// It is never public: it is not in `TIERS`, so nothing that renders the
+// pricing page or reads a signup body can name it, and `validateCloseLink`
+// refuses it by name so a close link cannot sell it either. This is the only
+// way onto it, it is super-admin only, and it moves an org that ALREADY
+// EXISTS — it never creates one.
+//
+// It is for one thing: proving a live charge end to end with real money that
+// is one dollar. The guard is tests/gtm1a-internal-price.test.js.
+app.post("/admin/orgs/:id/internal-test-price", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const priceId = process.env[PRICING.INTERNAL_TEST.env];
+  if (!priceId) {
+    return res.status(400).json({
+      error: "internal_price_not_configured",
+      message: `${PRICING.INTERNAL_TEST.env} is not set. Create the $1 price in Stripe and set it before moving anyone onto it.`,
+    });
+  }
+  if (!billingStripe) return res.status(503).json({ error: "stripe_not_configured" });
+
+  const rows = await query(
+    `SELECT id, name, plan, subscription_status, stripe_subscription_id FROM orgs WHERE id=?`, [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: "org_not_found", message: "That organization does not exist." });
+  const org = rows[0];
+  if (!org.stripe_subscription_id) {
+    return res.status(409).json({
+      error: "no_subscription",
+      message: `${org.name} has no Stripe subscription to move. Close them first, then move them onto the test price.`,
+    });
+  }
+
+  // A dollar is still a charge, so the amount is CHECKED before an org is put
+  // on it — the same rule as every other price in this file.
+  try {
+    const price = await billingStripe.prices.retrieve(priceId);
+    if (price.unit_amount !== 100 || price.currency !== "usd" || !price.recurring) {
+      return res.status(400).json({
+        error: "internal_price_wrong",
+        message: `${PRICING.INTERNAL_TEST.env} does not point at a recurring $1 USD price. Fix it before using it.`,
+      });
+    }
+  } catch (err) {
+    if (handleBillingConfigError(err, res, { plan: PRICING.INTERNAL_TEST.id, surface: "internal test price" })) return;
+    throw err;
+  }
+
+  const sub = await billingStripe.subscriptions.retrieve(org.stripe_subscription_id);
+  const itemId = sub && sub.items && sub.items.data && sub.items.data[0] && sub.items.data[0].id;
+  if (!itemId) return res.status(409).json({ error: "subscription_unreadable", message: "That subscription has no line to move." });
+  await billingStripe.subscriptions.update(org.stripe_subscription_id, {
+    items: [{ id: itemId, price: priceId }],
+    proration_behavior: "none",
+    metadata: { plan: PRICING.INTERNAL_TEST.id, movedBy: req.user.email },
+  });
+  await run(`UPDATE orgs SET plan=? WHERE id=?`, [PRICING.INTERNAL_TEST.id, org.id]);
+  console.log(`[internal-price] ${org.id} (${org.name}) moved onto the $1 price by ${req.user.email}`);
+  res.json({ ok: true, orgId: org.id, orgName: org.name, plan: PRICING.INTERNAL_TEST.id, monthlyUsd: 1 });
+}));
+
 // GET /admin/close-links — what has been handed out, and what it became.
 app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
   const rows = await query(
@@ -1164,14 +1455,21 @@ app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, r
   // actually holds, and whether it matches what the page would quote.
   const plans = await Promise.all(CLOSE_PLANS.map(async p => {
     const priceId = process.env[p.env] || null;
-    const row = { id: p.id, name: p.name, monthlyUsd: p.monthlyUsd, env: p.env, configured: !!priceId, ready: false };
+    // GTM-1a — the amount and the CADENCE both come off the plan now. A
+    // yearly tier charges the yearly figure on a `year` interval, and
+    // comparing it against a monthly one would report every yearly price as
+    // broken.
+    const want = planAmountUsd(p), wantInterval = planInterval(p);
+    const row = { id: p.id, name: p.name, monthlyUsd: p.monthlyUsd, amountUsd: want,
+                  interval: wantInterval, internal: !!p.internal, env: p.env,
+                  configured: !!priceId, ready: false };
     if (!priceId || !billingStripe) return row;
     try {
       const price = await billingStripe.prices.retrieve(priceId);
       row.stripeAmountUsd = price.unit_amount != null ? price.unit_amount / 100 : null;
       row.stripeInterval = price.recurring ? `${price.recurring.interval_count || 1} ${price.recurring.interval}` : null;
-      row.ready = price.unit_amount === p.monthlyUsd * 100 && price.currency === "usd"
-        && !!price.recurring && price.recurring.interval === "month" && (price.recurring.interval_count || 1) === 1;
+      row.ready = price.unit_amount === want * 100 && price.currency === "usd"
+        && !!price.recurring && price.recurring.interval === wantInterval && (price.recurring.interval_count || 1) === 1;
     } catch (e) { row.error = "price_unreadable"; }
     return row;
   }));
@@ -1182,6 +1480,16 @@ app.get("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, r
       status: r.status, url: r.checkout_url, orgId: r.org_id,
       trialEndsAt: r.trial_ends_at, createdAt: r.created_at, completedAt: r.completed_at,
       createdByName: r.created_by_name,
+      // GTM-1a 5 — every signup lists here. `signupSource` is 'public' when
+      // the visitor pressed the button themselves and null when Jonathan
+      // minted the link, so the console can tell a deal he closed from one
+      // that closed itself. The estimate is what they said their size was,
+      // which is the number GTM-1b 1 checks against a real count after the
+      // import.
+      signupSource: r.signup_source || null,
+      contactName: r.contact_name || null,
+      estimatedDonors: r.estimated_donors == null ? null : Number(r.estimated_donors),
+      billingInterval: r.billing_interval || null,
       // Which EXISTING org this link attaches to, if any. A link with a target
       // reads differently in the list - it did not create the organisation it
       // names, it put one that was already here onto a plan.

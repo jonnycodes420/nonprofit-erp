@@ -267,7 +267,7 @@ const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward
 const { imageSize } = require("image-size");
 const { computeTrialEnd, computeReminderAt, isReminderDue, TRIAL_DAYS, REMINDER_LEAD_DAYS } = require("./trialEnd");
 const { CLOSE_PLANS, closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
-        firstChargeSentence, formatChargeDate, usd: usdWhole } = require("./closeLink");
+        firstChargeSentence, formatChargeDate, usd: usdWhole, planAmountUsd } = require("./closeLink");
 
 // `stripe` = DONATION processing (connected accounts + /stripe/webhook), on the
 // LIVE STRIPE_SECRET_KEY. `billingStripe` = PLATFORM subscription billing
@@ -2198,7 +2198,13 @@ async function orgOwns(table, id, orgId) {
 //   core  = { core, seed, founding }  OR lapsed/canceled (team features re-lock)
 // `founding` is the private $99 founding-partner price — a core-tier discount,
 // so it maps to core. See "Platform billing (BUILD-24)" in CLAUDE.md.
-const TEAM_PLANS = new Set(["team", "growth", "impact"]);
+// GTM-1a — EVERYTHING IS IN THE PLAN, so every tier plan is the top tier.
+// The tiers price on how many donors you work, not on which features you get,
+// and `orgPlanTier` is the gate that decides whether a surface opens. Reading
+// the ids from the catalogue rather than listing them means a fourth band
+// cannot ship half-locked.
+const TIER_PLAN_IDS = require("./closeLink").TIER_CLOSE_PLANS.map(p => p.id);
+const TEAM_PLANS = new Set(["team", "growth", "impact", "internal_test", ...TIER_PLAN_IDS]);
 function orgPlanTier(org) {
   // BUILD-46: the network Portal tier is its own tier and is NEVER
   // trial-elevated — a network signup gets the portal product, not a free
@@ -7172,6 +7178,14 @@ const PLAN_PRICE_ENV = {
   core: "STRIPE_PRICE_CORE", team: "STRIPE_PRICE_TEAM", founding: "STRIPE_PRICE_FOUNDING",
   seed: "STRIPE_PRICE_SEED", growth: "STRIPE_PRICE_GROWTH", impact: "STRIPE_PRICE_IMPACT",
 };
+// GTM-1a — the tier prices join the mode check, so `/health.billing` reports a
+// live price id sitting behind a test key (or the reverse) for the bands that
+// are actually on sale, not only for the three legacy plans.
+for (const t of require("./pricing").TIERS) {
+  PLAN_PRICE_ENV[`${t.id}_monthly`] = t.envMonthly;
+  PLAN_PRICE_ENV[`${t.id}_yearly`] = t.envYearly;
+}
+PLAN_PRICE_ENV[require("./pricing").INTERNAL_TEST.id] = require("./pricing").INTERNAL_TEST.env;
 
 // ── BUILD-90 90b · THE REMINDER AND THE CANCEL BUTTON ──────────────────────
 // NOTHING MOVES THE TRIAL END. Not an import, not a second import, not a
@@ -7220,7 +7234,7 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
     const to = admins[0]?.email;
     if (!to) { out.skipped.push({ id: org.id, reason: "no_admin" }); continue; }
     const tz = await orgTzName(org.id);
-    const sentence = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: org.trial_ends_at, tz });
+    const sentence = firstChargeSentence({ monthlyUsd: planAmountUsd(plan), firstChargeAt: org.trial_ends_at, tz });
     // Canonical domain via the vercel.json /billing/cancel proxy rewrite — a
     // cancel link is exactly where an unfamiliar host would read as a phish.
     const cancelUrl = `${publicAppUrl()}/billing/cancel/${signCancelToken(org.id)}`;
@@ -7248,7 +7262,7 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
     // Stamped only after a delivered send, so a Resend outage retries next tick
     // instead of silently eating the one warning she gets.
     if (send) await run("UPDATE orgs SET trial_reminder_sent_at=NOW() WHERE id=?", [org.id]);
-    out.sent.push({ id: org.id, to, trialEndsAt: org.trial_ends_at, amount: plan.monthlyUsd });
+    out.sent.push({ id: org.id, to, trialEndsAt: org.trial_ends_at, amount: planAmountUsd(plan) });
   }
   return out;
 }
@@ -7270,10 +7284,21 @@ const PLAN_LIMITS = {
   portal:   { seats: 3,         records: 25000,     extraSeatPrice: null }, // BUILD-46 network tier (soft)
 };
 
+// GTM-1a — UNLIMITED USERS, on every tier, because that is what the page
+// sells. The record band is the tier's own donor band and it is INFORMATIONAL
+// (every tier plan is in SOFT_BAND_PLANS below): going over it is a
+// conversation and thirty days' notice, never a door that shuts. GTM-1b 1 is
+// the notice.
+for (const p of require("./closeLink").TIER_CLOSE_PLANS) {
+  const tier = require("./pricing").tierById(p.tierId);
+  PLAN_LIMITS[p.id] = { seats: 999999999, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
+}
+PLAN_LIMITS.internal_test = { seats: 999999999, records: 999999999, extraSeatPrice: null };
+
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
 // no pre-cutover org's behavior changes.
-const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal"]);
+const SOFT_BAND_PLANS = new Set(["core", "team", "founding", "portal", "internal_test", ...TIER_PLAN_IDS]);
 
 // Returns the limits actually in effect for an org, accounting for trial state
 function effectivePlanLimits(org) {
@@ -8638,7 +8663,7 @@ require("./routes/webhooks").mount({
   INBOUND_EMAIL_ENABLED, MB_READY, Sentry, SvixWebhook, UNSUB_SECRET, bcrypt, billingCustomerColumn,
   billingStripe, bumpFormEvent, checkGiftExtras, closePlan, computeTrialEnd, crypto,
   displayNameCase, donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision,
-  donorSendOpts, enrollMembership, ensureOrgLedger, express, fireWorkflows, firstChargeSentence,
+  donorSendOpts, enrollMembership, ensureOrgLedger, express, fireWorkflows, firstChargeSentence, planAmountUsd,
   inboundMod, inviteeDisplayName, issueGiftReceipt, linkEmailToAccounts, logRecoveryEvent,
   logRecurringChange, mbCents, money, openGiftThread, openSustainerLapseThread, orgToday, orgTz,
   orgTzName, planFromSubscription, portalTimeline, provisionNewOrgWorkflows, publicAppUrl, query,
@@ -8660,6 +8685,13 @@ require("./routes/billing").mount({
   resend, retryFailedNotifications, run, sampleDataMod, sessionCache, signToken,
   stripeChargesEnabled, unsubscribeEmailFooterHtml, unsubscribeHeaders, uuid, validateCloseLink,
   validateOrgClose, wrap,
+  // GTM-1a — the pricing catalogue, the amount/cadence helpers for a plan that
+  // may be yearly, and the click-through agreement.
+  PRICING: require("./pricing"),
+  planAmountUsd: require("./closeLink").planAmountUsd,
+  planInterval: require("./closeLink").planInterval,
+  SELLABLE_CLOSE_PLANS: require("./closeLink").SELLABLE_CLOSE_PLANS,
+  customerAgreement: require("./customerAgreement"),
 });
 require("./routes/finance").mount({
   actor, checkWriteAccess, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,

@@ -56,22 +56,34 @@ let base = {};
 try { base = (JSON.parse(fs.readFileSync(basePath, "utf8")) || {}).suites || {}; }
 catch { console.log(`${Y}no ${BASELINE} yet — this run writes the first one${Z}`); }
 
-// A suite that SKIPPED part of itself is not comparable and is not a drop.
-// CI has no Playwright, so every browser leg skips there: `smoke-walk` runs
-// 104 assertions on a laptop and 0 in CI, and `hotfix1-profile` runs 49 and
-// 38. Reading that as "asserting less" would fail every CI run for ever,
-// and would train people to ignore the one guard that catches a suite
-// quietly doing less. The ratchet compares like with like; a full local run
-// has no skips and is ratcheted completely.
-const skipped = new Set(suites.filter(s => (s.skips || 0) > 0).map(s => s.name));
+// A suite whose BROWSER LEG did not run is not comparable and is not a drop:
+// `smoke-walk` runs 104 assertions with Chromium and 0 without it, and
+// `hotfix1-profile` 49 and 38. Reading that as "asserting less" would fail
+// every such run for ever and train people to ignore the one guard that
+// catches a suite quietly doing less.
+//
+// GTM-1a A — it is the LEG skip that counts, not the word SKIP. It used to
+// be `skips > 0`, which is every line containing "SKIP", and smoke-walk
+// prints one of those for each tab hidden from the CRM on that org. So the
+// suite that covers every screen was exempt from its own floor on EVERY run,
+// laptop and CI alike, and could have dropped from 104 assertions to 2
+// without a word. `legSkips` is set only by helpers' browserLegOrSkip.
+//
+// CI now installs Chromium and sets REQUIRE_BROWSER=1, under which a leg that
+// cannot run EXITS 1 instead of skipping — so in CI this exemption can no
+// longer be reached at all, and a skipped browser leg there is a failure.
+const legless = suites.filter(s => (s.legSkips || 0) > 0).map(s => s.name);
+if (process.env.REQUIRE_BROWSER === "1" && legless.length)
+  problems.push(`REQUIRE_BROWSER=1 but a browser leg still skipped: ${legless.join(" ")}`);
+const skipped = new Set(legless);
 const dropped = [];
 const notCompared = [];
 for (const [name, was] of Object.entries(base)) {
   if (!(name in counts)) continue;               // a retired suite is not a drop
-  if (skipped.has(name)) { notCompared.push(`${name} (${was} → ${counts[name]}, a leg skipped here)`); continue; }
+  if (skipped.has(name)) { notCompared.push(`${name} (${was} → ${counts[name]}, the browser leg skipped here)`); continue; }
   if (counts[name] < was) dropped.push(`${name}: ${was} → ${counts[name]}`);
 }
-if (notCompared.length) console.log(`  ${Y}not compared, a leg skipped in this environment:${Z} ${notCompared.join(" · ")}`);
+if (notCompared.length) console.log(`  ${Y}not compared, the browser leg skipped in this environment:${Z} ${notCompared.join(" · ")}`);
 if (dropped.length) problems.push(`a suite is asserting LESS than it did:\n    ` + dropped.join("\n    "));
 
 console.log("");

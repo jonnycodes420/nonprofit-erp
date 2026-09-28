@@ -26,7 +26,7 @@ const http = require("http");
 const bcrypt = require("bcryptjs");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY || "sk_test_dummy");
 const { BASE, ok, summary, login, api, q, closeDb, SINK_PORT, BILLING_MOCK_PORT } = require("./helpers");
-const { CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams, checkoutNotice } = require("../closeLink");
+const { CLOSE_PLANS, LEGACY_CLOSE_PLANS, TIER_CLOSE_PLANS, closePlan, validateCloseLink, checkoutSessionParams, checkoutNotice } = require("../closeLink");
 const { computeTrialEnd } = require("../trialEnd");
 
 const SECRET = process.env.STRIPE_BILLING_WEBHOOK_SECRET || process.env.STRIPE_WEBHOOK_SECRET || "whsec_localtest";
@@ -125,9 +125,19 @@ async function reset() {
   const staff = await login(STAFF);
 
   console.log("— §1 · the pure module: the plans, and the sentence she reads —");
-  ok("three plans, and they are the live prices",
-     CLOSE_PLANS.map(p => `${p.id}:${p.monthlyUsd}`).join(",") === "founding:199,core:249,team:499",
-     CLOSE_PLANS);
+  // GTM-1a — the catalogue grew: the three LEGACY plans are still exactly
+  // what they were (real orgs are on those Stripe prices), and the six tier
+  // plans plus the internal $1 price joined them. Both halves are asserted,
+  // because "the legacy prices did not move" is the load-bearing half.
+  ok("the three legacy plans are untouched, and they are the live prices",
+     LEGACY_CLOSE_PLANS.map(p => `${p.id}:${p.monthlyUsd}`).join(",") === "founding:199,core:249,team:499",
+     LEGACY_CLOSE_PLANS);
+  ok("…and the tier plans are the three bands, monthly and yearly",
+     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}`).join(",")
+       === "t1000_monthly:199,t1000_yearly:1990,t5000_monthly:299,t5000_yearly:2990,t10000_monthly:499,t10000_yearly:4990",
+     TIER_CLOSE_PLANS.map(p => `${p.id}:${p.amountUsd}`));
+  ok("…and a yearly plan's first charge names the YEARLY figure, not the monthly one",
+     /\$2,990/.test(checkoutNotice({ monthlyUsd: 2990, firstChargeAt: Date.parse("2026-10-20T12:00:00Z"), tz: "America/New_York" })));
   ok("an unknown plan is refused", validateCloseLink({ orgName: "X", contactEmail: "a@b.org", plan: "enterprise" }).error === "invalid_plan");
   ok("a missing org name is refused", validateCloseLink({ contactEmail: "a@b.org", plan: "core" }).error === "org_name_required");
   ok("a malformed email is refused", validateCloseLink({ orgName: "X", contactEmail: "not-an-email", plan: "core" }).error === "contact_email_invalid");
@@ -179,7 +189,9 @@ async function reset() {
   r = await api("POST", "/admin/close-links", supr, { orgName: "Sparrow Ministries", contactEmail: NEW_ED, plan: "core" });
   ok("a price at the WRONG AMOUNT refuses the link", r.status === 400 && r.body.error === "plan_price_mismatch", r.body);
   ok("…and the refusal names both numbers, so it is actionable",
-     /\$149\.00 USD/.test(r.body.message || "") && /\$249\/month/.test(r.body.message || ""), r.body.message);
+     // GTM-1a — the cadence is named too, because a plan may now be yearly
+     // and "$249/month" would be the wrong half of the sentence for one.
+     /\$149\.00 USD/.test(r.body.message || "") && /\$249 every month/.test(r.body.message || ""), r.body.message);
   ok("…and no Checkout session was created", sessions.length === sessionsBefore, sessions.length);
   ok("…and no close_links row was written",
      (await q(`SELECT id FROM close_links WHERE contact_email=$1`, [NEW_ED])).length === 0);
@@ -302,8 +314,17 @@ async function reset() {
   const listed = await api("GET", "/admin/close-links", supr);
   ok("the super-admin can see what was handed out and what it became",
      listed.status === 200 && listed.body.links.some(l => l.id === linkId && l.orgId === org.id), listed.body);
-  ok("…and whether each plan's Stripe price is not merely CONFIGURED but the right amount",
-     listed.body.plans.every(p => p.ready === true && p.stripeAmountUsd === p.monthlyUsd), listed.body.plans);
+  // GTM-1a — the catalogue now holds bands whose Stripe prices Jonathan has
+  // not created yet, so "every plan is ready" is no longer the question. The
+  // question is: of the ones that ARE configured, does Stripe hold the amount
+  // the page would quote — and an unconfigured one must read as unconfigured
+  // rather than as fine.
+  const cfg = listed.body.plans.filter(p => p.configured);
+  ok("…and whether each CONFIGURED plan's Stripe price is not merely set but the right amount",
+     cfg.length >= 3 && cfg.every(p => p.ready === true && p.stripeAmountUsd === p.amountUsd), cfg);
+  ok("…while a band with no Stripe price yet reads as NOT configured, never as ready",
+     listed.body.plans.filter(p => !p.configured).every(p => p.ready === false),
+     listed.body.plans.filter(p => !p.configured).map(p => p.id));
   PRICES.price_test_team = { unit_amount: 29900, currency: "usd", recurring: { interval: "month", interval_count: 1 } };
   const stale = await api("GET", "/admin/close-links", supr);
   const teamRow = stale.body.plans.find(p => p.id === "team");

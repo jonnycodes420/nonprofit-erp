@@ -2,6 +2,38 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../main";
 import { apiFetch } from "../api";
+// The catalogue, read straight out of the JSON the server prices against.
+// See pricing.js for why it is JSON and not a module: it is the one file both
+// the bundle and the Node process can read without a build plugin.
+import PRICING from "../../../pricing.json";
+
+const TIERS = PRICING.tiers;
+const TALK_TO_US = PRICING.talkToUs;
+const INCLUDED = PRICING.included;
+const TERMS_STRIP = PRICING.termsStrip;
+const YEARLY_NOTE = PRICING.yearlyNote;
+const ACTIVE_DONOR_SENTENCE = PRICING.activeDonorSentence;
+
+// ── GTM-1a 1 · ONE PLAN, PRICED BY HOW MANY DONORS YOU WORK ────────────────
+//
+// The old page sold two plans "split on a real line" — Core for a small shop,
+// Team if you have gift officers. That line stopped being real: Moves
+// management, officer portfolios and the Agent are what a small shop most
+// needs, and putting them behind the bigger number meant the orgs Steward is
+// for could not have them. So there is one plan, everything is in it,
+// unlimited users, and the only thing that changes with size is the price.
+//
+// EVERY NUMBER ON THIS PAGE COMES FROM shared/pricing.js, which is the same
+// list the signup route prices against and the same list `closeLink.js` builds
+// its Stripe plans from. A price on a public page that disagrees with the
+// price on the card is the exact defect BUILD-90 shipped a Stripe price-check
+// for, and the way not to have it twice is to have one list.
+//
+// WHAT THIS PAGE MUST NEVER GROW (the landing page's rule, and it applies
+// here for the same reason): invented social proof. No logos, no review
+// scores, no testimonials, no customer counts, no "trusted by". Steward has
+// real customers and can name them when they say yes; until then the page
+// says what the software does and what it costs.
 
 // FIX-2 C — this surface's colours, named once (it keeps its own palette;
 // see tests/fix2-c-hex.test.js for why a public surface does).
@@ -15,20 +47,16 @@ const PAL = {
   terraLight: "#e0a893",
 };
 
+const CREAM = "#f0ede6", INK = "#0f1a12", SAGE = "rgba(240,237,230,0.7)";
+const GOLD = "#c9a84c", PANEL_BORDER = "#2d4a35", EMERALD = "#0d5c3a";
 
-// ── Live-billing plans (BUILD-24 cutover) ──────────────────────────────────
-// CHECKOUT_PLANS is the source of truth for the in-app PlanPicker's real Stripe
-// Checkout (POST /billing/create-checkout maps these ids → STRIPE_PRICE_CORE /
-// STRIPE_PRICE_TEAM env vars). BUILD-24 repointed the in-app checkout at the
-// Core/Team commercial model. Checkout goes live once those Stripe Prices exist
-// and the env vars are set (scripts/create-billing-products.js provisions them);
-// until then create-checkout returns a clean `plan_not_configured` message
-// instead of 500-ing. The founding-partner price is deliberately NOT here —
-// it's off-menu, assigned privately by a super-admin through a close link.
-//
-// BUILD-90: the prices are Core $249 / Team $499 / Founding $199. The server's
-// closeLink.js holds the same three numbers and is the source of truth for
-// anything that charges; these are what the page renders.
+const CAL = "https://calendly.com/xjca2006/new-meeting";
+
+// ── Live-billing plans (BUILD-24 cutover, superseded by GTM-1a) ────────────
+// CHECKOUT_PLANS and BILLING_PLANS below are LEGACY and are exported because
+// the in-app PlanPicker and the upgrade modal still read them for an org that
+// is on one of those prices today. Nothing on THIS page renders from them any
+// more. Do not add to them; add a band to shared/pricing.js.
 export const CHECKOUT_PLANS = [
   {
     id: "core",
@@ -59,20 +87,14 @@ export const CHECKOUT_PLANS = [
 ];
 
 // Legacy Stripe-wired set (seed/growth/impact) — retained for reference and any
-// pre-cutover org reactivating on its old price. The in-app PlanPicker now uses
-// CHECKOUT_PLANS (Core/Team) above; do NOT reintroduce these into the modal.
+// pre-cutover org reactivating on its old price.
 export const BILLING_PLANS = [
   {
     id: "seed",
     name: "Seed",
     price: 99,
     tagline: "For solo founders and tiny teams.",
-    features: [
-      "1 user seat",
-      "Up to 1,000 donor records",
-      "Full platform — CRM, grants, finance, AI",
-      "Email support",
-    ],
+    features: ["1 user seat", "Up to 1,000 donor records", "Full platform — CRM, grants, finance, AI", "Email support"],
     highlight: false,
   },
   {
@@ -80,12 +102,7 @@ export const BILLING_PLANS = [
     name: "Growth",
     price: 249,
     tagline: "For teams ready to grow.",
-    features: [
-      "Up to 5 user seats",
-      "Up to 10,000 donor records",
-      "Everything in the platform — nothing locked",
-      "Priority support",
-    ],
+    features: ["Up to 5 user seats", "Up to 10,000 donor records", "Everything in the platform — nothing locked", "Priority support"],
     highlight: true,
   },
   {
@@ -93,276 +110,239 @@ export const BILLING_PLANS = [
     name: "Impact",
     price: 499,
     tagline: "For established orgs at scale.",
-    features: [
-      "Unlimited user seats",
-      "Unlimited donor records",
-      "Everything in Growth",
-      "Dedicated onboarding call",
-    ],
+    features: ["Unlimited user seats", "Unlimited donor records", "Everything in Growth", "Dedicated onboarding call"],
     highlight: false,
   },
 ];
 
-// ── Public commercial model (what the /pricing page shows) ─────────────────
-// Two plans split on the real line: do you have gift officers to manage?
-// Cards are PARALLEL so the eye can diff them (BUILD-49 rewrite). Core lists
-// what's included; Team is "Everything in Core" + the major-gifts layer. The
-// old Team white-label "COMING SOON" bullet is removed — a coming-soon badge
-// inside a paid feature list is a promise attached to a price.
-const PUBLIC_PLANS = [
-  {
-    id: "core",
-    name: "Core",
-    price: 249,
-    forWho: "For a 1–3 person development team.",
-    highlight: false,
-    features: [
-      { t: "Up to 5,000 active donors · 3 users" },
-      { t: "Full donor CRM, gift history, households, planned-giving tags" },
-      { t: "Online giving on your own Stripe — no platform fee, no donor tip" },
-      { t: "IRS-compliant receipts and year-end statements" },
-      { t: "Goals and campaigns — Annual, Project, Capital, with roll-up" },
-      { t: "Retention workflows — failed-card recovery, instant gift thank-you" },
-      { t: "Reports — LYBUNT, SYBUNT, retention, top donors, 3-year, annual" },
-      { t: "Week-in-Review weekly digest" },
-    ],
-  },
-  {
-    id: "team",
-    name: "Team",
-    price: 499,
-    forWho: "For staffed offices with gift officers.",
-    highlight: true,
-    features: [
-      { t: "Up to 25,000 active donors · 10 users" },
-      { t: "Everything in Core" },
-      { t: "Moves management — prospect pipeline, stages, moves log, ask vs. gift" },
-      { t: "Officer portfolios and assignment" },
-      { t: "Per-officer monthly reports and the solicitations report" },
-      { t: "Multi-officer Week-in-Review breakdowns" },
-      { t: "Founder-direct onboarding and support" },
-    ],
-  },
-];
+const usd = n => "$" + Number(n).toLocaleString("en-US");
+
+function Tick() {
+  return (
+    <span style={{ width: 18, height: 18, marginTop: 2, background: PAL.mist, border: `1px solid ${EMERALD}`,
+                   borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+      <svg width="9" height="7" viewBox="0 0 10 8" fill="none" aria-hidden="true">
+        <path d="M1 4l3 3 5-6" stroke={EMERALD} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+    </span>
+  );
+}
 
 export default function Pricing() {
   const { auth } = useAuth();
   const navigate = useNavigate();
   const isAuthed = !!auth?.token;
-  // A signed-in org still on its free trial already committed by signing up —
-  // the primary path is into the product, not a card-first checkout (QA R1) —
-  // but they can still pick a plan whenever they're ready (the plan buttons
-  // start checkout below).
   const onTrial = isAuthed && (auth?.org?.plan === "trial" || auth?.org?.subscription_status === "trialing");
 
-  // Current commercial tier (for the "Current plan" state). seed/founding roll
-  // up to core; growth/impact to team — same mapping as orgPlanTier server-side.
-  // Only an ACTIVE subscription counts as "current" — a canceled/read_only org
-  // on the core plan should still be able to check out to reactivate it.
-  const orgPlan = auth?.org?.plan;
-  const currentTier = (orgPlan === "team" || orgPlan === "growth" || orgPlan === "impact") ? "team"
-    : (orgPlan === "core" || orgPlan === "seed" || orgPlan === "founding") ? "core" : null;
-  const subActive = auth?.org?.subscription_status === "active";
-  const isCurrentPlan = (id) => subActive && currentTier === id;
+  // Monthly is the default because it is the smaller commitment and the page
+  // should not push the bigger one. Yearly is one tap away and says plainly
+  // what it saves.
+  const [interval, setInterval] = useState("monthly");
+  const yearly = interval === "yearly";
 
-  // ── Checkout wiring (BUILD-24 → this FIX) ──────────────────────────────────
-  // A plan button starts a REAL Stripe Checkout (POST /billing/create-checkout,
-  // which maps core→STRIPE_PRICE_CORE / team→STRIPE_PRICE_TEAM) and redirects
-  // the browser to the returned session URL. success_url/cancel_url are set
-  // server-side (→ /dashboard?subscribed=true / back to /pricing); the org's
-  // tier actually flips via the billing webhook, not here.
-  const [checkingOut, setCheckingOut] = useState(null); // plan id in flight
-  const [checkoutErr, setCheckoutErr] = useState("");    // {id, msg}
-  async function startCheckout(planId) {
+  // An org already paying should see which band it is on rather than four
+  // buttons that all read "Start now". `plan` is `<tier>_<cadence>`.
+  const orgPlan = String(auth?.org?.plan || "");
+  const currentTier = orgPlan.includes("_") ? orgPlan.split("_")[0] : null;
+  const subActive = auth?.org?.subscription_status === "active";
+
+  const [checkingOut, setCheckingOut] = useState(null);
+  const [checkoutErr, setCheckoutErr] = useState("");
+  async function startCheckout(tierId) {
     setCheckoutErr("");
-    setCheckingOut(planId);
+    setCheckingOut(tierId);
     try {
-      const r = await apiFetch("/billing/create-checkout", { method: "POST", body: JSON.stringify({ plan: planId }) });
+      const r = await apiFetch("/billing/create-checkout", {
+        method: "POST", body: JSON.stringify({ plan: `${tierId}_${interval}` }),
+      });
       if (!r?.url) throw new Error("Checkout is not available yet — please contact us.");
       window.location.href = r.url;
     } catch (e) {
       const code = e?.error || "";
       const raw = e?.message || "";
-      // Turn the known backend states into human copy; never a dead button and
-      // NEVER a raw 500 / Stripe internals. The typed billing-config errors
-      // (plan_mode_mismatch / plan_not_configured) already carry clean,
-      // admin-facing copy from the server — prefer it verbatim.
       const isConfig = code === "plan_mode_mismatch" || code === "plan_not_configured"
         || /plan_mode_mismatch|plan_not_configured|No Stripe price/i.test(raw);
       const msg = isConfig
         ? (raw || "Billing isn't configured correctly yet — reach out and we'll get you set up.")
-        : code === "founding_forbidden"
-        ? "That plan is assigned privately."
         : (e?.status === 403 || /admin/i.test(raw))
         ? "Only an admin can change the plan. Ask your workspace admin to upgrade."
         : /internal server error/i.test(raw)
         ? "Something went wrong starting checkout. Please try again, or reach out if it keeps happening."
         : (raw || "Could not start checkout. Please try again.");
-      setCheckoutErr({ id: planId, msg });
+      setCheckoutErr({ id: tierId, msg });
       setCheckingOut(null);
     }
   }
 
-  const CAL = "https://calendly.com/xjca2006/new-meeting";
-
-  const cream = "#f0ede6", ink = "#0f1a12", sage = "rgba(240,237,230,0.7)", gold = "#c9a84c";
-  const panel = "#1a2e1f", panelBorder = "#2d4a35", green = "#0d5c3a", emerald = "#0d5c3a";
-
   return (
-    <div style={{ minHeight: "100vh", background: ink, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 24px 72px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: INK, display: "flex", flexDirection: "column", alignItems: "center", padding: "60px 24px 72px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 
       {/* Nav */}
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: ink, borderBottom: "1px solid "+PAL.panel, zIndex: 100 }}>
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: INK, borderBottom: "1px solid "+PAL.panel, zIndex: 100 }}>
         <Link to="/" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-          <span style={{ fontSize: 20, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
+          <span style={{ fontSize: 20, fontWeight: 400, color: CREAM, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
         {isAuthed ? (
-          <Link to="/dashboard" style={{ fontSize: 13, color: sage, textDecoration: "none", fontWeight: 600 }}>Go to dashboard →</Link>
+          <Link to="/dashboard" style={{ fontSize: 13, color: SAGE, textDecoration: "none", fontWeight: 600 }}>Go to dashboard →</Link>
         ) : (
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            <Link to="/login" style={{ fontSize: 13, color: sage, textDecoration: "none" }}>Sign in</Link>
-            <Link to="/invitation" style={{ fontSize: 13, color: ink, background: cream, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Request an invitation</Link>
+            <Link to="/login" style={{ fontSize: 13, color: SAGE, textDecoration: "none" }}>Sign in</Link>
+            <Link to="/signup" data-testid="pricing-nav-start" style={{ fontSize: 13, color: INK, background: CREAM, borderRadius: 8, padding: "7px 16px", textDecoration: "none", fontWeight: 700 }}>Start now</Link>
           </div>
         )}
       </div>
 
       <div style={{ maxWidth: 980, width: "100%", marginTop: 56 }}>
         {/* Header */}
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: gold, textTransform: "uppercase", marginBottom: 12 }}>Pricing</div>
-          <div style={{ fontSize: 38, fontWeight: 400, color: cream, fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.15, marginBottom: 14 }}>
-            Two plans, split on a real line.
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", color: GOLD, textTransform: "uppercase", marginBottom: 12 }}>Pricing</div>
+          <h1 data-testid="pricing-headline" style={{ fontSize: 38, fontWeight: 400, color: CREAM, fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.15, margin: "0 0 14px" }}>
+            One plan. Everything is in it.
+          </h1>
+          <div style={{ fontSize: 15, color: SAGE, maxWidth: 600, margin: "0 auto", lineHeight: 1.55 }}>
+            The donor CRM, Volunteers and the Agent, with as many users as you like.
+            No platform fee, no donor tip prompt, month to month. What you pay depends
+            only on how many donors you are actually working.
           </div>
-          <div style={{ fontSize: 15, color: sage, maxWidth: 560, margin: "0 auto", lineHeight: 1.55 }}>
-            Do you have gift officers to manage? If not, <span style={{ color: cream, fontWeight: 600 }}>Core</span> is the whole product. If you do, that's <span style={{ color: cream, fontWeight: 600 }}>Team</span>.
-          </div>
-          <div style={{ fontSize: 13.5, color: gold, maxWidth: 560, margin: "16px auto 0", lineHeight: 1.55, fontWeight: 600 }}>
+          <div data-testid="pricing-trial-line" style={{ fontSize: 13.5, color: GOLD, maxWidth: 560, margin: "16px auto 0", lineHeight: 1.55, fontWeight: 600 }}>
             Nothing is charged for your first thirty days.
           </div>
         </div>
 
         {onTrial && (
-          <div style={{ marginBottom: 36, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <Link to="/dashboard" style={{ display: "inline-block", background: gold, color: ink, borderRadius: 12, padding: "14px 32px", fontSize: 15, fontWeight: 800, textDecoration: "none" }}>
+          <div style={{ marginBottom: 32, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <Link to="/dashboard" style={{ display: "inline-block", background: GOLD, color: INK, borderRadius: 12, padding: "14px 32px", fontSize: 15, fontWeight: 800, textDecoration: "none" }}>
               Continue with your free trial →
             </Link>
-            <div style={{ fontSize: 13, color: sage }}>
+            <div style={{ fontSize: 13, color: SAGE }}>
               You're inside your first thirty days — nothing has been charged. Your first charge date is in Settings → Billing.
             </div>
           </div>
         )}
 
-        {/* Plan cards */}
-        <div className="pricing-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 20, marginBottom: 28 }}>
-          {PUBLIC_PLANS.map(plan => (
-            <div key={plan.id} style={{
-              background: plan.highlight ? cream : panel,
-              border: plan.highlight ? `2px solid ${gold}` : `1px solid ${panelBorder}`,
-              borderRadius: 18,
-              padding: "30px 28px 32px",
-              display: "flex",
-              flexDirection: "column",
-              position: "relative",
-            }}>
-              {plan.highlight && (
-                <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: gold, color: ink, fontSize: 10, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 99, padding: "4px 12px", whiteSpace: "nowrap" }}>
-                  Staffed offices
-                </div>
-              )}
-              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: plan.highlight ? PAL.sageGrey : sage, marginBottom: 8 }}>
-                {plan.name}
+        {/* Monthly / yearly */}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, marginBottom: 26 }}>
+          <div role="group" aria-label="Billing period" data-testid="pricing-interval"
+            style={{ display: "inline-flex", background: PAL.panel, border: `1px solid ${PANEL_BORDER}`, borderRadius: 99, padding: 4 }}>
+            {[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([id, label]) => (
+              <button key={id} onClick={() => setInterval(id)} aria-pressed={interval === id}
+                data-testid={"pricing-interval-" + id}
+                style={{ background: interval === id ? CREAM : "transparent", color: interval === id ? INK : SAGE,
+                         border: "none", borderRadius: 99, padding: "8px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div style={{ fontSize: 13, color: yearly ? GOLD : SAGE, fontWeight: yearly ? 700 : 400 }}>{YEARLY_NOTE}</div>
+        </div>
+
+        {/* THE ONE CARD. The bands are rows inside it, not competing plans —
+            they are the same product at three sizes, and three cards would
+            read as three things to choose between. */}
+        <div style={{ background: CREAM, borderRadius: 18, padding: "30px 28px 28px", marginBottom: 20 }}>
+          <div className="pricing-cols" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+
+            {/* Left: the bands */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: PAL.sageGrey, marginBottom: 14 }}>
+                What it costs
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 5, marginBottom: 6 }}>
-                <span style={{ fontSize: 40, fontWeight: 800, color: plan.highlight ? ink : cream, fontFamily: "'DM Serif Display',Georgia,serif" }}>${plan.price}</span>
-                <span style={{ fontSize: 14, color: plan.highlight ? PAL.sageGrey : sage }}>/month</span>
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: plan.highlight ? ink : cream, marginBottom: 22, lineHeight: 1.45 }}>
-                {plan.forWho}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 11, marginBottom: 26, flex: 1 }}>
-                {plan.features.map(f => (
-                  <div key={f.t} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    <div style={{ width: 18, height: 18, marginTop: 1, background: plan.highlight ? PAL.mist : ink, border: `1px solid ${emerald}`, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke={emerald} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <div data-testid="pricing-bands" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {TIERS.map(t => {
+                  const amount = yearly ? t.yearlyUsd : t.monthlyUsd;
+                  const isCurrent = subActive && currentTier === t.id;
+                  const busy = checkingOut === t.id;
+                  const err = checkoutErr && checkoutErr.id === t.id ? checkoutErr.msg : null;
+                  return (
+                    <div key={t.id} data-testid={"pricing-band-" + t.id}
+                      style={{ border: `1px solid ${PAL.mistEdge}`, borderRadius: 12, padding: "14px 16px", background: PAL.white }}>
+                      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: INK }}>{t.band}</span>
+                        <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                          <span data-testid={"pricing-amount-" + t.id}
+                            style={{ fontSize: 26, fontWeight: 800, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{usd(amount)}</span>
+                          <span style={{ fontSize: 13, color: PAL.sageGrey }}>{yearly ? "/year" : "/month"}</span>
+                        </span>
+                      </div>
+                      {isAuthed && (
+                        <div style={{ marginTop: 10 }}>
+                          {isCurrent ? (
+                            <span style={{ fontSize: 12.5, fontWeight: 700, color: PAL.sageGrey }}>Your current plan</span>
+                          ) : (
+                            <button onClick={() => startCheckout(t.id)} disabled={busy}
+                              style={{ background: EMERALD, border: "none", borderRadius: 9, padding: "9px 16px",
+                                       color: PAL.white, fontSize: 13, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1 }}>
+                              {busy ? "Starting checkout…" : "Choose this band →"}
+                            </button>
+                          )}
+                          {err && <div style={{ fontSize: 12, color: PAL.terracotta, marginTop: 8, lineHeight: 1.45 }}>{err}</div>}
+                        </div>
+                      )}
                     </div>
-                    <span style={{ fontSize: 13, color: plan.highlight ? ink : sage, lineHeight: 1.45 }}>
-                      {f.t}
-                    </span>
+                  );
+                })}
+                <div data-testid="pricing-band-talk"
+                  style={{ border: `1px dashed ${PAL.mistEdge}`, borderRadius: 12, padding: "14px 16px", background: "transparent",
+                           display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: INK }}>{TALK_TO_US.band}</span>
+                  <a href={CAL} target="_blank" rel="noreferrer" style={{ fontSize: 14, fontWeight: 700, color: EMERALD, textDecoration: "underline" }}>
+                    {TALK_TO_US.copy}
+                  </a>
+                </div>
+              </div>
+
+              {/* The definition, in ONE sentence, right under the thing it
+                  defines. Every number has a sentence. */}
+              <p data-testid="pricing-active-donor-sentence"
+                style={{ fontSize: 13, color: PAL.sageGrey, lineHeight: 1.6, margin: "14px 0 0" }}>
+                {ACTIVE_DONOR_SENTENCE}
+              </p>
+            </div>
+
+            {/* Right: what is in it */}
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: PAL.sageGrey, marginBottom: 14 }}>
+                What you get, on every band
+              </div>
+              <div data-testid="pricing-included" style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+                {INCLUDED.map(f => (
+                  <div key={f} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <Tick />
+                    <span style={{ fontSize: 13.5, color: INK, lineHeight: 1.45 }}>{f}</span>
                   </div>
                 ))}
               </div>
-              {(() => {
-                const base = {
-                  background: plan.highlight ? green : "transparent",
-                  border: plan.highlight ? "none" : `1px solid ${panelBorder}`,
-                  borderRadius: 10, padding: "13px 20px",
-                  color: plan.highlight ? PAL.white : sage,
-                  fontSize: 14, fontWeight: 700, cursor: "pointer", transition: "all 0.15s",
-                };
-                if (!isAuthed) {
-                  // Signup is CLOSED (BUILD-87 F.2) and this said "Start free"
-                  // at a door that redirects. A visitor asks for an invitation;
-                  // an organisation is created by a close link, in the room.
-                  return <button onClick={() => navigate("/invitation")} style={base}>Request an invitation →</button>;
-                }
-                if (isCurrentPlan(plan.id)) {
-                  return (
-                    <button disabled style={{ ...base, background: plan.highlight ? PAL.mistEdge : "transparent", color: plan.highlight ? PAL.sageGrey : sage, cursor: "default", opacity: 0.85 }}>
-                      Current plan
-                    </button>
-                  );
-                }
-                const busy = checkingOut === plan.id;
-                const label = plan.id === "team" ? "Upgrade to Team →" : `Choose ${plan.name} →`;
-                const err = checkoutErr && checkoutErr.id === plan.id ? checkoutErr.msg : null;
-                return (
-                  <>
-                    <button
-                      onClick={() => startCheckout(plan.id)}
-                      disabled={busy}
-                      style={{ ...base, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1 }}
-                    >
-                      {busy ? "Starting checkout…" : label}
-                    </button>
-                    {err && (
-                      <div style={{ fontSize: 12, color: plan.highlight ? PAL.terracotta : PAL.terraLight, marginTop: 10, lineHeight: 1.45 }}>{err}</div>
-                    )}
-                  </>
-                );
-              })()}
             </div>
-          ))}
-        </div>
-
-        {/* One line under the cards (BUILD-49): what the bands count. */}
-        <div style={{ textAlign: "center", fontSize: 13.5, color: sage, marginBottom: 32, lineHeight: 1.55, maxWidth: 620, marginLeft: "auto", marginRight: "auto" }}>
-          Bands count active donors — the ones you're actually working, not every dead record on file.
-        </div>
-
-        {/* Foundation Portal add-on — one line, real CTA (not a Calendly link
-            dressed as prose). */}
-        <div style={{ background: panel, border: `1px solid ${panelBorder}`, borderRadius: 16, padding: "20px 26px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 40 }}>
-          <div style={{ maxWidth: 660, fontSize: 13.5, color: sage, lineHeight: 1.55 }}>
-            <b style={{ color: cream }}>Foundation Portal</b> — add-on, any plan. Foundation records and full grant lifecycle: deadlines, LOIs, requested vs. awarded, reporting. Turn it on when you start pursuing foundation funding.
           </div>
-          <a href={CAL} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700, color: cream, background: "transparent", border: `1px solid ${panelBorder}`, borderRadius: 10, padding: "11px 18px", textDecoration: "none", whiteSpace: "nowrap" }}>
-            Ask about it →
-          </a>
+
+          {/* The two actions, side by side, exactly as on the landing page. */}
+          {!isAuthed && (
+            <div className="pricing-ctas" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 26 }}>
+              <button onClick={() => navigate("/signup")} data-testid="pricing-start"
+                style={{ background: EMERALD, border: "none", borderRadius: 10, padding: "14px 28px", color: PAL.white, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                Start now →
+              </button>
+              <a href={CAL} target="_blank" rel="noreferrer" data-testid="pricing-book"
+                style={{ background: "transparent", border: `1px solid ${PAL.mistEdge}`, borderRadius: 10, padding: "14px 28px", color: INK, fontSize: 15, fontWeight: 700, textDecoration: "none" }}>
+                Book a call
+              </a>
+            </div>
+          )}
         </div>
 
         {/* Footer strip — short items, no sentences (BUILD-49). */}
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "8px 14px", fontSize: 13, color: sage }}>
-          {["No platform fee", "No donor tip", "Gifts settle in your own Stripe", "Export your data anytime", "Month to month, cancel anytime"].map((item, i) => (
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center", gap: "8px 14px", fontSize: 13, color: SAGE }}>
+          {[...TERMS_STRIP, "Gifts settle in your own Stripe", "Export your data anytime"].map((item, i) => (
             <span key={item} style={{ display: "inline-flex", alignItems: "center", gap: "14px" }}>
-              {i > 0 && <span aria-hidden="true" style={{ color: panelBorder }}>·</span>}
+              {i > 0 && <span aria-hidden="true" style={{ color: PANEL_BORDER }}>·</span>}
               {item}
             </span>
           ))}
         </div>
       </div>
 
-      <style>{`@media (max-width: 720px){ .pricing-grid{ grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width: 760px){ .pricing-cols{ grid-template-columns: 1fr !important; gap: 26px !important; } .pricing-ctas > *{ width: 100%; text-align: center; } }`}</style>
     </div>
   );
 }

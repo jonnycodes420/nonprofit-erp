@@ -35,7 +35,7 @@ in_core() { echo "$core" | grep -qx "$1"; }
 # `grep -l 'client/' tests/*.test.js` + manual check that each actually reads
 # client files, not just mentions them in a comment). Any client/ change runs
 # ALL of these.
-CLIENT_SUITES="clickability no-emoji palette upgrade-checkout smoke-walk"
+CLIENT_SUITES="clickability no-emoji palette upgrade-checkout smoke-walk gtm1a-internal-price"
 
 suites=""
 add_suite() {

@@ -76,7 +76,14 @@ const TZ = process.env.DEMO_TZ || "America/New_York";
 // loopback scratch Postgres; the shard holding demo-shape seeds the demo into
 // its own. The pattern is deliberately narrow — a digit, nothing else — so it
 // cannot match anything a person would name by hand.
-const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+|steward_shard_\d+)$/;
+// GTM-1a — `steward_<tag>_shard_<n>`, not only `steward_shard_<n>`. CLAUDE.md
+// requires a database per WORKTREE, and the way to get one per worktree AND
+// per shard is SHARD_DB_PREFIX. A worktree that set it found the seed refuse,
+// smoke-walk fail with "the demo org is on this database", and the failure
+// read as a product defect when it was this allowlist. The pattern still
+// pins both ends: it must start `steward_` and end `shard_<digits>`, so it
+// widens to sharded scratch databases and to nothing else.
+const ALLOWED_DB = /^(steward_loadtest|steward_demo|steward_freshcheck|steward_build\w+|steward_fix\w+|steward_chore\w+|steward_gtm\w+|steward_\w*shard_\d+)$/;
 const KB_DB = /^(kb_|kingdom)/i;
 const PROD_DB = "postgres";
 

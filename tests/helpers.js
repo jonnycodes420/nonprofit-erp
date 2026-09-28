@@ -188,3 +188,36 @@ const NEGATIVE_MAIL_WAIT_MS = Number(process.env.NEGATIVE_MAIL_WAIT_MS || 4000);
 const settleNegative = () => new Promise(r => setTimeout(r, NEGATIVE_MAIL_WAIT_MS));
 
 module.exports = { BASE, ok, summary, login, api, wireSize, q, closeDb, SINK_PORT, STRIPE_MOCK_PORT, BILLING_MOCK_PORT, civilToday, civilPlusDays, textMatch, leaks, waitFor, settleNegative, NEGATIVE_MAIL_WAIT_MS };
+
+// ── GTM-1a A · A BROWSER LEG MAY NOT SKIP WHERE IT IS REQUIRED ─────────────
+// Both browser suites SKIP cleanly when Playwright or a localhost-API dist is
+// missing, and that is right on a laptop that has neither. In CI it was a
+// hole: CI had no Playwright, so smoke-walk ran 104 assertions here and 0
+// there, hotfix1-profile 49 and 38, and the count ratchet was taught to
+// EXEMPT a suite that skipped — which is exactly the shape of "green with the
+// browser coverage missing" the ratchet exists to catch.
+//
+// CI now installs Chromium and sets REQUIRE_BROWSER=1. With it set, the same
+// absence is a FAILURE with the same sentence, so the run says which of the
+// three things is missing instead of quietly asserting a third less.
+//
+// It is an opt-IN, so nothing changes for a laptop or a worktree that has not
+// set it, and the two suites keep one skip decision between them.
+function browserLegOrSkip(why, label) {
+  if (!why) return false;                       // the leg can run
+  const line = "  " + (label ? label + " " : "") + why;
+  if (process.env.REQUIRE_BROWSER === "1") {
+    console.log("  FAIL  browser leg required here and cannot run:" + line);
+    console.log("\n0 passed, 1 failed (the browser leg could not run)");
+    process.exit(1);
+  }
+  // The marker is what tests/shard.sh counts as a LEG skip. It is deliberately
+  // not the bare word SKIP: smoke-walk prints "SKIP tab …" for a tab that is
+  // hidden from the CRM for that org, which is the suite doing its job, and
+  // counting that as "a leg skipped" exempted smoke-walk from the count
+  // ratchet on every run — the one suite that covers every screen, never
+  // compared against its own floor.
+  console.log("  SKIP [leg-skip]" + line);
+  return true;                                  // skipped
+}
+module.exports.browserLegOrSkip = browserLegOrSkip;

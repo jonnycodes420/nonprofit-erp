@@ -190,6 +190,21 @@ jobs:
       SHARDS: "3"
       SHARD_PGUSER: steward
       PGPASSWORD: steward
+      # ── GTM-1a A · THE BROWSER LEGS RUN HERE NOW ─────────────────────────
+      # They used to skip. `smoke-walk` opens every tab and every donor-profile
+      # tab and fails on a blank screen, an error boundary, a 5xx or a console
+      # error — it is the ONLY coverage screens have (CLAUDE.md: "Screens are
+      # covered by tests/smoke-walk.test.js"), and it was asserting 104 things
+      # on a laptop and 0 in CI. Every deploy for months went out on a battery
+      # that had never opened a page.
+      #
+      # PLAYWRIGHT_DIR is the directory the two suites require `playwright`
+      # from (default ~/steward-qa on Jonathan's machine). REQUIRE_BROWSER=1
+      # turns "Playwright not found" / "dist not built" from a quiet SKIP into
+      # a red suite, so this can never silently regress to what it was.
+      PLAYWRIGHT_DIR: ${{ github.workspace }}/.playwright
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      REQUIRE_BROWSER: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -207,6 +222,32 @@ jobs:
 
       - name: Install client deps (locked)
         run: npm ci --prefix client
+
+      # ── Playwright + Chromium, cached ────────────────────────────────────
+      # Pinned to the same version Jonathan's ~/steward-qa runs, so a suite
+      # that passes on the laptop and fails here is a real difference and not
+      # a browser version. The cache key carries the version, so a bump
+      # invalidates it on its own; the browser download is ~140MB and the
+      # install is the slowest step in this job without it.
+      - name: Cache Playwright (package + Chromium)
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .playwright
+            .playwright-browsers
+          key: playwright-${{ runner.os }}-1.61.1
+      - name: Install Playwright + Chromium
+        run: |
+          mkdir -p .playwright
+          if [ ! -d .playwright/node_modules/playwright ]; then
+            (cd .playwright && npm init -y >/dev/null && npm i --no-audit --no-fund playwright@1.61.1)
+          fi
+          # --with-deps installs the shared libraries Chromium needs on the
+          # runner image; it is a no-op when they are already present, and it
+          # is NOT covered by the cache (it writes outside the workspace).
+          (cd .playwright && npx playwright install --with-deps chromium)
+          node -e "console.log('playwright', require('$GITHUB_WORKSPACE/.playwright/node_modules/playwright/package.json').version)"
 
       # tests/shard.sh creates this shard's database, boots its own server on
       # its own port block, waits for /health, runs its suites serially and

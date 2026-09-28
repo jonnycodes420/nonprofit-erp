@@ -20,9 +20,42 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
 - **Return typed billing errors, never a raw 500:** `plan_not_configured`, `plan_mode_mismatch`,
   `portal_not_configured` via `billingConfigError`. The client shows them through `billingErrorMessage`.
   (BUILD-24)
-- **Treat `closeLink.js` `CLOSE_PLANS` as the one price list: Founding $199, Core $249, Team $499.**
-  `tests/one-date.test.js` checks `PLAN_MRR`, `PLAN_MONTHLY_COST`, the provisioning script and the
-  rendered pricing page against it. (BUILD-90)
+- **`pricing.json` is the one price list, and it is the only place a number lives.** One plan,
+  everything included, unlimited users, month to month; three bands on ACTIVE donors — $199 up to
+  1,000, $299 up to 5,000, $499 up to 10,000, and above that a conversation. Yearly is two months
+  free ($1,990 / $2,990 / $4,990). It is JSON, not a module, because the server needs it
+  synchronously at require time and the client needs it in the bundle, and a root CommonJS file
+  cannot be bundled (Rollup's CommonJS transform covers only node_modules). `pricing.js` adds the
+  lookups; `closeLink.js` builds `TIER_CLOSE_PLANS` from it; the client imports the JSON. (GTM-1a)
+- **An active donor is one sentence, and it is `activeDonorSentence`.** A gift OR a logged
+  conversation in the last 24 months. The pricing page, the signup page and the over-band notice
+  all render that constant. (GTM-1a)
+- **A plan id is `<band>_<cadence>`** (`t5000_yearly`). A yearly plan's first charge is the YEARLY
+  figure: read it with `planAmountUsd(plan)`, never `plan.monthlyUsd`, which is still the monthly
+  number on purpose. `planInterval(plan)` is what the Stripe price-check compares cadence against.
+  (GTM-1a)
+- **The legacy three (Founding $199, Core $249, Team $499) do not move.** Real organisations are on
+  those Stripe prices; `LEGACY_CLOSE_PLANS` and their env vars are untouched, recognised by the
+  webhook for ever, and no longer offered anywhere. (GTM-1a)
+- **The $1 internal price is never public, and that is enforced in three places, not one:** it is
+  not in `pricing.json` (so it is not in the browser bundle at all), not in `TIERS` (so no estimate
+  resolves to it and no public route can name it), and `validateCloseLink` refuses it by name. The
+  one door is `POST /admin/orgs/:id/internal-test-price`, super-admin only, on an org that already
+  exists. `tests/gtm1a-internal-price.test.js`. (GTM-1a)
+- **Public signup IS a close link.** `POST /public/signup` writes a `close_links` row with
+  `signup_source='public'` and hands back the same Stripe Checkout; the org, the first admin and
+  the subscription are created by the same webhook, with the same thirty days from signing, the
+  same seven-day reminder and the same two-click cancel. There is no second org-creation path, and
+  a signup that is never paid for leaves two rows and nothing else. (GTM-1a)
+- **A click-through acceptance names a version AND a sha256.** `legal/customer-agreement.md` is
+  served by `GET /public/agreement`; `customerAgreement.js` bumps `VERSION` with the document and
+  `verifyVersion()` refuses a mismatch. Rows in `terms_acceptances` are append-only, carry the
+  sha256 of the exact bytes served, and learn their `org_id` when Checkout completes. A signup body
+  whose `termsVersion` is stale is refused rather than recorded. The document lives in `legal/`,
+  not `claude/`, because `.railwayignore` excludes `claude/` — the product must have the document
+  it serves. (GTM-1a)
+- **Every signup emails the founder, one message per signup.** Not `opsAlert`, which dedupes by
+  kind and hour: two organisations signing up in the same hour is news, not a repeat. (GTM-1a)
 - **A configured price id is not a correct price.** The close link retrieves the Stripe price and compares
   the amount before minting (`plan_price_mismatch`). `GET /admin/close-links` reports `ready`. (BUILD-90)
 - **Guard prices by the data and the rendered page, never by banning a string in source.** The price is

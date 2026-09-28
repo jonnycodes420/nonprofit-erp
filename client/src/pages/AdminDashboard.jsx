@@ -428,6 +428,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   const [extDays, setExtDays] = useState("14");
   const [changePlanOrgId, setChangePlanOrgId] = useState(null);
   const [newPlan, setNewPlan] = useState("growth");
+  const [dollarBusy, setDollarBusy] = useState(null);
 
   const filtered = (orgs || [])
     .filter(o => !search || o.name.toLowerCase().includes(search.toLowerCase()))
@@ -447,6 +448,31 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   async function quickChangePlan(orgId) {
     try { await adminFetch("/admin/orgs/" + orgId + "/change-plan", { method: "POST", body: JSON.stringify({ plan: newPlan }) }); onRefresh(); setChangePlanOrgId(null); }
     catch (e) { alert(errorMessage(e)); }
+  }
+
+  // ── GTM-1a 4 · THE $1 PRICE ─────────────────────────────────────────────
+  // The only door to it, and it is HERE, on an organisation that already
+  // exists. The price is not in the public catalogue, so no pricing page, no
+  // signup body and no close link can reach it; this control moves an org's
+  // live Stripe subscription onto it so a real charge can be proven end to
+  // end for a dollar.
+  //
+  // It confirms first, and the confirmation says what will actually happen:
+  // this changes a LIVE subscription. It is the one control on this screen
+  // that touches money that is already being charged.
+  async function moveToDollarPrice(org) {
+    const yes = window.confirm(
+      `Move ${org.name} onto the $1 internal test price?\n\n` +
+      `This changes their LIVE Stripe subscription. Their next invoice will be $1.\n` +
+      `Use it to prove a real charge end to end, then move them back with Plan.`
+    );
+    if (!yes) return;
+    setDollarBusy(org.id);
+    try {
+      await adminFetch("/admin/orgs/" + org.id + "/internal-test-price", { method: "POST", body: "{}" });
+      onRefresh();
+    } catch (e) { alert(errorMessage(e)); }
+    finally { setDollarBusy(null); }
   }
 
   const INP = {
@@ -551,6 +577,16 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                     ) : (
                       <button onClick={() => { setChangePlanOrgId(o.id); setNewPlan(o.plan || "trial"); }} style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge }}>Plan</button>
                     )}
+                    {/* GTM-1a 4 — never rendered as a plan you could pick: it
+                        is an action on one organisation, beside the other
+                        actions on that organisation. */}
+                    <button data-testid={`org-dollar-${o.id}`} onClick={() => moveToDollarPrice(o)}
+                      disabled={dollarBusy === o.id}
+                      title="Move this org's live Stripe subscription onto the $1 internal test price"
+                      style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge,
+                               cursor: dollarBusy === o.id ? "not-allowed" : "pointer" }}>
+                      {dollarBusy === o.id ? "…" : "$1 test"}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -1025,14 +1061,18 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
       </div>
 
       {/* ── What has been handed out ─────────────────────────────────────── */}
-      <div style={{ ...SH, marginTop: 32 }}>Links handed out</div>
+      {/* GTM-1a 5 — a link Jonathan minted and a signup somebody made for
+          themselves are the same row in the same table, because they are the
+          same object: one close link. The SOURCE column is what tells them
+          apart, and the estimate beside it is the size the org said it was. */}
+      <div style={{ ...SH, marginTop: 32 }}>Links handed out, and signups</div>
       {!data ? <div style={{ color: A.muted, fontSize: 13 }}>Loading…</div> :
         (data.links || []).length === 0 ? <div style={{ color: A.muted, fontSize: 13 }}>No close link has been created yet.</div> : (
           <div style={{ background: A.card, border: `1px solid ${A.border}`, borderRadius: 10, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: A.surface }}>
-                  {["Organization", "Contact", "Plan", "Status", "Created", "Link"].map(h => (
+                  {["Organization", "Contact", "Source", "Plan", "Status", "Created", "Link"].map(h => (
                     <th key={h} style={{ textAlign: "left", fontSize: 10, fontWeight: 700, letterSpacing: "0.07em", textTransform: "uppercase", color: A.muted, padding: "10px 14px", borderBottom: `1px solid ${A.border}` }}>{h}</th>
                   ))}
                 </tr>
@@ -1041,8 +1081,21 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
                 {(data.links || []).map(l => (
                   <tr key={l.id} data-testid="cl-row" style={{ borderBottom: `1px solid ${A.borderSub}` }}>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 600, color: A.ink }}>{l.orgName}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>{l.contactEmail}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary, textTransform: "capitalize" }}>{l.plan}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>
+                      {l.contactName ? <div style={{ color: A.ink }}>{l.contactName}</div> : null}
+                      {l.contactEmail}
+                    </td>
+                    <td data-testid="cl-source" style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>
+                      {l.signupSource === "public"
+                        ? <span style={{ background: A.greenPale, border: `1px solid ${A.greenChip}`, color: A.green, borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 700 }}>Signed up</span>
+                        : <span>{l.createdByName || "Console"}</span>}
+                      {l.estimatedDonors != null && (
+                        <div style={{ color: A.muted, fontSize: 11, marginTop: 3 }}>
+                          said {l.estimatedDonors.toLocaleString("en-US")} active donors
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>{l.plan}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12.5, color: l.status === "completed" ? A.green : A.secondary }}>{l.status === "completed" ? "Signed" : "Waiting"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12.5, color: A.secondary }}>{fmtDate(l.createdAt)}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12.5 }}>

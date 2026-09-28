@@ -34,6 +34,7 @@ const JoinNetwork        = React.lazy(() => import("./pages/JoinNetwork"));
 const GivingOrgShell     = React.lazy(() => import("./pages/GivingDashboard").then(m => ({ default: m.GivingOrgShell })));
 function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 const Pricing            = React.lazy(() => import("./pages/Pricing"));
+const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
 // NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
 // section), so this lazy route resolves from the already-loaded entry chunk.
 const InvitationPage     = React.lazy(() => import("./pages/Invitation"));
@@ -163,19 +164,21 @@ function Root() {
         <Routes>
           <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
-          {/* BUILD-87 F.2 — THE ROUTER DECISION, AND IT IS A REDIRECT.
-              /signup was PUBLICLY reachable and still sold a free-through-2026
-              promise at a price that has not existed since August
-              and a self-serve door BUILD-39 closed when Steward went
-              invitation-only. A public signup form contradicting the product
-              it signs you up for is worse than no form, so the path resolves
-              to the invitation request instead. The page component is deleted,
-              not hidden: nothing reached it but this route. The token-gated
-              half of the flow is /invite/:token, which is where the
-              founding-partner terms read. BUILD-90 gave the other half a door
-              too: an organisation is created by a super-admin CLOSE LINK, in
-              the room, and nothing exists until the card goes in. */}
-          <Route path="/signup"    element={<Navigate to="/invitation" replace />} />
+          {/* GTM-1a 2 — SIGNUP REOPENS, AS THE PATH IT ALWAYS SHOULD HAVE BEEN.
+              BUILD-87 F.2 made this a redirect and deleted the page, because
+              the form sold a price that had not existed since August and a
+              self-serve door BUILD-39 had shut: a signup form contradicting
+              the product it signs you up for is worse than no form.
+              Every one of those reasons is now answered rather than avoided.
+              The page quotes shared/pricing.js, which is the same list the
+              route prices against and the same list Stripe is checked
+              against; and it is not a second door — it mints a BUILD-90 close
+              link for the visitor and hands them the same Checkout, the same
+              thirty days from signing, the same seven-day reminder and the
+              same two-click cancel. Nothing exists until the card goes in.
+              /invitation is still a real page for someone who wants to talk
+              first, and /invite/:token is still the token-gated half. */}
+          <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />

@@ -1,0 +1,24 @@
+{
+  "_note": "GTM-1a — THE PRICES, IN ONE FILE THAT BOTH SIDES READ NATIVELY. The server reads it through pricing.js (CommonJS, which adds the lookups and the things a browser must never see); the client imports THIS FILE directly, because Vite parses JSON natively and a CommonJS module at the repo root it does not. That was not a style choice: shared/pricing.js as a CJS re-export failed the client build with 'default is not exported by ../pricing.js' — Rollup's CommonJS transform only covers node_modules. Numbers live here and nowhere else.",
+  "activeDonorMonths": 24,
+  "activeDonorSentence": "An active donor is a person or organization that has given a gift or had a conversation logged in the last 24 months.",
+  "yearlyNote": "Pay yearly and two months are free.",
+  "tiers": [
+    { "id": "t1000",  "maxDonors": 1000,  "band": "Up to 1,000 active donors",  "monthlyUsd": 199, "yearlyUsd": 1990, "envMonthly": "STRIPE_PRICE_T1000_MONTHLY",  "envYearly": "STRIPE_PRICE_T1000_YEARLY" },
+    { "id": "t5000",  "maxDonors": 5000,  "band": "Up to 5,000 active donors",  "monthlyUsd": 299, "yearlyUsd": 2990, "envMonthly": "STRIPE_PRICE_T5000_MONTHLY",  "envYearly": "STRIPE_PRICE_T5000_YEARLY" },
+    { "id": "t10000", "maxDonors": 10000, "band": "Up to 10,000 active donors", "monthlyUsd": 499, "yearlyUsd": 4990, "envMonthly": "STRIPE_PRICE_T10000_MONTHLY", "envYearly": "STRIPE_PRICE_T10000_YEARLY" }
+  ],
+  "talkToUs": { "id": "talk", "band": "More than 10,000 active donors", "copy": "Talk to us." },
+  "included": [
+    "The full donor CRM — gift history, households, soft credit, planned giving",
+    "Volunteers — people, shifts, hours and the sign-up link",
+    "The Agent — it reads your data and drafts the next move; you send it",
+    "Online giving on your own Stripe. No platform fee, no donor tip prompt",
+    "Receipts, year-end statements and board-ready reports",
+    "Grants, major gifts, memberships, campaigns and goals",
+    "Unlimited users",
+    "Import from a spreadsheet, and export everything whenever you want it"
+  ],
+  "termsStrip": ["Everything included", "Unlimited users", "No platform fee", "Month to month"],
+  "billingIntervals": ["monthly", "yearly"]
+}

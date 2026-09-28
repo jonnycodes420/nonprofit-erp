@@ -3,6 +3,18 @@
 Read this when you touch a test, a guard, the battery, the pre-push hook, CI, a deploy, or the local scratch stack.
 
 ## Rules
+- **The browser legs run in CI.** The `test` job installs Playwright + Chromium (pinned to the
+  version `~/steward-qa` runs, cached on that version) and sets `REQUIRE_BROWSER=1`, under which
+  `helpers.browserLegOrSkip` turns "Playwright not found" or "client/dist not built" from a quiet
+  SKIP into a red suite. Before GTM-1a, `smoke-walk` asserted 104 things on a laptop and 0 in CI —
+  and `smoke-walk` is the only coverage screens have. Every deploy for months went out on a battery
+  that had never opened a page. (GTM-1a)
+- **Only a LEG skip excuses a suite from the count ratchet.** `shard-combine.js` reads
+  `legSkips`, written by `tests/shard.sh` from the `[leg-skip]` marker, not every line containing
+  the word SKIP. It used to be the latter, and `smoke-walk` prints one informational SKIP per tab
+  hidden from the CRM — so the one suite that covers every screen was exempt from its own floor on
+  EVERY run and could have dropped from 104 assertions to 2 without a word. (GTM-1a)
+
 - **Boot the scratch server from the recipe in the header of `tests/run-all.sh`, not the one in
   `tests/README.md`.** The README's recipe lacks `TEST_MODE`, `SESSION_CACHE_TTL_MS=0` and the
   two network flags, and without those flags thirteen suites red-light on a 404. (BUILD-87)
