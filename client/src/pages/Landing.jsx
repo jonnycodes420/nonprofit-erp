@@ -22,7 +22,9 @@ import { publicSourceRow, DIRECT_HEADING, UPLOAD_HEADING } from "../../../shared
 //
 // What this page must never grow (unchanged from BUILD-73/74/81):
 //   · a price, a plan name, a tier, or a founding-partner rate. Cost is a
-//     conversation. Every path ends at Start free or Talk to the founder.
+//     conversation. GTM-1a: the price IS published now, at /pricing, and
+//     the nav links to it; the sections below still name no figure, and
+//     every path on this page ends at Start now or Book a call.
 //   · invented social proof — no logos, no review scores, no testimonials,
 //     no customer counts, no "trusted by", no "join hundreds of".
 //   · an outcome claim. "Recovery" is a feature noun; "recovered" is a
@@ -229,7 +231,7 @@ function CalendlyModal({ onClose }) {
         display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 30px 80px rgba(15, 26, 18, 0.35)",
       }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid rgba(15,26,18,0.12)" }}>
-          <span className="lp-serif" style={{ fontSize: 23, color: C.ink }}>Talk to the founder</span>
+          <span className="lp-serif" style={{ fontSize: 23, color: C.ink }}>Book a call</span>
           <button onClick={onClose} aria-label="Close" className="lp-focus" style={{ background: "transparent", border: "none", fontSize: 22, color: C.ink3, cursor: "pointer", lineHeight: 1, padding: 8 }}>✕</button>
         </div>
         <iframe title="Schedule time with the founder" src={CALENDLY_URL} style={{ flexGrow: 1, border: "none", width: "100%" }} />
@@ -422,11 +424,15 @@ export default function Landing() {
         <nav className="lp-nav">
           <a href="/" className="lp-serif lp-focus" style={{ fontSize: 26, letterSpacing: "-0.01em", display: "inline-flex", alignItems: "center", minHeight: 44 }}>Steward</a>
           <div className="lp-navwrap">
-            {/* No Pricing link, deliberately. Price is a conversation. */}
+            {/* GTM-1a 1 — there IS a Pricing link now. "Price is a
+                conversation" was honest while there was no published price;
+                publishing three bands and then hiding the page that names
+                them would be the opposite. */}
             <a href="#how-it-works" className="lp-navlink lp-navlink-hide lp-focus">How it works</a>
+            <a href="/pricing" className="lp-navlink lp-navlink-hide lp-focus">Pricing</a>
             <a href="#your-data" className="lp-navlink lp-navlink-hide lp-focus">Your data</a>
             <a href="/login" className="lp-navlink lp-focus">Log in</a>
-            <a href="/signup" className="lp-navbtn lp-focus">Start free</a>
+            <a href="/signup" className="lp-navbtn lp-focus">Start now</a>
           </div>
         </nav>
 
@@ -442,9 +448,13 @@ export default function Landing() {
             <p className="up" style={{ fontSize: 20, lineHeight: 1.5, color: C.ink, maxWidth: 540, fontWeight: 500, animationDelay: "0.14s" }}>
               Log the conversation once. Steward carries it from there.
             </p>
+            {/* GTM-1a 1 — THE TWO ACTIONS, SIDE BY SIDE. "Start free" was
+                true when there was no card at signup; there is one now, and
+                thirty days at no charge is said in the line under the
+                buttons rather than in the button's own name. */}
             <div className="up lp-ctarow" style={{ animationDelay: "0.22s" }}>
-              <a href="/signup" className="lp-btn lp-btn-ink lp-focus">Start free</a>
-              <button className="lp-btn lp-btn-quiet lp-focus" onClick={talkToFounder}>Talk to the founder</button>
+              <a href="/signup" className="lp-btn lp-btn-ink lp-focus" data-testid="lp-start">Start now</a>
+              <button className="lp-btn lp-btn-quiet lp-focus" data-testid="lp-book" onClick={talkToFounder}>Book a call</button>
             </div>
             <p className="up" style={{ fontSize: 14, color: C.ink3, lineHeight: 1.7, marginTop: 4, animationDelay: "0.28s" }}>
               No platform fee · no donor tip prompt · gifts settle in your own Stripe
@@ -716,14 +726,14 @@ export default function Landing() {
               Start with one conversation.
             </h2>
             <p style={{ fontSize: 19, lineHeight: 1.55, color: "rgba(240, 237, 230, 0.72)", maxWidth: 540 }}>
-              Import a CSV, log one call, and watch the next step come back to you. About ten minutes, and no card.
+              Import a CSV, log one call, and watch the next step come back to you. About ten minutes, and nothing is charged for thirty days.
             </p>
             <div className="lp-ctarow" style={{ justifyContent: "center", gap: 14, marginTop: 12 }}>
-              <a href="/signup" className="lp-btn lp-btn-gold lp-focus">Start free</a>
-              <button className="lp-btn lp-btn-ghost lp-focus" onClick={talkToFounder}>Talk to the founder</button>
+              <a href="/signup" className="lp-btn lp-btn-gold lp-focus" data-testid="lp-start-close">Start now</a>
+              <button className="lp-btn lp-btn-ghost lp-focus" data-testid="lp-book-close" onClick={talkToFounder}>Book a call</button>
             </div>
             <p style={{ fontSize: 14, color: C.sage, marginTop: 4 }}>
-              No card required · your data exports whenever you want it · cancel by email
+              Thirty days at no charge · your data exports whenever you want it · cancel in two clicks
             </p>
           </div>
         </section>

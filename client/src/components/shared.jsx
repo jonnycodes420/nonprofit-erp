@@ -326,6 +326,34 @@ export function moveUrgency(d) {
   return{days,level,urgencyColor,contactTextColor};
 }
 
+// ── GTM-1a 0 — ONE ANSWER TO "WHEN DID ANYONE LAST SPEAK TO THEM?" ─────────
+// The Last contact tile reads the server's `donor-contact-gap` figure: whole
+// days to the most recent LOGGED CONVERSATION, and a gift on its own is not
+// one. `moveUrgency` answers a different question — is this donor late for
+// their stage? — and to answer it, it falls back to the last GIFT date and
+// then to a flat 999. Those are fine for a colour. They are not the figure.
+//
+// They were being read as the figure. The prompt behind the next move was
+// built from `moveUrgency(donor).days`, so a donor with a gift in May and no
+// conversation ever logged got a tile saying "Never contacted." and a
+// suggestion saying "it has been over four months since the last
+// conversation" — the same record, two contradictory readings, on one screen.
+//
+// This is the one place that turns the tile's figure into words. A caller
+// that has no figures loaded (the list, before the profile fetch) gets
+// `known:false` and must say it does not know, never a number.
+export function contactGap(d) {
+  const f = d && d.figures && d.figures.contact;
+  if (!f) return { known: false, days: null, phrase: "not known here" };
+  // value null + a blank sentence IS the answer: nobody has logged one.
+  if (f.value === null || f.value === undefined)
+    return { known: true, days: null, everContacted: false,
+             phrase: "never — no conversation has ever been logged with this person" };
+  const days = Number(f.value);
+  return { known: true, days, everContacted: true,
+           phrase: days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago` };
+}
+
 // ── Global styles ──────────────────────────────────────────────────────────
 export function GlobalStyles() {
   return <style>{`

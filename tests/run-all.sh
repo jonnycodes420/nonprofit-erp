@@ -119,6 +119,8 @@ CORE=(
   money-cents
   pledge-math
   reconciliation
+  fix2-a-footing
+  gtm1a-internal-price
   import-reconciliation
   webhook-manifest
   webhook-ordering

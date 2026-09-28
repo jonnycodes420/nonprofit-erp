@@ -36,7 +36,7 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 const bcrypt = require("bcryptjs");
-const { ok, summary, api, q, closeDb, civilToday } = require("./helpers");
+const { ok, summary, api, q, closeDb, civilToday, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
@@ -254,8 +254,9 @@ async function seed() {
      /The donor profile always has the right rail, on a contrasting ground to the main column\. No build removes it\./
        .test(readSource("docs/decisions/design-system.md")));
 
+  // GTM-1a A — REQUIRE_BROWSER=1 (CI) makes the same absence a failure.
   const why = browserReady();
-  if (why) console.log("  SKIP  " + why + " (browser leg)");
+  if (browserLegOrSkip(why, "(browser leg)")) { /* skipped */ }
   else {
     await seed();
     const login = await api("POST", "/auth/login", null, { email: "hf1prof@t.local", password: "loadtest1234" });

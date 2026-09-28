@@ -29,7 +29,7 @@ const {
   INBOUND_EMAIL_ENABLED, MB_READY, Sentry, SvixWebhook, UNSUB_SECRET, bcrypt, billingCustomerColumn,
   billingStripe, bumpFormEvent, checkGiftExtras, closePlan, computeTrialEnd, crypto,
   displayNameCase, donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision,
-  donorSendOpts, enrollMembership, ensureOrgLedger, express, fireWorkflows, firstChargeSentence,
+  donorSendOpts, enrollMembership, ensureOrgLedger, express, fireWorkflows, firstChargeSentence, planAmountUsd,
   inboundMod, inviteeDisplayName, issueGiftReceipt, linkEmailToAccounts, logRecoveryEvent,
   logRecurringChange, mbCents, money, openGiftThread, openSustainerLapseThread, orgToday, orgTz,
   orgTzName, planFromSubscription, portalTimeline, provisionNewOrgWorkflows, publicAppUrl, query,
@@ -1980,7 +1980,9 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
     ["prt_" + uuid().slice(0, 8), userId, token]
   );
   const link = `${publicAppUrl()}/reset-password?token=${token}`;
-  const charge = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: trialEndsAt, tz });
+  // GTM-1a — a yearly plan charges the YEARLY figure, and this is the
+  // sentence that names it. `planAmountUsd` is the one place that knows.
+  const charge = firstChargeSentence({ monthlyUsd: planAmountUsd(plan), firstChargeAt: trialEndsAt, tz });
   const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   if (!process.env.RESEND_API_KEY) {
     console.warn("[close-link] RESEND_API_KEY not set — welcome email not sent to", email);
@@ -2025,7 +2027,9 @@ async function sendCloseWelcomeEmail({ userId, email, orgName, plan, trialEndsAt
 // you're in" reads as though nobody knew who they were. This says the one thing
 // that actually changed - what they are on, and when the first charge lands.
 async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz }) {
-  const charge = firstChargeSentence({ monthlyUsd: plan.monthlyUsd, firstChargeAt: trialEndsAt, tz });
+  // GTM-1a — a yearly plan charges the YEARLY figure, and this is the
+  // sentence that names it. `planAmountUsd` is the one place that knows.
+  const charge = firstChargeSentence({ monthlyUsd: planAmountUsd(plan), firstChargeAt: trialEndsAt, tz });
   const from = process.env.FOUNDER_EMAIL || process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev";
   const settings = `${publicAppUrl()}/settings`;
   if (!process.env.RESEND_API_KEY) {
@@ -2177,6 +2181,12 @@ async function provisionOrgFromCloseLink(session) {
     `UPDATE close_links SET status='completed', org_id=?, stripe_customer_id=?, stripe_subscription_id=?, completed_at=NOW() WHERE id=?`,
     [orgId, customerId, subId, closeLinkId]
   );
+  // GTM-1a 5 — the acceptance was recorded at signup, before this org
+  // existed. Now it does, so the row learns which organisation it belongs to.
+  // A close link Jonathan minted in the room has no acceptance row and this
+  // updates nothing, which is correct: the signature there is on paper.
+  await run(`UPDATE terms_acceptances SET org_id=? WHERE close_link_id=? AND org_id IS NULL`,
+    [orgId, closeLinkId]).catch(e => console.error("[close-link] terms acceptance link:", e.message));
   // The card she just put in, so the seven-day reminder can name it.
   await refreshBillingCard(orgId, subId).catch(() => {});
 

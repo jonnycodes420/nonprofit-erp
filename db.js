@@ -3624,6 +3624,46 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
                     ON close_links (target_org_id) WHERE target_org_id IS NOT NULL`);
 
+  // ── GTM-1a · PUBLIC SIGNUP RIDES THE CLOSE LINK ──────────────────────────
+  // Signup reopened, and it did NOT get a second way to create an
+  // organisation. A visitor who signs up mints a close link for themselves:
+  // same table, same Stripe Checkout, same thirty-day trial, same webhook
+  // provisioning, same seven-day reminder and same two-click cancel. The only
+  // difference is who pressed the button, and that is what `signup_source`
+  // records.
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS signup_source TEXT`);
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS estimated_donors INTEGER`);
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
+  await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS contact_name TEXT`);
+
+  // ── GTM-1a · WHO AGREED, WHEN, AND TO WHICH VERSION ──────────────────────
+  // A click-through agreement that cannot say which words were on the screen
+  // is not evidence of anything. Every row names the document VERSION and the
+  // sha256 of the exact text that was served, so the agreement a customer
+  // accepted can be reproduced years later even after the document changes.
+  //
+  // APPEND-ONLY. Nothing updates or deletes a row here; a new agreement is a
+  // new row. `org_id` is null until Checkout completes and the webhook mints
+  // the organisation, then it is filled in — the acceptance happens BEFORE the
+  // org exists, which is the whole shape of a signup.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS terms_acceptances (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      close_link_id TEXT,
+      email TEXT NOT NULL,
+      name TEXT,
+      doc_version TEXT NOT NULL,
+      doc_sha256 TEXT NOT NULL,
+      accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      ip TEXT,
+      user_agent TEXT
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_terms_acceptances_org
+                    ON terms_acceptances (org_id, accepted_at DESC) WHERE org_id IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_terms_acceptances_link
+                    ON terms_acceptances (close_link_id) WHERE close_link_id IS NOT NULL`);
+
   // ── BUILD-94 Part 1 — A FACE ON EVERY PROFILE ─────────────────────────────
   // The bytes live behind the BUILD-51 asset seam (content-addressed, org
   // scoped, S3-or-DB); the row keeps only the asset id. Deliberately NOT a

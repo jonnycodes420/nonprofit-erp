@@ -7,7 +7,7 @@ import { apiFetch, adaptDonor } from "../api";
 import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
-import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, moveUrgency, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
+import { T, activeMark, fmtFull, daysDiff, askClaude, STAGES, donorScore, contactGap, Card, AIBtn, AIPanel, PageTitle, LockedFeature, goToPricing, Modal } from "./shared";
 import { LogConversationModal } from "./LogConversation";
 import { guardSuggestion, dropLog, plainText } from "../../../shared/suggestionGuard.js";
 import { composeNextMove } from "../../../shared/nextMove.js";
@@ -253,7 +253,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const getAI=async(donor,type,openItems=[])=>{
     const key=`${donor.id}_${type}`;setLoadingKey(key);setAiMap(p=>({...p,[key]:""}));
     const stage=STAGES.find(s=>s.id===(donor.stage||"cultivate"))||STAGES[2];
-    const urg=moveUrgency(donor);
+    // GTM-1a 0 — ONE reading of "when did anyone last speak to them?".
+    // `moveUrgency` answers "is this donor late for their stage?" and falls
+    // back to the last gift date to do it; that is a colour, not a figure.
+    // The Last contact TILE reads the server's donor-contact-gap figure, and
+    // the suggestion must read the same one or the two contradict each other
+    // on one screen. shared.jsx contactGap() is that single reading.
+    const gap=contactGap(donor);
     const sys=`You are an expert major gifts officer. Be specific, strategic, brief. Max 200 words. Use ONLY the facts given below: never name a person, number, program or outcome that is not in them. Plain sentences, no markdown, no headings, no bullet points.`;
     let threadCtx="";
     if(type==="email"||type==="outreach"){
@@ -272,8 +278,8 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       // last contact against that stage's own thresholds, and it is on the
       // Contact tile beside this panel already. The model is asked for the move,
       // the timing and the words, which is what it is good for.
-      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Days since contact: ${urg.days} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nReply with JSON only, in this shape: {"when": "...", "say": "...", "for": "..."}. Each value is ONE short plain sentence she could say out loud, using only the facts above: "when" says when and how to reach out, "say" says what to tell them, "for" says what the gift would be for. Start each with a verb or with "It", never with a label.`,
-      outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} ${urg.days}d ago.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
+      nextmove:`Donor: ${donor.name} | Stage: ${stage.label} | Last logged conversation: ${gap.phrase} | Total: ${fmtFull(donor.total)} (${donor.gifts} gifts) | Last: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}\nNotes: ${donor.notes||"none"}\nOrg: ${data.org.name} — ${data.org.mission}\nRecent touchpoints: ${donor.interactions?.slice(0,3).map(i=>`${i.date}: ${i.type} - ${i.note}`).join("; ")||"none"}\n\nReply with JSON only, in this shape: {"when": "...", "say": "...", "for": "..."}. Each value is ONE short plain sentence she could say out loud, using only the facts above: "when" says when and how to reach out, "say" says what to tell them, "for" says what the gift would be for. Start each with a verb or with "It", never with a label.`,
+      outreach:`Write an outreach strategy for ${donor.name} (${stage.label} stage).\nTotal: ${fmtFull(donor.total)}, last gift ${fmtFull(donor.lastAmount)} on ${donor.lastGift||"no date on record"}.\nLast logged conversation: ${gap.phrase}.\nNotes: ${donor.notes}\nOrg: ${data.org.mission}${threadCtx}\n\nBest channel, talking points, suggested ask amount, personal hook.`,
       email:`Write a personalized email to ${donor.name} (${stage.label} stage).\nLast gift: ${fmtFull(donor.lastAmount)} on ${donor.lastGift}. Notes: ${donor.notes}\nOrg: ${data.org.name}.${threadCtx}\n\nWarm, specific, 150 words max.`,
       callscript:`Phone call script for ${donor.name} (${stage.label}).\nContext: ${donor.notes}\nLast gift: ${fmtFull(donor.lastAmount)}\n\nOpening, 2 listening questions, impact hook, soft ask.`,
     };
@@ -298,7 +304,13 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         names:[stage.label,...(donor.tags||[])],
         today:localToday(),
         openItems:Array.isArray(openItems)?openItems:[],
-        rows:[{id:"contact",count:urg.days},
+        // GTM-1a 0 — the contact row is the TILE's figure, and when nobody
+        // has logged a conversation there is no row at all. It used to be
+        // moveUrgency's fallback-to-the-last-gift number, which both fed the
+        // prompt and told the validator that number was allowed in the
+        // output — so "over four months since the last conversation" passed
+        // the guard on a record whose own tile said "Never contacted."
+        rows:[...(gap.days===null?[]:[{id:"contact",count:gap.days}]),
               ...(donor.interactions||[]).slice(0,20).map((i,n)=>({id:i.id||("int"+n),amount:i.amount,date:i.date,label:i.note,type:i.type}))],
       };
       // FIX-3 finding 11 — the next move is three fields, and composeNextMove

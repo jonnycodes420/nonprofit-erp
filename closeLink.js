@@ -17,19 +17,70 @@
 
 const { computeTrialEnd, TRIAL_DAYS } = require("./trialEnd");
 const { DEFAULT_TZ } = require("./orgTime");
+const PRICING = require("./pricing");
 
 // The three plans a close link may sell, and what they cost. These prices are
 // the live commercial model as of BUILD-90 (they superseded the lower set
 // BUILD-24 shipped). The Stripe Price ids behind them are Jonathan's to
 // create — anything that spends or charges money is — so each plan names the
 // env var that carries its id rather than an id.
-const CLOSE_PLANS = [
+// LEGACY — the three plans BUILD-90 sold. Real organisations are on these
+// Stripe prices right now, so the ids and the env vars do not move. GTM-1a
+// stopped OFFERING them (there is one plan now, priced by band) but a close
+// link may still name one, and the webhook must still recognise a renewal.
+const LEGACY_CLOSE_PLANS = [
   { id: "founding", name: "Founding", monthlyUsd: 199, env: "STRIPE_PRICE_FOUNDING" },
   { id: "core",     name: "Core",     monthlyUsd: 249, env: "STRIPE_PRICE_CORE" },
   { id: "team",     name: "Team",     monthlyUsd: 499, env: "STRIPE_PRICE_TEAM" },
 ];
 
+// GTM-1a — THE PLANS ON SALE. One plan, three bands, two cadences, built from
+// shared/pricing.js so the page, the checkout sentence and the Stripe
+// price-check all read one list. A plan id is `<tier>_<cadence>`, e.g.
+// `t5000_yearly`, and that string is what lands in orgs.plan and in the
+// subscription metadata.
+const TIER_CLOSE_PLANS = [];
+for (const t of PRICING.TIERS) {
+  TIER_CLOSE_PLANS.push({
+    id: `${t.id}_monthly`, name: `Steward · ${t.band}`, tierId: t.id, interval: "month",
+    monthlyUsd: t.monthlyUsd, amountUsd: t.monthlyUsd, env: t.envMonthly,
+  });
+  TIER_CLOSE_PLANS.push({
+    id: `${t.id}_yearly`, name: `Steward · ${t.band}, yearly`, tierId: t.id, interval: "year",
+    // `monthlyUsd` stays the MONTHLY figure because that is what it has always
+    // meant; `amountUsd` is what Stripe actually charges on the first charge,
+    // and it is what the sentence she reads must say.
+    monthlyUsd: t.monthlyUsd, amountUsd: t.yearlyUsd, env: t.envYearly,
+  });
+}
+
+// The $1 internal price. In this catalogue because the checkout machinery is
+// the same; NEVER in the list any public surface renders, and the only route
+// that may name it is super-admin-only (routes/billing.js).
+const INTERNAL_CLOSE_PLAN = {
+  id: PRICING.INTERNAL_TEST.id, name: PRICING.INTERNAL_TEST.name, interval: "month",
+  monthlyUsd: PRICING.INTERNAL_TEST.monthlyUsd, amountUsd: PRICING.INTERNAL_TEST.monthlyUsd,
+  env: PRICING.INTERNAL_TEST.env, internal: true,
+};
+
+const CLOSE_PLANS = [...LEGACY_CLOSE_PLANS, ...TIER_CLOSE_PLANS, INTERNAL_CLOSE_PLAN];
+
+// Every plan a close link may sell. The internal $1 price is NOT one of them:
+// a close link is a thing Jonathan hands to a customer, and the $1 price is
+// not for sale at any door. It is reachable only through the super-admin
+// control that moves an org already in the product onto it.
+const SELLABLE_CLOSE_PLANS = CLOSE_PLANS.filter(p => !p.internal);
+
 const closePlan = id => CLOSE_PLANS.find(p => p.id === id) || null;
+
+// What a plan charges on its first charge, in whole dollars. Yearly plans
+// charge the yearly figure, and the sentence she reads before pressing the
+// button has to say so.
+const planAmountUsd = plan => Number(plan && (plan.amountUsd != null ? plan.amountUsd : plan.monthlyUsd));
+
+// The cadence Stripe must be configured for, so the price-check can compare
+// like with like instead of assuming every plan is monthly.
+const planInterval = plan => (plan && plan.interval) || "month";
 
 // Money, as a person writes it. Whole dollars — every plan is.
 const usd = n => "$" + Number(n).toLocaleString("en-US");
@@ -72,8 +123,11 @@ function validateCloseLink(body = {}) {
   if (!orgName) return { ok: false, error: "org_name_required", message: "The organization's name is required." };
   if (!EMAIL_RE.test(contactEmail)) return { ok: false, error: "contact_email_invalid", message: "A valid contact email is required." };
   const plan = closePlan(planId);
-  if (!plan) {
-    return { ok: false, error: "invalid_plan", message: `Plan must be one of: ${CLOSE_PLANS.map(p => p.id).join(", ")}.` };
+  // A close link may not name the internal $1 price, whoever is holding the
+  // console. `closePlan` finds it (the checkout machinery needs to), and this
+  // is where it is refused.
+  if (!plan || plan.internal) {
+    return { ok: false, error: "invalid_plan", message: `Plan must be one of: ${SELLABLE_CLOSE_PLANS.map(p => p.id).join(", ")}.` };
   }
   return { ok: true, orgName, contactEmail, plan };
 }
@@ -88,8 +142,11 @@ function validateOrgClose(body = {}) {
   const planId = String(body.plan || "").trim();
   if (!orgId) return { ok: false, error: "org_id_required", message: "Pick an organization to close." };
   const plan = closePlan(planId);
-  if (!plan) {
-    return { ok: false, error: "invalid_plan", message: `Plan must be one of: ${CLOSE_PLANS.map(p => p.id).join(", ")}.` };
+  // A close link may not name the internal $1 price, whoever is holding the
+  // console. `closePlan` finds it (the checkout machinery needs to), and this
+  // is where it is refused.
+  if (!plan || plan.internal) {
+    return { ok: false, error: "invalid_plan", message: `Plan must be one of: ${SELLABLE_CLOSE_PLANS.map(p => p.id).join(", ")}.` };
   }
   return { ok: true, orgId, plan };
 }
@@ -144,7 +201,7 @@ function checkoutSessionParams({
     },
     metadata,
     custom_text: {
-      submit: { message: checkoutNotice({ monthlyUsd: plan.monthlyUsd, firstChargeAt, tz }) },
+      submit: { message: checkoutNotice({ monthlyUsd: planAmountUsd(plan), firstChargeAt, tz }) },
     },
     success_url: successUrl,
     cancel_url: cancelUrl,
@@ -152,6 +209,8 @@ function checkoutSessionParams({
 }
 
 module.exports = {
-  CLOSE_PLANS, closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
+  CLOSE_PLANS, LEGACY_CLOSE_PLANS, TIER_CLOSE_PLANS, SELLABLE_CLOSE_PLANS, INTERNAL_CLOSE_PLAN,
+  planAmountUsd, planInterval,
+  closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
   checkoutNotice, firstChargeSentence, formatChargeDate, usd,
 };

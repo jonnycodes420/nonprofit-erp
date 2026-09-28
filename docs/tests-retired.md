@@ -176,7 +176,6 @@ caught by review and by the walk, not by the battery.
 | `fix1-volunteers` | FIX-1 WORKSTREAM C — VOLUNTEERS, ITS OWN HUB. |
 | `fix1-walk` | FIX-1 PART 0 — WHAT THE WALK FOUND, AS ASSERTIONS BEFORE FIXES. |
 | `fix2-a-dashboards` | FIX-2 A — DASHBOARDS A BOARD CAN READ, AND EVERY NUMBER ON THEM OPENS. |
-| `fix2-a-footing` | FIX-2 A — EVERY NUMBER OPENS, AND WHAT IT OPENS ADDS UP TO IT. |
 | `fix2-b-reports` | FIX-2 B — REPORTS, ONE WAY IN. |
 | `fix2-c-cream` | FIX-2 C — LESS GREEN, MORE CREAM (claude/FIX-2.md Part 0 finding 5, Part C). |
 | `fix2-c-hex` | FIX-2 C — ZERO HEX LITERALS OUTSIDE THE TOKENS (claude/FIX-2.md Part C, Tests). |
@@ -276,3 +275,12 @@ caught by review and by the walk, not by the battery.
 | `vocabulary` | BUILD-86 Part B — HER WORDS. Run: node  |
 | `workflows` | BUILD-13 Part 3 — Workflows engine suite. |
 | `workflows-e2e` | BUILD-25 Part A — Workflow recipes, end to end (the highest-stakes suite). |
+
+## Brought back
+
+A retired suite that earns its place again is restored from the commit that
+removed it, listed in `run-all.sh` CORE, and struck from the table above.
+
+| Suite | Restored by | Why |
+|---|---|---|
+| `fix2-a-footing` | GTM-1a (B) | Every figure with a source is fetched and its rows footed to it, in cents. Nothing else checks that the drawer behind a number adds up to the number; `fix2-a-dashboards` checks the figures exist, not that they foot. Money is going on sale, so the numbers on the board have to be right. |

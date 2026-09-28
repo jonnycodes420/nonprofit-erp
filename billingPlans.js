@@ -13,7 +13,17 @@
 // seed/growth/impact are legacy (recognized for back-compat); founding is the
 // private $99 founding-partner price (core tier). orgPlanTier() resolves any of
 // these to core/team.
-const BILLING_PLAN_VALUES = new Set(["core", "team", "founding", "seed", "growth", "impact"]);
+// GTM-1a adds the tier plans (`t1000_monthly` … `t10000_yearly`) and the
+// internal $1 price. Read from the catalogue so a new band is recognised by
+// the webhook the moment it exists — a plan value the webhook does not know
+// is a subscription that silently stops updating the org's plan.
+const PRICING = require("./pricing");
+const TIER_PLAN_IDS = [];
+for (const t of PRICING.TIERS) TIER_PLAN_IDS.push(`${t.id}_monthly`, `${t.id}_yearly`);
+const BILLING_PLAN_VALUES = new Set([
+  "core", "team", "founding", "seed", "growth", "impact",
+  PRICING.INTERNAL_TEST.id, ...TIER_PLAN_IDS,
+]);
 
 // A Stripe Price id → our plan value (reverse of create-checkout's price map).
 // Returns null when the price isn't one we recognize.
@@ -26,7 +36,14 @@ function planForPriceId(priceId, env = process.env) {
     [env.STRIPE_PRICE_SEED, "seed"],
     [env.STRIPE_PRICE_GROWTH, "growth"],
     [env.STRIPE_PRICE_IMPACT, "impact"],
+    [env[PRICING.INTERNAL_TEST.env], PRICING.INTERNAL_TEST.id],
   ];
+  // The six tier prices, monthly and yearly. Appended rather than written out
+  // so the list cannot fall behind pricing.js.
+  for (const t of PRICING.TIERS) {
+    entries.push([env[t.envMonthly], `${t.id}_monthly`]);
+    entries.push([env[t.envYearly], `${t.id}_yearly`]);
+  }
   const hit = entries.find(([pid]) => pid && pid === priceId);
   return hit ? hit[1] : null;
 }

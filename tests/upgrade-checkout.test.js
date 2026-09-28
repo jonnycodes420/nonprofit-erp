@@ -40,18 +40,33 @@ for (const [name, src] of [["Pipeline", pipeline], ["Reports", reports], ["Donor
 
 // ── Pricing page starts a REAL Stripe Checkout for the chosen plan ─────────
 ok(/import\s*\{\s*apiFetch\s*\}\s*from\s*"\.\.\/api"/.test(pricing), "Pricing imports apiFetch");
-ok(/async function startCheckout\(planId\)/.test(pricing), "Pricing has a startCheckout(planId) handler");
-ok(/apiFetch\("\/billing\/create-checkout",\s*\{\s*method:\s*"POST",\s*body:\s*JSON\.stringify\(\{\s*plan:\s*planId\s*\}\)/.test(pricing),
-   "startCheckout POSTs /billing/create-checkout with the plan id");
+// GTM-1a — there is ONE plan now, in three BANDS, so the page iterates
+// `TIERS` and the handler takes a tier id plus a cadence rather than a plan
+// object. Every behaviour below is the same behaviour; only the noun changed.
+// What must not change, and is what this block is actually for: the button
+// starts a REAL Checkout, the browser is sent to Stripe's URL, an org sees
+// which band it is already on instead of a button that re-buys it, the
+// button says it is working, and a configuration failure is a sentence
+// rather than a dead button.
+ok(/async function startCheckout\(tierId\)/.test(pricing), "Pricing has a startCheckout(tierId) handler");
+ok(/apiFetch\("\/billing\/create-checkout",\s*\{[\s\S]{0,120}plan:\s*`\$\{tierId\}_\$\{interval\}`/.test(pricing),
+   "startCheckout POSTs /billing/create-checkout with the band AND the cadence");
 ok(/window\.location\.href\s*=\s*r\.url/.test(pricing), "startCheckout redirects the browser to the returned Stripe URL");
-ok(/startCheckout\(plan\.id\)/.test(pricing), "the plan button calls startCheckout(plan.id)");
+ok(/startCheckout\(t\.id\)/.test(pricing), "the band button calls startCheckout(t.id)");
 
 // ── Plan-aware button states: current-plan handled, loading + honest errors ─
-ok(/isCurrentPlan\s*=\s*\(id\)\s*=>/.test(pricing), "Pricing computes isCurrentPlan (only an ACTIVE sub counts as current)");
-ok(has(pricing, "Current plan"), "the org's active plan shows a 'Current plan' state (not a re-checkout button)");
-ok(/checkingOut\s*===\s*plan\.id/.test(pricing), "the button reflects an in-flight (loading) state per plan");
+ok(/const\s+currentTier\s*=/.test(pricing) && /subActive/.test(pricing),
+   "Pricing computes the current band (only an ACTIVE sub counts as current)");
+ok(has(pricing, "Your current plan"), "the org's active band says so (not a re-checkout button)");
+ok(/checkingOut\s*===\s*t\.id/.test(pricing), "the button reflects an in-flight (loading) state per band");
 ok(has(pricing, "plan_not_configured") || /No Stripe price/i.test(pricing), "a failed create-checkout shows a clean message, never a dead button");
-ok(/Upgrade to Team|Choose \$\{plan\.name\}/.test(pricing), "authed non-current plans get a Choose/Upgrade checkout label");
+ok(/Choose this band/.test(pricing), "authed non-current bands get a checkout label");
+
+// GTM-1a — the two public actions, side by side, and the one sentence that
+// defines the thing the price is charged on.
+ok(/data-testid="pricing-start"/.test(pricing) && /Start now/.test(pricing), "the page's primary action is Start now");
+ok(/data-testid="pricing-book"/.test(pricing) && /Book a call/.test(pricing), "…beside Book a call");
+ok(/activeDonorSentence/.test(pricing), "…and the page renders the one sentence that defines an active donor");
 
 // ── Founding stays off-menu (never rendered on the public pricing page) ────
 ok(!/id:\s*"founding"/.test(pricing), "the founding-partner plan is NOT surfaced on the pricing page");

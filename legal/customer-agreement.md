@@ -1,7 +1,10 @@
 # Steward Customer Agreement
 
 **Steward Software LLC**, 101 W Main St Apt 3, Wilmore, KY 40390
-Effective for any organization that signs on or after 19 September 2026.
+Version 2026-09-27. Effective for any organization that signs on or after
+27 September 2026. Earlier versions govern organizations that signed before
+that date; which version an organization accepted, and when, is recorded in
+`terms_acceptances` with the sha256 of the exact text that was on the screen.
 
 This is the agreement Jonathan puts in front of an executive director in the
 room. It is the same set of promises the product keeps in code: the numbers in
@@ -26,15 +29,34 @@ never asks your donors for a tip.
 
 ## 2. Price, the first charge, and cancellation
 
-**The plan.** One of:
+**The plan.** There is one plan. Everything is in it: the donor CRM,
+Volunteers, the Agent, online giving, receipts, grants, major gifts and
+reports. There is no per-user charge and no limit on how many people from your
+organization use it. Steward takes no percentage of any gift and adds no tip
+prompt to any donation page.
 
-| Plan | Monthly |
-| --- | --- |
-| Founding | $199 |
-| Core | $249 |
-| Team | $499 |
+What you pay depends only on how many **active donors** you work. An active
+donor is a person or organization that has given a gift or had a conversation
+logged in the last 24 months.
 
-Prices are in US dollars and are charged monthly in advance.
+| Active donors | Monthly | Yearly |
+| --- | --- | --- |
+| Up to 1,000 | $199 | $1,990 |
+| Up to 5,000 | $299 | $2,990 |
+| Up to 10,000 | $499 | $4,990 |
+| More than 10,000 | Talk to us | Talk to us |
+
+Paying yearly is two months free. Prices are in US dollars and are charged in
+advance for the period you chose. It is month to month: there is no term and
+no minimum.
+
+**If you grow past your band.** Steward counts your active donors and tells
+you, in the product and by email, before anything changes, and the new price
+does not take effect for at least thirty days. Steward never changes what you
+pay without telling you first.
+
+Organizations on a plan named in an earlier version of this agreement
+(Founding, Core or Team) keep that price until they choose to move.
 
 **The first charge is thirty days after signing.** Signing is the moment you
 complete checkout — the moment the card goes in. Nothing is charged that day.

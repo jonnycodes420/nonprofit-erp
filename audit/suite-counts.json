@@ -5,11 +5,13 @@
   "build88a-one-gift": 53,
   "build96-ai-gate": 45,
   "clickability": 56,
-  "close-link": 56,
+  "close-link": 59,
   "consistency-e2e": 68,
   "email-footer": 5,
   "finance-gift-stamp": 18,
+  "fix2-a-footing": 20,
   "gift-idempotency": 54,
+  "gtm1a-internal-price": 21,
   "hotfix1-profile": 49,
   "import-columns": 48,
   "import-messy": 56,
@@ -34,7 +36,7 @@
   "tenant-matrix": 43,
   "test-clock-seam": 18,
   "trial-end": 25,
-  "upgrade-checkout": 29,
+  "upgrade-checkout": 32,
   "webhook-manifest": 15,
   "webhook-ordering": 15
  }

@@ -34,14 +34,16 @@
 
 const path = require("path");
 const fs = require("fs");
-const { ok, summary, api, closeDb } = require("./helpers");
+const { ok, summary, api, closeDb, browserLegOrSkip } = require("./helpers");
 
 const ROOT = path.join(__dirname, "..");
 const DIST = path.join(ROOT, "client", "dist");
 const APP = process.env.APP_URL || "http://localhost:4173";
 const BASE = process.env.BASE || "http://localhost:5601";
 
-const skip = why => { console.log("  SKIP  " + why + "\n\n0 passed, 0 failed (suite skipped)"); process.exit(0); };
+// GTM-1a A — REQUIRE_BROWSER=1 (CI) turns this skip into a failure, so a
+// missing Chromium or an unbuilt dist can never read as a green battery.
+const skip = why => { browserLegOrSkip(why); console.log("\n0 passed, 0 failed (suite skipped)"); process.exit(0); };
 if (!fs.existsSync(path.join(DIST, "index.html"))) skip("client/dist not built");
 const API_ORIGIN = BASE.replace(/^https?:\/\//, "");
 const assetDir = path.join(DIST, "assets");

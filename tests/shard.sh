@@ -182,6 +182,12 @@ for name in $SUITES_IN; do
   # shard then reads to the reporter as "produced no result" and a green run
   # is announced as a broken one. `|| true` keeps the count it already printed.
   skips=$(grep -c "SKIP" "$log" 2>/dev/null || true); skips=${skips:-0}
+  # GTM-1a A — a LEG skip is the whole browser half of a suite not running,
+  # and it is the only kind that makes a pass count incomparable. An
+  # informational SKIP inside a suite (smoke-walk names a tab hidden from the
+  # CRM for that org) is the suite working, and must not buy an exemption
+  # from the count ratchet. helpers' browserLegOrSkip prints the marker.
+  legskips=$(grep -c "\[leg-skip\]" "$log" 2>/dev/null || true); legskips=${legskips:-0}
   # ONE SUMMARY. scripts/shard-report.js prints every suite once, at the end,
   # in name order — six shards interleaving their own PASS lines is not a
   # summary, it is six of them. A FAILURE still shows the moment it happens,
@@ -190,7 +196,7 @@ for name in $SUITES_IN; do
   if [ "$rc" -ne 0 ]; then
     printf "  \033[31mFAIL\033[0m  [%s] %-26s %4ss  %s\n" "$N" "$name" "$secs" "$last"
   fi
-  rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"last\":\"$last\"},"
+  rows="$rows{\"name\":\"$name\",\"rc\":$rc,\"secs\":$secs,\"skips\":$skips,\"legSkips\":$legskips,\"last\":\"$last\"},"
 done
 
 printf '{"shard":%s,"api":%s,"db":"%s","suites":[%s]}\n' "$N" "$api" "$DBNAME" "${rows%,}" >"$OUT/shard-$N.json"

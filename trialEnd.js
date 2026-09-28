@@ -17,7 +17,7 @@
 // product — no customer had signed under it, so nothing is grandfathered, and
 // `tests/one-date.test.js` keeps the string from coming back.
 //
-// Matches claude/steward-customer-agreement.md §2.
+// Matches legal/customer-agreement.md §2.
 //
 // Pure + Node-testable (the money.js / greeting.js / taskDue.js pattern) so the
 // pinning test can freeze the clock by passing `now` — no injectable clock yet,
