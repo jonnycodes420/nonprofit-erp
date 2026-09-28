@@ -21,7 +21,25 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-NEW · THE DEMO ORG HAS NO CONNECTED STRIPE ACCOUNT (2026-09-28, EVENTS-2)
+
+EVENTS-2 lets the public event page take a card, and the whole path is proven
+by `tests/events2-checkout.test.js` against a Stripe mock. On Harborlight the
+page still shows the old "we will be in touch about paying" flow, because
+`orgs.stripe_connected` is false for `org_b72demo` and a page that offers to
+take a card with nowhere to send it is worse than one that does not.
+
+To walk a live test-mode purchase on the demo you would connect a Stripe
+**test-mode** Express account to Harborlight through the normal Connect
+onboarding in Settings. That is your Stripe login and your decision, and
+nothing else waits on it: every other org that is connected gets paid tickets
+the moment this deploys.
+
 ## 0a · THE PROD DEMO IS ONE COMMAND BEHIND (2026-09-28)
+
+MEMBERS-2 and EVENTS-2 changed it again (memberships and four member pages;
+the 5K open with a member price, five entrants and one person waiting; and
+"Harbour" is "Harbor" everywhere, with /e/harbour-run redirecting).
 
 VOL-1 and FIN-1 both changed `scripts/seed-demo.js`, so Harborlight on
 production has no volunteer programme and no finance month on it. Everything

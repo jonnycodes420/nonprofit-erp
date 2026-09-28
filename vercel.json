@@ -47,6 +47,14 @@
       "destination": "https://nonprofit-erp-production.up.railway.app/unsubscribe"
     },
     {
+      "source": "/e/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/e/:path*"
+    },
+    {
+      "source": "/ticket/:path*",
+      "destination": "https://nonprofit-erp-production.up.railway.app/ticket/:path*"
+    },
+    {
       "source": "/you/:path*",
       "destination": "https://nonprofit-erp-production.up.railway.app/you/:path*"
     },

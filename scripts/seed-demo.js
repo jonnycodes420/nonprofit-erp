@@ -339,7 +339,7 @@ async function main() {
   // that exists to answer "how much of this is not ours to spend" answered
   // nothing, and a treasurer opening it learned less than from the bank.
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted,description)
-           VALUES ('fund_b72demo_boat',$1,'Harbour Skills Boat',true,'The Meridian Foundation grant for the second training boat.')`, [ORG]);
+           VALUES ('fund_b72demo_boat',$1,'Harbor Skills Boat',true,'The Meridian Foundation grant for the second training boat.')`, [ORG]);
   // Goal is set AFTER the gifts exist, from what was actually raised (below) —
   // a demo whose first screen reads "666% · $1,018,277 over" looks broken, not
   // successful. Created here with a placeholder; corrected once totals are in.
@@ -862,22 +862,51 @@ async function main() {
   const run5k = { id: "ev_b72_5k", date: orgTime.addDays(TODAY, 68) };
   await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
            VALUES ($1,$2,$3,'event','active',$4,$5,$6)`,
-          ["camp_b72_5k", ORG, `Harbour Run ${run5k.date.slice(0, 4)}`, 25000, TODAY, run5k.date]);
+          ["camp_b72_5k", ORG, `Harbor Run ${run5k.date.slice(0, 4)}`, 25000, TODAY, run5k.date]);
   await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,goal_amount,campaign_id,created_by,created_by_name)
            VALUES ($1,$2,$3,'other',$4,$4,$5,$6,400,'upcoming',0,3200,$7,$8,'u_b72demo','Dana Reyes')`,
-          [run5k.id, ORG, `Harbour Run ${run5k.date.slice(0, 4)}`, run5k.date, "North Shore Path, Harborlight",
+          [run5k.id, ORG, `Harbor Run ${run5k.date.slice(0, 4)}`, run5k.date, "North Shore Path, Harborlight",
            "A five kilometre run and walk along the shore. Families welcome, and every runner raises for the scholarship fund.",
            25000, "camp_b72_5k"]);
-  await q(`UPDATE events SET public_slug='harbour-run' WHERE id=$1 AND org_id=$2`, [run5k.id, ORG]);
+  // EVENTS-2 — Harborlight is a US organisation, so it is "harbor" everywhere
+  // and the money is dollars. The old slug is kept as `previous_slug` so every
+  // /e/harbour-run link already printed, posted or shared still opens.
+  await q(`UPDATE events SET public_slug='harbor-run', previous_slug='harbour-run' WHERE id=$1 AND org_id=$2`, [run5k.id, ORG]);
+  // EVENTS-2 — the 5K is OPEN: two ticket types with a member price, a
+  // capacity on the family entry so it can sell out, and a sponsorship.
   const RUN_LEVELS = [
-    ["evl_b72_run_adult", "ticket", "Adult entry", 35, 12, null],
-    ["evl_b72_run_family", "ticket", "Family entry, up to four", 90, 30, null],
-    ["evl_b72_run_sponsor", "sponsor", "Mile sponsor", 1000, 0, "Mile sponsor"],
+    ["evl_b72_run_adult", "ticket", "Adult entry", 35, 12, 28, null, null],
+    ["evl_b72_run_family", "ticket", "Family entry, up to four", 90, 30, 72, null, 40],
+    ["evl_b72_run_sponsor", "sponsor", "Mile sponsor", 1000, 0, null, "Mile sponsor", null],
   ];
-  for (const [k, [id, kind, name, price, fmv, recognition]] of RUN_LEVELS.entries())
-    await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,recognition,position,created_by,created_by_name)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'u_b72demo','Dana Reyes')`,
-            [id, ORG, run5k.id, kind, name, price, fmv, recognition, k]);
+  for (const [k, [id, kind, name, price, fmv, memberPrice, recognition, capacity]] of RUN_LEVELS.entries())
+    await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,member_price,recognition,capacity,position,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'u_b72demo','Dana Reyes')`,
+            [id, ORG, run5k.id, kind, name, price, fmv, memberPrice, recognition, capacity, k]);
+
+  // A few people have already entered, so the page is not a page nobody has
+  // used. They are written the way a staff registration is written — the demo
+  // never touches a card — and one person is on the waiting list for the
+  // family entry, which is the state a coordinator has to recognise on sight.
+  const runEntrants = await q(
+    `SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL
+       AND email IS NOT NULL AND email <> '' ORDER BY total_giving DESC OFFSET 40 LIMIT 5`, [ORG]);
+  for (const [i, p] of runEntrants.entries()) {
+    const lvl = i % 2 ? "evl_b72_run_family" : "evl_b72_run_adult";
+    await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,source,notes)
+             VALUES ($1,$2,$3,$4,$5,$6,'registered',$7,1,'public','Entered through the event page.')
+             ON CONFLICT (event_id, donor_id) DO NOTHING`,
+      [`att_b72_run${i}`, run5k.id, ORG, p.id, p.name, p.email, lvl]);
+  }
+  const [waiter] = await q(
+    `SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL
+       AND email IS NOT NULL AND email <> '' ORDER BY total_giving DESC OFFSET 60 LIMIT 1`, [ORG]);
+  if (waiter) {
+    await q(`INSERT INTO event_waitlist (id,org_id,event_id,level_id,name,email,qty,position,created_by,created_by_name)
+             VALUES ($1,$2,$3,'evl_b72_run_family',$4,$5,1,1,'system:event-waitlist','The waiting list, from the event page')`,
+      ["ewl_b72_run1", ORG, run5k.id, waiter.name, waiter.email]);
+  }
+  console.log(`[assert] the 5K is open: ${RUN_LEVELS.length} levels (members pay $28 and $72), ${runEntrants.length} entered, ${waiter ? "1 waiting" : "nobody waiting"} · /e/harbor-run, with /e/harbour-run redirecting`);
 
   // ── Derived state: totals, stages, ledger stamps ───────────────────────
   console.log("[seed] recomputing donor summaries…");
@@ -1192,7 +1221,7 @@ async function main() {
   // the one item a restricted balance is supposed to raise.
   const GRANT_ID = "gr_b72_boat";
   await q(`INSERT INTO grants (id,org_id,funder,program,amount,received,status,report_due,description)
-           VALUES ($1,$2,'Meridian Foundation','Harbour Skills: second training boat',85000,55000,'awarded',$3,
+           VALUES ($1,$2,'Meridian Foundation','Harbor Skills: second training boat',85000,55000,'awarded',$3,
                    'Restricted to the purchase and fit-out of a second training boat.')
            ON CONFLICT (id) DO NOTHING`,
     [GRANT_ID, ORG, dateIn2(TODAY, 41)]);
@@ -1238,7 +1267,7 @@ async function main() {
   // give and volunteer — the crossing that is the whole point.
   console.log("[seed] the volunteer programme…");
   const VOL_OPPS = [
-    { id: "vo_b72_shore", name: "Saturday harbour clean-up", slug: "saturday-harbour-clean-up",
+    { id: "vo_b72_shore", name: "Saturday harbor clean-up", slug: "saturday-harbor-clean-up",
       description: "Two hours on the shoreline with gloves, bags and a flask of something hot.",
       location: "Pier 4, Harborlight", program: "Shoreline", waiver: true, check: false },
     { id: "vo_b72_tutor", name: "After-school tutoring", slug: "after-school-tutoring",
@@ -1346,8 +1375,8 @@ async function main() {
     return id;
   };
   const past = [
-    { slot: VOL_SLOTS[0], who: allVols.slice(0, 11), hours: 4, role: "Saturday harbour clean-up" },
-    { slot: VOL_SLOTS[1], who: allVols.slice(4, 14), hours: 4, role: "Saturday harbour clean-up" },
+    { slot: VOL_SLOTS[0], who: allVols.slice(0, 11), hours: 4, role: "Saturday harbor clean-up" },
+    { slot: VOL_SLOTS[1], who: allVols.slice(4, 14), hours: 4, role: "Saturday harbor clean-up" },
     { slot: VOL_SLOTS[2], who: allVols.slice(0, 5),  hours: 1, role: "After-school tutoring" },
     { slot: VOL_SLOTS[3], who: allVols.slice(8, 22), hours: 6, role: "Gala night crew" },
   ];
@@ -1412,8 +1441,8 @@ async function main() {
     ["mbl_b72_friend", "Friend", 50, 0, 0,
       ["The newsletter, four times a year", "Your name in the annual report"]],
     ["mbl_b72_family", "Family", 120, 25, 1,
-      ["Everything a Friend has", "Four guest passes to the harbour centre", "Early notice of every event"]],
-    ["mbl_b72_circle", "Harbour Circle", 500, 60, 2,
+      ["Everything a Friend has", "Four guest passes to the harbor center", "Early notice of every event"]],
+    ["mbl_b72_circle", "Harbor Circle", 500, 60, 2,
       ["Everything a Family has", "Two seats at the annual dinner", "A morning on the water with the programme staff"]],
   ];
   for (const [id, name, price, fmv, pos, benefits] of MEMBERSHIP_LEVELS)

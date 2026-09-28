@@ -7810,15 +7810,22 @@ async function levelTaken(levelId) {
 // exists (the Stripe webhook wrote it); otherwise this writes the gift, or the
 // sponsor's pledge, itself. Returns the attendee row.
 async function registerForEvent({ orgId, event, level, donorId, qty, paid = true, giftId = null,
-                                  paymentMethod = null, date = null, idemKey = null, who }) {
+                                  paymentMethod = null, date = null, idemKey = null, who,
+                                  guests = [], dietary = null, notify = false }) {
   await EV_READY;
   const split = EV.ticketSplit({ priceCents: rbCentsEv(level.price), fmvCents: rbCentsEv(level.fmv), qty });
   const [donor] = await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [donorId, orgId]);
   if (!donor) throw Object.assign(new Error("Donor not found"), { status: 404 });
   if (level.capacity != null && !giftId) {
+    // EVENTS-2 — a seat somebody is paying for right now is a seat taken. The
+    // office adding a walk-in must not be handed the same chair as the person
+    // holding a phone at the door with a Checkout page open on it.
     const taken = await levelTaken(level.id);
-    if (taken + split.qty > level.capacity)
-      throw Object.assign(new Error(`${level.name} has ${Math.max(0, level.capacity - taken)} places left.`), { status: 409 });
+    const [h] = await query(`SELECT COALESCE(SUM(qty),0)::int AS n FROM event_seat_holds
+                              WHERE level_id=? AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > NOW()`, [level.id]);
+    const used = taken + (h?.n || 0);
+    if (used + split.qty > level.capacity)
+      throw Object.assign(new Error(`${level.name} has ${Math.max(0, level.capacity - used)} places left.`), { status: 409 });
   }
   const day = date || orgToday(await orgTz(orgId));           // ORG_TZ_SEAM_OK
   let pledgeId = null;
@@ -7838,9 +7845,6 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
       const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, idemKey]);
       giftId = g?.id || null;
     } else giftId = written.gift.id;
-    // EVENTS-1 — stamp WHICH EVENT this gift is, so "raised" is a sum over an
-    // id rather than a match on a name that somebody may rename tonight.
-    if (giftId) await run("UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL", [event.id, giftId, orgId]);
   } else if (!giftId) {
     // An unpaid sponsorship is a promise: a pledge due on the event day,
     // attributed to nothing but itself. It is NOT money until it arrives.
@@ -7852,6 +7856,15 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
     await run(`INSERT INTO pledge_installments (id,org_id,pledge_id,seq,due_date,amount) VALUES (?,?,?,1,?,?)`,
       ["pi_" + uuid().slice(0, 8), orgId, pledgeId, String(event.date).slice(0, 10) > day ? String(event.date).slice(0, 10) : day, split.totalCents / 100]);
   }
+  // EVENTS-1 — stamp WHICH EVENT this gift is, so "raised" is a sum over an
+  // id rather than a match on a name that somebody may rename tonight.
+  //
+  // EVENTS-2 moved it OUT of the branch above. It only ran when this function
+  // wrote the gift itself, so every ticket bought online — where the webhook
+  // writes the gift and hands the id in — left its money unstamped, and the
+  // event's raised figure counted nothing that was actually paid for on the
+  // public page. That is the whole of what this build sells.
+  if (giftId) await run("UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL", [event.id, giftId, orgId]);
   const recognition = level.kind === "sponsor" ? EV.recognitionLine({ donorName: donor.name, levelName: level.name, recognition: level.recognition }) : null;
   const id = "att_" + uuid().slice(0, 8);
   const rows = await query(
@@ -7865,7 +7878,57 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
        status=CASE WHEN event_attendees.status='cancelled' THEN 'registered' ELSE event_attendees.status END
      RETURNING *`,
     [id, event.id, orgId, donorId, donor.name, donor.email || "", level.id, split.qty, giftId, pledgeId, recognition, split.totalCents / 100]);
-  return { attendee: rows[0], giftId, pledgeId, split };
+  const attendee = rows[0];
+  if (dietary) await run(`UPDATE event_attendees SET dietary=? WHERE id=? AND org_id=?`, [dietary, attendee.id, orgId]).catch(() => {});
+  // EVENTS-2 — the other names on the ticket. Each is a place and a name tag
+  // and NOT a second gift: quantity 0, guest_of the buyer, exactly as the
+  // free registration page has always written them.
+  for (const g of (guests || []).slice(0, 10)) {
+    if (!g || g.toLowerCase() === String(donor.name || "").toLowerCase()) continue;
+    await run(`INSERT INTO event_attendees (id,event_id,org_id,name,status,level_id,quantity,source,guest_of,notes)
+               VALUES (?,?,?,?,'registered',?,0,'public',?,?)`,
+      ["att_" + uuid().slice(0, 10), event.id, orgId, String(g).slice(0, 200), level.id, attendee.id, `Guest of ${donor.name}.`]).catch(() => {});
+  }
+  // EVENTS-2 — the confirmation, sent only when somebody paid on the public
+  // page. It is transactional (they were just charged for a seat), and it
+  // carries the ticket's QR as an IMAGE URL rather than a data: URI, because
+  // no email client renders a data: URI.
+  if (notify && donor.email) {
+    await sendEventTicketEmail({ orgId, event, level, attendee, split, guestCount: guests.length })
+      .catch(e => console.error("[event] confirmation email:", e.message));
+  }
+  return { attendee, giftId, pledgeId, split };
+}
+
+// The ticket in an inbox: what they bought, when and where it is, the code
+// the door reads, and the one page that holds it afterwards.
+async function sendEventTicketEmail({ orgId, event, level, attendee, split, guestCount = 0 }) {
+  await EV_READY;
+  const PASS = await import("./shared/passCode.js");
+  const [org] = await query("SELECT id, name, org_slug FROM orgs WHERE id=?", [orgId]);
+  const display = await donorFacingOrgName(orgId, org?.name).catch(() => org?.name || "");
+  const day = event.date instanceof Date ? event.date.toISOString().slice(0, 10) : String(event.date).slice(0, 10);
+  const code = PASS.makePassCode({ kind: "ticket", orgId, id: attendee.id, expiresOn: day, secret: process.env.JWT_SECRET || "" });
+  const base = publicAppUrl();
+  const when = new Date(day + "T12:00:00Z").toLocaleDateString("en-US",
+    { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const deductible = (split.totalCents - split.fmvCents) / 100;
+  const html = await brandEmailHeaderHtml(orgId) + `
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+      <p>You are coming to <strong>${escapeHtml(event.name)}</strong>.</p>
+      <p>${escapeHtml(when)}${event.location ? `<br>${escapeHtml(event.location)}` : ""}</p>
+      <p>${escapeHtml(level.name)}${split.qty > 1 ? ` · ${split.qty} places` : ""}${guestCount ? ` · ${guestCount} guest${guestCount === 1 ? "" : "s"} named` : ""}.
+         ${split.fmvCents > 0 ? `$${deductible.toLocaleString("en-US", { minimumFractionDigits: 2 })} of what you paid is tax deductible; your receipt states it.` : "The whole amount is tax deductible."}</p>
+      <p style="text-align:center;margin:26px 0;">
+        <img src="${base}/ticket/${encodeURIComponent(code)}.png" alt="Your ticket code" width="200" height="200" style="display:block;margin:0 auto;">
+      </p>
+      <p style="font-size:13px;color:#555;text-align:center;">Show this at the door.</p>
+      <p style="font-size:13px;color:#555;">Your ticket, your receipts and everything else you have with ${escapeHtml(display)} live on one page:
+         <a href="${base}/you/${encodeURIComponent(org?.org_slug || "")}">open your page</a>. It never asks for a password.</p>
+      ${event.location ? `<p style="font-size:13px;color:#555;"><a href="https://maps.google.com/?q=${encodeURIComponent(event.location)}">Directions</a> · <a href="${base}/e/${encodeURIComponent(event.public_slug || "")}/calendar.ics">Add to calendar</a></p>` : ""}
+    </div>`;
+  await sendDonorLifecycleEmail("event_ticket", attendee.email,
+    `Your ticket — ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()));
 }
 
 // ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────
@@ -9090,6 +9153,7 @@ require("./routes/crm").mount({
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
+  sendDonorLifecycleEmail, fromWithDisplayName,
   checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,

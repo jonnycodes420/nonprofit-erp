@@ -428,8 +428,23 @@ function EventKiosk({ eventId }) {
   const [data, setData] = useState(null);
   const [term, setTerm] = useState("");
   const [msg, setMsg] = useState("");
+  const [code, setCode] = useState("");
+  const [scanMsg, setScanMsg] = useState("");
+  const [scanOk, setScanOk] = useState(false);
   const load = () => apiFetch(`/events/${eventId}/kiosk`).then(setData).catch(() => setData(null));
   useEffect(() => { load(); }, [eventId]);
+  // The code is handed to the server whole. Nothing here reads or trusts what
+  // is inside it: the signature is checked on the server, against this org.
+  const scan = async () => {
+    const c = code.trim();
+    if (!c) return;
+    setScanMsg(""); setCode("");
+    try {
+      const r = await apiFetch(`/events/${eventId}/scan`, { method: "POST", body: JSON.stringify({ code: c }) });
+      setScanOk(!!r.ok); setScanMsg(r.sentence || (r.ok ? "In." : "That code did not read."));
+      if (r.ok) load();
+    } catch (e) { setScanOk(false); setScanMsg(errorMessage(e, "That code did not read.")); }
+  };
   const tap = async (g) => {
     setMsg("");
     try {
@@ -445,6 +460,22 @@ function EventKiosk({ eventId }) {
     <div data-testid="ev-kiosk" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
       <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>Check-in</div>
       <div style={{ fontSize: 13, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-count">{data.sentence}</div>
+      {/* EVENTS-2 — the scanner. A phone camera reads the QR into a text box
+          (any scanner app or a Bluetooth reader types into the focused field),
+          and the server decides what it means. Two kinds of code arrive here:
+          a ticket for this event, and a member card. A member card is NOT a
+          ticket, so it never invents a registration — it says who this is and
+          whether they are on the list, and the person at the door decides. */}
+      <form onSubmit={e => { e.preventDefault(); scan(); }} style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+        <input data-testid="ev-kiosk-scan" value={code} onChange={e => setCode(e.target.value)}
+          placeholder="Scan a ticket or a member card" autoComplete="off"
+          style={{ flex: 1, minWidth: 0, boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink }} />
+        <button type="submit" disabled={!code.trim()} data-testid="ev-kiosk-scan-go"
+          style={{ background: T.greenDk, color: T.white, border: "none", borderRadius: 10, padding: "12px 16px", fontSize: 14, fontWeight: 800, cursor: code.trim() ? "pointer" : "not-allowed", opacity: code.trim() ? 1 : 0.5, fontFamily: "inherit" }}>Scan</button>
+      </form>
+      {scanMsg && <div role="status" data-testid="ev-kiosk-scan-msg"
+        style={{ fontSize: 14, fontWeight: 700, color: scanOk ? T.greenDk : T.ink, background: scanOk ? T.green100 : T.bg,
+                 border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 10 }}>{scanMsg}</div>}
       <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Type a name"
         style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
       {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginBottom: 8 }}>{msg}</div>}

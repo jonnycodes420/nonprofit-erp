@@ -63,6 +63,7 @@ const {
   threadRankMod, threadShapeMod, thresholdsMod, toCents, toDollars, unsubscribeEmailFooterHtml,
   uploadImageError, uuid, validateCustomFields, validateStoryBlocks, volunteerSummary, weekBounds,
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
+  sendDonorLifecycleEmail, fromWithDisplayName,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -18358,6 +18359,7 @@ app.get("/gmail/thread/:donorId", requireAuth, wrap(async (req, res) => {
 
 function eventLevelPayload(l, taken = 0) {
   return { id: l.id, kind: l.kind, name: l.name, price: Number(l.price), fmv: Number(l.fmv),
+    memberPrice: l.member_price == null ? null : Number(l.member_price),
     deductible: (rbCentsEv(l.price) - rbCentsEv(l.fmv)) / 100, capacity: l.capacity, taken,
     remaining: l.capacity == null ? null : Math.max(0, l.capacity - taken), recognition: l.recognition };
 }
@@ -18668,8 +18670,9 @@ app.post("/events/:id/levels", requireAuth, checkWriteAccess, wrap(async (req, r
   const v = EV.validateLevel(req.body || {});
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level, id = "evl_" + uuid().slice(0, 8);
-  await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,capacity,recognition,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, ev.id, L.kind, L.name, L.priceCents / 100, L.fmvCents / 100, L.capacity, L.recognition, actor(req).id, actor(req).name]);
+  await run(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,member_price,capacity,recognition,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, ev.id, L.kind, L.name, L.priceCents / 100, L.fmvCents / 100,
+     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, actor(req).id, actor(req).name]);
   res.status(201).json({ id });
 }));
 
@@ -18680,8 +18683,9 @@ app.put("/event-levels/:id", requireAuth, checkWriteAccess, wrap(async (req, res
   const v = EV.validateLevel({ ...eventLevelPayload(l), ...req.body });
   if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
   const L = v.level;
-  await run("UPDATE event_levels SET kind=?, name=?, price=?, fmv=?, capacity=?, recognition=? WHERE id=? AND org_id=?",
-    [L.kind, L.name, L.priceCents / 100, L.fmvCents / 100, L.capacity, L.recognition, l.id, req.user.orgId]);
+  await run("UPDATE event_levels SET kind=?, name=?, price=?, fmv=?, member_price=?, capacity=?, recognition=? WHERE id=? AND org_id=?",
+    [L.kind, L.name, L.priceCents / 100, L.fmvCents / 100,
+     L.memberPriceCents == null ? null : L.memberPriceCents / 100, L.capacity, L.recognition, l.id, req.user.orgId]);
   res.json({ ok: true });
 }));
 
@@ -18823,15 +18827,39 @@ const evDayWords = iso => {
 };
 const evMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
 
+// EVENTS-2 — the page takes a card now. Everything it charges is priced by
+// the server from the level (`POST /e/:slug/checkout`, which is the donation
+// checkout), the seat is HELD for fifteen minutes while somebody pays, and
+// the registration is confirmed only by the payment webhook. A sold-out
+// ticket type takes a name for the waiting list instead.
+const evSeatsSql = `SELECT
+    (SELECT COALESCE(SUM(quantity),0)::int FROM event_attendees WHERE level_id=$1 AND status <> 'cancelled')
+  + (SELECT COALESCE(SUM(qty),0)::int FROM event_seat_holds
+       WHERE level_id=$1 AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > NOW()) AS used`;
+async function evSeatsLeft(level) {
+  if (level.capacity == null) return null;                 // no cap, no count
+  const [r] = await query(evSeatsSql, [level.id]);
+  return Math.max(0, Number(level.capacity) - Number(r?.used || 0));
+}
+
 app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   await EV_PUBLIC_READY;
   const e = await publicEvent(req.params.slug);
+  // A slug that has been renamed still opens: the link is on a poster and in
+  // somebody's messages, and it is not theirs to take back.
+  if (!e) {
+    const [moved] = await query(`SELECT public_slug FROM events WHERE previous_slug=? AND status <> 'cancelled' LIMIT 1`,
+      [String(req.params.slug || "")]);
+    if (moved) return res.redirect(301, `/e/${encodeURIComponent(moved.public_slug)}`);
+  }
   if (!e) return res.status(404).send(evPage({ title: "Not found",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
     body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this event has been taken down. Ask the organisation for its current link.</p></div>` }));
   const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+  const [org] = await query("SELECT org_slug, stripe_connected, stripe_account_id FROM orgs WHERE id=?", [e.org_id]);
+  const canTakeACard = !!(org && org.stripe_connected && org.stripe_account_id);
   const levels = await query(
-    `SELECT id, kind, name, price::float AS price, fmv::float AS fmv, capacity, recognition
+    `SELECT id, kind, name, price::float AS price, member_price::float AS member_price, fmv::float AS fmv, capacity, recognition
        FROM event_levels WHERE org_id=? AND event_id=? ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
   const esc = PPG.escapeHtml;
   res.setHeader("Cache-Control", "no-store");
@@ -18839,46 +18867,229 @@ app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", "frame-ancestors *");
 
+  const seats = new Map();
+  for (const l of levels) seats.set(l.id, await evSeatsLeft(l));
+
   const levelCard = l => {
+    const left = seats.get(l.id);
+    const soldOut = left === 0;
     const deductible = Number(l.price) - Number(l.fmv);
+    const memberDeductible = l.member_price != null ? Number(l.member_price) - Number(l.fmv) : null;
+    const priceLine = l.member_price != null
+      ? `<p class="small">Members pay ${esc(evMoney(l.member_price))}. Enter the email your membership is under and the price changes when you check out; it is checked against the membership, never taken on trust.</p>`
+      : "";
     return `<div class="card">
-      <div class="row"><h2>${esc(l.name)}</h2><span class="pill open">${esc(evMoney(l.price))}</span></div>
+      <div class="row"><h2>${esc(l.name)}</h2>${soldOut
+        ? `<span class="pill shut">Sold out</span>`
+        : `<span class="pill open">${esc(evMoney(l.price))}</span>`}</div>
       ${Number(l.fmv) > 0
-        ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive on the night, so ${esc(evMoney(deductible))} is tax deductible.</p>`
+        ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive on the night, so ${esc(evMoney(deductible))} is tax deductible${memberDeductible != null ? `, or ${esc(evMoney(memberDeductible))} at the member price` : ""}.</p>`
         : `<p class="small">The whole amount is tax deductible: nothing is given in return.</p>`}
+      ${priceLine}
       ${l.recognition ? `<p class="small">Listed as ${esc(l.recognition)}.</p>` : ""}
-      <form method="post" action="/e/${esc(e.public_slug)}/register">
+      ${left != null && !soldOut && left <= 10 ? `<p class="small">${left} place${left === 1 ? "" : "s"} left.</p>` : ""}
+      ${soldOut ? `
+      <form method="post" action="/e/${esc(e.public_slug)}/waitlist">
+        <input type="hidden" name="levelId" value="${esc(l.id)}">
+        <input class="hp" name="website" tabindex="-1" autocomplete="off">
+        <p class="small">Leave your name and ${esc(brand.displayName || "the organisation")} will be in touch if a place comes free. Nothing is charged and you are under no obligation.</p>
+        <label>Your name<input name="name" required autocomplete="name"></label>
+        <label>Email<input name="email" type="email" required autocomplete="email"></label>
+        <button class="btn quiet" type="submit">Put me on the waiting list</button>
+      </form>` : `
+      <form method="post" action="/e/${esc(e.public_slug)}/${canTakeACard ? "checkout" : "register"}">
         <input type="hidden" name="levelId" value="${esc(l.id)}">
         <input class="hp" name="website" tabindex="-1" autocomplete="off">
         <label>Your name<input name="name" required autocomplete="name"></label>
         <label>Email<input name="email" type="email" required autocomplete="email"></label>
         ${l.kind === "ticket"
-          ? `<label>How many<select name="quantity">${[1,2,3,4,5,6,8,10].map(n => `<option value="${n}">${n}</option>`).join("")}</select></label>
+          ? `<label>How many<select name="quantity">${[1,2,3,4,5,6,8,10].filter(n => left == null || n <= left).map(n => `<option value="${n}">${n}</option>`).join("")}</select></label>
              <label>Who is coming, one name per line<textarea name="guests" placeholder="So we can put a name at every seat"></textarea></label>
              <label>Anything we should know about food<input name="dietary" placeholder="Vegetarian, an allergy, anything"></label>`
           : ""}
-        <button class="btn" type="submit">${l.kind === "sponsor" ? "Sponsor" : "Register"}</button>
-      </form>
+        <button class="btn" type="submit">${canTakeACard
+          ? (l.kind === "sponsor" ? "Sponsor and pay" : "Buy and pay")
+          : (l.kind === "sponsor" ? "Sponsor" : "Register")}</button>
+      </form>`}
     </div>`;
   };
   const tickets = levels.filter(l => l.kind === "ticket");
   const sponsors = levels.filter(l => l.kind === "sponsor");
+  const problem = String(req.query.problem || "").slice(0, 200);
 
   res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, body: `
+    ${problem ? `<div class="err">${esc(problem)}</div>` : ""}
+    ${req.query.waitlisted === "1" ? `<div class="ok">You are on the waiting list. ${esc(brand.displayName || "The organisation")} will be in touch if a place comes free.</div>` : ""}
     <div class="card">
       <h1>${esc(e.name)}</h1>
       <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
       ${e.description ? `<p>${esc(e.description)}</p>` : ""}
+      ${e.location ? `<p class="small"><a href="https://maps.google.com/?q=${encodeURIComponent(e.location)}">Directions</a> · <a href="/e/${esc(e.public_slug)}/calendar.ics">Add to calendar</a></p>` : ""}
     </div>
     ${tickets.length ? `<h2 style="margin:18px 0 10px">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
     ${sponsors.length ? `<h2 style="margin:18px 0 10px">Sponsor it</h2>${sponsors.map(levelCard).join("")}` : ""}
     <div class="card">
       <h2>Cannot come?</h2>
       <p class="small">You can still give. It goes to the same place the evening does, and the whole amount is tax deductible because nothing is given in return.</p>
-      <a class="btn quiet" href="/give/${esc((await orgSlugFor(e.org_id)) || "")}">Give instead</a>
+      <a class="btn quiet" href="/give/${esc((org && org.org_slug) || "")}">Give instead</a>
     </div>
-    <p class="small" style="text-align:center">Registering here tells ${esc(brand.displayName || "the organisation")} you are coming. They will be in touch about paying, and nothing is charged on this page.</p>
+    <p class="small" style="text-align:center">${canTakeACard
+      ? `Your card is taken by ${esc(brand.displayName || "the organisation")}'s own payment account. Steward never holds the money and never sees the card.`
+      : `Registering here tells ${esc(brand.displayName || "the organisation")} you are coming. They will be in touch about paying, and nothing is charged on this page.`}</p>
   ` }));
+}));
+
+// ── EVENTS-2 · THE ATTENDEE'S SIDE ────────────────────────────────────────
+// Where Stripe sends somebody after they pay. It writes NOTHING: the webhook
+// is what confirms a registration, and this page reports what it finds.
+//
+// The honest case is that the webhook has not landed yet, which happens for a
+// second or two and occasionally for longer. The page says so plainly rather
+// than pretending, and it refreshes itself: telling somebody who has just been
+// charged that there is no record of them is the worst thing this page could
+// do.
+app.get("/e/:slug/thanks", donateLimiter, wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const e = await publicEvent(req.params.slug);
+  if (!e) return res.status(404).send("Not found");
+  const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+  const esc = PPG.escapeHtml;
+  const sessionId = String(req.query.s || "").slice(0, 200);
+  res.setHeader("Cache-Control", "no-store");
+
+  // Which registration this was: the hold carries the Checkout session id, and
+  // the hold is stamped confirmed by the webhook that wrote the gift.
+  let att = null;
+  if (sessionId) {
+    const [hold] = await query(
+      `SELECT id, email, confirmed_at FROM event_seat_holds
+        WHERE stripe_session_id=? AND org_id=? LIMIT 1`, [sessionId, e.org_id]);
+    if (hold && hold.email) {
+      [att] = await query(
+        `SELECT a.id, a.name, a.email, a.quantity, a.dietary, l.name AS level_name
+           FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
+          WHERE a.org_id=? AND a.event_id=? AND LOWER(a.email)=? AND a.status <> 'cancelled'
+            AND a.registration_gift_id IS NOT NULL
+          ORDER BY a.created_at DESC LIMIT 1`, [e.org_id, e.id, String(hold.email).toLowerCase()]);
+    }
+  }
+  const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
+  const CAL = await import("../shared/calendarLinks.js");
+  const calEvent = { uid: `event-${e.id}@steward`, subject: e.name, dueCivil: day,
+                     description: [e.description || "", e.location ? `Where: ${e.location}` : ""].filter(Boolean).join("\n") };
+  const whenWhere = `<p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
+    <p class="small">
+      <a href="/e/${esc(e.public_slug)}/calendar.ics">Add to calendar</a>
+      · <a href="${esc(CAL.googleUrl(calEvent))}">Google</a>
+      · <a href="${esc(CAL.outlookUrl(calEvent))}">Outlook</a>
+      ${e.location ? `· <a href="https://maps.google.com/?q=${encodeURIComponent(e.location)}">Directions</a>` : ""}
+    </p>`;
+
+  if (!att) {
+    return res.send(withRefresh(evPage({ title: `Thank you · ${e.name}`, brand, body: `
+      <div class="card">
+        <h1>Thank you. Your payment went through.</h1>
+        <p class="muted">We are putting you on the list now. This page finds you within a few seconds; if it does not, your email receipt is your proof of payment and ${esc(brand.displayName || "the organisation")} has the record.</p>
+        ${whenWhere}
+      </div>` })));
+  }
+
+  const code = await evTicketQr(e.org_id, att, day);
+  const orgSlug = (await orgSlugFor(e.org_id)) || "";
+  res.send(evPage({ title: `You are coming · ${e.name}`, brand, body: `
+    <div class="card">
+      <h1>You are coming, ${esc(String(att.name || "").split(" ")[0])}.</h1>
+      <div class="ok">${esc(att.level_name || "Ticket")}${Number(att.quantity) > 1 ? ` · ${att.quantity} places` : ""}. Your receipt is on its way by email.</div>
+      ${whenWhere}
+    </div>
+    <div class="card" style="text-align:center">
+      <h2 style="text-align:left">Your ticket</h2>
+      ${code ? `<img src="${code}" alt="Your ticket code" style="width:210px;height:210px;display:block;margin:12px auto 6px">` : ""}
+      <p class="small" style="text-align:left">Show this at the door. It is read by ${esc(brand.displayName || "the organisation")} and says which ticket this is; it carries nothing else about you.</p>
+      <a class="btn quiet" href="/you/${esc(orgSlug)}">Keep it on your page</a>
+      <p class="small" style="text-align:left">Your page holds this ticket, your receipts and anything else you have with ${esc(brand.displayName || "us")}. It opens with a link to your email and never asks for a password.</p>
+    </div>` }));
+}));
+
+// THE TICKET QR AS AN IMAGE, ADDRESSED BY THE CODE ITSELF. An email client
+// will not render a data: URI, so the confirmation email points here. The code
+// IS the credential and it carries nothing but which ticket this is; the
+// endpoint verifies the signature before it draws anything, so a guessed or
+// edited code renders no image rather than a valid-looking one.
+//
+// It is a GET and it writes nothing.
+app.get("/ticket/:code.png", donateLimiter, wrap(async (req, res) => {
+  const PASS = await import("../shared/passCode.js");
+  const read = PASS.readPassCode(String(req.params.code || ""), { secret: process.env.JWT_SECRET || "" });
+  if (!read.ok) return res.status(404).send("Not found");
+  let png = null;
+  try { png = await require("qrcode").toBuffer(String(req.params.code), { width: 360, margin: 1, errorCorrectionLevel: "M" }); }
+  catch { return res.status(500).send("Not available"); }
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.send(png);
+}));
+
+// A page that is waiting for a webhook says so and comes back on its own. Ten
+// seconds, not one: a reload storm helps nobody and the webhook is usually
+// there before the first one.
+function withRefresh(html) {
+  return html.replace("</head>", `<meta http-equiv="refresh" content="10"></head>`);
+}
+
+// THE TICKET QR. The same signed string a member card carries, with a
+// different kind, so one scanner reads both (shared/passCode.js).
+async function evTicketQr(orgId, attendee, eventDay) {
+  try {
+    const PASS = await import("../shared/passCode.js");
+    const code = PASS.makePassCode({ kind: "ticket", orgId, id: attendee.id,
+      expiresOn: eventDay, secret: process.env.JWT_SECRET || "" });
+    return await require("qrcode").toDataURL(code, { width: 320, margin: 1, errorCorrectionLevel: "M",
+      color: { dark: "#0f1a12", light: "#ffffff" } });
+  } catch { return null; }
+}
+
+// The event in a calendar. A GET, and it writes nothing.
+app.get("/e/:slug/calendar.ics", donateLimiter, wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const e = await publicEvent(req.params.slug);
+  if (!e) return res.status(404).send("Not found");
+  const CAL = await import("../shared/calendarLinks.js");
+  const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null);
+  const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
+  const ics = CAL.buildIcs({
+    uid: `event-${e.id}@steward`, subject: e.name, dueCivil: day,
+    description: [e.description || "", e.location ? `Where: ${e.location}` : ""].filter(Boolean).join("\n"),
+  }, { prodId: "-//Steward//Event//EN" });
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${String(e.public_slug || "event")}.ics"`);
+  res.send(ics);
+}));
+
+// The waiting list. A name and an email, nothing charged, and a place is
+// OFFERED by a person pressing a button — never handed out by a sweep.
+app.post("/e/:slug/waitlist", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const e = await publicEvent(req.params.slug);
+  if (!e) return res.status(404).send("Not found");
+  const done = () => res.redirect(303, `/e/${encodeURIComponent(e.public_slug)}?waitlisted=1`);
+  if (String(req.body?.website || "").trim()) return done();
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 320);
+  const [level] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+    [String(req.body?.levelId || ""), e.id, e.org_id]);
+  if (!name || !email.includes("@") || !level) {
+    return res.redirect(303, `/e/${encodeURIComponent(e.public_slug)}?problem=${encodeURIComponent("A name and an email, so they can reach you if a place comes free.")}`);
+  }
+  const [dup] = await query(`SELECT id FROM event_waitlist WHERE org_id=? AND level_id=? AND LOWER(email)=?
+                              AND removed_at IS NULL AND taken_at IS NULL`, [e.org_id, level.id, email]);
+  if (dup) return done();
+  const [pos] = await query(`SELECT COALESCE(MAX(position),0)::int AS p FROM event_waitlist
+                              WHERE org_id=? AND level_id=? AND removed_at IS NULL`, [e.org_id, level.id]);
+  await run(`INSERT INTO event_waitlist (id,org_id,event_id,level_id,name,email,qty,position,created_by,created_by_name)
+             VALUES (?,?,?,?,?,?,1,?, 'system:event-waitlist','The waiting list, from the event page')`,
+    ["ewl_" + uuid().slice(0, 10), e.org_id, e.id, level.id, name, email, (pos?.p || 0) + 1]);
+  done();
 }));
 
 async function orgSlugFor(orgId) {
@@ -19129,6 +19340,110 @@ app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req,
   if (!rows.length) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true, attendee: rows[0],
     sentence: undo ? `${rows[0].name} is not checked in.` : `${rows[0].name} is in.` });
+}));
+
+// ── EVENTS-2 · THE DOOR READS A CODE ─────────────────────────────────────
+// One scanner, two kinds of code: a ticket for this event, or a member card.
+// A member card is not a ticket, so scanning one does NOT invent a
+// registration — it says who this is and whether they are on the list, and
+// the person at the door decides. Anything it cannot read, it says so in
+// words somebody standing up holding a phone can act on.
+//
+// Every answer names a PERSON, because the thing the door actually needs is a
+// name to say out loud.
+app.post("/events/:id/scan", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const PASS = await import("../shared/passCode.js");
+  const read = PASS.readPassCode(String(req.body?.code || ""), { secret: process.env.JWT_SECRET || "", orgId });
+  if (!read.ok) {
+    return res.json({ ok: false, reason: read.reason, sentence: PASS.PASS_REASON_WORDS[read.reason] || "That code did not read." });
+  }
+  if (read.kind === "ticket") {
+    const rows = await query(
+      `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
+        WHERE id=? AND event_id=? AND org_id=? AND status <> 'cancelled'
+        RETURNING id, name, table_label, quantity, checked_in_at`,
+      [read.id, event.id, orgId]);
+    if (!rows.length) {
+      // A real, signed ticket for a DIFFERENT event: say which, rather than
+      // "invalid", because the person is standing there holding it.
+      const [other] = await query(
+        `SELECT a.name, e.name AS event_name FROM event_attendees a JOIN events e ON e.id=a.event_id
+          WHERE a.id=? AND a.org_id=?`, [read.id, orgId]);
+      return res.json({ ok: false, reason: "wrong_event",
+        sentence: other ? `That ticket is ${other.name}'s, for ${other.event_name}. Not this one.`
+                        : "That ticket is not on this event's list." });
+    }
+    const a = rows[0];
+    return res.json({ ok: true, kind: "ticket", attendee: a,
+      sentence: `${a.name} is in${a.table_label ? `, table ${a.table_label}` : ""}${Number(a.quantity) > 1 ? ` · ${a.quantity} places` : ""}.` });
+  }
+  if (read.kind === "membership") {
+    const [m] = await query(
+      `SELECT m.id, m.status, m.expires_on, d.id AS donor_id, d.name, l.name AS level_name
+         FROM memberships m JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id
+         JOIN membership_levels l ON l.id=m.level_id AND l.org_id=m.org_id
+        WHERE m.id=? AND m.org_id=?`, [read.id, orgId]);
+    if (!m) return res.json({ ok: false, reason: "unknown", sentence: "That card is not one of ours." });
+    const [att] = await query(
+      `SELECT id, name, table_label, checked_in_at FROM event_attendees
+        WHERE org_id=? AND event_id=? AND donor_id=? AND status <> 'cancelled' LIMIT 1`, [orgId, event.id, m.donor_id]);
+    if (!att) {
+      // A member with no ticket is not turned away and is not checked in
+      // either. The door says who they are and the person decides.
+      return res.json({ ok: false, kind: "membership", reason: "not_registered", member: m,
+        sentence: `${m.name} is a ${m.level_name} member${m.status === "active" ? "" : ", " + m.status} but is not on the list for ${event.name}. Add them or take a payment.` });
+    }
+    const rows = await query(
+      `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
+        WHERE id=? AND org_id=? RETURNING id, name, table_label`, [att.id, orgId]);
+    return res.json({ ok: true, kind: "membership", attendee: rows[0], member: m,
+      sentence: `${rows[0].name} is in${rows[0].table_label ? `, table ${rows[0].table_label}` : ""} · ${m.level_name} member.` });
+  }
+  res.json({ ok: false, reason: "unreadable", sentence: PASS.PASS_REASON_WORDS.unreadable });
+}));
+
+// ── EVENTS-2 · THE WAITING LIST, ON THE STAFF SIDE ───────────────────────
+// A place is offered by a PERSON pressing a button, never by a sweep. The
+// offer is an email with the event's own link on it; nothing is reserved and
+// nothing is charged, because the person still has to buy the ticket.
+app.get("/events/:id/waitlist", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  // Another org's event id gets the same answer a made-up one gets. An empty
+  // list is still an answer, and "this id exists" is a thing worth not saying.
+  const [ev] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!ev) return res.status(404).json({ error: "Event not found" });
+  const rows = await query(
+    `SELECT w.id, w.name, w.email, w.qty, w.position, w.offered_at, w.taken_at, l.name AS level_name, l.id AS level_id
+       FROM event_waitlist w JOIN event_levels l ON l.id=w.level_id AND l.org_id=w.org_id
+      WHERE w.org_id=? AND w.event_id=? AND w.removed_at IS NULL
+      ORDER BY l.position, w.position`, [orgId, req.params.id]);
+  res.json({ waitlist: rows,
+    sentence: "People who asked to be told if a place comes free, in the order they asked. Offering one sends them the event's link; it holds nothing and charges nothing." });
+}));
+
+app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id, name, public_slug FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const [w] = await query(`SELECT * FROM event_waitlist WHERE id=? AND org_id=? AND event_id=? AND removed_at IS NULL AND taken_at IS NULL`,
+    [req.params.wid, orgId, event.id]);
+  if (!w) return res.status(404).json({ error: "Not found" });
+  const who = actor(req);
+  await run(`UPDATE event_waitlist SET offered_at=NOW(), offered_by=? WHERE id=?`, [who.id, w.id]);
+  const display = await donorFacingOrgName(orgId, null).catch(() => "");
+  const link = `${publicAppUrl()}/e/${encodeURIComponent(event.public_slug || "")}`;
+  const html = await brandEmailHeaderHtml(orgId) + `
+    <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+      <p>A place has come free for <strong>${escapeHtml(event.name)}</strong>, and you were next on the list.</p>
+      <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#0d5c3a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Take the place</a></p>
+      <p style="font-size:13px;color:#555;">Nothing is held for you, so it is first come. If somebody else gets there first, you stay on the list.</p>
+    </div>`;
+  await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free — ${event.name}`,
+    html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => console.error("[event] waitlist offer:", e.message));
+  res.json({ ok: true, sentence: `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.` });
 }));
 
 app.get("/events", requireAuth, async (req, res) => {

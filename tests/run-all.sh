@@ -109,6 +109,7 @@ CORE=(
   vol1-coordinator-scope
   lf1-no-donor-data-leaves
   members2-isolation
+  events2-checkout
   script-guards
   build96-ai-gate
   incident-mail-gate

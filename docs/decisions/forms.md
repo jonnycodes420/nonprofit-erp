@@ -39,6 +39,40 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **Style public pages (`Donate.jsx`, `ManageFundraiser.jsx`) with `publicTheme.js`, not `shared.jsx`'s
   `T`.** `Donate.jsx` is a named exclusion from the modal-shell guard. (BUILD-87 F.1)
 
+### EVENTS-2 — the public event page takes a card
+- **`POST /e/:slug/checkout` is the donation checkout.** It calls the same named
+  `donateHandler` in `routes/give.js` through a small response shim that turns `{url}` into a
+  303. There is exactly one place a ticket is priced and one place a gift is written.
+  (EVENTS-2)
+- **It is a plain form POST**, so the public page takes a card with no JavaScript at all.
+  (EVENTS-2)
+- **A seat is HELD for 15 minutes while somebody pays (`event_seat_holds`), and capacity is
+  registrations PLUS live holds**, computed by `eventSeatsLeft` so the page, the checkout and
+  `registerForEvent` cannot disagree. A hold is not a registration and never becomes one on its
+  own. (EVENTS-2)
+- **A registration is confirmed ONLY by the payment webhook.** A checkout that is never
+  completed reaches nothing; its hold runs out and the seats are on sale again. (EVENTS-2)
+- **The member price is decided by the SERVER**, from the email, against a current membership in
+  that org, matched on exact email. A client claiming to be a member changes nothing, and the
+  metadata records which price was applied. A member price is never above the price and never
+  below the FMV, by validator and by CHECK. (EVENTS-2)
+- **`registerForEvent` stamps `gifts.event_id` on EVERY path, including one where the webhook
+  wrote the gift.** It used to stamp only gifts it wrote itself, so every ticket bought online
+  left its money uncounted against the event. (EVENTS-2)
+- **One QR for every door: `shared/passCode.js`.** `POST /events/:id/scan` reads a ticket or a
+  member card. A member card is not a ticket, so it never invents a registration — it names the
+  person and says whether they are on the list. `/ticket/:code.png` renders the image for an
+  email, because no client renders a `data:` URI. (EVENTS-2, MEMBERS-2)
+- **A waiting-list place is offered by a PERSON pressing a button, never by a sweep.** Nothing
+  is held and nothing is charged: the offer is the event's link, in order. (EVENTS-2)
+- **A renamed public slug keeps the old one in `events.previous_slug` and `/e/:slug` 301s.** A
+  link on a poster is not the org's to take back. (EVENTS-2)
+- **Money is formatted `en-US`, named, never `toLocaleString(undefined, …)`.** A browser in half
+  of Europe flips the separator, and `$25.000` beside a dollar sign reads as twenty-five dollars.
+  (EVENTS-2)
+- **`/e/*` and `/ticket/*` are `vercel.json` rewrites.** EVENTS-1 shipped the public event page
+  without one, so it was unreachable from www.stewardapp.dev until EVENTS-2. (EVENTS-2)
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)

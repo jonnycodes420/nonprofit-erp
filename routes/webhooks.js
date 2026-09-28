@@ -384,8 +384,20 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 .catch(e => console.error("[forms] counting a completion:", e.message));
             }
             if (evLevel) {
+              // EVENTS-2 — THE REGISTRATION IS CONFIRMED HERE AND NOWHERE ELSE.
+              // The page held a seat; this is what turns the hold into a place
+              // on the list, with the names of everybody coming on the ticket
+              // and whatever they told us about food. A checkout that never
+              // completes reaches none of this and its hold simply runs out.
               await registerForEvent({ orgId, event: evRow, level: evLevel, donorId, qty: evQty, giftId,
+                guests: String(pi.metadata?.event_guests || "").split("|").map(x => x.trim()).filter(Boolean),
+                dietary: String(pi.metadata?.event_dietary || "").trim() || null,
+                notify: true,
                 who: SYS_STRIPE }).catch(e => console.error("[event] webhook registration:", e.message));
+              if (pi.metadata?.event_hold_id) {
+                await run(`UPDATE event_seat_holds SET confirmed_at=NOW() WHERE id=? AND org_id=? AND confirmed_at IS NULL`,
+                  [pi.metadata.event_hold_id, orgId]).catch(() => {});
+              }
             }
             if (memLevel) {
               await attachOnlineMembership({ orgId, donorId, levelId: memLevel.id, giftId })

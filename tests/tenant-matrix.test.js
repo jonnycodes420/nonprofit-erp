@@ -90,7 +90,7 @@ async function reset() {
       // cascade covers a page delete, and this list has to survive an ORG delete
       // too.
       "form_events",
-      "peer_fundraisers", "giving_pages", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
       // `grants` delete below would usually take them — but `grant_id` is
       // nullable, so a row without one would survive and block the org delete
@@ -180,6 +180,11 @@ async function seedOrg(o, tag) {
   // BUILD-98 (switch) Part 4 — a ticket level, so /event-levels/:id is probed.
   await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv) VALUES ($1,$2,$3,'ticket',$4,150,60)`,
     [`evl_${o}`, o, `ev_${o}`, `${mark} Level`]);
+  // EVENTS-2 — a place on that level's waiting list, so the cross probe has a
+  // REAL row to try to offer: offering one sends an email to a person, which
+  // is exactly the act the wall exists to stop reaching across.
+  await q(`INSERT INTO event_waitlist (id,org_id,event_id,level_id,name,email,position) VALUES ($1,$2,$3,$4,$5,$6,1)`,
+    [`ewl_${o}`, o, `ev_${o}`, `evl_${o}`, `${mark} Waiting`, `${mark.toLowerCase()}-waiting@matrix.test`]);
   await q(`INSERT INTO volunteers (id,org_id,donor_id,name) VALUES ($1,$2,$3,$4)`, [`v_${o}`, o, `d_${o}`, `${mark} Volunteer`]);
   await q(`INSERT INTO board_members (id,org_id,name,role) VALUES ($1,$2,$3,'Member')`, [`bd_${o}`, o, `${mark} Board`]);
   await q(`INSERT INTO households (id,org_id,name,primary_donor_id) VALUES ($1,$2,$3,$4)`, [`h_${o}`, o, `${mark} Household`, `d_${o}`]);
@@ -320,6 +325,9 @@ function bResolver(routePath, param) {
     msId: `gms_${B}`,
     docId: `gdoc_${B}`,
     spendId: `gsp_${B}`,
+    // EVENTS-2 — a place on a waiting list belongs to one org's event, and
+    // offering it is an email to a person. Org A must not be able to send it.
+    wid: `ewl_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;

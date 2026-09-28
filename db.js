@@ -4678,6 +4678,73 @@ async function initSchema() {
   // this column is what makes each renewal charge extend a membership.
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS membership_level_id TEXT`);
 
+  // ── EVENTS-2 — TICKETS PEOPLE CAN BUY ───────────────────────────────────
+  // EVENTS-1 shipped a public page that could not take a card, and said so.
+  // These four things are what it takes to take one honestly.
+  //
+  // A MEMBER PRICE. Null means the level has one price. It is never above the
+  // full price and never below the fair-market value, by CHECK: a ticket
+  // whose deductible part is negative is not a discount, it is a mistake.
+  await pool.query(`ALTER TABLE event_levels ADD COLUMN IF NOT EXISTS member_price NUMERIC(12,2)`);
+  await pool.query(`DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='event_levels_member_price_check') THEN
+        ALTER TABLE event_levels ADD CONSTRAINT event_levels_member_price_check
+          CHECK (member_price IS NULL OR (member_price > 0 AND member_price <= price AND fmv <= member_price));
+      END IF; END $$`);
+
+  // A SEAT HELD WHILE SOMEBODY PAYS. Fifteen minutes, then it is gone. A hold
+  // is not a registration and never becomes one on its own: the webhook is
+  // what confirms, and the hold exists only so that the last two seats are not
+  // sold three times in the ninety seconds it takes to find a card.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_seat_holds (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      level_id TEXT NOT NULL,
+      qty INTEGER NOT NULL CHECK (qty > 0),
+      email TEXT,
+      stripe_session_id TEXT,
+      expires_at TIMESTAMPTZ NOT NULL,
+      released_at TIMESTAMPTZ,
+      confirmed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_seat_holds_live ON event_seat_holds (level_id, expires_at)
+                      WHERE released_at IS NULL AND confirmed_at IS NULL`);
+
+  // THE WAITING LIST. A sold-out ticket type still takes a name, and a seat is
+  // OFFERED by a person pressing a button — never handed out by a sweep.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_waitlist (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      event_id TEXT NOT NULL,
+      level_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      qty INTEGER NOT NULL DEFAULT 1,
+      position INTEGER,
+      offered_at TIMESTAMPTZ,
+      offered_by TEXT,
+      taken_at TIMESTAMPTZ,
+      removed_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_waitlist_level ON event_waitlist (org_id, level_id, position)
+                      WHERE removed_at IS NULL AND taken_at IS NULL`);
+
+  // WHO IS COMING ON THIS TICKET, and whether the buyer may move it on. A
+  // refund is never self-serve: it stays a staff act on the gift.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS ticket_code_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS transferred_from TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS event_self_service BOOLEAN NOT NULL DEFAULT FALSE`);
+  // A public link that has been printed on a poster, posted to a Facebook page
+  // and forwarded round a family cannot be taken away because somebody fixed a
+  // spelling. Renaming a slug keeps the old one here and /e/:slug redirects.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS previous_slug TEXT`);
+
   // ── MEMBERS-2 — "YOUR PAGE": ONE PAGE PER PERSON PER ORG ────────────────
   // A member, a ticket buyer, a fundraiser and a volunteer were each heading
   // for their own surface with their own link. There is one now, and one way
