@@ -4292,6 +4292,42 @@ async function initSchema() {
   // When this attendee's attendance reached their timeline — once, ever.
   await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS attendance_logged_at TIMESTAMPTZ`);
 
+  // ── EVENTS-1 · WHAT THE NIGHT IS FOR ─────────────────────────────────────
+  // An event had `revenue` and `cost` and no GOAL, so the one question an ED
+  // asks before the night ("are we going to make it?") had no field to answer
+  // from. `revenue` stays what it always was: a figure somebody can type. The
+  // goal is what the cards and the report are measured against, and what is
+  // RAISED is never typed — it is summed from the gifts, so the number on the
+  // card and the rows behind it cannot drift.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS goal_amount NUMERIC`);
+  // WHICH EVENT THIS GIFT BELONGS TO, stamped at registration. Before this the
+  // only link was the campaign NAME, so "raised" for an event was a string
+  // comparison and a renamed event lost its money. The campaign match stays as
+  // a FALLBACK for rows written before this column existed; nothing is
+  // rewritten behind anybody's back.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS event_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_event ON gifts (org_id, event_id) WHERE event_id IS NOT NULL`);
+  // The campaign an event raises into, so an event and its appeal are one
+  // total rather than two.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS campaign_id TEXT`);
+  // The public registration page's address. Set when an event is made public,
+  // never guessed from the name: a renamed event keeps the link somebody
+  // printed on a poster.
+  await pool.query(`ALTER TABLE events ADD COLUMN IF NOT EXISTS public_slug TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_events_public_slug ON events (org_id, public_slug) WHERE public_slug IS NOT NULL`);
+  // A registration that came in from the public page and has NOT been paid or
+  // confirmed by the office yet. It is not money and not a place taken.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS source TEXT`);
+  // Dietary notes and a seat belong to the guest, not to the ticket: two
+  // people on one ticket sit at different tables and eat different things.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS dietary TEXT`);
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS checked_in_at TIMESTAMPTZ`);
+  // A guest brought BY a registration, who is not the person who paid. They
+  // are on the list, they have a seat and a name tag, and they are not a
+  // second gift.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS guest_of TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees (org_id, event_id, table_label)`);
+
   // ── BUILD-98 (switch) Part 5 — VOLUNTEERS AND HOURS ─────────────────────
   // One row per shift, on the PERSON (donors row, BUILD-94 person types).
   // import_key makes re-importing the same export a no-op.

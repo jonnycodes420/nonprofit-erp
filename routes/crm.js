@@ -18797,16 +18797,379 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
   res.json({ updated: rows.length, timelineLines: logged });
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENTS-1 item 3 · THE PUBLIC REGISTRATION PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The org's own brand band and logo, the same shell the volunteer sign-up page
+// wears (shared/publicPage.js — one renderer, two surfaces), embeddable like a
+// donation form, and built for a phone first: 16px inputs so nothing zooms,
+// 48px buttons because it is read one-handed on a sofa.
+//
+// WHAT IT TAKES: tickets with their deductible line stated before the button,
+// the names of the people coming, a sponsorship, or a gift from somebody who
+// cannot come at all.
+//
+// WHAT IT DOES NOT DO YET, SAID PLAINLY ON THE PAGE: take a card. A
+// registration from here arrives in Steward as a REQUEST the office confirms,
+// and confirming it runs the same `registerForEvent` writer every other
+// registration runs, so the money is a gift through recordGift with the
+// deductible split on it and there is no second money path. Taking the card
+// inline means a Stripe Connect checkout session and a webhook branch that
+// completes the registration, and half of that is worse than none: a page that
+// takes a card and does not reliably finish the registration is a page that
+// charges somebody for a seat they do not get.
+let PPG = null;
+const PPG_READY = import("../shared/publicPage.js").then(m => { PPG = m; return m; });
+const evPage = opts => PPG.publicPage({ footer: "Registration by Steward.", ...opts });
+const EV_PUBLIC_READY = Promise.all([EV_READY, PPG_READY]);
+
+async function publicEvent(slug) {
+  const [e] = await query(
+    `SELECT * FROM events WHERE public_slug=? AND status <> 'cancelled' LIMIT 1`, [String(slug || "")]);
+  return e || null;
+}
+const evDayWords = iso => {
+  // `events.date` is a DATE column and pg hands it back as a Date OBJECT, so
+  // String(it) is "Sat Dec 05 2026 00:00:00 GMT-0500 (Eastern Standard Time)"
+  // and slicing ten characters off that gives "Sat Dec 0". The public page
+  // printed exactly that. Normalise to the civil day first.
+  const day = iso instanceof Date ? iso.toISOString().slice(0, 10) : String(iso || "").slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day);
+  if (!m) return String(iso || "");
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]))
+    .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+};
+const evMoney = n => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: Number(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+
+app.get("/e/:slug", donateLimiter, wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const e = await publicEvent(req.params.slug);
+  if (!e) return res.status(404).send(evPage({ title: "Not found",
+    brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
+    body: `<div class="card"><h1>That page is not here.</h1><p class="muted">The link may have changed, or this event has been taken down. Ask the organisation for its current link.</p></div>` }));
+  const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+  const levels = await query(
+    `SELECT id, kind, name, price::float AS price, fmv::float AS fmv, capacity, recognition
+       FROM event_levels WHERE org_id=? AND event_id=? ORDER BY kind DESC, position, price`, [e.org_id, e.id]);
+  const esc = PPG.escapeHtml;
+  res.setHeader("Cache-Control", "no-store");
+  // EMBEDDABLE, the same rule the donation form follows.
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", "frame-ancestors *");
+
+  const levelCard = l => {
+    const deductible = Number(l.price) - Number(l.fmv);
+    return `<div class="card">
+      <div class="row"><h2>${esc(l.name)}</h2><span class="pill open">${esc(evMoney(l.price))}</span></div>
+      ${Number(l.fmv) > 0
+        ? `<p class="small">${esc(evMoney(l.fmv))} of this is what you receive on the night, so ${esc(evMoney(deductible))} is tax deductible.</p>`
+        : `<p class="small">The whole amount is tax deductible: nothing is given in return.</p>`}
+      ${l.recognition ? `<p class="small">Listed as ${esc(l.recognition)}.</p>` : ""}
+      <form method="post" action="/e/${esc(e.public_slug)}/register">
+        <input type="hidden" name="levelId" value="${esc(l.id)}">
+        <input class="hp" name="website" tabindex="-1" autocomplete="off">
+        <label>Your name<input name="name" required autocomplete="name"></label>
+        <label>Email<input name="email" type="email" required autocomplete="email"></label>
+        ${l.kind === "ticket"
+          ? `<label>How many<select name="quantity">${[1,2,3,4,5,6,8,10].map(n => `<option value="${n}">${n}</option>`).join("")}</select></label>
+             <label>Who is coming, one name per line<textarea name="guests" placeholder="So we can put a name at every seat"></textarea></label>
+             <label>Anything we should know about food<input name="dietary" placeholder="Vegetarian, an allergy, anything"></label>`
+          : ""}
+        <button class="btn" type="submit">${l.kind === "sponsor" ? "Sponsor" : "Register"}</button>
+      </form>
+    </div>`;
+  };
+  const tickets = levels.filter(l => l.kind === "ticket");
+  const sponsors = levels.filter(l => l.kind === "sponsor");
+
+  res.send(evPage({ title: `${e.name} · ${brand.displayName}`, brand, body: `
+    <div class="card">
+      <h1>${esc(e.name)}</h1>
+      <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
+      ${e.description ? `<p>${esc(e.description)}</p>` : ""}
+    </div>
+    ${tickets.length ? `<h2 style="margin:18px 0 10px">Come along</h2>${tickets.map(levelCard).join("")}` : ""}
+    ${sponsors.length ? `<h2 style="margin:18px 0 10px">Sponsor it</h2>${sponsors.map(levelCard).join("")}` : ""}
+    <div class="card">
+      <h2>Cannot come?</h2>
+      <p class="small">You can still give. It goes to the same place the evening does, and the whole amount is tax deductible because nothing is given in return.</p>
+      <a class="btn quiet" href="/give/${esc((await orgSlugFor(e.org_id)) || "")}">Give instead</a>
+    </div>
+    <p class="small" style="text-align:center">Registering here tells ${esc(brand.displayName || "the organisation")} you are coming. They will be in touch about paying, and nothing is charged on this page.</p>
+  ` }));
+}));
+
+async function orgSlugFor(orgId) {
+  const [o] = await query("SELECT org_slug FROM orgs WHERE id=?", [orgId]);
+  return o && o.org_slug;
+}
+
+app.post("/e/:slug/register", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  await EV_PUBLIC_READY;
+  const e = await publicEvent(req.params.slug);
+  if (!e) return res.status(404).send("Not found");
+  const brand = await resolveOrgBrandTheme(e.org_id).catch(() => null) || { band: "#0d5c3a", bandFg: "#fff", displayName: "" };
+  const esc = PPG.escapeHtml;
+  const back = `<p><a class="btn quiet" href="/e/${esc(e.public_slug)}">Back</a></p>`;
+  // The honeypot: a field no person sees and every simple bot fills in.
+  if (String(req.body?.website || "").trim()) return res.send(evPage({ title: "Thank you", brand, body: `<div class="card"><h1>Thank you.</h1></div>` }));
+
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  const email = String(req.body?.email || "").trim().toLowerCase().slice(0, 200);
+  if (!name || !email) {
+    return res.status(400).send(evPage({ title: "Almost", brand, body:
+      `<div class="card"><div class="err">A name and an email, so they know who is coming and how to reach you.</div>${back}</div>` }));
+  }
+  const [level] = await query("SELECT * FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+    [String(req.body?.levelId || ""), e.id, e.org_id]);
+  if (!level) return res.status(400).send(evPage({ title: "Almost", brand, body:
+    `<div class="card"><div class="err">That option is no longer available.</div>${back}</div>` }));
+  const qty = Math.min(EV.MAX_QTY, Math.max(1, parseInt(req.body?.quantity, 10) || 1));
+
+  // ONE PERSON, ONE RECORD. Matched by email first, exactly as every other
+  // way into this file works; a registrant who already gives is the person
+  // they already are.
+  let donorId = null;
+  const m = await query("SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL AND LOWER(email)=? LIMIT 2", [e.org_id, email]);
+  if (m.length === 1) donorId = m[0].id;
+  if (!donorId) {
+    donorId = "d_" + uuid().slice(0, 10);
+    await run(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
+               VALUES (?,?,?,?,'prospect','active','[]','system:event-registration','The registration page')`,
+      [donorId, e.org_id, name, email]);
+  }
+  // A REQUEST, not money and not a seat taken. `registerForEvent` runs when
+  // the office confirms it, and that is the one writer that turns a
+  // registration into a gift with its deductible split.
+  const attId = "att_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,dietary,source,notes)
+     VALUES (?,?,?,?,?,?,'registered',?,?,?,'public',?)
+     ON CONFLICT (event_id, donor_id) DO UPDATE SET
+       level_id=EXCLUDED.level_id, quantity=EXCLUDED.quantity, dietary=COALESCE(EXCLUDED.dietary, event_attendees.dietary),
+       status=CASE WHEN event_attendees.status='cancelled' THEN 'registered' ELSE event_attendees.status END`,
+    [attId, e.id, e.org_id, donorId, name, email, level.id, level.kind === "ticket" ? qty : 1,
+     String(req.body?.dietary || "").trim().slice(0, 200) || null,
+     `From the registration page. ${level.name}.`]);
+
+  // The other names on the ticket: each one is a person on the list with a
+  // seat and a name tag, and NOT a second gift.
+  const guests = String(req.body?.guests || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, EV.MAX_QTY);
+  for (const g of guests) {
+    if (g.toLowerCase() === name.toLowerCase()) continue;
+    await run(
+      `INSERT INTO event_attendees (id,event_id,org_id,name,status,level_id,quantity,source,guest_of,notes)
+       VALUES (?,?,?,?,'registered',?,0,'public',?,?)`,
+      ["att_" + uuid().slice(0, 10), e.id, e.org_id, g.slice(0, 200), level.id, attId, `Guest of ${name}.`]).catch(() => {});
+  }
+
+  const deductible = (Number(level.price) - Number(level.fmv)) * (level.kind === "ticket" ? qty : 1);
+  res.send(evPage({ title: `Thank you · ${e.name}`, brand, body: `
+    <div class="card">
+      <h1>Thank you, ${esc(name.split(" ")[0])}.</h1>
+      <div class="ok">You are on the list for ${esc(e.name)}.</div>
+      <p class="muted">${esc(evDayWords(e.date))}${e.location ? ` · ${esc(e.location)}` : ""}</p>
+      <p>${esc(level.name)}${level.kind === "ticket" && qty > 1 ? ` · ${qty} places` : ""}${guests.length ? ` · ${guests.length} ${guests.length === 1 ? "guest" : "guests"} named` : ""}.</p>
+      <p class="small">${esc(brand.displayName || "The organisation")} will be in touch about paying. Nothing was charged here${Number(level.fmv) > 0 ? `, and when it is, ${esc(evMoney(deductible))} of it will be tax deductible` : ""}.</p>
+    </div>` }));
+}));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENTS-1 · AFTER THE NIGHT
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The four questions an ED is asked the morning after, each with the sentence
+// that says what it counts and the rows behind it. Nothing here is typed: the
+// money is summed from gifts, the attendance from the list somebody marked,
+// and the first-time givers from whose FIRST gift this event was.
+//
+// EVERY NUMBER OPENS. `GET /events/:id/rows?rows=<key>` re-runs the SAME SQL
+// the figure was built from, so a count and its list cannot drift.
+const EVENT_ROW_SQL = {
+  raised: `SELECT g.id, g.amount::float AS amount, g.date, d.id AS donor_id, d.name
+             FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+            WHERE g.org_id=? AND g.event_id=?
+            ORDER BY g.amount DESC`,
+  registered: `SELECT a.id, a.donor_id, a.name, a.quantity, a.table_label, l.name AS level_name
+                 FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
+                WHERE a.org_id=? AND a.event_id=? AND a.status <> 'cancelled'
+                ORDER BY a.name`,
+  attended: `SELECT a.id, a.donor_id, a.name, a.table_label, l.name AS level_name
+               FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
+              WHERE a.org_id=? AND a.event_id=? AND a.status='attended'
+              ORDER BY a.name`,
+  firstTime: `SELECT d.id AS donor_id, d.name, g.amount::float AS amount, g.date
+                FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+               WHERE g.org_id=? AND g.event_id=?
+                 AND g.date = (SELECT MIN(x.date) FROM gifts x
+                                WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.amount > 0)
+                 AND NOT EXISTS (SELECT 1 FROM gifts y
+                                  WHERE y.org_id=g.org_id AND y.donor_id=g.donor_id
+                                    AND y.amount > 0 AND y.date < g.date)
+               ORDER BY g.amount DESC`,
+  sponsors: `SELECT a.id, a.donor_id, a.name, a.recognition, a.sponsor_pledge_id, l.name AS level_name, l.price::float AS price
+               FROM event_attendees a JOIN event_levels l ON l.id=a.level_id
+              WHERE a.org_id=? AND a.event_id=? AND l.kind='sponsor' AND a.status <> 'cancelled'
+              ORDER BY l.price DESC, a.name`,
+};
+
+app.get("/events/:id/report", requireAuth, wrap(async (req, res) => {
+  await EV_READY;
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const counts = {};
+  for (const [key, sql] of Object.entries(EVENT_ROW_SQL)) {
+    counts[key] = await query(sql, [orgId, event.id]);
+  }
+  const raisedCents = counts.raised.reduce((a, g) => a + Math.round(Number(g.amount) * 100), 0);
+  // `|| 1` COUNTS A ZERO AS A ONE. A named guest brought on somebody else's
+  // ticket carries quantity 0 on purpose — they have a seat and a name tag and
+  // they are not a second place — and `Number(0) || 1` turned every one of
+  // them back into a place. The walk caught it: three places and two guests
+  // reported as five.
+  const registered = counts.registered.reduce((a, r) => a + (r.quantity == null ? 1 : Number(r.quantity)), 0);
+  const progress = EV.eventProgress({ raisedCents,
+    goalCents: event.goal_amount == null ? null : Math.round(Number(event.goal_amount) * 100) });
+  const attendance = EV.attendanceRate({ registered, attended: counts.attended.length });
+
+  res.json({
+    event: { id: event.id, name: event.name, date: String(event.date).slice(0, 10), location: event.location,
+             goalAmount: event.goal_amount == null ? null : Number(event.goal_amount) },
+    progress, attendance,
+    figures: [
+      { key: "raised", label: "Raised", value: raisedCents / 100, money: true,
+        count: counts.raised.length, sentence: EV.EVENT_FIGURES.raised + " " + progress.sentence },
+      { key: "registered", label: "Registered", value: registered,
+        count: counts.registered.length, sentence: EV.EVENT_FIGURES.registered },
+      { key: "attended", label: "Came", value: counts.attended.length,
+        count: counts.attended.length, sentence: EV.EVENT_FIGURES.attended + " " + attendance.sentence },
+      { key: "firstTime", label: "First-time givers", value: counts.firstTime.length,
+        count: counts.firstTime.length, sentence: EV.EVENT_FIGURES.firstTime },
+      { key: "sponsors", label: "Sponsors", value: counts.sponsors.length,
+        count: counts.sponsors.length, sentence: EV.EVENT_FIGURES.sponsors },
+    ],
+    // WHAT THIS REPORT DOES NOT CLAIM. An event is not the reason somebody
+    // gave, and a report that implies it is a report that flatters the event.
+    caveat: "These are the gifts attributed to this event and the people marked as having come. "
+      + "Nothing here claims the event CAUSED a gift, and nobody is counted as attending until somebody said they did.",
+  });
+}));
+
+app.get("/events/:id/rows", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const key = String(req.query.rows || "");
+  const sql = EVENT_ROW_SQL[key];
+  if (!sql) return res.status(400).json({ error: "unknown_rows",
+    message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(EVENT_ROW_SQL).join(", ")}.` });
+  const rows = await query(sql, [orgId, event.id]);
+  res.json({ eventId: event.id, rows: key, count: rows.length, donors: rows.slice(0, 1000) });
+}));
+
+// ── EVENTS-1 item 6 · A THANK-YOU PER SPONSOR, FOR A PERSON TO SEND ──────
+// A DRAFT, never a send: it writes into `thank_you_drafts`, which is the queue
+// FIX-6 gave an Approve button, so a sponsor thank-you goes out the same way
+// every other one does and through the same human press.
+app.post("/events/:id/sponsor-thanks", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId, who = actor(req);
+  const [event] = await query("SELECT * FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const [org] = await query("SELECT name, voice_samples FROM orgs WHERE id=?", [orgId]);
+  const samples = Array.isArray(org?.voice_samples) ? org.voice_samples
+    : (typeof org?.voice_samples === "string" ? JSON.parse(org.voice_samples || "[]") : []);
+  const draftMod = await import("../shared/draftNote.js");
+  const voice = draftMod.voiceFrom(samples);
+  const sponsors = await query(EVENT_ROW_SQL.sponsors, [orgId, event.id]);
+  const out = { drafted: 0, alreadyThere: 0, noGift: 0, sponsors: sponsors.length };
+  for (const sp of sponsors) {
+    if (!sp.donor_id) continue;
+    const [g] = await query(
+      `SELECT id, amount FROM gifts WHERE org_id=? AND event_id=? AND donor_id=?
+        ORDER BY amount DESC LIMIT 1`, [orgId, event.id, sp.donor_id]);
+    // A sponsor who has only PLEDGED has no gift to thank them for yet, and
+    // thanking somebody for money that has not arrived is the one mistake a
+    // sponsor notices.
+    if (!g) { out.noGift++; continue; }
+    const [dupe] = await query("SELECT id FROM thank_you_drafts WHERE org_id=? AND gift_id=?", [orgId, g.id]);
+    if (dupe) { out.alreadyThere++; continue; }
+    const t = draftMod.thankYouDraft({
+      donorName: sp.name, giftCents: Math.round(Number(g.amount) * 100),
+      fundName: null, campaignName: event.name, orgName: org?.name, voice,
+    });
+    await run(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES (?,?,?,?,?,?)`,
+      ["ty_" + uuid().slice(0, 10), orgId, sp.donor_id, g.id, t.body, t.voice]);
+    out.drafted++;
+  }
+  res.json({ ...out,
+    sentence: out.drafted
+      ? `${out.drafted} thank-you${out.drafted === 1 ? "" : "s"} drafted and waiting for you on the Agent's queue. Steward sends none of them.`
+      : out.alreadyThere
+        ? `Every sponsor already has a draft waiting. Nothing was written twice.`
+        : `No sponsor has paid yet, so there is nothing to thank anybody for.` });
+}));
+
+// ── EVENTS-1 item 5 · CHECK-IN, ON A TABLET AT THE DOOR ──────────────────
+// The kiosk shape VOL-1 built for volunteers, for a guest list: search a name,
+// tap to check in, and a walk-in who pays at the door becomes a registration
+// through the SAME writer as every other one, so their money is a gift with
+// the same deductible split and their name is on the same list.
+app.get("/events/:id/kiosk", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id, name, date, location FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const guests = await query(
+    `SELECT a.id, a.name, a.email, a.status, a.quantity, a.table_label, a.checked_in_at, a.dietary,
+            l.name AS level_name, l.kind AS level_kind
+       FROM event_attendees a LEFT JOIN event_levels l ON l.id=a.level_id
+      WHERE a.org_id=? AND a.event_id=? AND a.status <> 'cancelled'
+      ORDER BY a.name`, [orgId, event.id]);
+  const levels = await query(
+    "SELECT id, name, kind, price::float AS price, fmv::float AS fmv FROM event_levels WHERE org_id=? AND event_id=? ORDER BY position, price", [orgId, event.id]);
+  const inCount = guests.filter(g => g.checked_in_at).length;
+  res.json({ event, guests, levels, checkedIn: inCount,
+    sentence: `${inCount} of ${guests.length} checked in.` });
+}));
+
+app.post("/events/:id/check-in", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const undo = req.body?.undo === true;
+  const rows = await query(
+    undo
+      ? `UPDATE event_attendees SET checked_in_at=NULL WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`
+      : `UPDATE event_attendees SET checked_in_at=COALESCE(checked_in_at, NOW()), status='attended'
+          WHERE id=? AND event_id=? AND org_id=? RETURNING id, name, checked_in_at`,
+    [String(req.body?.attendeeId || ""), event.id, orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, attendee: rows[0],
+    sentence: undo ? `${rows[0].name} is not checked in.` : `${rows[0].name} is in.` });
+}));
+
 app.get("/events", requireAuth, async (req, res) => {
   try {
     const orgId = req.user.orgId;
+    // EVENTS-1 — RAISED IS SUMMED FROM THE GIFTS, never from a typed figure
+    // and never from `gift_amount` on the attendee row, which is a copy. The
+    // card's number and the rows behind it are one query.
     const rows = await query(`
       SELECT e.*,
         COUNT(CASE WHEN ea.status='attended' THEN 1 END)::int AS attendee_count,
         COUNT(CASE WHEN ea.status='confirmed' THEN 1 END)::int AS confirmed_count,
         COUNT(CASE WHEN ea.status='no_show' THEN 1 END)::int AS no_show_count,
         COUNT(ea.id)::int AS invited_count,
-        COALESCE(SUM(ea.gift_amount),0) AS total_revenue
+        COALESCE(SUM(CASE WHEN ea.status <> 'cancelled' THEN COALESCE(ea.quantity,1) END),0)::int AS registered_count,
+        COUNT(CASE WHEN ea.checked_in_at IS NOT NULL THEN 1 END)::int AS checked_in_count,
+        COALESCE(SUM(ea.gift_amount),0) AS total_revenue,
+        (SELECT COALESCE(SUM(g.amount),0) FROM gifts g
+          WHERE g.org_id = e.org_id
+            AND (g.event_id = e.id
+                 OR (g.event_id IS NULL AND e.campaign_id IS NOT NULL AND g.campaign_id = e.campaign_id)
+                 OR (g.event_id IS NULL AND e.campaign_id IS NULL AND g.campaign = e.name)))::float AS raised
       FROM events e
       LEFT JOIN event_attendees ea ON ea.event_id = e.id
       WHERE e.org_id = $1
@@ -18820,13 +19183,15 @@ app.get("/events", requireAuth, async (req, res) => {
 app.post("/events", requireAuth, checkWriteAccess, async (req, res) => {
   try {
     const orgId = req.user.orgId;
-    const { name, eventType, date, endDate, location, description, capacity, cost } = req.body;
+    const { name, eventType, date, endDate, location, description, capacity, cost, goalAmount } = req.body;
     if (!name || !eventType || !date) return res.status(400).json({ error: "name, eventType, date required" });
     const id = "evt_" + uuid().slice(0, 8);
     await run(
-      `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost, created_by, created_by_name)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [id, orgId, name, eventType, date, endDate || null, location || null, description || null, capacity || null, parseFloat(cost) || 0, actor(req).id, actor(req).name]
+      `INSERT INTO events (id, org_id, name, event_type, date, end_date, location, description, capacity, cost, goal_amount, created_by, created_by_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [id, orgId, name, eventType, date, endDate || null, location || null, description || null, capacity || null, parseFloat(cost) || 0,
+       goalAmount === undefined || goalAmount === null || goalAmount === "" ? null : parseFloat(goalAmount) || null,
+       actor(req).id, actor(req).name]
     );
     const [row] = await query("SELECT * FROM events WHERE id=$1", [id]);
     res.json({ ...row, attendee_count: 0, confirmed_count: 0, no_show_count: 0, invited_count: 0, total_revenue: 0 });

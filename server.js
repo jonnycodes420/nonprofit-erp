@@ -7832,6 +7832,9 @@ async function registerForEvent({ orgId, event, level, donorId, qty, paid = true
       const [g] = await query("SELECT id FROM gifts WHERE org_id=? AND idempotency_key=?", [orgId, idemKey]);
       giftId = g?.id || null;
     } else giftId = written.gift.id;
+    // EVENTS-1 — stamp WHICH EVENT this gift is, so "raised" is a sum over an
+    // id rather than a match on a name that somebody may rename tonight.
+    if (giftId) await run("UPDATE gifts SET event_id=? WHERE id=? AND org_id=? AND event_id IS NULL", [event.id, giftId, orgId]);
   } else if (!giftId) {
     // An unpaid sponsorship is a promise: a pledge due on the event day,
     // attributed to nothing but itself. It is NOT money until it arrives.
