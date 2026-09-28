@@ -34,6 +34,7 @@ const WHITE = "#ffffff", EDGE = "#e8e4db", GREY = "#5a554f";
 const EMERALD = "#0d5c3a", BRASS = "#c9a84c";
 const WASH = "#f3e9cc", WASH_INK = "#5c4710";
 const SERIF = "'DM Serif Display',Georgia,serif";
+const CAL = "https://calendly.com/xjca2006/new-meeting";
 
 const fmtPct = v => (v === null || v === undefined ? "—" : v + "%");
 
@@ -151,9 +152,9 @@ export default function LostAndFound() {
         </div>
       </nav>
 
-      <section style={{ maxWidth: 1080, margin: "0 auto", padding: "80px 24px 72px" }}>
+      <section style={{ maxWidth: 1080, margin: "0 auto", padding: "72px 24px 72px" }}>
         {/* ── THE HERO ─────────────────────────────────────────────── */}
-        <div style={{ textAlign: "center", maxWidth: 780, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", maxWidth: 820, margin: "0 auto" }}>
           <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
             Lost &amp; Found
           </span>
@@ -161,10 +162,27 @@ export default function LostAndFound() {
             style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.04, fontWeight: 600, letterSpacing: "-1.4px", margin: "18px 0 20px" }}>
             A $1,500 donor audit. Free.
           </h1>
-          <p style={{ fontSize: 19, lineHeight: 1.55, color: GREY, margin: 0 }}>
-            Consultants charge $500 to $2,000 to tell you which donors are slipping away. We built a
-            better version and gave it away, because every nonprofit should know before year-end.
+          <p style={{ fontSize: 19, lineHeight: 1.55, color: GREY, margin: "0 auto", maxWidth: 640 }}>
+            Consultants charge $500 to $2,000 to tell you which donors are slipping away.
+            Upload the export your database already makes and know in two minutes.
+            Free forever. No account. Your file never leaves your computer.
           </p>
+
+          {/* What she is about to learn: the prize, previewed. */}
+          <div className="lf-trio" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12,
+            marginTop: 36, textAlign: "left" }}>
+            {[
+              ["01", "The dollars walking away", "The exact figure your lapsed and drifting donors represent."],
+              ["02", "Your real retention rate", "What share of last year's donors gave again. Most orgs guess wrong."],
+              ["03", "Who to call first", "Every name, ranked by what is at stake, so Monday morning writes itself."],
+            ].map(([n, t, d]) => (
+              <div key={n} style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 14, padding: "18px 18px 20px" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: BRASS, letterSpacing: "1px" }}>{n}</div>
+                <div style={{ fontSize: 15.5, fontWeight: 700, margin: "8px 0 6px", lineHeight: 1.35 }}>{t}</div>
+                <div style={{ fontSize: 14, color: GREY, lineHeight: 1.55 }}>{d}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* ── THE UPLOAD ───────────────────────────────────────────── */}
@@ -198,7 +216,7 @@ export default function LostAndFound() {
               </div>
               <p style={{ fontSize: 13, color: GREY, margin: "12px 0 0", lineHeight: 1.55 }}>
                 The whole audit runs in this browser tab. Your results are free and complete with no
-                email address. We only ask who you are if you want the PDF.
+                email address. We only ask who you are if you want the board-ready PDF.
               </p>
             </div>
           )}
@@ -218,10 +236,10 @@ export default function LostAndFound() {
               {result.sections.map(s => (
                 <button key={s.key} data-testid={"lf-section-" + s.key}
                   onClick={() => setOpenSection(openSection === s.key ? null : s.key)}
-                  style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 16, padding: "18px 20px",
+                  style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 16, padding: "20px 20px",
                            textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>{s.label}</div>
-                  <div style={{ fontFamily: SERIF, fontSize: 38, lineHeight: 1.1, margin: "6px 0 8px" }}>{s.count}</div>
+                  <div style={{ fontFamily: SERIF, fontSize: 44, lineHeight: 1.1, margin: "6px 0 8px" }}>{s.count}</div>
                   <div style={{ fontSize: 14, color: INK, lineHeight: 1.55 }}>{s.sentence}</div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: EMERALD, marginTop: 10 }}>
                     {openSection === s.key ? "Hide the names" : "See the names"}
@@ -261,14 +279,19 @@ export default function LostAndFound() {
               );
             })()}
 
-            {/* ── THE PDF, AND THE ONE FORM ─────────────────────── */}
+            {/* ── THE PDF: THE PRIZE BEHIND THE EMAIL ─────────────── */}
             <div id="lf-report" data-testid="lf-report-form" style={{ background: INK, color: CREAM, borderRadius: 18,
-              padding: "28px 26px", marginTop: 22 }}>
-              <div style={{ fontFamily: SERIF, fontSize: 28, marginBottom: 8 }}>Take the report with you</div>
-              <p style={{ fontSize: 15, lineHeight: 1.6, color: "rgba(240,237,230,0.78)", margin: "0 0 18px", maxWidth: 620 }}>
-                A clean PDF with every list above, in full, to send to your board or your ED. Your
-                results on this page stay free either way; we ask who you are because we would like
-                to know who we helped.
+              padding: "32px 28px", marginTop: 22 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: BRASS }}>
+                The board-ready report
+              </div>
+              <div style={{ fontFamily: SERIF, fontSize: 32, margin: "10px 0 8px", lineHeight: 1.15 }}>
+                Take this to your board meeting.
+              </div>
+              <p style={{ fontSize: 15, lineHeight: 1.6, color: "rgba(240,237,230,0.78)", margin: "0 0 18px", maxWidth: 640 }}>
+                The full audit as a clean PDF: every lapsed donor, every quiet donor, every dollar,
+                ranked and ready to forward. Your results above are free either way. We ask who you
+                are because we would like to know who we helped.
               </p>
               {formState === "sent" ? (
                 <div data-testid="lf-sent" style={{ fontSize: 15.5, lineHeight: 1.6 }}>
@@ -320,7 +343,7 @@ export default function LostAndFound() {
                     style={{ background: EMERALD, color: WHITE, border: "none", borderRadius: 10, padding: "14px 20px",
                              fontSize: 15, fontWeight: 700, cursor: formState === "sending" ? "wait" : "pointer",
                              fontFamily: "inherit", minHeight: 48 }}>
-                    {formState === "sending" ? "Preparing…" : "Download the PDF"}
+                    {formState === "sending" ? "Preparing…" : "Send me the PDF"}
                   </button>
                   <label style={{ gridColumn: "1 / -1", display: "flex", gap: 10, alignItems: "flex-start",
                                   fontSize: 14, lineHeight: 1.55, color: "rgba(240,237,230,0.85)", marginTop: 4 }}>
@@ -342,22 +365,43 @@ export default function LostAndFound() {
           </div>
         )}
 
+        {/* ── THE CLOSE: THIS WAS THE SNAPSHOT ─────────────────────── */}
+        <div data-testid="lf-close" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
+          padding: "40px 32px", marginTop: 46, maxWidth: 860, marginLeft: "auto", marginRight: "auto",
+          textAlign: "center" }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase", color: GREY }}>
+            The next step
+          </div>
+          <div style={{ fontFamily: SERIF, fontSize: 38, lineHeight: 1.12, margin: "12px 0 14px", letterSpacing: "-0.5px" }}>
+            This was the snapshot.<br/>Steward is the movie.
+          </div>
+          <p style={{ fontSize: 16.5, lineHeight: 1.6, color: GREY, margin: "0 auto 24px", maxWidth: 600 }}>
+            Lost &amp; Found looks backward once. Steward watches your donors every week, drafts the
+            next right thing, and waits for your approval. Want it running automatically, with next
+            steps attached? That&apos;s Steward.
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+            <Link to="/signup" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "15px 30px",
+              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
+              Start now
+            </Link>
+            <a href={CAL} target="_blank" rel="noreferrer" style={{ background: "transparent", color: INK,
+              border: `1.5px solid ${INK}`, borderRadius: 12, padding: "15px 30px",
+              fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block", minWidth: 44, minHeight: 44 }}>
+              Book a call
+            </a>
+          </div>
+        </div>
+
         {/* ── WHY FREE ─────────────────────────────────────────────── */}
-        <div data-testid="lf-why-free" style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18,
-          padding: "28px 26px", marginTop: 46, maxWidth: 780, marginLeft: "auto", marginRight: "auto" }}>
-          <div style={{ fontFamily: SERIF, fontSize: 28, marginBottom: 10 }}>Why is this free?</div>
-          <p style={{ fontSize: 16, lineHeight: 1.65, color: INK, margin: 0 }}>
+        <div data-testid="lf-why-free" style={{ marginTop: 40, maxWidth: 720, marginLeft: "auto", marginRight: "auto",
+          textAlign: "center" }}>
+          <div style={{ fontFamily: SERIF, fontSize: 26, marginBottom: 10 }}>Why is this free?</div>
+          <p style={{ fontSize: 16, lineHeight: 1.65, color: GREY, margin: 0 }}>
             We sell a CRM. But we believe every nonprofit deserves to know which donors are drifting,
             customer or not. So Lost &amp; Found is free, forever. If you want someone watching it
             automatically every week, that&apos;s what Steward does. No catch.
           </p>
-        </div>
-
-        <div style={{ textAlign: "center", marginTop: 34 }}>
-          <Link to="/signup" style={{ background: EMERALD, color: WHITE, borderRadius: 12, padding: "16px 30px",
-            fontSize: 16, fontWeight: 700, textDecoration: "none", display: "inline-block" }}>
-            Start Steward free for 30 days →
-          </Link>
         </div>
       </section>
 
@@ -366,6 +410,7 @@ export default function LostAndFound() {
           .lf-h1{ font-size: 40px !important; letter-spacing: -0.8px !important; }
           .lf-nav{ padding: 0 16px !important; }
           .lf-hide-sm{ display: none !important; }
+          .lf-trio{ grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
@@ -375,27 +420,31 @@ export default function LostAndFound() {
 function Headline({ result, onAnother }) {
   const h = result.headline;
   return (
-    <div style={{ background: WHITE, border: `1px solid ${EDGE}`, borderRadius: 18, padding: "26px 24px" }}>
+    <div style={{ background: INK, color: CREAM, borderRadius: 18, padding: "30px 28px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
-        <div style={{ fontSize: 13, color: GREY }} data-testid="lf-file-line">{result.file.sentence}</div>
-        <button onClick={onAnother} style={{ background: "none", border: "none", color: EMERALD, fontSize: 13,
+        <div style={{ fontSize: 13, color: "rgba(240,237,230,0.72)" }} data-testid="lf-file-line">{result.file.sentence}</div>
+        <button onClick={onAnother} style={{ background: "none", border: "none", color: BRASS, fontSize: 13,
           fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: 0 }}>Audit another file</button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 20, marginTop: 16 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: "1.8px", textTransform: "uppercase",
+        color: BRASS, marginTop: 22 }}>At risk</div>
+      <div data-testid="lf-at-risk" style={{ fontFamily: SERIF, fontSize: 64, lineHeight: 1.02, letterSpacing: "-1px" }}>
+        {h.dollarsAtRisk}
+      </div>
+      <div style={{ fontSize: 15.5, color: "rgba(240,237,230,0.82)", lineHeight: 1.6, marginTop: 8, maxWidth: 640 }}>
+        {h.atRiskSentence}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 20, marginTop: 26,
+        paddingTop: 22, borderTop: "1px solid rgba(240,237,230,0.16)" }}>
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>At risk</div>
-          <div data-testid="lf-at-risk" style={{ fontFamily: SERIF, fontSize: 46, lineHeight: 1.05 }}>{h.dollarsAtRisk}</div>
-          <div style={{ fontSize: 14, color: GREY, lineHeight: 1.55, marginTop: 4 }}>{h.atRiskSentence}</div>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "rgba(240,237,230,0.6)" }}>Retention</div>
+          <div data-testid="lf-retention" style={{ fontFamily: SERIF, fontSize: 40, lineHeight: 1.05 }}>{fmtPct(h.retentionPct)}</div>
+          <div style={{ fontSize: 14, color: "rgba(240,237,230,0.72)", lineHeight: 1.55, marginTop: 4 }}>{h.retentionSentence}</div>
         </div>
         <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>Retention</div>
-          <div data-testid="lf-retention" style={{ fontFamily: SERIF, fontSize: 46, lineHeight: 1.05 }}>{fmtPct(h.retentionPct)}</div>
-          <div style={{ fontSize: 14, color: GREY, lineHeight: 1.55, marginTop: 4 }}>{h.retentionSentence}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: GREY }}>On file</div>
-          <div style={{ fontFamily: SERIF, fontSize: 46, lineHeight: 1.05 }}>{result.totals.donors.toLocaleString()}</div>
-          <div style={{ fontSize: 14, color: GREY, lineHeight: 1.55, marginTop: 4 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "rgba(240,237,230,0.6)" }}>On file</div>
+          <div style={{ fontFamily: SERIF, fontSize: 40, lineHeight: 1.05 }}>{result.totals.donors.toLocaleString()}</div>
+          <div style={{ fontSize: 14, color: "rgba(240,237,230,0.72)", lineHeight: 1.55, marginTop: 4 }}>
             {result.totals.donors.toLocaleString()} donors and {result.totals.gifts.toLocaleString()} gifts,
             {" "}{money(result.totals.lifetimeCents)} in all, from {result.totals.firstGiftDate} to {result.totals.lastGiftDate}.
           </div>
