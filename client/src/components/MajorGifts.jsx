@@ -814,15 +814,20 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
 
   return (
     <div data-testid="donor-brief-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Before you go</div>
-        {canWrite && !isReadOnly && (
+      {/* FIX-5 — THE HEADING IS THE RAIL'S, NOT THIS PANEL'S. The rail section
+          this panel sits in is already titled "Before you go"
+          (DonorProfile `dp-rail-brief`), so the panel printing it again gave
+          the rail the same heading twice, one under the other. The panel keeps
+          its action and drops the title: a section has one heading, and it
+          belongs to the section, not to what is inside it. */}
+      {canWrite && !isReadOnly && (
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
           <button onClick={write} disabled={busy}
             style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: busy ? "wait" : "pointer" }}>
             {busy ? "Reading the file…" : brief ? "Write it again" : "Brief me"}
           </button>
-        )}
-      </div>
+        </div>
+      )}
       {err && <div style={{ fontSize: 12, color: T.terra700, marginBottom: 8 }}>{err}</div>}
       {!brief && !err && (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
