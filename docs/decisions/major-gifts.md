@@ -3,11 +3,41 @@
 Read this when you touch the pipeline, stage or status, moves, opportunities, portfolios and assignment, or wealth scoring.
 
 ## Rules
-- **The journey builder is Direction A, "the spine".** Node position is the offset as a fraction
-  of the journey, spaced so nothing collides (`nodePositions`, MIN_GAP 11.5%) — proportional, not
-  equal, because the unequal gaps ARE the idea. The spine is 900px minimum and scrolls inside its
-  own container; the page never scrolls sideways. At ≤900px it becomes a vertical list with the
-  same order and dates. The journey chip lives in the donor profile's RIGHT RAIL. (THREAD-2b)
+- **The chain is a CSS GRID, one column per node, four shared rows.** Rows are: the timing
+  caption, the node (a fixed 26px row), the step name, the date. Every column is placed in those
+  same four rows, so the captions share a baseline, the names share one and the dates share one,
+  and a name that wraps grows the name row for every column at once instead of pushing its own
+  date down. The ONE line lives in the node row, centred on it, with negative margins carrying it
+  to both edges of the card, so it passes through the node centres rather than floating above
+  them. Column widths carry the time since the previous node but are CLAMPED to 0.85–1.6
+  (`columnWeights`): a longer wait is visibly a little wider, and nothing is ever cramped beside a
+  chasm. Absolute positioning inside a fixed-height box is what this replaced, and it is what made
+  a wrapped label bleed into the panel below it. Below 1100px the chain is a vertical list with
+  the same order and dates. The journey chip lives in the donor profile's RIGHT RAIL. (FIX-5)
+- **The open card is three flow rows that cannot overlap**: the chain across the full width, then
+  the step editor and the live preview side by side (`alignItems: start`), then the actions. None
+  of them is positioned, which is the reason they cannot overlap. (FIX-5)
+- **A journey is created, not only chosen.** "Create a journey" names it, picks the trigger and
+  its conditions and starts with a step; presets remain "Start from one of these". Pressing a
+  preset the org already has ASKS ("Open it, or make a copy?") and never mints a silent duplicate.
+  A copy always arrives OFF. (FIX-5)
+- **Landing on Journeys opens one**: the most recently edited (`updated_at`), or the first that is
+  On. The others stay as rows. (FIX-5)
+- **Timing is input, `offsetDays` is storage.** A step may be expressed as days, weeks or months
+  after the TRIGGER or after the PREVIOUS step, and `resolveTiming` turns that into the one number
+  the engine computes dates from. The `timing` object is stored beside it only so the screen can
+  show back the words she chose. A first step is always counted from the trigger. (FIX-5)
+- **Saving an On journey shows who it reaches first, and tells the truth.** `GET /journeys/:id/
+  affects` says who is in it and that saving leaves them where they are, because their steps were
+  copied when they entered. `retimeExisting` on the PATCH is the opt-in that moves them, and it
+  moves PENDING steps only: open, done and skipped steps have already happened to somebody.
+  (FIX-5)
+- **What counts as a big gift is asked, never refused.** Choosing Major donor opens an inline
+  "A big gift for us is $____" prefilled from `GET /journeys/suggest-big-gift` (the 90th
+  percentile single gift, rounded to a sayable figure) with the gifts behind it one click away.
+  The old screen POSTed, failed validation and printed the refusal in terracotta: an error for not
+  having answered a question nobody had asked. Red on this screen is for a destructive confirm and
+  nothing else. (FIX-5)
 - **A journey's numbers open their donors, and the route says what they are not.** One SQL per
   number in `JOURNEY_ROW_SQL`, used by both the figure and the drill-through, so a count cannot
   stop matching its own rows. The "no comparison group, so this is not a measure of cause" caveat

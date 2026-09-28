@@ -8815,20 +8815,89 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
          CASE WHEN coalesce(d.tags,'') ~ '^\\s*\\[' THEN d.tags::jsonb ELSE '[]'::jsonb END) AS tg
       WHERE d.org_id=? AND d.deleted_at IS NULL AND btrim(tg) <> '' ORDER BY 1 LIMIT 200`,
     [req.user.orgId]).catch(() => []);
+  // FIX-5 — who a step may name as its owner. The same list Settings shows, so
+  // "a named person" means somebody who can actually be handed a step.
+  const teamRows = await query(
+    `SELECT id, name FROM users WHERE org_id=? AND deactivated_at IS NULL ORDER BY name`,
+    [req.user.orgId]).catch(() => []);
   res.json({
     triggers: J.TRIGGERS,
     audienceFilters: J.AUDIENCE_FILTERS,
+    timingUnits: J.TIMING_UNITS,
+    timingFrom: J.TIMING_FROM,
+    draftKinds: J.DRAFT_KINDS,
+    priority: { min: J.PRIORITY_MIN, max: J.PRIORITY_MAX, default: J.PRIORITY_DEFAULT },
     stages: stageRows.map(r => r.stage),
     tags: tagRows.map(r => r.tag),
     presets: J.PRESETS.map(p => ({ ...p, touches: J.touchesSentence(p.steps) })),
+    // FIX-5 — the team, so a step can name a person as its owner instead of
+    // always falling to the relationship owner.
+    team: teamRows.map(u => ({ id: u.id, name: u.name })),
     journeys: rows.map(t => ({
-      id: t.id, name: t.name, steps: t.steps, trigger: t.trigger_key,
+      id: t.id, name: t.name, description: t.description || "", steps: t.steps, trigger: t.trigger_key,
       amountCents: t.trigger_amount_cents, priority: t.priority,
+      audience: t.audience || {},
+      audienceSentence: J.audienceSentence(t.audience || {}),
       presetKey: t.preset_key, enabled: !!t.journey_enabled,
       touches: J.touchesSentence(t.steps || []),
+      // FIX-5 item 2 — arriving on Journeys opens one, and this is how the page
+      // knows which: the most recently edited. `updated_at` is set on every
+      // PATCH already, so nothing new has to be recorded for it.
+      updatedAt: t.updated_at,
       inIt: Number((byTpl.get(t.id) || {}).active) || 0,
       everIn: Number((byTpl.get(t.id) || {}).ever) || 0,
     })),
+  });
+}));
+
+// ── FIX-5 item 6 · WHAT A BIG GIFT IS HERE, FROM THEIR OWN FILE ───────────
+// The Major donor journey needs a number and there is no universal one, so the
+// old screen refused to save and printed the refusal in terracotta — an error
+// for not yet having answered a question nobody had been asked. The question is
+// asked up front instead, with a SUGGESTION from this organisation's own gifts:
+// the 90th percentile single gift, which is the size the top tenth of their
+// gifts start at. Every number opens, so the rows behind it come back with it.
+//
+// A GET, and it writes nothing.
+app.get("/journeys/suggest-big-gift", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [agg] = await query(
+    `SELECT COUNT(*)::int n,
+            percentile_disc(0.9) WITHIN GROUP (ORDER BY amount)::float p90,
+            MAX(amount)::float top
+       FROM gifts WHERE org_id=? AND amount > 0`, [orgId]);
+  const n = Number(agg?.n) || 0;
+  // A file with almost nothing in it cannot suggest anything honestly. $1,000
+  // is offered as a STARTING POINT and said to be one, rather than dressed up
+  // as something read out of their data.
+  if (n < 20) {
+    return res.json({
+      cents: 100000, fromTheirData: false, gifts: 0,
+      sentence: "There are not enough gifts on file yet to read a number out of them, so this is a common starting point. Change it to whatever a big gift is for you.",
+      rows: [],
+    });
+  }
+  // Rounded to a number a person would say out loud. $2,647 is arithmetic;
+  // $2,500 is an answer.
+  const p90 = Number(agg.p90) || 0;
+  const step = p90 >= 25000 ? 5000 : p90 >= 10000 ? 2500 : p90 >= 2500 ? 500 : p90 >= 500 ? 100 : 25;
+  // Rounded on purpose, and it is not a gift: it is a THRESHOLD being offered
+  // for her to accept or type over, and it is carried in cents from here on.
+  const suggested = Math.max(step, Math.round(p90 / step) * step);
+  const rows = await query(
+    `SELECT g.id, g.amount::float amount, g.date, d.id AS donor_id, d.name AS donor_name
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND g.amount >= ? AND d.deleted_at IS NULL
+      ORDER BY g.amount DESC LIMIT 200`, [orgId, suggested]);
+  res.json({
+    cents: Math.round(suggested * 100), fromTheirData: true, gifts: n,
+    sentence: `The top tenth of your ${n.toLocaleString("en-US")} gifts start at about $${suggested.toLocaleString("en-US")}. `
+      + `${rows.length} gift${rows.length === 1 ? "" : "s"} on file ${rows.length === 1 ? "is" : "are"} that size or larger.`,
+    // sentenceMoney, not Math.round: these are real gifts, and a gift of
+    // $4,000.50 shown as $4,001 in the rows behind a number is the whole
+    // reason the money seam exists.
+    rows: rows.map(r => ({ id: r.donor_id, giftId: r.id, name: r.donor_name,
+      reason: `${sentenceMoney(r.amount)} on ${r.date}` })),
   });
 }));
 
@@ -8843,9 +8912,11 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
 
   const input = {
     name: b.name || (preset && preset.name),
+    description: b.description !== undefined ? b.description : (preset && preset.blurb),
     trigger: b.trigger || (preset && preset.trigger),
     priority: b.priority !== undefined ? b.priority : (preset && preset.priority),
     amountCents: b.amountCents,
+    audience: b.audience,
     steps: Array.isArray(b.steps) && b.steps.length ? b.steps : (preset && preset.steps),
   };
   const v = J.validateJourney(input);
@@ -8853,16 +8924,114 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
 
   const id = "ct_" + uuid().slice(0, 10);
   await run(
-    `INSERT INTO cultivation_templates (id,org_id,name,steps,trigger_key,trigger_amount_cents,priority,preset_key,journey_enabled,created_by,created_by_name)
-     VALUES (?,?,?,?::jsonb,?,?,?,?,?,?,?)`,
-    [id, req.user.orgId, v.name, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,?,?,?)`,
+    [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+     JSON.stringify(v.audience),
      preset ? preset.key : null,
      // ARMED ONLY IF ASKED. Creating a journey and having it start firing at
      // people in the same breath is not a thing anybody wants by surprise.
      b.enabled === true, actor(req).id, actor(req).name]);
   const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [id, req.user.orgId]);
-  res.status(201).json({ id, name: v.name, trigger: v.trigger, priority: v.priority,
-    steps: v.steps, enabled: !!row.journey_enabled, touches: J.touchesSentence(v.steps) });
+  res.status(201).json({ id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
+    steps: v.steps, audience: v.audience, enabled: !!row.journey_enabled, touches: J.touchesSentence(v.steps) });
+}));
+
+// ── FIX-5 item 5 · DUPLICATE A WHOLE JOURNEY ─────────────────────────────
+// The way an org gets its second journey: copy the one that works and change
+// two things. The copy arrives OFF, whatever the original was — two journeys
+// firing on the same trigger the moment you press "duplicate" is the surprise
+// this build exists to remove.
+app.post("/journeys/:id/duplicate", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const J = await journeyMod();
+  const [cur] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!cur) return res.status(404).json({ error: "Not found" });
+  // "New donor, first year (copy)", then "(copy 2)" — a name nobody has to
+  // think about, and never a silent second row with the identical name.
+  const existing = (await query(
+    `SELECT name FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL`, [req.user.orgId]))
+    .map(r => String(r.name || "").toLowerCase());
+  let name = `${cur.name} (copy)`;
+  for (let n = 2; existing.includes(name.toLowerCase()); n++) name = `${cur.name} (copy ${n})`;
+
+  const v = J.validateJourney({ name, description: cur.description, trigger: cur.trigger_key,
+    priority: cur.priority, amountCents: cur.trigger_amount_cents, audience: cur.audience, steps: cur.steps });
+  if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
+  const id = "ct_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO cultivation_templates (id,org_id,name,description,steps,trigger_key,trigger_amount_cents,priority,audience,preset_key,journey_enabled,created_by,created_by_name)
+     VALUES (?,?,?,?,?::jsonb,?,?,?,?::jsonb,?,false,?,?)`,
+    [id, req.user.orgId, v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+     JSON.stringify(v.audience), cur.preset_key, actor(req).id, actor(req).name]);
+  res.status(201).json({ id, name: v.name, copiedFrom: cur.id, enabled: false,
+    sentence: `"${v.name}" is a copy of "${cur.name}" and it is off. Nothing starts until you turn it on.` });
+}));
+
+// ── FIX-5 item 5 · DELETE, WITH AN UNDO ──────────────────────────────────
+// Archived, never deleted: applied plans point at this id and a plan whose
+// origin vanished is a record with a hole in it. Archiving also makes the undo
+// trivial and exact — it is the same row, put back.
+app.delete("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const [cur] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!cur) return res.status(404).json({ error: "Not found" });
+  const [inIt] = await query(
+    `SELECT COUNT(*)::int n FROM cultivation_plans WHERE org_id=? AND template_id=? AND status='active'`,
+    [req.user.orgId, req.params.id]);
+  // Turned OFF as well as archived, so restoring cannot quietly re-arm it.
+  await run(`UPDATE cultivation_templates SET archived_at=NOW(), journey_enabled=false, updated_at=NOW()
+              WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  res.json({ id: req.params.id, name: cur.name, deleted: true, undoable: true, inIt: Number(inIt?.n) || 0,
+    sentence: Number(inIt?.n) > 0
+      ? `"${cur.name}" is gone from the list. The ${inIt.n} ${Number(inIt.n) === 1 ? "person" : "people"} already in it keep the steps they entered with.`
+      : `"${cur.name}" is gone from the list.` });
+}));
+
+app.post("/journeys/:id/restore", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const { changes } = await run(
+    `UPDATE cultivation_templates SET archived_at=NULL, updated_at=NOW()
+      WHERE id=? AND org_id=? AND archived_at IS NOT NULL`, [req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found" });
+  const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
+  res.json({ id: row.id, name: row.name, restored: true, enabled: false,
+    sentence: `"${row.name}" is back, and it is off.` });
+}));
+
+// ── FIX-5 item 5 · WHO A CHANGE REACHES, BEFORE IT IS SAVED ──────────────
+// A GET that writes nothing, and it tells the truth rather than the reassuring
+// version. Saving a journey does NOT rewrite the people already in it — their
+// steps were copied when they entered, on purpose, so somebody three touches
+// into seven cannot silently acquire two more. So the honest sentence is "these
+// people are in it, and saving leaves them where they are", plus the count that
+// WOULD move if she asks for it (`retimeExisting` on the PATCH).
+app.get("/journeys/:id/affects", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT d.id, d.name, p.applied_on,
+            (SELECT COUNT(*) FROM cultivation_plan_steps s WHERE s.plan_id=p.id AND s.status='pending')::int pending,
+            (SELECT MIN(s.due_date) FROM cultivation_plan_steps s WHERE s.plan_id=p.id AND s.status='pending') next_due
+       FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+      WHERE p.org_id=? AND p.template_id=? AND p.status='active' AND d.deleted_at IS NULL
+      ORDER BY d.name LIMIT 500`, [orgId, t.id]);
+  const movable = rows.filter(r => Number(r.pending) > 0);
+  res.json({
+    journeyId: t.id, name: t.name, inIt: rows.length, movable: movable.length,
+    enabled: !!t.journey_enabled,
+    sentence: rows.length === 0
+      ? "Nobody is in this journey yet, so this change only affects people who enter it from now on."
+      : `${rows.length} ${rows.length === 1 ? "person is" : "people are"} in this journey. `
+        + `Their steps were copied when they entered, so saving leaves them where they are. `
+        + `It changes what happens to everybody who enters from now on.`,
+    moveSentence: movable.length
+      ? `This moves ${movable.length} ${movable.length === 1 ? "person's" : "people's"} next step.`
+      : "There is no step still to come on anybody in it, so there is nothing to move.",
+    donors: movable.map(r => ({ id: r.id, name: r.name,
+      reason: `${r.pending} step${Number(r.pending) === 1 ? "" : "s"} still to come${r.next_due ? `, next on ${r.next_due}` : ""}` })),
+  });
 }));
 
 app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
@@ -8873,24 +9042,57 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
   const b = req.body || {};
   const v = J.validateJourney({
     name: b.name !== undefined ? b.name : cur.name,
+    description: b.description !== undefined ? b.description : cur.description,
     trigger: b.trigger !== undefined ? b.trigger : cur.trigger_key,
     priority: b.priority !== undefined ? b.priority : cur.priority,
     amountCents: b.amountCents !== undefined ? b.amountCents : cur.trigger_amount_cents,
+    audience: b.audience !== undefined ? b.audience : cur.audience,
     steps: b.steps !== undefined ? b.steps : cur.steps,
   });
   if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
   await run(
-    `UPDATE cultivation_templates SET name=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
-       priority=?, journey_enabled=?, updated_at=NOW() WHERE id=? AND org_id=?`,
-    [v.name, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+    `UPDATE cultivation_templates SET name=?, description=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
+       priority=?, audience=?::jsonb, journey_enabled=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [v.name, v.description, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+     JSON.stringify(v.audience),
      b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled,
      req.params.id, req.user.orgId]);
+
   // CHANGING A JOURNEY DOES NOT REWRITE THE PEOPLE ALREADY IN IT. Their steps
   // were copied when they entered, exactly as a plan's are — somebody who has
   // already had three of seven touches must not silently acquire two more.
-  res.json({ id: req.params.id, name: v.name, trigger: v.trigger, priority: v.priority,
-    steps: v.steps, touches: J.touchesSentence(v.steps),
-    note: "People already in this journey keep the steps they entered with." });
+  //
+  // FIX-5 — UNLESS SHE ASKS. `retimeExisting` is the opt-in the confirm dialog
+  // offers after showing her exactly who it reaches, and it moves PENDING steps
+  // only: a step that is open, done or skipped has already happened to somebody
+  // and is not ours to rewrite. The dates are recomputed from each plan's own
+  // `applied_on`, so two people who entered in different weeks stay in their own
+  // weeks rather than being dragged onto a shared date.
+  let moved = 0, movedPeople = 0;
+  if (b.retimeExisting === true) {
+    const plans = await query(
+      `SELECT id, applied_on FROM cultivation_plans
+        WHERE org_id=? AND template_id=? AND status='active'`, [req.user.orgId, req.params.id]);
+    for (const p of plans) {
+      let any = false;
+      for (let i = 0; i < v.steps.length; i++) {
+        const due = orgTime.addDays(String(p.applied_on).slice(0, 10), Number(v.steps[i].offsetDays) || 0);
+        const { changes } = await run(
+          `UPDATE cultivation_plan_steps SET due_date=?, label=?, step_type=?
+            WHERE plan_id=? AND org_id=? AND seq=? AND status='pending'`,
+          [due, v.steps[i].label, v.steps[i].type, p.id, req.user.orgId, i + 1]);
+        if (changes) { moved += changes; any = true; }
+      }
+      if (any) movedPeople++;
+    }
+  }
+
+  res.json({ id: req.params.id, name: v.name, description: v.description, trigger: v.trigger, priority: v.priority,
+    steps: v.steps, audience: v.audience, touches: J.touchesSentence(v.steps),
+    movedPeople, movedSteps: moved,
+    note: b.retimeExisting === true
+      ? `${movedPeople} ${movedPeople === 1 ? "person's" : "people's"} steps still to come were moved to the new timing. Steps already done were left alone.`
+      : "People already in this journey keep the steps they entered with." });
 }));
 
 // Who would qualify right now — the count the "apply to people who already
@@ -8970,13 +9172,54 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
   }
   if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
 
+  // ── FIX-5 · THE CHAIN'S STATES COME FROM A REAL PLAN WHEN THERE IS ONE ──
+  // The chain shows done, today and still-to-come at a glance, and those words
+  // have to MEAN something. So the preview prefers somebody who is ACTUALLY in
+  // this journey: their real steps, with the real statuses the Thread engine
+  // set. Only when nobody is in it does it fall back to the arithmetic above,
+  // and then a step is "past", "today" or "upcoming" by its date, never "done"
+  // — because nothing has been done, and the caption says which it is showing.
+  const today = orgToday(await orgTz(orgId));                           // ORG_TZ_SEAM_OK
+  const [live] = await query(
+    `SELECT p.id, p.applied_on, d.id AS donor_id, d.name
+       FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+      WHERE p.org_id=? AND p.template_id=? AND p.status='active' AND d.deleted_at IS NULL
+      ORDER BY p.applied_on DESC LIMIT 1`, [orgId, t.id]);
+  if (live) {
+    const real = await query(
+      `SELECT seq, label, due_date, status FROM cultivation_plan_steps
+        WHERE org_id=? AND plan_id=? ORDER BY seq`, [orgId, live.id]);
+    if (real.length) {
+      return res.json({
+        donor: { id: live.donor_id, name: live.name,
+                 basis: `In this journey since ${String(live.applied_on).slice(0, 10)}` },
+        from: String(live.applied_on).slice(0, 10),
+        live: true,
+        steps: real.map(s => ({
+          seq: s.seq, label: s.label, dueDate: s.due_date,
+          // done and skipped both read as behind them; open is what they are on
+          // now, and it is the step the emerald ring belongs to.
+          state: s.status === "done" || s.status === "skipped" ? "done"
+               : s.status === "open" || s.due_date === today ? "today"
+               : s.due_date < today ? "past" : "upcoming",
+        })),
+        legend: "This is somebody really in it. Filled steps are behind them, the ring is where they are now.",
+        touches: J.touchesSentence(t.steps || []),
+      });
+    }
+  }
+
   const v = J.validateJourney({ name: t.name, trigger: t.trigger_key, priority: t.priority,
                                 amountCents: t.trigger_amount_cents, steps: t.steps });
   const steps = PL.planFromTemplate({ steps: v.steps, today: from }, orgTime.addDays);
   res.json({
     donor: { id: donor.id, name: donor.name, basis },
     from,
-    steps: steps.map((s, i) => ({ seq: s.seq, label: s.label, dueDate: s.dueDate, draft: (v.steps[i] || {}).draft || null })),
+    live: false,
+    steps: steps.map((s, i) => ({ seq: s.seq, label: s.label, dueDate: s.dueDate,
+      draft: (v.steps[i] || {}).draft || null,
+      state: s.dueDate === today ? "today" : s.dueDate < today ? "past" : "upcoming" })),
+    legend: "Nobody is in this journey yet, so these are the dates it would have produced for this person. Change a step and they move.",
     touches: J.touchesSentence(v.steps),
   });
 }));

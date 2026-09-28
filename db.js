@@ -2480,6 +2480,15 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_templates_trigger
                     ON cultivation_templates (org_id, trigger_key, priority DESC)
                     WHERE journey_enabled = true AND archived_at IS NULL`);
+  // ── FIX-5 · A JOURNEY AN ORG WROTE ITSELF ────────────────────────────────
+  // Two more columns and no new table. `description` is the one line under the
+  // name in the list, which is what makes a shelf of five self-written journeys
+  // readable. `audience` is the trigger's CONDITIONS stored WITH the journey:
+  // until now the audience filters existed only inside the apply dialog, so
+  // "volunteers who gave over $500" was something you re-picked every time
+  // instead of something the journey knew about itself.
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS description TEXT`);
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS audience JSONB NOT NULL DEFAULT '{}'::jsonb`);
 
   // WHY THIS DONOR IS IN THIS JOURNEY, AND WHAT IT REPLACED. A donor moved
   // from one journey to another by a rule, with no record of why, is a person

@@ -114,8 +114,54 @@ const between = (a, b) => a + Math.floor(rnd() * (b - a + 1));
 
 // No name mistakable for a real organization or person, and no implied social
 // proof anywhere. Invented surnames, invented org.
-const FIRST = ["Marguerite","Halvard","Ondine","Casper","Wilhelmina","Tobias","Rosalind","Emmett","Philippa","Gideon","Cordelia","Ansel","Beatrix","Rufus","Isolde","Barnaby","Clementine","Alaric","Perpetua","Silas","Verity","Osric","Henrietta","Leopold","Araminta","Fenwick","Drusilla","Cuthbert","Marisol","Thaddeus"];
-const LAST  = ["Ashgrove","Bellwether","Cinderhalt","Dunmoor","Elmsworth","Fairweather","Glasswick","Hollowell","Ironvale","Jessamine","Kettleby","Lindquist","Marchbanks","Netherfield","Oakhampton","Pemberton","Quillfeather","Ravensmere","Stonebridge","Thornbury","Underhill","Vanterpool","Wexford","Yarrowdale","Ziegler","Applewhite","Braithwaite","Carrowmore","Dellacroix","Everhart"];
+//
+// FIX-5 — THE POOL IS 64 × 72 NOW, AND NOBODY IS CALLED "DONOR 1002".
+// It was 30 × 30 = 900 pairs for a file of about 1,150 people, so the draw ran
+// out and fell back to minting "Donor 1002 Ashgrove": 205 of them, sitting in
+// the donor list of the screen the product is sold on. 4,608 pairs for 1,150
+// people is a draw that lands, and the registry below is what makes the
+// guarantee rather than the arithmetic.
+const FIRST = ["Marguerite","Halvard","Ondine","Casper","Wilhelmina","Tobias","Rosalind","Emmett","Philippa","Gideon","Cordelia","Ansel","Beatrix","Rufus","Isolde","Barnaby","Clementine","Alaric","Perpetua","Silas","Verity","Osric","Henrietta","Leopold","Araminta","Fenwick","Drusilla","Cuthbert","Marisol","Thaddeus",
+               "Anneliese","Bartholomew","Celestine","Dorotea","Ezekiel","Flavia","Gervase","Hyacinth","Ignatius","Jocasta","Kenelm","Lavinia","Mordecai","Nerissa","Octavian","Persis","Quenby","Rowena","Septimus","Theodora","Ulric","Vespasia","Winifred","Xanthe","Yseult","Zephyrine","Amabel","Bertrand","Constance","Desmond","Eulalia","Fitzhugh","Griselda","Horatio"];
+const LAST  = ["Ashgrove","Bellwether","Cinderhalt","Dunmoor","Elmsworth","Fairweather","Glasswick","Hollowell","Ironvale","Jessamine","Kettleby","Lindquist","Marchbanks","Netherfield","Oakhampton","Pemberton","Quillfeather","Ravensmere","Stonebridge","Thornbury","Underhill","Vanterpool","Wexford","Yarrowdale","Ziegler","Applewhite","Braithwaite","Carrowmore","Dellacroix","Everhart",
+               "Ashenhurst","Barrowcliffe","Cranmoor","Darrowby","Eastleigh","Fennimore","Grimsdale","Harrowgate","Inglewood","Jarrowfield","Kirkbride","Larkmead","Mossbank","Norrington","Ollerenshaw","Pendlebury","Quarrendon","Rushmere","Saltonstall","Thistlewood","Ulverston","Vellacott","Wharfedale","Yelverton","Zennor","Abberline","Blackmoor","Cobbleworth","Duffield","Edgerton","Frostwick","Gillingwater","Haverbrook","Inkpen","Jewkes","Kelsingham","Lammermoor","Merripen","Nettlefold","Ockendon","Pentreath","Ravelstoke"];
+
+// ── FIX-5 · ONE NAME REGISTRY FOR THE WHOLE DEMO ─────────────────────────
+// Every person the seed writes goes through here, so no two of them share a
+// full name anywhere in Harborlight — donors, organisations, volunteers, staff
+// and gala guests alike. It used to be enforced on the derived EMAIL and only
+// inside the tail generator, which meant the hand-written names, the eleven,
+// the volunteers (their own separate pool, "Rufus Fairweather" in both) and
+// the staff could all collide with the generated file and nothing noticed.
+//
+// The key is case-folded and whitespace-collapsed, because "two people with
+// the same name" is a thing a person judges by eye, not by byte.
+const takenNames = new Set();
+// Names the generator has MINTED but nobody has been given yet. Without this,
+// a generated name is reserved by `mkName` and then rejected by `addDonor` a
+// line later as a collision with itself — which is how the first run of this
+// registry failed, on "Fenwick Ravensmere".
+const mintedNames = new Set();
+const nameKey = s => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+// true if the name was free and is now this person's. Callers that must not
+// collide throw on false; mkName just draws again.
+const takeName = name => {
+  const k = nameKey(name);
+  if (!k) return false;
+  if (mintedNames.has(k)) { mintedNames.delete(k); return true; }   // claiming what mkName minted
+  if (takenNames.has(k)) return false;
+  takenNames.add(k);
+  return true;
+};
+// What mkName does: reserve the name against the whole file AND remember that
+// it is still on its way to a person.
+const mintName = name => {
+  const k = nameKey(name);
+  if (!k || takenNames.has(k)) return false;
+  takenNames.add(k); mintedNames.add(k);
+  return true;
+};
+const emailFor = name => name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.|\.$/g, "") + "@example.demo";
 
 // THE ELEVEN, hoisted to module scope and exported. They are the demo's thesis
 // — consistent multi-year mid-level giving, then nothing — and BUILD-73 Part 3
@@ -275,6 +321,10 @@ async function main() {
            VALUES ($1,'Harborlight Youth Collective','harborlight',1,'active','team',$2,
                    'After-school arts and mentoring for young people on the north shore.',
                    false,true)`, [ORG, TZ]);   // INCIDENT 2026-09-22: a seeded org sends nothing
+  // FIX-5 — the two staff names are claimed FIRST, before a generated donor
+  // can be handed either of them. The director's own name turning up again
+  // halfway down her donor list is the worst version of this bug.
+  takeName("Dana Reyes"); takeName("Priya Raman");
   await q(`INSERT INTO users (id,org_id,email,password_hash,name,role)
            VALUES ('u_b72demo',$1,$2,$3,'Dana Reyes','admin')`,
           [ORG, ADMIN_EMAIL, bcrypt.hashSync(ADMIN_PASSWORD, 10)]);
@@ -301,6 +351,12 @@ async function main() {
   let gid = 0, did = 0;
   const pinnedStage = [];   // donors whose stage is DELIBERATE, never re-inferred
   const addDonor = (name, email, o = {}) => {
+    // FIX-5 — the registry is checked HERE, so every literal name in this file
+    // is covered without anybody remembering to. `sharesNameWith` is the one
+    // door out of it and there is exactly one user of it: the merge fixture,
+    // which is ONE person holding TWO records on purpose.
+    if (!takeName(name) && !o.sharesNameWith)
+      throw new Error(`[seed] two people would be called "${name}". Every demo person has their own name.`);
     const id = `d_b72_${pad(++did)}`;
     donors.push({ id, name, email, ...o });
     if (o.pin) pinnedStage.push(id);
@@ -349,18 +405,39 @@ async function main() {
       addGift(id, amt, date, { campaign: "Annual Fund " + date.slice(0, 4) });
   });
 
+  // ── FIX-5 · THE NAMED PEOPLE ARE CLAIMED BEFORE THE TAIL IS DRAWN ───────
+  // Every person below this point who is written by hand has a job — the
+  // lapsed major, the household, the two-record merge fixture, the pledges,
+  // the failed card, the sponsors — and the tail generator draws from the same
+  // two pools their names came from. Claimed here, in file order, so a
+  // generated donor can never be handed one of them and leave the demo with
+  // two Henrietta Stonebridges. Adding a hand-written person means adding them
+  // to this list; the registry in addDonor throws if you forget.
+  for (const n of [
+    "Verity Underhill", "Osric Ravensmere", "Henrietta Stonebridge", "Leopold Stonebridge",
+    "Araminta Wexford", "Isolde Fennimore", "Barnaby Thistlewood", "Ondine Cinderhalt",
+    "Tidewater Community Foundation", "Grace Chapel", "Saltbox Printing",
+    "Halyard & Pike Architects", "Brinewood Hardware",
+  ]) mintName(n);
+
   // ── The rest of the file: ~1,000 donors on the FEP shape — roughly 200
   // carrying about 90% of revenue.
   console.log("[seed] the long tail on the FEP distribution…");
-  const usedEmail = new Set(donors.map(d => d.email));
+  // FIX-5 — draws against the ONE registry, and there is no filler-name
+  // fallback any more. If the random draw keeps landing on taken pairs the
+  // pairs are WALKED in order, which cannot fail while one is free; a pool
+  // genuinely exhausted throws, because "add more names" is a thing to fix in
+  // this file rather than to paper over on the demo screen.
   const mkName = () => {
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < 400; i++) {
       const n = `${pick(FIRST)} ${pick(LAST)}`;
-      const e = n.toLowerCase().replace(/ /g, ".") + "@example.demo";
-      if (!usedEmail.has(e)) { usedEmail.add(e); return [n, e]; }
+      if (mintName(n)) return [n, emailFor(n)];
     }
-    const n = `Donor ${did + 1} Ashgrove`;
-    return [n, `donor${did + 1}@example.demo`];
+    for (const f of FIRST) for (const l of LAST) {
+      const n = `${f} ${l}`;
+      if (mintName(n)) return [n, emailFor(n)];
+    }
+    throw new Error(`[seed] the name pool is exhausted at ${takenNames.size} people. Add first or last names to FIRST/LAST.`);
   };
 
   // 190 major/mid donors carrying the bulk of revenue. Each gives in ONE
@@ -424,8 +501,13 @@ async function main() {
   const twoAddr = addDonor("Osric Ravensmere", "osric.ravensmere@example.demo",
                            { status: "mid", stage: "cultivate", city: "Beverly", state: "MA" });
   addGift(twoAddr, 1500, dateIn(YEAR - 1, 6, 3));
+  // FIX-5 — the one repeated name in Harborlight, and it is not two people.
+  // `sharesNameWith` says so out loud: this is the SECOND RECORD of the person
+  // above, which is the whole point of the merge fixture. Making these two
+  // names different would delete the demo's only duplicate-record story.
   const twoAddrB = addDonor("Osric Ravensmere", "o.ravensmere@example.demo",
-                            { status: "mid", stage: "cultivate", city: "Salem", state: "MA" });
+                            { status: "mid", stage: "cultivate", city: "Salem", state: "MA",
+                              sharesNameWith: twoAddr });
   addGift(twoAddrB, 1200, dateIn(YEAR, 2, 14));
 
   // A household with two people.
@@ -856,11 +938,13 @@ async function main() {
   const JOURNEY_STEPS = JOURNEY_PRESET.steps.map(s => ({ ...s }));
   const OFF = JOURNEY_STEPS.map(s => s.offsetDays);
   const JOURNEY_TPL = "ct_b72_newdonor";
+  // FIX-5 — the one line under the name comes from the preset too, for the same
+  // reason the steps do: the demo reads the catalogue, it does not carry a copy.
   await q(`INSERT INTO cultivation_templates
-             (id,org_id,name,steps,trigger_key,priority,preset_key,journey_enabled,created_by,created_by_name)
-           VALUES ($1,$2,'New donor, first year',$3::jsonb,'first_gift',50,'new_donor_first_year',true,
+             (id,org_id,name,description,steps,trigger_key,priority,preset_key,journey_enabled,created_by,created_by_name)
+           VALUES ($1,$2,'New donor, first year',$4,$3::jsonb,'first_gift',50,'new_donor_first_year',true,
                    'u_b72demo','Dana Reyes')`,
-          [JOURNEY_TPL, ORG, JSON.stringify(JOURNEY_STEPS)]);
+          [JOURNEY_TPL, ORG, JSON.stringify(JOURNEY_STEPS), JOURNEY_PRESET.blurb]);
 
   // enteredAgo picks which step is open, because the due dates are the entry
   // date plus the offsets. One on step 1, one OVERDUE, one on step 3, one on
@@ -1131,18 +1215,28 @@ async function main() {
                ELSE COALESCE(person_types,'["donor"]'::jsonb) || '["volunteer"]'::jsonb END
              WHERE id=$1 AND org_id=$2`, [id, ORG]);
   }
+  // FIX-5 — TWENTY-FOUR SURNAMES FOR TWENTY-FOUR VOLUNTEERS, paired one to one.
+  // The surnames used to cycle (`i % 14`), which was safe only by luck: the
+  // volunteer pool overlaps the donor pool on both sides ("Marisol", "Rufus",
+  // "Fairweather"), and nothing here checked the names the rest of the file had
+  // already used. Each name now goes through the same registry as everybody
+  // else, and a clash throws instead of shipping two people with one name.
   const VOL_FIRST = ["Marisol","Dev","Aiko","Tomas","Nell","Rufus","Priya","Odin","Clara","Bertie",
                      "Ines","Kofi","Saoirse","Milo","Freya","Hassan","Juno","Emeka","Lotte","Arjun",
                      "Wren","Ottoline","Cassius","Maeve"];
   const VOL_LAST = ["Vance","Okonjo","Brightwater","Mendel","Ashcroft","Iyer","Fairweather","Quill",
-                    "Rosewood","Delacroix","Northcote","Abara","Winterbourne","Sallow"];
+                    "Rosewood","Delacroix","Northcote","Abara","Winterbourne","Sallow",
+                    "Tremaine","Oyelaran","Halliwell","Strand","Beaumaris","Ng","Castellan",
+                    "Fitzgibbon","Larkspur","Orsini"];
   const volOnly = [];
   for (let i = 0; i < 24; i++) {
     const id = `d_b72_vol${i}`;
-    const name = `${VOL_FIRST[i]} ${VOL_LAST[i % VOL_LAST.length]}`;
+    const name = `${VOL_FIRST[i]} ${VOL_LAST[i]}`;
+    if (!takeName(name))
+      throw new Error(`[seed] the volunteer "${name}" has the same name as somebody already in the file.`);
     await q(`INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
              VALUES ($1,$2,$3,$4,$5,'prospect','active','[]','["volunteer"]'::jsonb,'system:volunteer-signup','The volunteer, from the sign-up link')`,
-      [id, ORG, name, `${VOL_FIRST[i].toLowerCase()}.${VOL_LAST[i % VOL_LAST.length].toLowerCase()}@example.org`,
+      [id, ORG, name, `${VOL_FIRST[i].toLowerCase()}.${VOL_LAST[i].toLowerCase()}@example.org`,
        `555-01${String(10 + i).padStart(2, "0")}`]);
     volOnly.push(id);
   }
@@ -1371,6 +1465,26 @@ async function main() {
     [ORG, gala.id, gala.date, gala.campaignId]);
   if (gl.tickets < GALA.ticketBuyersMin || gl.paddle < GALA.paddleGiftsMin || Math.abs(gl.revenue - gl.gifts) > 0.005)
     shapeFail.push(`the gala: ${gl.tickets} ticket buyers (≥${GALA.ticketBuyersMin}), ${gl.paddle} paddle-raise gifts (≥${GALA.paddleGiftsMin}), revenue ${gl.revenue} vs its gifts ${gl.gifts}`);
+  // ── FIX-5 · NOBODY IN HARBORLIGHT SHARES A NAME ────────────────────────
+  // Asserted against the DATABASE, not against the registry that built it: a
+  // registry checking itself proves only that the registry is consistent. The
+  // one allowed repeat is the merge fixture — ONE person with TWO records —
+  // and it is named here rather than counted, so a second duplicate appearing
+  // by accident cannot hide inside an allowance of "one".
+  const dupNames = await q(
+    `SELECT lower(btrim(regexp_replace(name,'\\s+',' ','g'))) AS k,
+            COUNT(*)::int n, array_agg(id ORDER BY id) AS ids, MIN(name) AS shown
+       FROM donors WHERE org_id=$1 AND deleted_at IS NULL
+      GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY 1`, [ORG]);
+  const MERGE_FIXTURE = "osric ravensmere";   // the deliberate two-record person
+  for (const d of dupNames) {
+    if (d.k === MERGE_FIXTURE && d.n === 2) continue;
+    shapeFail.push(`${d.n} people are called "${d.shown}" (${d.ids.join(", ")}) — every demo person has their own name`);
+  }
+  const [fillerNames] = await q(
+    `SELECT COUNT(*)::int n FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND name ~ '^Donor [0-9]+ '`, [ORG]);
+  if (fillerNames.n) shapeFail.push(`${fillerNames.n} donor(s) still carry a filler name like "Donor 1002 Ashgrove"`);
+
   // FIX-3 C, finding 8 — the finished demo holds no real person.
   const stillReal = await findRealPeople(q, ORG, { seededUserEmails: SEEDED_USER_EMAILS });
   if (stillReal.length) {
@@ -1384,6 +1498,7 @@ async function main() {
     process.exit(1);
   }
   console.log(`[assert] drifting/high ${driftingHigh} (range ${SHAPE.driftingHighMin}–${SHAPE.driftingHighMax}) · top-decile share ${(decileShare * 100).toFixed(1)}% — shape holds`);
+  console.log(`[assert] ${takenNames.size} distinct names across every person in the file · the only repeated one is the merge fixture's two records`);
   console.log(`[assert] the year online: ${(onlineShare * 100).toFixed(1)}% of dollars, ${(onlineCountShare * 100).toFixed(1)}% of gifts · ${subs.n} monthly givers · ${gala.name} on ${gala.date}: ${gl.tickets} ticket buyers, ${gl.paddle} paddle gifts, $${Math.round(gl.revenue).toLocaleString()} · no real person`);
 
   // ── Report ──────────────────────────────────────────────────────────────

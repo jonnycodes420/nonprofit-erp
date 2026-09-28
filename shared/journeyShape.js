@@ -253,6 +253,81 @@ export const presetByKey = k => PRESETS.find(p => p.key === k) || null;
 // over the whole catalogue rather than step by step.
 export const DRAFT_KINDS = ["impact_report", "event_invitation", "the_ask", "thank_you"];
 
+// ── FIX-5 · HOW A STEP'S TIMING IS EXPRESSED, AND WHAT IS STORED ──────────
+// "Fourteen days after the trigger" and "two weeks after the previous step"
+// are two ways of saying a thing, and a fundraiser says whichever one the step
+// actually is: the thank-you call is three days after the gift, and the
+// follow-up is a fortnight after the call, not day seventeen.
+//
+// BUT THE ENGINE KEEPS ONE NUMBER. `offsetDays` is days from the trigger,
+// full stop, because that is what plan dates are computed from and a second
+// unit would be a second source of truth for a date. So timing is INPUT and
+// `offsetDays` is DERIVED: `resolveTiming` turns what she said into the one
+// number, and the `timing` object is stored alongside so the screen can show
+// her back the words she chose rather than an arithmetic result.
+//
+// A month is 30 days here. It is a plan's spacing, not an invoice's due date,
+// and "month 3" on a cultivation timeline has never meant the 3rd.
+export const TIMING_UNITS = [
+  { key: "days",   label: "days",   days: 1 },
+  { key: "weeks",  label: "weeks",  days: 7 },
+  { key: "months", label: "months", days: 30 },
+];
+export const TIMING_FROM = [
+  { key: "trigger",  label: "after the trigger" },
+  { key: "previous", label: "after the previous step" },
+];
+const unitDays = k => (TIMING_UNITS.find(u => u.key === k) || TIMING_UNITS[0]).days;
+
+// What one step's timing means, given the step before it. Returns the timing as
+// it will be stored AND the offsetDays it resolves to. A first step can only be
+// "after the trigger" — there is no previous step for it to follow, and reading
+// "after the previous step" on step one would be reading nothing.
+export function resolveTiming(raw = {}, prevOffsetDays = null) {
+  const t = raw && typeof raw.timing === "object" && raw.timing ? raw.timing : null;
+  const hasPrev = Number.isInteger(prevOffsetDays);
+  if (!t) {
+    // No timing given: the step is whatever `offsetDays` says, expressed in
+    // days from the trigger. Every journey stored before FIX-5 lands here, so
+    // an old journey opens with correct words rather than blank controls.
+    const off = Math.max(0, Math.round(Number(raw.offsetDays) || 0));
+    return { timing: { from: "trigger", value: off, unit: "days" }, offsetDays: off };
+  }
+  const unit = TIMING_UNITS.some(u => u.key === t.unit) ? t.unit : "days";
+  const from = hasPrev && t.from === "previous" ? "previous" : "trigger";
+  const value = Math.max(0, Math.round(Number(t.value) || 0));
+  const span = value * unitDays(unit);
+  const offsetDays = from === "previous" ? prevOffsetDays + span : span;
+  return { timing: { from, value, unit }, offsetDays };
+}
+
+// The words under a node: "Day 3", "Week 2", "Month 12" when it hangs off the
+// trigger, and "+2 weeks" when it hangs off the step before it. Built from the
+// timing so a retimed step relabels itself and cannot disagree with its date.
+export function timingWord(timing = {}, offsetDays = 0) {
+  const value = Math.max(0, Math.round(Number(timing.value) || 0));
+  const unit = TIMING_UNITS.find(u => u.key === timing.unit) || TIMING_UNITS[0];
+  if (timing.from === "previous") {
+    if (!value) return "Same day";
+    return `+${value} ${value === 1 ? unit.label.replace(/s$/, "") : unit.label}`;
+  }
+  const d = Math.max(0, Math.round(Number(offsetDays) || 0));
+  if (d === 0) return "Same day";
+  if (d < 7) return `Day ${d}`;
+  if (d < 45) { const w = Math.round(d / 7); return `Week ${w}`; }
+  return `Month ${Math.round(d / 30)}`;
+}
+
+// The one-line description under a journey's name. Not a second name and not a
+// paragraph: one sentence a person reads in a row without opening it.
+export function sanitizeDescription(s) {
+  return String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, 200);
+}
+// A step's private note. Longer, because it is where "she hates the phone" goes.
+export function sanitizeNote(s) {
+  return String(s == null ? "" : s).replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+}
+
 // TRUE FOR EVERY STEP, DRAFT OR NOT. It is not a per-step setting an org can
 // turn off — it is what a journey step IS. A function rather than a constant
 // so a caller reads it as a question about the step it is holding.
@@ -272,7 +347,22 @@ export function allPresetSteps() {
 // of rules about what a step may be, and a journey does not get its own — and
 // adds only what a journey has that a plan does not.
 export function validateJourney(input = {}) {
-  const base = validateTemplate({ name: input.name, steps: input.steps });
+  // FIX-5 — TIMING IS RESOLVED BEFORE THE STEPS ARE VALIDATED. A step that says
+  // "two weeks after the previous step" has to become a number of days from the
+  // trigger before planShape can check the ordering rule, or every relative
+  // step would read as offset 14 and the second one would look like it goes
+  // backwards. Resolved left to right, because "the previous step" means the
+  // one already resolved.
+  const rawSteps = Array.isArray(input.steps) ? input.steps : [];
+  const timed = [];
+  let prev = null;
+  for (const s of rawSteps) {
+    const r = resolveTiming(s, prev);
+    timed.push({ ...s, offsetDays: r.offsetDays, timing: r.timing });
+    prev = r.offsetDays;
+  }
+
+  const base = validateTemplate({ name: input.name, steps: timed });
   const errors = [...base.errors];
 
   const trigger = String(input.trigger || "").trim();
@@ -303,7 +393,7 @@ export function validateJourney(input = {}) {
   // about drafts. An unknown kind is refused rather than ignored: a step that
   // silently loses its draft is a step that quietly asks her to write it.
   const steps = base.steps.map((s, i) => {
-    const raw = (input.steps || [])[i] || {};
+    const raw = timed[i] || {};
     const draft = raw.draft == null || raw.draft === "" ? null : String(raw.draft);
     if (draft && !DRAFT_KINDS.includes(draft)) {
       errors.push({ field: `steps.${i}.draft`,
@@ -312,11 +402,20 @@ export function validateJourney(input = {}) {
     // `ownerMode` defaults to the relationship owner, which is the answer in
     // almost every case and the one the brief names.
     const ownerMode = raw.ownerMode === "specific" ? "specific" : "relationship_owner";
-    return { ...s, draft: DRAFT_KINDS.includes(draft) ? draft : null, ownerMode,
-             ownerId: ownerMode === "specific" ? (raw.ownerId || null) : null };
+    // FIX-5 — the timing as she expressed it, carried through. `base.steps` has
+    // already thrown everything but type/label/offsetDays away, so the words
+    // have to come back from the resolved copy rather than from base.
+    const timing = i === 0 && raw.timing && raw.timing.from === "previous"
+      ? { ...raw.timing, from: "trigger" } : (raw.timing || { from: "trigger", value: s.offsetDays, unit: "days" });
+    return { ...s, timing, note: sanitizeNote(raw.note),
+             draft: DRAFT_KINDS.includes(draft) ? draft : null, ownerMode,
+             ownerId: ownerMode === "specific" ? (raw.ownerId || null) : null,
+             ownerName: ownerMode === "specific" ? sanitizeLabel(raw.ownerName) : "" };
   });
 
-  return { ok: errors.length === 0, name: base.name, trigger, amountCents, priority, steps, errors };
+  return { ok: errors.length === 0, name: base.name, description: sanitizeDescription(input.description),
+           trigger, amountCents, priority, steps,
+           audience: validateAudience(input.audience), errors };
 }
 
 // ── WHICH JOURNEY WINS ───────────────────────────────────────────────────

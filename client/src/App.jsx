@@ -650,7 +650,7 @@ function AppShell() {
         <span style={{flex:1,minWidth:240}}>
           {data.org?.isDemoOrg?(
             <><strong style={{color:T.gold50}}>This is a demonstration organisation.</strong>{" "}
-              Everything in it is invented, and Steward will not send email to anyone here — not a
+              Everything in it is invented, and Steward will not send email to anyone here: not a
               receipt, not a reminder, not a campaign.</>
           ):(
             <><strong style={{color:T.gold50}}>
