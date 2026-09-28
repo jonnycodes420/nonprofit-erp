@@ -41,7 +41,7 @@ jobs:
       skip: ${{ steps.t.outputs.skip }}
       trusted: ${{ steps.t.outputs.trusted }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { fetch-depth: 0 }
       - id: t
         env:
@@ -61,7 +61,7 @@ jobs:
     needs: [tree-check]
     if: needs.tree-check.outputs.skip != 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -207,7 +207,7 @@ jobs:
       REQUIRE_BROWSER: "1"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -308,7 +308,7 @@ jobs:
       group: deploy-main
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -379,7 +379,7 @@ jobs:
       VERCEL_ORG_ID: team_bmpIjp9a9Cji8y2NqHsEuewv
       VERCEL_PROJECT_ID: prj_OCO0p927wc7CszoQS9PEEnDg7mIy
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Deploy to Vercel
         run: |
