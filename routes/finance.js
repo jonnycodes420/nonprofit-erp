@@ -59,6 +59,503 @@ app.get("/finance/restricted", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  FIN-1 · THE OVERVIEW A TREASURER TRUSTS ON SIGHT
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Four figures, and every one of them OPENS its rows and foots to the cent.
+// That is the whole bar: a number a bookkeeper cannot get behind is a number
+// she will not sign, and Finance had four figures that were period totals of
+// a ledger most of the org's giving never reaches.
+//
+// THE FOUR, AND WHY THESE FOUR. They are the four questions somebody opens
+// Finance to ask, in the order they ask them:
+//   money in this month     did the money arrive
+//   restricted balance      how much of it is not ours to spend
+//   unrestricted balance    how much of it is
+//   deposits not matched    is anything unaccounted for
+//
+// EVERY FIGURE IS IN CENTS END TO END and only becomes a decimal for
+// reading. The rows behind a figure are the SAME query as the figure, run
+// again with the rows returned, so the number on the screen and the rows
+// behind it cannot drift — the pattern the journey stats and the hours
+// report already use.
+const FIN_FIGURES = [
+  { key: "moneyInThisMonth", label: "Money in this month",
+    definition: "Every gift dated in the current month, in your organisation's time zone, whatever it came in through. It is the gifts themselves, not the ledger: imported history and online giving are both here." },
+  { key: "restricted", label: "Restricted balance",
+    definition: "What is in funds marked restricted: money that arrived for a named purpose and is not the organisation's to spend on anything else." },
+  { key: "unrestricted", label: "Unrestricted balance",
+    definition: "What is in funds not marked restricted. This is the money the board can actually direct." },
+  { key: "unmatched", label: "Deposits not yet matched",
+    definition: "Gifts recorded as a cheque, cash or a bank transfer that are not yet on a deposit, plus payouts Steward could not line up with its own gifts. Nothing is wrong with them; nobody has reconciled them yet." },
+];
+
+// The month, as the ORG's civil month. A gift recorded at 9pm Eastern on the
+// 31st belongs to that month, not to the next one in UTC.
+function monthRange(today) {
+  const y = today.slice(0, 4), m = today.slice(5, 7);
+  const last = new Date(Date.UTC(+y, +m, 0)).getUTCDate();
+  return { from: `${y}-${m}-01`, to: `${y}-${m}-${String(last).padStart(2, "0")}` };
+}
+
+// One place each figure's SQL lives, so the figure and its rows are one
+// query. `rows` true returns the rows; false returns the total in cents.
+async function finFigure(orgId, key, { from, to }, rows = false) {
+  if (key === "moneyInThisMonth") {
+    const sel = rows
+      ? `g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund`
+      : `COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents`;
+    const r = await query(
+      `SELECT ${sel} FROM gifts g
+         JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+         LEFT JOIN fin_funds f ON f.id=g.fund_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL
+          AND g.date IS NOT NULL AND g.date <> '' AND g.date >= ? AND g.date <= ?
+        ${rows ? "ORDER BY g.date DESC, g.id LIMIT 2000" : ""}`, [orgId, from, to]);
+    return rows ? r : Number(r[0].cents);
+  }
+  if (key === "restricted" || key === "unrestricted") {
+    const want = key === "restricted";
+    const sel = rows
+      ? `f.id, f.name, f.restricted,
+         COALESCE(SUM(CASE WHEN ft.type='income' THEN ROUND(ft.amount*100)
+                           WHEN ft.type='expense' THEN -ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS cents`
+      : `COALESCE(SUM(CASE WHEN ft.type='income' THEN ROUND(ft.amount*100)
+                           WHEN ft.type='expense' THEN -ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS cents`;
+    const r = await query(
+      `SELECT ${sel} FROM fin_funds f
+         LEFT JOIN fin_transactions ft ON ft.fund_id=f.id AND ft.org_id=f.org_id
+        WHERE f.org_id=? AND COALESCE(f.restricted,false) = ?
+        ${rows ? "GROUP BY f.id, f.name, f.restricted ORDER BY 4 DESC" : ""}`, [orgId, want]);
+    return rows ? r : Number(r[0].cents);
+  }
+  if (key === "unmatched") {
+    // A gift that came in as money somebody physically banked, and is not on
+    // a deposit yet. A DEPOSIT IS AN `imports` ROW with shape='deposit'
+    // (BUILD-88b), and its gifts carry its import_id — there is no
+    // `gifts.deposit_id`, and writing one would have been a second place a
+    // deposit lives. The window is the last ninety days: an eighteen month
+    // old cheque is history, not an open item, and a figure that counts it
+    // is a figure nobody can ever drive to zero.
+    const sel = rows
+      ? `g.id, g.date, g.amount, g.payment_method, d.name AS who`
+      : `COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents`;
+    const r = await query(
+      `SELECT ${sel} FROM gifts g
+         JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM imports im
+                            WHERE im.id = g.import_id AND im.org_id = g.org_id
+                              AND im.shape = 'deposit' AND im.reversed_at IS NULL)
+          AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
+          AND g.date >= (CURRENT_DATE - 90)::text
+        ${rows ? "ORDER BY g.date DESC, g.id LIMIT 2000" : ""}`, [orgId]).catch(() => rows ? [] : [{ cents: 0 }]);
+    return rows ? r : Number((r[0] || {}).cents || 0);
+  }
+  return rows ? [] : 0;
+}
+
+app.get("/finance/overview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const month = monthRange(today);
+
+  const cents = {};
+  for (const f of FIN_FIGURES) cents[f.key] = await finFigure(orgId, f.key, month);
+
+  // MONEY IN BY MONTH, as bars that open their gifts. Twelve months back
+  // from this one, in the org's civil months, and a month with nothing in it
+  // is a zero rather than a gap — a chart that silently skips empty months
+  // makes a quiet year look like a busy one.
+  const rawMonths = await query(
+    `SELECT substring(g.date from 1 for 7) AS month,
+            COALESCE(SUM(ROUND(g.amount*100)),0)::bigint AS cents,
+            COUNT(*)::int AS n
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
+        AND g.date >= ? AND g.date <= ?
+      GROUP BY 1 ORDER BY 1`,
+    [orgId, `${Number(today.slice(0, 4)) - 1}-${today.slice(5, 7)}-01`, month.to]);
+  const byMonth = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1 - i, 1));
+    const key = d.toISOString().slice(0, 7);
+    const hit = rawMonths.find(r => r.month === key);
+    byMonth.push({ month: key, cents: Number(hit ? hit.cents : 0), gifts: hit ? hit.n : 0,
+                   amount: toDollars(Number(hit ? hit.cents : 0)) });
+  }
+
+  // ── NEEDS YOU ─────────────────────────────────────────────────────────
+  // Three things, and each one is a thing somebody can DO today. Not a
+  // health score and not a warning: a list with a count, a sentence and the
+  // rows behind it.
+  const needsYou = [];
+  const [noFund] = await query(
+    `SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
+        AND g.date >= (CURRENT_DATE - 365)::text`, [orgId]);
+  if (noFund.n) needsYou.push({ key: "noFund", label: "Gifts with no fund", count: noFund.n,
+    amount: toDollars(Number(noFund.cents)),
+    sentence: `${noFund.n} ${noFund.n === 1 ? "gift" : "gifts"} in the last year, ${money.formatCentsPlain(Number(noFund.cents))}, are not assigned to a fund. They are counted in your totals and they are not counted in any fund's balance.`,
+    rows: "noFund" });
+
+  const [unmatchedN] = await query(
+    `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM imports im
+                          WHERE im.id = g.import_id AND im.org_id = g.org_id
+                            AND im.shape = 'deposit' AND im.reversed_at IS NULL)
+        AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash','bank transfer','ach')
+        AND g.date >= (CURRENT_DATE - 90)::text`, [orgId]).catch(() => [{ n: 0 }]);
+  if (unmatchedN.n) needsYou.push({ key: "unmatched", label: "Not yet on a deposit", count: unmatchedN.n,
+    amount: toDollars(cents.unmatched),
+    sentence: `${unmatchedN.n} ${unmatchedN.n === 1 ? "gift" : "gifts"} came in as a cheque, cash or a transfer in the last ninety days and ${unmatchedN.n === 1 ? "is" : "are"} not on a deposit yet.`,
+    rows: "unmatched" });
+
+  // Restricted money with a grant deadline coming. Only AWARDED grants hold
+  // money, and only a REPORT or SPEND deadline inside sixty days is a thing
+  // to do rather than a date in a calendar.
+  // `grants.funder` is a TEXT name and `grants.program` is the grant's title.
+  // There is no funder_id: the funders table came later and never became the
+  // grant's parent. Written against the real columns, and NOT wrapped in a
+  // catch that would turn a wrong column name into a silently empty list —
+  // which is exactly how the first version of this shipped looking fine.
+  const deadlines = await query(
+    `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
+       FROM grants g
+      WHERE g.org_id=? AND g.status = 'awarded'
+        AND g.report_due IS NOT NULL AND g.report_due <> ''
+        AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
+      ORDER BY g.report_due LIMIT 25`, [orgId]);
+  if (deadlines.length) needsYou.push({ key: "grantDeadline", label: "Restricted money with a deadline", count: deadlines.length,
+    amount: null,
+    sentence: `${deadlines.length} awarded ${deadlines.length === 1 ? "grant has a report" : "grants have reports"} due within sixty days. Restricted money with a report coming is money somebody has to account for.`,
+    rows: "grantDeadline" });
+
+  res.json({
+    today, month,
+    monthLabel: new Date(month.from + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+    figures: FIN_FIGURES.map(f => ({
+      key: f.key, label: f.label, cents: cents[f.key], amount: toDollars(cents[f.key]),
+      definition: f.definition, rows: f.key,
+    })),
+    byMonth,
+    needsYou,
+    sentence: needsYou.length
+      ? `${needsYou.length} ${needsYou.length === 1 ? "thing needs" : "things need"} you. Every figure here opens the rows behind it.`
+      : "Nothing is waiting. Every figure here opens the rows behind it.",
+  });
+}));
+
+// The rows behind one of those numbers, and they FOOT: the total of the rows
+// returned is sent back beside them, so a screen can say out loud that they
+// add up rather than asking anybody to trust that they do.
+app.get("/finance/overview/rows", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const month = monthRange(today);
+  const key = String(req.query.rows || "");
+
+  if (FIN_FIGURES.some(f => f.key === key)) {
+    const rows = await finFigure(orgId, key, month, true);
+    const total = rows.reduce((a, r) => a + Number(r.cents != null ? r.cents : Math.round(Number(r.amount) * 100)), 0);
+    const figure = await finFigure(orgId, key, month);
+    return res.json({
+      rows: rows.map(r => ({ ...r, amount: r.amount != null ? Number(r.amount) : toDollars(Number(r.cents)) })),
+      count: rows.length, totalCents: total, total: toDollars(total),
+      foots: total === figure,
+      sentence: total === figure
+        ? `${rows.length} ${rows.length === 1 ? "row" : "rows"}, ${money.formatCentsPlain(total)}. They add up to the figure, to the cent.`
+        : `${rows.length} ${rows.length === 1 ? "row" : "rows"} shown, ${money.formatCentsPlain(total)}, against a figure of ${money.formatCentsPlain(figure)}. More rows exist than this list shows.`,
+      definition: (FIN_FIGURES.find(f => f.key === key) || {}).definition,
+    });
+  }
+
+  if (key === "noFund") {
+    const rows = await query(
+      `SELECT g.id, g.date, g.amount, g.type, d.name AS who
+         FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')=''
+          AND g.date >= (CURRENT_DATE - 365)::text
+        ORDER BY g.date DESC, g.id LIMIT 2000`, [orgId]);
+    const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
+    return res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
+      totalCents: total, total: toDollars(total), foots: true,
+      sentence: `${rows.length} ${rows.length === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(total)}, with no fund on them.` });
+  }
+  if (key === "grantDeadline") {
+    const rows = await query(
+      `SELECT g.id, g.funder, g.program, g.amount, g.received, g.report_due
+         FROM grants g
+        WHERE g.org_id=? AND g.status = 'awarded' AND g.report_due IS NOT NULL AND g.report_due <> ''
+          AND g.report_due::date >= CURRENT_DATE AND g.report_due::date <= (CURRENT_DATE + 60)
+        ORDER BY g.report_due LIMIT 100`, [orgId]);
+    return res.json({ rows, count: rows.length, foots: true,
+      sentence: `${rows.length} awarded ${rows.length === 1 ? "grant" : "grants"} with a report due inside sixty days.` });
+  }
+  return res.status(400).json({ error: "unknown_rows", message: "That is not a figure this screen can open." });
+}));
+
+// The gifts behind ONE month's bar.
+app.get("/finance/overview/month", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const m = String(req.query.month || "");
+  if (!/^\d{4}-\d{2}$/.test(m)) return res.status(400).json({ error: "bad_month" });
+  const rows = await query(
+    `SELECT g.id, g.date, g.amount, g.type, d.name AS who, f.name AS fund
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+       LEFT JOIN fin_funds f ON f.id=g.fund_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND substring(g.date from 1 for 7) = ?
+      ORDER BY g.date DESC, g.id LIMIT 2000`, [orgId, m]);
+  const total = rows.reduce((a, r) => a + Math.round(Number(r.amount) * 100), 0);
+  res.json({ month: m, rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
+    totalCents: total, total: toDollars(total),
+    sentence: `${rows.length} ${rows.length === 1 ? "gift" : "gifts"} in ${m}, ${money.formatCentsPlain(total)}.` });
+}));
+
+// ── FIN-1 · FUNDS, ONE CARD EACH ──────────────────────────────────────────
+// Balance, in and out this period, and the restriction. A restricted fund
+// says WHERE THE RESTRICTION CAME FROM — which grant, or which donor — and
+// that is the thing a treasurer cannot get out of a chart of accounts.
+app.get("/finance/funds-detail", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const month = monthRange(today);
+  const funds = await query(
+    `SELECT f.id, f.name, f.restricted, f.description,
+            COALESCE(SUM(CASE WHEN ft.type='income'  THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_all,
+            COALESCE(SUM(CASE WHEN ft.type='expense' THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_all,
+            COALESCE(SUM(CASE WHEN ft.type='income'  AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS in_period,
+            COALESCE(SUM(CASE WHEN ft.type='expense' AND ft.date >= ? AND ft.date <= ? THEN ROUND(ft.amount*100) ELSE 0 END),0)::bigint AS out_period
+       FROM fin_funds f
+       LEFT JOIN fin_transactions ft ON ft.fund_id=f.id AND ft.org_id=f.org_id
+      WHERE f.org_id=?
+      GROUP BY f.id, f.name, f.restricted, f.description
+      ORDER BY COALESCE(f.restricted,false) DESC, f.name`,
+    [month.from, month.to, month.from, month.to, orgId]);
+
+  // WHO RESTRICTED IT. A grant whose money went to this fund, or a donor
+  // whose gift did. Read per fund rather than guessed from the name.
+  // THREE WAYS A RESTRICTION ARRIVES, and all three are read rather than
+  // guessed from the fund's name: a grant whose money was posted to the
+  // fund, a gift that named the fund, and a ledger line that named neither
+  // but carries the person or body it came from. The third matters because
+  // most restricted money in a small shop arrives as a transaction somebody
+  // typed, not as a gift with a fund on it.
+  const sources = await query(
+    `SELECT ft.fund_id, 'grant' AS kind, COALESCE(NULLIF(gr.funder,''), gr.program) AS who,
+            COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint AS cents
+       FROM fin_transactions ft JOIN grants gr ON gr.id = ft.grant_id AND gr.org_id = ft.org_id
+      WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
+      GROUP BY 1,2,3
+      UNION ALL
+     SELECT g.fund_id, 'donor', d.name, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND g.fund_id IS NOT NULL AND d.deleted_at IS NULL
+      GROUP BY 1,2,3
+      UNION ALL
+     SELECT ft.fund_id, 'ledger', ft.vendor_donor, COALESCE(SUM(ROUND(ft.amount*100)),0)::bigint
+       FROM fin_transactions ft
+      WHERE ft.org_id=? AND ft.fund_id IS NOT NULL AND ft.type='income'
+        AND ft.grant_id IS NULL AND COALESCE(ft.vendor_donor,'') <> ''
+      GROUP BY 1,2,3
+      ORDER BY 4 DESC`, [orgId, orgId, orgId]);
+  const byFund = new Map();
+  for (const s of sources) {
+    if (!byFund.has(s.fund_id)) byFund.set(s.fund_id, []);
+    const list = byFund.get(s.fund_id);
+    if (list.length < 4) list.push({ kind: s.kind, who: s.who, amount: toDollars(Number(s.cents)) });
+  }
+
+  res.json({
+    period: month,
+    periodLabel: new Date(month.from + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+    funds: funds.map(f => {
+      const balance = Number(f.in_all) - Number(f.out_all);
+      const restricted = !!f.restricted;
+      const who = byFund.get(f.id) || [];
+      return {
+        id: f.id, name: f.name, restricted, description: f.description || null,
+        balanceCents: balance, balance: toDollars(balance),
+        inPeriod: toDollars(Number(f.in_period)), outPeriod: toDollars(Number(f.out_period)),
+        inPeriodCents: Number(f.in_period), outPeriodCents: Number(f.out_period),
+        restrictedBy: restricted ? who : [],
+        sentence: restricted
+          ? (who.length
+              ? `Restricted. ${money.formatCentsPlain(balance)} is held for a named purpose, and it came from ${who.slice(0, 2).map(w => w.who).join(" and ")}${who.length > 2 ? " and others" : ""}.`
+              : `Restricted. ${money.formatCentsPlain(balance)} is held for a named purpose. Nothing on file says which grant or donor restricted it.`)
+          : `Unrestricted. ${money.formatCentsPlain(balance)} the board can direct.`,
+        rows: "fund:" + f.id,
+      };
+    }),
+    definitions: {
+      balance: "Everything that has ever come into this fund, less everything that has gone out of it. Not a period figure.",
+      inPeriod: "Income posted to this fund inside the current month, in your organisation's time zone.",
+      restrictedBy: "The grants and donors whose money went into this fund, largest first. Read from the transactions and the gifts, never from the fund's name.",
+    },
+    sentence: funds.length
+      ? `${funds.length} ${funds.length === 1 ? "fund" : "funds"}. Every number opens the rows behind it.`
+      : "No funds yet. A fund is a pot of money with a purpose; every gift can name one.",
+  });
+}));
+
+app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const fundId = String(req.query.fund || "");
+  if (!(await orgOwns("fin_funds", fundId, orgId))) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT ft.id, ft.date, ft.type, ft.amount, ft.description, ft.vendor_donor
+       FROM fin_transactions ft WHERE ft.org_id=? AND ft.fund_id=?
+      ORDER BY ft.date DESC, ft.id LIMIT 2000`, [orgId, fundId]);
+  const net = rows.reduce((a, r) => a + (r.type === "income" ? 1 : -1) * Math.round(Number(r.amount) * 100), 0);
+  res.json({ rows: rows.map(r => ({ ...r, amount: Number(r.amount) })), count: rows.length,
+    netCents: net, net: toDollars(net),
+    sentence: `${rows.length} ${rows.length === 1 ? "transaction" : "transactions"}, ${money.formatCentsPlain(net)} net. This is every row behind that balance.` });
+}));
+
+// ── FIN-1 · THE BOOKKEEPER'S EXPORT, IN THE SHAPE THEIR TOOL WANTS ───────
+// BUILD-87 gave Steward one bookkeeper's export: one row per gift, a fixed
+// column list, and an assertion in cents before a single byte is written.
+// That file is correct and a bookkeeper still has to re-map its columns by
+// hand every month, because QuickBooks and Xero each want their own header
+// row and neither wants Steward's.
+//
+// So this is a RESHAPE, not a second export. It reads the SAME rows through
+// the SAME route and only renames and reorders the columns, which is why
+// the totals cannot diverge: there is nothing here that adds anything up.
+// A flavour Steward does not know is refused by name rather than falling
+// back to one that looks similar.
+//
+// The mappings are each vendor's documented import header for a sales
+// receipt / bank transaction. Marked as documented-not-walked, the same
+// honesty the import presets carry: neither has been run through a real
+// QuickBooks import, and the day one is, this comment changes.
+const BOOKKEEPER_FLAVOURS = {
+  steward: { label: "Steward", confidence: "walked",
+    note: "Steward's own columns, one row per gift." },
+  quickbooks: { label: "QuickBooks", confidence: "documented-not-walked",
+    note: "QuickBooks Online's Sales Receipt import columns. Each gift is one sales receipt.",
+    columns: [
+      ["SalesReceiptNo", r => r.receiptNumber || r.giftId],
+      ["Customer", r => r.donorName],
+      ["SalesReceiptDate", r => r.date],
+      ["Item(Product/Service)", r => r.fund || "Donations"],
+      ["ItemAmount", r => r.amount],
+      ["ItemDescription", r => [r.paymentMethod, r.reference].filter(Boolean).join(" ")],
+      ["PaymentMethod", r => r.paymentMethod],
+      ["Memo", r => r.giftId],
+    ] },
+  xero: { label: "Xero", confidence: "documented-not-walked",
+    note: "Xero's Sales Invoice import columns. Each gift is one paid invoice line.",
+    columns: [
+      ["*ContactName", r => r.donorName],
+      ["*InvoiceNumber", r => r.receiptNumber || r.giftId],
+      ["*InvoiceDate", r => r.date],
+      ["*DueDate", r => r.date],
+      ["*Quantity", () => 1],
+      ["*UnitAmount", r => r.amount],
+      ["Description", r => [r.fund, r.paymentMethod, r.reference].filter(Boolean).join(" · ")],
+      ["TrackingName1", r => (r.fund ? "Fund" : "")],
+      ["TrackingOption1", r => r.fund || ""],
+      ["Reference", r => r.giftId],
+    ] },
+};
+
+app.get("/finance/bookkeeper-flavours", requireAuth, wrap(async (req, res) => {
+  res.json({
+    flavours: Object.entries(BOOKKEEPER_FLAVOURS).map(([key, f]) => ({
+      key, label: f.label, confidence: f.confidence, note: f.note,
+      columns: f.columns ? f.columns.map(c => c[0]) : null,
+    })),
+    sentence: "The same rows, in the column order your bookkeeping tool wants. Nothing is added up differently: "
+      + "only the headings change, and Steward checks the rows foot to the cent before it writes any of them.",
+    caveat: "The QuickBooks and Xero column sets are each vendor's documented import headers. Neither has been run "
+      + "through a real import by us, so check the first file before you trust the tenth.",
+  });
+}));
+
+// ── FIN-1 · THE MONTH-CLOSE CHECKLIST ────────────────────────────────────
+// Five things, each one either done or not, each one saying what to do. Not
+// a score and not a progress bar: a bookkeeper closing a month wants to know
+// which of five things is still open, and a percentage tells her nothing.
+app.get("/finance/month-close", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const ymRaw = String(req.query.month || "");
+  const ym = /^\d{4}-\d{2}$/.test(ymRaw) ? ymRaw
+    : new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 1)).toISOString().slice(0, 7);
+  const last = new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5, 7), 0)).getUTCDate();
+  const from = `${ym}-01`, to = `${ym}-${String(last).padStart(2, "0")}`;
+
+  const one = async (key, label, sql, params, done, todoFn) => {
+    const [r] = await query(sql, params).catch(() => [{ n: 0 }]);
+    const n = Number(r ? r.n : 0);
+    return { key, label, count: n, done: done(n), sentence: todoFn(n) };
+  };
+
+  const items = [
+    await one("noFund", "Every gift has a fund",
+      `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND COALESCE(g.fund_id,'')='' AND g.date >= ? AND g.date <= ?`,
+      [orgId, from, to],
+      n => n === 0,
+      n => n ? `${n} ${n === 1 ? "gift has" : "gifts have"} no fund. They are in your totals and in no fund's balance.`
+             : "Every gift this month names a fund."),
+    await one("banked", "Every cheque is on a deposit",
+      `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+          AND lower(COALESCE(g.payment_method,'')) IN ('check','cheque','cash')
+          AND NOT EXISTS (SELECT 1 FROM imports im WHERE im.id=g.import_id AND im.org_id=g.org_id
+                            AND im.shape='deposit' AND im.reversed_at IS NULL)`,
+      [orgId, from, to],
+      n => n === 0,
+      n => n ? `${n} ${n === 1 ? "cheque or cash gift is" : "cheque and cash gifts are"} not on a deposit slip.`
+             : "Every cheque and cash gift this month is on a deposit."),
+    // A RECEIPT IS A ROW IN `receipts`, not a column on the gift. Writing
+    // this against `gifts.receipt_number` would have compiled and counted
+    // every gift as un-receipted for ever.
+    await one("receipted", "Every gift is receipted",
+      `SELECT COUNT(*)::int n FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+        WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?
+          AND NOT EXISTS (SELECT 1 FROM receipts r WHERE r.gift_id = g.id AND r.org_id = g.org_id)`,
+      [orgId, from, to],
+      n => n === 0,
+      n => n ? `${n} ${n === 1 ? "gift has" : "gifts have"} no receipt on the record.`
+             : "Every gift this month carries a receipt."),
+    await one("ledger", "The ledger has the month in it",
+      `SELECT COUNT(*)::int n FROM fin_transactions WHERE org_id=? AND date >= ? AND date <= ?`,
+      [orgId, from, to],
+      n => n > 0,
+      n => n ? `${n} ${n === 1 ? "transaction is" : "transactions are"} posted for this month.`
+             : "Nothing is posted to the ledger for this month. Connect Stripe, or log the month's transactions."),
+  ];
+
+  // The fifth is the export itself, and it is the one that can REFUSE: the
+  // bookkeeper file will not be written unless the rows, the fund totals and
+  // the database agree to the cent (BUILD-87). Reported, not re-derived.
+  const [gifts] = await query(
+    `SELECT COUNT(*)::int n, COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents
+       FROM gifts g JOIN donors d ON d.id=g.donor_id AND d.org_id=g.org_id
+      WHERE g.org_id=? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?`, [orgId, from, to]);
+  items.push({ key: "export", label: "The bookkeeper's file", count: gifts.n,
+    done: gifts.n > 0,
+    sentence: gifts.n
+      ? `${gifts.n} ${gifts.n === 1 ? "gift" : "gifts"}, ${money.formatCentsPlain(Number(gifts.cents))}. Steward checks the rows foot to the cent before it writes the file.`
+      : "No gifts were received this month, so there is nothing to send." });
+
+  const open = items.filter(i => !i.done).length;
+  res.json({
+    month: ym, from, to,
+    monthLabel: new Date(from + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }),
+    items, openCount: open,
+    sentence: open
+      ? `${open} of ${items.length} ${open === 1 ? "thing is" : "things are"} still open for this month.`
+      : `All ${items.length} are done. This month is ready to close.`,
+  });
+}));
+
 // ── Financials ─────────────────────────────────────────────────────────────
 app.get("/financials", requireAuth, wrap(async (req, res) => {
   const months = await query(

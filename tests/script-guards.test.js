@@ -91,6 +91,11 @@ const SELF_REFUSING = [
   // routes on a loopback stack, so it refuses a non-loopback BASE outright;
   // there is no read-only mode for a walk whose point is that the writes land.
   "build99-walk",
+  // FIN-1 — the walk. It opens every Finance screen at 1440 and 390 and
+  // reads the numbers back; it writes nothing of its own, but it signs in as
+  // a real admin, so it refuses a non-loopback BASE or APP_URL outright and
+  // refuses to run with NODE_ENV production.
+  "fin1-walk",
   // VOL-1 — the walk. It signs a volunteer up through the public page, checks
   // somebody in and out (which writes hours), and switches one user's ROLE to
   // volunteer_coordinator and back to prove the server-side boundary rather

@@ -95,6 +95,11 @@ const PROD_DB = "postgres";
 
 const pad = n => String(n).padStart(2, "0");
 const ymd = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+// FIN-1 — n days from a civil date, as a civil date. `dateIn` already exists
+// and takes (year, month, day); this one takes an ISO day and an offset,
+// which is what every "forty-one days from today" in the seed wants.
+const dateIn2 = (iso, n) =>
+  new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + n)).toISOString().slice(0, 10);
 // Civil dates only — the seed never stores an instant as a gift date (Part 4).
 const TODAY = orgTime.orgToday({ timezone: TZ });
 const YEAR = Number(TODAY.slice(0, 4));
@@ -279,6 +284,12 @@ async function main() {
   await q(`INSERT INTO accounts (id,org_id,code,name,type) VALUES ('acct_b72demo',$1,'4010','Contributions','revenue')`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_gen',$1,'General Operating',false)`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_sch',$1,'Scholarship Fund',true)`, [ORG]);
+  // FIN-1 — a THIRD fund, and it is restricted and actually holds money. The
+  // demo had two funds and a restricted balance of zero, so the one screen
+  // that exists to answer "how much of this is not ours to spend" answered
+  // nothing, and a treasurer opening it learned less than from the bank.
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted,description)
+           VALUES ('fund_b72demo_boat',$1,'Harbour Skills Boat',true,'The Meridian Foundation grant for the second training boat.')`, [ORG]);
   // Goal is set AFTER the gifts exist, from what was actually raised (below) —
   // a demo whose first screen reads "666% · $1,018,277 over" looks broken, not
   // successful. Created here with a placeholder; corrected once totals are in.
@@ -1018,6 +1029,70 @@ async function main() {
   await q(`UPDATE fin_transactions ft SET date = g.date FROM gifts g
             WHERE ft.gift_id = g.id AND ft.org_id=$1 AND g.donor_id = ANY($2)`, [ORG, jIds])
     .catch(() => {});
+
+  // ── FIN-1 · A REALISTIC FINANCE MONTH ─────────────────────────────────
+  // Three funds with real balances, one restricted grant whose money is
+  // visibly sitting in its own fund, and payouts from TWO sources with one
+  // of them unmatched — the state a bookkeeper actually opens Finance to
+  // resolve. Without this the Finance screens are technically correct and
+  // answer nothing.
+  console.log("[seed] the finance month…");
+  const FIN_ACCT = "acct_b72demo";
+  let ftn = 0;
+  const ft = async (date, desc, who, amount, type, fund, opts = {}) => {
+    ftn++;
+    await q(`INSERT INTO fin_transactions (id,org_id,date,description,vendor_donor,amount,type,account_id,fund_id,source,grant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [`ft_b72fin_${ftn}`, ORG, date, desc, who, amount, type, FIN_ACCT, fund, opts.source || "seed", opts.grantId || null]);
+  };
+
+  // THE RESTRICTED GRANT. An awarded grant whose money is in the boat fund,
+  // with a report due inside the sixty-day window so "Needs you" has the one
+  // item a restricted balance is supposed to raise.
+  // The grant's own row. `grants.funder` is a TEXT name, not a foreign key
+  // (the funders table came later and never became the grant's parent), and
+  // the grant's title lives in `program` — which is why this insert is
+  // written against the real columns rather than the ones a reader would
+  // guess. The report is due inside the sixty-day window, so "Needs you" has
+  // the one item a restricted balance is supposed to raise.
+  const GRANT_ID = "gr_b72_boat";
+  await q(`INSERT INTO grants (id,org_id,funder,program,amount,received,status,report_due,description)
+           VALUES ($1,$2,'Meridian Foundation','Harbour Skills: second training boat',85000,55000,'awarded',$3,
+                   'Restricted to the purchase and fit-out of a second training boat.')
+           ON CONFLICT (id) DO NOTHING`,
+    [GRANT_ID, ORG, dateIn2(TODAY, 41)]);
+  await ft(dateIn2(TODAY, -74), "Meridian Foundation, first instalment", "Meridian Foundation", 55000, "income", "fund_b72demo_boat", { grantId: GRANT_ID });
+  await ft(dateIn2(TODAY, -31), "Boat hull and trailer", "Kestrel Marine", 21400, "expense", "fund_b72demo_boat");
+  await ft(dateIn2(TODAY, -12), "Outboard and safety kit", "Kestrel Marine", 6250, "expense", "fund_b72demo_boat");
+
+  // The scholarship fund, restricted by named donors rather than by a grant,
+  // so the Funds screen shows BOTH ways a restriction arrives.
+  const schDonors = (await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 5000
+      ORDER BY total_giving DESC LIMIT 3`, [ORG]));
+  for (const [i, d] of schDonors.entries()) {
+    await ft(dateIn2(TODAY, -120 + i * 30), `Scholarship gift from ${d.name}`, d.name, [12000, 7500, 4000][i], "income", "fund_b72demo_sch");
+  }
+  await ft(dateIn2(TODAY, -45), "Autumn term scholarships", "Harborlight Youth Collective", 9200, "expense", "fund_b72demo_sch");
+
+  // The month's operating expenses, so the Overview's bars and the fund's
+  // in-and-out are not one-sided.
+  for (const [day, desc, who, amt] of [
+    [-24, "Rent, the Annexe", "Mill Street Properties", 3400],
+    [-19, "Payroll", "Harborlight Youth Collective", 18600],
+    [-14, "Insurance", "Kestrel Mutual", 1180],
+    [-9,  "Boat fuel and moorings", "Pier 4 Marina", 640],
+    [-4,  "Printing, autumn appeal", "Northgate Press", 910],
+  ]) await ft(dateIn2(TODAY, day), desc, who, amt, "expense", "fund_b72demo_gen");
+
+  const [finCheck] = await q(
+    `SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE -amount END),0)::float bal
+       FROM fin_transactions WHERE org_id=$1 AND fund_id='fund_b72demo_boat'`, [ORG]);
+  console.log(`[assert] the restricted boat fund holds $${Math.round(finCheck.bal).toLocaleString()} of its $85,000 grant`);
+  if (!(finCheck.bal > 0)) {
+    console.error("\nREFUSED: the restricted fund must hold money or the Finance screens answer nothing.");
+    process.exit(1);
+  }
 
   // ── VOL-1 · THE VOLUNTEER PROGRAMME ───────────────────────────────────
   // What a coordinator's week actually looks like, so the demo answers the

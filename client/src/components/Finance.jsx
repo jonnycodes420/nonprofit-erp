@@ -545,7 +545,13 @@ function MonthlyClose() {
     setBusy(false);
   };
   return (
-    <div data-testid="monthly-close"><Card>
+    <div data-testid="monthly-close">
+      {/* FIN-1 — THE CHECKLIST, above the file. Five things, each one open or
+          done, each one saying what to do. Not a score and not a progress
+          bar: somebody closing a month wants to know WHICH of five is still
+          open, and a percentage tells her nothing. */}
+      <MonthCloseChecklist month={ym}/>
+      <Card>
       <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap", marginBottom:12 }}>
         <SectionLabel>Monthly close</SectionLabel>
         <input type="month" value={ym} onChange={e => e.target.value && setYm(e.target.value)} aria-label="Month to close" style={{ ...inp, width:170 }}/>
@@ -577,16 +583,103 @@ function MonthlyClose() {
           style={{ ...btn(), ...((busy || !d.balanced || d.giftCount === 0) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
           {busy ? "Preparing…" : `Download ${monthName} for the bookkeeper`}
         </button>
+        {/* FIN-1 — the same rows, in the column order their tool wants. */}
+        <BookkeeperFlavours/>
       </>}
     </Card></div>
   );
 }
 
+// FIN-1 — the month-close checklist.
+function MonthCloseChecklist({ month }) {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    let alive = true; setD(null);
+    apiFetch(`/finance/month-close?month=${month}`).then(r => { if (alive) setD(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [month]);
+  if (!d) return null;
+  return (
+    <Card>
+      <div style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap", marginBottom:6 }}>
+        <SectionLabel>Before you close {d.monthLabel}</SectionLabel>
+        <span data-testid="close-open-count"
+          style={{ fontSize:12.5, fontWeight:700, color: d.openCount ? T.gold700 : T.greenDk }}>{d.sentence}</span>
+      </div>
+      {d.items.map(i => (
+        <div key={i.key} data-testid={"close-item-" + i.key}
+          style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"9px 0", borderTop:"1px solid "+T.bg2 }}>
+          <span aria-hidden="true" style={{ width:16, height:16, borderRadius:"50%", flexShrink:0, marginTop:2,
+            background: i.done ? T.green100 : T.gold100, border:"1.5px solid "+(i.done ? T.greenDk : T.gold500),
+            display:"inline-flex", alignItems:"center", justifyContent:"center",
+            fontSize:10, fontWeight:900, color: i.done ? T.greenDk : T.gold700 }}>{i.done ? "✓" : ""}</span>
+          <div style={{ minWidth:0 }}>
+            <div style={{ fontSize:13.5, fontWeight:700, color: i.done ? T.ink3 : T.ink }}>{i.label}</div>
+            <div style={{ fontSize:12.5, color:T.ink3, marginTop:2, lineHeight:1.5 }}>{i.sentence}</div>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// FIN-1 — the same rows, in the column order the bookkeeper's tool wants.
+function BookkeeperFlavours() {
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    apiFetch("/finance/bookkeeper-flavours").then(r => { if (alive) setD(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (!d) return null;
+  return (
+    <div data-testid="bookkeeper-flavours" style={{ marginTop:16, paddingTop:14, borderTop:"1px solid "+T.bg2 }}>
+      <div style={{ fontSize:12.5, color:T.ink2, lineHeight:1.6, maxWidth:640 }}>{d.sentence}</div>
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+        {d.flavours.map(f => (
+          <span key={f.key} title={f.note}
+            style={{ fontSize:12, fontWeight:700, borderRadius:8, padding:"6px 12px",
+                     background:T.white, border:"1px solid "+T.bg3, color:T.ink }}>
+            {f.label}
+            {f.confidence !== "walked" && <span style={{ color:T.ink3, fontWeight:500 }}> · check the first file</span>}
+          </span>
+        ))}
+      </div>
+      <div style={{ fontSize:12, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>{d.caveat}</div>
+    </div>
+  );
+}
+
+// ── FIN-1 · FIVE SECTIONS, EACH ONE A QUESTION ────────────────────────────
+const FIN_SECTIONS = [
+  { id: "overview", label: "Overview", question: "What happened this month, and what needs you?",
+    parts: [{ id: "overview", label: "This month" }, { id: "transactions", label: "Transactions" }] },
+  { id: "funds", label: "Funds", question: "Where is the money, and what is it promised to?",
+    parts: [{ id: "funds", label: "Funds" }, { id: "budgets", label: "Budgets" }] },
+  { id: "deposits", label: "Deposits and payouts", question: "What arrived, and does it match?",
+    parts: [{ id: "payouts", label: "Payouts" }, { id: "deposits", label: "Deposit sheet" }] },
+  { id: "grantsmoney", label: "Grants money", question: "What is restricted, and who restricted it?",
+    parts: [{ id: "restricted", label: "Restricted" }] },
+  { id: "exports", label: "Exports", question: "What does the bookkeeper need?",
+    parts: [{ id: "close", label: "Month close" }, { id: "yearend", label: "Year-end statements" },
+            { id: "audit", label: "Audit log" }] },
+];
+// An old sub-tab id resolves to its section, so every deep link that named
+// one still lands on it rather than on the first thing in the list.
+const PART_SECTION = {};
+for (const sec of FIN_SECTIONS) for (const p of sec.parts) PART_SECTION[p.id] = sec.id;
+
 // ── Finance ────────────────────────────────────────────────────────────────
 export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // FIX-1 E: restricted money leads Finance — the first question a treasurer
   // asks Steward that the books cannot answer.
-  const [subtab, setSubtab] = useState("restricted");
+  // FIN-1 — `subtab` stays the name of the OPEN PART, because forty-odd
+  // lines below read it and every deep link names one. What is new is the
+  // section above it; setting a part sets the section it lives in, so the
+  // two can never disagree.
+  const [subtab, setSubtabRaw] = useState("overview");
+  const [section, setSection] = useState("overview");
+  const setSubtab = id => { setSubtabRaw(id); if (PART_SECTION[id]) setSection(PART_SECTION[id]); };
   const [openPayout, setOpenPayout] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [funds, setFunds] = useState([]);
@@ -672,16 +765,16 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
   // which gifts made up a payout, what goes to the bookkeeper this month. The
   // manual Accounts tab is gone (the chart of accounts is still provisioned
   // and still read by Budgets and the transaction form).
-  const SUBTABS = [
-    { id:"restricted",   label:"Restricted" },
-    { id:"payouts",      label:"Payouts" },
-    { id:"close",        label:"Monthly close" },
-    { id:"overview",     label:"Overview" },
-    { id:"transactions", label:"Transactions" },
-    { id:"funds",        label:"Funds" },
-    { id:"budgets",      label:"Budgets" },
-    { id:"audit",        label:"Audit Log" },
-  ];
+  // ── FIN-1 · THE SAME SHAPE FUNDRAISING AND VOLUNTEERS GOT ─────────────
+  // Finance had EIGHT sub-tabs in a flat strip, every one of them equally
+  // loud, and a treasurer opening it had to know which of the eight held
+  // the answer before she could look for it. Five sections now, each one a
+  // question, with the old views folded in underneath as parts.
+  //
+  // NOTHING WAS DROPPED. Restricted, Payouts, Monthly close, Overview,
+  // Transactions, Funds, Budgets and the Audit log are all still here, each
+  // under the question it answers, and every deep link that named a subtab
+  // still resolves (PART_SECTION below maps an old id to its section).
 
   // ── Transactions filtering + sort ──
   const sortedTxns = [...transactions]
@@ -830,8 +923,8 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
 
   if (loading) return (
     <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
-      <PageTitle main="Your" accent="finances."/>
-      <div style={{ color:T.ink3, fontSize:13 }}>Loading financial data…</div>
+      <PageTitle main="Your" accent="money."/>
+      <div style={{ color:T.ink3, fontSize:13 }}>Loading your money…</div>
     </div>
   );
 
@@ -850,7 +943,7 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
     <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
       {/* Title + year-basis toggle share one row (no dead band under the title). */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:16, flexWrap:"wrap" }}>
-        <PageTitle main="Your" accent="finances."/>
+        <PageTitle main="Your" accent="money."/>
         <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4, marginTop:6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}>
             <span style={{ fontSize:11, color:T.ink3 }}>Year basis:</span>
@@ -875,7 +968,37 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       {showTxnModal && <TransactionModal accounts={accounts} funds={funds} onSave={handleAddTxn} onRouted={handleRouted} onClose={() => setShowTxnModal(false)}/>}
       {(showFundModal || editFund) && <FundModal fund={editFund} onSave={handleSaveFund} onClose={() => { setShowFundModal(false); setEditFund(null); }}/>}
 
-      <SectionTabs tabs={SUBTABS} active={subtab} onSelect={setSubtab} className="finance-tabbar"/>
+      <SectionTabs tabs={FIN_SECTIONS.map(x => ({ id: x.id, label: x.label }))} active={section}
+        onSelect={id => { setSection(id); const sec = FIN_SECTIONS.find(x => x.id === id); if (sec) setSubtabRaw(sec.parts[0].id); }}
+        className="finance-tabbar fr-tabbar" dataKey="fin-section"
+        stripProps={{ "data-fin-strip": "", "aria-label": "Finance" }} style={{ marginBottom: 12 }}/>
+      {(() => {
+        const sec = FIN_SECTIONS.find(x => x.id === section) || FIN_SECTIONS[0];
+        return (
+          <>
+            <div style={{ display:"flex", alignItems:"baseline", gap:12, flexWrap:"wrap", margin:"0 0 10px" }}>
+              <div style={{ fontSize:13, color:T.ink3 }}>{sec.question}</div>
+            </div>
+            {sec.parts.length > 1 && (
+              <div data-fin-parts="" role="navigation" aria-label={sec.label}
+                style={{ display:"flex", flexWrap:"wrap", gap:2, marginBottom:14, borderBottom:"1px solid "+T.bg2 }}>
+                {sec.parts.map(pt => {
+                  const on = subtab === pt.id;
+                  return (
+                    <button key={pt.id} data-fin-part={pt.id} aria-current={on ? "true" : undefined}
+                      onClick={() => setSubtabRaw(pt.id)}
+                      style={{ display:"inline-flex", alignItems:"center", gap:6, background:"transparent", color:T.ink3,
+                               border:"none", borderRadius:"6px 6px 0 0", padding:"6px 12px", fontSize:12.5,
+                               fontWeight:600, cursor:"pointer", whiteSpace:"nowrap", ...activeMark(on,"bottom") }}>
+                      {pt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {/* ── Restricted (BUILD-100 Part 7) ── */}
       {/* FIX-1 E: where restricted money sits is the first thing Finance shows,
@@ -896,11 +1019,23 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
       {/* ── Payouts (FIX-1 E): which gifts made up this payout ── */}
       {subtab === "payouts" && <PayoutsView onNavigate={onNavigate} openId={openPayout} onOpen={setOpenPayout}/>}
 
+      {/* ── FIN-1 · the deposit sheet, where a treasurer looks for it ── */}
+      {subtab === "deposits" && <DepositSheetCard onNavigate={onNavigate} isReadOnly={isReadOnly}/>}
+
+      {/* ── FIN-1 · the year-end statement run, in Exports with the rest ── */}
+      {subtab === "yearend" && <YearEndCard isReadOnly={isReadOnly} onNavigate={onNavigate}/>}
+
       {/* ── Monthly close (FIX-1 E): what goes to the bookkeeper this month ── */}
       {subtab === "close" && <MonthlyClose/>}
 
       {/* ── Overview ── */}
       {subtab === "overview" && <>
+        {/* FIN-1 — THE FOUR FIGURES A TREASURER OPENS FINANCE TO ASK, above
+            everything else, each one opening its rows and footing to the
+            cent. The period tiles below are unchanged and still there: they
+            answer a different question (the fiscal-year picture) and one is
+            not a replacement for the other. */}
+        <FinOverview onNavigate={onNavigate}/>
         {/* FIX-1 E — the period figures live on Overview now; Restricted leads. */}
         {summary && (
           <>
@@ -1116,6 +1251,11 @@ export function Finance({ data, setData, isReadOnly, onNavigate }) {
 
       {/* ── Funds ── */}
       {subtab === "funds" && <>
+        {/* FIN-1 — ONE CARD PER FUND: balance, in and out this period, and
+            the restriction, with WHO restricted it read from the grants and
+            the gifts rather than guessed from the fund's name. The table
+            below is unchanged. */}
+        <FinFundCards/>
         <div style={{ display:"flex", justifyContent:"flex-end" }}>
           <button style={writeBtn(isReadOnly, btn(IN))} onClick={addBtnHandler(() => setShowFundModal(true))} title={isReadOnly ? RO_TIP : ""}>+ Add fund</button>
         </div>
@@ -1419,5 +1559,284 @@ function BudgetInput({ value, onSave }) {
       title="Click to edit">
       {fmtFull(value)}
     </span>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FIN-1 · THE SCREENS A TREASURER TRUSTS ON SIGHT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// A figure that OPENS. The number, its one sentence, and the rows behind it —
+// with the rows saying out loud whether they add up to the figure, because
+// "trust me" is exactly what a bookkeeper will not do.
+function FinFigure({ f, onOpen }) {
+  return (
+    <button data-testid={"fin-figure-" + f.key} onClick={() => onOpen(f)} title={f.definition}
+      style={{ background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"15px 16px",
+               textAlign:"left", cursor:"pointer", fontFamily:"inherit", minWidth:0 }}>
+      <div style={{ fontSize:10.5, color:T.ink3, textTransform:"uppercase", letterSpacing:".07em", marginBottom:5 }}>{f.label}</div>
+      <div style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif", lineHeight:1.1 }}>{fmtFull(f.amount)}</div>
+    </button>
+  );
+}
+
+function FinOverview({ onNavigate }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    apiFetch("/finance/overview").then(r => { if (alive) setD(r); })
+      .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not add up this month.")); });
+    return () => { alive = false; };
+  }, []);
+
+  async function openFigure(f) {
+    setOpen({ loading: true, label: f.label, definition: f.definition });
+    try { setOpen({ ...(await apiFetch(`/finance/overview/rows?rows=${encodeURIComponent(f.rows)}`)), label: f.label, definition: f.definition }); }
+    catch (e) { setOpen({ label: f.label, error: errorMessage(e, "Those rows did not open.") }); }
+  }
+  async function openMonth(m) {
+    setOpen({ loading: true, label: m.month });
+    try { setOpen({ ...(await apiFetch(`/finance/overview/month?month=${m.month}`)), label: m.month }); }
+    catch (e) { setOpen({ label: m.month, error: errorMessage(e, "Those gifts did not open.") }); }
+  }
+
+  if (err) return <Card><div role="alert" style={{ fontSize:13, color:T.terra700 }}>{err}</div></Card>;
+  if (!d) return <Card><div style={{ fontSize:12, color:T.ink3 }}>Adding up this month…</div></Card>;
+
+  const maxBar = Math.max(...d.byMonth.map(m => m.cents), 1);
+  const monthWord = k => new Date(k + "-01T12:00:00Z").toLocaleDateString("en-US", { month:"short", timeZone:"UTC" });
+
+  return (
+    <div data-testid="fin-overview" style={{ display:"flex", flexDirection:"column", gap:14 }}>
+      <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6 }}>{d.sentence}</div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))", gap:10 }}>
+        {d.figures.map(f => <FinFigure key={f.key} f={f} onOpen={openFigure}/>)}
+      </div>
+
+      {/* MONEY IN BY MONTH, and every bar opens its gifts. Empty months are
+          zeros rather than gaps: a chart that skips them makes a quiet year
+          look like a busy one. */}
+      <Card>
+        <SectionLabel>Money in, by month</SectionLabel>
+        <div data-testid="fin-bars" style={{ display:"flex", alignItems:"flex-end", gap:6, height:120, marginTop:8 }}>
+          {d.byMonth.map(m => (
+            <button key={m.month} data-testid={"fin-bar-" + m.month} onClick={() => openMonth(m)}
+              title={`${m.month} · ${fmtFull(m.amount)} from ${m.gifts} ${m.gifts === 1 ? "gift" : "gifts"}`}
+              style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"flex-end", alignItems:"center",
+                       gap:5, background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", minWidth:0, height:"100%" }}>
+              <span style={{ width:"100%", height:`${Math.max(2, (m.cents / maxBar) * 84)}%`,
+                             background: m.cents ? T.greenDk : T.bg2, borderRadius:"5px 5px 0 0" }}/>
+              <span style={{ fontSize:10, color:T.ink3, whiteSpace:"nowrap" }}>{monthWord(m.month)}</span>
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize:12, color:T.ink3, marginTop:10, lineHeight:1.5 }}>
+          Twelve months of gifts, in your organisation&apos;s own months. Every bar opens the gifts behind it.
+        </div>
+      </Card>
+
+      {/* NEEDS YOU. Three things at most, each one a thing somebody can do
+          today, each with its rows. Not a health score and not a warning. */}
+      <Card>
+        <SectionLabel>Needs you</SectionLabel>
+        {!d.needsYou.length && (
+          <div style={{ fontSize:13, color:T.ink3, lineHeight:1.6, marginTop:6 }}>
+            Nothing is waiting. Every gift is on a fund, every cheque is on a deposit, and no restricted grant has a report due inside sixty days.
+          </div>
+        )}
+        {d.needsYou.map(n => (
+          <button key={n.key} data-testid={"fin-needs-" + n.key}
+            onClick={() => openFigure({ rows: n.rows, label: n.label, definition: n.sentence })}
+            style={{ display:"block", width:"100%", textAlign:"left", background:"none", border:"none",
+                     borderTop:"1px solid "+T.bg2, padding:"11px 2px", cursor:"pointer", fontFamily:"inherit" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"baseline", flexWrap:"wrap" }}>
+              <span style={{ fontSize:13.5, fontWeight:700, color:T.ink }}>{n.label}</span>
+              <span style={{ fontSize:13, fontWeight:700, color:T.gold700 }}>
+                {n.count}{n.amount != null ? ` · ${fmtFull(n.amount)}` : ""}
+              </span>
+            </div>
+            <div style={{ fontSize:12.5, color:T.ink3, marginTop:3, lineHeight:1.5 }}>{n.sentence}</div>
+          </button>
+        ))}
+      </Card>
+
+      <Definitions4 items={d.figures.map(f => [f.label, f.definition])}/>
+
+      {open && (
+        <Modal onClose={() => setOpen(null)} title={open.label + (open.total != null ? ` · ${fmtFull(open.total)}` : "")}>
+          {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}
+          {open.loading && <div style={{ fontSize:13, color:T.ink3 }}>Opening the rows…</div>}
+          {open.sentence && (
+            <div data-testid="fin-rows-sentence"
+              style={{ fontSize:13, color: open.foots === false ? T.gold700 : T.ink2, lineHeight:1.6, marginBottom:12 }}>
+              {open.sentence}
+            </div>
+          )}
+          {open.definition && <div style={{ fontSize:12, color:T.ink3, lineHeight:1.55, marginBottom:12 }}>{open.definition}</div>}
+          {open.rows && (
+            <div style={{ maxHeight:380, overflowY:"auto" }}>
+              {!open.rows.length && <div style={{ fontSize:13, color:T.ink3 }}>No rows.</div>}
+              {open.rows.map((r, i) => (
+                <div key={r.id || i} style={{ display:"flex", justifyContent:"space-between", gap:12, alignItems:"baseline",
+                                              padding:"8px 0", borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
+                  <span style={{ color:T.ink, minWidth:0 }}>
+                    {r.date || r.report_due || r.name || ""}
+                    {r.who ? ` · ${r.who}` : ""}{r.funder ? ` · ${r.funder}` : ""}{r.program ? ` · ${r.program}` : ""}
+                    {r.fund ? <span style={{ color:T.ink3 }}> · {r.fund}</span> : null}
+                    {r.payment_method ? <span style={{ color:T.ink3 }}> · {r.payment_method}</span> : null}
+                  </span>
+                  <span style={{ fontWeight:700, color:T.ink, whiteSpace:"nowrap" }}>
+                    {r.amount != null ? fmtFull(r.amount) : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// FIN-1 — one card per fund. Balance, in and out this period, the
+// restriction, and WHO restricted it.
+function FinFundCards() {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    apiFetch("/finance/funds-detail").then(r => { if (alive) setD(r); })
+      .catch(e => { if (alive) setErr(errorMessage(e, "The funds did not load.")); });
+    return () => { alive = false; };
+  }, []);
+  async function openFund(f) {
+    setOpen({ loading: true, label: f.name });
+    try { setOpen({ ...(await apiFetch(`/finance/funds-detail/rows?fund=${encodeURIComponent(f.id)}`)), label: f.name }); }
+    catch (e) { setOpen({ label: f.name, error: errorMessage(e, "Those rows did not open.") }); }
+  }
+  if (err) return <Card><div role="alert" style={{ fontSize:13, color:T.terra700 }}>{err}</div></Card>;
+  if (!d) return <Card><div style={{ fontSize:12, color:T.ink3 }}>Adding up the funds…</div></Card>;
+  if (!d.funds.length) return (
+    <Card><EmptyState title="No funds yet"
+      message="A fund is a pot of money with a purpose. Make one, name it on your gifts, and this screen tells you what is in it and what it is promised to."/></Card>
+  );
+  return (
+    <div data-testid="fin-fund-cards" style={{ display:"flex", flexDirection:"column", gap:12, marginBottom:6 }}>
+      <div style={{ fontSize:13, color:T.ink3 }}>{d.sentence} Figures in and out are for {d.periodLabel}.</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:12 }}>
+        {d.funds.map(f => (
+          <button key={f.id} data-testid="fin-fund-card" onClick={() => openFund(f)}
+            style={{ background:T.white, border:"1px solid "+T.bg2, borderRadius:12, padding:"16px 17px",
+                     textAlign:"left", cursor:"pointer", fontFamily:"inherit",
+                     borderLeft:"3px solid "+(f.restricted ? T.gold500 : T.greenDk) }}>
+            <div style={{ display:"flex", justifyContent:"space-between", gap:10, alignItems:"baseline", flexWrap:"wrap" }}>
+              <span style={{ fontSize:14.5, fontWeight:700, color:T.ink }}>{f.name}</span>
+              <span style={{ fontSize:11, fontWeight:700, borderRadius:99, padding:"2px 9px",
+                             background: f.restricted ? T.gold100 : T.green100,
+                             color: f.restricted ? T.gold700 : T.greenDk }}>
+                {f.restricted ? "Restricted" : "Unrestricted"}
+              </span>
+            </div>
+            <div style={{ fontSize:26, fontWeight:800, color:T.ink, fontFamily:"'DM Serif Display',serif", lineHeight:1.15, marginTop:6 }}>
+              {fmtFull(f.balance)}
+            </div>
+            <div style={{ fontSize:12, color:T.ink3, marginTop:4 }}>
+              In {fmtFull(f.inPeriod)} · out {fmtFull(f.outPeriod)} this period
+            </div>
+            <div style={{ fontSize:12.5, color:T.ink2, marginTop:8, lineHeight:1.55 }}>{f.sentence}</div>
+          </button>
+        ))}
+      </div>
+      <Definitions4 items={Object.entries(d.definitions || {})}/>
+      {open && (
+        <Modal onClose={() => setOpen(null)} title={open.label + (open.net != null ? ` · ${fmtFull(open.net)} net` : "")}>
+          {open.error && <div role="alert" style={{ fontSize:13, color:T.terra700 }}>{open.error}</div>}
+          {open.loading && <div style={{ fontSize:13, color:T.ink3 }}>Opening the rows…</div>}
+          {open.sentence && <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, marginBottom:12 }}>{open.sentence}</div>}
+          {open.rows && (
+            <div style={{ maxHeight:380, overflowY:"auto" }}>
+              {!open.rows.length && <div style={{ fontSize:13, color:T.ink3 }}>Nothing has moved through this fund yet.</div>}
+              {open.rows.map(r => (
+                <div key={r.id} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"8px 0",
+                                         borderBottom:"1px solid "+T.bg2, fontSize:13 }}>
+                  <span style={{ color:T.ink, minWidth:0 }}>{r.date} · {r.description || r.vendor_donor || ""}</span>
+                  <span style={{ fontWeight:700, color: r.type === "income" ? IN : OUT, whiteSpace:"nowrap" }}>
+                    {r.type === "income" ? "+" : "−"}{fmtFull(r.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// FIN-1 — the deposit sheet, where a treasurer looks for it. The sheet
+// itself lives in Donors (it writes gifts, and a gift is written in one
+// place); this is the door, beside the payouts it reconciles against.
+function DepositSheetCard({ onNavigate, isReadOnly }) {
+  return (
+    <Card>
+      <SectionLabel>The deposit sheet</SectionLabel>
+      <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, maxWidth:640 }}>
+        Cheques and cash, keyed as one slip that has to foot before Steward will write a single gift.
+        Photograph the cheques and Steward reads the amounts; the two amounts are cross-checked, and a
+        slip that does not add up is refused rather than half-entered.
+      </div>
+      <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>
+        It lives with the donors because it writes gifts, and a gift is written in one place.
+        Anything banked and not yet on a slip shows up as <strong>Deposits not yet matched</strong> on Overview.
+      </div>
+      {!isReadOnly && (
+        <button onClick={() => onNavigate && onNavigate("donors", { openImport: true })}
+          data-testid="fin-open-deposit-sheet"
+          style={{ ...btn(), marginTop:14 }}>
+          Open the deposit sheet →
+        </button>
+      )}
+    </Card>
+  );
+}
+
+// FIN-1 — the year-end statement run, in Exports with the rest of what a
+// bookkeeper needs, rather than three screens away in Settings.
+function YearEndCard({ onNavigate }) {
+  return (
+    <Card>
+      <SectionLabel>Year-end giving statements</SectionLabel>
+      <div style={{ fontSize:13, color:T.ink2, lineHeight:1.6, maxWidth:640 }}>
+        One statement per donor for the tax year, with every gift on it and the deductible amount
+        worked out where a gift carried something in return. Steward drafts the run; a person sends it.
+      </div>
+      <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>
+        The run is in Settings, under Receipts, because it sends mail and mail settings live together.
+        It is named here because this is where somebody closing the year looks for it.
+      </div>
+      <button onClick={() => onNavigate && onNavigate("settings", { section: "receipts" })}
+        data-testid="fin-open-yearend"
+        style={{ ...btn(), marginTop:14 }}>
+        Open the year-end run →
+      </button>
+    </Card>
+  );
+}
+
+// The defining sentence for every figure, shown under the figures it
+// defines. Named with a 4 because Finance already had a `Definitions`-shaped
+// block inline and two components of one name in one file is how a later
+// edit picks the wrong one.
+function Definitions4({ items }) {
+  const rows = (items || []).filter(([, s]) => s);
+  if (!rows.length) return null;
+  return (
+    <div data-testid="fin-definitions" style={{ fontSize:12, color:T.ink3, lineHeight:1.6, display:"flex", flexDirection:"column", gap:3 }}>
+      {rows.map(([k, s]) => <div key={k}><strong style={{ color:T.ink2, fontWeight:700 }}>{k}.</strong> {s}</div>)}
+    </div>
   );
 }
