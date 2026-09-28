@@ -820,7 +820,7 @@ function AppShell() {
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not
           revived: the file stays, unimported, like Events and Board. */}
-      {tab==="volunteers"&&<VolunteersHub key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo}/>}
+      {tab==="volunteers"&&<VolunteersHub key={navNonce} isReadOnly={isReadOnly} onNavigate={navigateTo} role={auth?.user?.role}/>}
       {/* BUILD-86 C.3 — BOARD MANAGEMENT IS REMOVED. It was deprioritised out of
           the nav in 2026-07-12 but its render stayed, keyed on the tab id
           `board` — which C.3 reused for Dashboards, so BOTH drew on the same

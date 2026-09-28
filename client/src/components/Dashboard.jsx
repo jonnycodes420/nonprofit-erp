@@ -1838,8 +1838,35 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
 
   // BUILD-83 Part 3.1 — THE THREAD, with Needs Your Attention folded in, is
   // the first thing on Home after the greeting and the setup card.
+  // VOL-1 — the volunteers who have never been asked. Read once, here, from
+  // the same route the Volunteers hub reads, so Home and that screen cannot
+  // disagree about the number or the sentence. A failure is silence: a
+  // crossover that will not load must never break the morning screen.
+  const [crossover,setCrossover]=useState(null);
+  useEffect(()=>{
+    if(surface!=="home")return undefined;
+    let live=true;
+    apiFetch("/volunteer-hub/crossover").then(r=>{ if(live)setCrossover(r); }).catch(()=>{});
+    return ()=>{live=false;};
+  },[surface]);
+
   const threadSection=(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {/* ── VOL-1 · THE CROSSOVER, ON HOME ────────────────────────────
+              The thing nobody else does, said in one line above the work:
+              the people who already say yes with their time and have never
+              been asked for a gift. It sits here rather than in a card of
+              its own because it is a NEXT STEP, and next steps belong above
+              the Thread. It is silent when there is nothing to say. */}
+          {surface==="home"&&crossover&&crossover.nextStep&&(
+            <button data-testid="home-volunteer-crossover"
+              onClick={()=>onNavigate&&onNavigate("volunteers")}
+              style={{textAlign:"left",background:T.white,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,
+                      borderRadius:10,padding:"11px 14px",cursor:"pointer",fontFamily:"inherit"}}>
+              <div style={{fontSize:13.5,fontWeight:700,color:T.ink}}>{crossover.nextStep.label}</div>
+              <div style={{fontSize:12.5,color:T.ink3,marginTop:2,lineHeight:1.5}}>{crossover.nextStep.why}</div>
+            </button>
+          )}
           {/* ABOVE the Thread, not inside it. The Thread is the work; this is
               a note about whose work it is, and it outranks the first row. */}
           {surface==="home"&&sampleStatus?.hasSampleData&&(

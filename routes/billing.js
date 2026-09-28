@@ -391,7 +391,9 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
 app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const { email, role } = req.body;
   if (!email) return res.status(400).json({ error: "Email required" });
-  const validRole = role === "admin" ? "admin" : "staff";
+  // VOL-1 — three roles now. A volunteer coordinator sees volunteers and
+  // hours and not giving; the boundary is enforced in auth.js, not here.
+  const validRole = ["admin", "volunteer_coordinator"].includes(role) ? role : "staff";
   const normalizedEmail = email.trim().toLowerCase();
 
   const existing = await query("SELECT id FROM users WHERE lower(email) = lower(btrim(?))", [email]);

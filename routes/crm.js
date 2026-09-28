@@ -11702,8 +11702,23 @@ app.get("/donors/:id/volunteer-hours", requireAuth, wrap(async (req, res) => {
   if (!d) return res.status(404).json({ error: "Donor not found" });
   const shifts = await query(`SELECT id, date, hours, role, note, via, created_by_name FROM volunteer_shifts
                                WHERE org_id=? AND person_id=? ORDER BY date DESC, created_at DESC LIMIT 100`, [req.user.orgId, d.id]);
+  // VOL-1 — the shifts they are SIGNED UP FOR, beside the hours they have
+  // already given. The record answers both questions a person opening it
+  // asks: what have they done, and when will I see them next.
+  const today = orgToday(await orgTz(req.user.orgId));             // ORG_TZ_SEAM_OK
+  const upcoming = await query(
+    `SELECT s.date, s.start_time, s.end_time, o.name AS opp_name, su.status
+       FROM volunteer_signups su
+       JOIN volunteer_slots s ON s.id = su.slot_id
+       JOIN volunteer_opportunities o ON o.id = s.opportunity_id
+      WHERE su.org_id=? AND su.person_id=? AND su.status IN ('confirmed','waitlisted')
+        AND s.cancelled_at IS NULL AND s.date >= ?
+      ORDER BY s.date, s.start_time LIMIT 6`, [req.user.orgId, d.id, today]).catch(() => []);
   res.json({ ...(await volunteerSummary(req.user.orgId, d.id)),
     sentence: "Every shift logged for this person, by staff, by the volunteer from their link, or from an import.",
+    upcoming: upcoming.map(u => ({
+      when: `${u.opp_name}, ${u.date}${u.status === "waitlisted" ? " (waiting list)" : ""}`,
+      date: u.date, status: u.status })),
     shifts: shifts.map(s => ({ ...s, hours: Number(s.hours) })) });
 }));
 

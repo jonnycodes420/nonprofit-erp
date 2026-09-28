@@ -801,6 +801,10 @@ async function orgUnrestrictedFundId(orgId) {
 // donation into a 500 because a journey could not start.
 let _journeyEngine = null;
 function registerJourneyEngine(fn) { _journeyEngine = fn; }
+// VOL-1 — the shift-reminder sweep, handed back by routes/volunteerScheduling
+// at mount time, for the same reason the journey engine is: that file is
+// required after this one's body has run.
+let _volunteerReminders = null;
 async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
   if (typeof _journeyEngine !== "function") return { started: false, reason: "engine_not_mounted" };
   try { return await _journeyEngine(orgId, donorId, trigger, opts); }
@@ -3105,6 +3109,10 @@ async function volunteerSummary(orgId, personId) {
   return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
 }
 app.use(require("./routes/volunteer").routers.r0);
+// VOL-1 — scheduling, capacity, waitlists, check-in and credentials. Mounted
+// AFTER routes/volunteer so /volunteer/join and /volunteer/log keep their
+// place; the catch-all /volunteer/:slug there defers to them by name.
+app.use(require("./routes/volunteerScheduling").routers.r0);
 
 // ── BUILD-98 (switch) Part 6 — THE PUBLIC API: A KEY THAT OPENS ONE ORG ────
 // Read scopes first. The rules:
@@ -8959,6 +8967,15 @@ require("./routes/volunteer").mount({
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
   volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
+});
+require("./routes/volunteerScheduling").mount({
+  actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
+  insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, orgToday, orgTz,
+  publicAppUrl, query, queryTx, requireAdmin, requireAuth, resend, resolveOrgBrandTheme, run, runTx, uuid,
+  volunteerSummary, withTransaction, wrap,
+  // The reminder sweep registers itself here so the background tick can call
+  // it without this file importing the router's internals.
+  registerVolunteerReminders: fn => { _volunteerReminders = fn; },
 });
 require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
