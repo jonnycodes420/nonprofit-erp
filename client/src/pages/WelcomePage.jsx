@@ -30,6 +30,10 @@ const STEP_META = {
   // gifts come in today?" is only interesting once there are donors for them
   // to land on. It never blocks: "I'll do this later" is always there.
   sources:{ label: "Where gifts come in",      time: "~1 min" },
+  // THREAD-2b 2 — after the file and before the goal: a journey is about the
+  // people who just arrived in the import, and asking before there is anybody
+  // to look after is asking in the abstract.
+  journey:{ label: "How do you look after a new donor?", time: "~2 min" },
   goal:   { label: "Set your first goal",      time: "~1 min" },
   metric: { label: "Your first impact metric", time: "~1 min" },
   launch: { label: "Launch",                   time: "~1 min" },
@@ -94,7 +98,7 @@ export default function WelcomePage() {
   // fresh trial reads as Team (full-feature trial), so a Team evaluator sees it.
   const [isTeam, setIsTeam] = useState(false);
   const flow = useMemo(
-    () => ["start", "basics", ...(isTeam ? ["invite"] : []), "import", "sources", "goal", "metric", "launch"],
+    () => ["start", "basics", ...(isTeam ? ["invite"] : []), "import", "sources", "journey", "goal", "metric", "launch"],
     [isTeam]
   );
   const stepIdx = Math.max(0, flow.indexOf(stepKey));
@@ -126,6 +130,48 @@ export default function WelcomePage() {
   const [donorsSnapshot, setDonorsSnapshot] = useState([]);
   const [importSkipped, setImportSkipped] = useState(false);
   const [loadingDonors, setLoadingDonors] = useState(false);
+
+  // ── THREAD-2b 2 · the journey step's state ─────────────────────────────
+  const [jPresets, setJPresets] = useState([]);
+  const [jLoading, setJLoading] = useState(true);
+  const [jPicked, setJPicked] = useState(null);
+  const [jPreview, setJPreview] = useState(null);
+  const [jSaving, setJSaving] = useState(false);
+  const [jErr, setJErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    apiFetch("/journeys")
+      .then(d => { if (live) { setJPresets(d.presets || []); setJLoading(false); } })
+      .catch(() => { if (live) setJLoading(false); });
+    return () => { live = false; };
+  }, []);
+  // Picking one CREATES it (turned off) so the preview can be a real preview
+  // of a real row, and so "adjust it later" has something to adjust. Turning
+  // it ON is the separate, deliberate act below.
+  async function pickJourney(p) {
+    setJErr(""); setJPicked(p); setJPreview(null);
+    try {
+      const made = p.__id ? { id: p.__id } : await apiFetch("/journeys", { method: "POST", body: JSON.stringify({ presetKey: p.key }) });
+      p.__id = made.id;
+      setJPreview(await apiFetch(`/journeys/${made.id}/preview`));
+    } catch (e) { setJErr(e?.message || "Could not set that one up."); }
+  }
+  async function turnJourneyOn() {
+    if (!jPicked?.__id) return;
+    setJSaving(true); setJErr("");
+    try {
+      await apiFetch(`/journeys/${jPicked.__id}`, { method: "PATCH", body: JSON.stringify({ enabled: true }) });
+      try { localStorage.removeItem("npe_journey_skipped"); } catch { /* private window */ }
+      goNext();
+    } catch (e) { setJErr(e?.message || "Could not turn it on."); }
+    setJSaving(false);
+  }
+  // Skipping is remembered so Home can show ONE calm card until it is done or
+  // dismissed. localStorage because it is a per-viewer nudge, not a fact about
+  // the organisation — and a nudge that survives a reinstall is a nag.
+  function markJourneySkipped() {
+    try { localStorage.setItem("npe_journey_skipped", "1"); } catch { /* private window */ }
+  }
 
   // Step 3 — goal
   const [goalForm, setGoalForm] = useState({ label: "", goalAmount: "", goalType: "total_raised", ...defaultPeriod() });
@@ -566,6 +612,93 @@ export default function WelcomePage() {
         )}
 
         {/* Step — Set first goal */}
+        {/* ── THREAD-2b 2 · HOW DO YOU LOOK AFTER A NEW DONOR? ────────
+            Pick one, see it on one of YOUR donors with real dates, done.
+            Under three minutes because there is one decision in it, and
+            skippable because an org that does not know its answer yet should
+            not be blocked from using the product while it works that out.
+            Skipping leaves one calm Home card, not a nag. */}
+        {stepKey === "journey" && (
+          <div style={card}>
+            <div style={{ marginBottom: 18 }}>
+              <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 27, fontWeight: 400, color: ink, margin: "0 0 8px", letterSpacing: "-0.01em" }}>
+                How do you look after a new donor?
+              </h1>
+              <p style={{ fontSize: 14, color: ink3, margin: 0, lineHeight: 1.6 }}>
+                Pick the closest one. You can change every step of it afterwards, and
+                <strong style={{ color: ink }}> nothing is ever sent without you</strong> — each step
+                becomes a reminder on your Thread on the day it is due.
+              </p>
+            </div>
+
+            {jLoading && <div style={{ fontSize: 13, color: ink3 }}>Loading…</div>}
+            {!jLoading && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                {(jPresets || []).map(p => (
+                  <button key={p.key} onClick={() => pickJourney(p)} data-testid={"wp-journey-" + p.key}
+                    style={{ textAlign: "left", background: T.white, cursor: "pointer", fontFamily: "inherit",
+                             border: `1.5px solid ${jPicked?.key === p.key ? greenDk : T.bg3}`,
+                             boxShadow: jPicked?.key === p.key ? `inset 0 0 0 1px ${greenDk}` : "none",
+                             borderRadius: 12, padding: "13px 15px", display: "flex", gap: 12,
+                             justifyContent: "space-between", alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 14.5, fontWeight: 700, color: ink }}>{p.name}</span>
+                      <span style={{ display: "block", fontSize: 12.5, color: ink3, marginTop: 2 }}>{p.blurb}</span>
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: greenDk, whiteSpace: "nowrap" }}>{p.touches}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* SEEN ON ONE OF THEIR OWN DONORS, with real dates. */}
+            {jPreview && (
+              <div style={{ background: T.ink, borderRadius: 12, padding: "15px 16px", marginBottom: 16 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: T.sage400, marginBottom: 9 }}>
+                  On one of your donors
+                </div>
+                {jPreview.donor ? (
+                  <>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: T.inkInverse }}>
+                      {jPreview.donor.name} · {jPreview.donor.basis}
+                    </div>
+                    <div style={{ display: "flex", gap: 5, marginTop: 10, flexWrap: "wrap" }}>
+                      {(jPreview.steps || []).map((st, i) => (
+                        <span key={i} title={`${st.label} · ${st.dueDate}`}
+                          style={{ width: 22, height: 4, borderRadius: 99, background: i === 0 ? T.gold500 : T.green650 }} />
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 12, color: T.sage400, marginTop: 9, lineHeight: 1.5 }}>
+                      Next: {(jPreview.steps || [])[0]?.label || "—"}
+                      {(jPreview.steps || [])[0]?.dueDate ? `, ${new Date((jPreview.steps || [])[0].dueDate + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" })}` : ""}.
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: 12.5, color: T.sage400, lineHeight: 1.55 }}>
+                    You have not imported anyone yet, so there is nobody to show it on. The journey is
+                    still set up and waiting — it starts the first time somebody gives.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {jErr && <div style={errBox}>{jErr}</div>}
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={turnJourneyOn} disabled={!jPicked || jSaving} style={primaryBtn(!jPicked || jSaving)}>
+                {jSaving ? "Setting it up…" : "Use this one →"}
+              </button>
+              <button onClick={() => { markJourneySkipped(); goNext(); }} data-testid="wp-journey-skip"
+                style={{ background: "none", border: "none", color: ink3, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginLeft: "auto" }}>
+                I'll do this later
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: ink3, marginTop: 12, lineHeight: 1.55 }}>
+              You can build your own, and change any of these, at Settings → Journeys.
+            </p>
+          </div>
+        )}
+
         {stepKey === "goal" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>

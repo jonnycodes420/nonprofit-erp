@@ -3,6 +3,17 @@
 Read this when you touch the pipeline, stage or status, moves, opportunities, portfolios and assignment, or wealth scoring.
 
 ## Rules
+- **The journey builder is Direction A, "the spine".** Node position is the offset as a fraction
+  of the journey, spaced so nothing collides (`nodePositions`, MIN_GAP 11.5%) — proportional, not
+  equal, because the unequal gaps ARE the idea. The spine is 900px minimum and scrolls inside its
+  own container; the page never scrolls sideways. At ≤900px it becomes a vertical list with the
+  same order and dates. The journey chip lives in the donor profile's RIGHT RAIL. (THREAD-2b)
+- **A journey's numbers open their donors, and the route says what they are not.** One SQL per
+  number in `JOURNEY_ROW_SQL`, used by both the figure and the drill-through, so a count cannot
+  stop matching its own rows. The "no comparison group, so this is not a measure of cause" caveat
+  is in the payload, not in a caption. (THREAD-2b)
+- **The builder's preview counts from the TRIGGER date, not today**, and writes nothing. (THREAD-2b)
+
 - **A journey is a Plan with a trigger, and there is no second engine.** `cultivation_templates`
   gains `trigger_key`, `priority`, `journey_enabled`; `cultivation_plans` gains `trigger_key`,
   `priority`, `replaced_plan_id`, `replaced_reason`. Everything else is the BUILD-99 plan

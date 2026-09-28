@@ -146,7 +146,18 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       <SectionTabs tabs={FR_SECTIONS.map(s => ({ id: s.id, label: s.label }))} active={sec.id}
         onSelect={id => setSection(id)} className="finance-tabbar fr-tabbar" dataKey="fr-section"
         stripProps={{ "data-fr-strip": "", "aria-label": "Fundraising" }} style={{ marginBottom: sec.parts.length > 1 ? 12 : 18 }} />
-      <div style={{ fontSize: 13, color: T.ink3, margin: sec.parts.length > 1 ? "0 0 10px" : "-8px 0 16px" }}>{sec.question}</div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: sec.parts.length > 1 ? "0 0 10px" : "-8px 0 16px" }}>
+        <div style={{ fontSize: 13, color: T.ink3 }}>{sec.question}</div>
+        {/* THREAD-2b 3 — the builder LIVES in Settings, because a journey is a
+            rule the organisation keeps rather than a thing you do to one
+            donor. But Fundraising is where somebody is when they think about
+            it, so it is reachable from here. */}
+        <button data-testid="fr-journeys-link" onClick={() => onNavigate && onNavigate("settings", { section: "journeys" })}
+          style={{ marginLeft: "auto", background: "none", border: "1px solid " + T.bg3, borderRadius: 9,
+                   padding: "6px 13px", color: T.ink2, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+          Journeys →
+        </button>
+      </div>
       {sec.parts.length > 1 && (
         <div data-fr-parts="" role="navigation" aria-label={sec.label}
           style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2 }}>

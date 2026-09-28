@@ -8892,6 +8892,179 @@ app.get("/journeys/:id/qualifying", requireAuth, wrap(async (req, res) => {
       + `their trigger happened in the last ${days} days and they are not in another journey that outranks this one.` });
 }));
 
+// ── THREAD-2b 1 · THE LIVE PREVIEW, ON A REAL DONOR ─────────────────────
+// The builder shows what this journey would do to somebody who actually
+// exists, with the dates it would actually produce. Invented dates on an
+// invented person would let a retiming mistake look fine right up until it
+// reached a real record.
+//
+// WHICH DONOR: the most recent one whose trigger genuinely applies — the
+// newest first-time giver for a first_gift journey, the newest big gift for
+// gift_over. Falling back to "any donor" would be a preview of something
+// that would never happen to them.
+//
+// A GET, and it writes NOTHING. No plan, no steps, no thread. It is
+// arithmetic on a date.
+app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const J = await journeyMod();
+  const PL = await planMod();
+
+  // The donor, and the DATE THE TRIGGER WOULD HAVE FIRED ON — which is what
+  // the offsets count from, not today. A first gift in October means month 3
+  // is January, and a preview that said "three months from today" would be
+  // showing a different journey from the one that runs.
+  let donor = null, basis = null, from = null;
+  const newestGift = async (minCents) => (await query(
+    `SELECT d.id, d.name, g.date, g.amount FROM donors d
+       JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
+        ${minCents ? "AND ROUND(g.amount*100) >= " + Number(minCents) : ""}
+      ORDER BY g.date DESC LIMIT 1`, [orgId]))[0] || null;
+
+  if (t.trigger_key === "first_gift") {
+    const [r] = await query(
+      `SELECT d.id, d.name, MIN(g.date) AS date, MAX(g.amount) AS amount
+         FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+        WHERE d.org_id=? AND d.deleted_at IS NULL AND g.date IS NOT NULL AND g.date <> ''
+        GROUP BY d.id, d.name HAVING COUNT(g.id)=1
+        ORDER BY MIN(g.date) DESC LIMIT 1`, [orgId]);
+    if (r) { donor = r; from = String(r.date).slice(0, 10);
+             basis = `First gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+  } else if (t.trigger_key === "gift_over") {
+    const r = await newestGift(Number(t.trigger_amount_cents) || 0);
+    if (r) { donor = r; from = String(r.date).slice(0, 10);
+             basis = `Gift $${Number(r.amount).toLocaleString("en-US")} · ${from}`; }
+  }
+  if (!donor) {
+    const r = await newestGift(0);
+    if (r) { donor = r; from = String(r.date).slice(0, 10); basis = `Most recent gift · ${from}`; }
+  }
+  if (!donor) return res.json({ donor: null, steps: [], why: "Nobody on file yet to preview this on." });
+
+  const v = J.validateJourney({ name: t.name, trigger: t.trigger_key, priority: t.priority,
+                                amountCents: t.trigger_amount_cents, steps: t.steps });
+  const steps = PL.planFromTemplate({ steps: v.steps, today: from }, orgTime.addDays);
+  res.json({
+    donor: { id: donor.id, name: donor.name, basis },
+    from,
+    steps: steps.map((s, i) => ({ seq: s.seq, label: s.label, dueDate: s.dueDate, draft: (v.steps[i] || {}).draft || null })),
+    touches: J.touchesSentence(v.steps),
+  });
+}));
+
+// ── THREAD-2b 6 · HOW A JOURNEY IS GOING, AND WHAT IT DOES NOT CLAIM ─────
+//
+// Four numbers per journey: how many people are in it, how its steps are
+// going (on time / late / skipped), and how many donors gave a SECOND gift
+// within twelve months of entering.
+//
+// THE LAST ONE IS NOT A CLAIM THAT THE JOURNEY CAUSED IT, and the route says
+// so in the payload rather than leaving it to a caption somebody might
+// delete. Nothing here is a comparison against donors who were not in it,
+// because Steward is not running an experiment and a number that looks like
+// a lift, without a control, is a lie with a decimal point on it.
+//
+// EVERY NUMBER OPENS. Each figure carries the `rows` key that
+// GET /journeys/:id/rows re-fetches, so the number on the screen and the
+// donors behind it are one query and cannot drift.
+app.get("/journeys/:id/stats", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const stats = await journeyStats(orgId, t);
+  res.json(stats);
+}));
+
+// The rows behind one of those numbers. A GET, and it writes nothing.
+app.get("/journeys/:id/rows", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const key = String(req.query.rows || "");
+  const sql = JOURNEY_ROW_SQL[key];
+  if (!sql) return res.status(400).json({ error: "unknown_rows",
+    message: `There is no set of rows called "${key}". Ask for one of: ${Object.keys(JOURNEY_ROW_SQL).join(", ")}.` });
+  const rows = await query(sql, [orgId, t.id]);
+  res.json({ journeyId: t.id, rows: key, count: rows.length, donors: rows.slice(0, 1000) });
+}));
+
+// ONE definition per number, written once, used by the figure AND by the
+// drill-through. A second copy is how a count stops matching its own rows.
+const JOURNEY_ROW_SQL = {
+  inIt: `SELECT d.id, d.name, p.applied_on AS entered
+           FROM cultivation_plans p JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+          WHERE p.org_id=? AND p.template_id=? AND p.status='active' AND d.deleted_at IS NULL
+          ORDER BY p.applied_on DESC`,
+  onTime: `SELECT DISTINCT d.id, d.name
+             FROM cultivation_plan_steps st
+             JOIN cultivation_plans p ON p.id=st.plan_id
+             JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+            WHERE p.org_id=? AND p.template_id=? AND st.status='done'
+              AND st.closed_at IS NOT NULL AND st.closed_at::date <= st.due_date::date
+            ORDER BY d.name`,
+  late: `SELECT DISTINCT d.id, d.name
+           FROM cultivation_plan_steps st
+           JOIN cultivation_plans p ON p.id=st.plan_id
+           JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+          WHERE p.org_id=? AND p.template_id=?
+            AND ((st.status='done' AND st.closed_at::date > st.due_date::date)
+                 OR (st.status IN ('open','pending') AND st.due_date::date < CURRENT_DATE))
+          ORDER BY d.name`,
+  skipped: `SELECT DISTINCT d.id, d.name, st.skip_reason AS reason
+              FROM cultivation_plan_steps st
+              JOIN cultivation_plans p ON p.id=st.plan_id
+              JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+             WHERE p.org_id=? AND p.template_id=? AND st.status='skipped'
+             ORDER BY d.name`,
+  // A SECOND GIFT WITHIN TWELVE MONTHS OF ENTERING. Not "because of" — after.
+  secondGift: `SELECT DISTINCT d.id, d.name, p.applied_on AS entered
+                 FROM cultivation_plans p
+                 JOIN donors d ON d.id=p.donor_id AND d.org_id=p.org_id
+                WHERE p.org_id=? AND p.template_id=? AND d.deleted_at IS NULL
+                  AND EXISTS (SELECT 1 FROM gifts g
+                               WHERE g.donor_id=d.id AND g.org_id=d.org_id
+                                 AND g.date IS NOT NULL AND g.date <> ''
+                                 AND g.date::date >  p.applied_on::date
+                                 AND g.date::date <= (p.applied_on::date + INTERVAL '12 months'))
+                ORDER BY d.name`,
+};
+
+// The four figures, each with the sentence that defines it (the "every number
+// has a sentence" rule) and the `rows` key that opens it.
+async function journeyStats(orgId, t) {
+  const one = async key => (await query(JOURNEY_ROW_SQL[key], [orgId, t.id])).length;
+  const [inIt, onTime, late, skipped, secondGift] = await Promise.all(
+    ["inIt", "onTime", "late", "skipped", "secondGift"].map(one));
+  const [everRow] = await query(
+    `SELECT COUNT(*)::int AS c FROM cultivation_plans WHERE org_id=? AND template_id=?`, [orgId, t.id]);
+  return {
+    journeyId: t.id, name: t.name,
+    figures: [
+      { key: "inIt", label: "In it now", value: inIt, rows: "inIt",
+        sentence: "People whose journey is still running. Someone who finished, or was moved to another journey, is not counted here." },
+      { key: "onTime", label: "Steps on time", value: onTime, rows: "onTime",
+        sentence: "People who have completed at least one step on or before the day it was due." },
+      { key: "late", label: "Steps late", value: late, rows: "late",
+        sentence: "People with a step completed after its due date, or still waiting past it. Late is brass, not a failure." },
+      { key: "skipped", label: "Steps skipped", value: skipped, rows: "skipped",
+        sentence: "People where somebody decided not to do a step and said why. The reason is on each row." },
+      { key: "secondGift", label: "Gave again within a year", value: secondGift, rows: "secondGift",
+        sentence: "People who gave another gift within twelve months of entering this journey." },
+    ],
+    everIn: Number(everRow && everRow.c) || 0,
+    // SAID BY THE ROUTE, not by a caption a redesign could drop.
+    caveat: "These are counts of what happened, not a measure of what the journey caused. "
+          + "Steward is not running an experiment: there is no comparison group, so none of "
+          + "these numbers can tell you what would have happened without the journey.",
+  };
+}
+
 // Who qualifies for a journey's trigger inside a window. One place, so the
 // COUNT the offer shows and the rows the apply writes cannot disagree.
 async function qualifyingDonors(orgId, t, days) {

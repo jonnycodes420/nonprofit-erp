@@ -13,6 +13,7 @@ import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
 import { SecurityPanel } from "./SecurityPanel";
+import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
@@ -1929,6 +1930,10 @@ const SETTINGS_TABS=[
   {id:"customization",label:"Customization"},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.
   {id:"words",label:"Your words"},
+  // THREAD-2b 3 — the journey builder lives here, and Fundraising links to
+  // it. It is a SETTINGS thing because it is a rule the organisation keeps,
+  // not a thing you do to one donor.
+  {id:"journeys",label:"Journeys"},
   // 2026-09-10 — the Donor Portal tab is hidden from the CRM's navigation
   // (App.jsx CRM_HIDDEN_TABS), and this section was only ever a POINTER to it,
   // so it goes with it rather than becoming a link to nowhere. Still shown to a
@@ -2726,6 +2731,14 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           Settings, so the Your words tab threw and the error boundary took the
           whole of Settings with it. The same card and label every other
           Settings section draws. */}
+      {/* THREAD-2b 3 — the journey builder, in Direction A. */}
+      {section==="journeys"&&(
+        <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
+          <SectionLabel>Journeys</SectionLabel>
+          <JourneyBuilder isAdmin={isAdmin} isReadOnly={isReadOnly}/>
+        </div>
+      )}
+
       {section==="words"&&(
         <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px",marginBottom:16}}>
           <SectionLabel>Your words</SectionLabel>
