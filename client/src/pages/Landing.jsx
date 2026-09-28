@@ -1,765 +1,900 @@
-import { useEffect, useState } from "react";
-import {
-  FIELD_SIZE, DRIFT_COUNTS, STEADY_COUNT, fieldDots, breatheDelay,
-} from "../lib/donorField";
-import { ProductMark } from "../components/ProductMark";
-import { copyrightLine } from "../../../shared/legalEntity";
-import { publicSourceRow, DIRECT_HEADING, UPLOAD_HEADING } from "../../../shared/publicSources";
+import { useState, useEffect, useRef } from "react";
+import { Link } from "react-router-dom";
+import PRICING from "../../../pricing.json";
 
-// ── Landing — BUILD-81 + the photograph pass ────────────────────────────────
+// ── LANDING-1 · THE LANDING PAGE, FROM JONATHAN'S MUSE DESIGN ────────────
 //
-// DESIGN SOURCE: docs/build81/landing/proposal.html — build to match it
-// section for section. The photographs are JONATHAN'S OWN (supplied inside
-// the proposal, extracted to client/public/photos/; originals in
-// docs/build81/photos-src/). Section order:
-//   Hero (the question + the ink Thread panel) · Who it's for (three
-//   photographs) · How it works (REAL product screenshots, kept from the
-//   prior FIX) · When a card stops (copy + the chapel, 4:5) · Drift (the
-//   dot field, byte-identical FEP caption) · Your data (the potter's hands,
-//   4:3 + the four sentences) · Closing (the doorway behind the ink
-//   gradient) · Footer. The record section is DELETED (headline, map,
-//   caption — the donor-map asset went with it).
+// `docs/landing/landing-mockup.html`, in React. The markup and the CSS are
+// the mockup's, with four deliberate differences, each one from the brief:
 //
-// What this page must never grow (unchanged from BUILD-73/74/81):
-//   · a price, a plan name, a tier, or a founding-partner rate. Cost is a
-//     conversation. GTM-1a: the price IS published now, at /pricing, and
-//     the nav links to it; the sections below still name no figure, and
-//     every path on this page ends at Start now or Book a call.
-//   · invented social proof — no logos, no review scores, no testimonials,
-//     no customer counts, no "trusted by", no "join hundreds of".
-//   · an outcome claim. "Recovery" is a feature noun; "recovered" is a
-//     banned outcome (tests/reserved-recovered.test.js scans this file).
-//   · an em dash in the copy. Jonathan's voice uses periods and "·".
+//   1. THE PRICING SECTION IS FIX-4'S, not the mockup's table. Seed,
+//      Sapling, Orchard and Forest, with the donor count under the name and
+//      the prices read from `pricing.json` — the same file the signup route
+//      prices against, so the page and the card cannot disagree.
+//   2. Volunteers says "Track background checks and get a heads-up before
+//      one expires", not "Run Checkr checks from inside Steward": Steward
+//      records that a check happened and when it lapses, and it does not
+//      run one. (Already correct in the mockup; kept, and named here so the
+//      next person does not put Checkr back.)
+//   3. JOURNEYS IS LIVE. It sits in Relationships as a real feature, not
+//      under "coming soon", because THREAD-2a/2b and FIX-4 shipped it.
+//   4. THE CONNECTIONS BAND IS CREAM. In the mockup it was a solid emerald
+//      panel — the only full-bleed block of the ACTION colour on the page,
+//      competing with every button on the screen.
 //
-// Copy that is load-bearing and must not be edited casually:
-//   · "Fundraising Effectiveness Project, full-year 2025." FEP rebased in
-//     Q1 2026 and now headlines a QUARTERLY figure. The caption lives in
-//     the Drift section with its dot field; the words are byte-identical.
-//   · The hero, card-stops, who-it's-for and your-data copy match the
-//     proposal verbatim. Do not invent claims beyond them.
+// The photographs are extracted from the mockup into `public/landing/` and
+// referenced by URL: 2MB of base64 in a source file is 2MB in the JS
+// bundle, parsed on every visit, and it cannot be cached separately.
 //
-// Semantics rule (BUILD-81, asserted by landing-prod-verify): every CTA
-// that NAVIGATES is a real <a href> (styled as a button); <button> is
-// reserved for actions on this page (the Calendly modal).
+// WHAT THIS PAGE MUST NEVER GROW: invented social proof. No logos, no
+// review scores, no testimonials, no customer counts, no "trusted by".
+// Steward has real customers and can name them when they say yes.
 //
-// The hero panel's donor is INVENTED ("Robert Harmon" — the spec's own
-// R. Harmon) and must not match any donor in any fixture or in production
-// (tests/threads.test.js renamed its own Harmon for exactly this).
+// THE ADVISORS ARE REAL PEOPLE who approved their name, title and photo.
+// Nothing about them is placeholder copy, and nothing here is changed
+// without asking them.
 
-// ── BUILD-91 91i · THE PUBLIC SOURCE ROW ────────────────────────────────────
-// The same two honest groups as the in-app page (Settings -> Where giving
-// comes in), in front of somebody who has NOT signed up and therefore cannot
-// check whether any of it is true. That difference is the whole reason this
-// row reads its members from shared/publicSources.js rather than from the
-// provider registry the in-app page uses: the registry says what Steward has
-// an adapter for, and the allowlist says what Steward has actually run a real
-// person's money through. Today those are not the same list, and the public
-// page gets the smaller one.
-//
-// So the direct group is EMPTY as this ships, and it renders as nothing at
-// all rather than as an empty heading. A heading with no tiles under it reads
-// as a page that failed to load; a heading that is simply absent reads as a
-// page that is not claiming anything. The prose above it still names the four
-// providers whose adapters are merged and green, which is a true sentence
-// about what the software can read. The TILES are a stronger claim than the
-// sentence, which is why they wait for the stronger evidence.
-//
-// Every tile is the company's name in type. No mark is drawn, traced or
-// recoloured here; when official files land in client/src/assets/sources/ with
-// their SOURCES.md rows cleared, they are passed in as `logos` and the tile
-// swaps type for the file. Nothing else about the row changes.
-function SourceTile({ label, logo }) {
-  return (
-    <li data-testid="lp-source-tile" data-source={label}
-      style={{ border: "1px solid rgba(15,26,18,0.14)", borderRadius: 12, background: C.cream,
-        padding: "14px 16px", display: "flex", alignItems: "center", minHeight: 52, listStyle: "none" }}>
-      {logo
-        ? <img src={logo} alt={label} style={{ maxHeight: 24, maxWidth: 116 }} />
-        : <span style={{ fontSize: 16, fontWeight: 700, color: C.ink, letterSpacing: "-0.01em" }}>{label}</span>}
-    </li>
-  );
-}
-
-function SourceGroup({ heading, tiles }) {
-  if (!tiles.length) return null;
-  return (
-    <div data-testid="lp-source-group" data-heading={heading}
-      style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div data-testid="lp-source-heading"
-        style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: C.ink3 }}>
-        {heading}
-      </div>
-      <ul style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: 0, padding: 0 }}>
-        {tiles.map(t => <SourceTile key={t.key} label={t.label} logo={t.logo} />)}
-      </ul>
-    </div>
-  );
-}
-
-function SourceRow() {
-  const { direct, upload, promise } = publicSourceRow();
-  return (
-    <div data-testid="lp-source-row" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <SourceGroup heading={DIRECT_HEADING} tiles={direct} />
-      <SourceGroup heading={UPLOAD_HEADING} tiles={upload} />
-      <p data-testid="lp-row-promise" style={{ fontSize: 15, lineHeight: 1.6, color: C.ink3 }}>{promise}</p>
-    </div>
-  );
-}
-
-const C = {
-  ink:     "#0F1A12",
-  cream:   "#F0EDE6",
-  cream2:  "#E8E4DB",
-  gold:    "#C9A84C",
-  greenDk: "#0D5C3A",
-  // 5.81:1 on cream2, 6.31:1 on cream — the BUILD-74 headroom decision; the
-  // verify floor is 5.0.
-  ink3:    "#5A554F",
-  sage:    "#8FA896",
-
-  // FIX-2 C — named here once, where they were inline.
-  white: "#ffffff",
-};
-
-const CALENDLY_URL   = "https://calendly.com/xjca2006/new-meeting";
-const FOUNDER_MAILTO = "mailto:jonathan@stewardapp.dev";
-
-// ── PLACEHOLDERS ────────────────────────────────────────────────────────────
-// GONE, 2026-09-12. `PLACEHOLDERS` and the dashed-outline `Placeholder`
-// component existed to make ONE unfinished value visibly unfinished on a public
-// page — the © line's legal entity, which BUILD-73 refused to invent. The entity
-// now exists (filed in Kentucky; the name itself lives in shared/legalEntity.js
-// and is written down nowhere else), the last member is filled, and a
-// mechanism for flagging blanks with no blanks left to flag is dead weight that
-// invites the next blank to be shipped through it. The guard that replaces it is
-// repo-wide and does not depend on anyone remembering to wrap a value:
-// tests/legal-entity.test.js fails the build on any bracketed placeholder in
-// source. See audit/FIX-legal-entity-FINDINGS.md §A.
-
-// ── THE THREAD PANEL — the hero's ink panel, from the proposal ──────────────
-// One donor, one thread: the conversation as cream cards down a rail, the
-// open step as a brass card. The brass knot breathes (opacity + transform
-// only, one slow cycle) and holds full opacity, static, under reduced
-// motion. role="img" + an aria-label that reads the sequence; the one
-// interactive element is the real "Log the call" anchor to /signup.
-const PANEL_KNOTS = [
-  { date: "Mar 3",  text: "Coffee. He's interested in the scholarship fund." },
-  { date: "Mar 5",  text: "Thank-you note sent." },
-  { date: "Mar 19", text: "Called, left a message." },
-  { date: "Mar 21", text: "Try again." },
-];
-
-function ThreadPanel() {
-  return (
-    <div
-      role="img"
-      className="lt-wrap lt-panel"
-      aria-label="The Thread for one donor, Robert Harmon, lifetime giving $14,500. The conversation so far: March 3, coffee, he's interested in the scholarship fund. March 5, thank-you note sent. March 19, called and left a message. March 21, try again. Still open, day 11. Back in your inbox Tuesday morning."
-    >
-      <div aria-hidden="true" className="lt-phead">
-        <div>
-          <div style={{ marginBottom: 10 }}><ProductMark product="thread" on="ink" /></div>
-          <div className="lp-serif" style={{ fontSize: 24, color: C.cream, letterSpacing: "-0.01em" }}>Robert Harmon</div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div className="lt-cap" style={{ color: C.sage, marginBottom: 6 }}>Lifetime</div>
-          <div className="lp-serif" style={{ fontSize: 22, color: C.cream }}>$14,500</div>
-        </div>
-      </div>
-      <div className="lt-rail">
-        {PANEL_KNOTS.map((k, i) => (
-          <div key={i} className="lt-knot" aria-hidden="true">
-            <span className="lt-dot" />
-            <div className="lt-card">
-              <span className="lt-cap lt-carddate">{k.date}</span>
-              <span className="lt-cardtext">{k.text}</span>
-            </div>
-          </div>
-        ))}
-        <div className="lt-knot lt-knot-open">
-          <span className="lt-dot lt-dot-open" aria-hidden="true" />
-          <div className="lt-card-open">
-            <div aria-hidden="true" className="lp-serif lt-openbig">Still open. Day 11.</div>
-            <div className="lt-openrow">
-              <span aria-hidden="true" style={{ fontSize: 13, color: "rgba(15,26,18,0.72)", fontWeight: 500 }}>Back in your inbox Tuesday morning.</span>
-              <a href="/signup" className="lt-mini lp-focus">Log the call →</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── THE DONOR FIELD — untouched: the Drift section's evidence ──────────────
-function DonorField({ count, size, gap, label, className = "" }) {
-  const dots = fieldDots(count);
-  return (
-    <div role="img" aria-label={label} className={className}>
-      <div aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", gap }}>
-        {dots.map(d => (
-          <span
-            key={d.i}
-            className={d.drifting ? "df-dot df-drift" : "df-dot"}
-            style={{
-              width: size, height: size, borderRadius: "50%",
-              background: d.drifting ? C.gold : C.greenDk,
-              "--d": `${d.delay}ms`,
-              "--b": `${breatheDelay(d.i)}ms`,
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function CalendlyModal({ onClose }) {
-  useEffect(() => {
-    const onKey = e => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, zIndex: 400, background: "rgba(15, 26, 18, 0.55)",
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: C.cream, borderRadius: 14, width: "100%", maxWidth: 720, height: "min(82vh, 760px)",
-        display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 30px 80px rgba(15, 26, 18, 0.35)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: "1px solid rgba(15,26,18,0.12)" }}>
-          <span className="lp-serif" style={{ fontSize: 23, color: C.ink }}>Book a call</span>
-          <button onClick={onClose} aria-label="Close" className="lp-focus" style={{ background: "transparent", border: "none", fontSize: 22, color: C.ink3, cursor: "pointer", lineHeight: 1, padding: 8 }}>✕</button>
-        </div>
-        <iframe title="Schedule time with the founder" src={CALENDLY_URL} style={{ flexGrow: 1, border: "none", width: "100%" }} />
-        <div style={{ padding: "10px 20px", fontSize: 13, color: C.ink3, borderTop: "1px solid rgba(15,26,18,0.12)" }}>
-          Or write directly: <a href={FOUNDER_MAILTO} style={{ color: C.greenDk, fontWeight: 600 }}>jonathan@stewardapp.dev</a>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const STYLES = `
-  .lp * { margin: 0; padding: 0; box-sizing: border-box; }
-  .lp { background: ${C.cream}; color: ${C.ink}; font-family: 'DM Sans', system-ui, sans-serif; overflow-x: hidden; }
-  .lp h1, .lp h2, .lp h3 { margin: 0; font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
-  .lp-serif { font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }
-  .lp a { color: inherit; text-decoration: none; }
-  .lp button { font-family: inherit; }
-
-  .lp-focus:focus-visible { outline: 3px solid ${C.gold}; outline-offset: 3px; border-radius: 4px; }
-
-  .lp-nav {
-    display: flex; align-items: center; justify-content: space-between;
-    height: 86px; padding: 0 48px; max-width: 1440px; margin: 0 auto;
-  }
-  .lp-navwrap { display: flex; align-items: center; gap: 30px; }
-  .lp .lp-navlink {
-    background: none; border: none; cursor: pointer; color: ${C.ink};
-    font-size: 15px; font-weight: 500; min-height: 44px; display: inline-flex; align-items: center;
-  }
-  .lp .lp-navbtn {
-    background: ${C.ink}; color: ${C.cream}; border: none; cursor: pointer;
-    font-size: 15px; font-weight: 600; padding: 12px 22px; border-radius: 8px;
-    min-height: 44px; display: inline-flex; align-items: center;
-  }
-  /* FIX-4 6 — Book a call sits BESIDE Start now, not three screens down.
-     Outlined, because exactly one thing in the header may be the filled
-     button and Start now is it. */
-  .lp .lp-navbtn-quiet {
-    background: transparent; color: ${C.ink}; border: 1.5px solid ${C.ink}; cursor: pointer;
-    font-size: 15px; font-weight: 600; padding: 10.5px 20px; border-radius: 8px;
-    min-height: 44px; display: inline-flex; align-items: center;
-  }
-
-  .lp .lp-btn {
-    border: none; cursor: pointer; font-size: 16px; font-weight: 600;
-    padding: 16px 28px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
-    min-height: 52px;
-  }
-  .lp .lp-btn-ink   { background: ${C.ink}; color: ${C.cream}; }
-  .lp .lp-btn-quiet { background: transparent; color: ${C.ink}; border: 1.5px solid rgba(15, 26, 18, 0.35); }
-  .lp .lp-btn-gold  { background: ${C.gold}; color: ${C.ink}; }
-  .lp .lp-btn-ghost { background: transparent; color: ${C.cream}; border: 1.5px solid rgba(240, 237, 230, 0.4); }
-
-  .lp-hero {
-    display: grid; grid-template-columns: 1fr 620px; gap: 72px; align-items: center;
-    max-width: 1440px; margin: 0 auto; padding: 48px 64px 88px;
-  }
-  .lp-ctarow { display: flex; gap: 12px; flex-wrap: wrap; }
-  .lp-hero-col { display: flex; flex-direction: column; gap: 26px; }
-
-  /* the Thread panel (the proposal's ink panel) */
-  .lt-panel { background: ${C.ink}; border-radius: 22px; padding: 34px 34px 30px; position: relative; box-shadow: 0 30px 70px rgba(15,26,18,0.22); }
-  .lt-phead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px; }
-  .lt-cap { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
-  .lt-rail { position: relative; padding-left: 30px; display: flex; flex-direction: column; gap: 12px; }
-  .lt-rail::before { content: ""; position: absolute; left: 9px; top: 18px; bottom: 44px; width: 2px; background: rgba(240,237,230,0.22); }
-  .lt-knot { position: relative; }
-  .lt-dot { position: absolute; left: -27px; top: 18px; width: 10px; height: 10px; border-radius: 50%; background: ${C.sage}; display: block; }
-  .lt-dot-open { background: ${C.gold}; width: 16px; height: 16px; left: -30px; top: 22px; box-shadow: 0 0 0 6px rgba(201,168,76,0.18); }
-  .lt-card { background: ${C.cream}; border-radius: 12px; padding: 13px 16px; display: flex; align-items: baseline; gap: 14px; }
-  .lt-carddate { color: ${C.ink3}; white-space: nowrap; }
-  .lt-cardtext { font-size: 15px; font-weight: 500; color: ${C.ink}; }
-  .lt-card-open { background: ${C.gold}; border-radius: 14px; padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 12px; }
-  .lt-openbig { font-size: 26px; letter-spacing: -0.01em; color: ${C.ink}; line-height: 1.05; }
-  .lt-openrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .lp .lt-mini { background: ${C.ink}; color: ${C.cream}; border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; min-height: 44px; }
-  @media (prefers-reduced-motion: no-preference) {
-    .lt-dot-open { animation: ltBreathe 4.5s ease-in-out infinite; }
-    @keyframes ltBreathe {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%      { opacity: 0.55; transform: scale(0.82); }
-    }
-  }
-
-  .lp-sec { padding: 96px 48px; }
-  .lp-sec-inner { max-width: 1440px; margin: 0 auto; }
-  .lp-eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
-  /* BUILD-82 Part 8 — section heads STACK: one left-aligned column (eyebrow →
-     mark → H2 → paragraph), 18px between, 48px before the grid. Nothing
-     right-aligned, nothing vertically centred against the headline. */
-  .lp-sechead { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 48px; }
-  .lp-sechead .lp-h2 { max-width: 920px; }
-  .lp-sechead .lp-sechead-p { max-width: 620px; margin: 0; }
-
-  /* who it's for — the photo strip (proposal) */
-  .lp-whohead { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 48px; }
-  .lp-whohead .lp-h2 { max-width: 920px; }
-  .lp-whohead .lp-sechead-p { max-width: 620px; margin: 0; }
-  .lp-whostrip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
-  .lp-whofig { margin: 0; }
-  .lp-whobox { aspect-ratio: 3 / 2; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 44px rgba(15,26,18,0.14); }
-  .lp-whoimg { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .lp-whocap { font-size: 14px; color: ${C.ink3}; margin-top: 12px; line-height: 1.5; }
-
-  .lp-beats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
-  .lp-shot { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid rgba(15, 26, 18, 0.12); background: ${C.white}; }
-  .lp-beat { background: ${C.cream}; border: 1px solid rgba(15, 26, 18, 0.1); border-radius: 14px; padding: 26px; display: flex; flex-direction: column; gap: 20px; box-shadow: 0 14px 40px rgba(15, 26, 18, 0.06); }
-
-  .lp-split { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; max-width: 1440px; margin: 0 auto; }
-
-  /* card-stops + your-data photo grids (proposal) */
-  .lp-cardstops { display: grid; grid-template-columns: 1fr 420px; gap: 64px; align-items: center; }
-  .lp-chapelbox { aspect-ratio: 4 / 5; border-radius: 18px; overflow: hidden; box-shadow: 0 30px 70px rgba(0,0,0,0.35); }
-  .lp-datagrid { display: grid; grid-template-columns: 480px 1fr; gap: 72px; align-items: center; }
-  .lp-potterbox { aspect-ratio: 4 / 3; border-radius: 18px; overflow: hidden; box-shadow: 0 22px 56px rgba(15,26,18,0.14); }
-  .lp-coverimg { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-  .lp-field-drift { max-width: 620px; }
-  .lp-legend { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; margin-top: 22px; }
-
-  /* the close — the doorway behind the ink gradient (proposal) */
-  .lp-close { position: relative; overflow: hidden; }
-  .lp-closeimg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.28; display: block; }
-  .lp-closegrad { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(15,26,18,0.55), rgba(15,26,18,0.85)); }
-  .lp-closeinner { position: relative; }
-
-  .lp-footer {
-    background: ${C.ink}; padding: 34px 48px; display: flex; align-items: center;
-    justify-content: space-between; gap: 20px; flex-wrap: wrap;
-  }
-
-  /* dot field motion (unchanged BUILD-73 machinery — fail-open) */
-  @media (prefers-reduced-motion: no-preference) {
-    .df-dot { animation: lpDotIn 0.5s ease-out both; animation-delay: var(--d); }
-    .df-drift { animation: lpDotIn 0.5s ease-out both, lpDotGlow 3.8s ease-in-out infinite; animation-delay: var(--d), var(--b); }
-    @keyframes lpDotIn { from { opacity: 0; transform: scale(0.4); } to { opacity: 1; transform: scale(1); } }
-    @keyframes lpDotGlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
-    .up { animation: lpUp 0.55s ease-out both; }
-    @keyframes lpUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
-  }
-
-  @media (max-width: 1080px) {
-    .lp-nav { padding: 0 28px; height: 72px; }
-    .lp-hero { grid-template-columns: 1fr; gap: 48px; padding: 36px 28px 72px; }
-    .lp-sec { padding: 64px 28px; }
-    .lp-split { grid-template-columns: 1fr; gap: 44px; }
-    .lp-beats { grid-template-columns: 1fr; }
-
-    .lp-cardstops { grid-template-columns: 1fr; gap: 44px; }
-    .lp-cardstops .lp-chapelbox { max-width: 420px; }
-    .lp-datagrid { grid-template-columns: 1fr; gap: 44px; }
-    .lp-datagrid .lp-potterbox { max-width: 480px; }
-    .lp-h1 { font-size: 54px !important; }
-  }
-  @media (max-width: 640px) {
-    .lp-sechead, .lp-whohead { gap: 14px; margin-bottom: 36px; }
-    .lp-h1 { font-size: 40px !important; }
-    .lp-h2 { font-size: 33px !important; }
-    .lp-close-h { font-size: 38px !important; }
-    .lp .lp-navlink-hide { display: none; }
-    .lp-ctarow { flex-direction: column; align-items: stretch; }
-    .lp-ctarow .lp-btn { width: 100%; }
-    .lp-sec { padding: 52px 20px; }
-    .lp-hero { padding: 24px 20px 56px; }
-    .lp-nav { padding: 0 20px; }
-    .lp-footer { padding: 28px 20px; }
-    .lp-whostrip { grid-template-columns: 1fr; }
-    .lt-panel { padding: 24px 20px 22px; }
-  }
-`;
+const CAL = "https://calendly.com/xjca2006/new-meeting";
+const TIERS = PRICING.tiers;
+const TALK = PRICING.talkToUs;
+const usd = n => "$" + Number(n).toLocaleString("en-US");
 
 export default function Landing() {
-  const [showCal, setShowCal] = useState(false);
+  // The Agent demo on the page: accept or skip, then review again.
+  const [decision, setDecision] = useState(null);
+  // The pricing toggle, from the same catalogue the signup route reads.
+  const [period, setPeriod] = useState("monthly");
+  const yearly = period === "yearly";
 
+  // The page owns its ground: index.html paints `body` ink for the
+  // authenticated shell, and an overscroll on a phone showed a black bar
+  // above a cream page.
   useEffect(() => {
-    document.title = "Steward — Donor CRM for small nonprofits";
-    // Brand fonts, non-render-blocking, display=optional (the BUILD-28 CLS
-    // lesson: swap reflows the serif hero; blocking spikes FCP).
-    if (!document.getElementById("lp-fonts")) {
-      const l = document.createElement("link");
-      l.id = "lp-fonts"; l.rel = "stylesheet";
-      l.href = "https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&display=optional";
-      document.head.appendChild(l);
-    }
+    const prev = document.body.style.background;
+    document.body.style.background = "#f0ede6";
+    return () => { document.body.style.background = prev; };
   }, []);
 
-  const talkToFounder = () => setShowCal(true);
+  // The photo carousel. Plain interval, paused on hover and when the tab is
+  // hidden, and it does nothing at all for somebody who asked for reduced
+  // motion — an auto-advancing strip of faces is exactly what that setting
+  // is for.
+  const trackRef = useRef(null);
+  const [slide, setSlide] = useState(0);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    let reduced = false;
+    try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { reduced = false; }
+    if (reduced || paused) return undefined;
+    const t = setInterval(() => setSlide(s => s + 1), 4200);
+    return () => clearInterval(t);
+  }, [paused]);
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const slides = el.querySelectorAll(".carousel-slide");
+    if (!slides.length) return;
+    const i = slide % slides.length;
+    const step = slides[0].offsetWidth + (parseFloat(getComputedStyle(el).gap) || 0);
+    el.style.transform = `translateX(-${i * step}px)`;
+  }, [slide]);
+
+  const priceOf = t => (yearly ? t.yearlyUsd : t.monthlyUsd);
+  const subOf = t => (yearly ? `$${Math.round(t.yearlyUsd / 12)} a month, billed yearly` : PRICING.monthToMonth);
 
   return (
-    <>
-      <style>{STYLES}</style>
-      {showCal && <CalendlyModal onClose={() => setShowCal(false)} />}
+    <div className="lp-root">
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,500;6..72,600&display=swap" rel="stylesheet"/>
+      <style>{LANDING_CSS}</style>
 
-      <div className="lp">
-
-        {/* ── NAV ────────────────────────────────────────────────────────── */}
-        <nav className="lp-nav">
-          <a href="/" className="lp-serif lp-focus" style={{ fontSize: 26, letterSpacing: "-0.01em", display: "inline-flex", alignItems: "center", minHeight: 44 }}>Steward</a>
-          <div className="lp-navwrap">
-            {/* GTM-1a 1 — there IS a Pricing link now. "Price is a
-                conversation" was honest while there was no published price;
-                publishing three bands and then hiding the page that names
-                them would be the opposite. */}
-            <a href="#how-it-works" className="lp-navlink lp-navlink-hide lp-focus">How it works</a>
-            <a href="/pricing" className="lp-navlink lp-navlink-hide lp-focus">Pricing</a>
-            <a href="#your-data" className="lp-navlink lp-navlink-hide lp-focus">Your data</a>
-            <a href="/login" className="lp-navlink lp-focus">Log in</a>
-            <a href={CALENDLY_URL} target="_blank" rel="noreferrer" data-testid="lp-nav-book" className="lp-navbtn-quiet lp-focus">Book a call</a>
-            <a href="/signup" className="lp-navbtn lp-focus">Start now</a>
-          </div>
-        </nav>
-
-        {/* ── HERO — the question + the Thread panel ─────────────────────── */}
-        <header className="lp-hero">
-          <div className="lp-hero-col">
-            <h1 className="up lp-h1" style={{ fontSize: 76, lineHeight: 0.98, letterSpacing: "-0.035em" }}>
-              Who did you <br />mean to call back?
-            </h1>
-            <p className="up" style={{ fontSize: 20, lineHeight: 1.55, color: C.ink3, maxWidth: 540, animationDelay: "0.08s" }}>
-              You talked to a donor in March and it went well. You meant to follow up. Then the gala, then the grant, then the board meeting, and the name slid off the list.
-            </p>
-            <p className="up" style={{ fontSize: 20, lineHeight: 1.5, color: C.ink, maxWidth: 540, fontWeight: 500, animationDelay: "0.14s" }}>
-              Log the conversation once. Steward carries it from there.
-            </p>
-            {/* GTM-1a 1 — THE TWO ACTIONS, SIDE BY SIDE. "Start free" was
-                true when there was no card at signup; there is one now, and
-                thirty days at no charge is said in the line under the
-                buttons rather than in the button's own name. */}
-            <div className="up lp-ctarow" style={{ animationDelay: "0.22s" }}>
-              <a href="/signup" className="lp-btn lp-btn-ink lp-focus" data-testid="lp-start">Start now</a>
-              <button className="lp-btn lp-btn-quiet lp-focus" data-testid="lp-book" onClick={talkToFounder}>Book a call</button>
-            </div>
-            <p className="up" style={{ fontSize: 14, color: C.ink3, lineHeight: 1.7, marginTop: 4, animationDelay: "0.28s" }}>
-              No platform fee · no donor tip prompt · gifts settle in your own Stripe
-            </p>
-          </div>
-
-          <div className="lp-hero-col">
-            <ThreadPanel />
-          </div>
-        </header>
-
-        {/* ── WHO IT'S FOR — the photo strip (Jonathan's photographs) ────── */}
-        <section id="who-its-for" className="lp-sec" style={{ background: C.cream2, paddingTop: 72, paddingBottom: 80 }}>
-          <div className="lp-sec-inner">
-            <div className="lp-whohead">
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>WHO IT&apos;S FOR</div>
-              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                For the shops where one person holds the whole donor file in her head.
-              </h2>
-              <p className="lp-sechead-p" style={{ fontSize: 18, lineHeight: 1.6, color: C.ink3 }}>
-                A church, a shelter, a food pantry, a school foundation. Fewer than three people ever touch the database, and one of them is the executive director.
-              </p>
-            </div>
-            <div className="lp-whostrip">
-              <figure className="lp-whofig">
-                <div className="lp-whobox">
-                  <img
-                    className="lp-whoimg"
-                    src="/photos/church.webp"
-                    srcSet="/photos/church.webp 1x, /photos/church-2x.webp 2x"
-                    width="450" height="300"
-                    alt="A white country church steeple above autumn trees at golden hour"
-                    loading="lazy" decoding="async"
-                  />
-                </div>
-                <figcaption className="lp-whocap">A church with four hundred households and a volunteer treasurer.</figcaption>
-              </figure>
-              <figure className="lp-whofig">
-                <div className="lp-whobox">
-                  <img
-                    className="lp-whoimg"
-                    src="/photos/shelter.webp"
-                    srcSet="/photos/shelter.webp 1x, /photos/shelter-2x.webp 2x"
-                    width="450" height="300"
-                    alt="Three shelter dogs looking through a kennel fence"
-                    loading="lazy" decoding="async"
-                  />
-                </div>
-                <figcaption className="lp-whocap">A shelter that runs on monthly givers.</figcaption>
-              </figure>
-              <figure className="lp-whofig">
-                <div className="lp-whobox">
-                  <img
-                    className="lp-whoimg"
-                    src="/photos/museum.webp"
-                    srcSet="/photos/museum.webp 1x, /photos/museum-2x.webp 2x"
-                    width="450" height="300"
-                    alt="A group of students sitting on a museum floor under a hanging installation"
-                    loading="lazy" decoding="async"
-                  />
-                </div>
-                <figcaption className="lp-whocap">An arts education program with one development hire.</figcaption>
-              </figure>
-            </div>
-          </div>
-        </section>
-
-        {/* ── HOW IT WORKS — the REAL product screenshots (prior FIX) ────── */}
-        <section id="how-it-works" className="lp-sec" style={{ background: C.cream2 }}>
-          <div className="lp-sec-inner">
-            <div className="lp-sechead">
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>HOW IT WORKS</div>
-              <div><ProductMark product="thread" on="cream" /></div>
-              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                Log it. The next step comes back. It stays with you.
-              </h2>
-              <p className="lp-sechead-p" style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
-                This is the Thread: a donor and an open next step. Never a task you had to remember to create.
-              </p>
-            </div>
-            <div className="lp-beats">
-              <article className="lp-beat">
-                <img
-                  className="lp-shot"
-                  src="/hiw-log.webp"
-                  srcSet="/hiw-log.webp 1x, /hiw-log-2x.webp 2x"
-                  width="454" height="214"
-                  alt="The Log a conversation panel on a donor's record: touch-type chips with Call reached selected, and one line typed about the scholarship fund."
-                  loading="lazy" decoding="async"
-                />
-                <div>
-                  <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>Log it.</h3>
-                  <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
-                    One line, from the donor&apos;s record or the home screen. That&apos;s the whole ask.
-                  </p>
-                </div>
-              </article>
-              <article className="lp-beat">
-                <img
-                  className="lp-shot"
-                  src="/hiw-nextstep.webp"
-                  srcSet="/hiw-nextstep.webp 1x, /hiw-nextstep-2x.webp 2x"
-                  width="456" height="108"
-                  alt="The next-step prompt in the same flow, prefilled with the default: Follow up, dated seven days out."
-                  loading="lazy" decoding="async"
-                />
-                <div>
-                  <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>The next step comes back.</h3>
-                  <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
-                    Logging the conversation is creating the follow-up. A call reached suggests a follow-up in a week; a meeting, a thank-you note in two days. Your call either way.
-                  </p>
-                </div>
-              </article>
-              <article className="lp-beat">
-                <img
-                  className="lp-shot"
-                  src="/hiw-thread.webp"
-                  srcSet="/hiw-thread.webp 1x, /hiw-thread-2x.webp 2x"
-                  width="760" height="212"
-                  alt="The Thread on the home screen: three open conversations with their next steps, the oldest overdue at day 11."
-                  loading="lazy" decoding="async"
-                />
-                <div>
-                  <h3 className="lp-serif" style={{ fontSize: 24, lineHeight: 1.2, marginBottom: 8 }}>It stays with you.</h3>
-                  <p style={{ fontSize: 15, lineHeight: 1.65, color: C.ink3 }}>
-                    One email on weekday mornings with what&apos;s due. The subject line shows how long each one has been open. It stops when the thread closes.
-                  </p>
-                </div>
-              </article>
-            </div>
-          </div>
-        </section>
-
-        {/* ── WHEN A CARD STOPS — the copy + the chapel at dusk ──────────── */}
-        <section id="card-stops" className="lp-sec" style={{ background: C.ink }}>
-          <div className="lp-sec-inner lp-cardstops">
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div className="lp-eyebrow" style={{ color: C.gold }}>WHEN A CARD STOPS</div>
-              <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, color: C.cream, letterSpacing: "-0.025em" }}>
-                A monthly donor&apos;s card expires. Most orgs find out when the deposit is short.
-              </h2>
-              <p style={{ fontSize: 18, lineHeight: 1.65, color: "rgba(240, 237, 230, 0.75)", maxWidth: 700 }}>
-                Steward catches it within the hour and emails the donor a link to keep going, in your name. The donor never logs in to anything.
-              </p>
-              <p style={{ fontSize: 16, lineHeight: 1.6, color: C.sage, maxWidth: 700 }}>
-                You know what four fifty-dollar sustainers a month are worth to you by December.
-              </p>
-            </div>
-            <div className="lp-chapelbox">
-              <img
-                className="lp-coverimg"
-                src="/photos/chapel.webp"
-                srcSet="/photos/chapel.webp 1x, /photos/chapel-2x.webp 2x"
-                width="420" height="525"
-                alt="A small chapel on a hillside at dusk"
-                loading="lazy" decoding="async"
-              />
-            </div>
-          </div>
-        </section>
-
-        {/* ── KEEP HOW PEOPLE GIVE (BUILD-89S 89f) ───────────────────────
-            The objection this section exists to end: "do we have to switch
-            how people give?" No. And the second half of that promise is the
-            one that has to be said plainly, because every competitor's
-            answer to the first half comes with a catch attached to it. */}
-        <section id="keep-giving" className="lp-sec" style={{ background: C.cream2 }}>
-          <div className="lp-sec-inner" style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 780 }}>
-            <div className="lp-eyebrow" style={{ color: C.greenDk }}>KEEP HOW PEOPLE GIVE</div>
-            <h2 className="lp-h2" style={{ fontSize: 46, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
-              You do not have to move anybody.
-            </h2>
-            <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3 }}>
-              Whatever you take gifts through today, keep it. Steward reads the gifts onto your donor
-              records and tells you who gives monthly, through any of it.
-            </p>
-            <p data-testid="lp-never-holds" style={{ fontSize: 18, lineHeight: 1.65, color: C.ink, fontWeight: 600 }}>
-              Steward never holds or moves your money. It reads, with access you can switch off at any time.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
-              <p data-testid="lp-connected"><strong style={{ color: C.ink }}>Connected:</strong> PayPal, Zeffy, Stripe, Givebutter. Steward checks every few hours.</p>
-              <p data-testid="lp-statement"><strong style={{ color: C.ink }}>Statement upload:</strong> Cash App and Venmo have no way to let software read an account. Once a month you drop the statement in.</p>
-            </div>
-            <SourceRow />
-            <p style={{ fontSize: 16, lineHeight: 1.6, color: C.ink3 }}>
-              Nobody re-enters a card. No monthly donor has to be asked to sign up again.
-            </p>
-          </div>
-        </section>
-
-        {/* ── DRIFT — untouched: the dot field as evidence ───────────────── */}
-        <section id="drift" className="lp-sec" style={{ background: C.cream }}>
-          <div className="lp-split">
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div><ProductMark product="drift" on="cream" /></div>
-              <h2 className="lp-h2" style={{ fontSize: 50, lineHeight: 1.06, letterSpacing: "-0.025em" }}>
-                And the ones who already went quiet.
-              </h2>
-              <p style={{ fontSize: 18, lineHeight: 1.65, color: C.ink3, maxWidth: 480 }}>
-                The Thread keeps the conversations you&apos;re having. Drift finds the people you&apos;ve stopped hearing from: each one named, with the reason in their own pattern. &quot;$2,000 every July since 2019. Nothing for 14 months.&quot; That is the window where a phone call still works, and it closes quietly.
-              </p>
-            </div>
-            <div>
-              <DonorField
-                count={DRIFT_COUNTS.hero}
-                size={16}
-                gap={10}
-                className="lp-field-drift"
-                label={`A field of ${FIELD_SIZE} dots, one for each of the donors who carry 90% of a typical file's revenue. ${DRIFT_COUNTS.hero} of them are gold, marking the donors expected to go quiet over a year.`}
-              />
-              <div className="lp-legend">
-                <span style={{ fontSize: 14, color: C.ink3 }}>{STEADY_COUNT} steady</span>
-                <span style={{ fontSize: 14, color: C.ink3 }}>{DRIFT_COUNTS.hero} drifting</span>
-                <span style={{ flexGrow: 1 }} />
-                <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-                  <span className="lp-serif" style={{ fontSize: 30, letterSpacing: "-0.02em" }}>$360,144</span>
-                  <span style={{ fontSize: 14, color: C.ink3 }}>walking out</span>
-                </span>
-              </div>
-              {/* Load-bearing caption — byte-identical to BUILD-73/74. */}
-              <p style={{ fontSize: 14, color: C.ink3, lineHeight: 1.6, marginTop: 14 }}>
-                Distribution and lapse rate from the Fundraising Effectiveness Project, full-year 2025, applied to a 1,000-donor file.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* ── YOUR DATA — the potter's hands + the four sentences ────────── */}
-        <section id="your-data" className="lp-sec" style={{ background: C.cream }}>
-          <div className="lp-sec-inner lp-datagrid">
-            <div className="lp-potterbox">
-              <img
-                className="lp-coverimg"
-                src="/photos/potter.webp"
-                srcSet="/photos/potter.webp 1x, /photos/potter-2x.webp 2x"
-                width="480" height="360"
-                alt="Hands shaping a clay pot on a wheel"
-                loading="lazy" decoding="async"
-              />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-              <div className="lp-eyebrow" style={{ color: C.greenDk }}>YOUR DATA</div>
-              <h2 className="lp-h2" style={{ fontSize: 44, lineHeight: 1.08, letterSpacing: "-0.025em" }}>
-                Yours, plainly.
-              </h2>
-              <div style={{ display: "flex", flexDirection: "column", gap: 14, fontSize: 17, lineHeight: 1.65, color: C.ink3 }}>
-                <p>Your donor records live in Steward&apos;s database, scoped to your organization; no other organization on Steward can read them.</p>
-                <p>Only your signed-in staff can see your donors.</p>
-                <p data-testid="lp-data-money">Steward never holds or moves your money. You keep whatever you take gifts through today, and Steward reads from it with read-only access you can switch off at any time.</p>
-                <p>You can export everything as CSV any time, with one click, even if your subscription has lapsed.</p>
-                <p>If you leave, you take the export with you and we delete the rest on request. That is the whole procedure.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ── CLOSING — the doorway behind the ink gradient ──────────────── */}
-        <section id="closing" className="lp-sec lp-close" style={{ background: C.ink, paddingTop: 130, paddingBottom: 130 }}>
-          <img
-            className="lp-closeimg"
-            src="/photos/doorway.webp"
-            width="1440" height="640"
-            alt="" aria-hidden="true"
-            loading="lazy" decoding="async"
-          />
-          <div className="lp-closegrad" aria-hidden="true" />
-          <div className="lp-closeinner" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24, textAlign: "center" }}>
-            <h2 className="lp-close-h" style={{ fontSize: 58, lineHeight: 1.05, color: C.cream, letterSpacing: "-0.03em", maxWidth: 820 }}>
-              Start with one conversation.
-            </h2>
-            <p style={{ fontSize: 19, lineHeight: 1.55, color: "rgba(240, 237, 230, 0.72)", maxWidth: 540 }}>
-              Import a CSV, log one call, and watch the next step come back to you. About ten minutes, and nothing is charged for thirty days.
-            </p>
-            <div className="lp-ctarow" style={{ justifyContent: "center", gap: 14, marginTop: 12 }}>
-              <a href="/signup" className="lp-btn lp-btn-gold lp-focus" data-testid="lp-start-close">Start now</a>
-              <button className="lp-btn lp-btn-ghost lp-focus" data-testid="lp-book-close" onClick={talkToFounder}>Book a call</button>
-            </div>
-            <p style={{ fontSize: 14, color: C.sage, marginTop: 4 }}>
-              Thirty days at no charge · your data exports whenever you want it · cancel in two clicks
-            </p>
-          </div>
-        </section>
-
-        {/* ── FOOTER ─────────────────────────────────────────────────────── */}
-        <footer className="lp-footer">
-          <div className="lp-serif" style={{ fontSize: 21, color: C.cream }}>Steward</div>
-          <div style={{ display: "flex", gap: 30, fontSize: 14, color: C.sage, alignItems: "center", flexWrap: "wrap" }}>
-            <a href="/terms" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Terms</a>
-            <a href="/privacy" className="lp-focus" style={{ color: C.sage, minHeight: 44, display: "inline-flex", alignItems: "center" }}>Privacy</a>
-            {/* The year is COMPUTED — "© 2026" was a literal here, which is a
-                claim that goes quietly stale on 1 January. */}
-            <span>{copyrightLine()}</span>
-          </div>
-        </footer>
-
+  <nav className="nav" aria-label="Page navigation">
+    <div className="wrap nav-inner">
+      <a className="brand" href="#top">Steward</a>
+      <div className="nav-links">
+        <a href="#relationships">Relationships</a>
+        <a href="#connections">Connections</a>
+        <a href="#pricing">Pricing</a>
+        <a href="/lost-and-found">Lost &amp; Found</a>
+        <div className="nav-cta">
+          <a className="button secondary" href={CAL} target="_blank" rel="noreferrer">Book a call</a>
+          <a className="button" href="/signup">Start now</a>
+        </div>
       </div>
-    </>
+    </div>
+  </nav>
+
+  <main>
+    <section className="wrap hero" id="top">
+      <div className="hero-copy">
+        <p className="eyebrow">For the people carrying the mission</p>
+        <h1>More time for the work that matters.</h1>
+        <p>Steward is the CRM that remembers the next right thing for every donor, so your team can spend more time serving people.</p>
+        <div className="hero-actions">
+          <a className="button" href="/signup">Start now</a>
+          <a className="button secondary" href={CAL} target="_blank" rel="noreferrer">Book a call</a>
+        </div>
+        <p className="microcopy">30 days free. Card at signup. Cancel anytime.</p>
+      </div>
+      <div className="hero-visual">
+        <img className="hero-photo" src="/landing/three-smiling-volunteers-working-together-outd.jpg" alt="Three smiling volunteers working together outdoors in warm morning light" />
+        <div className="hero-card">
+          <div className="hero-card-top"><i aria-hidden="true"></i><strong>Harborlight</strong></div>
+          <p>Marisol gave again after your last conversation. Her next step is due Friday.</p>
+        </div>
+      </div>
+    </section>
+
+    <div className="promises" aria-label="Three promises">
+      <div className="wrap promise-grid">
+        <div className="promise"><strong>Room to lead</strong><span>Your team holds the relationships. Nothing reaches a donor without a person.</span></div>
+        <div className="promise"><strong>Thoughtful next steps</strong><span>Every suggestion says why, and every number opens the records behind it.</span></div>
+        <div className="promise"><strong>Gifts stay with you</strong><span>Steward keeps watch without ever moving a dollar.</span></div>
+      </div>
+    </div>
+
+    <section className="lostfound" id="lost-and-found">
+      <div className="wrap">
+        <div className="lostfound-card">
+          <div>
+            <p className="eyebrow">Lost &amp; Found</p>
+            <h2>A $1,500 donor audit. Free.</h2>
+            <p className="lf-copy">Consultants charge $500 to $2,000 to tell you which donors are slipping away. Upload your donor file and see who has gone quiet, who is drifting and how much is at risk, before your year-end appeal goes out.</p>
+          </div>
+          <div className="lostfound-side">
+            <span className="trust"><i aria-hidden="true"></i>Your donor file never leaves your computer.</span>
+            <a className="button light" href="/lost-and-found">Find your lost donors</a>
+            <p className="fine">Free, forever. No account needed.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section className="agent-section" id="agent">
+      <div className="wrap">
+        <div className="section-head">
+          <div><p className="eyebrow">The Agent</p><h2>A steady hand for the details.</h2></div>
+          <p>The Agent drafts notes, builds briefs, and cleans records, so your team can stay present with people. Every important change still comes to you.</p>
+        </div>
+        <div className="product-shell" aria-label="Harborlight approval screen">
+          <aside className="product-nav">
+            <p className="org-name">Harborlight</p>
+            <ul>
+              <li>Home</li>
+              <li>Donors</li>
+              <li className="active">The Agent</li>
+              <li>Reports</li>
+            </ul>
+          </aside>
+          <div className="product-main">
+            <div className="product-top">
+              <div><h3>Steward Data</h3><p>One record needs your review.</p></div>
+              <span className="approval-label">You approve</span>
+            </div>
+            <article className="approval-card" id="approvalCard">
+              {!decision && <div id="approvalPrompt">
+                <div className="approval-head"><span>Possible donor match</span><span>Needs approval</span></div>
+                <div className="approval-body">
+                  <h4>Match this $125 gift to Marisol Reed?</h4>
+                  <p>The donor name is shortened on the gift record.</p>
+                  <p className="why"><strong>Why:</strong> the email, initials, and giving pattern match Marisol's record.</p>
+                </div>
+                <div className="approval-actions">
+                  <button type="button" data-decision="skipped" onClick={() => setDecision("skipped")}>Skip</button>
+                  <button className="accept" type="button" data-decision="accepted" onClick={() => setDecision("accepted")}>Accept</button>
+                </div>
+              </div>}
+              {decision && <div className="approval-result" id="approvalResult" aria-live="polite">
+                <div><strong id="decisionTitle">{decision === "accepted" ? "Accepted" : "Skipped"}</strong><p id="decisionCopy">{decision === "accepted" ? "The gift is ready to appear on Marisol's record." : "No change was made. The gift stays in the review queue."}</p><button type="button" id="reviewAgain" onClick={() => setDecision(null)}>Review again</button></div>
+              </div>}
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section className="relationship-section" id="relationships">
+      <div className="wrap">
+        <div className="section-head">
+          <div><p className="eyebrow">Relationships worth tending</p><h2>Never lose the next right thing.</h2></div>
+          <p>Steward keeps conversations, giving changes, and missed gifts close, so thoughtful follow-up never slips away.</p>
+        </div>
+        <div className="relationship-grid">
+          <article className="relationship-card"><span className="step">01</span><h3>The Thread</h3><p>A conversation becomes a promise kept. Steward brings the next step back when it is due.</p></article>
+          <article className="relationship-card"><span className="step">02<span className="live">New</span></span><h3>Journeys</h3><p>Write your first-year rhythm once. Steward walks every new donor through it and names each next step.</p></article>
+          <article className="relationship-card"><span className="step">03</span><h3>Drift</h3><p>Notice when a donor begins to pull away, while there is still time to reconnect.</p></article>
+          <article className="relationship-card"><span className="step">04</span><h3>Recurring recovery</h3><p>Catch failed gifts and expired cards before a generous habit is quietly lost.</p></article>
+        </div>
+
+        <div className="photo-carousel" aria-label="Nonprofit work in action">
+          <div className="carousel-head">
+            <p>For teams who keep showing up for their neighbors.</p>
+            <div className="carousel-controls" aria-label="Photo carousel controls">
+              <button type="button" data-carousel-prev aria-label="Previous photo">←</button>
+              <button type="button" data-carousel-next aria-label="Next photo">→</button>
+            </div>
+          </div>
+          <div className="carousel-viewport">
+            <div className="carousel-track" ref={trackRef}>
+              <figure className="carousel-slide"><img src="/landing/three-volunteers-packing-food-aid-boxes-beside.jpg" alt="Three volunteers packing food-aid boxes beside a van in warm evening light" /><figcaption><span>Hands at work</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/four-volunteers-preparing-aid-boxes-and-helpin.jpg" alt="Four volunteers preparing aid boxes and helping a person using a wheelchair" /><figcaption><span>Serving neighbors</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/volunteers-handing-supplies-to-people-at-a-com.jpg" alt="Volunteers handing supplies to people at a community outreach event" /><figcaption><span>Care</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/volunteers-and-community-members-gathered-arou.jpg" alt="Volunteers and community members gathered around a table of food and water" /><figcaption><span>Welcome</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/volunteers-unloading-aid-boxes-from-a-van-and-.jpg" alt="Volunteers unloading aid boxes from a van and assisting a person using a wheelchair" /><figcaption><span>Community</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/smiling-volunteers-sorting-clothes-and-toiletr.jpg" alt="Smiling volunteers sorting clothes and toiletries into donation boxes" /><figcaption><span>Generosity</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/two-young-volunteers-smiling-as-they-pack-food.jpg" alt="Two young volunteers smiling as they pack food donation boxes" /><figcaption><span>Together</span></figcaption></figure>
+              <figure className="carousel-slide"><img src="/landing/a-nonprofit-team-gathering-around-a-table-to-r.jpg" alt="A nonprofit team gathering around a table to review their work" /><figcaption><span>Shared purpose</span></figcaption></figure>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section className="growth-section" id="growth">
+      <div className="wrap">
+        <div className="section-head">
+          <div><p className="eyebrow">Built to grow</p><h2>Grow the work without losing the heart.</h2></div>
+          <p>Keep funds, grants, reports, and board views in one clear place, with the people behind every number always in reach.</p>
+        </div>
+        <div className="growth-grid">
+          <article className="growth-item"><h3>Fund accounting</h3><p>Honor every gift by keeping restricted and unrestricted funds clear.</p></article>
+          <article className="growth-item"><h3>Grants</h3><p>Move each opportunity forward with the full story close at hand.</p></article>
+          <article className="growth-item"><h3>Board dashboards</h3><p>Share the story of the work, then open the records behind every number.</p><span className="open-number" aria-hidden="true"></span></article>
+          <article className="growth-item"><h3>Reports</h3><p>See retention, giving patterns, and follow-up without losing time in spreadsheets.</p><span className="open-number" aria-hidden="true"></span></article>
+        </div>
+
+        <div className="people-block" id="founder">
+          <div className="people-head"><p className="eyebrow">People behind Steward</p><h3>Built alongside people who know the work.</h3><p>Nonprofit leaders who know every record stands for a real person and a real relationship.</p></div>
+          <article className="founder-feature">
+            <div className="founder-photo"><img src="/landing/jonathan-atkinson.png" alt="Jonathan Atkinson" /></div>
+            <div><h3>Jonathan Atkinson</h3><p>Founder of Steward</p></div>
+          </article>
+          <h3 className="advisor-label">Board of Advisors</h3>
+          <div className="advisor-grid">
+            <article className="advisor-card">
+              <img className="advisor-photo" src="/landing/winfield-bevins.jpg" alt="Winfield Bevins" />
+              <h3><a href="https://winfieldbevins.com/about-winfield/" target="_blank" rel="noopener noreferrer">Winfield Bevins</a></h3>
+              <p className="advisor-title">Executive Director</p><p className="advisor-org">Creo Arts</p>
+            </article>
+            <article className="advisor-card">
+              <img className="advisor-photo" src="/landing/ross-jenkins.png" alt="Ross Jenkins" />
+              <h3>Ross Jenkins</h3>
+              <p className="advisor-title">Founder</p><p className="advisor-org">Kingdom Legacy Collective</p>
+            </article>
+            <article className="advisor-card">
+              <img className="advisor-photo" src="/landing/brad-atkinson.jpg" alt="Brad Atkinson" />
+              <h3><a href="https://www.asbury.edu/directory/entry/brad-atkinson/" target="_blank" rel="noopener noreferrer">Brad Atkinson</a></h3>
+              <p className="advisor-title">Development Director</p><p className="advisor-org">Asbury University</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section className="connections connections-cream" id="connections">
+      <div className="wrap">
+        <div className="section-head">
+          <div><p className="eyebrow">Connections</p><h2>Keep the tools your team already knows.</h2></div>
+          <p>Steward brings gifts together from the services you connect and quietly watches for gaps. It never holds or moves your money.</p>
+        </div>
+        <div className="connection-grid" aria-label="Giving tool connections">
+          <div className="connection">Stripe</div><div className="connection">PayPal</div><div className="connection">Zeffy</div><div className="connection">Givebutter</div><div className="connection">Square</div><div className="connection">Bank statement imports</div>
+        </div>
+        <div className="soon-list" aria-label="Connections coming soon">
+          <span>QuickBooks and Xero coming soon</span><span>Mailchimp and Constant Contact coming soon</span><span>Gmail and Outlook logging coming soon</span>
+        </div>
+      </div>
+    </section>
+
+    <section className="volunteers" id="volunteers">
+      <div className="wrap volunteer-layout">
+        <div className="volunteer-visual">
+          <img className="volunteer-photo" src="/landing/smiling-volunteers-sorting-clothes-and-supplie.jpg" alt="Smiling volunteers sorting clothes and supplies into donation boxes" />
+        </div>
+        <div className="volunteer-copy">
+          <p className="eyebrow">Included in every plan</p>
+          <h2>Make it easier for people to show up.</h2>
+          <p className="volunteer-subhead">From first sign-up to hours served, every volunteer stays known, prepared, and connected.</p>
+          <div className="volunteer-grid">
+            <article className="volunteer-card"><span className="volunteer-number">01</span><h3>Volunteer roster</h3><p>Know the people behind the work, with contact details, screening, and availability together.</p></article>
+            <article className="volunteer-card"><span className="volunteer-number">02</span><h3>Shifts and hours</h3><p>Plan shifts, match people with roles, and record every hour they give.</p></article>
+            <article className="volunteer-card"><span className="volunteer-number">03</span><h3>Public sign-up link</h3><p>Welcome new volunteers with one simple link they can use on their own.</p></article>
+            <article className="volunteer-card"><span className="volunteer-number">04</span><h3>Background checks</h3><p>Track background checks and get a heads-up before one expires.</p></article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+          {/* ── LANDING-1 item 1 · THE PRICING SECTION FIX-4 SHIPPED ──────
+          Seed, Sapling, Orchard and Forest, with the donor count UNDER the
+          name, read from `pricing.json`. Not the mockup's table: this is
+          the section Jonathan approved in docs/landing/pricing-mockup.html
+          and FIX-4 built, and there is one of it. */}
+      <section className="pricing" id="pricing">
+        <div className="wrap">
+          <div className="section-head">
+            <div><p className="eyebrow">Pricing</p><h2>{PRICING.headline}</h2></div>
+            <p>{PRICING.lede}</p>
+          </div>
+
+          <div className="lp-toggle-wrap">
+            <div className="toggle" role="group" aria-label="Billing period">
+              {[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([id, label]) => (
+                <button key={id} type="button" data-period={id} aria-pressed={period === id}
+                  onClick={() => setPeriod(id)}>{label}</button>
+              ))}
+            </div>
+            <span className="lp-pill">{PRICING.yearlyPill}</span>
+          </div>
+
+          <div className="lp-tiers">
+            {TIERS.map(t => (
+              <div key={t.id} className={"lp-tier" + (t.featured ? " featured" : "")} data-tier={t.id}>
+                <div className="lp-tier-top">
+                  <span className="lp-tier-name">{t.name}</span>
+                  {t.featured && <span className="lp-badge">{PRICING.featuredBadge}</span>}
+                </div>
+                <span className="lp-tier-band">{t.band}</span>
+                <div className="lp-tier-price">
+                  <strong>{usd(priceOf(t))}</strong><span className="per">{yearly ? "a year" : "a month"}</span>
+                </div>
+                <span className="sub">{subOf(t)}</span>
+                <Link className="lp-tier-cta" to="/signup">{PRICING.startCta}</Link>
+              </div>
+            ))}
+          </div>
+
+          <div className="lp-forest">
+            <div>
+              <span className="lp-forest-name">{TALK.name}</span>
+              <span className="lp-forest-line">{TALK.line}</span>
+            </div>
+            <a className="lp-tier-cta quiet" href={CAL} target="_blank" rel="noreferrer">{TALK.cta}</a>
+          </div>
+
+          <div className="lp-included">
+            <h3>{PRICING.includedHeading}</h3>
+            <div className="lp-included-grid">
+              {PRICING.includedGroups.map(g => (
+                <div key={g.name}><b>{g.name}</b><span>{g.copy}</span></div>
+              ))}
+            </div>
+            <div className="lp-extras">{PRICING.extras.map(x => <span key={x}>{x}</span>)}</div>
+          </div>
+        </div>
+      </section>
+
+<section className="data-plain" id="data">
+      <div className="wrap data-inner">
+        <p className="data-quote">Your data belongs to your mission.</p>
+        <div className="data-copy">
+          <p>Export everything anytime, even after you leave. The history you have built with your donors always stays yours.</p>
+          <p className="mobile-note">A mobile app is coming soon.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer className="footer">
+    <div className="wrap footer-inner">
+      <div><strong>The CRM that remembers the next right thing, for every donor.</strong><p>Made for small teams with meaningful work to do.</p></div>
+      <div className="footer-links"><a href="#agent">The Agent</a><a href="#relationships">Relationships</a><a href="#volunteers">Volunteers</a><a href="/lost-and-found">Lost &amp; Found</a><a href="#pricing">Pricing</a><a href={CAL} target="_blank" rel="noreferrer">Book a call</a></div>
+    </div>
+  </footer>
+</div>
   );
 }
+
+const LANDING_CSS = `
+    :root {
+      color-scheme: light;
+      --ink: #0f1a12;
+      --cream: #f0ede6;
+      --cream-deep: #e8e4db;
+      --white: #ffffff;
+      --grey: rgba(15,26,18,.68);
+      --line: rgba(15,26,18,.16);
+      --emerald: #0d5c3a;
+      --emerald-dark: #0d5c3a;
+      --brass: #c9a84c;
+      --serif: "Newsreader", Georgia, serif;
+      --sans: "DM Sans", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    .lp-root { scroll-behavior: smooth; }
+    .lp-root {
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--white);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.58;
+      -webkit-font-smoothing: antialiased;
+    }
+    img { display: block; max-width: 100%; }
+    a, button { font: inherit; }
+    a { color: inherit; }
+    button { color: inherit; }
+    :focus-visible { outline: 3px solid rgba(201,168,76,.65); outline-offset: 3px; }
+    .wrap { width: min(1160px, calc(100% - 48px)); margin-inline: auto; }
+    .eyebrow {
+      margin: 0 0 17px;
+      color: var(--grey);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .17em;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      display: inline-block;
+      width: 18px;
+      height: 2px;
+      margin: 0 9px 3px 0;
+      background: var(--brass);
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1, h2, h3 {
+      font-family: var(--serif);
+      font-weight: 600;
+      letter-spacing: -.035em;
+    }
+    h1 { max-width: 720px; margin-bottom: 24px; font-size: clamp(52px, 6.6vw, 86px); line-height: .95; }
+    h2 { margin-bottom: 0; font-size: clamp(40px, 5.2vw, 66px); line-height: .98; }
+    h3 { font-size: 28px; line-height: 1.08; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 22px;
+      border: 1px solid var(--emerald);
+      border-radius: 6px;
+      background: var(--emerald);
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: background .18s ease, border-color .18s ease;
+    }
+    .button:hover { background: var(--emerald-dark); border-color: var(--emerald-dark); }
+    .button.secondary { background: transparent; color: var(--emerald); }
+    .button.secondary:hover { background: var(--cream); }
+    .button.light { border-color: rgba(255,255,255,.75); background: var(--white); color: var(--emerald); }
+    .button.light:hover { background: var(--cream); border-color: var(--cream); }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,.96);
+      backdrop-filter: blur(10px);
+    }
+    .nav-inner { min-height: 66px; display: flex; align-items: center; justify-content: flex-end; gap: 26px; }
+    .nav-links { display: flex; align-items: center; gap: 25px; }
+    .nav a { font-size: 13px; font-weight: 700; text-decoration: none; }
+    .nav a:not(.button):hover { color: var(--emerald); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: .94fr 1.06fr;
+      align-items: center;
+      gap: clamp(44px, 7vw, 90px);
+      min-height: 725px;
+      padding: 88px 0 96px;
+    }
+    .hero-copy > p:not(.eyebrow) { max-width: 590px; margin-bottom: 0; color: var(--grey); font-size: clamp(18px, 1.8vw, 21px); }
+    .hero-actions, .pricing-actions { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 30px; }
+    .microcopy { margin-top: 14px !important; font-size: 13px !important; }
+    .hero-visual { position: relative; min-height: 540px; }
+    .hero-photo {
+      width: 91%;
+      height: 525px;
+      margin-left: auto;
+      border-radius: 140px 6px 6px 6px;
+      object-fit: cover;
+      object-position: 53% center;
+    }
+    .hero-card {
+      position: absolute;
+      left: 0;
+      bottom: 28px;
+      width: min(350px, 80%);
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: var(--white);
+      box-shadow: 0 18px 40px rgba(15,26,18,.12);
+    }
+    .hero-card-top { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; font-size: 13px; }
+    .hero-card-top i { width: 8px; height: 8px; border-radius: 50%; background: var(--brass); }
+    .hero-card p { margin-bottom: 0; color: var(--grey); font-size: 13px; }
+    .photo-credit { margin: 8px 0 0; color: var(--grey); font-size: 10px; letter-spacing: .05em; text-align: right; }
+
+    .promises { border-block: 1px solid var(--line); background: var(--cream); }
+    .promise-grid { display: grid; grid-template-columns: repeat(3, 1fr); }
+    .promise { padding: 32px 36px; border-right: 1px solid var(--line); }
+    .promise:first-child { padding-left: 0; }
+    .promise:last-child { border-right: 0; }
+    .promise strong { display: block; margin-bottom: 5px; font-family: var(--serif); font-size: 24px; }
+    .promise span { color: var(--grey); font-size: 14px; }
+
+    section { padding: 112px 0; }
+    .section-head { display: grid; grid-template-columns: .95fr 1.05fr; align-items: end; gap: clamp(42px, 7vw, 90px); margin-bottom: 52px; }
+    .section-head > p { max-width: 550px; margin-bottom: 3px; color: var(--grey); font-size: 18px; }
+
+    .agent-section { background: var(--white); }
+    .product-shell {
+      display: grid;
+      grid-template-columns: 205px 1fr;
+      min-height: 535px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--cream);
+      box-shadow: 0 20px 50px rgba(15,26,18,.09);
+    }
+    .product-nav { padding: 25px 18px; background: var(--ink); color: var(--cream); }
+    .org-name { margin: 0 0 27px; font-family: var(--serif); font-size: 24px; }
+    .product-nav ul { list-style: none; padding: 0; margin: 0; }
+    .product-nav li { margin-bottom: 5px; padding: 9px 11px; border-radius: 4px; color: rgba(240,237,230,.72); font-size: 13px; }
+    .product-nav li.active { background: rgba(240,237,230,.12); color: var(--white); }
+    .product-main { display: grid; grid-template-rows: auto 1fr; padding: 34px 38px 42px; }
+    .product-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    .product-top h3 { margin-bottom: 6px; font-size: 36px; }
+    .product-top p { margin-bottom: 0; color: var(--grey); font-size: 14px; }
+    .approval-label { padding: 6px 9px; border: 1px solid rgba(201,168,76,.7); border-radius: 999px; color: var(--ink); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .approval-card {
+      align-self: center;
+      width: min(625px, 100%);
+      margin: 34px auto 0;
+      border: 1px solid var(--cream-deep);
+      border-radius: 8px;
+      background: var(--white);
+      box-shadow: 8px 8px 0 var(--cream-deep);
+    }
+    .approval-head { display: flex; justify-content: space-between; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--line); color: var(--grey); font-size: 12px; }
+    .approval-.lp-root { padding: 24px 24px 18px; }
+    .approval-body h4 { margin: 0 0 8px; font-size: 18px; }
+    .approval-body > p { margin-bottom: 16px; color: var(--grey); font-size: 14px; }
+    .why { padding: 12px 14px; border-left: 3px solid var(--brass); background: var(--cream); color: var(--ink) !important; font-size: 13px !important; }
+    .approval-actions { display: flex; justify-content: flex-end; gap: 9px; padding: 0 24px 22px; }
+    .approval-actions button { min-width: 80px; min-height: 39px; border: 1px solid rgba(15,26,18,.4); border-radius: 5px; background: var(--white); font-weight: 700; cursor: pointer; }
+    .approval-actions .accept { border-color: var(--emerald); background: var(--emerald); color: var(--white); }
+    /* LANDING-1. Hiding this by default was the mockup script's job to
+       undo. React decides whether the element EXISTS at all now, so the
+       default has to be the visible one; leaving it hidden rendered the
+       result into a box nobody could see. */
+    .approval-result { display: grid; min-height: 245px; place-items: center; padding: 24px; text-align: center; }
+    .approval-result strong { display: block; margin-bottom: 5px; font-family: var(--serif); font-size: 26px; }
+    .approval-result p { margin: 0 0 16px; color: var(--grey); font-size: 14px; }
+    .approval-result button { border: 0; background: transparent; color: var(--emerald); font-weight: 700; cursor: pointer; }
+
+    .relationship-section { background: var(--cream); }
+    .relationship-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .relationship-card { padding: 30px 28px 28px; border-top: 3px solid var(--brass); background: var(--white); }
+    .relationship-card .step { color: var(--grey); font-size: 11px; font-weight: 700; letter-spacing: .13em; }
+    .relationship-card h3 { margin: 28px 0 10px; font-size: 30px; }
+    .relationship-card p { margin-bottom: 0; color: var(--grey); }
+    .photo-carousel { margin-top: 72px; margin-inline: calc(50% - 50vw); overflow: hidden; }
+    .carousel-head { width: min(1160px, calc(100% - 48px)); margin: 0 auto 18px; display: flex; align-items: end; justify-content: space-between; gap: 20px; }
+    .carousel-head p { margin: 0; color: var(--grey); font-size: 14px; }
+    .carousel-controls { display: flex; gap: 8px; }
+    .carousel-controls button { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 50%; background: var(--white); color: var(--emerald); cursor: pointer; font-size: 19px; }
+    .carousel-viewport { overflow: hidden; padding-inline: max(24px, calc((100vw - 1160px) / 2)); }
+    .carousel-track { display: flex; width: max-content; gap: 16px; will-change: transform; }
+    .carousel-slide { flex: 0 0 auto; width: clamp(290px, 35vw, 500px); margin: 0; }
+    .carousel-slide img { width: 100%; height: clamp(300px, 31vw, 410px); border-radius: 4px; object-fit: cover; }
+    .carousel-slide figcaption { display: flex; justify-content: space-between; gap: 12px; margin-top: 8px; color: var(--grey); font-size: 11px; }
+
+    .growth-section { background: var(--white); }
+    .growth-grid { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); }
+    .growth-item { min-height: 178px; padding: 32px; border-bottom: 1px solid var(--line); }
+    .growth-item:nth-child(odd) { border-right: 1px solid var(--line); }
+    .growth-item:nth-last-child(-n+2) { border-bottom: 0; }
+    .growth-item h3 { margin-bottom: 9px; }
+    .growth-item p { margin-bottom: 0; color: var(--grey); }
+    .open-number { display: inline-flex; align-items: center; gap: 8px; margin-top: 13px; color: var(--emerald); font-size: 12px; font-weight: 700; }
+    .open-number::after { content: "Open records"; }
+
+    .people-block { margin-top: 92px; padding-top: 72px; border-top: 1px solid var(--line); }
+    .people-head { max-width: 680px; margin-bottom: 38px; }
+    .people-head h3 { margin-bottom: 10px; font-size: 40px; }
+    .people-head p { margin-bottom: 0; color: var(--grey); }
+    .founder-feature { display: grid; grid-template-columns: 190px 1fr; align-items: center; gap: 34px; margin-bottom: 42px; padding: 18px; border: 1px solid var(--line); background: var(--cream); }
+    .founder-photo { width: 190px; height: 190px; overflow: hidden; border-radius: 50%; }
+    .founder-photo img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; object-position: center; }
+    .founder-feature h3 { margin: 0 0 4px; font-size: 38px; }
+    .founder-feature p { margin: 0; color: var(--grey); }
+    .founder-kicker { margin-bottom: 8px !important; color: var(--emerald) !important; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+    .advisor-label { margin: 0 0 17px; font-size: 26px; }
+    .advisor-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .advisor-card { padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+    .advisor-photo { width: 184px; height: 184px; margin-bottom: 18px; border-radius: 50%; object-fit: cover; object-position: center; }
+    .advisor-card h3 { margin-bottom: 5px; font-size: 27px; }
+    .advisor-card h3 a { text-decoration: none; }
+    .advisor-card h3 a:hover { color: var(--emerald); }
+    .advisor-title { margin-bottom: 2px; color: var(--emerald); font-size: 13px; font-weight: 700; }
+    .advisor-org { margin: 0; color: var(--grey); font-size: 14px; }
+
+    .connections { background: var(--cream-deep); color: var(--ink); }
+  /* LANDING-1 item 4 — the Connections band was a solid emerald panel, the
+     only full-bleed block of the ACTION colour on the page. Emerald means
+     "this is the thing to press", and a whole section of it competes with
+     every button on the screen. Cream, with the logo tiles as white cards,
+     which is how every other band on this page is built. The text rules
+     below follow it: white-on-emerald becomes ink-on-cream. */
+  .connections-cream .connection { background: var(--white); border-color: var(--line); color: var(--ink); }
+  .connections-cream .connection-note { color: var(--grey); }
+  .connections-cream .soon-list span { border-color: var(--line); color: var(--grey); }
+  .connections-cream .section-head p { color: var(--grey); }
+  .connections-cream .eyebrow { color: var(--grey); }
+    .connections .eyebrow { color: var(--grey); }
+    .connections .section-head > p { color: var(--grey); }
+    .connection-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .connection { padding: 20px; border: 1px solid rgba(255,255,255,.34); background: rgba(255,255,255,.06); text-align: center; font-weight: 700; }
+    .connection-note { margin: 22px 0 0; color: rgba(255,255,255,.76); font-size: 13px; }
+    .soon-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; }
+    .soon-list span { padding: 7px 9px; border: 1px solid rgba(255,255,255,.34); border-radius: 999px; color: rgba(255,255,255,.86); font-size: 11px; }
+
+    .volunteers { background: var(--cream); }
+    .volunteer-layout { display: grid; grid-template-columns: .94fr 1.06fr; align-items: center; gap: clamp(60px, 7vw, 98px); }
+    .volunteer-visual { position: relative; margin: 0 18px 18px 0; }
+    .volunteer-visual::after { content: ""; position: absolute; inset: 20px -18px -18px 20px; z-index: 0; border: 1px solid rgba(201,168,76,.55); border-radius: 28px; }
+    .volunteer-photo { position: relative; z-index: 1; width: 100%; aspect-ratio: 1 / 1; border-radius: 28px; box-shadow: 0 24px 48px rgba(15,26,18,.13); object-fit: cover; object-position: center; }
+    .volunteer-copy h2 { max-width: 660px; }
+    .volunteer-subhead { margin: 30px 0 40px; color: var(--grey); font-size: 18px; }
+    .volunteer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); background: rgba(255,255,255,.45); }
+    .volunteer-card { min-height: 188px; padding: 24px 26px 26px; }
+    .volunteer-card:nth-child(odd) { border-right: 1px solid var(--line); }
+    .volunteer-card:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+    .volunteer-number { display: block; margin-bottom: 24px; color: var(--emerald); font-family: var(--serif); font-size: 15px; }
+    .volunteer-card h3 { margin: 0 0 9px; font-family: var(--sans); font-size: 17px; font-weight: 700; letter-spacing: 0; line-height: 1.35; }
+    .volunteer-card p { margin: 0; color: var(--grey); font-size: 13px; line-height: 1.5; }
+
+    .pricing { background: var(--white); }
+    .pricing-layout { display: grid; gap: 22px; }
+    .pricing-card { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: var(--white); box-shadow: 0 18px 46px rgba(15,26,18,.08); }
+    .price-table { overflow: hidden; }
+    .price-row { display: grid; grid-template-columns: 1.2fr .9fr .9fr; border-bottom: 1px solid var(--line); }
+    .price-row > div { display: flex; align-items: center; min-height: 76px; padding: 20px 26px; }
+    .price-row > div + div { border-left: 1px solid var(--line); }
+    .price-head { background: var(--ink); color: var(--cream); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .price-head > div { min-height: 52px; padding-block: 14px; }
+    .price-row:not(.price-head) > div:first-child { font-size: 15px; font-weight: 700; }
+    .price-row:not(.price-head) > div:nth-child(n+2) { font-family: var(--serif); font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+    .price-row:last-child { border-bottom: 0; background: var(--cream); }
+    .price-card-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; padding: 24px 26px 27px; border-top: 1px solid var(--line); background: var(--cream); }
+    .active-note { max-width: 500px; margin: 0; color: var(--grey); font-size: 13px; }
+    .price-card-footer .pricing-actions { flex: 0 0 auto; margin-top: 0; }
+    .price-card-footer .microcopy { margin: 9px 0 0 !important; text-align: right; }
+    .feature-list { padding: clamp(30px, 4.2vw, 48px); border: 1px solid var(--line); border-radius: 10px; background: var(--cream); }
+    .feature-list h3 { margin-bottom: 26px; font-size: clamp(30px, 3vw, 40px); }
+    .feature-list ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: clamp(34px, 6vw, 78px); list-style: none; padding: 0; margin: 0; }
+    .feature-list li { position: relative; padding: 15px 0 15px 34px; border-top: 1px solid var(--line); color: var(--grey); font-size: 15px; line-height: 1.5; }
+    .feature-list li::before { content: "✓"; position: absolute; left: 0; top: 14px; display: grid; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: var(--emerald); color: var(--white); font-size: 12px; font-weight: 700; }
+    .feature-list strong { color: var(--ink); }
+    .pricing-actions { margin-top: 28px; }
+
+    .data-plain { padding: 84px 0; border-block: 1px solid var(--line); background: var(--cream); }
+    .data-inner { display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: 70px; }
+    .data-quote { margin: 0; font-family: var(--serif); font-size: clamp(42px, 5vw, 66px); font-weight: 600; letter-spacing: -.035em; line-height: 1; }
+    .data-copy p { color: var(--grey); font-size: 18px; }
+    .data-copy p:last-child { margin-bottom: 0; }
+    .mobile-note { margin-top: 17px; font-size: 13px !important; }
+
+    .footer { padding: 58px 0 68px; background: var(--ink); color: var(--cream); }
+    .footer-inner { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; }
+    .footer strong { display: block; max-width: 560px; font-family: var(--serif); font-size: 31px; line-height: 1.1; }
+    .footer p { margin: 9px 0 0; color: rgba(240,237,230,.68); }
+    .footer-links { display: flex; flex-wrap: wrap; gap: 17px; }
+    .footer-links a { color: var(--cream); font-size: 13px; font-weight: 700; text-decoration: none; }
+
+    @media (max-width: 920px) {
+      .hero, .section-head, .pricing-layout, .data-inner, .volunteer-layout { grid-template-columns: 1fr; }
+      .volunteer-layout { gap: 64px; }
+      .volunteer-visual { width: min(680px, calc(100% - 18px)); }
+      .hero { min-height: 0; gap: 44px; padding: 70px 0 82px; }
+      .hero-copy { max-width: 730px; }
+      .hero-visual { min-height: 510px; }
+      .hero-photo { height: 500px; }
+      .promise-grid { grid-template-columns: 1fr; }
+      .promise, .promise:first-child { padding: 23px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .promise:last-child { border-bottom: 0; }
+      .product-shell { grid-template-columns: 1fr; }
+      .product-nav { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 20px; }
+      .org-name { margin: 0; }
+      .product-nav ul { display: flex; gap: 4px; }
+      .product-nav li { margin: 0; }
+      .product-nav li:nth-child(n+3) { display: none; }
+      .relationship-grid, .advisor-grid, .connection-grid { grid-template-columns: 1fr 1fr; }
+      .advisor-card:last-child, .connection:last-child { grid-column: 1 / -1; }
+      .advisor-card:last-child .advisor-photo { max-height: 430px; }
+      .people-block { margin-top: 76px; }
+    }
+
+    @media (max-width: 640px) {
+      .wrap { width: min(100% - 30px, 1160px); }
+      .nav-inner { min-height: 60px; }
+      /* LANDING-1. The mockup hid every text link on a phone, which left a
+         visitor on a phone unable to reach Pricing or Lost & Found at all.
+         Lost & Found is the whole top of the funnel and a phone is where
+         most people meet a link to it, so the links WRAP onto a second row
+         instead of disappearing: smaller, tighter, still there. */
+      .nav-inner { flex-wrap: wrap; gap: 10px 14px; padding-top: 10px; padding-bottom: 10px; min-height: 0; }
+      .nav-links { flex-wrap: wrap; justify-content: flex-end; gap: 10px 14px; }
+      .nav-links a:not(.button) { font-size: 12px; }
+      .nav-inner::before { content: "For nonprofit teams"; font-family: var(--serif); font-size: 17px; font-weight: 600; }
+      .nav .button { min-height: 40px; padding: 0 14px; }
+      .hero { padding: 54px 0 66px; }
+      h1 { font-size: clamp(48px, 15vw, 65px); }
+      .hero-actions, .pricing-actions { display: grid; grid-template-columns: 1fr 1fr; }
+      .hero-actions .button, .pricing-actions .button { padding-inline: 10px; }
+      .hero-visual { min-height: 410px; }
+      .hero-photo { width: 95%; height: 400px; border-radius: 84px 5px 5px 5px; }
+      .hero-card { bottom: 16px; width: 88%; padding: 16px; }
+      section { padding: 78px 0; }
+      .section-head { gap: 22px; margin-bottom: 38px; }
+      h2 { font-size: clamp(41px, 12vw, 52px); }
+      .product-main { padding: 26px 16px 30px; }
+      .product-nav li:nth-child(n+2) { display: none; }
+      .product-top { display: block; }
+      .approval-label { display: inline-block; margin-top: 13px; }
+      .approval-card { box-shadow: 5px 5px 0 var(--cream-deep); }
+      .approval-head, .approval-.lp-root { padding: 16px; }
+      .approval-actions { padding: 0 16px 17px; }
+      .relationship-grid, .growth-grid, .advisor-grid, .connection-grid { grid-template-columns: 1fr; }
+      .volunteer-layout { gap: 52px; }
+      .volunteer-visual { width: calc(100% - 14px); margin: 0 14px 14px 0; }
+      .volunteer-visual::after { inset: 14px -14px -14px 14px; border-radius: 20px; }
+      .volunteer-photo { border-radius: 20px; }
+      .volunteer-subhead { margin: 22px 0 30px; font-size: 16px; }
+      .volunteer-grid { grid-template-columns: 1fr; }
+      .volunteer-card { min-height: 0; padding: 20px; }
+      .volunteer-card:nth-child(odd) { border-right: 0; }
+      .volunteer-card:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
+      .volunteer-number { margin-bottom: 14px; }
+      .volunteer-card h3 { font-size: 15px; }
+      .relationship-card { padding: 25px 22px; }
+      .carousel-head { width: min(100% - 30px, 1160px); }
+      .carousel-viewport { padding-inline: 15px; }
+      .carousel-slide { width: 82vw; }
+      .carousel-slide img { height: 300px; }
+      .growth-item, .growth-item:nth-child(odd), .growth-item:nth-last-child(-n+2) { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .growth-item:last-child { border-bottom: 0; }
+      .founder-feature { grid-template-columns: 1fr; text-align: center; }
+      .founder-photo { width: 180px; height: 180px; margin-inline: auto; }
+      .advisor-card:last-child, .connection:last-child { grid-column: auto; }
+      .advisor-photo { width: 168px; height: 168px; }
+      .connection-grid { gap: 8px; }
+      .pricing-card, .feature-list { border-radius: 6px; }
+      .price-row { grid-template-columns: 1fr 1fr; }
+      .price-row > div { min-height: 58px; padding: 14px 16px; }
+      .price-row > div:first-child { grid-column: 1 / -1; min-height: 48px; border-bottom: 1px solid var(--line); }
+      .price-row > div:nth-child(2) { border-left: 0; }
+      .price-head > div:first-child { display: none; }
+      .price-head > div:nth-child(2), .price-head > div:nth-child(3) { min-height: 48px; border-top: 0; }
+      .price-row:not(.price-head) > div:nth-child(n+2) { font-size: 21px; }
+      .price-card-footer { display: block; padding: 22px 18px 24px; }
+      .price-card-footer .pricing-actions { margin-top: 20px; }
+      .price-card-footer .microcopy { text-align: left; }
+      .feature-list { padding: 29px 20px; }
+      .feature-list ul { grid-template-columns: 1fr; }
+      .feature-list li { padding-block: 14px; }
+      .data-plain { padding: 68px 0; }
+      .footer-inner { display: block; }
+      .footer-links { margin-top: 26px; }
+    }
+
+
+    .nav-inner { justify-content: space-between; }
+    .nav a.brand { font-family: var(--serif); font-size: 26px; font-weight: 600; letter-spacing: -.02em; text-decoration: none; }
+    .nav .nav-cta { display: flex; gap: 10px; }
+    .relationship-grid { grid-template-columns: repeat(4, 1fr); }
+    .relationship-card .live { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: var(--brass); color: var(--ink); font-size: 10px; letter-spacing: .08em; vertical-align: middle; }
+
+    .lostfound { padding: 0; background: var(--white); }
+    .lostfound-card { display: grid; grid-template-columns: 1.2fr .8fr; align-items: center; gap: 48px; margin: 88px auto 0; padding: 48px 52px; border-radius: 10px; background: var(--ink); color: var(--cream); }
+    .lostfound-card .eyebrow { color: rgba(240,237,230,.72); }
+    .lostfound-card h2 { font-size: clamp(38px, 4.4vw, 56px); }
+    .lostfound-card p.lf-copy { margin: 18px 0 0; color: rgba(240,237,230,.78); font-size: 17px; max-width: 560px; }
+    .lostfound-side { display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
+    .lostfound-side .trust { display: flex; gap: 10px; align-items: center; color: var(--cream); font-size: 14px; font-weight: 700; }
+    .lostfound-side .trust i { width: 9px; height: 9px; border-radius: 50%; background: var(--brass); }
+    .lostfound-side .fine { margin: 0; color: rgba(240,237,230,.68); font-size: 13px; }
+
+    .connections { background: var(--white); color: var(--ink); border-top: 1px solid var(--line); }
+    .connections .eyebrow { color: var(--grey); }
+    .connections .section-head > p { color: var(--grey); }
+    .connection { border: 1px solid var(--line); background: var(--cream); }
+    .soon-list span { border: 1px solid var(--line); color: var(--grey); }
+
+    .price-intro { display: flex; flex-direction: column; align-items: center; gap: 12px; margin-bottom: 30px; }
+    .toggle { display: flex; padding: 5px; background: var(--cream-deep); border-radius: 12px; }
+    .toggle button { padding: 10px 24px; border: 0; border-radius: 9px; background: transparent; color: var(--grey); font-weight: 700; cursor: pointer; transition: background .16s ease, color .16s ease; }
+    .toggle button[aria-pressed="true"] { background: var(--ink); color: var(--cream); }
+    .pill { padding: 5px 12px; border-radius: 999px; background: #f3e9cc; color: #5c4710; font-size: 13px; font-weight: 700; }
+    .tier-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .tier { display: flex; flex-direction: column; gap: 8px; padding: 34px 30px 30px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
+    .tier.featured { border: 0; background: var(--ink); color: var(--cream); box-shadow: 0 28px 56px -24px rgba(15,26,18,.45); }
+    .tier-top { display: flex; justify-content: space-between; align-items: center; min-height: 28px; }
+    .tier-name { font-family: var(--serif); font-size: 32px; font-weight: 600; letter-spacing: -.02em; }
+    .tier-badge { padding: 4px 10px; border-radius: 999px; background: var(--brass); color: var(--ink); font-size: 11px; font-weight: 700; }
+    .tier-size { font-weight: 700; }
+    .tier-price { display: flex; align-items: baseline; gap: 6px; padding-top: 6px; }
+    .tier-price strong { font-family: var(--serif); font-size: 56px; font-weight: 600; letter-spacing: -.03em; line-height: 1; }
+    .tier-muted { color: var(--grey); font-size: 14px; }
+    .tier.featured .tier-muted { color: rgba(240,237,230,.72); }
+    .tier .button { margin-top: 18px; }
+    .tier:not(.featured) .button { background: transparent; color: var(--ink); border-color: var(--ink); }
+    .tier:not(.featured) .button:hover { background: var(--cream); }
+    .forest { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 18px; padding: 24px 30px; border: 1px solid var(--line); border-radius: 12px; background: var(--cream); }
+    .forest-left { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+    .forest-left strong { font-family: var(--serif); font-size: 28px; font-weight: 600; }
+    .forest-left span { color: var(--grey); }
+    .forest .button { background: transparent; color: var(--ink); border-color: var(--ink); }
+    .active-line { margin: 18px 0 0; color: var(--grey); font-size: 14px; text-align: center; }
+
+    @media (max-width: 920px) {
+      .relationship-grid { grid-template-columns: 1fr 1fr; }
+      .lostfound-card { grid-template-columns: 1fr; padding: 38px 30px; }
+      .tier-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .relationship-grid { grid-template-columns: 1fr; }
+      /* Book a call stays, because "talk to a person" is the other half of
+         the header's job and it is one tap on a phone. */
+      .nav .nav-cta .secondary { padding: 0 12px; font-size: 12px; }
+      .nav-inner::before { content: none; }
+      .forest { flex-direction: column; align-items: flex-start; }
+      .lostfound-card { margin-top: 64px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .lp-root { scroll-behavior: auto; }
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+  
+/* ── LANDING-1 · the FIX-4 pricing cards, in the mockup's own voice ──── */
+.lp-toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 40px 0 36px; }
+.lp-root .toggle { display: flex; padding: 5px; background: #ece8df; border-radius: 14px; }
+.lp-root .toggle button { padding: 11px 26px; border: none; border-radius: 10px; background: transparent;
+  color: var(--grey); font: 600 15px var(--sans); cursor: pointer; }
+.lp-root .toggle button[aria-pressed="true"] { background: var(--ink); color: var(--cream); }
+.lp-pill { font-size: 14px; font-weight: 600; padding: 6px 12px; border-radius: 99px; background: #f3e9cc; color: #5c4710; }
+.lp-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.lp-tier { padding: 36px 34px 34px; border-radius: 22px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--white); border: 1px solid var(--cream-deep); }
+.lp-tier.featured { background: var(--ink); color: var(--cream); border: none;
+  box-shadow: 0 30px 60px -24px rgba(15,26,18,.45); }
+.lp-tier-top { display: flex; justify-content: space-between; align-items: center; min-height: 28px; gap: 10px; }
+.lp-tier-name { font-family: var(--serif); font-size: 34px; font-weight: 600; letter-spacing: -.4px; }
+.lp-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: var(--brass); color: var(--ink); white-space: nowrap; }
+.lp-tier-band { font-size: 16px; font-weight: 600; }
+.lp-tier-price { display: flex; align-items: baseline; gap: 6px; padding-top: 8px; flex-wrap: wrap; }
+.lp-tier-price strong { font-family: var(--serif); font-size: 64px; font-weight: 600; letter-spacing: -1.6px; line-height: 1; }
+.lp-tier .per, .lp-tier .sub { font-size: 15px; color: var(--grey); }
+.lp-tier.featured .per, .lp-tier.featured .sub { color: rgba(240,237,230,.72); }
+.lp-tier-cta { margin-top: 22px; text-align: center; padding: 16px; border-radius: 12px; font-size: 16px;
+  font-weight: 600; text-decoration: none; border: 1.5px solid var(--ink); color: var(--ink); display: block; }
+.lp-tier.featured .lp-tier-cta { background: var(--emerald); color: #fff; border-color: var(--emerald); }
+.lp-tier-cta.quiet { margin: 0; padding: 14px 22px; white-space: nowrap; }
+.lp-forest { margin-top: 20px; padding: 26px 32px; border-radius: 18px; background: var(--white);
+  border: 1px solid var(--cream-deep); display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.lp-forest-name { font-family: var(--serif); font-size: 30px; font-weight: 600; margin-right: 18px; }
+.lp-forest-line { font-size: 17px; color: var(--grey); }
+.lp-included { margin-top: 48px; display: flex; flex-direction: column; gap: 28px; }
+.lp-included h3 { margin: 0; font-family: var(--serif); font-size: 30px; font-weight: 600; text-align: center; }
+.lp-included-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.lp-included-grid > div { display: flex; flex-direction: column; gap: 8px; padding-top: 18px; border-top: 2px solid var(--ink); }
+.lp-included-grid b { font-size: 18px; }
+.lp-included-grid span { font-size: 15px; line-height: 1.55; color: var(--grey); }
+.lp-extras { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 36px; font-size: 15px; color: #3e3a35; }
+@media (max-width: 900px) {
+  .lp-tiers, .lp-included-grid { grid-template-columns: 1fr; }
+  .lp-forest { flex-direction: column; align-items: flex-start; }
+  .lp-tier-name { font-size: 28px; }
+  .lp-tier-price strong { font-size: 48px; }
+}
+`;

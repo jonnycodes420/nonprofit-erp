@@ -91,6 +91,10 @@ const SELF_REFUSING = [
   // routes on a loopback stack, so it refuses a non-loopback BASE outright;
   // there is no read-only mode for a walk whose point is that the writes land.
   "build99-walk",
+  // LANDING-1 — the walk. It opens the public landing page at 1440 and 390
+  // and reads it; it writes nothing at all. Loopback APP_URL only, and it
+  // refuses to run with NODE_ENV production.
+  "landing1-walk",
   // LOST & FOUND — the walk. It uploads a donor fixture to the public page,
   // downloads the PDF (which writes a lead row), and promotes one user to
   // super admin and back to read the leads list. Loopback BASE and APP_URL
