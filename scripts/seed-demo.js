@@ -810,6 +810,199 @@ async function main() {
             [`th_b72_${k + 1}`, ORG, did, stepType, step, orgTime.addDays(TODAY, due), orgTime.addDays(TODAY, -ago), intId]);
   }
 
+  // ── One armed journey, and five people at different points in it ───────
+  //
+  // THREAD-2a built the engine and THREAD-2b the screens; without this the
+  // demo shows an empty builder and every donor profile says nothing about a
+  // journey, which is the one thing a person opening the demo now wants to
+  // see. So Harborlight arms "New donor, first year" and five of its
+  // first-time givers are partway through it.
+  //
+  // THE STEPS ARE COPIED, NOT REFERENCED — exactly as the product copies them
+  // when somebody enters a journey. Editing the template later must not
+  // rewrite the history of people already in it, and a seed that shared rows
+  // would hide that.
+  //
+  // WHY THE GIFT DATES MOVE. A first-gift journey starts ON the first gift,
+  // so `applied_on` and the donor's only gift have to be the same day or the
+  // demo contradicts itself on the profile. These five are single-gift
+  // donors and the seed owns their rows, so the gift is moved to the entry
+  // date and the rollup is re-run for just them.
+  console.log("[seed] the journey…");
+  const JOURNEY_STEPS = [
+    { type: "thank",        label: "Call to say thank you",    offsetDays: 2,   draft: null },
+    { type: "send",         label: "Send a handwritten note",  offsetDays: 7,   draft: null },
+    { type: "send",         label: "Send the impact report",   offsetDays: 90,  draft: "impact_report" },
+    { type: "follow_up",    label: "Ask them for a visit",     offsetDays: 120, draft: null },
+    { type: "follow_up",    label: "Invite them to something", offsetDays: 150, draft: "event_invitation" },
+    { type: "follow_up",    label: "Check in, no ask",         offsetDays: 180, draft: null },
+    { type: "check_in_ask", label: "Make the ask",             offsetDays: 210, draft: "the_ask" },
+  ];
+  const JOURNEY_TPL = "ct_b72_newdonor";
+  await q(`INSERT INTO cultivation_templates
+             (id,org_id,name,steps,trigger_key,priority,preset_key,journey_enabled,created_by,created_by_name)
+           VALUES ($1,$2,'New donor, first year',$3::jsonb,'first_gift',50,'new_donor_first_year',true,
+                   'u_b72demo','Dana Reyes')`,
+          [JOURNEY_TPL, ORG, JSON.stringify(JOURNEY_STEPS)]);
+
+  // enteredAgo picks which step is open, because the due dates are the entry
+  // date plus the offsets. One on step 1, one OVERDUE, one on step 3, one on
+  // step 5, one finished — the five states somebody should see before they
+  // trust this with a real donor.
+  //
+  //   [enteredAgo, openIdx | null = finished, skipIdx | null, what they said]
+  const JOURNEY_PEOPLE = [
+    [  1, 0, null, null],                                   // step 1, due tomorrow
+    [ 20, 1, null, "Rang twice, left a message the second time."],   // step 2, 13 days OVERDUE
+    [ 88, 2, null, "Lovely call. She asked how the scholarship students are chosen."],
+    [148, 4, 3,    "Talked at the spring showcase instead of a separate visit."],
+    [230, null, 5, "He said to skip the check-in and just make the ask."],
+  ];
+  const DONE_NOTES = [
+    "Caught her at home. Genuinely surprised anyone called.",
+    "Card posted with a photo from the showcase.",
+    "Sent the spring report with the scholarship pages marked.",
+    "Came by the studio on a Thursday afternoon.",
+    "Invited to the fall open studio; said yes.",
+    "Quick call, nothing asked for.",
+    "Asked for $2,500 toward the summer intensive.",
+  ];
+  const SKIP_REASONS = [null, null, null, "Already done another way", null, "They asked us not to", null];
+
+  // Single-gift donors — genuine first-time givers, so a FIRST-GIFT journey
+  // is honest on their record — and never one already carrying an open
+  // thread, because `threads_one_open` allows exactly one per person and the
+  // journey's open step needs it.
+  //
+  // AND NEVER THE FILLER NAMES. 205 of the 1,120 are "Donor 1002 Ashgrove",
+  // which is the bulk generator's convention and fine in a list of a
+  // thousand; on the five records the demo exists to show off it reads like
+  // a fixture somebody forgot to finish. Ordering by id alone picked five of
+  // them, because the bulk block runs first. 253 named donors qualify.
+  //
+  // AND FIVE DIFFERENT NAMES. The name pool repeats across 1,120 donors, so
+  // the first cut put "Osric Ravensmere" on two of the five — two people at
+  // different points in the same journey, with the same name, on the screen
+  // this exists to show. DISTINCT ON (name) picks one row per name.
+  const journeyDonors = (await q(
+    `SELECT * FROM (
+       SELECT DISTINCT ON (name) id, name, assigned_to, assigned_to_name, gift_id FROM (
+         SELECT d.id, d.name, d.assigned_to, d.assigned_to_name, MIN(g.id) AS gift_id
+           FROM donors d JOIN gifts g ON g.donor_id = d.id AND g.org_id = d.org_id
+          WHERE d.org_id = $1 AND d.deleted_at IS NULL AND d.kind IS NULL
+            AND d.id <> ALL($2)
+            AND d.name NOT LIKE 'Donor %'
+            AND NOT EXISTS (SELECT 1 FROM threads t WHERE t.donor_id = d.id AND t.closed_at IS NULL)
+          GROUP BY d.id, d.name, d.assigned_to, d.assigned_to_name
+         HAVING COUNT(g.*) = 1
+       ) one_gift ORDER BY name, id
+     ) distinct_names ORDER BY id LIMIT 5`,
+    [ORG, [...driftedIds, recurDonor, pledgeDonorA, pledgeDonorB, ...threadDonors]]));
+  if (journeyDonors.length < 5) {
+    console.error(`\nREFUSED: the journey needs 5 single-gift donors and found ${journeyDonors.length}. `
+      + `Seeding four out of five would be a demo that quietly tells a shorter story.\n`);
+    process.exit(1);
+  }
+
+  for (const [k, d] of journeyDonors.entries()) {
+    const [enteredAgo, openIdx, skipIdx, lastWord] = JOURNEY_PEOPLE[k];
+    const entered = orgTime.addDays(TODAY, -enteredAgo);
+    const planId = `cp_b72_${k + 1}`;
+    const owner = d.assigned_to || "u_b72demo";
+    const ownerName = d.assigned_to_name || "Dana Reyes";
+    const finished = openIdx === null;
+
+    // The gift IS the trigger, so it moves to the entry date.
+    await q(`UPDATE gifts SET date=$1 WHERE id=$2 AND org_id=$3`, [entered, d.gift_id, ORG]);
+
+    await q(`INSERT INTO cultivation_plans
+               (id,org_id,donor_id,template_id,template_name,applied_on,status,owner_id,owner_name,
+                created_by,created_by_name,trigger_key,priority)
+             VALUES ($1,$2,$3,$4,'New donor, first year',$5,$6,$7,$8,
+                     'system:journey','Steward (journey)','first_gift',50)`,
+            [planId, ORG, d.id, JOURNEY_TPL, entered, finished ? "done" : "active", owner, ownerName]);
+
+    for (const [i, st] of JOURNEY_STEPS.entries()) {
+      const due = orgTime.addDays(entered, st.offsetDays);
+      const skipped = skipIdx === i;
+      const done = !skipped && (finished || i < openIdx);
+      const open = !finished && i === openIdx;
+      const status = skipped ? "skipped" : done ? "done" : open ? "open" : "pending";
+      let threadId = null;
+
+      // A DONE STEP LEFT A TRACE. The line goes on the timeline as a real
+      // conversation, which is what makes Last contact true afterwards —
+      // the same thing POST /plan-steps/:id/done writes.
+      if (done) {
+        const intId = `int_b72_jr${k + 1}_${i + 1}`;
+        await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                [intId, ORG, d.id,
+                 st.type === "thank" ? "call" : st.type === "send" ? "email" : "note",
+                 `${st.label}: ${DONE_NOTES[i]}`, due, owner, ownerName]);
+      }
+
+      // THE OPEN STEP CARRIES THE THREAD. That is what puts it on Home's
+      // Thread as today's or an overdue next step, owner-scoped.
+      if (open) {
+        threadId = `th_b72_jr${k + 1}`;
+        await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+                                      opening_gift_id,owner_id,owner_name,created_by,created_by_name)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'system:journey','Steward (journey)')`,
+                [threadId, ORG, d.id, st.type, st.label, due,
+                 i === 0 ? entered : orgTime.addDays(entered, JOURNEY_STEPS[i - 1].offsetDays),
+                 i === 0 ? d.gift_id : null, owner, ownerName]);
+      }
+
+      await q(`INSERT INTO cultivation_plan_steps
+                 (id,org_id,plan_id,seq,step_type,label,due_date,status,thread_id,draft_kind,
+                  owner_id,owner_name,closed_at,closed_by,closed_by_name,done_note,skip_reason)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+              [`cs_b72_${k + 1}_${i + 1}`, ORG, planId, i + 1, st.type, st.label, due, status,
+               threadId, st.draft, owner, ownerName,
+               (done || skipped) ? `${due} 12:00:00+00` : null,
+               (done || skipped) ? owner : null, (done || skipped) ? ownerName : null,
+               done ? DONE_NOTES[i] : null,
+               skipped ? SKIP_REASONS[i] : null]);
+    }
+
+    // What the officer last said, so the record reads like somebody has been
+    // working it rather than like a fixture.
+    if (lastWord) {
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+               VALUES ($1,$2,$3,'note',$4,$5,$6,$7)`,
+              [`int_b72_jrn${k + 1}`, ORG, d.id, lastWord,
+               orgTime.addDays(TODAY, -Math.max(1, Math.round(enteredAgo / 6))), owner, ownerName]);
+    }
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name)
+             VALUES ($1,$2,$3,'note',$4,$5,'system:journey','Steward (journey)')`,
+            [`int_b72_jrs${k + 1}`, ORG, d.id,
+             `Journey started: New donor, first year (${JOURNEY_STEPS.length} steps).`, entered]);
+  }
+
+  // The five gift dates moved, so their rollups and stages are recomputed —
+  // the main rollup above ran before this block and is stale for exactly
+  // these five. A demo whose Last gift disagrees with its own journey start
+  // is the kind of small lie nobody reports and everybody notices.
+  const jIds = journeyDonors.map(d => d.id);
+  await q(`
+    UPDATE donors d SET
+      total_giving = COALESCE(s.total,0), gift_count = COALESCE(s.n,0),
+      last_gift_date = s.last_date, last_gift_amount = COALESCE(s.last_amt,0), first_gift_date = s.first_date
+    FROM (SELECT g.donor_id, SUM(g.amount) total, COUNT(*) n, MAX(g.date) last_date, MIN(g.date) first_date,
+                 (ARRAY_AGG(g.amount ORDER BY g.date DESC))[1] last_amt
+            FROM gifts g WHERE g.org_id=$1 AND g.donor_id = ANY($2) GROUP BY g.donor_id) s
+    WHERE d.id = s.donor_id AND d.org_id = $1`, [ORG, jIds]);
+  await q(`
+    UPDATE donors SET stage = CASE
+      WHEN last_gift_date IS NOT NULL AND ($2::date - last_gift_date::date) > 365 THEN 'lapsed'
+      WHEN last_gift_date IS NOT NULL AND ($2::date - last_gift_date::date) < 90 THEN 'steward'
+      ELSE 'cultivate' END
+    WHERE org_id=$1 AND id = ANY($3)`, [ORG, TODAY, jIds]);
+  await q(`UPDATE fin_transactions ft SET date = g.date FROM gifts g
+            WHERE ft.gift_id = g.id AND ft.org_id=$1 AND g.donor_id = ANY($2)`, [ORG, jIds])
+    .catch(() => {});
+
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(
     `SELECT COALESCE(SUM(amount),0)::float d FROM gifts WHERE org_id=$1 AND date >= $2 AND campaign_id IS NULL`,
