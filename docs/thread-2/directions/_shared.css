@@ -1,0 +1,53 @@
+/* THREAD-2a design directions — the real palette, nothing new.
+   ink #0F1A12 · white #FFFFFF · cream #F0EDE6 (white's shade) · emerald
+   #0D5C3A (THE one action colour) · brass #C9A84C (late, never red).
+   Both directions load this so a difference between them is a difference of
+   LAYOUT, never of colour. */
+:root{
+  --ink:#0F1A12; --white:#FFFFFF; --cream:#F0EDE6; --cream2:#E8E4DB;
+  --emerald:#0D5C3A; --brass:#C9A84C;
+  --ink3:#5A554F;                 /* secondary text on cream, 6.31:1 */
+  --rail:#0F1A12;                 /* the donor profile's right rail ground */
+  --rail-panel:#16281C; --rail-line:#26452F;
+  --rail-text:#F0EDE6; --rail-dim:rgba(240,237,230,0.62);
+  --hair:rgba(15,26,18,0.13);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--cream);color:var(--ink);font-family:'DM Sans',system-ui,-apple-system,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;font-weight:400;letter-spacing:-0.02em}
+.wrap{max-width:1180px;margin:0 auto;padding:36px 24px 80px}
+.kicker{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3)}
+.note{font-size:13px;color:var(--ink3);line-height:1.6}
+.card{background:var(--white);border:1px solid var(--hair);border-radius:16px}
+.sec{margin-top:40px}
+.sec-h{display:flex;align-items:baseline;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.sec-h h2{font-size:24px}
+/* THE ONE ACTION COLOUR. Exactly one filled emerald button per screen. */
+.btn{font:inherit;font-size:14px;font-weight:700;border-radius:10px;padding:11px 20px;cursor:pointer;border:1px solid var(--hair);background:transparent;color:var(--ink)}
+.btn-go{background:var(--emerald);border-color:var(--emerald);color:var(--white)}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:99px;padding:3px 10px;background:var(--cream2);color:var(--ink3)}
+.chip-late{background:rgba(201,168,76,.18);color:#7A6218}   /* brass. late, not dangerous */
+.chip-done{background:rgba(13,92,58,.10);color:var(--emerald)}
+.hdr{border-bottom:1px solid var(--hair);padding-bottom:22px}
+.hdr h1{font-size:34px;margin-bottom:6px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink3);margin-top:8px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:1px}
+.d-done{background:var(--emerald)} .d-today{background:var(--ink)} .d-soon{background:var(--cream2);border:1px solid var(--hair)} .d-late{background:var(--brass)}
+/* the donor profile's ink rail, kept exactly as approved */
+.rail{background:var(--rail);border-radius:16px;padding:18px 18px 20px;color:var(--rail-text)}
+.rail-t{font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--rail-dim);margin-bottom:10px}
+.rail-p{background:var(--rail-panel);border:1px solid var(--rail-line);border-radius:11px;padding:13px 14px}
+@media(max-width:900px){.two{grid-template-columns:1fr!important}.builder-grid{grid-template-columns:1fr!important}}
+
+/* THE 390 FIX, and it is the same bug in both directions.
+   A grid item's default `min-width:auto` refuses to shrink below its
+   content, so a wide child (the spine's 860px minimum in A, a long
+   unbroken line in B) pushes the whole grid past the viewport and the
+   PAGE scrolls sideways — the one layout rule a phone must never break.
+   `min-width:0` lets the column shrink, and the spine then scrolls inside
+   its own overflow-x container, which is where the scrolling belongs. */
+.builder-grid > *, .two > *{min-width:0}
+.card, .rail{max-width:100%}
+@media(max-width:900px){
+  .spine{min-width:640px}          /* still scrolls inside .spine-wrap, never the page */
+}
