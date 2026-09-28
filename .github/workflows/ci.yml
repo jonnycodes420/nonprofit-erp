@@ -19,8 +19,114 @@ on:
     branches: [main]
 
 jobs:
+  # ── CHORE-2 · HAS THIS EXACT TREE ALREADY PASSED? ────────────────────────
+  # A push to main is nearly always a merge of a PR whose head commit already
+  # ran the full battery. If the TREE (not the commit) is byte-identical to
+  # one that passed, running it again buys nothing and costs eight minutes on
+  # the path between "merged" and "deployed".
+  #
+  # The key is `git rev-parse HEAD^{tree}`: it ignores the commit message, the
+  # author and the parents, so a squash, a rebase or a merge commit with no
+  # conflicts all hash to the tree that was tested. A merge that resolved a
+  # conflict produces a DIFFERENT tree and is tested in full, which is exactly
+  # right — that tree has never run anywhere.
+  #
+  # It only ever skips on a push to main, it names the run it trusted in the
+  # log and in the summary, and `re-run all jobs` re-tests regardless because
+  # the marker lookup is scoped to successful runs of this workflow.
+  tree-check:
+    runs-on: ubuntu-latest
+    outputs:
+      tree: ${{ steps.t.outputs.tree }}
+      skip: ${{ steps.t.outputs.skip }}
+      trusted: ${{ steps.t.outputs.trusted }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/tree-already-passed.js
+        # The script writes tree/skip/trusted to $GITHUB_OUTPUT and a line to
+        # $GITHUB_STEP_SUMMARY saying which run it trusted, or why it did not.
+
+  # ── CHORE-2 · THE GUARDS THAT ARE NOT SUITES ──────────────────────────────
+  # Lint, the TDZ scan and the dependency audit are one-shot checks of the
+  # tree. They used to sit inside the battery job; with six shards that would
+  # run each of them six times for one answer. They run once, here, and the
+  # shards wait on them — a tree that fails the TDZ scan would fail six
+  # batteries in a dozen confusing ways, so failing in two seconds is kinder.
+  guards:
+    runs-on: ubuntu-latest
+    needs: [tree-check]
+    if: needs.tree-check.outputs.skip != 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+      - name: Install server deps (locked)
+        run: npm ci
+      - name: Install client deps (locked)
+        run: npm ci --prefix client
+      # ── Guards: no-undef + rules-of-hooks (client ESLint) ──────────────────
+      # emoji / brand-color allowlist / gradient-bar guards run as suites inside
+      # run-all.sh (no-emoji, brand-allowlist, brand-glyph).
+      - name: Lint guards (no-undef, rules-of-hooks)
+        run: npm run lint --prefix client
+
+      # ── TDZ self-references — the one class that reaches a browser past every
+      # ── other gate. `const INK = INK;` parses, type-checks, lints clean and
+      # passes every server suite, then throws ReferenceError at runtime and
+      # replaces a whole screen with its error boundary. Five builds have paid for
+      # it (BUILD-84, 89, 95, 96, 102), four of them via a blanket string replace
+      # that rewrote a declaration along with its uses.
+      #
+      # Only the SELF-REFERENCE half is gated: `--all` reports ~200 read-above
+      # candidates that are mostly parameters sharing a spelling with a later
+      # binding, and a gate with false positives is one people learn to bypass. A
+      # self-reference needs no judgement — it is always a bug. Runs BEFORE the
+      # battery because it is two seconds and it explains failures the battery
+      # would otherwise report as a dozen unrelated browser timeouts.
+      - name: TDZ self-reference guard
+        run: node scripts/tdz-scan.js
+
+      # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
+      # A new high/critical advisory fails the build unless it is listed in
+      # audit/npm-audit-allowlist.json with a reason and a review-by date
+      # (two no-fix-available highs are currently accepted there, with their
+      # exposure analysis). scripts/audit-gate.js is the gate.
+      - name: npm audit gate (server)
+        run: node scripts/audit-gate.js .
+      - name: npm audit gate (client)
+        run: node scripts/audit-gate.js client
+
+
+  # ── CHORE-2 · THE BATTERY, SHARDED ────────────────────────────────────────
+  # Three jobs, each with its own Postgres and its own copy of the repo, each
+  # running the slice of the battery that tests/shard.sh is handed. The list
+  # is computed by the same planner the local run uses, from the same
+  # audit/suite-timings.json, so a shard here and a shard on a laptop contain
+  # the same suites.
+  #
+  # tests/shard.sh boots the API itself, per shard, on its own port block —
+  # so there is no "Boot the API server" step here any more, and no shared
+  # server for six workers to interleave behind.
+  #
+  # The guards that are not suites (lint, TDZ, npm audit) run ONCE, in the
+  # `guards` job, rather than six times.
   test:
     runs-on: ubuntu-latest
+    needs: [tree-check, guards]
+    if: needs.tree-check.outputs.skip != 'true'
+    strategy:
+      fail-fast: false          # a red shard must not hide the other five
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -79,7 +185,12 @@ jobs:
       FOUNDER_EMAIL: jonathan@stewardapp.dev   # From on the close-link welcome + the 7-day reminder
       DISABLE_BACKGROUND_TICKS: "1"   # SPEED: no periodic job fires mid-suite (the flake fix);
                                       # every sweep stays drivable via its ops route.
-                                      # CI still runs the FULL battery — no suite selection here.
+      # CHORE-2 — this job runs ONE shard of the full battery. Between them
+      # the six shards run every suite in CORE; the combine job refuses the
+      # run if any planned suite did not.
+      SHARDS: "3"
+      SHARD_PGUSER: steward
+      PGPASSWORD: steward
 
     steps:
       - uses: actions/checkout@v4
@@ -98,60 +209,31 @@ jobs:
       - name: Install client deps (locked)
         run: npm ci --prefix client
 
-      # ── Guards: no-undef + rules-of-hooks (client ESLint) ──────────────────
-      # emoji / brand-color allowlist / gradient-bar guards run as suites inside
-      # run-all.sh (no-emoji, brand-allowlist, brand-glyph).
-      - name: Lint guards (no-undef, rules-of-hooks)
-        run: npm run lint --prefix client
-
-      # ── TDZ self-references — the one class that reaches a browser past every
-      # ── other gate. `const INK = INK;` parses, type-checks, lints clean and
-      # passes every server suite, then throws ReferenceError at runtime and
-      # replaces a whole screen with its error boundary. Five builds have paid for
-      # it (BUILD-84, 89, 95, 96, 102), four of them via a blanket string replace
-      # that rewrote a declaration along with its uses.
-      #
-      # Only the SELF-REFERENCE half is gated: `--all` reports ~200 read-above
-      # candidates that are mostly parameters sharing a spelling with a later
-      # binding, and a gate with false positives is one people learn to bypass. A
-      # self-reference needs no judgement — it is always a bug. Runs BEFORE the
-      # battery because it is two seconds and it explains failures the battery
-      # would otherwise report as a dozen unrelated browser timeouts.
-      - name: TDZ self-reference guard
-        run: node scripts/tdz-scan.js
-
-      # ── BUILD-75 B.6 — dependency audit at a FAILING threshold ─────────────
-      # A new high/critical advisory fails the build unless it is listed in
-      # audit/npm-audit-allowlist.json with a reason and a review-by date
-      # (two no-fix-available highs are currently accepted there, with their
-      # exposure analysis). scripts/audit-gate.js is the gate.
-      - name: npm audit gate (server)
-        run: node scripts/audit-gate.js .
-      - name: npm audit gate (client)
-        run: node scripts/audit-gate.js client
-
-      - name: Boot the API server
-        run: |
-          node server.js > /tmp/server.log 2>&1 &
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:5601/health >/dev/null; then echo "server up"; exit 0; fi
-            sleep 1
-          done
-          echo "server failed to start"; cat /tmp/server.log; exit 1
-
-      # FIX-1 §11 — the demo org is seeded before the battery, so demo-shape
-      # asserts the pitch on every run instead of skipping it.
-      - name: Seed the demo
-        run: node scripts/seed-demo.js
-
-      - name: Full verification suite
+      # tests/shard.sh creates this shard's database, boots its own server on
+      # its own port block, waits for /health, runs its suites serially and
+      # tears everything down. FIX-1 §11's demo seed happens inside the shard
+      # that holds demo-shape, so it is seeded exactly once and never skipped.
+      - name: Battery — shard ${{ matrix.shard }} of 3
         run: bash tests/run-all.sh
         env:
-          DEMO_SEEDED: "1"
+          SHARD_ONLY: ${{ matrix.shard }}
+          SHARD_OUT: /tmp/steward-shards
+          SUITE_LOG_DIR: /tmp/steward-suite-logs
 
       - name: Server log on failure
         if: failure()
-        run: cat /tmp/server.log || true
+        run: tail -200 /tmp/steward-shards/server-${{ matrix.shard }}.log || true
+
+      # The combine job needs each shard's result and its per-suite pass
+      # counts. Uploaded ALWAYS, not just on failure, because the count
+      # ratchet has to read a green run too.
+      - name: Upload shard result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: /tmp/steward-shards/
+          if-no-files-found: warn
 
       # run-all.sh keeps every suite's full output in /tmp/steward-suite-logs
       # (and already dumps a failing suite's output inline in the step log).
@@ -161,9 +243,51 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: suite-logs
+          name: suite-logs-${{ matrix.shard }}
           path: /tmp/steward-suite-logs/
           if-no-files-found: ignore
+
+  # ── CHORE-2 · COMBINE ─────────────────────────────────────────────────────
+  # The one place that says whether the battery passed. It fails if ANY shard
+  # failed, if any shard produced no result at all (a shard whose server never
+  # started would otherwise just vanish), or if any suite's pass count DROPPED
+  # against audit/suite-counts.json — because a suite can go green by
+  # asserting less, and that is the failure mode a green battery cannot see.
+  #
+  # Nothing deploys except through here.
+  combine:
+    runs-on: ubuntu-latest
+    needs: [tree-check, guards, test]
+    # Runs on a skip too, so the deploy jobs have one gate to wait on either
+    # way — and so the summary always says which it was.
+    if: always() && needs.tree-check.result == 'success'
+    steps:
+      - name: This tree already passed
+        if: needs.tree-check.outputs.skip == 'true'
+        run: |
+          echo "Skipping the battery: tree ${{ needs.tree-check.outputs.tree }} already passed in run ${{ needs.tree-check.outputs.trusted }}."
+          echo "Battery skipped — tree \`${{ needs.tree-check.outputs.tree }}\` already passed in [run ${{ needs.tree-check.outputs.trusted }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ needs.tree-check.outputs.trusted }})." >> $GITHUB_STEP_SUMMARY
+      - name: A shard failed, or the guards did
+        if: needs.tree-check.outputs.skip != 'true' && (needs.guards.result != 'success' || needs.test.result != 'success')
+        run: |
+          echo "guards=${{ needs.guards.result }} test=${{ needs.test.result }}"
+          exit 1
+      - uses: actions/checkout@v4
+        if: needs.tree-check.outputs.skip != 'true'
+      - uses: actions/setup-node@v4
+        if: needs.tree-check.outputs.skip != 'true'
+        with:
+          node-version: "22"
+      - name: Collect every shard's result
+        if: needs.tree-check.outputs.skip != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: /tmp/shards
+          merge-multiple: true
+      - name: One summary, and the count ratchet
+        if: needs.tree-check.outputs.skip != 'true'
+        run: node scripts/shard-combine.js --in /tmp/shards --shards 3 --baseline audit/suite-counts.json
 
   # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
   # Runs ONLY on push to main, ONLY after a green test job. The shared
@@ -175,7 +299,7 @@ jobs:
   # a local checkout — see audit/deploy-rewire.md.
   deploy-railway:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [combine]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     concurrency:
       group: deploy-main
@@ -239,7 +363,7 @@ jobs:
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [combine]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VERCEL_DEPLOY_ENABLED == 'true'
     concurrency:
       group: deploy-main

@@ -51,8 +51,16 @@ drafts or suggests the next move, and a human always reviews and sends. It start
   that reads it. Shared consts go in one block under the imports. Run `scripts/tdz-scan.js`.
 - **A guard must be proven able to fail.** State what would make it fail, then plant that
   defect and watch it go red before you trust the green.
-- **Nothing is done until the full battery is green**, with no silent skips (grep the suite
-  logs for SKIP). A red run during edits tells you nothing. Finish, then run.
+- **At most ONE new test per build, and only if it guards money, donor data, email or
+  security.** Screens are covered by `tests/smoke-walk.test.js`, which opens every tab and
+  every donor-profile tab and fails on a blank screen, an error boundary, a 5xx or a console
+  error. Copy, layout and per-screen numbers are reviewed by eye, not pinned. There is no
+  failing-test-first step any more: write the fix, then the one test if it earns its place.
+  CHORE-2 retired 238 suites on this rule (`docs/tests-retired.md` says how to bring one back).
+- **Affected suites while you build; the full battery once, at the end.** A red run during
+  edits tells you nothing, and a full run after every edit is the slowest way to learn that.
+  Nothing is done until that final battery is green, with no silent skips. It is 35 suites in
+  about a minute now (`bash tests/run-all.sh`, three shards; `SHARDS=1` for the serial run).
 - **Never email a prospect, and never create calendar events.** Tests send to the local
   Resend sink. Addresses in `mailBlock.js` are never mailed, from
   any org, and only Jonathan edits that list.
@@ -65,6 +73,12 @@ drafts or suggests the next move, and a human always reviews and sends. It start
 - **Speed comes out of the paperwork, never out of the evidence.** Keep test families small,
   take screenshots only when a walk found a defect, run independent parts in parallel
   worktrees, and run prod smoke once per push.
+- **A build is small: one theme, six items at most.** Something found mid-build that is not
+  one of them goes in the next build's brief, not this one. Walk prod only when a screen
+  changed; re-seed the demo only when the seed changed; one short handoff and one report at
+  the end, not a document per part. None of this loosens what protects money, donors or
+  production: the actor stamp, one gift path, the mail rules, the prod-write guard and the
+  deploy gate are unchanged and are not what a build is allowed to go faster through.
 - **The two-strikes rule for this file.** A new line goes into CLAUDE.md only when the same
   mistake has happened twice. Anything else goes into the decisions file for its area, or
   into `docs/HISTORY.md`. A new build's entry goes at the top of HISTORY.md, not here.
@@ -81,7 +95,12 @@ drafts or suggests the next move, and a human always reviews and sends. It start
   `API=http://localhost:5601 PORT=4173 node scripts/local-preview.js`. Never a bare
   `npx vite build`, because it skips the brand guard. Rebuild after any client edit.
 - **The battery:** `SUITE_LOG_DIR=/tmp/steward-suite-logs-<tag> bash tests/run-all.sh`
-  (= `npm test`). One battery at a time on this machine: check `pgrep -f run-all.sh` first.
+  (= `npm test`). It SHARDS three ways by default — each shard builds its own database
+  (`steward_shard_<n>`), boots its own server on its own port block, and the run prints one
+  summary. `SHARDS=1` is the serial run against an already-booted `$BASE`; `SHARDS=n` to
+  change the width. Balance comes from `audit/suite-timings.json`, which the run refreshes.
+  CI runs the same three shards as a matrix and `combine` is the one gate the deploys wait
+  on: it fails on a dead shard and on any suite whose pass count dropped.
 - **The tenant battery:** `node tests/tenant-matrix.test.js` (boots server.js in-process on
   :5697) and `node tests/tenant-isolation.test.js`. After adding a route, re-run
   `node scripts/build75-route-inventory.js` in the same commit.

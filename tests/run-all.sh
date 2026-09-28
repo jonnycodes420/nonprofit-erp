@@ -101,81 +101,41 @@ export DATABASE_URL="${DATABASE_URL:-postgresql://steward@localhost:5544/steward
 
 # Self-contained suites (server + scratch DB only). Alphabetical.
 CORE=(
-  attribution-completeness
-  billing billing-config-error brand-glyph branding clickability consistency-e2e designations digests
-  date-seam donor-merge drift email-links email-polish finance-entity-routing finance-funds finance-gift-stamp finance-overview greeting
-  finance-reintegration fundraising gift-attribution goals home home-layout households impact
-  import-assign import-both import-combined import-messy import-reconciliation import-shape import-stage invitation landing-reveal
-  locked-features migc fix1-people
-  brand-allowlist moves no-emoji notifications officer-chip onboarding-brand palette pipeline pipeline-gating portfolios portfolio-pipeline-consistency reports-cadence setup-checklist solicitations-winrate
-  report-truth
-  session-cache session-privilege smart-moves state-diff state-diff2 tasks task-due tenant-isolation tenant-matrix actor-stamp user-removal trial-end upgrade-checkout workflows workflows-e2e
-  empty-states presentation-wiring notify-delivery concurrency2 permissions-matrix
-  portal-visual
-  gift-idempotency pledge-math portal
-  money-cents money-grammar demo-shape donor-field landing-field
-  donor-accounts donor-linking org-blindness network-gate donor-dashboard network-directory theme-depth donor-front-door theme-assets
-  campaign-impact portal-page portal-designation asset-retention recurring-surface giving-flow-brand portal-crop giving-summary
-  ledger-provisioning mail-suppression first-login-matrix import-columns
-  custom-fields import-messy-cf custom-fields-roundtrip
-  stripe-disputes external-fixture-provenance reconciliation webhook-manifest webhook-ordering
-  build65 guards
-  portal-contrast
-  finance-reports-consistency name-normalize reserved-recovered concurrency
-  demo-content
-  script-guards deploy-shape import-header import-messy-v2 import-workbook-v3 import-workbook-server mapper-one-dropdown
-  threads thread-nudge thread-next-step thread-step-inline
-  build84 recurring-recovery
-  legal-entity build85 build86 vocabulary palette-census dashboards modal-shell invitation-only
-  imports-history import-sentence bookkeeper-export inbound-email
-  build88a-mapper build88a-one-gift build88a-one-task build88a-giving build88a-profile build88a-week build88a-finance
-  build88b-deposit build88b-pledges build88b-thankyous build88c-domain build88c-composer
-  build89s-sources build89s-paypal build89s-zeffy build89s-stripe-givebutter build89s-presets build89s-surfaces
-  close-link trial-billing one-date build92-close-existing build93-civil-date build93-superadmin build93-paypal-request
-  build92-seed build92-source-errors build92-dedupe build92-statement
-  build92-close-screen build92-sources-page build92-home-proportions
-  build91-public-sources
-  build94-photo build94-people build94-sequences build94-bulk build94-calendar build94-welcome
-  build95-square build95-cheque build95-cheque-read page-widgets giving-page-builder
+  tenant-isolation
+  tenant-matrix
+  org-blindness
+  session-privilege
+  permissions-matrix
+  script-guards
+  build96-ai-gate
   incident-mail-gate
-  build96-sample-data build96-ai-gate build96-verifying build96-photos-folder
-  build97-audiences
-  build98-photos
-  build99-grant-timeline
-  build100-score-names
-  build97-part0 build97-npsp build97-numbers build97-agent build97-observability
-  fix1-agent
-  build98-credit build98-letters build98-reports build98-events build98-volunteers fix1-volunteers build98-api mail-block
-  build99-proposals build99-portfolios build99-plans build99-brief build99-dashboard build99-import
-  build100-funders build100-deadlines build100-documents build100-restricted
-  build100-reports build100-import build100-screens
-  claude-md
-  build98-migration email-footer build98-security build101-memberships build101-renewals build101-lapsed build101-online build101-reports build101-import
-  build102-form-config build102-steps-upsell build102-extras build102-embed build102-attribution build102-funnel
+  mail-block
+  mail-suppression
+  email-footer
+  consistency-e2e
+  build88a-one-gift
+  gift-idempotency
+  finance-gift-stamp
+  money-cents
+  pledge-math
+  reconciliation
+  import-reconciliation
+  webhook-manifest
+  webhook-ordering
+  stripe-disputes
+  recurring-recovery
+  trial-end
+  upgrade-checkout
+  close-link
+  import-messy
+  import-workbook-v3
+  import-columns
+  palette
+  no-emoji
+  clickability
   test-clock-seam
-  fix1-fundraising
-  fix1-finance
-  fix1-institutional
-  fix2-codeql
-  fix2-d-agent
-  fix2-e-grant-word
-  fix2-e-no-iso
-  fix2-e-profile
-  fix2-b-reports
-  fix2-a-dashboards
-  fix2-a-footing
-  fix2-c-hex
-  fix2-c-cream
-  fix3-c-demo-people
-  fix3-c-demo-giving
-  fix3-a-home
-  fix3-e-reports
-  fix3-b-agent
-  fix3-d-lock-flash
-  fix3-d-suggestion
   hotfix1-profile
-  profile1-figures
-  profile1-screen
+  smoke-walk
 )
 
 # SUITES="name1 name2" runs only those suites (each must be in CORE above —
@@ -203,12 +163,91 @@ fi
 # and a failing suite's entire output is dumped inline under its FAIL line — so a
 # red run (local or CI) shows the failing assertion, not just the suite name.
 # CI also uploads the whole log dir as an artifact on failure (ci.yml).
+pass=0; fail=0; failed=()
+total_start=$(date +%s)
+
 LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs}"
 mkdir -p "$LOGDIR"
 rm -f "$LOGDIR"/*.log 2>/dev/null || true
 
-pass=0; fail=0; failed=()
-total_start=$(date +%s)
+# ── CHORE-2 · SHARDING ─────────────────────────────────────────────────────
+# run-all.sh is still the one entry point. By default it now splits the SAME
+# list across SHARDS parallel workers (tests/shard.sh), each with its own
+# database, server and port block, and then aggregates one summary.
+#
+#   SHARDS=1            the old serial run, unchanged, against $BASE
+#   SHARDS=6            the default locally
+#   SHARDS=<n> + SHARD_ONLY=<i>   run just shard i (this is what CI's matrix does)
+#
+# BALANCE. Longest suite first into the emptiest shard (LPT), from
+# audit/suite-timings.json. A suite with no recorded time is assumed to be the
+# median, so a brand-new suite is never the thing that unbalances a run. The
+# file is data, not a gate: a stale entry costs seconds, never correctness.
+#
+# NO RETRIES anywhere. A suite that only passes the second time is a flake and
+# the run should say so.
+# A SMALL SELECTION RUNS SERIALLY, and that is not a compromise — it is the
+# faster answer. A shard's cost is a fresh database plus a server boot (~10s
+# of DDL on a new database); six of those to run three suites is slower than
+# running three suites against the server that is already up. So sharding is
+# the default for the FULL battery and serial is the default for a selection;
+# an explicit SHARDS= always wins, either way.
+#
+# This also keeps `tests/affected.sh` and the pre-push hook behaving exactly
+# as they did — they pass a handful of names to an already-booted $BASE.
+SHARD_MIN="${SHARD_MIN:-12}"
+if [ -z "${SHARDS:-}" ]; then
+  # THREE, not six. CHORE-2 retired 238 suites (docs/tests-retired.md); what
+  # is left is 35, and a shard's fixed cost is a fresh database plus a server
+  # boot. Six shards over 35 suites spends more on starting than it saves on
+  # running.
+  if [ ${#RUN[@]} -ge "$SHARD_MIN" ]; then SHARDS=3; else SHARDS=1; fi
+fi
+TIMINGS="audit/suite-timings.json"
+
+if [ "$SHARDS" != "1" ]; then
+  SHARD_OUT="${SHARD_OUT:-/tmp/steward-shards-$$}"
+  export SHARD_OUT SUITE_LOG_DIR="$LOGDIR"
+  rm -rf "$SHARD_OUT"; mkdir -p "$SHARD_OUT"
+
+  # The assignment is computed once, in one place, and written down — so a
+  # failure can be reproduced with the exact list that shard was given.
+  node scripts/shard-plan.js --shards "$SHARDS" --timings "$TIMINGS" --out "$SHARD_OUT/plan.json" ${RUN[@]+"${RUN[@]}"} \
+    || { echo "ERROR: could not plan the shards" >&2; exit 2; }
+
+  # THE BROWSER LEGS' DIST. They are all in one shard (see shard-plan.js) and
+  # each checks that client/dist was built against ITS $BASE, skipping quietly
+  # when it was not. So the dist is built ONCE, for that shard's API port, and
+  # only when there is no usable one already. Without this the browser legs
+  # skip and the run is green with the browser coverage missing.
+  BSHARD=$(node -e 'const p=require(process.argv[1]);process.stdout.write(String(p.browserShard||""))' "$SHARD_OUT/plan.json")
+  if [ -n "$BSHARD" ] && [ "${SHARD_BUILD_DIST:-1}" = "1" ]; then
+    bapi=$(( ${SHARD_PORT_BASE:-5700} + 10 * BSHARD ))
+    if ! grep -rqs "localhost:$bapi" client/dist/assets 2>/dev/null; then
+      echo "[run-all] building client/dist against shard $BSHARD's API (:$bapi) for the browser legs"
+      ( cd client && VITE_API_URL="http://localhost:$bapi" VITE_ASSET_ORIGIN="http://localhost:$bapi" \
+        VITE_PORTAL_API="http://localhost:$bapi/portal" VITE_ACCOUNT_API="http://localhost:$bapi/account" \
+        VITE_NETWORK_API="http://localhost:$bapi/network" npm run build >/dev/null 2>&1 ) \
+        || echo "[run-all] WARNING: the client build failed — the browser legs will skip"
+    fi
+  fi
+
+  echo "[run-all] $SHARDS shards · ${#RUN[@]} suites · plan $SHARD_OUT/plan.json"
+  pids=()
+  for i in $(seq 1 "$SHARDS"); do
+    [ -n "${SHARD_ONLY:-}" ] && [ "$SHARD_ONLY" != "$i" ] && continue
+    list=$(node -e 'const p=require(process.argv[1]);process.stdout.write((p.shards[process.argv[2]-1]||[]).map(s=>s.name).join(" "))' "$SHARD_OUT/plan.json" "$i")
+    [ -z "$list" ] && continue
+    SHARD_N="$i" SHARD_SUITES="$list" bash tests/shard.sh &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do wait "$pid" || true; done
+
+  node scripts/shard-report.js --out "$SHARD_OUT" --plan "$SHARD_OUT/plan.json" --started "$total_start" --timings "$TIMINGS"
+  exit $?
+fi
+
+
 
 # FIX-1 §11 — THE DEMO IS SEEDED BEFORE THE BATTERY, so demo-shape never skips.
 # scripts/seed-demo.js drops and recreates ONLY the demo org, against the

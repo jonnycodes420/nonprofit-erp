@@ -28,11 +28,14 @@ if [ -z "$files" ]; then exit 0; fi
 core=$(awk '/^CORE=\(/{f=1;next} /^\)/{f=0} f{print}' tests/run-all.sh | tr -s ' \t' '\n' | grep -v '^$')
 in_core() { echo "$core" | grep -qx "$1"; }
 
+# CHORE-2 — the screens are covered by ONE suite now (smoke-walk), so a
+# client change runs it plus the few source-scanning guards that survived
+# the retirement. See docs/tests-retired.md.
 # Suites that read client source or client/dist (verified 2026-08-15 via
 # `grep -l 'client/' tests/*.test.js` + manual check that each actually reads
 # client files, not just mentions them in a comment). Any client/ change runs
 # ALL of these.
-CLIENT_SUITES="legal-entity build85 build86 vocabulary palette-census dashboards modal-shell invitation-only brand-allowlist brand-glyph campaign-impact clickability concurrency donor-front-door empty-states finance-entity-routing finance-funds finance-reports-consistency gift-attribution greeting home-layout import-assign import-both import-combined import-shape landing-reveal locked-features name-normalize no-emoji officer-chip onboarding-brand palette pipeline pipeline-gating portal-page presentation-wiring reserved-recovered setup-checklist task-due theme-depth upgrade-checkout workflows-e2e import-sentence bookkeeper-export landing-field donor-field"
+CLIENT_SUITES="clickability no-emoji palette upgrade-checkout smoke-walk"
 
 suites=""
 add_suite() {
@@ -47,11 +50,8 @@ while IFS= read -r f; do
     routes/*|.github/*)
       echo "FULL"; exit 0 ;;
     # Shared test infrastructure → a narrowed run could mask a breakage.
-    tests/helpers.js|tests/run-all.sh|tests/state-diff.lib.js)
+    tests/helpers.js|tests/run-all.sh|tests/shard.sh)
       echo "FULL"; exit 0 ;;
-    # State-diff manifests map to their suites.
-    tests/state-diff.manifests.js)  in_core state-diff  && add_suite state-diff ;;
-    tests/state-diff2.manifests.js) in_core state-diff2 && add_suite state-diff2 ;;
     # A suite's own file → run that suite (only if it's in the standard run).
     tests/*.test.js)
       name=$(basename "$f" .test.js)
