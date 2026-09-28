@@ -1524,6 +1524,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   // SHELVED — voice capture works but unproven adoption assumption, revisit
   // later. Code intact, re-enable by uncommenting.
   // const [showVoiceMemo,setShowVoiceMemo]=useState(false);
+  // MEMBERS-2 — one click sends this person the link to their own page. The
+  // email goes out through the normal path and the token never comes back to
+  // this screen: a staff member who could read it could open the page.
+  const [yourPageMsg,setYourPageMsg]=useState("");
+  const sendYourPageLink=async()=>{
+    setYourPageMsg("");
+    try{
+      const r=await apiFetch(`/donors/${donor.id}/your-page-link`,{method:"POST"});
+      setYourPageMsg(r.message||"Sent.");
+    }catch(e){setYourPageMsg(e?.data?.message||"That link could not be sent.");}
+    setTimeout(()=>setYourPageMsg(""),9000);
+  };
+
   const downloadImpactSummary=async()=>{
     setImpactPdfLoading(true);
     try{
@@ -1704,12 +1717,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
               {[["Request a gift",()=>setShowGiftModal(true),false],
                 [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
+                /* MEMBERS-2 — the one page this person has: their membership,
+                   their tickets, their shifts and their giving. Staff send the
+                   link; they never see the token it carries, because somebody
+                   who could read it could open somebody else's page. */
+                ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
                 ["Edit record",onEdit,false]].map(([label,fn,disabled])=>(
                 <button key={label} role="menuitem" disabled={disabled} onClick={()=>{setDpMoreOpen(false);fn();}}
                   style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
               ))}
             </div>
           )}
+          {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
             onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
             onClose={()=>setConvoOpen(false)}/>}

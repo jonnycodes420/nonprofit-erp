@@ -69,6 +69,41 @@ Read this when you touch memberships, levels, renewals or member benefits.
 - **An imported membership is history only: no gift and no ledger row.** A re-run adds nothing. A bare
   "Level" header is claimed only beside a membership date column. (BUILD-101 Part 6)
 
+### MEMBERS-2 — the member's own side
+- **"Your page" is ONE page per person per org (`/you/:orgSlug`), server-rendered on
+  `shared/publicPage.js`.** The volunteer page and the donor portal are sections of it, not
+  surfaces of their own. A live `/volunteer/me?t=` link is exchanged for a session here; an
+  expired one still falls through to the old page's words. (MEMBERS-2)
+- **A section with nothing in it does not render.** Not an empty state, not a "you have no
+  tickets" card — nothing. `sectionsFor` in `shared/supporterPage.js` decides. (MEMBERS-2)
+- **The emailed link is single-use, hashed at rest and lasts 15 minutes; spending it mints a
+  30-day session in its own cookie (`steward_you`, `supporter_sessions`).** The token rides the
+  URL FRAGMENT, so it never reaches a server log or a Referer header, and the GET that lands on
+  `/you/:slug/enter` writes nothing: the page POSTs the token and the POST consumes it.
+  (MEMBERS-2)
+- **Every query on the page is scoped by (org_id, person_id) from the SESSION**, never from the
+  URL or a form field. `tests/members2-isolation.test.js` plants the three ways that could
+  break. (MEMBERS-2)
+- **The link comes back in a response ONLY under TEST_MODE.** A staff member who could read a
+  token could open somebody else's page, so "Send their page link" returns a sentence and
+  nothing else. (MEMBERS-2)
+- **Renewing prices from the level through the existing `?membership=` path, and a recurring
+  change goes to the donor portal's own routes.** There is no second money path on this page.
+  Turning auto-renew off is the existing `cancel_at_period_end`; the term already paid for runs
+  to its end. (MEMBERS-2)
+- **One QR format for every door (`shared/passCode.js`): `STW1.<kind>.<org>.<id>.<exp>.<sig>`,
+  HMAC over `JWT_SECRET`.** A member card and an event ticket are the same string with a
+  different `kind`, so there is one scanner. A code from another org is refused by the org
+  segment, not only by the signature. (MEMBERS-2)
+- **The member card is rendered by `memberCard.js`, required by both the staff route and the
+  member's own download.** Two renderers is how the staff copy and the member's copy end up
+  disagreeing about one membership. (MEMBERS-2)
+- **The installed app is the ORG's, not Steward's:** one manifest per org
+  (`/you/:slug/manifest.webmanifest`), `display: standalone`, and ONE icon —
+  `/you/:slug/icon.svg`, a tile in the org's band with its logo or its initial, declared
+  `sizes: "any"`. Declaring `192x192` for a logo nobody measured is how an installed app gets a
+  blurred tile. (MEMBERS-2)
+
 ## Gotchas
 - **Generate a renewal-window fixture from today.** The window is a fact about today, so a fixed-date
   file goes stale. (BUILD-101 Part 6)
@@ -90,3 +125,6 @@ Read this when you touch memberships, levels, renewals or member benefits.
 - `GET /memberships/:id/card.pdf` — the one-page member card (ack-letter pdfkit pattern)
 - `client/src/components/Memberships.jsx` — `MembershipPanel` (profile) and `MembersView` (Fundraising → Members)
 - `client/src/pages/Donate.jsx` `MembershipPage` — `/give/:slug?membership=<levelId>`
+- `routes/supporter.js` — "Your page"; `shared/supporterPage.js` (what shows, and every sentence),
+  `shared/passCode.js` (the one QR), `memberCard.js` (the card PDF)
+- `tests/members2-isolation.test.js` — a link opens one person's page and nobody else's

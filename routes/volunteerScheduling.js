@@ -34,7 +34,7 @@ const {
   actor, checkWriteAccess, crypto, donateLimiter, escapeHtml, insertShift, markVolunteer, requireAdmin,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, run, uuid,
   volunteerSummary, withTransaction, queryTx, runTx, wrap, maybeStartJourneyFromServer, orgMaySendEmail, resend,
-  displayNameCase, donorFacingOrgName,
+  displayNameCase, donorFacingOrgName, supporterSession,
 } = ctx;
 
 let app = routers.r0;
@@ -709,6 +709,18 @@ app.get("/volunteer/me", donateLimiter, wrap(async (req, res) => {
   await READY;
   const token = String(req.query.t || "");
   const link = await readMagicLink(token);
+  // MEMBERS-2 — the volunteer's page is a SECTION of "Your page" now. A live
+  // link still works: it is exchanged for a supporter session and the person
+  // lands on the one page that holds their shifts, their membership, their
+  // tickets and their giving. An expired one falls through to the words
+  // below, which are the words this page has always answered with.
+  if (link) {
+    const [o] = await query(`SELECT org_slug FROM orgs WHERE id=?`, [link.org_id]);
+    if (o && o.org_slug) {
+      supporterSession.setCookie(res, await supporterSession.mint(link.org_id, link.person_id));
+      return res.redirect(303, `/you/${encodeURIComponent(o.org_slug)}`);
+    }
+  }
   if (!link) return res.status(404).send(publicPage({ title: "Link expired",
     brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
     body: `<div class="card"><h1>This link has expired.</h1><p class="muted">Volunteer links last ${VOL_LINK_DAYS} days. Ask the organisation for a new one.</p></div>` }));

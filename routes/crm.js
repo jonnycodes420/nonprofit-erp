@@ -18476,31 +18476,11 @@ const LAPSED_MEMBER_SQL = `m.id = (SELECT m2.id FROM memberships m2 WHERE m2.org
                                      ORDER BY m2.starts_on DESC, m2.created_at DESC LIMIT 1)
     AND NOT EXISTS (SELECT 1 FROM memberships c WHERE c.org_id=m.org_id AND c.donor_id=m.donor_id AND c.status IN ('active','grace'))`;
 
-// BUILD-101 Part 5 — THE MEMBER CARD. One page: the org's letterhead, the
-// member's name, the level and the date it runs through. The pdfkit pattern
-// the acknowledgment letters use; held to one page by construction.
-function renderMemberCardPdf({ orgName, accent, logo, memberName, levelName, expiresOn, memberSince }) {
-  const PDFDocument = require("pdfkit");
-  const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: false });
-  return new Promise((resolve, reject) => {
-    const chunks = []; doc.on("data", c => chunks.push(c)); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject);
-    doc.addPage();
-    const INK = "#0f1a12", SUB = "#5a554f";
-    // A wallet-card-sized panel (3.375 x 2.125 in) near the top, to cut out.
-    const X = 72, Y = 72, W = 243, H = 153;
-    doc.roundedRect(X, Y, W, H, 10).lineWidth(1).strokeColor("#e8e4db").stroke();
-    doc.rect(X, Y, W, 8).fill(accent || "#0d5c3a");
-    if (logo) { try { doc.image(logo, X + W - 58, Y + 16, { fit: [44, 32] }); } catch { /* a logo that will not draw costs the logo, not the card */ } }
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(INK).text(orgName, X + 14, Y + 20, { width: W - 80, height: 26, ellipsis: true });
-    doc.font("Helvetica").fontSize(8).fillColor(SUB).text("MEMBER", X + 14, Y + 58, { characterSpacing: 1.5 });
-    doc.font("Helvetica-Bold").fontSize(15).fillColor(INK).text(memberName, X + 14, Y + 70, { width: W - 28, height: 20, ellipsis: true });
-    doc.font("Helvetica").fontSize(10).fillColor(INK).text(`${levelName} membership`, X + 14, Y + 96, { width: W - 28, height: 14, ellipsis: true });
-    doc.font("Helvetica").fontSize(9).fillColor(SUB)
-      .text(expiresOn ? `Valid through ${expiresOn}` : "Lifetime member", X + 14, Y + 118, { width: W - 28, height: 12 })
-      .text(`Member since ${memberSince}`, X + 14, Y + 131, { width: W - 28, height: 12 });
-    doc.end();
-  });
-}
+// BUILD-101 Part 5 — THE MEMBER CARD. MEMBERS-2 moved the renderer to
+// ../memberCard.js, because the member downloads the same card from their own
+// page and two renderers is how the staff copy and the member's copy end up
+// disagreeing about one membership.
+const { renderMemberCardPdf } = require("../memberCard");
 
 app.get("/memberships/:id/card.pdf", requireAuth, wrap(async (req, res) => {
   const [m] = await query(
@@ -18551,7 +18531,8 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
   const dir = req.query.sort === "expiry_desc" ? "DESC" : "ASC";
   const rows = await query(
     `SELECT m.id, m.donor_id, d.name AS donor_name, m.status, m.joined_on, m.starts_on, m.expires_on, m.gift_id,
-            l.id AS level_id, l.name AS level_name, l.term
+            l.id AS level_id, l.name AS level_name, l.term,
+            d.your_page_sent_at AS "yourPageSentAt", d.your_page_opened_at AS "yourPageOpenedAt"
        FROM memberships m JOIN membership_levels l ON l.id=m.level_id JOIN donors d ON d.id=m.donor_id
       WHERE ${where.join(" AND ")} ORDER BY m.expires_on ${dir} NULLS LAST, d.name LIMIT 1000`, args);
   const counts = await query(`SELECT m.status, COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status <> 'lapsed' GROUP BY 1`, [orgId]);
@@ -18560,7 +18541,7 @@ app.get("/memberships", requireAuth, wrap(async (req, res) => {
   const [lp] = await query(`SELECT COUNT(*)::int n FROM memberships m WHERE m.org_id=? AND m.status='lapsed' AND ${LAPSED_MEMBER_SQL}`, [orgId]);
   byStatus.lapsed = lp?.n || 0;
   res.json({ members: rows, byStatus,
-    sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period." });
+    sentence: "Each person counts once per membership. Active and in-grace members hold a current membership; lapsed ones have passed their grace period. Their page says whether they have opened the page that holds their card, their renewal and their receipts." });
 }));
 
 // Cancelling stops a membership; it does not refund the gift (a refund is its

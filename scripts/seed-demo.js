@@ -1403,6 +1403,69 @@ async function main() {
     process.exit(1);
   }
 
+  // ── MEMBERS-2 · THE MEMBER SIDE ────────────────────────────────────────
+  // Three levels an org this size would really sell, and four people whose
+  // "Your page" each shows a DIFFERENT set of sections — which is the whole
+  // point of the page, and the only way to see that the empty ones really do
+  // not render.
+  const MEMBERSHIP_LEVELS = [
+    ["mbl_b72_friend", "Friend", 50, 0, 0,
+      ["The newsletter, four times a year", "Your name in the annual report"]],
+    ["mbl_b72_family", "Family", 120, 25, 1,
+      ["Everything a Friend has", "Four guest passes to the harbour centre", "Early notice of every event"]],
+    ["mbl_b72_circle", "Harbour Circle", 500, 60, 2,
+      ["Everything a Family has", "Two seats at the annual dinner", "A morning on the water with the programme staff"]],
+  ];
+  for (const [id, name, price, fmv, pos, benefits] of MEMBERSHIP_LEVELS)
+    await q(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term,scope,benefits,position,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,'12_months',$6,$7::jsonb,$8,'u_b72demo','Dana Reyes')`,
+      [id, ORG, name, price, fmv, name === "Family" ? "household" : "individual", JSON.stringify(benefits), pos]);
+
+  // Four people, chosen off rows that already exist rather than invented, so
+  // each one is the SAME record the rest of the demo already knows.
+  const [memberA] = await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
+       AND email IS NOT NULL AND email <> '' AND id <> ALL($2::text[])
+     ORDER BY total_giving DESC OFFSET 3 LIMIT 1`, [ORG, givers]);
+  const [memberB] = await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
+       AND email IS NOT NULL AND email <> '' AND id <> ALL($2::text[]) AND id <> $3
+     ORDER BY total_giving DESC OFFSET 24 LIMIT 1`, [ORG, givers, memberA.id]);
+  const [monthlyMember] = await q(
+    `SELECT d.id, d.name FROM donors d JOIN recurring_subscriptions r ON r.donor_id=d.id AND r.org_id=d.org_id
+      WHERE d.org_id=$1 AND d.deleted_at IS NULL AND r.status='active' AND d.email IS NOT NULL AND d.email <> ''
+      ORDER BY r.amount DESC LIMIT 1`, [ORG]);
+  const volMemberId = givers[0];
+  const [volMember] = await q(`SELECT id, name FROM donors WHERE id=$1`, [volMemberId]);
+
+  const putMember = async (personId, levelId, startsOn, expiresOn, status, source) =>
+    q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status,payment_method,source,created_by,created_by_name)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'check',$9,'u_b72demo','Dana Reyes')`,
+      [`mb_b72_${personId.slice(-6)}_${status}`, ORG, personId, levelId, startsOn, startsOn, expiresOn, status, source]);
+
+  // A. A Family membership that renews next month — the one the renewal
+  //    thread is about, and the one the member's own page has to state in a
+  //    sentence rather than a row of fields.
+  await putMember(memberA.id, "mbl_b72_family", dAdd(TODAY, -330), dAdd(TODAY, 35), "active", "staff");
+  // B. Lapsed: it ran out five months ago and they hold none now.
+  await putMember(memberB.id, "mbl_b72_family", dAdd(TODAY, -515), dAdd(TODAY, -150), "lapsed", "staff");
+  await q(`UPDATE memberships SET status_changed_on=$2 WHERE org_id=$1 AND donor_id=$3`,
+          [ORG, dAdd(TODAY, -120), memberB.id]);
+  // C. A volunteer who is also a member: the crossover the page exists for.
+  await putMember(volMemberId, "mbl_b72_friend", dAdd(TODAY, -200), dAdd(TODAY, 165), "active", "staff");
+  // D. The monthly donor has no membership at all, on purpose: their page is
+  //    ONE section, and that is how you see that four empty ones do not draw.
+
+  // One of them has opened their page already, so the Members screen has both
+  // answers to show: sent-and-opened, and sent-and-not.
+  await q(`UPDATE donors SET your_page_sent_at = NOW() - INTERVAL '6 days',
+                             your_page_opened_at = NOW() - INTERVAL '6 days' WHERE id=$1 AND org_id=$2`,
+          [memberA.id, ORG]);
+  await q(`UPDATE donors SET your_page_sent_at = NOW() - INTERVAL '2 days' WHERE id=$1 AND org_id=$2`,
+          [memberB.id, ORG]);
+  const [mbCount] = await q(`SELECT COUNT(*)::int c FROM memberships WHERE org_id=$1`, [ORG]);
+  console.log(`[assert] memberships ${mbCount.c} on ${MEMBERSHIP_LEVELS.length} levels · ${memberA.name} renews in 35 days · ${memberB.name} lapsed · ${volMember.name} volunteers and is a member · ${monthlyMember ? monthlyMember.name + " gives monthly" : "no monthly giver found"}`);
+
   // ── Goal from reality: ~85% of the way there reads like a live campaign ──
   const [raisedThisYear] = await q(
     `SELECT COALESCE(SUM(amount),0)::float d FROM gifts WHERE org_id=$1 AND date >= $2 AND campaign_id IS NULL`,

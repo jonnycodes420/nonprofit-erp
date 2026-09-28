@@ -3162,6 +3162,12 @@ async function volunteerSummary(orgId, personId) {
                              FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, personId]);
   return { hundredths: Number(t?.h || 0), totalHours: Number(t?.h || 0) / 100, shiftCount: t?.n || 0, firstShift: t?.first || null, lastShift: t?.last || null };
 }
+// MEMBERS-2 — "Your page". Mounted BEFORE the volunteer routers on purpose:
+// it intercepts a live /volunteer/me?t=<token> and exchanges that token for a
+// session on the new page, so every volunteer link already in somebody's
+// inbox keeps working. An expired or unknown token falls through by next(),
+// and the old page answers it with the words it always did.
+app.use(require("./routes/supporter").routers.r0);
 app.use(require("./routes/volunteer").routers.r0);
 // VOL-1 — scheduling, capacity, waitlists, check-in and credentials. Mounted
 // AFTER routes/volunteer so /volunteer/join and /volunteer/log keep their
@@ -9025,6 +9031,19 @@ require("./routes/volunteer").mount({
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
   volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
 });
+// MEMBERS-2 — "Your page" owns the supporter session, and VOL-1's
+// /volunteer/me exchanges an old volunteer link for one. It hands the minter
+// out here rather than registering a second /volunteer/me of its own: two
+// handlers on one path is a route the inventory counts once and the matrix
+// probes once, and the one it does not probe is the one that leaks.
+let _supporterSession = null;
+require("./routes/supporter").mount({
+  registerSupporterSession: fns => { _supporterSession = fns; },
+  DONOR_MAIL_ADDR, actor, brandEmailHeaderHtml, checkWriteAccess, crypto, donateLimiter,
+  donorFacingOrgName, fromWithDisplayName, orgSendingIdentity, orgToday, orgTz, publicAppUrl,
+  query, requireAuth, resend, resolveOrgBrandTheme, run, sendDonorLifecycleEmail, stripe, testMode,
+  uuid, volunteerSummary, withAdvisoryLock, wrap, writeAuditLog,
+});
 require("./routes/volunteerScheduling").mount({
   actor, checkWriteAccess, crypto, donateLimiter, displayNameCase, donorFacingOrgName, escapeHtml,
   insertShift, markVolunteer, maybeStartJourneyFromServer, orgMaySendEmail, orgToday, orgTz,
@@ -9033,6 +9052,7 @@ require("./routes/volunteerScheduling").mount({
   // The reminder sweep registers itself here so the background tick can call
   // it without this file importing the router's internals.
   registerVolunteerReminders: fn => { _volunteerReminders = fn; },
+  supporterSession: { mint: (...a) => _supporterSession.mint(...a), setCookie: (...a) => _supporterSession.setCookie(...a) },
 });
 require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,

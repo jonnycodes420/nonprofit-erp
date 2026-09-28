@@ -4678,6 +4678,54 @@ async function initSchema() {
   // this column is what makes each renewal charge extend a membership.
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS membership_level_id TEXT`);
 
+  // ── MEMBERS-2 — "YOUR PAGE": ONE PAGE PER PERSON PER ORG ────────────────
+  // A member, a ticket buyer, a fundraiser and a volunteer were each heading
+  // for their own surface with their own link. There is one now, and one way
+  // in: an emailed link that is single-use, hashed at rest and short-lived,
+  // which mints a session. Nobody ever has a password.
+  //
+  // It is the volunteer link's model, generalised, not a second auth system:
+  // the same CSPRNG token, the same hash-at-rest, the same identical answer
+  // for a known and an unknown email. What changes is that the link is spent
+  // on arrival and the SESSION is what lasts, so a link forwarded on, or
+  // sitting in a mailbox somebody else can read next year, opens nothing.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS supporter_links (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      email TEXT,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      superseded_at TIMESTAMPTZ,
+      requested_ip TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_supporter_links_person ON supporter_links (org_id, person_id)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS supporter_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      person_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      last_seen_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_supporter_sessions_person ON supporter_sessions (org_id, person_id)`);
+  // Two facts the Members screen shows staff: that a link was sent, and that
+  // the person opened their page. Neither is a metric — they are the two
+  // things somebody about to chase a lapsed member needs to know first.
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS your_page_sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS your_page_opened_at TIMESTAMPTZ`);
+  // An auto-renewing membership is a recurring subscription; this is what
+  // lets a member turn that off from their own page without cancelling the
+  // membership they have already paid for.
+  await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS auto_renew_subscription_id TEXT`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(
