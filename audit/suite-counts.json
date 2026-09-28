@@ -1,6 +1,6 @@
 {
  "note": "The floor for every suite's pass count. A suite may assert MORE at any time; asserting less fails the combine job. Lowering a number here is a deliberate edit, in the commit that removes the assertion, with the reason in the message.",
- "updated": "2026-09-27",
+ "updated": "2026-09-28",
  "suites": {
   "build88a-one-gift": 53,
   "build96-ai-gate": 45,

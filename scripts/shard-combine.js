@@ -56,11 +56,22 @@ let base = {};
 try { base = (JSON.parse(fs.readFileSync(basePath, "utf8")) || {}).suites || {}; }
 catch { console.log(`${Y}no ${BASELINE} yet — this run writes the first one${Z}`); }
 
+// A suite that SKIPPED part of itself is not comparable and is not a drop.
+// CI has no Playwright, so every browser leg skips there: `smoke-walk` runs
+// 104 assertions on a laptop and 0 in CI, and `hotfix1-profile` runs 49 and
+// 38. Reading that as "asserting less" would fail every CI run for ever,
+// and would train people to ignore the one guard that catches a suite
+// quietly doing less. The ratchet compares like with like; a full local run
+// has no skips and is ratcheted completely.
+const skipped = new Set(suites.filter(s => (s.skips || 0) > 0).map(s => s.name));
 const dropped = [];
+const notCompared = [];
 for (const [name, was] of Object.entries(base)) {
   if (!(name in counts)) continue;               // a retired suite is not a drop
+  if (skipped.has(name)) { notCompared.push(`${name} (${was} → ${counts[name]}, a leg skipped here)`); continue; }
   if (counts[name] < was) dropped.push(`${name}: ${was} → ${counts[name]}`);
 }
+if (notCompared.length) console.log(`  ${Y}not compared, a leg skipped in this environment:${Z} ${notCompared.join(" · ")}`);
 if (dropped.length) problems.push(`a suite is asserting LESS than it did:\n    ` + dropped.join("\n    "));
 
 console.log("");
@@ -83,7 +94,10 @@ if (problems.length) {
 // Green: ratchet the baseline up to what this run actually asserted.
 const next = { ...base };
 let raised = 0;
-for (const [name, n] of Object.entries(counts)) if (!(name in next) || n > next[name]) { next[name] = n; raised++; }
+for (const [name, n] of Object.entries(counts)) {
+  if (skipped.has(name)) continue;               // an incomplete run sets no floor
+  if (!(name in next) || n > next[name]) { next[name] = n; raised++; }
+}
 try {
   fs.mkdirSync(path.dirname(basePath), { recursive: true });
   fs.writeFileSync(basePath, JSON.stringify({

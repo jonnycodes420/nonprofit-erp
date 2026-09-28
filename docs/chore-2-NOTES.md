@@ -158,6 +158,10 @@ no retries, and a small selection still serial.
 3. **The CI matrix.** Three parallel runners instead of three shards in one,
    which needs per-job artifacts and a combine job. Worth doing when the
    battery grows again; worth nothing at 59 seconds.
-4. **`audit/suite-counts.json` is seeded from a local run.** CI's first green
-   run will ratchet it to CI's own numbers, which differ where a browser leg
-   skips there and runs here. Expect one commit of churn.
+4. **~~`audit/suite-counts.json` churn~~ — happened, and is fixed.** The first
+   CI run failed the ratchet with `smoke-walk: 104 → 0` and
+   `hotfix1-profile: 49 → 38`: CI has no Playwright, so every browser leg
+   skips there. A suite that skipped part of itself is not comparable and is
+   not a drop, so the ratchet now passes over any suite with a SKIP in its
+   log, says which ones it passed over, and lets an incomplete run set no
+   floor. A full local run has no skips and is ratcheted completely.
