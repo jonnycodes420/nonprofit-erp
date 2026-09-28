@@ -22,7 +22,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
+  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
@@ -805,6 +805,21 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
         : "";
       return res.status(503).json({ error: gate.reason, reason, sentence: lead + st.sentence });
     }
+    // GTM-1b 2 — THE TRIAL ALLOWANCE, CHECKED BEFORE THE MODEL IS CALLED.
+    // Twenty-five plans in the free thirty days; no cap at all once the first
+    // charge has landed. It refuses HERE, above agentBuildPlan, because the
+    // point of a cap is not to spend the call — a refusal after the model has
+    // answered has already cost what the cap exists to prevent.
+    const allow = await agentTrialAllowance(req.user.orgId);
+    if (allow.capped && allow.exhausted) {
+      return res.status(402).json({
+        error: "agent_trial_allowance",
+        used: allow.used, allowance: allow.allowance,
+        sentence: `You have used all ${allow.allowance} Agent plans included in your free thirty days. `
+          + `The Agent comes back without a limit the moment your first charge goes through — nothing else `
+          + `about Steward is affected, and every plan you have already written is still here.`,
+      });
+    }
     let built;
     try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId }); }
     catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }
@@ -1023,8 +1038,58 @@ app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
       ORDER BY instruction_id, started_at DESC`, [req.user.orgId]);
   const byIns = new Map(runs.map(r => [r.instruction_id, r]));
   const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [req.user.orgId]);
+
+  // GTM-1b 2 — BEFORE THE IMPORT, THE AGENT SHOWS ITSELF ON HARBORLIGHT.
+  // An org with no donors opens this page to an empty room, and "write an
+  // instruction" is a poor prompt when there is nobody to write it about. So
+  // it shows a WORKED EXAMPLE on the demo organisation instead.
+  //
+  // Three properties make this honest rather than a mock-up:
+  //   · the people in it are REAL rows from Harborlight, read live, so the
+  //     example cannot drift from what the demo actually contains;
+  //   · it calls NO model — it costs nothing and spends none of the trial
+  //     allowance, which would be a strange thing to charge for a tour;
+  //   · it is labelled as Harborlight's, not theirs, by the route, not by
+  //     copy the page could forget to render.
+  let showcase = null;
+  const [mine] = await query(
+    "SELECT COUNT(*)::int AS c FROM donors WHERE org_id=? AND deleted_at IS NULL", [req.user.orgId]);
+  if (!Number(mine && mine.c)) {
+    const demo = await query(
+      `SELECT d.name, d.total_giving, d.last_gift_date
+         FROM donors d
+        WHERE d.org_id='org_b72demo' AND d.deleted_at IS NULL AND d.last_gift_date IS NOT NULL
+        ORDER BY d.total_giving DESC NULLS LAST LIMIT 3`, []).catch(() => []);
+    if (demo.length) {
+      showcase = {
+        orgName: "Harborlight Youth Collective",
+        isDemoData: true,
+        why: "You have not imported anyone yet, so this is what the Agent would do on the demo organisation's real records — not yours, and not invented.",
+        instruction: "Thank everyone who gave in the last month, in my voice, and tell me who I should call.",
+        people: demo.map(d => ({
+          name: d.name,
+          total: Number(d.total_giving) || 0,
+          lastGift: d.last_gift_date ? String(d.last_gift_date).slice(0, 10) : null,
+        })),
+        steps: [
+          { verb: "Read", detail: `${demo.length} people at Harborlight who gave recently, with their history.` },
+          { verb: "Draft", detail: "One thank-you each, in the words you have already used on this kind of gift." },
+          { verb: "Hold", detail: "Nothing is sent. Every draft waits for you to read it and press send." },
+        ],
+        // The one sentence that is true of every plan, shown here first.
+        promise: "The Agent reads and drafts. A person signs anything that reaches a donor.",
+      };
+    }
+  }
+
+  const allowance = await agentTrialAllowance(req.user.orgId);
+
   res.json({
     pausedAll: !!(org && org.agent_paused_at),
+    showcase,
+    // What is left of the free thirty days' allowance, so the screen can say
+    // it before she writes the twenty-sixth plan rather than after.
+    allowance,
     plans: rows.map(p => {
       const plan = typeof p.plan === "string" ? JSON.parse(p.plan || "null") : p.plan;
       const r = byIns.get(p.id);

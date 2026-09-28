@@ -3636,6 +3636,34 @@ async function initSchema() {
   await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS billing_interval TEXT`);
   await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS contact_name TEXT`);
 
+  // ── GTM-1b 1 · GROWING PAST YOUR BAND IS A CONVERSATION, NOT A SURPRISE ──
+  // Steward counts active donors after an import and compares the count to the
+  // band the org is paying for. If they are over it, the admin is told in the
+  // product and by email, the new price takes effect no sooner than THIRTY
+  // DAYS later, and nothing about the subscription changes until Jonathan or
+  // the org acts. A price that moves without a person is the thing this
+  // exists to make impossible.
+  //
+  // Three columns rather than a table: there is one open notice per org at a
+  // time, a second import that finds the same band is the same notice, and a
+  // history of counts is not evidence of anything anyone needs.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_band TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_effective_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_count INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS tier_notice_dismissed_at TIMESTAMPTZ`);
+
+  // ── GTM-1b 4 · A FOUNDING ORG KEEPS ITS $50, ON ANY BAND ────────────────
+  // The discount used to be a PRICE (STRIPE_PRICE_FOUNDING, $199). A price
+  // cannot follow an org that grows: the day a founding partner moved off it
+  // they would lose the thing they were promised for ever. A Stripe COUPON
+  // rides the subscription instead, so it survives every band change.
+  //
+  // Backfilled from the plan for the orgs already on the founding price, so
+  // nobody has to be remembered by hand.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS founding_partner BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`UPDATE orgs SET founding_partner = true WHERE plan = 'founding' AND founding_partner = false`);
+
   // ── GTM-1a · WHO AGREED, WHEN, AND TO WHICH VERSION ──────────────────────
   // A click-through agreement that cannot say which words were on the screen
   // is not evidence of anything. Every row names the document VERSION and the

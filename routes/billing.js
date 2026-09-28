@@ -38,6 +38,8 @@ const {
   // GTM-1a — the pricing catalogue, the plan-amount helpers, the click-through
   // agreement and the founder address public signup reports to.
   PRICING, planAmountUsd, planInterval, SELLABLE_CLOSE_PLANS, customerAgreement,
+  // GTM-1b — the active-donor count and the over-band notice.
+  checkActiveDonorBand,
 } = ctx;
 let app = routers.r0;
 // BUILD-38 Part 1 — kill all of a user's live sessions: stamp sessions_valid_after
@@ -934,15 +936,24 @@ app.post("/billing/create-checkout", requireAuth, requireAdmin, wrap(async (req,
     // Stripe requires trial_end strictly in the future; guard with a small margin.
     if (trialEndSec && trialEndSec > Math.floor(Date.now() / 1000) + 60) subData.trial_end = trialEndSec;
 
+    // GTM-1b 4 — A FOUNDING ORG KEEPS ITS $50 OFF, WHICHEVER BAND IT MOVES
+    // TO. The discount is a coupon rather than a price precisely so it
+    // survives this moment: an org that outgrows the first band would
+    // otherwise lose the thing it was promised on the day it grew.
+    const [orgForDiscount] = await query("SELECT founding_partner, plan FROM orgs WHERE id=?", [req.user.orgId]);
+    const isFounding = !!(orgForDiscount && (orgForDiscount.founding_partner || orgForDiscount.plan === "founding"));
+
     const sessionParams = {
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: publicAppUrl() + "/dashboard?subscribed=true",
       cancel_url:  publicAppUrl() + "/pricing",
-      metadata: { orgId: req.user.orgId, plan },
+      metadata: { orgId: req.user.orgId, plan, ...(isFounding ? { foundingDiscount: "1" } : {}) },
       subscription_data: subData,
       customer: customerId,
+      ...(isFounding ? { discounts: [{ coupon: PRICING.FOUNDING_COUPON.couponId }] } : {}),
     };
+    if (isFounding) console.log(`[billing] ${req.user.orgId} is a founding partner — applying coupon ${PRICING.FOUNDING_COUPON.couponId} to ${plan}`);
 
     const session = await billingStripe.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
@@ -1161,6 +1172,53 @@ app.post("/admin/close-links", requireAuth, requireSuperAdmin, wrap(async (req, 
     if (handleBillingConfigError(err, res, { plan: plan.id, surface: "close-link" })) return;
     throw err;
   }
+}));
+
+// ── GTM-1b 1 · WHAT THE PRODUCT SAYS ABOUT YOUR BAND ──────────────────────
+// One read, for the banner and for Settings → Billing. It does NOT recount on
+// every call: the count is taken after an import (the thing that changes it)
+// and stored with the notice, so opening a page cannot be an expensive scan
+// of every gift in the org. `recount=1` takes a fresh one on purpose, for the
+// admin who has just deleted a pile of records and wants the answer now.
+app.get("/billing/donor-band", requireAuth, wrap(async (req, res) => {
+  const [org] = await query(
+    `SELECT id, plan, tier_notice_band, tier_notice_at, tier_notice_effective_at,
+            tier_notice_count, tier_notice_dismissed_at
+       FROM orgs WHERE id=?`, [req.user.orgId]);
+  if (!org) return res.status(404).json({ error: "org_not_found" });
+
+  if (req.query.recount === "1") {
+    const fresh = await checkActiveDonorBand(req.user.orgId, { send: false });
+    return res.json({ ...fresh, sentence: PRICING.ACTIVE_DONOR_SENTENCE, recounted: true });
+  }
+
+  const band = PRICING.tierById(String(org.plan || "").split("_")[0]);
+  const next = org.tier_notice_band ? PRICING.tierById(org.tier_notice_band) : null;
+  res.json({
+    plan: org.plan,
+    band: band ? { id: band.id, label: band.band, maxDonors: band.maxDonors } : null,
+    sentence: PRICING.ACTIVE_DONOR_SENTENCE,
+    notice: org.tier_notice_band ? {
+      nextBand: org.tier_notice_band,
+      nextBandLabel: next ? next.band : PRICING.TALK_TO_US.band,
+      nextMonthlyUsd: next ? next.monthlyUsd : null,
+      nextYearlyUsd: next ? next.yearlyUsd : null,
+      count: org.tier_notice_count,
+      noticedAt: org.tier_notice_at,
+      effectiveAt: org.tier_notice_effective_at,
+      dismissedAt: org.tier_notice_dismissed_at,
+    } : null,
+  });
+}));
+
+// Dismissing the banner hides the BANNER. It does not withdraw the notice, it
+// does not move the date, and the sentence stays in Settings → Billing — a
+// price change somebody has been told about cannot be un-told by closing a
+// card. A POST, because it changes state.
+app.post("/billing/donor-band/dismiss", requireAuth, requireAdmin, wrap(async (req, res) => {
+  await run(`UPDATE orgs SET tier_notice_dismissed_at=NOW() WHERE id=? AND tier_notice_band IS NOT NULL`,
+    [req.user.orgId]);
+  res.json({ ok: true });
 }));
 
 // ── GTM-1a 1-5 · PUBLIC SIGNUP, AND IT IS A CLOSE LINK ────────────────────
