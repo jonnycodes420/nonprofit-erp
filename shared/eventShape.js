@@ -35,11 +35,24 @@ export function validateLevel(raw) {
   if (!Number.isFinite(fmv) || fmv < 0) errors.push("a fair-market value of zero or more");
   if (Number.isFinite(price) && Number.isFinite(fmv) && fmv > price)
     errors.push("the fair-market value cannot be more than the price — the deductible part would be negative");
+  // EVENTS-2 — the member price. Null means the level has one price. It is
+  // never above the full price and never below the fair-market value: a
+  // ticket whose deductible part is negative is not a discount, it is a
+  // mistake, and the same CHECK stands behind this in the database.
+  const memberPrice = raw?.memberPrice === undefined || raw?.memberPrice === null || raw?.memberPrice === ""
+    ? null : toCents(raw.memberPrice);
+  if (memberPrice !== null) {
+    if (!Number.isFinite(memberPrice) || memberPrice <= 0) errors.push("a member price greater than zero, or none at all");
+    else {
+      if (Number.isFinite(price) && memberPrice > price) errors.push("a member price cannot be more than the price");
+      if (Number.isFinite(fmv) && memberPrice < fmv) errors.push("a member price below the fair-market value would make the deductible part negative");
+    }
+  }
   const capacity = raw?.capacity === undefined || raw?.capacity === null || raw?.capacity === "" ? null : Number(raw.capacity);
   if (capacity !== null && (!Number.isInteger(capacity) || capacity <= 0)) errors.push("capacity is a whole number of places");
   const recognition = String(raw?.recognition || "").trim().slice(0, 200) || null;
   return errors.length ? { ok: false, errors }
-    : { ok: true, level: { kind, name, priceCents: price, fmvCents: fmv, capacity, recognition } };
+    : { ok: true, level: { kind, name, priceCents: price, fmvCents: fmv, memberPriceCents: memberPrice, capacity, recognition } };
 }
 
 // The split for a purchase of `qty` at this level, in cents.

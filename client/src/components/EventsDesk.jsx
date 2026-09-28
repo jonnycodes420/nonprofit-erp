@@ -20,17 +20,25 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
   const [levels, setLevels] = useState([]);
   const [guests, setGuests] = useState(null);
   const [msg, setMsg] = useState("");
-  const [lv, setLv] = useState({ kind: "ticket", name: "", price: "", fmv: "", capacity: "", recognition: "" });
+  const [lv, setLv] = useState({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "" });
   const [reg, setReg] = useState({ who: "", email: "", levelId: "", quantity: 1, paid: true });
   const [marks, setMarks] = useState({});
+  // EVENTS-2 — who asked to be told if a place comes free.
+  const [wait, setWait] = useState(null);
   const load = () => {
     apiFetch(`/events/${event.id}/levels`).then(r => { setLevels(r.levels || []); setReg(x => ({ ...x, levelId: x.levelId || r.levels?.[0]?.id || "" })); }).catch(() => {});
     apiFetch(`/events/${event.id}/guests`).then(setGuests).catch(e => setMsg(errorMessage(e, "Could not load the guest list.")));
+    apiFetch(`/events/${event.id}/waitlist`).then(setWait).catch(() => setWait(null));
+  };
+  const offer = async w => {
+    setMsg("");
+    try { const r = await apiFetch(`/events/${event.id}/waitlist/${w.id}/offer`, { method: "POST" }); setMsg(r.sentence || ""); load(); }
+    catch (e) { setMsg(errorMessage(e, "That offer did not go out.")); }
   };
   useEffect(() => { load(); }, [event.id]);
   const act = async (fn, okMsg) => { setMsg(""); try { await fn(); if (okMsg) setMsg(okMsg); load(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
   const addLevel = () => act(() => apiFetch(`/events/${event.id}/levels`, { method: "POST", body: JSON.stringify(lv) })
-    .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", capacity: "", recognition: "" })));
+    .then(() => setLv({ kind: "ticket", name: "", price: "", fmv: "", memberPrice: "", capacity: "", recognition: "" })));
   const register = () => {
     const d = donors.find(x => String(x.name || "").toLowerCase() === reg.who.trim().toLowerCase());
     const body = d ? { donorId: d.id } : { name: reg.who.trim(), email: reg.email.trim() };
@@ -65,6 +73,7 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
             <strong style={{ minWidth: 160 }}>{l.name}</strong>
             <span>{fmtFull(l.price)}</span>
             <span style={{ color: T.ink3 }}>{l.kind === "sponsor" ? "sponsorship" : `worth ${fmtFull(l.fmv)}, so ${fmtFull(l.deductible)} deductible`}</span>
+            {l.memberPrice != null && <span style={{ color: T.ink3 }} title="A current member of this organisation pays this instead. Steward checks the membership against the email at checkout; the page never decides it.">members {fmtFull(l.memberPrice)}</span>}
             <span style={{ marginLeft: "auto", color: T.ink3 }}>{l.capacity == null ? `${l.taken} taken` : `${l.taken} of ${l.capacity} taken`}</span>
           </div>))}
         {!isReadOnly && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
@@ -72,11 +81,28 @@ function EventDetail({ event, orgSlug, donors, isReadOnly, onBack }) {
           <input placeholder="Name (e.g. Dinner ticket)" value={lv.name} onChange={e => setLv({ ...lv, name: e.target.value })} style={{ ...inp, width: 170 }} />
           <input placeholder="Price" type="number" value={lv.price} onChange={e => setLv({ ...lv, price: e.target.value })} style={{ ...inp, width: 80 }} />
           <input placeholder="Value received" type="number" value={lv.fmv} onChange={e => setLv({ ...lv, fmv: e.target.value })} style={{ ...inp, width: 110 }} title="What the guest receives, such as the dinner. The receipt says only the rest is deductible." />
+          {lv.kind === "ticket" && <input placeholder="Member price" type="number" value={lv.memberPrice} onChange={e => setLv({ ...lv, memberPrice: e.target.value })} style={{ ...inp, width: 120 }} title="What a current member pays. Leave it empty and everybody pays the same. Steward checks the membership against the email at checkout, so the page never decides it." />}
           <input placeholder="Places" type="number" value={lv.capacity} onChange={e => setLv({ ...lv, capacity: e.target.value })} style={{ ...inp, width: 70 }} />
           {lv.kind === "sponsor" && <input placeholder="Recognition, e.g. {{name}}, Gold sponsor" value={lv.recognition} onChange={e => setLv({ ...lv, recognition: e.target.value })} style={{ ...inp, width: 240 }} />}
           <button onClick={addLevel} style={btn(false)} data-testid="event-add-level">Add</button>
         </div>}
       </Card>
+
+      {/* EVENTS-2 — THE WAITING LIST. A place is offered by a PERSON pressing
+          this button, never by a sweep: nothing is held and nothing is
+          charged, so it is an invitation to come and buy, in order. */}
+      {wait?.waitlist?.length > 0 && <Card style={{ padding: "16px 18px" }}>
+        <div style={h}>Waiting list</div>
+        <div style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{wait.sentence}</div>
+        {wait.waitlist.map(w => (
+          <div key={w.id} data-testid="event-waitlist-row" style={{ display: "flex", gap: 10, alignItems: "baseline", fontSize: 13, color: T.ink, padding: "6px 0", borderBottom: "1px solid " + T.bg3, flexWrap: "wrap" }}>
+            <strong style={{ minWidth: 160 }}>{w.name}</strong>
+            <span style={{ color: T.ink3 }}>{w.level_name}</span>
+            <span style={{ color: T.ink3 }}>{w.offered_at ? `offered ${displayDate(String(w.offered_at).slice(0, 10))}` : `number ${w.position}`}</span>
+            {!isReadOnly && !w.taken_at && <button onClick={() => offer(w)} style={{ ...btn(false), marginLeft: "auto" }} data-testid="event-waitlist-offer">
+              {w.offered_at ? "Offer again" : "Offer a place"}</button>}
+          </div>))}
+      </Card>}
 
       {!isReadOnly && levels.length > 0 && <Card style={{ padding: "16px 18px" }}>
         <div style={h}>Register someone</div>

@@ -28,7 +28,7 @@ export const fmt = n => {
   const one = x => { const t = x.toFixed(1); return t.endsWith(".0") ? t.slice(0, -2) : t; };
   if (a >= 999500) return `${sign}$${one(a / 1000000)}M`;
   if (a >= 1000)   return `${sign}$${one(a / 1000)}k`;
-  return `${sign}$${a.toLocaleString()}`;
+  return `${sign}$${a.toLocaleString("en-US")}`;
 };
 
 // Full: whole dollars stay clean ($1,200); cents-carrying amounts render as
@@ -36,11 +36,16 @@ export const fmt = n => {
 // FIX-1 E: negatives are SIGN-FIRST, the way money is written ("-$1.33"). It
 // used to render "$-1.33" — the Stripe payout the 25 September walk found — and
 // RestrictedView wrote the sign at its render site to work around it.
+// EVENTS-2: the locale is NAMED. `toLocaleString(undefined, …)` takes the
+// BROWSER's locale, and in half of Europe that separator flips: $25.000 next
+// to a dollar sign reads as twenty-five dollars, not twenty-five thousand.
+// Steward's amounts are US dollars, so they are formatted as US dollars on
+// every machine that opens the app.
 export const fmtFull = n => {
   const v = Number(n);
   if (!Number.isFinite(v)) return "$0";
   const a = Math.abs(v);
-  const body = a.toLocaleString(undefined, Number.isInteger(a) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const body = a.toLocaleString("en-US", Number.isInteger(a) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${v < 0 ? "-" : ""}$${body}`;
 };
 

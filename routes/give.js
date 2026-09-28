@@ -1469,7 +1469,49 @@ function coverFeesGrossUpCents(netCents) {
   return Math.ceil((netCents + COVER_FEES_FLAT_CENTS) / (1 - COVER_FEES_PCT));
 }
 
-app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENTS-2 · A SEAT IS HELD WHILE SOMEBODY PAYS
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Fifteen minutes. A hold is not a registration, and it never becomes one on
+// its own: only the payment webhook confirms a seat. It exists so the last two
+// places are not sold three times over in the ninety seconds it takes somebody
+// to find their card, and so a checkout that is abandoned gives them back
+// without anybody having to do anything.
+//
+// Capacity is therefore registrations PLUS live holds, computed in one place
+// so the page, the checkout and the door can never disagree about what is left.
+const EVENT_HOLD_MINUTES = 15;
+
+async function eventSeatsLeft(level) {
+  if (level.capacity == null) return Infinity;
+  const [t] = await query(
+    `SELECT COALESCE(SUM(quantity),0)::int AS n FROM event_attendees
+      WHERE level_id=? AND status <> 'cancelled'`, [level.id]);
+  const [h] = await query(
+    `SELECT COALESCE(SUM(qty),0)::int AS n FROM event_seat_holds
+      WHERE level_id=? AND released_at IS NULL AND confirmed_at IS NULL AND expires_at > NOW()`, [level.id]);
+  return Math.max(0, Number(level.capacity) - (t?.n || 0) - (h?.n || 0));
+}
+
+// THE MEMBER PRICE IS DECIDED BY THE SERVER, from the email, against a
+// CURRENT membership in THIS org. Exact email, never a name: the same rule
+// everything else in this codebase links a person by.
+async function emailHoldsMembership(orgId, email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return false;
+  const [m] = await query(
+    `SELECT m.id FROM memberships m
+       JOIN donors d ON d.id=m.donor_id AND d.org_id=m.org_id AND d.deleted_at IS NULL
+      WHERE m.org_id=? AND LOWER(d.email)=? AND m.status IN ('active','grace') LIMIT 1`, [orgId, e]);
+  return !!m;
+}
+
+// EVENTS-2 — the handler is NAMED so the public event page can reach exactly
+// this code, unchanged, rather than growing a second place where a ticket is
+// priced. It reads only `params.orgSlug` and `body`, which is all the event
+// page hands it.
+const donateHandler = async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const { firstName, lastName, email, campaignId } = req.body;
   // BUILD-102 Part 2 — `fundId` is a `let` because the FORM's designation
@@ -1519,16 +1561,37 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   }
 
   let baseCents = toCents(amount);                       // BUILD-73: the money seam
-  let eventLevel = null, eventRow = null;
+  let eventLevel = null, eventRow = null, eventHoldId = null, eventMemberPriced = false;
   if (eventLevelId) {
     [eventLevel] = await query("SELECT * FROM event_levels WHERE id=? AND org_id=?", [eventLevelId, org.id]);
     if (eventLevel) [eventRow] = await query("SELECT * FROM events WHERE id=? AND org_id=? AND status <> 'cancelled'", [eventLevel.event_id, org.id]);
     if (!eventLevel || !eventRow) return res.status(400).json({ error: "This ticket is no longer available." });
+    // EVENTS-2 — A SEAT IS HELD WHILE SOMEBODY PAYS, and a hold counts against
+    // capacity exactly as a registration does. Without it the last two seats
+    // are sold three times in the ninety seconds it takes to find a card. The
+    // hold is claimed BEFORE the Checkout session exists, so a session that is
+    // never completed simply runs out and gives the seat back.
     if (eventLevel.capacity != null) {
-      const [t] = await query("SELECT COALESCE(SUM(quantity),0)::int AS n FROM event_attendees WHERE level_id=? AND status <> 'cancelled'", [eventLevel.id]);
-      if ((t?.n || 0) + eventQty > eventLevel.capacity) return res.status(409).json({ error: `${eventLevel.name} is sold out.` });
+      const left = await eventSeatsLeft(eventLevel);
+      if (left < eventQty) {
+        return res.status(409).json({ error: left <= 0
+          ? `${eventLevel.name} is sold out.`
+          : `${eventLevel.name} has ${left} place${left === 1 ? "" : "s"} left.` });
+      }
     }
-    baseCents = Math.round(Number(eventLevel.price) * 100) * eventQty;
+    // EVENTS-2 — THE MEMBER PRICE, DECIDED HERE AND NOWHERE ELSE. The page
+    // never says which price applies; the server checks whether this email
+    // holds a current membership in THIS org and prices from the level. A page
+    // that sent "I am a member" would be a page that sets its own price.
+    const memberPriceCents = Number(eventLevel.member_price) > 0 ? Math.round(Number(eventLevel.member_price) * 100) : null;
+    if (memberPriceCents && await emailHoldsMembership(org.id, email)) eventMemberPriced = true;
+    baseCents = (eventMemberPriced ? memberPriceCents : Math.round(Number(eventLevel.price) * 100)) * eventQty;
+    if (eventLevel.capacity != null) {
+      eventHoldId = "esh_" + uuid().slice(0, 12);
+      await run(`INSERT INTO event_seat_holds (id,org_id,event_id,level_id,qty,email,expires_at)
+                 VALUES (?,?,?,?,?,?, NOW() + (? || ' minutes')::interval)`,
+        [eventHoldId, org.id, eventRow.id, eventLevel.id, eventQty, email, String(EVENT_HOLD_MINUTES)]);
+    }
   }
   let memLevel = null;
   if (membershipLevelId) {
@@ -1707,6 +1770,13 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
     // split and the guest-list row from these, re-reading the level itself.
     event_level_id: eventLevel ? eventLevel.id : "",
     event_qty: eventLevel ? String(eventQty) : "",
+    // EVENTS-2 — the hold the webhook consumes, whether the member price was
+    // applied (so the receipt's split is computed from the price actually
+    // charged), and who is coming on this ticket.
+    event_hold_id: eventHoldId || "",
+    event_member_price: eventMemberPriced ? "1" : "",
+    event_guests: eventLevel ? String(req.body.guests || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean).slice(0, 10).join("|").slice(0, 480) : "",
+    event_dietary: eventLevel ? String(req.body.dietary || "").trim().slice(0, 200) : "",
     // BUILD-101 Part 4 — the webhook re-reads the level from this id.
     membership_level_id: memLevel ? memLevel.id : "",
   };
@@ -1750,7 +1820,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const reconnectDecoded = req.body.reconnectToken ? verifyReconnectToken(req.body.reconnectToken) : null;
   if (reconnectDecoded && reconnectDecoded.orgId === org.id) metadata.reconnect_donor_id = reconnectDecoded.donorId;
 
-  const returnPath = peerFundraiserId
+  const returnPath = eventRow && eventRow.public_slug
+    ? `/e/${eventRow.public_slug}`
+    : peerFundraiserId
     ? `/give/${req.params.orgSlug}/${givingPageSlug}/${fundraiserSlug}`
     : givingPageId
       ? `/give/${req.params.orgSlug}/${givingPageSlug}`
@@ -1770,7 +1842,9 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
       quantity: 1,
     }],
     metadata,
-    success_url: `${frontendUrl}${returnPath}?donated=true`,
+    success_url: eventRow && eventRow.public_slug
+      ? `${frontendUrl}${returnPath}/thanks?s={CHECKOUT_SESSION_ID}`
+      : `${frontendUrl}${returnPath}?donated=true`,
     cancel_url: `${frontendUrl}${returnPath}`,
     ...(isRecurring
       ? { subscription_data: { metadata } }
@@ -1787,7 +1861,60 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(async (req, res) => {
   const session = await stripe.checkout.sessions.create(sessionParams, {
     stripeAccount: org.stripe_account_id,
   });
+  if (eventHoldId) await run(`UPDATE event_seat_holds SET stripe_session_id=? WHERE id=?`, [session.id, eventHoldId]).catch(() => {});
   res.json({ url: session.url });
+};
+app.post("/donate/:orgSlug", donateLimiter, wrap(donateHandler));
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENTS-2 · PAYING ON THE PUBLIC EVENT PAGE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// It lives here, beside the donation checkout, because it IS the donation
+// checkout: the same `donateHandler`, the same server-side pricing, the same
+// Connect account, the same metadata, the same webhook. A ticket bought at
+// /e/:slug and a ticket bought anywhere else are one code path, so there is no
+// second place a price can be decided or a gift can be written.
+//
+// It is a PLAIN FORM POST that answers with a 303 to Stripe, so the page needs
+// no JavaScript to take a card. The handler answers JSON; this shim turns its
+// one success shape into a redirect and its failures into the event page's own
+// words on the event page's own brand.
+app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  const [ev] = await query(`SELECT e.*, o.org_slug FROM events e JOIN orgs o ON o.id=e.org_id
+                             WHERE e.public_slug=? AND e.status <> 'cancelled' LIMIT 1`, [String(req.params.slug || "")]);
+  if (!ev) return res.status(404).send("Not found");
+  // The honeypot, the same field the registration form carries.
+  if (String(req.body?.website || "").trim()) return res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}?thanks=1`);
+  const name = String(req.body?.name || "").trim().slice(0, 200);
+  const email = String(req.body?.email || "").trim().slice(0, 320);
+  const parts = name.split(/\s+/);
+  const back = msg => res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}?problem=${encodeURIComponent(String(msg).slice(0, 200))}`);
+  if (!name || !email.includes("@")) return back("A name and an email, so they know who is coming and how to reach you.");
+
+  const inner = {
+    params: { orgSlug: ev.org_slug },
+    body: {
+      firstName: parts[0], lastName: parts.slice(1).join(" ") || parts[0], email,
+      amount: "1", frequency: "once", coverFees: false,
+      eventLevelId: String(req.body?.levelId || ""),
+      quantity: String(req.body?.quantity || "1"),
+      guests: String(req.body?.guests || ""),
+      dietary: String(req.body?.dietary || ""),
+    },
+  };
+  let answered = false;
+  const shim = {
+    status(code) { this._code = code; return this; },
+    json(payload) {
+      if (answered) return;
+      answered = true;
+      if (payload && payload.url) return res.redirect(303, payload.url);
+      return back(payload && payload.error ? payload.error : "That did not go through. Try again in a moment.");
+    },
+  };
+  await donateHandler(inner, shim);
+  if (!answered) back("That did not go through. Try again in a moment.");
 }));
 
 // ── Demo request (no auth — public landing page) ──────────────────────────
