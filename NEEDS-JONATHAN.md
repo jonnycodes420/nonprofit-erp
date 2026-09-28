@@ -37,9 +37,25 @@ the moment this deploys.
 
 ## 0a · THE PROD DEMO IS ONE COMMAND BEHIND (2026-09-28)
 
-MEMBERS-2 and EVENTS-2 changed it again (memberships and four member pages;
-the 5K open with a member price, five entrants and one person waiting; and
-"Harbour" is "Harbor" everywhere, with /e/harbour-run redirecting).
+MEMBERS-2, EVENTS-2 and BUILD-103 changed it again, and this one is visible
+to anybody you show the product to: **`/e/harbor-run` and `/e/harbour-run`
+both 404 on production right now**, because the demo org has no 5K with a
+public slug on it. The code for all of it is live at `b17a23a`; the demo has
+no data for any of it.
+
+After the re-seed Harborlight also has three membership levels and four people
+whose "Your page" each shows a different set of sections; the 5K open for
+registration with a member price, five entrants and one person on the waiting
+list; and the 5K as a peer-to-peer campaign with two teams, five fundraisers
+(one deliberately at zero) and twelve gifts with soft credits. "Harbour" is
+"Harbor" everywhere, and `/e/harbour-run` redirects to `/e/harbor-run`.
+
+I could not run it. The script writes to the database directly, and this
+session's Railway connection returns variable NAMES only, so the production
+`DATABASE_URL` is not readable from here. Run it with that set:
+
+    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app \
+      node scripts/seed-demo.js --i-know-this-is-prod
 
 VOL-1 and FIN-1 both changed `scripts/seed-demo.js`, so Harborlight on
 production has no volunteer programme and no finance month on it. Everything
