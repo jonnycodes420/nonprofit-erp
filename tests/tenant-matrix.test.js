@@ -168,6 +168,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'invited')`,
     [`ea_${o}`, `ev_${o}`, o, `d_${o}`, `${mark} Attendee`]);
   await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role) VALUES ($1,$2,$3,$4,3,'Barn')`, [`vs_${o}`, o, `d_${o}`, TODAY]);
+  // VOL-2 — a VOLUNTEERS-shaped import per org, for the undo probe. The
+  // `imp_${o}` row above is shape 'workbook' and the volunteer undo only
+  // answers for shape 'volunteers', so probing with it would have 404'd
+  // because of the shape and never touched the org wall at all.
+  await q(`INSERT INTO imports (id,org_id,name,shape,rows_in) VALUES ($1,$2,$3,'volunteers',1)`,
+    [`vimp_${o}`, o, `${mark} Volunteer import`]);
   await q(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash) VALUES ($1,$2,'Zapier','stw_xxxxxx',$3)`, [`ak_${o}`, o, `hash_${o}`]);
   await q(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term) VALUES ($1,$2,'Family',100,25,'12_months')`, [`mbl_${o}`, o]);
   await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status) VALUES ($1,$2,$3,$4,$5,$5,$5,'active')`, [`mb_${o}`, o, `d_${o}`, `mbl_${o}`, TODAY]);
@@ -357,6 +363,11 @@ function bResolver(routePath, param) {
   // BUILD-99 (major gifts) Part 3 — the plan's three shapes, resolved by PATH
   // because all three use `:id` and their first segments differ.
   if (routePath.startsWith("/cultivation-templates/")) return `ct_${B}`;
+  // VOL-2 — two routes under /volunteer-hub, both on `:id`, needing different
+  // rows: the undo takes an IMPORT and the person view takes a PERSON, and a
+  // person is a `donors` row (the one-person-one-record rule).
+  if (routePath.startsWith("/volunteer-hub/import/")) return `vimp_${B}`;
+  if (routePath.startsWith("/volunteer-hub/person/")) return `d_${B}`;
   // THREAD-2a — a journey IS a cultivation template, so the cross-tenant
   // probe is org B's own template row. These three routes read, rewrite and
   // APPLY a journey to people, which is the most consequential of the set:

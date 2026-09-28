@@ -21,6 +21,8 @@ import Papa from "papaparse";
 import { apiFetch, API } from "../api";
 import { T, PageTitle, SectionTabs, EmptyState, Modal, activeMark } from "./shared";
 import { HoursImportModal } from "./VolunteerPanel";
+import { VolunteerImport } from "./VolunteerImport";
+import { parseFileToSheets } from "./DonorImport";
 import * as HOURS_PRESETS_MOD from "../../../shared/volunteerHours.js";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
@@ -42,6 +44,11 @@ const VOL_SECTIONS = [
   { id: "schedule", label: "Schedule", question: "What is coming up, and who is coming?",
     parts: [
       { id: "opportunities", label: "Opportunities and shifts" },
+      // VOL-2 item 5 — the group sign-up had a route and a seed and no screen,
+      // so a church group or a company day went in through the API or one
+      // person at a time. It is a part of Schedule because that is the
+      // question it answers: who is coming, and they are coming together.
+      { id: "groups", label: "Groups" },
       { id: "kiosk", label: "Check-in" },
     ] },
   { id: "records", label: "Records", question: "What has been given, and what is about to lapse?",
@@ -105,6 +112,11 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
   const [roster, setRoster] = useState(null);
   const [err, setErr] = useState("");
   const [open, setOpen] = useState(null);   // the person whose panel is open
+  // VOL-2 item 1 — the two ways a volunteer gets onto the roster, held by the
+  // hub rather than by the roster view, so they are the same two buttons
+  // whether the roster is empty or full.
+  const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const narrow = useNarrow();
 
   // A VOLUNTEER COORDINATOR DOES NOT SEE GIVING, and the parts that ARE
@@ -139,7 +151,7 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       </div>
       {sec.parts.length > 1 && (
         <div data-vol-parts="" role="navigation" aria-label={sec.label}
-          style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2 }}>
+          style={{ display: "flex", flexWrap: "wrap", gap: 2, marginBottom: 18, borderBottom: "1px solid " + T.bg2, width: "fit-content", maxWidth: "100%" }}>
           {sec.parts.map(p => {
             const on = part === p.id;
             return (
@@ -154,27 +166,140 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
         </div>
       )}
       {err && <div role="alert" style={{ fontSize: 13, color: T.ink }}>{err}</div>}
-      {part === "roster" && <RosterView roster={roster} narrow={narrow} onOpen={setOpen} coordinator={isCoordinator} />}
+
+      {/* ── VOL-2 item 1 · THE ACTIONS, UP FRONT ──────────────────────────
+          Always here, empty roster or full. Before this, the only way in was
+          an "Import hours" button two sections away under Shifts and hours,
+          and a coordinator with one new volunteer in front of her had to go
+          to Donors and tag somebody, which is the DONOR way in and says
+          donor on every screen it passes through. */}
+      {section === "people" && !isReadOnly && (
+        <div data-testid="vol-people-actions"
+          style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+          <button onClick={() => setAdding(true)} style={btnPrimary} data-testid="vol-add-open">Add a volunteer</button>
+          <button onClick={() => setImporting(true)} style={btnQuiet} data-testid="vol-import-open">Import volunteers</button>
+          <span style={{ fontSize: 12.5, color: T.ink3 }}>
+            One person, or a file from VolunteerHub, SignUpGenius, Wranglr, Bloomerang Volunteer or a spreadsheet.
+          </span>
+        </div>
+      )}
+
+      {part === "roster" && <RosterView roster={roster} narrow={narrow} onOpen={setOpen} coordinator={isCoordinator}
+        onAdd={() => setAdding(true)} onImport={() => setImporting(true)} onSignupLink={() => { setSection("reach"); setPart("signup"); }}
+        isReadOnly={isReadOnly} />}
       {part === "shifts" && <ShiftsView roster={roster} narrow={narrow} isReadOnly={isReadOnly} onChanged={loadRoster} onOpen={setOpen} />}
       {part === "signup" && <SignupView />}
       {part === "givers" && <GiversView narrow={narrow} onOpenRecord={openRecord} onOpen={setOpen} />}
       {part === "opportunities" && <OpportunitiesView isReadOnly={isReadOnly} narrow={narrow} />}
+      {part === "groups" && <GroupsView isReadOnly={isReadOnly} narrow={narrow} onOpenRecord={openRecord} />}
       {part === "kiosk" && <KioskView isReadOnly={isReadOnly} />}
       {part === "credentials" && <CredentialsView isReadOnly={isReadOnly} onOpenRecord={openRecord} />}
       {part === "report" && <HoursReportView narrow={narrow} />}
       {part === "crossover" && <CrossoverView onOpenRecord={openRecord} />}
       {open && <PersonPanel person={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onChanged={loadRoster} onOpenRecord={id => { setOpen(null); openRecord(id); }} />}
+      {adding && <AddVolunteerModal onClose={() => setAdding(false)} onDone={loadRoster} />}
+      {importing && <VolunteerImport onClose={() => setImporting(false)} parseFile={parseFileToSheets} onDone={loadRoster} />}
     </div>
   );
 }
 
+// ── VOL-2 item 1 · ADD ONE VOLUNTEER ────────────────────────────────────
+// Three fields, because that is what a coordinator has when somebody signs up
+// at a table: a name, maybe an email, maybe a phone. Everything else about
+// them is learned later.
+//
+// WHAT IT SAYS AFTERWARDS IS THE POINT. If the email was already on file the
+// answer says so, by name: one person, one record, and she finds out at the
+// moment it happens rather than from a duplicate she meets next week.
+function AddVolunteerModal({ onClose, onDone }) {
+  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const save = async () => {
+    setMsg(""); setBusy(true);
+    try {
+      const r = await apiFetch("/volunteer-hub/people", { method: "POST", body: JSON.stringify(form) });
+      setOut(r); onDone && onDone();
+    } catch (e) { setMsg(errorMessage(e, "That volunteer was not added.")); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Modal onClose={onClose} width={480} ariaLabel="Add a volunteer" padding={24}>
+      <div data-testid="vol-add" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: T.ink }}>Add a volunteer</div>
+        {!out ? (
+          <>
+            <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+              They join the roster as a volunteer. Nothing on their record says donor, because they have not given.
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
+              Name
+              <input data-testid="vol-add-name" value={form.name} autoFocus style={inp}
+                onChange={e => setForm({ ...form, name: e.target.value })} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
+              Email
+              <input data-testid="vol-add-email" type="email" value={form.email} style={inp}
+                onChange={e => setForm({ ...form, email: e.target.value })} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
+              Phone
+              <input data-testid="vol-add-phone" value={form.phone} style={inp}
+                onChange={e => setForm({ ...form, phone: e.target.value })} />
+            </label>
+            {msg && <div role="alert" style={{ fontSize: 13, color: T.terra700 }}>{msg}</div>}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={save} disabled={busy || (!form.name.trim() && !form.email.trim())}
+                style={{ ...btnPrimary, opacity: busy || (!form.name.trim() && !form.email.trim()) ? 0.5 : 1 }}
+                data-testid="vol-add-save">{busy ? "Adding…" : "Add them"}</button>
+              <button onClick={onClose} style={btnQuiet}>Cancel</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div role="status" data-testid="vol-add-result" style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.65 }}>{out.sentence}</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setOut(null); setForm({ name: "", email: "", phone: "" }); }} style={btnQuiet}>Add another</button>
+              <button onClick={onClose} style={btnPrimary} data-testid="vol-add-done">Done</button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 // ── Roster ──────────────────────────────────────────────────────────────────
-function RosterView({ roster, narrow, onOpen }) {
+function RosterView({ roster, narrow, onOpen, onAdd, onImport, onSignupLink, isReadOnly }) {
   if (!roster) return <div style={{ fontSize: 13, color: T.ink3, padding: 20 }}>Loading the roster…</div>;
   const d = roster.definitions || {};
+  // ── VOL-2 item 3 · THE EMPTY STATE LEADS WITH THE VOLUNTEER WAY IN ─────
+  // It used to say "Nobody is on the roster yet" and stop, which left the
+  // only route onto the roster as "go to Donors and tag somebody Volunteer" —
+  // the DONOR way in, discovered by accident, on a screen that says donor
+  // everywhere. The three ways that are actually about volunteering are the
+  // three buttons; tagging on a donor record is mentioned last, in small text,
+  // because it is still true and it is still not the answer.
   if (!roster.people.length) return (
-    <div style={card}>
-      <EmptyState title="Nobody is on the roster yet" message={roster.sentence} />
+    <div style={card} data-testid="vol-roster-empty">
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    padding: "44px 24px", gap: 14, textAlign: "center" }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: T.ink2 }}>Nobody is on the roster yet</div>
+        <div data-testid="vol-empty-lead" style={{ fontSize: 13.5, color: T.ink3, maxWidth: 420, lineHeight: 1.7 }}>
+          Add your first volunteer, import from VolunteerHub, SignUpGenius or a spreadsheet, or share your sign-up link.
+        </div>
+        {!isReadOnly && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", marginTop: 4 }}>
+            <button onClick={onAdd} style={btnPrimary} data-testid="vol-empty-add">Add your first volunteer</button>
+            <button onClick={onImport} style={btnQuiet} data-testid="vol-empty-import">Import volunteers</button>
+            <button onClick={onSignupLink} style={btnQuiet} data-testid="vol-empty-link">Share your sign-up link</button>
+          </div>
+        )}
+        <div data-testid="vol-empty-tag-note" style={{ fontSize: 11.5, color: T.ink3, maxWidth: 420, lineHeight: 1.6, marginTop: 6 }}>
+          You can also tag somebody Volunteer on a donor record, and they appear here.
+        </div>
+      </div>
     </div>
   );
   const cols = narrow ? "1fr auto" : "minmax(180px,2fr) 1fr 1fr 1fr";
@@ -363,7 +488,14 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
   const [notes, setNotes] = useState(null);
   const [form, setForm] = useState({ kind: "training", noteDate: "", body: "" });
   const [msg, setMsg] = useState("");
+  // VOL-2 item 4 — ONE READ, AND IT IS THE VOLUNTEER'S. Upcoming shifts,
+  // hours, waivers and checks, and groups come back together from
+  // /volunteer-hub/person/:id, which also decides whether giving is in the
+  // payload at all: a volunteer coordinator does not receive it, whatever
+  // this screen would have chosen to draw.
+  const [view, setView] = useState(null);
   const load = useCallback(() => {
+    apiFetch(`/volunteer-hub/person/${person.id}`).then(setView).catch(() => setView(null));
     apiFetch(`/donors/${person.id}/volunteer-hours`).then(setHours).catch(() => setHours(null));
     apiFetch(`/volunteer-hub/notes?personId=${encodeURIComponent(person.id)}`).then(setNotes).catch(() => setNotes({ notes: [] }));
   }, [person.id]);
@@ -392,14 +524,72 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
           <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink }}>{person.name}</div>
           <button onClick={() => onOpenRecord(person.id)} style={btnLink}>Open their record</button>
         </div>
+        {/* ── THE VOLUNTEER VIEW, FIRST ──────────────────────────────
+            What is coming up, what they have given in hours, whether they
+            may work, and who they come with. This is the order a coordinator
+            asks in, and it is the order the panel answers in. */}
+        {view && (
+          <div data-testid="vol-person-upcoming" style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" }}>
+            <div style={{ ...eyebrow, marginBottom: 6 }}>Coming up</div>
+            {view.upcoming.length ? view.upcoming.map(u => (
+              <div key={u.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>
+                {displayDate(u.date)} · {u.opportunity}
+                {u.status === "waitlisted" && <span style={{ color: T.gold700 }}> · waiting list{u.position ? `, number ${u.position}` : ""}</span>}
+                {u.location && <span style={{ color: T.ink3 }}> · {u.location}</span>}
+              </div>
+            )) : <div style={{ fontSize: 13, color: T.ink3 }}>{view.upcomingSentence}</div>}
+          </div>
+        )}
+
         {hours && (
-          <div title={hours.sentence}>
+          <div title={hours.sentence} data-testid="vol-person-hours">
             <span style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{hrs(hours.hundredths)}</span>
             <span style={{ fontSize: 13, color: T.ink3 }}> hours across {hours.shiftCount} {hours.shiftCount === 1 ? "shift" : "shifts"}{hours.lastShift ? `, the last on ${hours.lastShift}` : ""}.</span>
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>{hours.sentence}</div>
           </div>
         )}
+
+        {/* WAIVERS AND CHECKS. An expiry is not a deadline, so a lapsed one is
+            brass and not red: it is a thing to book, not a thing that broke. */}
+        {view && (
+          <div data-testid="vol-person-credentials">
+            <div style={{ ...eyebrow, marginBottom: 6 }}>Waivers and checks</div>
+            {view.credentials.length ? view.credentials.map(c => (
+              <div key={c.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>
+                {c.kind === "waiver" ? "Waiver" : "Background check"} signed {displayDate(c.signed_on)}
+                {c.expires_on && <span style={{ color: c.expires_on < new Date().toISOString().slice(0, 10) ? T.gold700 : T.ink3 }}>
+                  {" "}· {c.expires_on < new Date().toISOString().slice(0, 10) ? "expired" : "expires"} {displayDate(c.expires_on)}</span>}
+              </div>
+            )) : <div style={{ fontSize: 13, color: T.ink3 }}>Nothing on file yet.</div>}
+          </div>
+        )}
+
+        {view && !!view.groups.length && (
+          <div data-testid="vol-person-groups">
+            <div style={{ ...eyebrow, marginBottom: 6 }}>Groups</div>
+            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>{view.groups.map(g => g.name).join(" · ")}</div>
+          </div>
+        )}
+
         {!isReadOnly && <button onClick={copyLink} style={{ ...btnLink, fontSize: 12 }}>Copy their link to log their own hours</button>}
+
+        {/* ── GIVING, SECOND AND CONDITIONAL ─────────────────────────────
+            Present only when they have actually given, and the server does
+            not send it at all to a volunteer coordinator. It is one sentence
+            and a door, not a giving history: giving is DEFINED on the donor
+            record and this screen does not get a second copy of it. */}
+        {view && view.giving && (
+          <div data-testid="vol-person-giving" style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
+            <div style={{ ...eyebrow, marginBottom: 6 }}>They also give</div>
+            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.65 }}>
+              {view.giving.sentence}{" "}
+              <button onClick={() => onOpenRecord(person.id)} style={{ ...btnLink, fontSize: 13 }}>Open their record</button>
+            </div>
+          </div>
+        )}
+        {view && view.givingHidden && (
+          <div data-testid="vol-person-giving-hidden" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>{view.givingHidden}</div>
+        )}
 
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
           <div style={{ ...eyebrow, marginBottom: 4 }}>Internal notes</div>
@@ -652,6 +842,142 @@ function SlotPeopleModal({ slotId, onClose, isReadOnly }) {
 // ── Check-in ───────────────────────────────────────────────────────────────
 // A tablet at the door. Big targets, one tap to check in, one tap to check
 // out, and the hours are the difference. Nothing else is on the screen.
+// ── VOL-2 item 5 · GROUPS, AND SIGNING ONE UP TOGETHER ──────────────────
+// VOL-1 shipped the route and the seed and no screen, so a church group or a
+// company day went in through the API or one person at a time. This is the
+// screen: pick the shift, name the group, paste or type the people, and every
+// one of them becomes THEIR OWN RECORD with their own hours. A group is a
+// label on a set of sign-ups and never a person; the sentence says so, because
+// the first thing anybody assumes about a group is that it is one row.
+//
+// CAPACITY IS STILL THE DATABASE'S. This screen sends the list; the server
+// signs each person up through the one path that locks the slot, so a group of
+// twelve arriving at an eight-place shift gets eight confirmed and four on the
+// waiting list, and the answer says which.
+function GroupsView({ isReadOnly, narrow, onOpenRecord }) {
+  const [data, reload, err] = useLoad("/volunteer-hub/groups");
+  const [opps] = useLoad("/volunteer-hub/opportunities");
+  const [form, setForm] = useState(null);      // {slotId, groupName, kind, people}
+  const [out, setOut] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+
+  // Every open shift, flattened, newest first: a coordinator picks the SHIFT,
+  // not the opportunity, because that is what somebody signs up for.
+  const slots = [];
+  for (const o of (opps && opps.opportunities) || []) {
+    for (const s of o.slots || []) if (!s.cancelled) slots.push({ ...s, opportunity: o.name });
+  }
+
+  const send = async () => {
+    setNote(""); setBusy(true);
+    try {
+      // One name per line, "Name <email>" or "Name, email" both read. A
+      // coordinator has this list in an email, not in a form.
+      const people = String(form.people || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(line => {
+        const m = /^(.*?)[<,;\t]\s*([^>\s,;]+@[^>\s,;]+)>?\s*$/.exec(line);
+        return m ? { name: m[1].trim().replace(/[,;]$/, ""), email: m[2].trim() } : { name: line };
+      });
+      const r = await apiFetch("/volunteer-hub/groups/signup", {
+        method: "POST",
+        body: JSON.stringify({ slotId: form.slotId, groupName: form.groupName, kind: form.kind, people }),
+      });
+      setOut(r); setForm(null); reload();
+    } catch (e) { setNote(errorMessage(e, "That group was not signed up.")); }
+    setBusy(false);
+  };
+
+  if (err) return <div style={card}><div role="alert" style={{ fontSize: 13 }}>{err}</div></div>;
+  if (!data) return <div style={{ fontSize: 13, color: T.ink3, padding: 20 }}>Loading…</div>;
+
+  const peopleCount = String((form && form.people) || "").split(/\r?\n/).filter(l => l.trim()).length;
+
+  return (
+    <div data-testid="vol-groups" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Sentence>{data.sentence}</Sentence>
+      {note && <div role="alert" style={{ fontSize: 13, color: T.terra700 }}>{note}</div>}
+      {out && (
+        <div role="status" data-testid="vol-group-result"
+          style={{ background: T.green100, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px", fontSize: 13.5, color: T.ink, lineHeight: 1.65 }}>
+          {out.message}
+        </div>
+      )}
+
+      {!isReadOnly && !form && (
+        <div>
+          <button data-testid="vol-group-new" style={btnPrimary}
+            onClick={() => { setOut(null); setForm({ slotId: slots[0] ? slots[0].id : "", groupName: "", kind: "church", people: "" }); }}>
+            Sign a group up
+          </button>
+          {!slots.length && (
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8 }}>
+              Add a shift under Opportunities and shifts first. A group signs up for a shift, so there has to be one.
+            </div>
+          )}
+        </div>
+      )}
+
+      {form && (
+        <div style={card} data-testid="vol-group-form">
+          <div style={{ display: "grid", gridTemplateColumns: narrow ? "1fr" : "1fr 1fr", gap: 12 }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
+              Which shift
+              <select data-testid="vol-group-slot" value={form.slotId} style={inp}
+                onChange={e => setForm({ ...form, slotId: e.target.value })}>
+                {slots.map(s => (
+                  <option key={s.id} value={s.id}>{displayDate(s.date)} · {s.opportunity}{s.sentence ? ` · ${s.sentence}` : ""}</option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3 }}>
+              What kind of group
+              <select data-testid="vol-group-kind" value={form.kind} style={inp}
+                onChange={e => setForm({ ...form, kind: e.target.value })}>
+                {(data.kinds || []).map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+              </select>
+            </label>
+          </div>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3, marginTop: 12 }}>
+            What the group is called
+            <input data-testid="vol-group-name" value={form.groupName} style={inp} placeholder="Meridian Bank, community day"
+              onChange={e => setForm({ ...form, groupName: e.target.value })} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: T.ink3, marginTop: 12 }}>
+            Who is coming, one per line
+            <textarea data-testid="vol-group-people" rows={7} value={form.people} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }}
+              placeholder={"Marisol Vance <marisol@example.org>\nDev Okonjo\nAiko Brightwater, aiko@example.org"}
+              onChange={e => setForm({ ...form, people: e.target.value })} />
+          </label>
+          <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.6, marginTop: 8 }}>
+            Every one of them becomes their own record with their own hours. Anyone whose email is already on file keeps the record they have.
+            If the shift fills, the rest go on the waiting list and Steward says who.
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <button onClick={send} data-testid="vol-group-send" style={{ ...btnPrimary, opacity: busy || !form.groupName.trim() || !peopleCount || !form.slotId ? 0.5 : 1 }}
+              disabled={busy || !form.groupName.trim() || !peopleCount || !form.slotId}>
+              {busy ? "Signing them up…" : `Sign up ${peopleCount || "nobody"}${peopleCount === 1 ? " person" : peopleCount ? " people" : ""}`}
+            </button>
+            <button onClick={() => setForm(null)} style={btnQuiet}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={card}>
+        <div style={{ ...eyebrow, marginBottom: 10 }}>Groups on file</div>
+        {!data.groups.length && <div style={{ fontSize: 13, color: T.ink3 }}>No groups yet.</div>}
+        {data.groups.map(g => (
+          <div key={g.id} data-testid="vol-group-row"
+            style={{ display: "flex", gap: 12, alignItems: "baseline", padding: "10px 2px", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{g.name}</span>
+            <span style={{ fontSize: 12.5, color: T.ink3 }}>{(data.kinds.find(k => k.key === g.kind) || {}).label || g.kind}</span>
+            <span style={{ fontSize: 12.5, color: T.ink3, marginLeft: "auto" }}>{g.people} {g.people === 1 ? "person" : "people"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function KioskView({ isReadOnly }) {
   const [opps] = useLoad("/volunteer-hub/opportunities");
   const [slotId, setSlotId] = useState("");

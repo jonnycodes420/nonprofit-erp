@@ -3,6 +3,11 @@
 Read this when you touch anything that reaches a screen: colours, tokens, modals, mobile layout, vocabulary, empty states, org branding or emoji.
 
 ## Rules
+- **The rule under a tab bar ends where the tabs end.** `SectionTabs` and the second-level part
+  rows are `width: fit-content; max-width: 100%`, so the border-bottom is the underline of a set
+  of tabs rather than a bare bar running to the right edge of the content. At 1440 on Volunteers
+  it was 835px of empty rule, which reads as a stray brass line on cream. `max-width` keeps the
+  phone overflow-scroll. (VOL-2)
 - **Use `Modal` from `shared.jsx` for every dialog in the authenticated app; never hand-roll a shell.** It
   portals to `document.body`, caps at 90vh with its own scroll, takes a sticky footer, ref-counts the
   body-scroll lock, closes on Escape and returns focus to the opener. (BUILD-87 F.1)

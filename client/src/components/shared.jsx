@@ -909,7 +909,11 @@ export function Card({children,selected,accent,onClick,style={},variant}) {
 // `stripProps` go on the strip itself, so a suite can find a tab by id and
 // measure the strip; every tab says whether it is the selected one.
 export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripProps}) {
-  return <div role="tablist" {...(stripProps||{})} className={className?`section-tabbar ${className}`:"section-tabbar"} style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,...style}}>
+  return <div role="tablist" {...(stripProps||{})} className={className?`section-tabbar ${className}`:"section-tabbar"} /* VOL-2 — width:fit-content so the rule under the tabs ENDS where the
+         tabs end. It used to run the full width of the content, which
+         left a bare tan bar past the last tab that read as a stray
+         brass line. maxWidth keeps the phone overflow-scroll. */
+    style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,width:"fit-content",maxWidth:"100%",...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
       return <button key={t.id} role="tab" aria-selected={on} {...(dataKey?{["data-"+dataKey]:t.id}:{})} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{

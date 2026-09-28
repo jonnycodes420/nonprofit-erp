@@ -410,7 +410,7 @@ export default function WelcomePage() {
                 Welcome to Steward.
               </h1>
               <p style={{ fontSize: 14.5, color: ink3, margin: 0, lineHeight: 1.6 }}>
-                Two ways in. You can change your mind at any point — neither one locks anything.
+                Two ways in. You can change your mind at any point, and neither one locks anything.
               </p>
             </div>
 

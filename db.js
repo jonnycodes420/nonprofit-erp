@@ -4470,6 +4470,30 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_creds_person ON volunteer_credentials (org_id, person_id, kind, signed_on DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_creds_expiry ON volunteer_credentials (org_id, kind, expires_on) WHERE superseded_at IS NULL`);
 
+  // ── VOL-2 · WHICH IMPORT PUT THIS ROW HERE ───────────────────────────────
+  // An undo has to be EXACT: it may remove what one import wrote and nothing
+  // else. A "delete everything created in the last five minutes" undo would
+  // take the shift a coordinator logged by hand while the import ran. So the
+  // import stamps its own `imports.id` on every row it creates, across the
+  // three tables it writes, and the undo deletes by that id alone.
+  //
+  // On `donors` it means "this import CREATED this person". A person the
+  // import merely matched and added hours to has no stamp and is never
+  // removed by an undo: they were here before the file arrived.
+  //
+  // IT LIVES HERE, AFTER `volunteer_credentials` IS CREATED, and that is the
+  // whole point of the placement. It first went in beside the shifts indexes
+  // further up, which worked on every database that already had the table and
+  // failed on a FRESH one: all three battery shards died on boot with
+  // `relation "volunteer_credentials" does not exist`. An ALTER goes below the
+  // CREATE it alters, always.
+  await pool.query(`ALTER TABLE volunteer_shifts ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE volunteer_credentials ADD COLUMN IF NOT EXISTS import_id TEXT`);
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS volunteer_import_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_shifts_import_id ON volunteer_shifts (org_id, import_id) WHERE import_id IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_creds_import_id ON volunteer_credentials (org_id, import_id) WHERE import_id IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_donors_vol_import ON donors (org_id, volunteer_import_id) WHERE volunteer_import_id IS NOT NULL`);
+
   // The volunteer's own page, by magic link. A SEPARATE family from the
   // donor portal's (portal_magic_links) on purpose: a volunteer is not a
   // donor account, the two must not share a session, and a link that opens a
