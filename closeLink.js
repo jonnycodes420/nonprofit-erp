@@ -41,12 +41,18 @@ const LEGACY_CLOSE_PLANS = [
 // subscription metadata.
 const TIER_CLOSE_PLANS = [];
 for (const t of PRICING.TIERS) {
+  // FIX-4 6 — THE PLAN HAS A NAME. `name` reaches the welcome email's
+  // subject line, the founder notification and every admin refusal, and it
+  // read "Steward · Up to 5,000 active donors" — a specification where a
+  // name belongs. Seed / Sapling / Orchard, with the size after it.
   TIER_CLOSE_PLANS.push({
-    id: `${t.id}_monthly`, name: `Steward · ${t.band}`, tierId: t.id, interval: "month",
+    id: `${t.id}_monthly`, name: `${t.name} · ${t.band.toLowerCase()}`, tierId: t.id, interval: "month",
+    tierName: t.name, band: t.band,
     monthlyUsd: t.monthlyUsd, amountUsd: t.monthlyUsd, env: t.envMonthly,
   });
   TIER_CLOSE_PLANS.push({
-    id: `${t.id}_yearly`, name: `Steward · ${t.band}, yearly`, tierId: t.id, interval: "year",
+    id: `${t.id}_yearly`, name: `${t.name} · ${t.band.toLowerCase()}, yearly`, tierId: t.id, interval: "year",
+    tierName: t.name, band: t.band,
     // `monthlyUsd` stays the MONTHLY figure because that is what it has always
     // meant; `amountUsd` is what Stripe actually charges on the first charge,
     // and it is what the sentence she reads must say.

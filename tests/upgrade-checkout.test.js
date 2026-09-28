@@ -60,7 +60,12 @@ ok(/const\s+currentTier\s*=/.test(pricing) && /subActive/.test(pricing),
 ok(has(pricing, "Your current plan"), "the org's active band says so (not a re-checkout button)");
 ok(/checkingOut\s*===\s*t\.id/.test(pricing), "the button reflects an in-flight (loading) state per band");
 ok(has(pricing, "plan_not_configured") || /No Stripe price/i.test(pricing), "a failed create-checkout shows a clean message, never a dead button");
-ok(/Choose this band/.test(pricing), "authed non-current bands get a checkout label");
+// FIX-4 6 — the button names the PLAN now ("Choose Sapling"), because the
+// approved section gives every band a name and "this band" was the phrasing
+// of the page that had none. Still the same assertion: an authed org that is
+// not already on a band gets a checkout button, not a dead card.
+ok(/Choose\s*" \+ t\.name|Choose \$\{t\.name\}|"Choose " \+ t\.name/.test(pricing),
+   "authed non-current bands get a checkout label naming the plan");
 
 // GTM-1a — the two public actions, side by side, and the one sentence that
 // defines the thing the price is charged on.

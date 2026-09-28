@@ -523,18 +523,24 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   );
 
   return (
-    // FIX-2 — the ink is the room's own margin (data-agent-margin), laid over
-    // the page's cream ground to the content's edges, so no page root is ink.
-    <div data-testid="agent-room" data-agent-margin style={{ color: T.bg, minWidth: 0, background: T.bgDark,
-      margin: wide ? "-20px -32px -28px" : "-20px -16px 0", padding: wide ? "20px 32px 28px" : "20px 16px 24px",
+    // ── FIX-4 3 · THE AGENT IS A SCREEN, NOT A ROOM ────────────────────────
+    // FIX-2 gave this page an ink "margin" around a cream sheet, on the
+    // theory that the Agent is somewhere you go rather than something you
+    // use. In the product it read as one screen painted a different colour
+    // from the other eleven, and the first thing anybody asked about it was
+    // why. So: the page's own cream ground, white cards, ink text and
+    // emerald for the one action — the same as Fundraising, Communications
+    // and Reports. Nothing else about the page changed.
+    <div data-testid="agent-room" style={{ color: T.ink, minWidth: 0, background: "transparent",
       minHeight: "calc(100vh - 52px)", boxSizing: "border-box" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: wide ? 18 : 14 }}>
-        <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 32 : 26, margin: 0, color: T.bg }}>Agent</h1>
-        {activity && <div data-testid="agent-activity" style={{ fontSize: 13.5, color: T.gold, fontWeight: 700 }}>{activity}</div>}
+        <h1 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 32 : 26, margin: 0, color: T.ink }}>Agent</h1>
+        {activity && <div data-testid="agent-activity" style={{ fontSize: 13.5, color: T.gold600, fontWeight: 700 }}>{activity}</div>}
       </div>
 
-      {/* THE SHEET. Cream, and it takes the room: the ink is only its margin. */}
-      <section data-testid="agent-desk" style={{ background: T.bg, color: T.ink, borderRadius: 16, minWidth: 0,
+      {/* THE SHEET. White, with a hairline, like every other screen's cards. */}
+      <section data-testid="agent-desk" style={{ background: T.white, color: T.ink, borderRadius: 16, minWidth: 0,
+        border: "1px solid " + T.bg2,
         padding: wide ? "0 28px 28px" : "0 14px 18px", boxSizing: "border-box" }}>
         <div role="tablist" style={{ display: "flex", overflowX: "auto", borderBottom: "1px solid " + T.bg3,
           margin: wide ? "0 -28px 22px" : "0 -14px 16px", padding: wide ? "0 20px" : "0 6px" }}>

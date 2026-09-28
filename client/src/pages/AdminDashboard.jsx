@@ -2,8 +2,38 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { planDisplayName, planDisplayBand } from "../lib/planNames";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
+
+// ── FIX-4 5 · AN ADMIN ERROR IS A SENTENCE ────────────────────────────────
+// This threw `d.error`, which is the machine CODE — so every refusal on this
+// screen arrived as `no_subscription`, `internal_price_wrong`,
+// `plan_mode_mismatch`. The server has written the sentence for every one of
+// them, in `d.message`, and it was being discarded one line before it reached
+// a person. Message first, code only as the fallback nobody should see, and
+// a code that does slip through is spaced out rather than left in snake_case.
+function sentenceFor(d, statusText) {
+  if (d && typeof d.message === "string" && d.message.trim()) return d.message.trim();
+  const code = d && typeof d.error === "string" ? d.error.trim() : "";
+  if (code && /^[a-z0-9_]+$/.test(code)) {
+    const words = code.replace(/_/g, " ");
+    return words.charAt(0).toUpperCase() + words.slice(1) + ".";
+  }
+  if (code) return code;
+  return statusText ? `Steward could not do that: ${statusText}.` : "Steward could not do that.";
+}
+
+// FIX-4 5 — WHERE THE $1 TEST IS OFFERED. One predicate, so the button and
+// the server's own refusal cannot disagree about which orgs it applies to:
+// the route needs `stripe_subscription_id` to be set, and the demo org is
+// never a customer. Exported shape kept trivial on purpose — it reads the
+// same row the table already has.
+function canDollarTest(org) {
+  if (!org) return false;
+  if (org.is_demo_org === true) return false;
+  return !!org.stripe_subscription_id;
+}
 
 function adminFetch(path, opts = {}) {
   const token = localStorage.getItem("npe_token");
@@ -11,8 +41,8 @@ function adminFetch(path, opts = {}) {
     ...opts,
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token, ...(opts.headers || {}) },
   }).then(async r => {
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.statusText);
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(new Error(sentenceFor(d, r.statusText)), { code: d.error || null, status: r.status });
     return d;
   });
 }
@@ -56,7 +86,12 @@ const A = {
 
 const PLAN_MRR   = { trial: 0, seed: 99, growth: 249, impact: 499 };
 const PLAN_COLOR = { trial: "#d97706", seed: "#3b82f6", growth: "#10b981", impact: "#8b5cf6" };
+// FIX-4 6 — the PLAN column names the tier, and says the size under it.
+// It printed the raw plan value, so a new org read as `t5000_monthly` in the
+// one place that is supposed to say what somebody is paying for.
 const PLAN_LABEL = { trial: "Trial", seed: "Seed", growth: "Growth", impact: "Impact" };
+const planName = plan => planDisplayName(plan) || PLAN_LABEL[plan] || plan || "No plan";
+const planBand = plan => planDisplayBand(plan);
 const PLAN_BADGE = {
   trial:  { bg: A.amberWash, color: A.amberInk },
   seed:   { bg: A.blueWash, color: A.blue },
@@ -93,9 +128,14 @@ function daysAgo(s) {
 
 function PlanBadge({ plan }) {
   const b = PLAN_BADGE[plan] || { bg: A.surface, color: A.secondary };
+  const band = planBand(plan);
   return (
-    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: b.color, background: b.bg, borderRadius: 99, padding: "3px 8px", whiteSpace: "nowrap" }}>
-      {PLAN_LABEL[plan] || plan}
+    <span style={{ display: "inline-flex", flexDirection: "column", gap: 2, alignItems: "flex-start" }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: b.color, background: b.bg, borderRadius: 99, padding: "3px 8px", whiteSpace: "nowrap" }}>
+        {planName(plan)}
+      </span>
+      {/* THE COUNT ALWAYS UNDER THE NAME, never instead of it. */}
+      {band && <span style={{ fontSize: 10, color: A.muted, whiteSpace: "nowrap" }}>{band}</span>}
     </span>
   );
 }
@@ -429,6 +469,7 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   const [changePlanOrgId, setChangePlanOrgId] = useState(null);
   const [newPlan, setNewPlan] = useState("growth");
   const [dollarBusy, setDollarBusy] = useState(null);
+  const [reconcileBusy, setReconcileBusy] = useState(null);
 
   const filtered = (orgs || [])
     .filter(o => !search || o.name.toLowerCase().includes(search.toLowerCase()))
@@ -460,6 +501,20 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
   // It confirms first, and the confirmation says what will actually happen:
   // this changes a LIVE subscription. It is the one control on this screen
   // that touches money that is already being charged.
+  // FIX-4 5 — WHEN AN ORG HAS NO SUBSCRIPTION ON FILE. Stripe is the record
+  // and Steward's copy of it can be blank (a webhook that never landed), so
+  // the answer is to read it back rather than to leave a button that can
+  // only refuse. It creates nothing and charges nothing.
+  async function reconcileSubscription(org) {
+    setReconcileBusy(org.id);
+    try {
+      const r = await adminFetch("/admin/orgs/" + org.id + "/reconcile-subscription", { method: "POST", body: "{}" });
+      window.alert(r.message || "Done.");
+      onRefresh();
+    } catch (e) { window.alert(errorMessage(e)); }
+    finally { setReconcileBusy(null); }
+  }
+
   async function moveToDollarPrice(org) {
     const yes = window.confirm(
       `Move ${org.name} onto the $1 internal test price?\n\n` +
@@ -579,14 +634,35 @@ function Organizations({ orgs, loading, onRefresh, onCloseOrg }) {
                     )}
                     {/* GTM-1a 4 — never rendered as a plan you could pick: it
                         is an action on one organisation, beside the other
-                        actions on that organisation. */}
-                    <button data-testid={`org-dollar-${o.id}`} onClick={() => moveToDollarPrice(o)}
-                      disabled={dollarBusy === o.id}
-                      title="Move this org's live Stripe subscription onto the $1 internal test price"
-                      style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge,
-                               cursor: dollarBusy === o.id ? "not-allowed" : "pointer" }}>
-                      {dollarBusy === o.id ? "…" : "$1 test"}
-                    </button>
+                        actions on that organisation.
+                        FIX-4 5 — AND ONLY WHERE IT CAN WORK. It moves a live
+                        Stripe subscription onto the $1 price, so an org that
+                        has no subscription has nothing to move and the button
+                        could only ever answer "no subscription". The demo org
+                        is excluded for the separate reason that it is not a
+                        customer and never will be: there is nothing there to
+                        prove a real charge with. */}
+                    {/* FIX-4 5 — the org has no subscription on file. Read
+                        it back from Stripe rather than show a $1 test that
+                        can only answer "no subscription". */}
+                    {!o.is_demo_org && !o.stripe_subscription_id && (
+                      <button data-testid={`org-reconcile-${o.id}`} onClick={() => reconcileSubscription(o)}
+                        disabled={reconcileBusy === o.id}
+                        title="Read this org's subscription back from Stripe and save it. Creates nothing, charges nothing."
+                        style={{ ...ABTN, fontSize: 11, color: A.blue, borderColor: A.blueEdge,
+                                 cursor: reconcileBusy === o.id ? "not-allowed" : "pointer" }}>
+                        {reconcileBusy === o.id ? "…" : "Find subscription"}
+                      </button>
+                    )}
+                    {canDollarTest(o) && (
+                      <button data-testid={`org-dollar-${o.id}`} onClick={() => moveToDollarPrice(o)}
+                        disabled={dollarBusy === o.id}
+                        title="Move this org's live Stripe subscription onto the $1 internal test price"
+                        style={{ ...ABTN, fontSize: 11, color: A.amber, borderColor: A.amberEdge,
+                                 cursor: dollarBusy === o.id ? "not-allowed" : "pointer" }}>
+                        {dollarBusy === o.id ? "…" : "$1 test"}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

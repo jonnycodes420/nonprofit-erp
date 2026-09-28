@@ -745,10 +745,19 @@ function RoleChips({donor,isReadOnly}){
           <button key={c.key} type="button" data-testid={"role-chip-"+c.key} aria-pressed={on}
             disabled={isReadOnly||busy===c.key} onClick={()=>toggle(c.key)}
             title={locked?lock.reason:(isReadOnly?c.label:(on?`Remove ${c.label}`:`Add ${c.label}`))}
-            style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:99,lineHeight:1.35,
+            style={{fontSize:11,fontWeight:on?700:600,padding:"3px 10px",lineHeight:1.35,
               cursor:isReadOnly?"default":(locked?"help":"pointer"),opacity:busy===c.key?0.55:1,
-              background:T.white,color:T.ink3,
-              border:"1px solid "+T.bg3,...activeMark(on,"bottom"),borderRadius:7}}>
+              // FIX-4 4 — NO COLOURED UNDERLINE ON A CHIP. These carried
+              // activeMark(on,"bottom"), which is an inset 3px emerald rule —
+              // the tab treatment, borrowed for a state. On a chip it read as
+              // a green bar that appeared when you clicked and stayed there,
+              // and on the Donor chip (which is set by giving and cannot be
+              // toggled) it appeared for a click that did nothing at all. The
+              // on-state is what the comment above this component always said
+              // it was: cream, ink text, an emerald hairline. No second
+              // action colour, and nothing that arrives on focus.
+              background:on?T.bg2:T.white,color:on?T.ink:T.ink3,
+              border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:7}}>
             {on?c.label:"+ "+c.label}
             {locked&&<span style={{fontWeight:600,color:T.ink3}}> · set by giving</span>}
           </button>
@@ -1277,12 +1286,50 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const [doneNote,setDoneNote]=useState("");
   const [skipFor,setSkipFor]=useState(null);     // step id awaiting its why
   const [skipWhy,setSkipWhy]=useState("");
+  // ── FIX-4 2 · NO HUNTING ──────────────────────────────────────────────
+  // Whether somebody is in a journey was on this record already; getting
+  // them INTO one was not, and the only door was Settings → Journeys →
+  // Apply to everyone who qualifies, which is a different question entirely.
+  // So: the journey they are in is a chip that opens it, and when they are
+  // in none, the rail offers the list, shows the first step and its real
+  // date, and asks once.
+  const [journeyList,setJourneyList]=useState(null);   // the org's journeys
+  const [addPick,setAddPick]=useState("");             // the one being considered
+  const [addPreview,setAddPreview]=useState(null);     // its first step, for this person
+  const [addErr,setAddErr]=useState("");
   useEffect(()=>{
     let live=true;
     if(!donor?.id)return undefined;
     apiFetch(`/donors/${donor.id}/plan`).then(r=>{ if(live)setJourney(r.plan||null); }).catch(()=>{});
     return ()=>{live=false;};
   },[donor?.id]);
+  // The list is only needed when they are NOT in one, so it is fetched then.
+  useEffect(()=>{
+    let live=true;
+    if(!donor?.id||journey?.status==="active")return undefined;
+    apiFetch("/journeys").then(d=>{ if(live)setJourneyList(d?.journeys||[]); }).catch(()=>{ if(live)setJourneyList([]); });
+    return ()=>{live=false;};
+  },[donor?.id,journey?.status]);
+  // Picking one asks the server what it would actually do to THIS person on
+  // THIS day. Never computed in the browser: the dates are the org's civil
+  // dates and the browser does not know the org's timezone.
+  async function pickJourney(id){
+    setAddPick(id); setAddPreview(null); setAddErr("");
+    if(!id)return;
+    try{ setAddPreview(await apiFetch(`/donors/${donor.id}/journey-preview?journeyId=${encodeURIComponent(id)}`)); }
+    catch(e){ setAddErr(errorMessage(e,"Steward could not work out what that journey would do.")); }
+  }
+  async function confirmAddToJourney(){
+    if(!addPick||journeyBusy)return;
+    setJourneyBusy(true); setAddErr("");
+    try{
+      await apiFetch(`/journeys/${addPick}/apply`,{method:"POST",body:JSON.stringify({donorIds:[donor.id]})});
+      const r=await apiFetch(`/donors/${donor.id}/plan`);
+      setJourney(r.plan||null); setAddPick(""); setAddPreview(null);
+      if(onInteractionAdded)onInteractionAdded();
+    }catch(e){ setAddErr(errorMessage(e,"Steward could not put them in that journey.")); }
+    setJourneyBusy(false);
+  }
 
 
   const interactionCount=donor.interactions?.length||0;
@@ -2864,6 +2911,20 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             const pos=cur?cur.seq:steps.length;
             const late=cur&&cur.dueDate&&String(cur.dueDate).slice(0,10)<new Date().toISOString().slice(0,10);
             return <RailSection title="Their journey" testid="dp-rail-journey">
+              {/* FIX-4 2 — THE CHIP. It names the journey and it OPENS it,
+                  because the next question after "which journey is she in"
+                  is always "and what is in that journey" — and the answer
+                  used to be four clicks away in Settings. */}
+              <button data-testid="dp-journey-chip" type="button"
+                onClick={()=>onNavigate&&onNavigate("journeys",{journeyId:journey.templateId||undefined})}
+                title={`Open ${journey.templateName}`}
+                style={{display:"inline-flex",alignItems:"center",gap:7,background:RAIL.panel,
+                  border:"1px solid "+RAIL.line,borderRadius:99,padding:"5px 12px",marginBottom:9,
+                  color:RAIL.text,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",maxWidth:"100%"}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:T.greenMid,flexShrink:0}}/>
+                <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{journey.templateName}</span>
+                <span aria-hidden="true" style={{color:RAIL.dim}}>→</span>
+              </button>
               <div style={{background:RAIL.panel,borderRadius:10,padding:"11px 12px"}}>
                 <div data-testid="dp-journey-position" style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>
                   Step {pos} of {steps.length}
@@ -2972,6 +3033,72 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               )}
             </RailSection>;
           })()}
+
+          {/* ── FIX-4 2 · ADD TO A JOURNEY ─────────────────────────────
+              Offered only when they are in none, because one active plan
+              per person is the model and a second control that can only 409
+              teaches people to distrust controls. Pick one, see the first
+              step and the real date it falls on, then confirm. */}
+          {!isReadOnly&&!(journey&&journey.status==="active")&&Array.isArray(journeyList)&&(
+            <RailSection title="Add to a journey" testid="dp-rail-add-journey">
+              {journeyList.length===0?(
+                <div style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55}}>
+                  There are no journeys yet.{" "}
+                  <button type="button" data-testid="dp-journey-setup"
+                    onClick={()=>onNavigate&&onNavigate("journeys")}
+                    style={{background:"none",border:"none",padding:0,color:T.white,fontWeight:700,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit",fontSize:"inherit"}}>
+                    Set one up
+                  </button>{" "}and it takes ten minutes.
+                </div>
+              ):(
+                <>
+                  <select data-testid="dp-journey-pick" value={addPick} onChange={e=>pickJourney(e.target.value)}
+                    style={{width:"100%",background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,
+                            padding:"8px 10px",color:RAIL.text,fontSize:12.5,outline:"none",fontFamily:"inherit"}}>
+                    <option value="">Pick a journey…</option>
+                    {journeyList.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}
+                  </select>
+                  {addPreview&&(
+                    <div data-testid="dp-journey-preview"
+                      style={{marginTop:9,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
+                      <div style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>
+                        First step
+                      </div>
+                      <div style={{fontSize:14,fontWeight:700,color:T.white,marginTop:3}}>
+                        {addPreview.firstStep?addPreview.firstStep.label:"No steps yet"}
+                      </div>
+                      {addPreview.firstStep&&addPreview.firstStep.dueDate&&(
+                        <div data-testid="dp-journey-preview-due" style={{fontSize:12.5,fontWeight:600,color:RAIL.dim,marginTop:2}}>
+                          due {new Date(addPreview.firstStep.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}
+                        </div>
+                      )}
+                      <div style={{fontSize:11.5,color:RAIL.dim,marginTop:7,lineHeight:1.5}}>{addPreview.touches}</div>
+                      {addPreview.alreadyIn&&(
+                        <div style={{fontSize:11.5,color:T.gold500,marginTop:7,lineHeight:1.5}}>
+                          They are already working through &ldquo;{addPreview.alreadyIn}&rdquo;. Finish or stop that one first.
+                        </div>
+                      )}
+                      <button data-testid="dp-journey-add-confirm" type="button"
+                        disabled={journeyBusy||!addPreview.firstStep||!!addPreview.alreadyIn}
+                        onClick={confirmAddToJourney}
+                        style={{marginTop:10,background:(addPreview.firstStep&&!addPreview.alreadyIn)?T.greenDk:RAIL.line,
+                          border:"none",borderRadius:8,padding:"8px 13px",
+                          color:(addPreview.firstStep&&!addPreview.alreadyIn)?T.white:RAIL.dim,
+                          fontSize:12.5,fontWeight:700,
+                          cursor:(addPreview.firstStep&&!addPreview.alreadyIn&&!journeyBusy)?"pointer":"not-allowed"}}>
+                        {journeyBusy?"Adding…":`Put ${firstNameOf(donor.name)} in it`}
+                      </button>
+                    </div>
+                  )}
+                  {addErr&&<div role="status" data-testid="dp-journey-add-error"
+                    style={{fontSize:11.5,color:T.gold500,marginTop:8,lineHeight:1.45}}>{addErr}</div>}
+                  <div style={{fontSize:11.5,color:RAIL.dim,marginTop:9,lineHeight:1.5}}>
+                    Nothing is sent. Each step becomes a next step on your Thread on the day it is due.
+                  </div>
+                </>
+              )}
+            </RailSection>
+          )}
 
           {/* The stage, and the smart moves that argue for changing it. Both
               are the major-gifts layer, so a Core org sees the one frosted

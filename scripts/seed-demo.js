@@ -829,15 +829,15 @@ async function main() {
   // donors and the seed owns their rows, so the gift is moved to the entry
   // date and the rollup is re-run for just them.
   console.log("[seed] the journey…");
-  const JOURNEY_STEPS = [
-    { type: "thank",        label: "Call to say thank you",    offsetDays: 2,   draft: null },
-    { type: "send",         label: "Send a handwritten note",  offsetDays: 7,   draft: null },
-    { type: "send",         label: "Send the impact report",   offsetDays: 90,  draft: "impact_report" },
-    { type: "follow_up",    label: "Ask them for a visit",     offsetDays: 120, draft: null },
-    { type: "follow_up",    label: "Invite them to something", offsetDays: 150, draft: "event_invitation" },
-    { type: "follow_up",    label: "Check in, no ask",         offsetDays: 180, draft: null },
-    { type: "check_in_ask", label: "Make the ask",             offsetDays: 210, draft: "the_ask" },
-  ];
+  // FIX-4 1a — THE STEPS COME FROM THE PRESET, not from a copy of it. This
+  // was a second hard-coded list of the same seven steps, and the moment
+  // Jonathan retimed the first-year journey it became a demo that showed the
+  // OLD timing on a screen whose caption described the new one. There is one
+  // catalogue; the demo reads it.
+  const journeyMod = await import("../shared/journeyShape.js");
+  const JOURNEY_PRESET = journeyMod.presetByKey("new_donor_first_year");
+  const JOURNEY_STEPS = JOURNEY_PRESET.steps.map(s => ({ ...s }));
+  const OFF = JOURNEY_STEPS.map(s => s.offsetDays);
   const JOURNEY_TPL = "ct_b72_newdonor";
   await q(`INSERT INTO cultivation_templates
              (id,org_id,name,steps,trigger_key,priority,preset_key,journey_enabled,created_by,created_by_name)
@@ -851,12 +851,22 @@ async function main() {
   // trust this with a real donor.
   //
   //   [enteredAgo, openIdx | null = finished, skipIdx | null, what they said]
+  //
+  // FIX-4 1a — enteredAgo is COMPUTED from the preset's own offsets rather
+  // than typed. It was five literals calibrated against the old timing, so
+  // retiming the journey silently moved four of the five people onto
+  // different steps: the one meant to be thirteen days overdue became on
+  // time, and the one meant to have FINISHED still had two steps to go.
+  // `[openIdx, dueInDays]` says what the demo is FOR — due tomorrow, two
+  // weeks late, finished — and the arithmetic follows the catalogue.
+  const entered = (openIdx, dueInDays) =>
+    openIdx === null ? OFF[OFF.length - 1] + 20 : OFF[openIdx] - dueInDays;
   const JOURNEY_PEOPLE = [
-    [  1, 0, null, null],                                   // step 1, due tomorrow
-    [ 20, 1, null, "Rang twice, left a message the second time."],   // step 2, 13 days OVERDUE
-    [ 88, 2, null, "Lovely call. She asked how the scholarship students are chosen."],
-    [148, 4, 3,    "Talked at the spring showcase instead of a separate visit."],
-    [230, null, 5, "He said to skip the check-in and just make the ask."],
+    [entered(0,  1),    0, null, null],                                          // step 1, due tomorrow
+    [entered(1, -13),   1, null, "Rang twice, left a message the second time."], // step 2, 13 days OVERDUE
+    [entered(2,  2),    2, null, "Lovely call. She asked how the scholarship students are chosen."],
+    [entered(4,  2),    4, 3,    "Talked at the spring showcase instead of a separate visit."],
+    [entered(null, 0),  null, 5, "He said to skip the check-in and just make the ask."],
   ];
   const DONE_NOTES = [
     "Caught her at home. Genuinely surprised anyone called.",

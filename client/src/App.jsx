@@ -19,6 +19,7 @@ import { Fundraising } from "./components/Fundraising";
 import { Tasks } from "./components/Tasks";
 import { Agent } from "./components/Agent";
 import { Settings } from "./components/Settings";
+import JourneyBuilder from "./components/JourneyBuilder";
 import { DonorPortalHub } from "./components/DonorPortalHub";
 import { confirmIfDirty } from "./lib/dirtyGuard";
 import { Events } from "./components/Events";
@@ -228,6 +229,7 @@ function AppShell() {
   // BUILD-57 — Home's Recurring tab deep-links to Fundraising → Recurring
   // Giving (opts key `frSection`, distinct from Settings' `section`).
   const [fundraisingIntent,setFundraisingIntent]=useState(null);
+  const [journeysIntent,setJourneysIntent]=useState(null);
   // BUILD-58 W-2 — the portal-tier org's network-application status (pending/
   // approved/held/…) surfaces as a quiet banner instead of a dead end.
   const [networkApp,setNetworkApp]=useState(null);
@@ -275,6 +277,9 @@ function AppShell() {
     setReportsIntent((opts?.report||opts?.savedReport)&&t==="reports"?{report:opts.report,savedReport:opts.savedReport,preset:opts.preset,from:opts.from,to:opts.to,yearMode:opts.yearMode}:null);
     setFundraisingIntent(opts?.frSection&&t==="fundraising"?{section:opts.frSection}:null);
     setAgentIntent(t==="agent"&&(opts?.agentView||opts?.agentText)?{view:opts.agentView||null,text:opts.agentText||"",autoAsk:!!opts.autoAsk}:null);
+    // FIX-4 2 — the profile's journey chip lands on the journey it names,
+    // open, rather than on a list somebody then has to find it in.
+    setJourneysIntent(t==="journeys"&&opts?.journeyId?{journeyId:opts.journeyId}:null);
     if(opts&&Object.keys(opts).some(k=>opts[k]!=null))setNavNonce(n=>n+1);
     setTab(t);
   };
@@ -702,8 +707,8 @@ function AppShell() {
           <strong style={{color:T.gold50}}>You have {Number(donorBand.notice.count||0).toLocaleString()} active donors</strong>
           {" — more than your current plan's band. "}
           {donorBand.notice.nextMonthlyUsd
-            ? <>The next band, {donorBand.notice.nextBandLabel}, is ${donorBand.notice.nextMonthlyUsd} a month. </>
-            : <>{donorBand.notice.nextBandLabel} is a conversation rather than a price. </>}
+            ? <>The next plan, {donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}), is ${donorBand.notice.nextMonthlyUsd} a month. </>
+            : <>{donorBand.notice.nextBandName||donorBand.notice.nextBandLabel} ({String(donorBand.notice.nextBandLabel||"").toLowerCase()}) is a conversation rather than a price. </>}
           <strong style={{color:T.gold50}}>Nothing has changed</strong>
           {donorBand.notice.effectiveAt
             ? <>, and nothing will before {new Date(donorBand.notice.effectiveAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.</>
@@ -799,6 +804,18 @@ function AppShell() {
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
       {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} isCoreTier={isCoreTier}/>}
+      {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
+          renders, with the page header every other screen has around it; the
+          Settings section is untouched, so both doors open the same thing. */}
+      {tab==="journeys"&&(
+        <div>
+          <h1 style={{fontFamily:"'DM Serif Display',Georgia,serif",fontWeight:400,fontSize:32,margin:"0 0 6px",color:T.ink}}>Journeys</h1>
+          <p style={{fontSize:14,color:T.ink3,lineHeight:1.6,margin:"0 0 20px",maxWidth:680}}>
+            How you look after somebody, written down once and then remembered for you.
+          </p>
+          <JourneyBuilder key={navNonce} isAdmin={auth?.user?.role==="admin"} isReadOnly={isReadOnly} initialJourneyId={journeysIntent?.journeyId}/>
+        </div>
+      )}
       {tab==="events"&&<Events data={data} isReadOnly={isReadOnly}/>}
       {/* FIX-1 C — the volunteer coordinator's hub, over person_types and
           volunteer_shifts. The old Volunteers.jsx (its own table) is not

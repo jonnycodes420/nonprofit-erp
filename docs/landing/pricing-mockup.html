@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steward pricing · approved mockup (Seed, Sapling, Orchard, Forest)</title>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#0F1A12;--cream:#F0EDE6;--cream2:#E8E4DB;--ground:#F7F5F0;--brass:#C9A84C;--emerald:#0D5C3A;--grey:#5A554F}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);font-family:'Figtree',system-ui,sans-serif;color:var(--ink)}
+  .serif{font-family:'Newsreader',Georgia,serif}
+  section{max-width:1200px;margin:0 auto;padding:112px 24px 96px;display:flex;flex-direction:column;align-items:center;gap:56px}
+  .head{display:flex;flex-direction:column;align-items:center;gap:22px;text-align:center;max-width:880px}
+  .eyebrow{font-size:13px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--grey)}
+  h2{margin:0;font-size:64px;line-height:1.04;font-weight:600;letter-spacing:-1.4px}
+  .lede{margin:0;font-size:19px;line-height:1.55;color:var(--grey);max-width:680px}
+  .toggle-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
+  .toggle{display:flex;padding:5px;background:#ECE8DF;border-radius:14px}
+  .toggle button{padding:11px 26px;border:none;border-radius:10px;background:transparent;color:var(--grey);font:600 15px 'Figtree',sans-serif;cursor:pointer;transition:background .16s ease,color .16s ease}
+  .toggle button[aria-pressed="true"]{background:var(--ink);color:var(--cream)}
+  .pill{font-size:14px;font-weight:600;padding:6px 12px;border-radius:99px;background:#F3E9CC;color:#5C4710}
+  .cards{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+  .card{padding:36px 34px 34px;border-radius:22px;display:flex;flex-direction:column;gap:10px;background:#fff;border:1px solid var(--cream2)}
+  .card.featured{background:var(--ink);color:var(--cream);border:none;box-shadow:0 30px 60px -24px rgba(15,26,18,.45)}
+  .card .top{display:flex;justify-content:space-between;align-items:center;min-height:28px}
+  .card .name{font-size:34px;font-weight:600;letter-spacing:-.4px}
+  .badge{font-size:12px;font-weight:700;padding:5px 10px;border-radius:99px;background:var(--brass);color:var(--ink)}
+  .card .size{font-size:16px;font-weight:600}
+  .card .row{display:flex;align-items:baseline;gap:6px;padding-top:8px}
+  .card .price{font-size:64px;font-weight:600;letter-spacing:-1.6px;line-height:1}
+  .muted{font-size:15px;color:var(--grey)}
+  .featured .muted{color:rgba(240,237,230,.72)}
+  .btn{margin-top:22px;text-align:center;padding:16px;border-radius:12px;font-size:16px;font-weight:600;text-decoration:none;border:1.5px solid var(--ink);color:var(--ink)}
+  .featured .btn{background:var(--emerald);color:#fff;border-color:var(--emerald)}
+  .forest{width:100%;padding:26px 32px;border-radius:18px;background:#fff;border:1px solid var(--cream2);display:flex;justify-content:space-between;align-items:center;gap:20px}
+  .forest .l{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap}
+  .forest .btn{margin:0;padding:14px 22px}
+  .incl{width:100%;display:flex;flex-direction:column;gap:28px;padding-top:24px}
+  .incl h3{margin:0;font-size:30px;font-weight:600;text-align:center}
+  .groups{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px}
+  .group{display:flex;flex-direction:column;gap:8px;padding-top:18px;border-top:2px solid var(--ink)}
+  .group b{font-size:18px}
+  .group span{font-size:15px;line-height:1.55;color:var(--grey)}
+  .extras{display:flex;justify-content:center;flex-wrap:wrap;gap:12px 36px;font-size:15px;color:#3E3A35}
+  @media (max-width:900px){
+    h2{font-size:44px}
+    .cards,.groups{grid-template-columns:1fr}
+    .forest{flex-direction:column;align-items:flex-start}
+  }
+</style>
+</head>
+<body>
+<section id="pricing">
+  <div class="head">
+    <span class="eyebrow">Pricing</span>
+    <h2 class="serif">Pay for the donors you have. Not every name you've ever had.</h2>
+    <p class="lede">One plan with everything in it. You pick a size by active donors: anyone who gave or talked with you in the last 24 months. The rest of your history stays in Steward, free.</p>
+  </div>
+
+  <div class="toggle-wrap">
+    <div class="toggle" role="group" aria-label="Billing period">
+      <button type="button" data-period="monthly" aria-pressed="true">Monthly</button>
+      <button type="button" data-period="yearly" aria-pressed="false">Yearly</button>
+    </div>
+    <span class="pill">Two months free yearly</span>
+  </div>
+
+  <div class="cards">
+    <div class="card" data-m="199" data-y="1990">
+      <div class="top"><span class="name serif">Seed</span></div>
+      <span class="size">Up to 1,000 active donors</span>
+      <div class="row"><span class="price serif">$199</span><span class="muted per">a month</span></div>
+      <span class="muted sub">Month to month. Cancel in two clicks.</span>
+      <a class="btn" href="#start">Start 30 days free</a>
+    </div>
+    <div class="card featured" data-m="299" data-y="2990">
+      <div class="top"><span class="name serif">Sapling</span><span class="badge">Where most land</span></div>
+      <span class="size">Up to 5,000 active donors</span>
+      <div class="row"><span class="price serif">$299</span><span class="muted per">a month</span></div>
+      <span class="muted sub">Month to month. Cancel in two clicks.</span>
+      <a class="btn" href="#start">Start 30 days free</a>
+    </div>
+    <div class="card" data-m="499" data-y="4990">
+      <div class="top"><span class="name serif">Orchard</span></div>
+      <span class="size">Up to 10,000 active donors</span>
+      <div class="row"><span class="price serif">$499</span><span class="muted per">a month</span></div>
+      <span class="muted sub">Month to month. Cancel in two clicks.</span>
+      <a class="btn" href="#start">Start 30 days free</a>
+    </div>
+  </div>
+
+  <div class="forest">
+    <div class="l"><span class="serif" style="font-size:30px;font-weight:600">Forest</span><span class="muted" style="font-size:17px">More than 10,000 active donors. Same product, priced for your size.</span></div>
+    <a class="btn" href="#book">Book a call</a>
+  </div>
+
+  <div class="incl">
+    <h3 class="serif">Everything is included, on every plan</h3>
+    <div class="groups">
+      <div class="group"><b>Donors</b><span>Gifts, households, pledges and the Thread naming every next step.</span></div>
+      <div class="group"><b>Fundraising</b><span>Donation forms, campaigns, major gifts, grants, memberships and events.</span></div>
+      <div class="group"><b>Volunteers</b><span>People, shifts and hours, on the same record as their giving.</span></div>
+      <div class="group"><b>The Agent</b><span>Drafts thank-yous and briefs in your voice. You approve every one.</span></div>
+    </div>
+    <div class="extras"><span>Unlimited users</span><span>No platform fee on gifts</span><span>Month to month</span><span>Export everything, any time</span></div>
+  </div>
+</section>
+<script>
+  const buttons = document.querySelectorAll('.toggle button');
+  function setPeriod(p){
+    buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.period === p)));
+    document.querySelectorAll('.card').forEach(c => {
+      const y = p === 'yearly', m = +c.dataset.m, yr = +c.dataset.y;
+      c.querySelector('.price').textContent = '$' + (y ? yr.toLocaleString('en-US') : m);
+      c.querySelector('.per').textContent = y ? 'a year' : 'a month';
+      c.querySelector('.sub').textContent = y ? '$' + Math.round(yr / 12) + ' a month, billed yearly' : 'Month to month. Cancel in two clicks.';
+    });
+  }
+  buttons.forEach(b => b.addEventListener('click', () => setPeriod(b.dataset.period)));
+</script>
+</body>
+</html>
