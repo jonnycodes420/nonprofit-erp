@@ -16,6 +16,13 @@ import { errorMessage } from "../lib/domainError";
 // Honest per-step time estimates (BUILD-08 Phase D) — shown beside the label so
 // nobody wonders how deep this rabbit hole goes.
 const STEP_META = {
+  // GTM-1b 3 — THE START PAGE. The first thing somebody sees after signing up
+  // is not a form, it is a choice: bring your own file, or look around first.
+  // Both are real doors. "Explore the demo" is not a lesser path — an ED who
+  // has just put a card in and wants to see the thing working before she goes
+  // and finds her spreadsheet is behaving sensibly, and the product should
+  // agree with her.
+  start:  { label: "Where would you like to start?", time: "" },
   basics: { label: "Org basics",               time: "~1 min" },
   invite: { label: "Invite your team",         time: "~1 min" }, // Team plan only
   import: { label: "Import your donors",       time: "~2 min" },
@@ -38,7 +45,7 @@ const FINISH_HINTS = ["Configuring accounts…", "Finalizing setup…", "Almost 
 function Spin() {
   return (
     <>
-      <style>{`@keyframes ws{to{transform:rotate(360deg)}}`}</style>
+      <style>{`@keyframes ws{to{transform:rotate(360deg)}}@media (max-width:620px){.wp-start-doors{grid-template-columns:1fr!important}}`}</style>
       <span style={{
         display: "inline-block", width: 15, height: 15,
         border: "2px solid "+T.bg2, borderTopColor: T.greenDk,
@@ -78,7 +85,7 @@ export default function WelcomePage() {
   const { auth, refreshOrg } = useAuth();
   const navigate = useNavigate();
 
-  const [stepKey, setStepKey] = useState("basics");
+  const [stepKey, setStepKey] = useState("start");
   const [phase, setPhase] = useState("form"); // launch step only: "finishing" | "ready"
   const [error, setError] = useState("");
 
@@ -87,7 +94,7 @@ export default function WelcomePage() {
   // fresh trial reads as Team (full-feature trial), so a Team evaluator sees it.
   const [isTeam, setIsTeam] = useState(false);
   const flow = useMemo(
-    () => ["basics", ...(isTeam ? ["invite"] : []), "import", "sources", "goal", "metric", "launch"],
+    () => ["start", "basics", ...(isTeam ? ["invite"] : []), "import", "sources", "goal", "metric", "launch"],
     [isTeam]
   );
   const stepIdx = Math.max(0, flow.indexOf(stepKey));
@@ -331,7 +338,7 @@ export default function WelcomePage() {
         </div>
 
         {/* Progress: Step X of 5 */}
-        {!(stepKey === "launch" && phase === "ready") && (
+        {stepKey !== "start" && !(stepKey === "launch" && phase === "ready") && (
           <div style={{ textAlign: "center", marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               Step {stepIdx + 1} of {flow.length} — {STEP_META[stepKey].label}
@@ -344,6 +351,57 @@ export default function WelcomePage() {
         )}
 
         {/* Step — Org basics */}
+        {/* ── GTM-1b 3 · THE START PAGE ─────────────────────────────────
+            Two doors, side by side and the same size, because they are both
+            real answers. The demo door loads sample data into THIS org and
+            goes straight to Home — it is a working product with rows in it,
+            not a video. Onboarding is still there afterwards; nothing about
+            this choice is final. */}
+        {stepKey === "start" && (
+          <div style={card}>
+            <div style={{ textAlign: "center", marginBottom: 26 }}>
+              <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 30, fontWeight: 400, color: ink, margin: "0 0 10px", letterSpacing: "-0.01em" }}>
+                Welcome to Steward.
+              </h1>
+              <p style={{ fontSize: 14.5, color: ink3, margin: 0, lineHeight: 1.6 }}>
+                Two ways in. You can change your mind at any point — neither one locks anything.
+              </p>
+            </div>
+
+            <div className="wp-start-doors" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <button data-testid="start-import" onClick={() => go("basics")}
+                style={{ textAlign: "left", background: T.white, border: `1.5px solid ${greenDk}`, borderRadius: 14,
+                         padding: "20px 18px", cursor: "pointer", fontFamily: "inherit", display: "flex",
+                         flexDirection: "column", gap: 8 }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: ink }}>Import your file</span>
+                <span style={{ fontSize: 13, color: ink3, lineHeight: 1.55 }}>
+                  A spreadsheet from your current system, or anything with names and gifts in it.
+                  Steward reads the columns and shows you what it found before it writes a thing.
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: greenDk, marginTop: "auto" }}>Set up my organization →</span>
+              </button>
+
+              <button data-testid="start-demo" onClick={handleLoadSample} disabled={loadingSample}
+                style={{ textAlign: "left", background: T.white, border: `1.5px solid ${T.bg3}`, borderRadius: 14,
+                         padding: "20px 18px", cursor: loadingSample ? "not-allowed" : "pointer", opacity: loadingSample ? 0.7 : 1,
+                         fontFamily: "inherit", display: "flex", flexDirection: "column", gap: 8 }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: ink }}>Explore the demo</span>
+                <span style={{ fontSize: 13, color: ink3, lineHeight: 1.55 }}>
+                  Sample donors, gifts and conversations loaded into your own workspace, so every
+                  screen has something real on it. Clear it whenever you like from Settings.
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: greenDk, marginTop: "auto" }}>
+                  {loadingSample ? "Loading…" : "Show me around →"}
+                </span>
+              </button>
+            </div>
+
+            <div style={{ textAlign: "center", marginTop: 18, fontSize: 12.5, color: ink3 }}>
+              Nothing is charged for thirty days, and cancelling takes two clicks.
+            </div>
+          </div>
+        )}
+
         {stepKey === "basics" && (
           <div style={card}>
             <h1 style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, fontWeight: 400, color: ink, margin: "0 0 6px", letterSpacing: "-0.01em" }}>

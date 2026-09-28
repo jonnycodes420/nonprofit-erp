@@ -121,6 +121,7 @@ CORE=(
   reconciliation
   fix2-a-footing
   gtm1a-internal-price
+  gtm1b-band-notice
   import-reconciliation
   webhook-manifest
   webhook-ordering

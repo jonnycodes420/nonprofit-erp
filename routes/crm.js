@@ -34,7 +34,7 @@ const {
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
@@ -3160,6 +3160,12 @@ app.post("/donors/import", requireAuth, wrap(async (req, res) => {
     photosQueued = pq ? pq.n : 0;
   } catch (e) { console.error("[person-photo] queued count:", e.message); }
   res.json({ created, duplicates, duplicatesOnFile, duplicatesInFile, batchErrors, namelessRows, geocodeQueued, photosQueued, unsubscribedImported, reconciliation: ledger.report() });
+  // GTM-1b 1 — AFTER AN IMPORT, COUNT. The file is the thing that changes an
+  // org's size, so this is where the active-donor count is re-taken. It runs
+  // AFTER the response: the import's own summary must not wait on it, and a
+  // failure here must never turn a successful import into an error. It never
+  // touches the subscription — it records one notice and tells the admin.
+  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(async (req, res) => {
@@ -4055,6 +4061,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              // discovered on the Finance page.
              fundsCreated,
              duplicateGroups, matchesExistingCount });
+  // GTM-1b 1 — AFTER AN IMPORT, COUNT. The file is the thing that changes an
+  // org's size, so this is where the active-donor count is re-taken. It runs
+  // AFTER the response: the import's own summary must not wait on it, and a
+  // failure here must never turn a successful import into an error. It never
+  // touches the subscription — it records one notice and tells the admin.
+  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 app.put("/donors/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -5665,6 +5677,12 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
     written = { merges: Number(mg?.c) || 0, pledges: Number(pg2?.c) || 0 };
   } catch (e) { console.error("[import-semantics] read-back failed:", e.message); written = { error: e.message }; }
   res.json({ ok: true, counts, written, merges: mergeRows });
+  // GTM-1b 1 — AFTER AN IMPORT, COUNT. The file is the thing that changes an
+  // org's size, so this is where the active-donor count is re-taken. It runs
+  // AFTER the response: the import's own summary must not wait on it, and a
+  // failure here must never turn a successful import into an error. It never
+  // touches the subscription — it records one notice and tells the admin.
+  checkActiveDonorBand(req.user.orgId).catch(e => console.error("[tier] band check after import:", e.message));
 }));
 
 // ── BUILD-87 PART 1 — NAMED IMPORTS AND HISTORY ────────────────────────────
