@@ -108,6 +108,7 @@ CORE=(
   permissions-matrix
   vol1-coordinator-scope
   lf1-no-donor-data-leaves
+  members2-isolation
   script-guards
   build96-ai-gate
   incident-mail-gate

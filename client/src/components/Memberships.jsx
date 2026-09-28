@@ -265,6 +265,7 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
               <thead><tr style={{ textAlign: "left", color: T.ink3, fontSize: 11 }}>
                 <th style={{ padding: "6px 8px" }}>Member</th><th style={{ padding: "6px 8px" }}>Level</th>
                 <th style={{ padding: "6px 8px" }}>Status</th><th style={{ padding: "6px 8px" }}>Joined</th><th style={{ padding: "6px 8px" }}>Expires</th>
+                <th style={{ padding: "6px 8px" }} title="Whether this member has opened their own page — the page with their card, their renewal and their receipts on it.">Their page</th>
               </tr></thead>
               <tbody>{list.members.map(m => (
                 <tr key={m.id} data-testid="member-row" style={{ borderTop: "1px solid " + T.bg3 }}>
@@ -276,6 +277,11 @@ export function MembersView({ isReadOnly, isAdmin = true, onNavigate, orgSlug = 
                   <td style={{ padding: "8px" }}><StatusPill status={m.status} /></td>
                   <td style={{ padding: "8px", color: T.ink3 }}>{displayDate(m.joined_on)}</td>
                   <td style={{ padding: "8px", color: T.ink3 }}>{m.expires_on || "Lifetime"}</td>
+                  <td style={{ padding: "8px", color: T.ink3 }} data-testid="member-page-state">
+                    {m.yourPageOpenedAt ? `Opened ${displayDate(String(m.yourPageOpenedAt).slice(0, 10))}`
+                      : m.yourPageSentAt ? `Sent ${displayDate(String(m.yourPageSentAt).slice(0, 10))}, not opened`
+                      : "Not sent"}
+                  </td>
                 </tr>))}</tbody>
             </table>)}
         </div>
