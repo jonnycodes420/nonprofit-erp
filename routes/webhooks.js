@@ -2039,7 +2039,7 @@ async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz
   try {
     const { error } = await resend.emails.send({
       from, to: email, replyTo: from,
-      subject: `${displayNameCase(orgName)} is on Steward ${plan.name}`,
+      subject: `${displayNameCase(orgName)} is on Steward ${plan.tierName || plan.name}`,
       html: `<!DOCTYPE html><html><head><meta charset="UTF-8"/></head>
 <body style="margin:0;padding:0;background:#f0ede6;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0ede6;padding:40px 16px;">
@@ -2048,7 +2048,7 @@ async function sendExistingOrgCloseEmail({ email, orgName, plan, trialEndsAt, tz
         <span style="font-family:Georgia,'Times New Roman',serif;font-size:24px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;">Steward</span>
       </td></tr>
       <tr><td style="background:#ffffff;border-radius:16px;padding:40px 40px 36px;box-shadow:0 2px 20px rgba(15,26,18,0.08);">
-        <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">${displayNameCase(orgName)} is on ${plan.name}</h1>
+        <h1 style="margin:0 0 12px;font-size:26px;font-weight:700;color:#0f1a12;letter-spacing:-0.02em;line-height:1.2;">${displayNameCase(orgName)} is on ${plan.tierName || plan.name}</h1>\n        ${plan.band ? `<p style="margin:0 0 12px;font-size:14px;color:#5A554F;">${plan.band}</p>` : ""}
         <p style="margin:0 0 24px;font-size:15px;color:#5A554F;line-height:1.6;">Your card is on file. Nothing has been charged, and you sign in exactly as you always have.</p>
         <p style="margin:0 0 8px;font-size:14px;color:#0f1a12;line-height:1.6;"><strong>${charge}</strong> Cancel any time before then and you pay nothing. After that it is month to month, and you can cancel any time from Settings.</p>
         <p style="margin:0;font-size:12px;color:#8a857f;">Billing lives in <span style="color:#0f1a12;word-break:break-all;">${settings}</span></p>

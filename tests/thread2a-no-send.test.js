@@ -83,10 +83,22 @@ async function reset() {
   ok("five presets, and they are the brief's five",
      J.PRESET_KEYS.join(",") === "new_donor_first_year,major_donor,welcome_back,monthly_giver,new_volunteer",
      J.PRESET_KEYS);
-  ok("…and the first-year one is the brief's seven touches over seven months",
+  // FIX-4 1a — SEVEN TOUCHES OVER TWELVE MONTHS. This pinned seven months,
+  // which was THREAD-2a's timing: all seven touches inside the first seven
+  // months and then five months of silence, which is the stretch a first-year
+  // donor lapses in. Jonathan's retiming moves the visit, the invitation, the
+  // check-in and the ask out to months 5, 7, 9 and 12. The sentence is BUILT
+  // from the steps, so this assertion is still the guard that the steps and
+  // the sentence under them cannot drift apart.
+  ok("…and the first-year one is the brief's seven touches over twelve months",
      J.touchesSentence(J.presetByKey("new_donor_first_year").steps)
-       === "7 touches over 7 months. Nothing is sent without you.",
+       === "7 touches over 12 months. Nothing is sent without you.",
      J.touchesSentence(J.presetByKey("new_donor_first_year").steps));
+  ok("…and the ask is the last step, at month twelve",
+     (() => { const st = J.presetByKey("new_donor_first_year").steps;
+              const last = st[st.length - 1];
+              return last.type === "check_in_ask" && last.offsetDays === 360; })(),
+     J.presetByKey("new_donor_first_year").steps.map(s => s.offsetDays).join(","));
   ok(`every step in the catalogue requires a person to confirm (${steps.length} steps)`,
      steps.length > 0 && steps.every(s => J.requiresConfirmation(s) === true));
   // THE SHAPE OF A STEP CANNOT EXPRESS A SEND. Not "is set to false" — there

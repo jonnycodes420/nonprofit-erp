@@ -1,14 +1,20 @@
 {
-  "_note": "GTM-1a — THE PRICES, IN ONE FILE THAT BOTH SIDES READ NATIVELY. The server reads it through pricing.js (CommonJS, which adds the lookups and the things a browser must never see); the client imports THIS FILE directly, because Vite parses JSON natively and a CommonJS module at the repo root it does not. That was not a style choice: shared/pricing.js as a CJS re-export failed the client build with 'default is not exported by ../pricing.js' — Rollup's CommonJS transform only covers node_modules. Numbers live here and nowhere else.",
+  "_note": "GTM-1a — THE PRICES, IN ONE FILE THAT BOTH SIDES READ NATIVELY. The server reads it through pricing.js (CommonJS, which adds the lookups and the things a browser must never see); the client imports THIS FILE directly, because Vite parses JSON natively and a CommonJS module at the repo root it does not. That was not a style choice: shared/pricing.js as a CJS re-export failed the client build with 'default is not exported by ../pricing.js' — Rollup's CommonJS transform only covers node_modules. Numbers live here and nowhere else. FIX-4 6 adds `name` — the tier's NAME, which is what a customer and an admin see everywhere a plan is named. The ids (t1000/t5000/t10000) and the STRIPE_PRICE_* variables are untouched, deliberately: renaming a Stripe product would move real organisations off the prices they are on.",
   "activeDonorMonths": 24,
   "activeDonorSentence": "An active donor is a person or organization that has given a gift or had a conversation logged in the last 24 months.",
   "yearlyNote": "Pay yearly and two months are free.",
+  "headline": "Pay for the donors you have. Not every name you've ever had.",
+  "lede": "One plan with everything in it. You pick a size by active donors: anyone who gave or talked with you in the last 24 months. The rest of your history stays in Steward, free.",
+  "yearlyPill": "Two months free yearly",
+  "monthToMonth": "Month to month. Cancel in two clicks.",
+  "featuredBadge": "Where most land",
+  "startCta": "Start 30 days free",
   "tiers": [
-    { "id": "t1000",  "maxDonors": 1000,  "band": "Up to 1,000 active donors",  "monthlyUsd": 199, "yearlyUsd": 1990, "envMonthly": "STRIPE_PRICE_T1000_MONTHLY",  "envYearly": "STRIPE_PRICE_T1000_YEARLY" },
-    { "id": "t5000",  "maxDonors": 5000,  "band": "Up to 5,000 active donors",  "monthlyUsd": 299, "yearlyUsd": 2990, "envMonthly": "STRIPE_PRICE_T5000_MONTHLY",  "envYearly": "STRIPE_PRICE_T5000_YEARLY" },
-    { "id": "t10000", "maxDonors": 10000, "band": "Up to 10,000 active donors", "monthlyUsd": 499, "yearlyUsd": 4990, "envMonthly": "STRIPE_PRICE_T10000_MONTHLY", "envYearly": "STRIPE_PRICE_T10000_YEARLY" }
+    { "id": "t1000",  "name": "Seed",    "maxDonors": 1000,  "band": "Up to 1,000 active donors",  "monthlyUsd": 199, "yearlyUsd": 1990, "featured": false, "envMonthly": "STRIPE_PRICE_T1000_MONTHLY",  "envYearly": "STRIPE_PRICE_T1000_YEARLY" },
+    { "id": "t5000",  "name": "Sapling", "maxDonors": 5000,  "band": "Up to 5,000 active donors",  "monthlyUsd": 299, "yearlyUsd": 2990, "featured": true,  "envMonthly": "STRIPE_PRICE_T5000_MONTHLY",  "envYearly": "STRIPE_PRICE_T5000_YEARLY" },
+    { "id": "t10000", "name": "Orchard", "maxDonors": 10000, "band": "Up to 10,000 active donors", "monthlyUsd": 499, "yearlyUsd": 4990, "featured": false, "envMonthly": "STRIPE_PRICE_T10000_MONTHLY", "envYearly": "STRIPE_PRICE_T10000_YEARLY" }
   ],
-  "talkToUs": { "id": "talk", "band": "More than 10,000 active donors", "copy": "Talk to us." },
+  "talkToUs": { "id": "talk", "name": "Forest", "band": "More than 10,000 active donors", "copy": "Talk to us.", "line": "More than 10,000 active donors. Same product, priced for your size.", "cta": "Book a call" },
   "included": [
     "The full donor CRM — gift history, households, soft credit, planned giving",
     "Volunteers — people, shifts, hours and the sign-up link",
@@ -19,6 +25,14 @@
     "Unlimited users",
     "Import from a spreadsheet, and export everything whenever you want it"
   ],
+  "includedHeading": "Everything is included, on every plan",
+  "includedGroups": [
+    { "name": "Donors",    "copy": "Gifts, households, pledges and the Thread naming every next step." },
+    { "name": "Fundraising", "copy": "Donation forms, campaigns, major gifts, grants, memberships and events." },
+    { "name": "Volunteers", "copy": "People, shifts and hours, on the same record as their giving." },
+    { "name": "The Agent", "copy": "Drafts thank-yous and briefs in your voice. You approve every one." }
+  ],
+  "extras": ["Unlimited users", "No platform fee on gifts", "Month to month", "Export everything, any time"],
   "termsStrip": ["Everything included", "Unlimited users", "No platform fee", "Month to month"],
   "billingIntervals": ["monthly", "yearly"]
 }

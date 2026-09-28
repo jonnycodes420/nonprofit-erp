@@ -18,6 +18,12 @@ const TABS=[
   {id:"board",label:"Dashboards",icon:"▤"},
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
+  // FIX-4 2 — JOURNEYS IS ITS OWN ROOM, under Fundraising. It lived in
+  // Settings, reachable by one button on Campaigns & pages, which put the
+  // thing an org does weekly behind the screen it opens twice a year. The
+  // builder component did not move; this is a second door to it, and the
+  // Settings section keeps working so every deep link survives.
+  {id:"journeys",label:"Journeys",icon:"⇢"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
@@ -44,6 +50,7 @@ const BOTTOM_TABS=[
 const MORE_TABS=[
   {id:"board",label:"Dashboards",icon:"▤"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
+  {id:"journeys",label:"Journeys",icon:"⇢"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
@@ -70,7 +77,7 @@ const MORE_TABS=[
 // and four slots is a different constraint from a 220px rail.
 // FIX-1 §12 (Jonathan, 27 Sep) — the rail is the seven questions; Dashboards
 // and the rest live under More.
-const PRIMARY_NAV=["dashboard","donors","fundraising","volunteers","agent","reports","finance"];
+const PRIMARY_NAV=["dashboard","donors","fundraising","journeys","volunteers","agent","reports","finance"];
 const MORE_NAV=["board","grants","communications","tasks","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 // FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →

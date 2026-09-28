@@ -7858,6 +7858,12 @@ async function enrollMembership({ orgId, donorId, level, startsOn = null, paid =
     await run(`UPDATE memberships SET gift_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [giftId, id, orgId]);
   }
   const [m] = await query(`SELECT * FROM memberships WHERE id=?`, [id]);
+  // FIX-4 1c — becoming a member can start a journey. Only a NEW membership,
+  // never a renewal: a renewal is a person continuing, and greeting a
+  // ten-year member with a welcome sequence is worse than saying nothing.
+  // The unique index above has already refused a second current membership,
+  // so this cannot fire twice for the same person.
+  await maybeStartJourneyFromServer(orgId, donorId, "became_member", {});
   return { membership: m, giftId };
 }
 

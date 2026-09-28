@@ -180,7 +180,13 @@ export default function SignupPage() {
             {band && (
               <div data-testid="signup-quote" style={{ background: WHITE, border: `1px solid ${MIST_EDGE}`, borderRadius: 12, padding: "14px 16px" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: INK }}>{band.band}</span>
+                  {/* FIX-4 6 — THE NAME, WITH THE DONOR COUNT UNDER IT. The
+                      quote named the band and not the plan, so the one screen
+                      that takes a card never said what she was buying. */}
+                  <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span data-testid="signup-plan-name" style={{ fontSize: 19, fontWeight: 700, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{band.name}</span>
+                    <span style={{ fontSize: 13, color: SAGE_GREY }}>{band.band}</span>
+                  </span>
                   <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
                     <span style={{ fontSize: 24, fontWeight: 800, color: INK, fontFamily: "'DM Serif Display',Georgia,serif" }}>{usd(amount)}</span>
                     <span style={{ fontSize: 13, color: SAGE_GREY }}>{interval === "yearly" ? "/year" : "/month"}</span>
@@ -194,7 +200,8 @@ export default function SignupPage() {
 
             {overTop && (
               <div data-testid="signup-talk" style={{ background: WHITE, border: `1px solid ${MIST_EDGE}`, borderRadius: 12, padding: "14px 16px" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: INK, marginBottom: 6 }}>{TALK_TO_US.band}</div>
+                <div style={{ fontSize: 19, fontWeight: 700, color: INK, marginBottom: 2, fontFamily: "'DM Serif Display',Georgia,serif" }}>{TALK_TO_US.name}</div>
+                <div style={{ fontSize: 13, color: SAGE_GREY, marginBottom: 6 }}>{TALK_TO_US.band}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, lineHeight: 1.55 }}>
                   That is a conversation rather than a checkout — at your size the import and the setup matter more than the price.{" "}
                   <a href={CAL} target="_blank" rel="noreferrer" style={{ color: EMERALD, fontWeight: 700 }}>Book a call</a> and we will size it with you.

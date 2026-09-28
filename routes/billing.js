@@ -15,6 +15,9 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-4 5 — the price→plan lookup, so the reconcile below names the plan the
+// live subscription is actually on rather than trusting a stale column.
+const { planFromSubscription } = require("../billingPlans");
 
 const routers = {
   r0: express.Router(),
@@ -1196,10 +1199,13 @@ app.get("/billing/donor-band", requireAuth, wrap(async (req, res) => {
   const next = org.tier_notice_band ? PRICING.tierById(org.tier_notice_band) : null;
   res.json({
     plan: org.plan,
-    band: band ? { id: band.id, label: band.band, maxDonors: band.maxDonors } : null,
+    // FIX-4 6 — the plan has a NAME, and the donor count goes under it.
+    planName: PRICING.planDisplayName(org.plan),
+    band: band ? { id: band.id, name: band.name, label: band.band, maxDonors: band.maxDonors } : null,
     sentence: PRICING.ACTIVE_DONOR_SENTENCE,
     notice: org.tier_notice_band ? {
       nextBand: org.tier_notice_band,
+      nextBandName: next ? next.name : PRICING.TALK_TO_US.name,
       nextBandLabel: next ? next.band : PRICING.TALK_TO_US.band,
       nextMonthlyUsd: next ? next.monthlyUsd : null,
       nextYearlyUsd: next ? next.yearlyUsd : null,
@@ -1440,6 +1446,103 @@ async function notifyFounderOfSignup({ closeLinkId, orgName, contactName, contac
       + `</div>`,
   });
 }
+
+// ── FIX-4 5 · PUT THE SUBSCRIPTION BACK ON THE ORG ────────────────────────
+// A signup through Start now takes a card, and Stripe creates a TRIALING
+// subscription the moment Checkout completes. The org learns about it from
+// one webhook (`checkout.session.completed` → provisionOrgFromCloseLink). If
+// that event is not delivered — the endpoint was down, the event type was
+// not subscribed, the delivery was dropped — the money side of Stripe is
+// perfectly correct and Steward's copy of it is blank, and everything that
+// reads `orgs.stripe_subscription_id` then refuses: the Customer Portal, the
+// cancel button, the seven-day reminder, and the $1 test, which is the one
+// that says so out loud.
+//
+// Stripe is the record. This reads it back and writes what is true:
+//   1. the close link that created this org already stored the subscription
+//      id — the cheapest and most certain answer;
+//   2. failing that, the org's Stripe CUSTOMER, whose live subscriptions
+//      Stripe will list.
+//
+// It never CREATES a subscription and never charges anything. If Stripe has
+// none, it says so and changes nothing, because an org with no subscription
+// is a real state and inventing one would be worse than reporting it.
+app.post("/admin/orgs/:id/reconcile-subscription", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  if (!billingStripe) return res.status(503).json({ error: "stripe_not_configured", message: "Platform billing is not configured, so there is nothing to read back from Stripe." });
+  const [org] = await query(
+    `SELECT id, name, plan, subscription_status, stripe_subscription_id, close_link_id,
+            stripe_customer_id, stripe_customer_id_test FROM orgs WHERE id=?`, [req.params.id]);
+  if (!org) return res.status(404).json({ error: "org_not_found", message: "That organization does not exist." });
+  if (org.stripe_subscription_id) {
+    return res.json({ ok: true, changed: false, subscriptionId: org.stripe_subscription_id,
+      message: `${org.name} already has a Stripe subscription on file. Nothing was changed.` });
+  }
+
+  // 1 — the close link that created this org.
+  let subId = null, found = "";
+  if (org.close_link_id) {
+    const [cl] = await query("SELECT stripe_subscription_id FROM close_links WHERE id=?", [org.close_link_id]);
+    if (cl && cl.stripe_subscription_id) { subId = cl.stripe_subscription_id; found = "the close link it signed up through"; }
+  }
+  if (!subId) {
+    const [cl] = await query("SELECT stripe_subscription_id FROM close_links WHERE org_id=? AND stripe_subscription_id IS NOT NULL ORDER BY completed_at DESC LIMIT 1", [org.id]);
+    if (cl && cl.stripe_subscription_id) { subId = cl.stripe_subscription_id; found = "the close link it signed up through"; }
+  }
+
+  // 2 — Stripe itself, through the customer.
+  const customerId = org.stripe_customer_id || org.stripe_customer_id_test || null;
+  if (!subId && customerId) {
+    try {
+      const list = await billingStripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+      // The live one, and only a live one: a cancelled subscription is not a
+      // subscription to put back, it is history.
+      const live = (list?.data || []).find(s => ["trialing", "active", "past_due", "unpaid"].includes(s.status));
+      if (live) { subId = live.id; found = "Stripe, on this organization's customer"; }
+    } catch (err) {
+      if (handleBillingConfigError(err, res, { plan: org.plan, surface: "subscription reconcile" })) return;
+      throw err;
+    }
+  }
+
+  if (!subId) {
+    return res.status(409).json({
+      error: "no_subscription_in_stripe",
+      message: `Stripe has no live subscription for ${org.name}${customerId ? "" : ", and no Stripe customer is on file for it either"}. `
+        + `Nothing was changed. Close them onto a plan, or have them sign up through Start now.`,
+    });
+  }
+
+  const sub = await billingStripe.subscriptions.retrieve(subId);
+  const priceId = sub?.items?.data?.[0]?.price?.id || null;
+  const plan = planFromSubscription(sub) || org.plan || null;
+  const status = sub.status === "trialing" ? "trialing"
+    : ["active"].includes(sub.status) ? "active"
+    : ["past_due", "unpaid"].includes(sub.status) ? "past_due"
+    : sub.status === "canceled" ? "cancelled" : org.subscription_status;
+  const trialEnd = sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null;
+  const periodEnd = sub.current_period_end ? new Date(sub.current_period_end * 1000).toISOString() : null;
+  const cust = typeof sub.customer === "string" ? sub.customer : sub.customer?.id || customerId;
+
+  await run(
+    `UPDATE orgs SET stripe_subscription_id=?, subscription_status=?, plan=COALESCE(?, plan),
+            trial_ends_at=COALESCE(?, trial_ends_at), current_period_end=COALESCE(?, current_period_end),
+            ${billingCustomerColumn()}=COALESCE(?, ${billingCustomerColumn()})
+      WHERE id=?`,
+    [subId, status, plan, trialEnd, periodEnd, cust, org.id]);
+  // The card, so the seven-day reminder can name it. Best effort: a missing
+  // card is a worse reminder, never a failed reconcile.
+  try {
+    const full = await billingStripe.subscriptions.retrieve(subId, { expand: ["default_payment_method"] });
+    const pm = full && full.default_payment_method;
+    if (pm && pm.card) await run("UPDATE orgs SET billing_card_brand=?, billing_card_last4=? WHERE id=?", [pm.card.brand, pm.card.last4, org.id]);
+  } catch { /* the reminder degrades; the reconcile does not */ }
+  console.log(`[reconcile-subscription] ${org.id} (${org.name}) <- ${subId} (${sub.status}, price ${priceId}) via ${found}, by ${req.user.email}`);
+
+  res.json({ ok: true, changed: true, subscriptionId: subId, status, plan,
+    trialEndsAt: trialEnd, foundVia: found,
+    message: `${org.name} is on ${PRICING.planDisplayName(plan) || plan || "a plan"}, ${status}. `
+      + `Steward read the subscription back from ${found} and saved it. Nothing was charged.` });
+}));
 
 // ── GTM-1a 4 · THE $1 PRICE, AND THE ONE DOOR TO IT ───────────────────────
 // It is never public: it is not in `TIERS`, so nothing that renders the

@@ -75,6 +75,18 @@ const EXTRAS = [
   // near-identical, and landing-prod-verify.js now holds a 5.0 floor against
   // it. Landing.jsx ONLY — T.ink3 is unchanged for the authenticated app.
   "#5a554f",
+  // FIX-4 6 — the approved pricing section (docs/landing/pricing-mockup.html),
+  // Pricing.jsx ONLY. Four warm neutrals, each measured on the ground it sits
+  // on, and none of them a second action colour:
+  //   #ece8df — the monthly/yearly toggle's tray. A background only: the
+  //     selected tab is ink, the unselected label is #5a554f on it at 6.03:1.
+  //   #f3e9cc — the "two months free" pill's brass wash. It is the gold ramp's
+  //     own #f6eccf, one step warmer, and carries only large-ish bold text.
+  //   #5c4710 — the ink ON that wash, 7.33:1. A dark brass, not a new hue.
+  //   #3e3a35 — the terms strip under the four included groups, on #f7f5f0 at
+  //     10.35:1. One step darker than #5a554f because the strip is 15px and
+  //     sits furthest from the reader's focus.
+  "#ece8df", "#f3e9cc", "#5c4710", "#3e3a35",
 ];
 for (const v of EXTRAS) ALLOWED.add(v.toLowerCase());
 

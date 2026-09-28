@@ -78,6 +78,15 @@ const INCLUDED = DATA.included;
 const TERMS_STRIP = DATA.termsStrip;
 const BILLING_INTERVALS = DATA.billingIntervals;
 const YEARLY_NOTE = DATA.yearlyNote;
+// FIX-4 6 — the words the pricing section is written in. In the JSON with
+// the numbers, for the same reason the numbers are: one file both sides read.
+const COPY = {
+  headline: DATA.headline, lede: DATA.lede, yearlyPill: DATA.yearlyPill,
+  monthToMonth: DATA.monthToMonth, featuredBadge: DATA.featuredBadge,
+  startCta: DATA.startCta, includedHeading: DATA.includedHeading,
+};
+const INCLUDED_GROUPS = DATA.includedGroups;
+const EXTRAS = DATA.extras;
 
 // ── LOOKUPS ────────────────────────────────────────────────────────────────
 
@@ -113,6 +122,50 @@ function amountUsdFor(tierId, interval) {
   return interval === "yearly" ? t.yearlyUsd : interval === "monthly" ? t.monthlyUsd : null;
 }
 
+// ── FIX-4 6 · THE NAME A CUSTOMER AND AN ADMIN SEE ────────────────────────
+// Seed, Sapling, Orchard, Forest. ONE function, because the plan value on an
+// org is a composite (`t5000_yearly`) and every screen that showed it was
+// either printing the raw id or keeping its own map — the admin console's
+// PLAN column showed `t5000_monthly`, Settings → Billing showed the band
+// sentence with no name at all, and the over-band notice named the band and
+// not the tier. The Stripe products keep their own names and their own ids:
+// this is what Steward calls the plan, and nothing here reaches Stripe.
+//
+// The legacy plan values (core/team/founding/seed/growth/impact) are NOT
+// renamed. Real organisations are on those prices, and calling somebody's
+// plan "Sapling" when their invoice says "Team" is worse than saying "Team".
+const LEGACY_PLAN_NAMES = {
+  core: "Core", team: "Team", founding: "Founding partner",
+  seed: "Seed", growth: "Growth", impact: "Impact",
+  trial: "Trial", portal: "Donor Portal",
+};
+
+// `t5000_yearly` → the tier. Also accepts a bare tier id.
+function tierForPlanValue(plan) {
+  const s = String(plan || "");
+  if (!s) return null;
+  return tierById(s.includes("_") ? s.split("_")[0] : s);
+}
+
+// The one answer to "what is this plan called?". Returns null for a plan
+// value nothing recognises, so a caller shows the raw value rather than a
+// confident wrong name.
+function planDisplayName(plan) {
+  const s = String(plan || "").trim();
+  if (!s) return null;
+  if (s === INTERNAL_TEST.id) return INTERNAL_TEST.name;
+  const t = tierForPlanValue(s);
+  if (t) return t.name;
+  return LEGACY_PLAN_NAMES[s.toLowerCase()] || null;
+}
+
+// The name plus the size under it — "Sapling · up to 5,000 active donors".
+// The count always goes UNDER the name, never instead of it.
+function planDisplayBand(plan) {
+  const t = tierForPlanValue(plan);
+  return t ? t.band : null;
+}
+
 // Every price env var this file knows about, so a health check or a script
 // can report which ones are set without duplicating the list.
 function allPriceEnvNames() {
@@ -125,7 +178,8 @@ function allPriceEnvNames() {
 module.exports = {
   TIERS, TALK_TO_US, INTERNAL_TEST, FOUNDING_COUPON,
   ACTIVE_DONOR_MONTHS, ACTIVE_DONOR_SENTENCE, INCLUDED, TERMS_STRIP,
-  BILLING_INTERVALS, YEARLY_NOTE,
+  BILLING_INTERVALS, YEARLY_NOTE, COPY, INCLUDED_GROUPS, EXTRAS,
+  LEGACY_PLAN_NAMES,
   publicTierIds, tierById, tierForDonorCount, priceEnvFor, priceIdFor,
-  amountUsdFor, allPriceEnvNames,
+  amountUsdFor, allPriceEnvNames, tierForPlanValue, planDisplayName, planDisplayBand,
 };

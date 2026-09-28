@@ -15,6 +15,7 @@ import { ApiKeysPanel } from "./ApiKeysPanel";
 import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
+import { planDisplayName, planDisplayBand } from "../lib/planNames";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -2965,14 +2966,23 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
               <div>
                 <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:T.ink3,marginBottom:4}}>Current Plan</div>
+                {/* FIX-4 6 — THE PLAN'S NAME, with the donor count under it.
+                    This printed the raw plan value capitalised, so a new org
+                    read "T5000 monthly" on the screen that answers "what am I
+                    paying for". */}
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:15,fontWeight:700,color:T.ink,textTransform:"capitalize"}}>{billing.plan||"Trial"}</span>
+                  <span data-testid="billing-plan-name" style={{fontSize:15,fontWeight:700,color:T.ink,textTransform:planDisplayName(billing.plan)?"none":"capitalize"}}>
+                    {planDisplayName(billing.plan)||billing.plan||"Trial"}
+                  </span>
                   {(()=>{const m=BILLING_STATUS_META[billing.subscriptionStatus]||BILLING_STATUS_META.trialing; return (
                   <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:99,background:m.bg,color:m.color,border:"1px solid "+m.border}}>
                     {m.label}
                   </span>
                   );})()}
                 </div>
+                {planDisplayBand(billing.plan)&&(
+                  <div data-testid="billing-plan-band" style={{fontSize:12,color:T.ink3,marginTop:2}}>{planDisplayBand(billing.plan)}</div>
+                )}
               </div>
               {/* BUILD-90 90b — THE DATE, WHERE SHE LOOKS FOR IT. The same
                   date Checkout showed her and the same one the seven-day
@@ -3059,7 +3069,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
               const isSubscriber=["core","team","growth","impact","founding"].includes(billing.plan);
               const hasSub=!!billing.hasSubscription;
               const isUpgradable=billing.plan==="trial"||billing.plan==="seed";
-              const planLabel={core:"Core",team:"Team",growth:"Team",impact:"Team",founding:"Core"}[billing.plan]||billing.plan;
+              const planLabel=planDisplayName(billing.plan)||billing.plan;
               return (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:12.5,color:T.ink3,lineHeight:1.5}}>

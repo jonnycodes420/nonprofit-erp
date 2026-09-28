@@ -41,8 +41,22 @@ const RAIL = { bg: T.ink, panel: T.bgElevated, line: T.green650, text: T.inkInve
 // gaps survive — months 3 to 7 are still visibly wider apart than day 2 to
 // week 1 — and nothing collides. The alternative was making every gap equal,
 // which would have thrown away the only idea Direction A has.
-const MIN_GAP = 11.5;   // percent — see SPINE_MIN below for why 11.5 is enough
+//
+// FIX-4 1b — THE SPINE FITS THE CARD NOW. It used to live inside the 1.85fr
+// left column with `minWidth: 900` and `overflowX: auto`, which at 1440 gave
+// that column about 680px and put a SECOND horizontal scrollbar inside the
+// card: seven steps existed, four of them were visible, and you had to know
+// to drag. The spine has moved out of the grid and spans the whole card, the
+// minimum width is gone, and the chain runs the full width of the card from
+// the first node to the last. Below SPINE_BREAKPOINT the card is too narrow
+// for seven labels at any width, so it becomes the vertical list — which is
+// the same answer 390 always got, reached earlier.
+const MIN_GAP = 11.5;   // percent
 const LEFT = 6, RIGHT = 94;
+// The narrowest CARD a seven-node spine reads at. 11.5% of the card must
+// clear NODE_W (88px), so the card needs ~765px; a 1100px viewport leaves
+// about 816px after the 220px rail and the page's gutters.
+export const SPINE_BREAKPOINT = 1100;
 
 export function nodePositions(offsets) {
   const list = offsets.map(n => Math.max(0, Number(n) || 0));
@@ -87,7 +101,7 @@ const STEP_TYPES = [
   { type: "follow_up_no_reply", label: "Follow up if no reply" },
 ];
 
-export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
+export default function JourneyBuilder({ isAdmin = true, isReadOnly = false, initialJourneyId = null }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [openId, setOpenId] = useState(null);      // which journey is expanded
@@ -98,6 +112,11 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
   const [stats, setStats] = useState(null);
   const [rowsPanel, setRowsPanel] = useState(null);
   const [applyPanel, setApplyPanel] = useState(null);
+  // FIX-4 1c — who the journey is for. Held beside the panel rather than in
+  // it, so changing a filter can re-ask the server for the count without
+  // closing and reopening the offer.
+  const [audience, setAudience] = useState({});
+  const [counting, setCounting] = useState(false);
   const dragFrom = useRef(null);
 
   const load = async () => {
@@ -105,6 +124,18 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
     catch (e) { setErr(e?.message || "Could not load journeys."); }
   };
   useEffect(() => { load(); }, []);
+
+  // FIX-4 2 — arriving from the profile's chip opens THAT journey, once.
+  // Guarded on `data` so it runs after the catalogue is in hand, and on
+  // `openId` so re-rendering does not keep reopening one somebody closed.
+  const openedInitial = useRef(false);
+  useEffect(() => {
+    if (openedInitial.current || !initialJourneyId || !data) return;
+    const j = (data.journeys || []).find(x => x.id === initialJourneyId);
+    if (!j) { openedInitial.current = true; return; }
+    openedInitial.current = true;
+    openJourney(j);
+  }, [data, initialJourneyId]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const current = useMemo(
     () => (data?.journeys || []).find(j => j.id === openId) || null, [data, openId]);
@@ -179,6 +210,27 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
     setSel(to);
   }
 
+  // FIX-4 1c — ONE PLACE THE COUNT COMES FROM. Opening the offer and
+  // changing a filter both land here, so the number on the button is always
+  // the number the server would apply to, never a stale one from the last
+  // set of filters.
+  async function recount(journeyId, next) {
+    setCounting(true);
+    try {
+      const q = Object.keys(next).length ? `&audience=${encodeURIComponent(JSON.stringify(next))}` : "";
+      setApplyPanel(await apiFetch(`/journeys/${journeyId}/qualifying?days=90${q}`));
+      setErr("");
+    } catch (e) { setErr(e?.message || "Could not count who qualifies."); setApplyPanel(null); }
+    setCounting(false);
+  }
+  function setFilter(key, value) {
+    const next = { ...audience };
+    if (value === undefined || value === null || value === "" || value === false) delete next[key];
+    else next[key] = value;
+    setAudience(next);
+    if (current) recount(current.id, next);
+  }
+
   const touches = draft && draft.length
     ? `${draft.length} touch${draft.length === 1 ? "" : "es"} over ${
         maxOffset < 45 ? `${Math.max(1, Math.round(maxOffset / 7))} week${Math.round(maxOffset / 7) === 1 ? "" : "s"}`
@@ -192,11 +244,14 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
   return (
     <div data-testid="journey-builder">
       <style>{`
-        @media (max-width: 900px){
+        @media (max-width: ${SPINE_BREAKPOINT}px){
           .jb-grid{ grid-template-columns: 1fr !important; }
           /* THE SPINE BECOMES A LIST. Seven nodes in 342px is a smudge, not a
              timeline — Direction A's idea is that time is a line you can see,
-             and on a phone that line is vertical. */
+             and on a phone that line is vertical. FIX-4 1b raised the point it
+             changes from 900 to ${SPINE_BREAKPOINT}: between the two the card was
+             wide enough to draw a spine and too narrow to read one, so it grew
+             a scrollbar instead of becoming a list. */
           .jb-spine{ display:none !important; }
           .jb-list{ display:block !important; }
         }
@@ -235,21 +290,18 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
 
             {j.id === openId && draft && (
               <div style={{ borderTop: "1px solid " + T.bg3 }}>
-                <div className="jb-grid" style={{ display: "grid", gridTemplateColumns: "1.85fr 1fr", gap: 18, padding: 16 }}>
-                  <div style={{ minWidth: 0 }}>
-                    {/* ── THE SPINE (1440) ───────────────────────────── */}
-                    <div className="jb-spine" style={{ position: "relative", padding: "30px 0 8px", overflowX: "auto" }}>
-                      {/* SPINE_MIN. A node is NODE_W wide and centred on its
-                          position, so two adjacent nodes only clear each
-                          other if MIN_GAP% of the track is wider than
-                          NODE_W. 11.5% of 900 is 103px against an 88px node,
-                          which clears; at 620 it was 71px against 92 and the
-                          labels ran into each other. The spine scrolls inside
-                          its own container when the column is narrower —
-                          which is the right place for a sideways scroll, and
-                          is never the page. */}
-                      <div style={{ position: "relative", minWidth: 900, height: 138, marginRight: 46 }}>
-                        <div style={{ position: "absolute", left: 0, right: 0, top: 52, height: 2, background: T.bg3 }} />
+                {/* ── THE SPINE (FIX-4 1b) ─────────────────────────────
+                    ACROSS THE WHOLE CARD, not inside a column of it. The
+                    chain is the first thing on the card and it runs edge to
+                    edge, first node to last; every step is on screen at 1440
+                    and nothing inside the card scrolls sideways. */}
+                <div className="jb-spine" data-testid="jb-spine" style={{ position: "relative", padding: "30px 16px 8px" }}>
+                  {/* A node is 88px wide and centred on its position, so two
+                      adjacent nodes clear each other when MIN_GAP% of the
+                      card is wider than 88px. Below SPINE_BREAKPOINT it is
+                      not, and this whole block is display:none. */}
+                  <div style={{ position: "relative", height: 138 }}>
+                    <div data-testid="jb-chain" style={{ position: "absolute", left: 0, right: 0, top: 52, height: 2, background: T.bg3 }} />
                         {draft.map((s, i) => {
                           const on = i === sel;
                           return (
@@ -277,9 +329,11 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
                             </div>
                           );
                         })}
-                      </div>
-                    </div>
+                  </div>
+                </div>
 
+                <div className="jb-grid" style={{ display: "grid", gridTemplateColumns: "1.85fr 1fr", gap: 18, padding: "0 16px 16px" }}>
+                  <div style={{ minWidth: 0 }}>
                     {/* ── THE SAME JOURNEY AS A LIST (390) ───────────── */}
                     <div className="jb-list" style={{ display: "none" }}>
                       {draft.map((s, i) => (
@@ -357,10 +411,7 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
                           {current.enabled ? "Turn it off" : "Turn it on"}
                         </button>
                         <button data-testid="jb-apply-open" style={BTN}
-                          onClick={async () => {
-                            try { setApplyPanel(await apiFetch(`/journeys/${current.id}/qualifying?days=90`)); }
-                            catch (e) { setErr(e?.message || "Could not count who qualifies."); }
-                          }}>
+                          onClick={async () => { setAudience({}); await recount(current.id, {}); }}>
                           Apply to people who already qualify
                         </button>
                       </div>
@@ -471,16 +522,84 @@ export default function JourneyBuilder({ isAdmin = true, isReadOnly = false }) {
       {applyPanel && (
         <Modal onClose={() => setApplyPanel(null)} title="Apply to people who already qualify">
           <p style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.6, marginTop: 0 }}>{applyPanel.sentence}</p>
+
+          {/* ── FIX-4 1c · WHO IT IS FOR ───────────────────────────────
+              Every filter narrows and none of them widens, so the number on
+              the button can only come down as you add one. It re-counts on
+              every change, because a confirm that names a number from a
+              previous set of filters is a confirm to the wrong thing. */}
+          <div data-testid="jb-audience" style={{ borderTop: "1px solid " + T.bg3, borderBottom: "1px solid " + T.bg3,
+                                                  padding: "12px 0", margin: "12px 0" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase",
+                          color: T.ink3, marginBottom: 9 }}>Who it is for</div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 10 }}>
+              {(data.audienceFilters || []).filter(f => f.kind === "flag").map(f => (
+                <button key={f.key} type="button" data-testid={"jb-aud-" + f.key} title={f.sentence}
+                  aria-pressed={!!audience[f.key]} disabled={counting}
+                  onClick={() => setFilter(f.key, !audience[f.key])}
+                  style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 7, cursor: "pointer",
+                           fontFamily: "inherit",
+                           background: audience[f.key] ? T.bg2 : T.white, color: T.ink,
+                           border: "1px solid " + (audience[f.key] ? T.greenDk : T.bg3) }}>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 10 }}>
+              <label style={{ display: "block" }}>
+                <span style={LBL}>Stage</span>
+                <select data-testid="jb-aud-stage" value={audience.stage || ""} disabled={counting}
+                  onChange={e => setFilter("stage", e.target.value)} style={INP}>
+                  <option value="">Any stage</option>
+                  {(data.stages || []).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={LBL}>Tag</span>
+                <select data-testid="jb-aud-tag" value={audience.tag || ""} disabled={counting}
+                  onChange={e => setFilter("tag", e.target.value)} style={INP}>
+                  <option value="">Any tag</option>
+                  {(data.tags || []).map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={LBL}>Largest gift at least</span>
+                <input data-testid="jb-aud-gift-min" type="number" min="0" step="1" disabled={counting}
+                  value={audience.giftSize?.minCents ? Math.round(audience.giftSize.minCents / 100) : ""}
+                  onChange={e => {
+                    const d = parseInt(e.target.value, 10);
+                    const next = { ...(audience.giftSize || {}) };
+                    if (Number.isInteger(d) && d > 0) next.minCents = d * 100; else delete next.minCents;
+                    setFilter("giftSize", Object.keys(next).length ? next : undefined);
+                  }} placeholder="$" style={INP} />
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={LBL}>Largest gift at most</span>
+                <input data-testid="jb-aud-gift-max" type="number" min="0" step="1" disabled={counting}
+                  value={audience.giftSize?.maxCents ? Math.round(audience.giftSize.maxCents / 100) : ""}
+                  onChange={e => {
+                    const d = parseInt(e.target.value, 10);
+                    const next = { ...(audience.giftSize || {}) };
+                    if (Number.isInteger(d) && d > 0) next.maxCents = d * 100; else delete next.maxCents;
+                    setFilter("giftSize", Object.keys(next).length ? next : undefined);
+                  }} placeholder="$" style={INP} />
+              </label>
+            </div>
+            <p data-testid="jb-audience-sentence" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "10px 0 0" }}>
+              {counting ? "Counting…" : applyPanel.audienceSentence}
+            </p>
+          </div>
+
           <p style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.55 }}>
             Each of them gets the journey&apos;s steps from today. Nothing is sent — every step waits for you.
             Anyone already in a journey that outranks this one is left where they are.
           </p>
           <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-            <button data-testid="jb-apply-confirm" disabled={!applyPanel.count}
+            <button data-testid="jb-apply-confirm" disabled={!applyPanel.count || counting}
               onClick={async () => {
                 try {
                   const r = await apiFetch(`/journeys/${current.id}/apply`,
-                    { method: "POST", body: JSON.stringify({ allQualifying: true, days: applyPanel.days }) });
+                    { method: "POST", body: JSON.stringify({ allQualifying: true, days: applyPanel.days, audience }) });
                   setApplyPanel(null); setErr("");
                   await load();
                   setStats(await apiFetch(`/journeys/${current.id}/stats`).catch(() => null));

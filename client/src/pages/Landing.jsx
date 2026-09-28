@@ -267,6 +267,14 @@ const STYLES = `
     font-size: 15px; font-weight: 600; padding: 12px 22px; border-radius: 8px;
     min-height: 44px; display: inline-flex; align-items: center;
   }
+  /* FIX-4 6 — Book a call sits BESIDE Start now, not three screens down.
+     Outlined, because exactly one thing in the header may be the filled
+     button and Start now is it. */
+  .lp .lp-navbtn-quiet {
+    background: transparent; color: ${C.ink}; border: 1.5px solid ${C.ink}; cursor: pointer;
+    font-size: 15px; font-weight: 600; padding: 10.5px 20px; border-radius: 8px;
+    min-height: 44px; display: inline-flex; align-items: center;
+  }
 
   .lp .lp-btn {
     border: none; cursor: pointer; font-size: 16px; font-weight: 600;
@@ -432,6 +440,7 @@ export default function Landing() {
             <a href="/pricing" className="lp-navlink lp-navlink-hide lp-focus">Pricing</a>
             <a href="#your-data" className="lp-navlink lp-navlink-hide lp-focus">Your data</a>
             <a href="/login" className="lp-navlink lp-focus">Log in</a>
+            <a href={CALENDLY_URL} target="_blank" rel="noreferrer" data-testid="lp-nav-book" className="lp-navbtn-quiet lp-focus">Book a call</a>
             <a href="/signup" className="lp-navbtn lp-focus">Start now</a>
           </div>
         </nav>

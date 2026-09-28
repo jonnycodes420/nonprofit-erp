@@ -8803,8 +8803,23 @@ app.get("/journeys", requireAuth, wrap(async (req, res) => {
        FROM cultivation_plans p WHERE p.org_id=? AND p.template_id IS NOT NULL
       GROUP BY p.template_id`, [req.user.orgId]);
   const byTpl = new Map(counts.map(c => [c.template_id, c]));
+  // FIX-4 1c — the stages and tags this org actually uses, so the audience
+  // controls offer what is on file rather than a list somebody has to type
+  // from memory. Read here, once, beside the filters they belong to.
+  const stageRows = await query(
+    `SELECT DISTINCT stage FROM donors WHERE org_id=? AND deleted_at IS NULL AND stage IS NOT NULL AND stage <> '' ORDER BY stage`,
+    [req.user.orgId]).catch(() => []);
+  const tagRows = await query(
+    `SELECT DISTINCT btrim(tg) AS tag FROM donors d,
+       LATERAL jsonb_array_elements_text(
+         CASE WHEN coalesce(d.tags,'') ~ '^\\s*\\[' THEN d.tags::jsonb ELSE '[]'::jsonb END) AS tg
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND btrim(tg) <> '' ORDER BY 1 LIMIT 200`,
+    [req.user.orgId]).catch(() => []);
   res.json({
     triggers: J.TRIGGERS,
+    audienceFilters: J.AUDIENCE_FILTERS,
+    stages: stageRows.map(r => r.stage),
+    tags: tagRows.map(r => r.tag),
     presets: J.PRESETS.map(p => ({ ...p, touches: J.touchesSentence(p.steps) })),
     journeys: rows.map(t => ({
       id: t.id, name: t.name, steps: t.steps, trigger: t.trigger_key,
@@ -8881,13 +8896,23 @@ app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(asy
 // Who would qualify right now — the count the "apply to people who already
 // qualify" offer opens. A GET, and it writes nothing.
 app.get("/journeys/:id/qualifying", requireAuth, wrap(async (req, res) => {
+  const J = await journeyMod();
   const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
     [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
   const days = Math.min(365, Math.max(1, Number(req.query.days) || 90));
-  const rows = await qualifyingDonors(req.user.orgId, t, days);
-  res.json({ journeyId: t.id, name: t.name, days, count: rows.length,
+  // FIX-4 1c — the audience arrives as a JSON query parameter so this stays a
+  // GET that writes nothing. A parameter that will not parse is treated as no
+  // filter at all, which is the wider set and therefore the honest failure:
+  // the count says more people than it should rather than fewer.
+  let audience = {};
+  try { audience = J.validateAudience(req.query.audience ? JSON.parse(String(req.query.audience)) : {}); }
+  catch { audience = {}; }
+  const rows = await qualifyingDonors(req.user.orgId, t, days, audience);
+  res.json({ journeyId: t.id, name: t.name, days, count: rows.length, audience,
     donorIds: rows.map(r => r.id).slice(0, 2000),
+    audienceSentence: J.audienceSentence(audience),
+    filters: J.AUDIENCE_FILTERS,
     sentence: `${rows.length} ${rows.length === 1 ? "person" : "people"} already qualify — `
       + `their trigger happened in the last ${days} days and they are not in another journey that outranks this one.` });
 }));
@@ -8968,6 +8993,48 @@ app.get("/journeys/:id/preview", requireAuth, wrap(async (req, res) => {
 // because Steward is not running an experiment and a number that looks like
 // a lift, without a control, is a lie with a decimal point on it.
 //
+// ── FIX-4 2 · WHAT THIS JOURNEY WOULD DO TO THIS PERSON ──────────────────
+// The rail's "Add to a journey" shows the FIRST STEP AND ITS DATE before
+// anybody presses anything, so the confirm is a confirm to something real
+// rather than to a name. The dates are the organisation's civil dates, the
+// same arithmetic the apply itself will do — computed by planShape from the
+// org's own today, never from a UTC instant.
+//
+// A GET, and it writes nothing: no plan, no step, no thread.
+app.get("/donors/:id/journey-preview", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const PL = await planMod();
+  const J = await journeyMod();
+  const [donor] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
+    [req.params.id, orgId]);
+  if (!donor) return res.status(404).json({ error: "Donor not found" });
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [String(req.query.journeyId || ""), orgId]);
+  if (!t) return res.status(404).json({ error: "Not found", message: "That journey no longer exists." });
+
+  const v = PL.validateTemplate({ name: t.name, steps: t.steps });
+  if (!v.ok) return res.status(400).json({ error: "invalid_journey", message: v.errors[0].message });
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+  const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
+  const first = steps[0] || null;
+
+  // Somebody already in a plan is the one case where this cannot just say
+  // yes, so it says so here rather than at the confirm.
+  const [open] = await query(
+    "SELECT template_name FROM cultivation_plans WHERE org_id=? AND donor_id=? AND status='active'", [orgId, donor.id]);
+
+  res.json({
+    journeyId: t.id, name: t.name, donorId: donor.id, donorName: donor.name,
+    touches: J.touchesSentence(t.steps || []),
+    firstStep: first ? { label: first.label, dueDate: first.dueDate, type: first.type } : null,
+    steps: steps.map(s => ({ seq: s.seq, label: s.label, dueDate: s.dueDate })),
+    alreadyIn: open ? open.template_name : null,
+    sentence: first
+      ? `${donor.name} would start with "${first.label}", due ${first.dueDate}. Nothing is sent. Every step waits for you.`
+      : "That journey has no steps yet.",
+  });
+}));
+
 // EVERY NUMBER OPENS. Each figure carries the `rows` key that
 // GET /journeys/:id/rows re-fetches, so the number on the screen and the
 // donors behind it are one query and cannot drift.
@@ -9065,19 +9132,77 @@ async function journeyStats(orgId, t) {
   };
 }
 
-// Who qualifies for a journey's trigger inside a window. One place, so the
-// COUNT the offer shows and the rows the apply writes cannot disagree.
-async function qualifyingDonors(orgId, t, days) {
+// ── FIX-4 1c · THE AUDIENCE, AS SQL ───────────────────────────────────────
+// The one place a filter from shared/journeyShape.js becomes a WHERE clause.
+// Every one of them is an EXISTS against a table Steward already keeps, so a
+// filter can narrow the set and can never invent a person.
+//
+// Returned as fragments + params rather than interpolated, because two of
+// them (tag, stage) carry text somebody typed.
+function audienceClauses(audience = {}, alias = "d") {
+  const sql = [], params = [];
+  if (audience.volunteers) {
+    sql.push(`EXISTS (SELECT 1 FROM volunteers v WHERE v.person_id=${alias}.id AND v.org_id=${alias}.org_id)`);
+  }
+  if (audience.attendedEvent) {
+    sql.push(`EXISTS (SELECT 1 FROM event_attendees ea WHERE ea.donor_id=${alias}.id AND ea.org_id=${alias}.org_id
+                        AND lower(coalesce(ea.status,'')) = 'attended')`);
+  }
+  if (audience.members) {
+    sql.push(`EXISTS (SELECT 1 FROM memberships m WHERE m.donor_id=${alias}.id AND m.org_id=${alias}.org_id
+                        AND m.status IN ('active','grace'))`);
+  }
+  if (audience.recurring) {
+    sql.push(`EXISTS (SELECT 1 FROM recurring_subscriptions rs WHERE rs.donor_id=${alias}.id AND rs.org_id=${alias}.org_id
+                        AND rs.status IN ('active','past_due'))`);
+  }
+  if (audience.stage) {
+    sql.push(`lower(coalesce(${alias}.stage,'')) = lower(?)`);
+    params.push(String(audience.stage));
+  }
+  if (audience.tag) {
+    // donors.tags is a JSON array kept as TEXT. Matched case-insensitively on
+    // the whole element, so "major" does not pull in "major-prospect".
+    sql.push(`EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                        CASE WHEN coalesce(${alias}.tags,'') ~ '^\\s*\\[' THEN ${alias}.tags::jsonb ELSE '[]'::jsonb END) AS tg
+                      WHERE lower(btrim(tg)) = lower(btrim(?)))`);
+    params.push(String(audience.tag));
+  }
+  if (audience.giftSize) {
+    const { minCents, maxCents } = audience.giftSize;
+    // THE LARGEST SINGLE GIFT, not the lifetime total: "gift size" is a
+    // sentence about one gift, and summing a year of $20s into a $1,000
+    // major donor is the kind of quiet wrong that reaches a real person.
+    if (minCents) {
+      sql.push(`(SELECT COALESCE(MAX(ROUND(g.amount*100)),0) FROM gifts g
+                  WHERE g.donor_id=${alias}.id AND g.org_id=${alias}.org_id) >= ?`);
+      params.push(Number(minCents));
+    }
+    if (maxCents) {
+      sql.push(`(SELECT COALESCE(MAX(ROUND(g.amount*100)),0) FROM gifts g
+                  WHERE g.donor_id=${alias}.id AND g.org_id=${alias}.org_id) <= ?`);
+      params.push(Number(maxCents));
+    }
+  }
+  return { sql: sql.length ? " AND " + sql.join(" AND ") : "", params };
+}
+
+// Who qualifies for a journey's trigger inside a window, narrowed by the
+// audience. One place, so the COUNT the offer shows and the rows the apply
+// writes cannot disagree.
+async function qualifyingDonors(orgId, t, days, audience = {}) {
   const trigger = t.trigger_key;
   if (trigger === "by_hand") return [];
   const cut = `(CURRENT_DATE - ${Number(days)})`;
+  const a = audienceClauses(audience, "d");
   if (trigger === "first_gift") {
     return await query(
       `SELECT d.id FROM donors d
         WHERE d.org_id=? AND d.deleted_at IS NULL
           AND (SELECT COUNT(*) FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id) = 1
           AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id
-                        AND g.date IS NOT NULL AND g.date <> '' AND g.date::date >= ${cut})`, [orgId]);
+                        AND g.date IS NOT NULL AND g.date <> '' AND g.date::date >= ${cut})${a.sql}`,
+      [orgId, ...a.params]);
   }
   if (trigger === "gift_over") {
     const need = Number(t.trigger_amount_cents) || 0;
@@ -9086,13 +9211,34 @@ async function qualifyingDonors(orgId, t, days) {
       `SELECT DISTINCT d.id FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
         WHERE d.org_id=? AND d.deleted_at IS NULL
           AND g.date IS NOT NULL AND g.date <> '' AND g.date::date >= ${cut}
-          AND ROUND(g.amount*100) >= ?`, [orgId, need]);
+          AND ROUND(g.amount*100) >= ?${a.sql}`, [orgId, need, ...a.params]);
   }
   if (trigger === "new_volunteer") {
     return await query(
       `SELECT DISTINCT d.id FROM donors d JOIN volunteers v ON v.person_id=d.id AND v.org_id=d.org_id
-        WHERE d.org_id=? AND d.deleted_at IS NULL AND v.created_at >= NOW() - (? || ' days')::interval`,
-      [orgId, String(days)]).catch(() => []);
+        WHERE d.org_id=? AND d.deleted_at IS NULL AND v.created_at >= NOW() - (? || ' days')::interval${a.sql}`,
+      [orgId, String(days), ...a.params]).catch(() => []);
+  }
+  // FIX-4 1c — the two new triggers. Both are states with a DATE on them, so
+  // unlike stage_change and lapsed_return they can honestly be looked back at.
+  if (trigger === "attended_event") {
+    return await query(
+      `SELECT DISTINCT d.id FROM donors d
+         JOIN event_attendees ea ON ea.donor_id=d.id AND ea.org_id=d.org_id
+         JOIN events e ON e.id=ea.event_id
+        WHERE d.org_id=? AND d.deleted_at IS NULL
+          AND lower(coalesce(ea.status,'')) = 'attended'
+          AND COALESCE(e.date::date, ea.created_at::date) >= ${cut}${a.sql}`,
+      [orgId, ...a.params]).catch(() => []);
+  }
+  if (trigger === "became_member") {
+    return await query(
+      `SELECT DISTINCT d.id FROM donors d
+         JOIN memberships m ON m.donor_id=d.id AND m.org_id=d.org_id
+        WHERE d.org_id=? AND d.deleted_at IS NULL
+          AND m.status IN ('active','grace')
+          AND m.joined_on IS NOT NULL AND m.joined_on <> '' AND m.joined_on::date >= ${cut}${a.sql}`,
+      [orgId, ...a.params]).catch(() => []);
   }
   // stage_change and lapsed_return are events rather than states: there is no
   // honest way to look backwards for them, so the offer says none rather than
@@ -9104,6 +9250,7 @@ async function qualifyingDonors(orgId, t, days) {
 // "apply to everyone who qualifies" button, and it goes through the SAME
 // engine as every automatic trigger — one path in.
 app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const J = await journeyMod();
   const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
     [req.params.id, req.user.orgId]);
   if (!t) return res.status(404).json({ error: "Not found" });
@@ -9111,7 +9258,11 @@ app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, 
   let ids = Array.isArray(req.body && req.body.donorIds) ? req.body.donorIds.map(String) : null;
   if (!ids && req.body && req.body.allQualifying === true) {
     const days = Math.min(365, Math.max(1, Number(req.body.days) || 90));
-    ids = (await qualifyingDonors(req.user.orgId, t, days)).map(r => r.id);
+    // THE SAME AUDIENCE THE COUNT WAS TAKEN WITH. The confirm said a number;
+    // if this recomputed without the filters it would put a wider set of
+    // people into a journey than the sentence somebody agreed to.
+    const audience = J.validateAudience(req.body.audience || {});
+    ids = (await qualifyingDonors(req.user.orgId, t, days, audience)).map(r => r.id);
   }
   if (!ids || !ids.length) return res.status(400).json({ error: "no_donors", message: "Name who should go in, or ask for everyone who qualifies." });
   if (ids.length > 2000) return res.status(400).json({ error: "too_many", message: "That is more than 2,000 people at once. Narrow it first." });
@@ -18377,6 +18528,12 @@ app.post("/events/:id/attendance", requireAuth, checkWriteAccess, wrap(async (re
       ["i_" + uuid().slice(0, 10), orgId, a.donor_id,
        status === "attended" ? `Came to ${event.name}.` : `Registered for ${event.name} and did not come.`,
        day, who.id, u?.name || who.name, JSON.stringify({ via: "event_attendance", event_id: event.id, attendee_id: a.id, status })]);
+    // FIX-4 1c — coming to an event can start a journey. Fired from HERE, the
+    // one place a person is deliberately marked as having come, and only for
+    // "attended": a no-show is not a moment somebody stepped closer. It rides
+    // the `attendance_logged_at` claim above, so a second save of the same
+    // sheet cannot start the journey twice.
+    if (status === "attended") await maybeStartJourney(orgId, a.donor_id, "attended_event", {});
     logged++;
   }
   res.json({ updated: rows.length, timelineLines: logged });
