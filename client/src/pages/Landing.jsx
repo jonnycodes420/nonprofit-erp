@@ -258,9 +258,10 @@ export default function Landing() {
           <img className="volunteer-photo" src="/landing/smiling-volunteers-sorting-clothes-and-supplie.jpg" alt="Smiling volunteers sorting clothes and supplies into donation boxes" />
         </div>
         <div className="volunteer-copy">
-          <p className="eyebrow">Included in every plan</p>
+          <p className="eyebrow">Volunteers</p>
           <h2>Make it easier for people to show up.</h2>
           <p className="volunteer-subhead">From first sign-up to hours served, every volunteer stays known, prepared, and connected.</p>
+          <p className="volunteer-included"><span>Included in every plan</span></p>
           <div className="volunteer-grid">
             <article className="volunteer-card"><span className="volunteer-number">01</span><h3>Volunteer roster</h3><p>Know the people behind the work, with contact details, screening, and availability together.</p></article>
             <article className="volunteer-card"><span className="volunteer-number">02</span><h3>Shifts and hours</h3><p>Plan shifts, match people with roles, and record every hour they give.</p></article>
@@ -283,39 +284,48 @@ export default function Landing() {
             <p>{PRICING.lede}</p>
           </div>
 
-          <div className="lp-toggle-wrap">
-            <div className="toggle" role="group" aria-label="Billing period">
-              {[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([id, label]) => (
-                <button key={id} type="button" data-period={id} aria-pressed={period === id}
-                  onClick={() => setPeriod(id)}>{label}</button>
-              ))}
-            </div>
-            <span className="lp-pill">{PRICING.yearlyPill}</span>
-          </div>
-
-          <div className="lp-tiers">
-            {TIERS.map(t => (
-              <div key={t.id} className={"lp-tier" + (t.featured ? " featured" : "")} data-tier={t.id}>
-                <div className="lp-tier-top">
-                  <span className="lp-tier-name">{t.name}</span>
-                  {t.featured && <span className="lp-badge">{PRICING.featuredBadge}</span>}
-                </div>
-                <span className="lp-tier-band">{t.band}</span>
-                <div className="lp-tier-price">
-                  <strong>{usd(priceOf(t))}</strong><span className="per">{yearly ? "a year" : "a month"}</span>
-                </div>
-                <span className="sub">{subOf(t)}</span>
-                <Link className="lp-tier-cta" to="/signup">{PRICING.startCta}</Link>
+          <div className="lp-layout">
+            <div className="lp-side">
+              <div className="lp-toggle" role="group" aria-label="Billing period">
+                {[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([id, label]) => (
+                  <button key={id} type="button" data-period={id} aria-pressed={period === id}
+                    onClick={() => setPeriod(id)}>{label}</button>
+                ))}
               </div>
-            ))}
-          </div>
-
-          <div className="lp-forest">
-            <div>
-              <span className="lp-forest-name">{TALK.name}</span>
-              <span className="lp-forest-line">{TALK.line}</span>
+              <p className="lp-yearly-nudge">{PRICING.yearlyPill}</p>
+              <div className="lp-active">
+                <h3>What counts as active?</h3>
+                <p>{PRICING.activeDonorSentence}</p>
+                <p><strong>A donor who gave $50 in March counts.</strong> A name from 2019 with nothing since does not, and costs you nothing.</p>
+              </div>
             </div>
-            <a className="lp-tier-cta quiet" href={CAL} target="_blank" rel="noreferrer">{TALK.cta}</a>
+
+            <div className="lp-rows">
+              {TIERS.map(t => (
+                <div key={t.id} className={"lp-row" + (t.featured ? " featured" : "")} data-tier={t.id}>
+                  <div className="lp-row-main">
+                    <div className="lp-row-top">
+                      <span className="lp-row-name">{t.name}</span>
+                      {t.featured && <span className="lp-badge">{PRICING.featuredBadge}</span>}
+                    </div>
+                    <span className="lp-row-band">{t.band}</span>
+                    <span className="lp-row-sub">{subOf(t)}</span>
+                  </div>
+                  <div className="lp-row-price">
+                    <strong>{usd(priceOf(t))}</strong><span>{yearly ? "a year" : "a month"}</span>
+                  </div>
+                  <Link className="lp-row-cta" to="/signup">{PRICING.startCta}<span aria-hidden="true"> →</span></Link>
+                </div>
+              ))}
+              <div className="lp-row forest">
+                <div className="lp-row-main">
+                  <div className="lp-row-top"><span className="lp-row-name">{TALK.name}</span></div>
+                  <span className="lp-row-band">{TALK.line}</span>
+                </div>
+                <div className="lp-row-price"><strong>Talk to us</strong></div>
+                <a className="lp-row-cta" href={CAL} target="_blank" rel="noreferrer">{TALK.cta}<span aria-hidden="true"> →</span></a>
+              </div>
+            </div>
           </div>
 
           <div className="lp-included">
@@ -614,7 +624,9 @@ const LANDING_CSS = `
     .volunteer-visual::after { content: ""; position: absolute; inset: 20px -18px -18px 20px; z-index: 0; border: 1px solid rgba(201,168,76,.55); border-radius: 28px; }
     .volunteer-photo { position: relative; z-index: 1; width: 100%; aspect-ratio: 1 / 1; border-radius: 28px; box-shadow: 0 24px 48px rgba(15,26,18,.13); object-fit: cover; object-position: center; }
     .volunteer-copy h2 { max-width: 660px; }
-    .volunteer-subhead { margin: 30px 0 40px; color: var(--grey); font-size: 18px; }
+    .volunteer-subhead { margin: 30px 0 18px; color: var(--grey); font-size: 18px; }
+    .volunteer-included { margin: 0 0 40px; }
+    .volunteer-included span { display: inline-block; padding: 6px 12px; border-radius: 99px; background: #f3e9cc; color: #5c4710; font-size: 13px; font-weight: 700; }
     .volunteer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--line); background: rgba(255,255,255,.45); }
     .volunteer-card { min-height: 188px; padding: 24px 26px 26px; }
     .volunteer-card:nth-child(odd) { border-right: 1px solid var(--line); }
@@ -827,34 +839,34 @@ const LANDING_CSS = `
       *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
   
-/* ── LANDING-1 · the FIX-4 pricing cards, in the mockup's own voice ──── */
-.lp-toggle-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 40px 0 36px; }
-.lp-root .toggle { display: flex; padding: 5px; background: #ece8df; border-radius: 14px; }
-.lp-root .toggle button { padding: 11px 26px; border: none; border-radius: 10px; background: transparent;
-  color: var(--grey); font: 600 15px var(--sans); cursor: pointer; }
-.lp-root .toggle button[aria-pressed="true"] { background: var(--ink); color: var(--cream); }
-.lp-pill { font-size: 14px; font-weight: 600; padding: 6px 12px; border-radius: 99px; background: #f3e9cc; color: #5c4710; }
-.lp-tiers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
-.lp-tier { padding: 36px 34px 34px; border-radius: 22px; display: flex; flex-direction: column; gap: 10px;
-  background: var(--white); border: 1px solid var(--cream-deep); }
-.lp-tier.featured { background: var(--ink); color: var(--cream); border: none;
-  box-shadow: 0 30px 60px -24px rgba(15,26,18,.45); }
-.lp-tier-top { display: flex; justify-content: space-between; align-items: center; min-height: 28px; gap: 10px; }
-.lp-tier-name { font-family: var(--serif); font-size: 34px; font-weight: 600; letter-spacing: -.4px; }
+/* ── Pricing: editorial rows, not template cards ─────────────────────── */
+.lp-layout { display: grid; grid-template-columns: 300px 1fr; gap: clamp(32px, 5vw, 72px); margin-top: 48px; align-items: start; }
+.lp-side { position: sticky; top: 24px; }
+.lp-toggle { display: inline-flex; padding: 4px; background: var(--white); border: 1px solid var(--line); border-radius: 999px; }
+.lp-toggle button { padding: 10px 22px; border: none; border-radius: 999px; background: transparent;
+  color: var(--grey); font: 700 14px var(--sans); cursor: pointer; font-family: inherit; }
+.lp-toggle button[aria-pressed="true"] { background: var(--ink); color: var(--cream); }
+.lp-yearly-nudge { margin: 12px 0 0; font-size: 13px; font-weight: 600; color: #5c4710; }
+.lp-active { margin-top: 24px; padding: 26px 24px; border-radius: 14px; background: var(--ink); color: var(--cream); }
+.lp-active h3 { margin: 0 0 10px; font-family: var(--serif); font-size: 22px; font-weight: 600; }
+.lp-active p { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: rgba(240,237,230,.82); }
+.lp-active p:last-child { margin-bottom: 0; }
+.lp-active strong { color: var(--cream); }
+.lp-rows { border-top: 1px solid var(--line); }
+.lp-row { display: grid; grid-template-columns: 1fr auto auto; gap: 28px; align-items: center;
+  padding: 30px 4px; border-bottom: 1px solid var(--line); }
+.lp-row.featured { border-left: 3px solid var(--brass); padding-left: 24px; }
+.lp-row-top { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.lp-row-name { font-family: var(--serif); font-size: 30px; font-weight: 600; letter-spacing: -.4px; }
 .lp-badge { font-size: 12px; font-weight: 700; padding: 5px 10px; border-radius: 99px; background: var(--brass); color: var(--ink); white-space: nowrap; }
-.lp-tier-band { font-size: 16px; font-weight: 600; }
-.lp-tier-price { display: flex; align-items: baseline; gap: 6px; padding-top: 8px; flex-wrap: wrap; }
-.lp-tier-price strong { font-family: var(--serif); font-size: 64px; font-weight: 600; letter-spacing: -1.6px; line-height: 1; }
-.lp-tier .per, .lp-tier .sub { font-size: 15px; color: var(--grey); }
-.lp-tier.featured .per, .lp-tier.featured .sub { color: rgba(240,237,230,.72); }
-.lp-tier-cta { margin-top: 22px; text-align: center; padding: 16px; border-radius: 12px; font-size: 16px;
-  font-weight: 600; text-decoration: none; border: 1.5px solid var(--ink); color: var(--ink); display: block; }
-.lp-tier.featured .lp-tier-cta { background: var(--emerald); color: #fff; border-color: var(--emerald); }
-.lp-tier-cta.quiet { margin: 0; padding: 14px 22px; white-space: nowrap; }
-.lp-forest { margin-top: 20px; padding: 26px 32px; border-radius: 18px; background: var(--white);
-  border: 1px solid var(--cream-deep); display: flex; justify-content: space-between; align-items: center; gap: 20px; }
-.lp-forest-name { font-family: var(--serif); font-size: 30px; font-weight: 600; margin-right: 18px; }
-.lp-forest-line { font-size: 17px; color: var(--grey); }
+.lp-row-band { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.lp-row-sub { display: block; font-size: 14px; color: var(--grey); }
+.lp-row-price { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.lp-row-price strong { font-family: var(--serif); font-size: 44px; font-weight: 600; letter-spacing: -1px; line-height: 1; }
+.lp-row-price span { font-size: 14px; color: var(--grey); }
+.lp-row-cta { font-size: 15px; font-weight: 700; color: var(--emerald); text-decoration: none; white-space: nowrap;
+  padding: 12px 0; }
+.lp-row-cta:hover { text-decoration: underline; }
 .lp-included { margin-top: 48px; display: flex; flex-direction: column; gap: 28px; }
 .lp-included h3 { margin: 0; font-family: var(--serif); font-size: 30px; font-weight: 600; text-align: center; }
 .lp-included-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
@@ -863,9 +875,11 @@ const LANDING_CSS = `
 .lp-included-grid span { font-size: 15px; line-height: 1.55; color: var(--grey); }
 .lp-extras { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px 36px; font-size: 15px; color: #3e3a35; }
 @media (max-width: 900px) {
-  .lp-tiers, .lp-included-grid { grid-template-columns: 1fr; }
-  .lp-forest { flex-direction: column; align-items: flex-start; }
-  .lp-tier-name { font-size: 28px; }
-  .lp-tier-price strong { font-size: 48px; }
+  .lp-layout { grid-template-columns: 1fr; }
+  .lp-side { position: static; }
+  .lp-row { grid-template-columns: 1fr; gap: 10px; }
+  .lp-included-grid { grid-template-columns: 1fr; }
+  .lp-row-name { font-size: 26px; }
+  .lp-row-price strong { font-size: 36px; }
 }
 `;
