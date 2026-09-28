@@ -1264,6 +1264,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
   const sc=donorScore(donor);const scoreColor=sc>70?T.greenDk:sc>45?T.gold600:T.terracotta;
   const urg=moveUrgency(donor);
 
+  // ── THREAD-2b 5 · WHERE THEY ARE IN THEIR JOURNEY ──────────────────────
+  // Direction A puts this in the RIGHT RAIL, with the rest of what is true
+  // of the relationship; the main column stays about the person and their
+  // money. The four figures, the ink rail itself and everything else about
+  // the approved profile are untouched — this is one new section IN the rail,
+  // which is exactly what the standing rule allows ("a redesign may move what
+  // is IN the rail; it may not delete the rail").
+  const [journey,setJourney]=useState(null);
+  const [journeyBusy,setJourneyBusy]=useState(false);
+  const [doneFor,setDoneFor]=useState(null);     // step id awaiting its one line
+  const [doneNote,setDoneNote]=useState("");
+  const [skipFor,setSkipFor]=useState(null);     // step id awaiting its why
+  const [skipWhy,setSkipWhy]=useState("");
+  useEffect(()=>{
+    let live=true;
+    if(!donor?.id)return undefined;
+    apiFetch(`/donors/${donor.id}/plan`).then(r=>{ if(live)setJourney(r.plan||null); }).catch(()=>{});
+    return ()=>{live=false;};
+  },[donor?.id]);
+
+
   const interactionCount=donor.interactions?.length||0;
   useEffect(()=>{
     setGiftLoading(true);
@@ -2830,6 +2851,127 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               </div>}
             </div>
           </RailSection>
+
+          {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
+              "Step 3 of 7 · Impact report · due Jan 3" and a small
+              done / today / upcoming timeline, exactly as the direction
+              showed it. Brass when it is late — late is late, not dangerous,
+              and red is only ever a destructive confirm. */}
+          {journey&&journey.status==="active"&&(()=>{
+            const steps=journey.steps||[];
+            const cur=steps.find(x=>x.status==="open")||steps.find(x=>x.status==="pending");
+            const doneCount=steps.filter(x=>x.status==="done"||x.status==="skipped").length;
+            const pos=cur?cur.seq:steps.length;
+            const late=cur&&cur.dueDate&&String(cur.dueDate).slice(0,10)<new Date().toISOString().slice(0,10);
+            return <RailSection title="Their journey" testid="dp-rail-journey">
+              <div style={{background:RAIL.panel,borderRadius:10,padding:"11px 12px"}}>
+                <div data-testid="dp-journey-position" style={{fontSize:10.5,fontWeight:700,letterSpacing:"0.07em",textTransform:"uppercase",color:RAIL.dim}}>
+                  Step {pos} of {steps.length}
+                </div>
+                <div style={{fontSize:14.5,fontWeight:700,color:T.white,marginTop:3}}>{cur?cur.label:"Finished"}</div>
+                {cur&&cur.dueDate&&(
+                  <div data-testid="dp-journey-due" style={{fontSize:12.5,fontWeight:600,marginTop:2,color:late?T.gold500:RAIL.dim}}>
+                    due {new Date(cur.dueDate+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",timeZone:"UTC"})}
+                  </div>
+                )}
+                {/* the small done / today / upcoming timeline */}
+                <div data-testid="dp-journey-timeline" style={{display:"flex",gap:5,marginTop:9}}>
+                  {steps.map(x=>(
+                    <span key={x.id} title={`${x.label} · ${x.status}`} style={{width:20,height:4,borderRadius:99,
+                      background:x.status==="done"?T.greenMid:x.status==="skipped"?RAIL.line
+                        :x.id===(cur||{}).id?(late?T.gold500:T.white):RAIL.line}}/>
+                  ))}
+                </div>
+                {cur&&(
+                  <div style={{display:"flex",gap:7,marginTop:12}}>
+                    <button data-testid="dp-journey-done" disabled={journeyBusy}
+                      onClick={()=>{setDoneFor(cur.id);setDoneNote("");}}
+                      style={{background:T.greenDk,border:"none",borderRadius:8,padding:"8px 13px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>
+                      Mark done
+                    </button>
+                    <button data-testid="dp-journey-skip" disabled={journeyBusy}
+                      onClick={()=>{setSkipFor(cur.id);setSkipWhy("");}}
+                      style={{background:"none",border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 13px",color:RAIL.text,fontSize:12.5,fontWeight:600,cursor:"pointer"}}>
+                      Skip
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div style={{fontSize:11.5,color:RAIL.dim,marginTop:9,lineHeight:1.5}}>
+                {journey.templateName} · started {journey.appliedOn}
+              </div>
+
+              {/* MARK DONE ASKS FOR ONE LINE. It is not paperwork: the line
+                  becomes a real conversation on the record, which is what
+                  makes Last contact true afterwards. */}
+              {doneFor&&(
+                <div style={{marginTop:10,background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
+                  <div style={{fontSize:12,color:RAIL.dim,marginBottom:7}}>What happened? One line.</div>
+                  <input data-testid="dp-journey-done-note" autoFocus value={doneNote} onChange={e=>setDoneNote(e.target.value)}
+                    placeholder="Called her, she was delighted."
+                    style={{width:"100%",background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12.5,outline:"none"}}/>
+                  <div style={{display:"flex",gap:7,marginTop:9}}>
+                    <button disabled={!doneNote.trim()||journeyBusy} data-testid="dp-journey-done-save"
+                      onClick={async()=>{
+                        setJourneyBusy(true);
+                        try{
+                          const r=await apiFetch(`/plan-steps/${doneFor}/done`,{method:"POST",body:JSON.stringify({note:doneNote.trim()})});
+                          setJourney(r.plan||null); setDoneFor(null); setDoneNote("");
+                          if(onInteractionAdded)onInteractionAdded();
+                        }catch(e){ window.alert(e?.message||"Could not save that."); }
+                        setJourneyBusy(false);
+                      }}
+                      style={{background:doneNote.trim()?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"7px 13px",
+                              color:doneNote.trim()?T.white:RAIL.dim,fontSize:12.5,fontWeight:700,cursor:doneNote.trim()?"pointer":"not-allowed"}}>
+                      Save and open the next
+                    </button>
+                    <button onClick={()=>setDoneFor(null)} style={{background:"none",border:"none",color:RAIL.dim,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
+              {/* SKIP ASKS WHY IN ONE TAP. Four reasons cover almost every
+                  case; "something else" is there for the rest. */}
+              {skipFor&&(
+                <div style={{marginTop:10,background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:10,padding:"11px 12px"}}>
+                  <div style={{fontSize:12,color:RAIL.dim,marginBottom:8}}>Why are you skipping it?</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {["Already done another way","Not right for this person","No time","They asked us not to"].map(r=>(
+                      <button key={r} data-testid="dp-journey-skip-reason" disabled={journeyBusy}
+                        onClick={async()=>{
+                          setJourneyBusy(true);
+                          try{
+                            const out=await apiFetch(`/plan-steps/${skipFor}/skip`,{method:"POST",body:JSON.stringify({reason:r})});
+                            setJourney(out.plan||null); setSkipFor(null);
+                            if(onInteractionAdded)onInteractionAdded();
+                          }catch(e){ window.alert(e?.message||"Could not skip that."); }
+                          setJourneyBusy(false);
+                        }}
+                        style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:99,padding:"6px 11px",
+                                color:RAIL.text,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r}</button>
+                    ))}
+                  </div>
+                  <input value={skipWhy} onChange={e=>setSkipWhy(e.target.value)} placeholder="Something else…"
+                    style={{width:"100%",marginTop:8,background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"7px 10px",color:RAIL.text,fontSize:12.5,outline:"none"}}/>
+                  <div style={{display:"flex",gap:7,marginTop:8}}>
+                    <button disabled={!skipWhy.trim()||journeyBusy}
+                      onClick={async()=>{
+                        setJourneyBusy(true);
+                        try{
+                          const out=await apiFetch(`/plan-steps/${skipFor}/skip`,{method:"POST",body:JSON.stringify({reason:skipWhy.trim()})});
+                          setJourney(out.plan||null); setSkipFor(null); setSkipWhy("");
+                          if(onInteractionAdded)onInteractionAdded();
+                        }catch(e){ window.alert(e?.message||"Could not skip that."); }
+                        setJourneyBusy(false);
+                      }}
+                      style={{background:skipWhy.trim()?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"7px 13px",
+                              color:skipWhy.trim()?T.white:RAIL.dim,fontSize:12.5,fontWeight:700,cursor:skipWhy.trim()?"pointer":"not-allowed"}}>Skip it</button>
+                    <button onClick={()=>setSkipFor(null)} style={{background:"none",border:"none",color:RAIL.dim,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </RailSection>;
+          })()}
 
           {/* The stage, and the smart moves that argue for changing it. Both
               are the major-gifts layer, so a Core org sees the one frosted

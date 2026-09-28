@@ -81,6 +81,25 @@ function AppShell() {
     try { await apiFetch("/billing/donor-band/dismiss",{method:"POST"}); } catch { /* the banner is already hidden */ }
   }
 
+  // THREAD-2b 2 — the onboarding journey step was skipped. ONE card, until
+  // it is done or dismissed. It re-checks whether a journey now exists, so
+  // setting one up anywhere else makes the card disappear on the next load
+  // rather than lingering as a lie.
+  const [journeySkipped,setJourneySkipped]=useState(false);
+  useEffect(()=>{
+    let live=true;
+    let flag=null;
+    try{ flag=localStorage.getItem("npe_journey_skipped"); }catch{ /* private window */ }
+    if(flag!=="1")return undefined;
+    apiFetch("/journeys").then(d=>{
+      if(!live)return;
+      const any=(d.journeys||[]).some(j=>j.enabled);
+      if(any){ try{localStorage.removeItem("npe_journey_skipped");}catch{/* private window */} setJourneySkipped(false); }
+      else setJourneySkipped(true);
+    }).catch(()=>{});
+    return ()=>{live=false;};
+  },[]);
+
   const sidebarKey = "npe_sidebar_collapsed_" + (auth?.user?.id || "anon");
   const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{
     try { return localStorage.getItem(sidebarKey) === "1"; } catch { return false; }
@@ -647,6 +666,28 @@ function AppShell() {
             Your data →
           </button>
         )}
+      </div>
+    )}
+    {/* ── THREAD-2b 2 · ONE CALM CARD, IF THE JOURNEY STEP WAS SKIPPED ──
+        Not a banner and not a nag: it sits once, says what it is for, and
+        goes away for good when it is done or dismissed. Cream on ink's
+        shade rather than brass — nothing is wrong, there is simply a thing
+        worth ten minutes. */}
+    {journeySkipped&&(
+      <div data-testid="journey-nudge" style={{background:T.bg2,borderBottom:"1px solid "+T.bg3,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.ink,flexWrap:"wrap"}}>
+        <span style={{flex:1,minWidth:240}}>
+          <strong>You have not said how you look after a new donor yet.</strong>{" "}
+          Pick one of five, adjust it, and Steward reminds you step by step. Ten minutes, and nothing is ever sent without you.
+        </span>
+        <button onClick={()=>navigateTo("settings",{section:"journeys"})}
+          style={{background:T.greenDk,border:"none",borderRadius:8,color:T.white,fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 13px",whiteSpace:"nowrap"}}>
+          Set up a journey →
+        </button>
+        <button data-testid="journey-nudge-dismiss"
+          onClick={()=>{ setJourneySkipped(false); try{localStorage.setItem("npe_journey_skipped","dismissed");}catch{/* private window */} }}
+          style={{background:"none",border:"1px solid "+T.bg3,borderRadius:8,color:T.ink3,fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 13px",whiteSpace:"nowrap"}}>
+          Not now
+        </button>
       </div>
     )}
     {/* ── GTM-1b 1 · YOU HAVE GROWN PAST YOUR BAND ──────────────────────
