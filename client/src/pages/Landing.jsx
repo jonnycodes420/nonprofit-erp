@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import AgentDemo from "../components/AgentDemo";
 import PRICING from "../../../pricing.json";
 
 // ── LANDING-1 · THE LANDING PAGE, FROM JONATHAN'S MUSE DESIGN ────────────
@@ -40,8 +41,6 @@ const TALK = PRICING.talkToUs;
 const usd = n => "$" + Number(n).toLocaleString("en-US");
 
 export default function Landing() {
-  // The Agent demo on the page: accept or skip, then review again.
-  const [decision, setDecision] = useState(null);
   // The pricing toggle, from the same catalogue the signup route reads.
   const [period, setPeriod] = useState("monthly");
   const yearly = period === "yearly";
@@ -138,7 +137,7 @@ export default function Landing() {
         <div className="lostfound-card">
           <div>
             <p className="eyebrow">Lost &amp; Found</p>
-            <h2>A $1,500 donor audit. Free.</h2>
+            <h2>A paid-caliber donor audit. Free.</h2>
             <p className="lf-copy">Consultants charge $500 to $2,000 to tell you which donors are slipping away. Upload your donor file and see who has gone quiet, who is drifting and how much is at risk, before your year-end appeal goes out.</p>
           </div>
           <div className="lostfound-side">
@@ -154,42 +153,9 @@ export default function Landing() {
       <div className="wrap">
         <div className="section-head">
           <div><p className="eyebrow">The Agent</p><h2>A steady hand for the details.</h2></div>
-          <p>The Agent drafts notes, builds briefs, and cleans records, so your team can stay present with people. Every important change still comes to you.</p>
+          <p>The agent drafts, recommends, and explains. You review, approve, and connect. No form. No call. Try it right here.</p>
         </div>
-        <div className="product-shell" aria-label="Harborlight approval screen">
-          <aside className="product-nav">
-            <p className="org-name">Harborlight</p>
-            <ul>
-              <li>Home</li>
-              <li>Donors</li>
-              <li className="active">The Agent</li>
-              <li>Reports</li>
-            </ul>
-          </aside>
-          <div className="product-main">
-            <div className="product-top">
-              <div><h3>Steward Data</h3><p>One record needs your review.</p></div>
-              <span className="approval-label">You approve</span>
-            </div>
-            <article className="approval-card" id="approvalCard">
-              {!decision && <div id="approvalPrompt">
-                <div className="approval-head"><span>Possible donor match</span><span>Needs approval</span></div>
-                <div className="approval-body">
-                  <h4>Match this $125 gift to Marisol Reed?</h4>
-                  <p>The donor name is shortened on the gift record.</p>
-                  <p className="why"><strong>Why:</strong> the email, initials, and giving pattern match Marisol's record.</p>
-                </div>
-                <div className="approval-actions">
-                  <button type="button" data-decision="skipped" onClick={() => setDecision("skipped")}>Skip</button>
-                  <button className="accept" type="button" data-decision="accepted" onClick={() => setDecision("accepted")}>Accept</button>
-                </div>
-              </div>}
-              {decision && <div className="approval-result" id="approvalResult" aria-live="polite">
-                <div><strong id="decisionTitle">{decision === "accepted" ? "Accepted" : "Skipped"}</strong><p id="decisionCopy">{decision === "accepted" ? "The gift is ready to appear on Marisol's record." : "No change was made. The gift stays in the review queue."}</p><button type="button" id="reviewAgain" onClick={() => setDecision(null)}>Review again</button></div>
-              </div>}
-            </article>
-          </div>
-        </div>
+        <AgentDemo />
       </div>
     </section>
 
