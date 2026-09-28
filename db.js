@@ -4310,6 +4310,44 @@ async function initSchema() {
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_notes_person ON volunteer_notes (org_id, person_id, created_at DESC)`);
 
+  // ── LOST & FOUND · THE LEAD, AND NOTHING ELSE ──────────────────────────
+  // Lost & Found runs the whole audit in the visitor's browser. THE DONOR
+  // FILE NEVER REACHES THIS DATABASE, and these two tables are the complete
+  // list of what does.
+  //
+  // A LEAD is the three fields the visitor TYPED to download the PDF, plus
+  // where they came from. There is no column here that could hold a donor's
+  // name, a donor's email or an amount, which is the point: the guarantee is
+  // enforced by the SHAPE OF THE TABLE, not by a promise in a route.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lost_and_found_leads (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      organization TEXT NOT NULL,
+      ref TEXT,                                -- ?ref= , so an affiliate gets credit
+      user_agent TEXT,
+      ip TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lf_leads_created ON lost_and_found_leads (created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lf_leads_ref ON lost_and_found_leads (ref) WHERE ref IS NOT NULL`);
+
+  // A BENCHMARK is four aggregate numbers, opt-in, with NO link to a lead:
+  // no lead id, no email, no organisation name. Joining the two would turn
+  // an anonymous contribution into an attributed one, so the schema makes
+  // the join impossible rather than forbidding it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS lost_and_found_benchmarks (
+      id TEXT PRIMARY KEY,
+      donor_band TEXT NOT NULL,
+      retention_pct INTEGER,
+      share_lapsed_pct INTEGER,
+      share_drifting_pct INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_lf_bench_band ON lost_and_found_benchmarks (donor_band)`);
+
   // ── VOL-1 · SCHEDULING, CAPACITY, WAITLISTS, CREDENTIALS ────────────────
   // See shared/volunteerShifts.js for the vocabulary. In one line: an
   // OPPORTUNITY is a standing thing to do, a SLOT is one dated occurrence of

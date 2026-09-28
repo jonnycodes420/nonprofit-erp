@@ -1546,6 +1546,121 @@ app.post("/admin/orgs/:id/reconcile-subscription", requireAuth, requireSuperAdmi
       + `Steward read the subscription back from ${found} and saved it. Nothing was charged.` });
 }));
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  LOST & FOUND · THE ONLY TWO THINGS THAT REACH A SERVER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The audit runs in the visitor's browser and the donor file never leaves
+// it. These two routes are the COMPLETE list of what Lost & Found sends,
+// and both of them are written to be read at a glance:
+//
+//   POST /lost-and-found/lead       three fields the visitor typed, plus ?ref=
+//   POST /lost-and-found/benchmark  four aggregate numbers, opt-in
+//
+// Neither accepts anything else. Every field is picked OUT of the body by
+// name — never a spread, never a whitelist filter over an object somebody
+// else built — so a page that started sending more would find the extra
+// silently dropped rather than quietly stored.
+
+const LF_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.post("/lost-and-found/lead", registerLimiter, wrap(async (req, res) => {
+  const b = req.body || {};
+  const name = String(b.name || "").trim().slice(0, 200);
+  const email = String(b.email || "").trim().toLowerCase().slice(0, 200);
+  const organization = String(b.organization || "").trim().slice(0, 200);
+  const ref = String(b.ref || "").trim().slice(0, 120) || null;
+
+  if (!name) return res.status(400).json({ error: "name_required", message: "Your name, so we know who to write back to." });
+  if (!LF_EMAIL.test(email)) return res.status(400).json({ error: "email_invalid", message: "A working email address, so we can send the report." });
+  if (!organization) return res.status(400).json({ error: "org_required", message: "Your organization's name." });
+
+  const id = "lf_" + uuid().slice(0, 12);
+  await run(
+    `INSERT INTO lost_and_found_leads (id, name, email, organization, ref, user_agent, ip)
+     VALUES (?,?,?,?,?,?,?)`,
+    [id, name, email, organization, ref,
+     String(req.get("user-agent") || "").slice(0, 300), String(req.ip || "").slice(0, 60)]);
+
+  // Jonathan hears about every one. Not a digest: a nonprofit running a
+  // donor audit at 11pm is somebody to write to in the morning, and a
+  // deduped alert would hide the second one.
+  const to = process.env.FOUNDER_EMAIL;
+  if (to && process.env.RESEND_API_KEY) {
+    resend.emails.send({
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, replyTo: email,
+      subject: `Lost & Found — ${organization}`,
+      html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7">`
+        + [organization, `${name} · ${email}`, ref ? `Came from: ${ref}` : "No referrer.",
+           "They ran the audit and downloaded the report. Their donor file never reached us."]
+            .map(l => `<div>${String(l).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</div>`).join("")
+        + `</div>`,
+    }).catch(e => console.error("[lost-and-found] founder notification failed:", e.message));
+  } else {
+    console.warn("[lost-and-found] FOUNDER_EMAIL or RESEND_API_KEY unset — nobody was told about", id);
+  }
+  console.log(`[lost-and-found] lead ${id} — ${organization} (${email})${ref ? ` via ${ref}` : ""}`);
+  res.status(201).json({ ok: true, id,
+    message: "Thank you. Your report is downloading, and nothing about your donors left your computer." });
+}));
+
+// THE BENCHMARK. Four numbers, and the route REFUSES anything that is not
+// one of them rather than ignoring it: a page that started sending a fifth
+// field should fail loudly here, in a test, not succeed quietly in
+// production. `donorBand` is a band and not a count, because a count plus a
+// city is a fingerprint.
+const LF_BANDS = new Set(["under 250", "250 to 1,000", "1,000 to 5,000", "5,000 to 25,000", "more than 25,000"]);
+const LF_BENCH_KEYS = ["donorBand", "retentionPct", "shareLapsedPct", "shareDriftingPct"];
+
+app.post("/lost-and-found/benchmark", registerLimiter, wrap(async (req, res) => {
+  const b = req.body || {};
+  const extra = Object.keys(b).filter(k => !LF_BENCH_KEYS.includes(k));
+  if (extra.length) {
+    console.error(`[lost-and-found] benchmark REFUSED: it carried ${extra.join(", ")}, which is not one of the four aggregates.`);
+    return res.status(400).json({ error: "unexpected_fields",
+      message: "The benchmark takes four aggregate numbers and nothing else." });
+  }
+  if (!LF_BANDS.has(String(b.donorBand || ""))) {
+    return res.status(400).json({ error: "band_invalid", message: "That is not a donor band." });
+  }
+  const pct = v => {
+    if (v === null || v === undefined) return null;
+    const n = Number(v);
+    return Number.isInteger(n) && n >= 0 && n <= 100 ? n : null;
+  };
+  const id = "lfb_" + uuid().slice(0, 12);
+  await run(
+    `INSERT INTO lost_and_found_benchmarks (id, donor_band, retention_pct, share_lapsed_pct, share_drifting_pct)
+     VALUES (?,?,?,?,?)`,
+    [id, String(b.donorBand), pct(b.retentionPct), pct(b.shareLapsedPct), pct(b.shareDriftingPct)]);
+  res.status(201).json({ ok: true,
+    message: "Added to the benchmark. Four numbers, no names." });
+}));
+
+// The leads, for the super admin. Newest first, with the referrer, because
+// the one question Jonathan asks this list is "who came from where".
+app.get("/admin/lost-and-found", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const leads = await query(
+    `SELECT id, name, email, organization, ref, created_at FROM lost_and_found_leads
+      ORDER BY created_at DESC LIMIT 500`, []);
+  const byRef = await query(
+    `SELECT COALESCE(ref, 'direct') AS ref, COUNT(*)::int AS n FROM lost_and_found_leads
+      GROUP BY 1 ORDER BY 2 DESC`, []);
+  const bench = await query(
+    `SELECT donor_band, COUNT(*)::int AS n,
+            ROUND(AVG(retention_pct))::int AS retention,
+            ROUND(AVG(share_lapsed_pct))::int AS lapsed,
+            ROUND(AVG(share_drifting_pct))::int AS drifting
+       FROM lost_and_found_benchmarks GROUP BY 1 ORDER BY 1`, []);
+  res.json({
+    leads, byRef, benchmarks: bench,
+    sentence: leads.length
+      ? `${leads.length} ${leads.length === 1 ? "person has" : "people have"} downloaded a Lost & Found report.`
+      : "Nobody has downloaded a report yet.",
+    note: "A lead is the three fields they typed. No donor file, and nothing derived from one, ever reaches this server.",
+  });
+}));
+
 // ── GTM-1a 4 · THE $1 PRICE, AND THE ONE DOOR TO IT ───────────────────────
 // It is never public: it is not in `TIERS`, so nothing that renders the
 // pricing page or reads a signup body can name it, and `validateCloseLink`

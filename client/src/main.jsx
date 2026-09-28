@@ -34,6 +34,10 @@ const JoinNetwork        = React.lazy(() => import("./pages/JoinNetwork"));
 const GivingOrgShell     = React.lazy(() => import("./pages/GivingDashboard").then(m => ({ default: m.GivingOrgShell })));
 function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
 const Pricing            = React.lazy(() => import("./pages/Pricing"));
+// LOST & FOUND — the free donor audit, and Steward's best salesperson. Its
+// own route because it is a page an org reaches from anywhere, including
+// from somebody else's newsletter with a ?ref= on the end.
+const LostAndFound       = React.lazy(() => import("./pages/LostAndFound"));
 const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
 // NB: Invitation.jsx is also imported eagerly by Landing (the on-page form
 // section), so this lazy route resolves from the already-loaded entry chunk.
@@ -189,6 +193,7 @@ function Root() {
           <Route path="/donors/:donorId" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
           <Route path="/pricing"   element={<Pricing />} />
+          <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/invitation" element={<InvitationPage />} />
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify
               consumes the fragment token). */}
