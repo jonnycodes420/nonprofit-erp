@@ -4,15 +4,28 @@ export const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-produc
 
 export const getToken = () => localStorage.getItem("npe_token");
 
-// Error codes returned by requireAuth for an unusable token. Legacy string
-// messages are matched too so this keeps working during the backend deploy
-// window (old server still returns "Invalid token"/"No token provided").
-const AUTH_ERROR_CODES = ["token_expired", "invalid_token", "no_token"];
-const LEGACY_AUTH_MESSAGES = ["Invalid token", "No token provided"];
-
-function isAuthError(err) {
-  return AUTH_ERROR_CODES.includes(err?.error) || LEGACY_AUTH_MESSAGES.includes(err?.error);
-}
+// ── A 401 ON A REQUEST THAT CARRIED A TOKEN IS AN UNUSABLE TOKEN ──────────
+//
+// This used to be an ALLOWLIST of three codes, and requireAuth returns SIX:
+// `session_revoked`, `user_not_found` and `account_deactivated` were never on
+// it. The token was therefore never cleared for any of them, so the app sat on
+// a "Failed to connect / Retry" screen where Retry could not possibly work —
+// the exact dead end handleAuthFailure exists to prevent. Found live on
+// 2026-09-28, showing requireAuth's own `session_revoked` words.
+//
+// So the rule is inverted, and it cannot rot: if WE sent a token and the
+// server answered 401, that token cannot be used, whatever it chose to call
+// the reason. A seventh code tomorrow is handled the day it ships.
+//
+// The codes below no longer decide WHETHER it is an auth failure. They decide
+// only the WORDING, and an unknown one falls through to the general sentence.
+const AUTH_MESSAGES = {
+  token_expired:       "Your session expired — please log in again.",
+  no_token:            "Please log in again.",
+  account_deactivated: "This account has been removed from the organization. Ask an admin to add you back.",
+  user_not_found:      "That account no longer exists. Please log in again.",
+};
+const AUTH_FALLBACK_MESSAGE = "Your session is no longer valid — please log in again.";
 
 // Human, admin-facing copy for a failed billing call (create-checkout /
 // create-portal). The server returns TYPED billing-config errors
@@ -41,15 +54,23 @@ export function billingErrorMessage(err, fallback = "Something went wrong with b
 // A present-but-unusable token can never succeed on retry. Clear the stale
 // session and send the user to /login with an explanation, instead of leaving
 // them on a dead-end "Failed to connect / Retry" screen.
+// True from the moment we START sending somebody to /login until the browser
+// gets there. A render that happens in between must not paint an outage over
+// a navigation that is already on its way — that is what put the dead-end
+// screen in front of somebody whose session had simply been revoked.
+let _leavingForLogin = false;
+export const leavingForLogin = () => _leavingForLogin;
+
 export function handleAuthFailure(code) {
   localStorage.removeItem("npe_token");
   localStorage.removeItem("npe_user");
   localStorage.removeItem("npe_org");
-  const msg = code === "token_expired"
-    ? "Your session expired — please log in again."
-    : "Your session is no longer valid — please log in again.";
+  const msg = AUTH_MESSAGES[code] || AUTH_FALLBACK_MESSAGE;
   try { sessionStorage.setItem("steward_auth_message", msg); } catch {}
   if (!window.location.pathname.startsWith("/login")) {
+    // The flag is set only when a navigation is actually starting. On /login
+    // there is nowhere to go, and a flag set there would strand the screen.
+    _leavingForLogin = true;
     window.location.replace("/login");
   }
 }
@@ -66,8 +87,14 @@ export async function apiFetch(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    if (res.status === 401 && isAuthError(err)) {
+    // WE SENT A TOKEN AND GOT A 401. Whatever the server called it, this token
+    // cannot be used, and no amount of retrying will change that.
+    if (res.status === 401 && token) {
       handleAuthFailure(err.error);
+      // `authHandled` tells a caller's catch that somebody is already being
+      // sent to /login, so it must not render this as an outage.
+      throw Object.assign(new Error(err.message || err.error || "Request failed"),
+        { status: 401, authHandled: true, ...err });
     }
     throw Object.assign(new Error(err.message || err.error || "Request failed"), { status: res.status, ...err });
   }
@@ -85,9 +112,11 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
     body: JSON.stringify({ systemPrompt, userMessage }),
   });
   if (!res.ok) {
-    if (res.status === 401) {
+    // Same rule as apiFetch: a token we sent, refused with a 401, is a token
+    // that cannot be used.
+    if (res.status === 401 && token) {
       const err = await res.json().catch(() => ({}));
-      if (isAuthError(err)) handleAuthFailure(err.error);
+      handleAuthFailure(err.error);
     }
     throw new Error(`Stream failed: ${res.status}`);
   }

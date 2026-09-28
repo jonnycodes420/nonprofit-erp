@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { apiFetch, adaptData, API, getToken, billingErrorMessage } from "./api";
+import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -410,6 +410,19 @@ function AppShell() {
       <span style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.inkInverse,lineHeight:1}}>S</span>
     </div>
     <div style={{display:"flex",alignItems:"center",gap:10,color:T.ink3,fontSize:13}}><span style={{display:"inline-block",width:14,height:14,border:"2px solid "+T.bg3,borderTopColor:T.greenDk,borderRadius:"50%",animation:"sp 0.7s linear infinite"}}/>Loading your workspace…</div>
+  </div>;
+
+  // AN OUTAGE IS NOT THE SAME THING AS A SIGN-OUT, and this branch comes
+  // FIRST because it used to lose the race. A 401 clears the session and
+  // starts the navigation to /login, and the throw that follows landed in
+  // loadData's catch and painted "Failed to connect" over a redirect that was
+  // already on its way. Somebody whose session had been revoked was told the
+  // server was down, and given a Retry button that could never work.
+  if(leavingForLogin()) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+    <GlobalStyles/>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:24,fontWeight:400,color:T.ink,letterSpacing:"-0.02em",opacity:0.85}}>Steward</div>
+    <div style={{fontSize:13,color:T.ink3}}>Taking you to the login page.</div>
   </div>;
 
   if(loadErr||!data) return <div style={{...BASE,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
