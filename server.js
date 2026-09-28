@@ -1128,6 +1128,29 @@ async function recordGift(o) {
     catch (e) { console.error("[gift] extras:", e.message); }
   }
 
+  // ── BUILD-103 Part 5 — THE FUNDRAISER'S SOFT CREDIT ──────────────────────
+  // A gift given through somebody's own fundraiser page was BROUGHT IN by
+  // them, and their record should say so. Hard credit stays on the donor and
+  // nothing that totals money reads gift_soft_credits unless it is asked to,
+  // so no giving total anywhere moves by a cent because of this row.
+  //
+  // It is written only when the fundraiser is a person in the CRM, matched by
+  // EXACT EMAIL on sign-up and never by name — `peer_fundraisers.person_id`
+  // is that match, made once, and this reads it rather than matching again.
+  if (o.peerFundraiserId && amount > 0) {
+    try {
+      const [pf] = await query(
+        `SELECT person_id, name FROM peer_fundraisers WHERE id=? AND org_id=?`, [o.peerFundraiserId, orgId]);
+      if (pf && pf.person_id && pf.person_id !== o.donorId) {
+        await run(
+          `INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
+           VALUES (?,?,?,?,?,100,'peer_fundraiser',?,?) ON CONFLICT (gift_id, donor_id) DO NOTHING`,
+          ["gsc_" + uuid().slice(0, 10), orgId, gift.id, pf.person_id, amount,
+           actorId || SYS_AUTO.id, actorName || "Their own fundraiser page"]);
+      }
+    } catch (e) { console.error("[p2p] soft credit:", e.message); }
+  }
+
   return { gift, duplicate: false, interactionId, fundId, paymentMethod, posted, appliedInstallment, appliedMembership, extras };
 }
 
@@ -7928,7 +7951,7 @@ async function sendEventTicketEmail({ orgId, event, level, attendee, split, gues
       ${event.location ? `<p style="font-size:13px;color:#555;"><a href="https://maps.google.com/?q=${encodeURIComponent(event.location)}">Directions</a> · <a href="${base}/e/${encodeURIComponent(event.public_slug || "")}/calendar.ics">Add to calendar</a></p>` : ""}
     </div>`;
   await sendDonorLifecycleEmail("event_ticket", attendee.email,
-    `Your ticket — ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()));
+    `Your ticket for ${event.name}`, html, fromWithDisplayName(display, DONOR_MAIL_ADDR()));
 }
 
 // ── BUILD-101 — MEMBERSHIPS ───────────────────────────────────────────────

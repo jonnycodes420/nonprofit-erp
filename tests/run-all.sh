@@ -110,6 +110,7 @@ CORE=(
   lf1-no-donor-data-leaves
   members2-isolation
   events2-checkout
+  build103-soft-credit
   script-guards
   build96-ai-gate
   incident-mail-gate

@@ -4678,6 +4678,81 @@ async function initSchema() {
   // this column is what makes each renewal charge extend a membership.
   await pool.query(`ALTER TABLE recurring_subscriptions ADD COLUMN IF NOT EXISTS membership_level_id TEXT`);
 
+  // ── BUILD-103 — PEER-TO-PEER: TEAMS, AND A FUNDRAISER WITH A DASHBOARD ──
+  // Supporters raising money for the org from their own networks. Most of the
+  // machinery already existed (peer_fundraisers under a giving page, a
+  // token-only manage link, rollup for free because a gift carries BOTH
+  // peer_fundraiser_id and the parent giving_page_id). This adds the parts a
+  // walk or a ride actually needs.
+  //
+  // A campaign is a giving page with this switch on. There is no second kind
+  // of page and no second kind of campaign attribution: the thermometer is the
+  // one Fundraising already shows.
+  await pool.query(`ALTER TABLE giving_pages ADD COLUMN IF NOT EXISTS p2p_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+
+  // A TEAM. Its total is a live SUM over the same gift rows everything else
+  // sums, never a stored counter, so page = teams + solo fundraisers + direct
+  // gifts in cents BY CONSTRUCTION. Archiving a team leaves its gifts counted
+  // on the page: the money did arrive.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS p2p_teams (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      giving_page_id TEXT NOT NULL REFERENCES giving_pages(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL,
+      captain_fundraiser_id TEXT,
+      goal_amount NUMERIC(12,2),
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','archived')),
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (giving_page_id, slug)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_p2p_teams_page ON p2p_teams (org_id, giving_page_id, status)`);
+
+  // A fundraiser belongs to zero or one team.
+  await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS team_id TEXT`);
+  // The CRM person this fundraiser IS, matched by exact email on sign-up and
+  // never by name. It is what a soft credit is written against.
+  await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS person_id TEXT`);
+  // The thank-yous the fundraiser has ticked off. Theirs to tick: Steward
+  // sends nothing to a fundraiser's contacts and never will.
+  await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS thanked JSONB NOT NULL DEFAULT '[]'::jsonb`);
+
+  // HASH AT REST. The manage link is the whole auth model, so the token is
+  // stored as its SHA-256 exactly like every other credential here. Existing
+  // rows are migrated by hashing what they already hold, so every link already
+  // in somebody's inbox keeps working; the plaintext column is then emptied.
+  await pool.query(`ALTER TABLE peer_fundraisers ADD COLUMN IF NOT EXISTS edit_token_hash TEXT`);
+  await pool.query(`UPDATE peer_fundraisers SET edit_token_hash = encode(digest(edit_token, 'sha256'), 'hex')
+                     WHERE edit_token IS NOT NULL AND edit_token <> '' AND edit_token_hash IS NULL`)
+    .catch(async () => {
+      // pgcrypto is not installed on every database. Fall back to leaving the
+      // migration to the route, which hashes on first use.
+      console.warn("[schema] peer fundraiser tokens will be hashed on first use (pgcrypto unavailable)");
+    });
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pf_token_hash ON peer_fundraisers (edit_token_hash)`);
+  // The plaintext column is emptied, not dropped, so an older deploy rolling
+  // back still finds the column it expects. It has to become nullable for
+  // that: it carries a UNIQUE index, and "" is a value that collides.
+  await pool.query(`ALTER TABLE peer_fundraisers ALTER COLUMN edit_token DROP NOT NULL`).catch(() => {});
+  await pool.query(`UPDATE peer_fundraisers SET edit_token = NULL WHERE edit_token = ''`).catch(() => {});
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pf_team ON peer_fundraisers (org_id, team_id)`);
+
+  // WHETHER THIS DONOR LET THE FUNDRAISER SEE THEIR NAME. Off by default, and
+  // that default is the decision: a gift through a friend's page is still a
+  // gift to the organisation, and the fundraiser is not entitled to a list of
+  // who gave unless each person said so.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS show_name_to_fundraiser BOOLEAN NOT NULL DEFAULT FALSE`);
+  // A page that ALREADY has fundraisers on it is already a peer-to-peer
+  // campaign, whatever the new column says. Turning the switch on for those
+  // pages is what keeps every live fundraiser sign-up link working the day
+  // this ships.
+  await pool.query(`UPDATE giving_pages SET p2p_enabled = true
+                     WHERE p2p_enabled = false
+                       AND id IN (SELECT DISTINCT giving_page_id FROM peer_fundraisers)`);
+
   // ── EVENTS-2 — TICKETS PEOPLE CAN BUY ───────────────────────────────────
   // EVENTS-1 shipped a public page that could not take a card, and said so.
   // These four things are what it takes to take one honestly.

@@ -24,6 +24,28 @@ export default function ManageFundraiser() {
   const [form, setForm] = useState({ name: "", personalGoalAmount: "", story: "", imageUrl: "" });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // BUILD-103 — the thank-you checklist is the fundraiser's own note to
+  // themselves. It is kept optimistically so a tick feels like a tick, and
+  // reconciled from the server's answer.
+  const [gifts, setGifts] = useState([]);
+  const [copied, setCopied] = useState("");
+  const tick = async (g) => {
+    const next = !g.thanked;
+    setGifts(list => list.map(x => x.id === g.id ? { ...x, thanked: next } : x));
+    try {
+      const r = await fetch(`${API}/peer-fundraisers/manage/${token}/thanked`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ giftId: g.id, done: next }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "");
+      const set = new Set(d.thanked || []);
+      setGifts(list => list.map(x => ({ ...x, thanked: set.has(x.id) })));
+    } catch { setGifts(list => list.map(x => x.id === g.id ? { ...x, thanked: !next } : x)); }
+  };
+  const copy = async (text, key) => {
+    try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(""), 2500); } catch { /* a browser that will not copy is not an error worth a banner */ }
+  };
 
   useEffect(() => {
     fetch(`${API}/peer-fundraisers/manage/${token}`)
@@ -32,6 +54,7 @@ export default function ManageFundraiser() {
         if (d.error) { setError(d.error); }
         else {
           setData(d);
+          setGifts(d.gifts || []);
           setForm({
             name: d.name || "",
             personalGoalAmount: d.personalGoalAmount != null ? String(d.personalGoalAmount) : "",
@@ -102,17 +125,104 @@ export default function ManageFundraiser() {
         </h1>
       </div>
 
+      {/* BUILD-103 Part 3 — THE DASHBOARD. What they have raised, with the
+          one sentence that says what it counts; the gifts they may read; a
+          thank-you checklist they tick themselves; and their team's standing.
+          Nothing on this screen reveals a donor's email or a gift the donor
+          made to the organisation outside this page. */}
       <div style={card}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(data.raisedAmount)}</div>
+          <div style={{ fontSize: 26, fontWeight: 800, color: T.greenDk, fontFamily: "'DM Serif Display', serif" }}>{fmtMoney(data.raisedAmount)}</div>
           <div style={{ fontSize: 12, color: T.ink3 }}>raised so far</div>
         </div>
+        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }} data-testid="pf-raised-sentence">{data.raisedSentence}</div>
+        {data.goalCents > 0 && (
+          <div style={{ height: 6, background: T.bg2 || T.bg, borderRadius: 3, overflow: "hidden", marginTop: 10 }}>
+            <div style={{ height: "100%", width: `${Math.min(100, Math.round((data.raisedCents / data.goalCents) * 100))}%`, background: T.greenDk, borderRadius: 3 }} />
+          </div>
+        )}
         {data.status === "archived" && (
           <div style={{ marginTop: 8, fontSize: 12, color: T.terra700, background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 8, padding: "8px 12px" }}>
             This fundraiser has been archived by {data.orgName} and is no longer visible to the public. You can still update your story below.
           </div>
         )}
       </div>
+
+      {data.gifts?.length > 0 && (
+        <div style={card} data-testid="pf-gifts">
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Gifts, and your thank-yous</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12, lineHeight: 1.5 }}>{data.giftsSentence}</div>
+          {gifts.map(g => (
+            <label key={g.id} data-testid="pf-gift-row"
+              style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 0", borderTop: "1px solid " + T.bg3, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!g.thanked} onChange={() => tick(g)} style={{ accentColor: T.greenDk, width: 17, height: 17, flexShrink: 0 }} />
+              <span style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{g.who}</span>
+              <span style={{ fontSize: 13, color: T.ink3, marginLeft: "auto" }}>{g.amount}</span>
+              <span style={{ fontSize: 12, color: T.ink3, minWidth: 78, textAlign: "right" }}>{g.date}</span>
+            </label>
+          ))}
+          <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 10 }}>
+            Ticking a box is a note to yourself. Nobody is emailed from here, by you or by anybody else.
+          </div>
+        </div>
+      )}
+
+      {data.team && (
+        <div style={card} data-testid="pf-team">
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>{data.team.name}</div>
+          <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 12, lineHeight: 1.5 }}>{data.team.sentence}</div>
+          {data.team.members.map((m, i) => (
+            <div key={m.id} style={{ display: "flex", gap: 10, padding: "7px 0", borderTop: i ? "1px solid " + T.bg3 : "none", fontSize: 13.5 }}>
+              <span style={{ color: T.ink3, width: 20 }}>{i + 1}</span>
+              <span style={{ color: T.ink, fontWeight: m.isYou ? 800 : 500 }}>{m.name}{m.isYou ? " (you)" : ""}</span>
+              <span style={{ marginLeft: "auto", color: T.ink }}>{fmtMoney(m.raisedCents / 100)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.drafts?.length > 0 && (
+        <div style={card} data-testid="pf-drafts">
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Words to send</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12, lineHeight: 1.5 }}>{data.draftsSentence}</div>
+          {data.drafts.map(d => (
+            <div key={d.key} style={{ borderTop: "1px solid " + T.bg3, paddingTop: 12, marginTop: 12 }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{d.label}</div>
+              <div style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{d.when}</div>
+              <div style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: T.ink2, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{d.body}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => copy(d.body, d.key)}
+                  style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 13px", fontSize: 12.5, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
+                  {copied === d.key ? "Copied" : "Copy it"}
+                </button>
+                <a href={d.mailto}
+                  style={{ background: T.greenDk, borderRadius: 9, padding: "8px 13px", fontSize: 12.5, fontWeight: 700, color: T.pureWhite, textDecoration: "none" }}>
+                  Open in my mail
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {data.share && (
+        <div style={card} data-testid="pf-share">
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Share it</div>
+          <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12, lineHeight: 1.5 }}>
+            Each of these carries a tag, so {data.orgName} can see which way of asking worked. It says the channel, never who you sent it to.
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {[["Text", data.share.text], ["WhatsApp", data.share.whatsapp], ["Facebook", data.share.facebook], ["Email", data.share.email]].map(([label, href]) => (
+              <a key={label} href={href}
+                style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 13px", fontSize: 12.5, fontWeight: 700, color: T.ink, textDecoration: "none" }}>{label}</a>
+            ))}
+            <button type="button" onClick={() => copy(data.share.copy, "link")}
+              style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 9, padding: "8px 13px", fontSize: 12.5, fontWeight: 700, color: T.ink, cursor: "pointer", fontFamily: "inherit" }}>
+              {copied === "link" ? "Copied" : "Copy the link"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={save} style={card}>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Your Fundraiser Page</div>

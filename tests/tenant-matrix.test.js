@@ -90,7 +90,7 @@ async function reset() {
       // cascade covers a page delete, and this list has to survive an ORG delete
       // too.
       "form_events",
-      "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
+      "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
       // `grants` delete below would usually take them — but `grant_id` is
       // nullable, so a row without one would survive and block the org delete
@@ -211,6 +211,11 @@ async function seedOrg(o, tag) {
     [`gp_${o}`, o, `page-${tag}`, `Page ${tag}`]); // title deliberately public-safe
   await q(`INSERT INTO peer_fundraisers (id,org_id,giving_page_id,name,email,slug,status,edit_token) VALUES ($1,$2,$3,$4,$5,$6,'active',$7)`,
     [`pf_${o}`, o, `gp_${o}`, `Peer ${tag}`, `peer-${tag}@mx.local`, `peer-${tag}`, crypto.randomBytes(32).toString("hex")]);
+  // BUILD-103 — a team on that org's giving page, so /p2p-teams/:id is
+  // crossed: taking a team down is a change to somebody else's campaign. It
+  // goes AFTER the page it hangs off, because it has an FK to it.
+  await q(`INSERT INTO p2p_teams (id,org_id,giving_page_id,name,slug,goal_amount) VALUES ($1,$2,$3,$4,$5,1000)`,
+    [`pt_${o}`, o, `gp_${o}`, `Team ${tag}`, `team-${tag}`]);
   // BUILD-78: defs table replaces the legacy custom_fields; B's donor also
   // carries a private custom VALUE so leak-scan bodies can catch it.
   await q(`INSERT INTO custom_field_defs (id,org_id,entity,key,label,type) VALUES ($1,$2,'donor',$3,$4,'text')`,
@@ -340,6 +345,7 @@ function bResolver(routePath, param) {
     workflows: `wf_${B}`, volunteers: `v_${B}`, interactions: `i_${B}`, materials: `mat_${B}`,
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
+    "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
     imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt

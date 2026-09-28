@@ -411,7 +411,7 @@ async function issueAndSend(org, person, { who }) {
       <p style="font-size:13px;color:#555;">If you did not ask for this, you can ignore it.</p>
     </div>`;
   await sendDonorLifecycleEmail("your_page_link", person.email,
-    `Your page — ${brand.displayName || org.name}`,
+    `Your page at ${brand.displayName || org.name}`,
     html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()));
   await run(`UPDATE donors SET your_page_sent_at=NOW() WHERE id=? AND org_id=?`, [person.id, org.id]).catch(() => {});
   return link;

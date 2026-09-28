@@ -14,6 +14,7 @@ import { PortalBannerCrop, PORTAL_CAMPAIGN_HERO_RATIO } from "./PortalBanner";
 import { errorMessage } from "../lib/domainError";
 import { Pipeline } from "./Pipeline";
 import { FR_SECTIONS, resolveFr } from "../lib/fundraisingSections";
+import { PeerToPeerView } from "./PeerToPeer";
 import { TEAM_GATED } from "../lib/tabRegistry";
 import { displayDate } from "../../../shared/displayDate";
 
@@ -245,6 +246,11 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
 
       {!loading && subtab === "pages" && (
         <PagesView pages={pages} orgSlug={orgSlug} onNavigate={onNavigate} />
+      )}
+
+      {/* BUILD-103 Part 6 — the screen an org runs a walk from. */}
+      {!loading && subtab === "p2p" && (
+        <PeerToPeerView isReadOnly={isReadOnly} orgSlug={orgSlug} onNavigate={onNavigate} />
       )}
 
       {!loading && subtab === "recurring" && (

@@ -15267,6 +15267,28 @@ async function sendFundraiserManageEmail(org, fundraiser, givingPage, manageUrl)
   }
 }
 
+// BUILD-103 Part 1 — the teams on this campaign, for the sign-up screen.
+// Public, and it returns a name, a slug and what the team has raised. Never a
+// member list and never an email: a stranger reading a campaign page is not
+// entitled to the roster.
+app.get("/org/:orgSlug/giving-page/:pageSlug/teams", donateLimiter, wrap(async (req, res) => {
+  const [org] = await query("SELECT id FROM orgs WHERE org_slug=?", [req.params.orgSlug]);
+  if (!org) return res.status(404).json({ error: "Not found" });
+  const [pg] = await query(`SELECT id FROM giving_pages WHERE org_id=? AND slug=? AND status='active' AND p2p_enabled = true`,
+    [org.id, req.params.pageSlug]);
+  if (!pg) return res.json({ teams: [] });
+  const rows = await query(
+    `SELECT t.id, t.name, t.slug, t.goal_amount,
+            (SELECT COUNT(*)::int FROM peer_fundraisers pf WHERE pf.team_id=t.id AND pf.status='active') AS members,
+            COALESCE((SELECT SUM(g.amount) FROM gifts g JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
+                       WHERE pf.team_id=t.id AND g.amount > 0),0)::float AS raised
+       FROM p2p_teams t WHERE t.giving_page_id=? AND t.org_id=? AND t.status='active'
+      ORDER BY raised DESC, t.name LIMIT 200`, [pg.id, org.id]);
+  res.json({ teams: rows.map(t => ({ id: t.id, name: t.name, slug: t.slug, members: t.members,
+    raisedCents: Math.round(Number(t.raised) * 100),
+    goalCents: t.goal_amount != null ? Math.round(Number(t.goal_amount) * 100) : null })) });
+}));
+
 // Public — a supporter starting a fundraiser from a live Giving Page. No
 // auth (this is the entire point — spur-of-the-moment, zero account setup),
 // rate-limited the same as the donation route it sits next to since it's
@@ -15290,10 +15312,57 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   const pageRows = await query("SELECT * FROM giving_pages WHERE org_id=? AND slug=? AND status='active'", [org.id, req.params.pageSlug]);
   if (!pageRows.length) return res.status(404).json({ error: "This giving page could not be found." });
   const givingPage = pageRows[0];
+  // BUILD-103 — a peer-to-peer campaign is a giving page with the switch on.
+  // A page that is not one does not take fundraisers, and says so in the same
+  // words it would use for a page that is not there.
+  if (givingPage.p2p_enabled !== true) return res.status(404).json({ error: "This giving page could not be found." });
+
+  // BUILD-103 Part 1 — JOIN A TEAM, OR START ONE. A team belongs to this page
+  // and is looked up under it, so a team id from another org's campaign finds
+  // nothing rather than being refused by a check somebody could forget.
+  const P2Pm = await import("../shared/p2p.js");
+  let teamId = null;
+  if (req.body?.teamId) {
+    const [t] = await query(`SELECT id FROM p2p_teams WHERE id=? AND giving_page_id=? AND org_id=? AND status='active'`,
+      [String(req.body.teamId), givingPage.id, org.id]);
+    if (!t) return res.status(404).json({ error: "That team is not on this campaign." });
+    teamId = t.id;
+  } else if (String(req.body?.teamName || "").trim()) {
+    const v = P2Pm.validateTeam({ name: req.body.teamName, goalAmount: req.body.teamGoalAmount });
+    if (!v.ok) return res.status(400).json({ error: v.errors.join("; ") });
+    const [existing] = await query(`SELECT id FROM p2p_teams WHERE giving_page_id=? AND slug=?`, [givingPage.id, v.team.slug]);
+    if (existing) teamId = existing.id;
+    else {
+      teamId = "pt_" + uuid().slice(0, 10);
+      await run(`INSERT INTO p2p_teams (id,org_id,giving_page_id,name,slug,goal_amount,created_by,created_by_name)
+                 VALUES (?,?,?,?,?,?,'system:p2p-signup','The fundraiser, from the sign-up page')`,
+        [teamId, org.id, givingPage.id, v.team.name, v.team.slug, v.team.goalCents == null ? null : v.team.goalCents / 100]);
+    }
+  }
+
+  // BUILD-103 Part 5 — ONE PERSON RECORD. The fundraiser is matched to the
+  // CRM by EXACT EMAIL, never by name, and somebody nobody has heard of
+  // becomes a person typed VOLUNTEER — not a donor. They are not a donor
+  // until they give, and typing them as one would put somebody who has never
+  // given a penny into every donor list the office reads.
+  const cleanEmail = email.trim().toLowerCase();
+  let personId = null;
+  const matched = await query(
+    `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 2`,
+    [org.id, cleanEmail]);
+  if (matched.length === 1) personId = matched[0].id;
+  if (!personId && !matched.length) {
+    personId = "d_" + uuid().slice(0, 10);
+    await run(
+      `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+       VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,'system:p2p-signup','The fundraiser, from the sign-up page')`,
+      [personId, org.id, name.trim(), cleanEmail]);
+  }
 
   const base = slugifyGivingPage(name);
   const id = "pf_" + uuid().slice(0, 8);
   const editToken = generateEditToken();
+  const editTokenHash = require("crypto").createHash("sha256").update(editToken).digest("hex");
 
   // uniquePeerFundraiserSlug's own SELECT check has a narrow TOCTOU window
   // against a second near-simultaneous submission slugifying to the same
@@ -15305,9 +15374,12 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   for (let attempt = 0; attempt < 3 && !inserted; attempt++) {
     try {
       await run(
-        `INSERT INTO peer_fundraisers (id, org_id, giving_page_id, name, email, slug, personal_goal_amount, story, image_url, status, edit_token)
-         VALUES (?,?,?,?,?,?,?,?,?,'active',?)`,
-        [id, org.id, givingPage.id, name.trim(), email.trim().toLowerCase(), slug, personalGoalAmount ? parseFloat(personalGoalAmount) : null, story || "", imageUrl || "", editToken]
+        // The token is stored as its SHA-256 and nowhere else (BUILD-103): the
+        // manage link is the whole auth model, so it is held the way every
+        // other credential in this codebase is held.
+        `INSERT INTO peer_fundraisers (id, org_id, giving_page_id, name, email, slug, personal_goal_amount, story, image_url, status, edit_token, edit_token_hash, team_id, person_id)
+         VALUES (?,?,?,?,?,?,?,?,?,'active',NULL,?,?,?)`,
+        [id, org.id, givingPage.id, name.trim(), cleanEmail, slug, personalGoalAmount ? parseFloat(personalGoalAmount) : null, story || "", imageUrl || "", editTokenHash, teamId, personId]
       );
       inserted = true;
     } catch (e) {
@@ -15333,7 +15405,7 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   // send is visible instead of silently stranding the supporter.
   const emailSent = await sendFundraiserManageEmail(org, { name: name.trim(), email: email.trim() }, givingPage, manageUrl);
 
-  res.status(201).json({ id, slug, publicUrl, emailSent });
+  res.status(201).json({ id, slug, publicUrl, emailSent, teamId });
 }));
 
 // Public — fundraiser's own page: name/image/story/goal + real live
@@ -16512,6 +16584,21 @@ function reportToCsv(key, data) {
       ];
       return { headers: ["Metric", "Value"], rows };
     }
+    // BUILD-103 Part 6 — peer-to-peer, through the ONE CSV layer like every
+    // other report. No email column: a fundraiser's address is the org's to
+    // hold, and a CSV is a file that gets forwarded.
+    case "p2p-fundraisers": {
+      const headers = ["Campaign", "Team", "Fundraiser", "Status", "Goal", "Raised", "Gifts"];
+      const rows = data.rows.map(r => [r.campaign, r.team, r.name, r.status, r.goal ?? "", r.raised, r.gifts]);
+      rows.push(["TOTAL", "", `${data.totals.fundraisers} fundraisers`, "", "", data.totals.raised, ""]);
+      return { headers, rows };
+    }
+    case "p2p-teams": {
+      const headers = ["Campaign", "Team", "Status", "Fundraisers", "Goal", "Raised"];
+      const rows = data.rows.map(r => [r.campaign, r.name, r.status, r.members, r.goal ?? "", r.raised]);
+      rows.push(["TOTAL", `${data.totals.teams} teams`, "", "", "", data.totals.raised]);
+      return { headers, rows };
+    }
     // BUILD-100 (grants) Part 5 — the two computed grant reports export through
     // the ONE `sendReportCsv` like every other, so the injection guard and the
     // BOM come for free rather than being re-remembered.
@@ -16760,6 +16847,44 @@ async function reportMembershipRevenue(orgId) {
 }
 const c2d = c => (Number(c) / 100).toFixed(2);
 
+// ── BUILD-103 Part 6 — THE TWO PEER-TO-PEER REPORTS ─────────────────────
+// Fundraisers by campaign, and teams by campaign. Both sum the SAME gift rows
+// the P2P screen and the public page sum, so a saved report and the screen
+// cannot show different figures.
+async function reportP2PFundraisers(orgId) {
+  const rows = await query(
+    `SELECT gp.title AS campaign, t.name AS team, pf.name, pf.status,
+            pf.personal_goal_amount AS goal,
+            COALESCE((SELECT SUM(g.amount) FROM gifts g WHERE g.peer_fundraiser_id=pf.id AND g.amount > 0),0)::float AS raised,
+            COALESCE((SELECT COUNT(*) FROM gifts g WHERE g.peer_fundraiser_id=pf.id AND g.amount > 0),0)::int AS gifts
+       FROM peer_fundraisers pf
+       JOIN giving_pages gp ON gp.id=pf.giving_page_id
+       LEFT JOIN p2p_teams t ON t.id=pf.team_id
+      WHERE pf.org_id=? ORDER BY gp.title, raised DESC, pf.name`, [orgId]);
+  return {
+    rows: rows.map(r => ({ campaign: r.campaign, team: r.team || "", name: r.name, status: r.status,
+      goal: r.goal == null ? null : Number(r.goal), raised: Number(r.raised), gifts: r.gifts })),
+    totals: { raised: rows.reduce((a, r) => a + Number(r.raised), 0), fundraisers: rows.length,
+              notYet: rows.filter(r => Number(r.raised) === 0).length },
+    sentence: "Every fundraiser on every peer-to-peer campaign, and what came in through their own page. Raised is a live sum over the gifts, in cents. A fundraiser at zero has not received a gift yet; nobody is emailed from a report.",
+  };
+}
+async function reportP2PTeams(orgId) {
+  const rows = await query(
+    `SELECT gp.title AS campaign, t.name, t.status, t.goal_amount AS goal,
+            (SELECT COUNT(*)::int FROM peer_fundraisers pf WHERE pf.team_id=t.id AND pf.status='active') AS members,
+            COALESCE((SELECT SUM(g.amount) FROM gifts g JOIN peer_fundraisers pf ON pf.id=g.peer_fundraiser_id
+                       WHERE pf.team_id=t.id AND g.amount > 0),0)::float AS raised
+       FROM p2p_teams t JOIN giving_pages gp ON gp.id=t.giving_page_id
+      WHERE t.org_id=? ORDER BY gp.title, raised DESC, t.name`, [orgId]);
+  return {
+    rows: rows.map(r => ({ campaign: r.campaign, name: r.name, status: r.status, members: r.members,
+      goal: r.goal == null ? null : Number(r.goal), raised: Number(r.raised) })),
+    totals: { raised: rows.reduce((a, r) => a + Number(r.raised), 0), teams: rows.length },
+    sentence: "Every team on every peer-to-peer campaign. A team's raised is summed from the gifts its fundraisers brought in, never a stored counter, so it always agrees with the campaign's own total.",
+  };
+}
+
 const REPORT_HANDLERS = {
   "giving-summary": reportGivingSummary,
   "by-group": reportByGroup,
@@ -16786,6 +16911,9 @@ const REPORT_HANDLERS = {
   "members-lapsed": reportMembersLapsed,
   "members-new-renewed": reportMembersNewRenewed,
   "membership-revenue": reportMembershipRevenue,
+  // BUILD-103 Part 6 — peer-to-peer.
+  "p2p-fundraisers": reportP2PFundraisers,
+  "p2p-teams": reportP2PTeams,
 };
 // [Team]-gated reports — the pipeline/solicitation oversight artifacts. A Core
 // org gets 403 plan_required (the client renders an upgrade state).
@@ -19441,7 +19569,7 @@ app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(
       <p style="text-align:center;margin:26px 0;"><a href="${link}" style="background:#0d5c3a;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Take the place</a></p>
       <p style="font-size:13px;color:#555;">Nothing is held for you, so it is first come. If somebody else gets there first, you stay on the list.</p>
     </div>`;
-  await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free — ${event.name}`,
+  await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
     html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => console.error("[event] waitlist offer:", e.message));
   res.json({ ok: true, sentence: `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.` });
 }));

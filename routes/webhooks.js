@@ -383,6 +383,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
                 { variant: formMeta.variant || null, cents: Math.round(amount * 100) })
                 .catch(e => console.error("[forms] counting a completion:", e.message));
             }
+            // BUILD-103 — the donor's own choice about their first name,
+            // carried from the form and written on the gift the fundraiser's
+            // dashboard reads. Never defaulted on.
+            if (peerFundraiserId && pi.metadata?.show_name_to_fundraiser === "1") {
+              await run(`UPDATE gifts SET show_name_to_fundraiser = true WHERE id=? AND org_id=?`, [giftId, orgId]).catch(() => {});
+            }
             if (evLevel) {
               // EVENTS-2 — THE REGISTRATION IS CONFIRMED HERE AND NOWHERE ELSE.
               // The page held a seat; this is what turns the hold into a place

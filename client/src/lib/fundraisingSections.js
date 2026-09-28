@@ -32,6 +32,10 @@ export const FR_SECTIONS = [
       // with the pages they are.
       { id: "pages", label: "Giving pages & forms" },
       { id: "events", label: "Events" },
+      // BUILD-103 — peer-to-peer. It sits beside the pages because a
+      // peer-to-peer campaign IS a giving page with the switch on, and the
+      // person running a walk is in this room for six weeks.
+      { id: "p2p", label: "Peer-to-peer" },
       { id: "recurring", label: "Recurring" },
       { id: "members", label: "Members" },
     ],
@@ -78,6 +82,10 @@ export const FR_LEGACY = {
   members:         { section: "campaigns",  part: "members",         label: "Members" },
   funds:           { section: "moneyin",    part: "funds",           label: "Funds" },
   pipeline:        { section: "majorgifts", part: "pipeline",        label: "Pipeline" },
+  // BUILD-103 — not a legacy id: a NEW one, registered here so /dashboard?fr=p2p
+  // and navigateTo("fundraising", {frSection: "p2p"}) both land on it. Every
+  // part id belongs in this map, or a link to it silently opens the Overview.
+  p2p:             { section: "campaigns",  part: "p2p",             label: "Peer-to-peer" },
 };
 
 // Any id — an old tab id, a section id, or nothing — to {section, part}.

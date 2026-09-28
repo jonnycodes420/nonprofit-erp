@@ -73,6 +73,43 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **`/e/*` and `/ticket/*` are `vercel.json` rewrites.** EVENTS-1 shipped the public event page
   without one, so it was unreachable from www.stewardapp.dev until EVENTS-2. (EVENTS-2)
 
+### BUILD-103 — peer-to-peer
+- **A peer-to-peer campaign is a giving page with `p2p_enabled`.** There is no second kind of
+  page and no second campaign attribution: the thermometer is the one Fundraising already shows.
+  A page that already had fundraisers had the switch turned on by the migration. (BUILD-103)
+- **A team is a `p2p_teams` row under that page, and its total is a live SUM over the same gift
+  rows.** Never a stored counter, so page = teams + solo fundraisers + direct gifts, in cents, by
+  construction. The P2P screen prints that identity rather than assuming it. Archiving a team
+  leaves its gifts counted on the page: the money did arrive. (BUILD-103)
+- **`gifts.show_name_to_fundraiser` is FALSE by default, and the default IS the decision.** A gift
+  through a friend's page is still a gift to the organisation, and the friend is not entitled to a
+  list of who gave unless each person chose it. `donorLine` in `shared/p2p.js` is the ONE function
+  that turns a gift row into something a fundraiser reads: a first name and an amount, or neither.
+  (BUILD-103)
+- **A fundraiser never sees a donor's email or a gift the donor made elsewhere.** The dashboard's
+  SELECT has no email column and there is not going to be one. (BUILD-103)
+- **The manage link is hashed at rest (`peer_fundraisers.edit_token_hash`).** A row from before
+  this build is migrated on first use, so every link already in an inbox keeps working and stops
+  being readable in the database afterwards. `fundraiserByToken` is the one exchange. (BUILD-103)
+- **A fundraiser is matched to the CRM by EXACT EMAIL on sign-up, never by name
+  (`peer_fundraisers.person_id`).** Somebody nobody has heard of becomes a person typed
+  **Volunteer**, never a donor: they are not a donor until they give. (BUILD-103)
+- **Every gift through a fundraiser page writes a `gift_soft_credits` row at 100%, role
+  `peer_fundraiser`, inside `recordGift`.** Hard credit stays on the donor and no giving total
+  anywhere moves. `tests/build103-soft-credit.test.js` plants the three ways that could break.
+  (BUILD-103)
+- **Steward emails none of a fundraiser's contacts.** The three drafts in `shared/p2p.js` are
+  words the fundraiser copies or opens in their own mail client through a `mailto:`. Merge fields
+  are the FUNDRAISER'S; the function takes no donor argument, which is why it cannot leak one.
+  (BUILD-103)
+- **Every share link carries UTM tags** through the same columns every other gift is attributed
+  by. The medium is the channel; the campaign is the fundraiser's slug. (BUILD-103)
+- **A waiting list of a different kind: a team a supporter starts at sign-up is created by the
+  same `p2p_teams` shape the staff screen creates**, so there is one row shape, not two.
+  (BUILD-103)
+- **Every new Fundraising part id goes in `FR_LEGACY`**, or a link to it silently opens the
+  Overview. (BUILD-103)
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)
@@ -88,7 +125,9 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - `server.js` `resolveWidgetsPublic`, `/giving-pages/:id/page/{draft,publish,starter,revert}`
 - `client/src/pages/Donate.jsx` — org page, giving page, peer page, `?event=`/`?membership=` modes
 - `client/src/components/Settings.jsx` `GivingPagesManager` — list, create, share, fundraisers
-- `tests/page-widgets`, `giving-page-builder`, `cover-fees`, `giving-flow-brand`
+- `tests/page-widgets`, `giving-page-builder`, `cover-fees`, `giving-flow-brand`, `build103-soft-credit`
+- `shared/p2p.js` — the words, the arithmetic and `donorLine`; `client/src/components/PeerToPeer.jsx`
+  (the org's campaign screen), `client/src/pages/ManageFundraiser.jsx` (the fundraiser's dashboard)
 
 ---
 
