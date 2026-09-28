@@ -24,6 +24,12 @@ const TABS=[
   // builder component did not move; this is a second door to it, and the
   // Settings section keeps working so every deep link survives.
   {id:"journeys",label:"Journeys",icon:"⇢"},
+  // EVENTS-1 — EVENTS IS ITS OWN ROOM, under Fundraising, for the same reason
+  // Journeys is: an organisation runs a gala or a 5K once or twice a year and
+  // spends six weeks inside it each time. The screen existed and was
+  // unreachable, commented out of this list; the model, the money path and the
+  // receipts were all already built. This is the door.
+  {id:"events",label:"Events",icon:"◎"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
@@ -37,8 +43,6 @@ const TABS=[
   {id:"finance",label:"Finance",icon:"◇"},
   {id:"settings",label:"Settings",icon:"⚙"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
-  // {id:"events",label:"Events",icon:"◎"},
-  // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 const BOTTOM_TABS=[
@@ -77,7 +81,10 @@ const MORE_TABS=[
 // and four slots is a different constraint from a 220px rail.
 // FIX-1 §12 (Jonathan, 27 Sep) — the rail is the seven questions; Dashboards
 // and the rest live under More.
-const PRIMARY_NAV=["dashboard","donors","fundraising","journeys","volunteers","agent","reports","finance"];
+// EVENTS-1 — Events joins the rail, next to Journeys, because both are things
+// an organisation lives inside for weeks at a time and neither belongs behind
+// a More menu during those weeks.
+const PRIMARY_NAV=["dashboard","donors","fundraising","journeys","events","volunteers","agent","reports","finance"];
 const MORE_NAV=["board","grants","communications","tasks","portal"];
 const NAV_MORE_KEY="steward_nav_more";
 // FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →

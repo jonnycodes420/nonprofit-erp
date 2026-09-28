@@ -3,6 +3,26 @@
 Read this when you touch the person record: donors, organisations, non-donors, households, photos, merge and duplicates, deletion, the timeline, the profile, volunteers or events.
 
 ## Rules
+- **An event has a GOAL, and what it RAISED is never typed.** `events.goal_amount` is what the
+  night is measured against; raised is summed from gifts stamped `gifts.event_id`, which
+  registration sets. Before this the only link was the campaign NAME, so a renamed event lost its
+  money; the campaign match survives as a fallback for rows written before the column. (EVENTS-1)
+- **Every event figure opens its rows, from the same SQL.** `EVENT_ROW_SQL` holds one query per
+  number and both the figure and `GET /events/:id/rows` run it, so a count and its list cannot
+  drift. The raised rows foot to the figure to the cent. The report says in its payload that it
+  does not claim the event CAUSED a gift. (EVENTS-1)
+- **A named guest is a person with a seat and NOT a second place.** A guest brought on somebody
+  else's ticket carries `quantity 0` and `guest_of`. Counting them needs `quantity == null ? 1 :
+  quantity`, never `quantity || 1`, which turns every zero back into a place. (EVENTS-1)
+- **The public registration page is a REQUEST, not a payment.** `/e/:slug` wears the org's band
+  from the one public shell (`shared/publicPage.js`, shared with the volunteer page), frames like
+  a donation form, states the deductible part before the button, and says plainly that nothing is
+  charged there. A registration lands as an attendee the office confirms, and confirming it runs
+  `registerForEvent` — the one writer that turns a registration into a gift with its split. Taking
+  the card inline is a Connect checkout plus a webhook branch that completes the registration, and
+  half of that charges somebody for a seat they do not get. (EVENTS-1)
+- **A name tag carries a name and a table and nothing else.** A badge that prints somebody's
+  giving level tells the room what they gave. (EVENTS-1)
 - **Record a second role on the same row, never a second record.** Donor, Volunteer, Staff and board, and
   Other are values in `donors.person_types`. (BUILD-94, BUILD-98)
 - **Let `normalizeTypes` validate person types.** It drops unknown keys, and it sets an empty list to

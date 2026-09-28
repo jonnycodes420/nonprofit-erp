@@ -43,6 +43,16 @@ let app = routers.r0;
 // is: a promise set at boot, awaited before the first read.
 let VS = null;
 const VS_READY = import("../shared/volunteerShifts.js").then(m => { VS = m; return m; });
+// EVENTS-1 — the public shell moved to shared/publicPage.js so the event
+// registration page wears the SAME brand band, cards and 16px inputs. One
+// renderer, two surfaces; `footer` is the only thing that differs.
+let PP = null;
+const PP_READY = import("../shared/publicPage.js").then(m => { PP = m; return m; });
+const publicPage = opts => PP.publicPage({ footer: "Volunteer scheduling by Steward.", ...opts });
+// Every route that renders a public page awaits THIS, not VS_READY alone: the
+// shell arrives by dynamic import like the shape module does, and a request
+// landing between boot and its resolution would read `PP` as null.
+const READY = Promise.all([VS_READY, PP_READY]);
 
 const slug = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "shift";
 const SYS_PUBLIC = { id: "system:volunteer-public", name: "The volunteer, from the sign-up page" };
@@ -60,47 +70,6 @@ async function brandOf(orgId) {
 // One shell for every public volunteer page. Mobile first, because a
 // volunteer reads this on a phone in a car park: one column, 16px gutters,
 // nothing that needs a pointer, and tap targets at 44px.
-function publicPage({ title, brand, body, wide = false }) {
-  const logo = brand.logoDataUri || brand.logoAbsUrl;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(title)}</title>
-<style>
-  *{box-sizing:border-box}
-  body{margin:0;background:#f0ede6;color:#0f1a12;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.5}
-  .band{background:${brand.band};color:${brand.bandFg};padding:18px 16px;display:flex;align-items:center;gap:12px}
-  .band img{height:34px;width:auto;display:block}
-  .band .nm{font-size:17px;font-weight:700;letter-spacing:-0.01em}
-  .wrap{max-width:${wide ? 720 : 560}px;margin:0 auto;padding:20px 16px 56px}
-  .card{background:#fff;border:1px solid #e8e4db;border-radius:14px;padding:18px 16px;margin:0 0 14px}
-  h1{font-family:Georgia,'Times New Roman',serif;font-weight:400;font-size:27px;line-height:1.15;margin:0 0 8px;letter-spacing:-0.01em}
-  h2{font-size:18px;font-weight:700;margin:0 0 4px}
-  p{margin:0 0 10px}
-  .muted{color:#5a554f;font-size:14px}
-  .small{font-size:13px;color:#5a554f}
-  label{display:block;font-size:13px;font-weight:600;margin:12px 0 4px}
-  input,textarea,select{width:100%;border:1px solid #d4cfc6;border-radius:9px;padding:12px;font-size:16px;font-family:inherit;background:#fff;color:#0f1a12;min-height:46px}
-  textarea{min-height:88px}
-  .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;min-height:48px;background:${brand.band};color:${brand.bandFg};border:none;border-radius:10px;padding:13px 18px;font-size:16px;font-weight:700;cursor:pointer;text-decoration:none;font-family:inherit;margin-top:14px}
-  .btn.quiet{background:transparent;color:#0f1a12;border:1.5px solid #0f1a12}
-  .btn.small{width:auto;min-height:40px;padding:9px 14px;font-size:14px;margin-top:0}
-  .pill{display:inline-block;font-size:12px;font-weight:700;border-radius:99px;padding:3px 10px}
-  .pill.open{background:#edf3ee;color:#0d5c3a}
-  .pill.full{background:#f6eccf;color:#5c4710}
-  .pill.shut{background:#e8e4db;color:#5a554f}
-  .row{display:flex;gap:10px;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
-  .foot{text-align:center;font-size:12px;color:#5a554f;padding:8px 16px 32px}
-  .err{background:#f6ece8;border:1px solid #e0a893;border-radius:9px;padding:11px 13px;font-size:14px;margin:0 0 12px}
-  .ok{background:#edf3ee;border:1px solid #cfe8dc;border-radius:9px;padding:11px 13px;font-size:14px;margin:0 0 12px}
-  .hp{position:absolute;left:-9999px}
-</style></head>
-<body>
-<div class="band">${logo ? `<img src="${escapeHtml(logo)}" alt="">` : ""}<span class="nm">${escapeHtml(brand.displayName || "")}</span></div>
-<div class="wrap">${body}</div>
-<div class="foot">Volunteer scheduling by Steward.</div>
-</body></html>`;
-}
-
 const dayWords = iso => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
   if (!m) return String(iso || "");
@@ -134,7 +103,7 @@ function shapeSlot(r) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 app.get("/volunteer-hub/opportunities", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const opps = await query(
@@ -164,7 +133,7 @@ app.get("/volunteer-hub/opportunities", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer-hub/opportunities", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const v = VS.validateOpportunity(req.body || {});
   if (!v.ok) return res.status(400).json({ error: "invalid", errors: v.errors, message: v.errors[0].message });
   const who = actor(req), id = "vo_" + uuid().slice(0, 10);
@@ -187,7 +156,7 @@ app.post("/volunteer-hub/opportunities", requireAuth, checkWriteAccess, wrap(asy
 }));
 
 app.patch("/volunteer-hub/opportunities/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const [cur] = await query("SELECT * FROM volunteer_opportunities WHERE id=? AND org_id=? AND archived_at IS NULL",
     [req.params.id, req.user.orgId]);
   if (!cur) return res.status(404).json({ error: "Not found" });
@@ -220,7 +189,7 @@ app.post("/volunteer-hub/opportunities/:id/archive", requireAuth, wrap(async (re
 }));
 
 app.post("/volunteer-hub/slots", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const [opp] = await query("SELECT id FROM volunteer_opportunities WHERE id=? AND org_id=? AND archived_at IS NULL",
     [String(req.body?.opportunityId || ""), req.user.orgId]);
   if (!opp) return res.status(404).json({ error: "Not found", message: "That opportunity does not exist." });
@@ -256,7 +225,7 @@ app.post("/volunteer-hub/slots/:id/cancel", requireAuth, wrap(async (req, res) =
 // Who is on one slot. Staff only, and the reason it is staff only is that
 // this is names and email addresses.
 app.get("/volunteer-hub/slots/:id/signups", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const [slot] = await query(`SELECT s.*, ${SLOT_COUNTS}, o.name AS opp_name, o.requires_waiver, o.requires_background_check
                                 FROM volunteer_slots s JOIN volunteer_opportunities o ON o.id=s.opportunity_id
@@ -315,7 +284,7 @@ async function credentialsFor(orgId, personIds, today) {
 // ── CREDENTIALS ──────────────────────────────────────────────────────────
 
 app.get("/volunteer-hub/credentials", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const rows = await query(
@@ -344,7 +313,7 @@ app.get("/volunteer-hub/credentials", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer-hub/credentials", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const [p] = await query("SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL",
@@ -370,7 +339,7 @@ app.post("/volunteer-hub/credentials", requireAuth, checkWriteAccess, wrap(async
 // ── GROUPS ───────────────────────────────────────────────────────────────
 
 app.get("/volunteer-hub/groups", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const rows = await query(
     `SELECT g.*, (SELECT COUNT(DISTINCT person_id) FROM volunteer_signups su
                    WHERE su.group_id=g.id AND su.status <> 'cancelled')::int AS people
@@ -384,7 +353,7 @@ app.get("/volunteer-hub/groups", requireAuth, wrap(async (req, res) => {
 // record. Anybody whose email is already on file joins on THAT record — one
 // person, one record — and the rest are created as volunteers.
 app.post("/volunteer-hub/groups/signup", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId, who = actor(req);
   const [slot] = await query("SELECT * FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL",
     [String(req.body?.slotId || ""), orgId]);
@@ -447,7 +416,7 @@ async function findOrCreatePerson(orgId, { name, email }, who, out) {
 // the same second cannot both take the last place: the second one waits for
 // the lock, re-reads, and is waitlisted with the sentence that says so.
 async function signUp(orgId, slotId, personId, { source, groupId = null, who, note = null }) {
-  await VS_READY;
+  await READY;
   return withTransaction(async tx => {
     const q = (sql, params) => queryTx(tx, sql, params);
     // THE SLOT ROW IS LOCKED FIRST. Everything below reads the counts under
@@ -485,7 +454,7 @@ async function signUp(orgId, slotId, personId, { source, groupId = null, who, no
 // Cancelling frees a place, and the first person waiting takes it — inside
 // the same transaction, so two cancellations cannot promote the same person.
 async function cancelSignUp(orgId, signupId, { by }) {
-  await VS_READY;
+  await READY;
   return withTransaction(async tx => {
     const q = (sql, params) => queryTx(tx, sql, params);
     const [su] = await q(
@@ -531,7 +500,7 @@ async function publicOpportunity(orgSlug, oppSlug) {
 }
 
 app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
-  await VS_READY;
+  await READY;
   // `/volunteer/join` and `/volunteer/log` are the FIX-1 routes and are
   // registered on another router; this must not swallow them.
   if (["join", "log", "me", "kiosk", "checkin"].includes(req.params.slug)) return next();
@@ -585,7 +554,7 @@ app.get("/volunteer/:slug", donateLimiter, wrap(async (req, res, next) => {
 }));
 
 app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const o = await publicOpportunity(null, req.params.slug);
   if (!o) return res.status(404).send(publicPage({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
     body: `<div class="card"><h1>That page is not here.</h1></div>` }));
@@ -619,7 +588,7 @@ app.get("/volunteer/:slug/signup", donateLimiter, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer/:slug/signup", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const o = await publicOpportunity(null, req.params.slug);
   if (!o) return res.status(404).send(publicPage({ title: "Not found", brand: { band: "#0d5c3a", bandFg: "#fff", displayName: "" },
     body: `<div class="card"><h1>That page is not here.</h1></div>` }));
@@ -737,7 +706,7 @@ async function myPage(orgId, personId, { flash = "", error = "" } = {}) {
 }
 
 app.get("/volunteer/me", donateLimiter, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const token = String(req.query.t || "");
   const link = await readMagicLink(token);
   if (!link) return res.status(404).send(publicPage({ title: "Link expired",
@@ -817,7 +786,7 @@ app.post("/volunteer/me/cancel", donateLimiter, express.urlencoded({ extended: f
 }));
 
 app.post("/volunteer/me/hours", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const link = await readMagicLink(String(req.body?.t || ""));
   if (!link) return res.redirect(303, "/volunteer/me");
   const VH = await import("../shared/volunteerHours.js");
@@ -860,7 +829,7 @@ app.get("/volunteer/me/waiver", donateLimiter, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer/me/waiver", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const link = await readMagicLink(String(req.body?.t || ""));
   if (!link) return res.redirect(303, "/volunteer/me");
   const signature = String(req.body?.signature || "").trim().slice(0, 200);
@@ -926,7 +895,7 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
 // The coordinator can edit it afterwards, because a clock is not a witness.
 
 app.get("/volunteer-hub/kiosk/:slotId", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const [slot] = await query(
     `SELECT s.*, ${SLOT_COUNTS}, o.name AS opp_name FROM volunteer_slots s
@@ -947,7 +916,7 @@ app.get("/volunteer-hub/kiosk/:slotId", requireAuth, wrap(async (req, res) => {
 }));
 
 app.post("/volunteer-hub/checkin", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const who = req.body?.kiosk === true ? SYS_KIOSK : actor(req);
   const [su] = await query(
@@ -1003,7 +972,7 @@ app.post("/volunteer-hub/signups/:id/no-show", requireAuth, checkWriteAccess, wr
 // Staff sign somebody up, and staff cancel. The same two functions the public
 // page uses, so capacity behaves identically whichever door it came through.
 app.post("/volunteer-hub/signups", requireAuth, checkWriteAccess, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId, who = actor(req);
   const [slot] = await query("SELECT id FROM volunteer_slots WHERE id=? AND org_id=? AND cancelled_at IS NULL",
     [String(req.body?.slotId || ""), orgId]);
@@ -1033,7 +1002,7 @@ app.post("/volunteer-hub/signups/:id/cancel", requireAuth, wrap(async (req, res)
 // not thank anybody: she wrote every word, she turned it on, and each send
 // is hers. Fires ONCE per milestone, which the column enforces.
 async function noteMilestone(orgId, personId, previousHundredths) {
-  await VS_READY;
+  await READY;
   try {
     const after = await volunteerSummary(orgId, personId);
     const crossed = VS.milestoneCrossed(previousHundredths, after.hundredths);
@@ -1068,7 +1037,7 @@ async function noteMilestone(orgId, personId, previousHundredths) {
 // screen and the rows behind it are one query and cannot drift.
 
 app.get("/volunteer-hub/report", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                      // ORG_TZ_SEAM_OK
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? String(req.query.from) : `${today.slice(0, 4)}-01-01`;
@@ -1182,7 +1151,7 @@ app.get("/volunteer-hub/report/export.csv", requireAuth, wrap(async (req, res) =
 // The thing nobody else does. Read here, once, so Home and the profile show
 // the same two numbers with the same two sentences.
 app.get("/volunteer-hub/crossover", requireAuth, wrap(async (req, res) => {
-  await VS_READY;
+  await READY;
   // The crossover is a question ABOUT GIVING, asked of volunteers. A
   // coordinator is refused it by name, for the same reason they are refused
   // the givers view: the boundary is what they can see, not where it lives.

@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
+import { eventProgress, attendanceRate, seatingChart, nameTags, EVENT_FIGURES } from "../../../shared/eventShape";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: T.ink },
@@ -131,14 +132,15 @@ function NewEventPanel({ onSave, onClose }) {
 }
 
 // ── Event Card ──────────────────────────────────────────────────────────────
-function EventCard({ event, onManage, onAddAttendees }) {
+function EventCard({ event, onManage, onAddAttendees, onOpenRows }) {
   const t = EVENT_TYPES[event.event_type] || EVENT_TYPES.other;
-  const cap = event.capacity;
-  const confirmed = parseInt(event.confirmed_count) || 0;
   const attended = parseInt(event.attendee_count) || 0;
   const invited = parseInt(event.invited_count) || 0;
-  const revenue = parseFloat(event.total_revenue) || 0;
-  const pct = cap ? Math.min(100, Math.round((confirmed / cap) * 100)) : null;
+  const goal = parseFloat(event.goal_amount) || 0;
+  const raised = parseFloat(event.raised) || 0;
+  const registered = parseInt(event.registered_count) || 0;
+  const progress = eventProgress({ raisedCents: Math.round(raised * 100),
+                                   goalCents: goal ? Math.round(goal * 100) : null });
 
   return (
     <div style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, overflow: "hidden", borderLeft: `3px solid ${t.color}`, display: "flex", flexDirection: "column", boxShadow: T.shadow }}>
@@ -158,27 +160,44 @@ function EventCard({ event, onManage, onAddAttendees }) {
 
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
           <TypeBadge type={event.event_type} />
-          <span style={{ fontSize: 11, color: T.ink3, background: T.bg2, borderRadius: 99, padding: "2px 8px" }}>
-            {attended} attended · {invited} total
-          </span>
         </div>
 
-        {cap > 0 && (
+        {/* ── EVENTS-1 item 1 · THE THREE NUMBERS ON A CARD ──────────────
+            Goal, raised and registered, and every one of them opens its own
+            rows. RAISED is summed from the gifts stamped with this event, not
+            from the `revenue` figure somebody typed: the card's number and
+            the list behind it are one query. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 10 }}>
+          {[
+            ["Goal", goal ? fmtFull(goal) : "None set", null, "The amount this event is aiming at."],
+            ["Raised", fmtFull(raised), "raised", "Every gift attributed to this event, at its full amount."],
+            ["Registered", String(registered), "registered", "People on the list who have not cancelled. A ticket for two counts as two."],
+          ].map(([label, value, rowsKey, sentence]) => (
+            <button key={label} data-testid={"ev-card-" + label.toLowerCase()} title={sentence}
+              onClick={e => { e.stopPropagation(); if (rowsKey && onOpenRows) onOpenRows(event, rowsKey, label, sentence); }}
+              disabled={!rowsKey}
+              style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 9, padding: "7px 9px",
+                       textAlign: "left", fontFamily: "inherit", cursor: rowsKey ? "pointer" : "default" }}>
+              <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{label}</div>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif", lineHeight: 1.25 }}>{value}</div>
+            </button>
+          ))}
+        </div>
+
+        {goal > 0 && (
           <div style={{ marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: T.ink3, marginBottom: 4 }}>
-              <span>{confirmed} / {cap} confirmed</span>
-              <span>{pct}%</span>
+              <span>{progress.sentence}</span>
             </div>
             <div style={{ height: 5, background: T.bg2, borderRadius: 3, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: t.color, borderRadius: 3, transition: "width 0.4s" }} />
+              <div style={{ height: "100%", width: `${Math.min(100, progress.percent || 0)}%`,
+                            background: progress.met ? T.greenDk : t.color, borderRadius: 3, transition: "width 0.4s" }} />
             </div>
           </div>
         )}
 
-        {revenue > 0 && (
-          <div style={{ fontSize: 12, color: T.greenDk, fontWeight: 700, marginBottom: 6 }}>
-            {fmtFull(revenue)} raised
-          </div>
+        {attended > 0 && (
+          <div style={{ fontSize: 11.5, color: T.ink3, marginBottom: 6 }}>{attended} came{invited ? ` of ${invited} on the list` : ""}</div>
         )}
       </div>
 
@@ -267,6 +286,186 @@ function FollowUpModal({ eventId, eventName, onDone, onClose }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  EVENTS-1 · THE THREE PANELS THE NIGHT NEEDS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── item 6 · AFTER THE EVENT ───────────────────────────────────────────────
+// Raised against goal, attended against registered, first-time givers and
+// sponsors. Every figure opens its rows, and the caveat is in the payload
+// rather than in a caption somebody can delete: an event is not the reason
+// anybody gave, and a report that implies it is a report that flatters itself.
+function EventReport({ eventId, onOpenRows }) {
+  const [r, setR] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { apiFetch(`/events/${eventId}/report`).then(setR).catch(() => setR(null)); }, [eventId]);
+  const thanks = async () => {
+    setBusy(true); setMsg("");
+    try { const out = await apiFetch(`/events/${eventId}/sponsor-thanks`, { method: "POST", body: "{}" }); setMsg(out.sentence); }
+    catch (e) { setMsg(errorMessage(e, "Those drafts were not written.")); }
+    setBusy(false);
+  };
+  if (!r) return null;
+  return (
+    <div data-testid="ev-report" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>After the event</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        {r.figures.map(f => (
+          <button key={f.key} data-testid={"ev-fig-" + f.key} title={f.sentence}
+            onClick={() => onOpenRows(f.key, f.label, f.sentence)}
+            style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 13px",
+                     cursor: "pointer", fontFamily: "inherit", textAlign: "left", minWidth: 120 }}>
+            <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase", color: T.ink3 }}>{f.label}</div>
+            <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 22, color: T.ink, lineHeight: 1.15 }}>
+              {f.money ? fmtFull(f.value) : f.value}
+            </div>
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6, marginBottom: 4 }}>{r.progress.sentence}</div>
+      <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.6 }}>{r.attendance.sentence}</div>
+      <p data-testid="ev-report-caveat" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.55, margin: "10px 0 0", maxWidth: 620 }}>{r.caveat}</p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+        <button onClick={thanks} disabled={busy} data-testid="ev-sponsor-thanks"
+          style={{ background: T.greenDk, border: "none", borderRadius: 9, padding: "9px 15px", color: T.white, fontSize: 13, fontWeight: 700, cursor: busy ? "wait" : "pointer" }}>
+          {busy ? "Writing…" : "Draft a thank-you per sponsor"}
+        </button>
+        {msg && <span role="status" data-testid="ev-thanks-result" style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5 }}>{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── item 4 · THE SEATING CHART ────────────────────────────────────────────
+// Drag a guest onto a table. The unseated stay in their own column rather than
+// being hidden, because the people without a seat are the ones this screen
+// exists to find. Printing gives the chart and the name tags, and a name tag
+// carries a name and a table and nothing else: a badge that prints somebody's
+// giving level is a badge that tells the room what they gave.
+function EventSeating({ eventId }) {
+  const [data, setData] = useState(null);
+  const [drag, setDrag] = useState(null);
+  const [msg, setMsg] = useState("");
+  const load = () => apiFetch(`/events/${eventId}/guests`).then(setData).catch(() => setData(null));
+  useEffect(() => { load(); }, [eventId]);
+  const move = async (attendeeId, table) => {
+    setMsg("");
+    try {
+      await apiFetch(`/events/${eventId}/attendees/${attendeeId}/table`, { method: "PUT", body: JSON.stringify({ table }) });
+      load();
+    } catch (e) { setMsg(errorMessage(e, "That guest did not move.")); }
+  };
+  if (!data) return null;
+  const chart = seatingChart(data.guests || []);
+  const tags = nameTags(data.guests || []);
+  const print = (title, rows) => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<title>${title}</title><style>
+      body{font-family:'DM Sans',system-ui,sans-serif;color:#0F1A12;padding:28px}
+      h1{font-family:Georgia,serif;font-weight:400;font-size:26px;margin:0 0 4px}
+      .sub{color:#5a554f;font-size:13px;margin-bottom:22px}
+      .t{break-inside:avoid;margin-bottom:18px}
+      .t h2{font-size:14px;margin:0 0 6px;letter-spacing:.06em;text-transform:uppercase;color:#5a554f}
+      .t div{font-size:14px;line-height:1.7}
+      .tag{border:1px solid #d4cfc6;border-radius:10px;padding:16px 18px;margin:0 8px 8px 0;display:inline-block;width:250px;break-inside:avoid}
+      .tag b{display:block;font-size:19px;font-family:Georgia,serif;font-weight:400}
+      .tag span{font-size:12px;color:#5a554f}
+    </style>${rows}`);
+    w.document.close(); w.focus(); w.print();
+  };
+  const printChart = () => print(`${data.event.name} — seating`,
+    `<h1>${data.event.name}</h1><div class="sub">${chart.sentence}</div>`
+    + chart.tables.map(t => `<div class="t"><h2>${t.label} · ${t.count}</h2>${t.seats.map(g => `<div>${g.name}${g.dietary ? ` <span style="color:#8a6d1f">(${g.dietary})</span>` : ""}</div>`).join("")}</div>`).join("")
+    + (chart.unseated.length ? `<div class="t"><h2>Not yet seated · ${chart.unseated.length}</h2>${chart.unseated.map(g => `<div>${g.name}</div>`).join("")}</div>` : ""));
+  const printTags = () => print(`${data.event.name} — name tags`,
+    tags.map(t => `<div class="tag"><b>${t.name}</b><span>${t.table || "Please see the desk"}</span></div>`).join(""));
+
+  return (
+    <div data-testid="ev-seating" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Tables and seating</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={printChart} data-testid="ev-print-chart" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Print the chart</button>
+          <button onClick={printTags} data-testid="ev-print-tags" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Print name tags</button>
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: T.ink3, marginBottom: 12 }}>{chart.sentence} Drag a name onto a table to seat them.</div>
+      {msg && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 8 }}>{msg}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 10 }}>
+        {chart.tables.map(t => (
+          <div key={t.label} data-testid="ev-table"
+            onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, t.label)}
+            style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t.label} · {t.count}</div>
+            {t.seats.map(g => (
+              <div key={g.id} draggable onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)}
+                style={{ fontSize: 12.5, color: T.ink, padding: "2px 0", cursor: "grab" }}>
+                {g.name}{g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
+              </div>
+            ))}
+          </div>
+        ))}
+        <div data-testid="ev-unseated" onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, "")}
+          style={{ background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>No seat yet · {chart.unseated.length}</div>
+          {chart.unseated.map(g => (
+            <div key={g.id} draggable onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)}
+              style={{ fontSize: 12.5, color: T.ink, padding: "2px 0", cursor: "grab" }}>{g.name}</div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── item 5 · CHECK-IN, AT THE DOOR ────────────────────────────────────────
+// The kiosk shape VOL-1 built, for a guest list: type a few letters, tap the
+// name, and they are in. It is deliberately one big list and one big box,
+// because it is used standing up, on a tablet, by somebody holding a pen.
+function EventKiosk({ eventId }) {
+  const [data, setData] = useState(null);
+  const [term, setTerm] = useState("");
+  const [msg, setMsg] = useState("");
+  const load = () => apiFetch(`/events/${eventId}/kiosk`).then(setData).catch(() => setData(null));
+  useEffect(() => { load(); }, [eventId]);
+  const tap = async (g) => {
+    setMsg("");
+    try {
+      const r = await apiFetch(`/events/${eventId}/check-in`, {
+        method: "POST", body: JSON.stringify({ attendeeId: g.id, undo: !!g.checked_in_at }) });
+      setMsg(r.sentence); load();
+    } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
+  };
+  if (!data) return null;
+  const q = term.trim().toLowerCase();
+  const shown = q ? data.guests.filter(g => (g.name || "").toLowerCase().includes(q)) : data.guests;
+  return (
+    <div data-testid="ev-kiosk" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+      <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3, marginBottom: 8 }}>Check-in</div>
+      <div style={{ fontSize: 13, color: T.ink3, marginBottom: 10 }} data-testid="ev-kiosk-count">{data.sentence}</div>
+      <input data-testid="ev-kiosk-search" value={term} onChange={e => setTerm(e.target.value)} placeholder="Type a name"
+        style={{ width: "100%", boxSizing: "border-box", border: "1.5px solid " + T.bg3, borderRadius: 10, padding: "12px 14px", fontSize: 16, fontFamily: "inherit", color: T.ink, marginBottom: 10 }} />
+      {msg && <div role="status" style={{ fontSize: 13, color: T.ink, marginBottom: 8 }}>{msg}</div>}
+      <div style={{ maxHeight: 300, overflowY: "auto" }}>
+        {shown.slice(0, 200).map(g => (
+          <button key={g.id} data-testid="ev-kiosk-row" onClick={() => tap(g)}
+            style={{ width: "100%", textAlign: "left", background: g.checked_in_at ? T.green100 : T.white,
+                     border: "1px solid " + T.bg3, borderRadius: 10, padding: "11px 13px", marginBottom: 6,
+                     cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", gap: 10 }}>
+            <span style={{ fontSize: 14.5, color: T.ink, fontWeight: 600 }}>{g.name}</span>
+            <span style={{ fontSize: 12, color: g.checked_in_at ? T.greenDk : T.ink3, whiteSpace: "nowrap" }}>
+              {g.checked_in_at ? "In" : g.table_label || "No seat"}{g.dietary ? ` · ${g.dietary}` : ""}
+            </span>
+          </button>
+        ))}
+        {!shown.length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody by that name on the list.</div>}
+      </div>
+    </div>
+  );
+}
+
 // ── Event Detail ────────────────────────────────────────────────────────────
 function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   const [event, setEvent] = useState(null);
@@ -288,6 +487,8 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
+  // EVENTS-1 — the rows behind a report figure, opened over the detail.
+  const [detailRows, setDetailRows] = useState(null);
 
   const reload = async () => {
     try {
@@ -432,6 +633,20 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
 
         {/* LEFT */}
         <div style={{ overflowY: "auto", padding: "20px 20px 32px 24px", display: "flex", flexDirection: "column", gap: 20, borderRight: "1px solid "+T.bgElevated }}>
+
+          {/* ── EVENTS-1 · THE THREE PANELS ────────────────────────────
+              The report first, because the morning after is when this screen
+              is opened most; then the seating; then the door. */}
+          <div>
+            <EventReport eventId={eventId} onOpenRows={async (key, label, sentence) => {
+              try {
+                const r = await apiFetch(`/events/${eventId}/rows?rows=${key}`);
+                setDetailRows({ ...r, label, sentence, eventName: event.name });
+              } catch { setDetailRows({ label, sentence, eventName: event.name, donors: [], count: 0 }); }
+            }} />
+            <EventSeating eventId={eventId} />
+            <EventKiosk eventId={eventId} />
+          </div>
 
           {/* Stat tiles */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
@@ -713,6 +928,27 @@ function EventDetail({ eventId, donors: allDonors, onClose, onEventUpdated }) {
           onClose={() => setShowFollowUp(false)}
         />
       )}
+
+      {/* The rows behind a report figure. Same SQL as the figure. */}
+      {detailRows && (
+        <Modal onClose={() => setDetailRows(null)} width={620}
+          title={`${detailRows.label} · ${detailRows.count}`}>
+          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginTop: 0 }}>{detailRows.sentence}</p>
+          <div style={{ maxHeight: 360, overflowY: "auto" }} data-testid="ev-report-rows">
+            {(detailRows.donors || []).map((r, i) => (
+              <div key={(r.id || r.donor_id || "") + i} style={{ padding: "8px 0", borderBottom: "1px solid " + T.bg3, display: "flex", gap: 10, justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13.5, color: T.ink, fontWeight: 600 }}>{r.name}</span>
+                <span style={{ fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>
+                  {r.amount != null ? fmtFull(Number(r.amount)) : ""}
+                  {r.level_name ? ` · ${r.level_name}` : ""}
+                  {r.table_label ? ` · ${r.table_label}` : ""}
+                </span>
+              </div>
+            ))}
+            {!(detailRows.donors || []).length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody yet.</div>}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -725,6 +961,14 @@ export function Events({ data, isReadOnly }) {
   const [selectedId, setSelectedId] = useState(null);
   const [showNew, setShowNew] = useState(false);
   const [addTarget, setAddTarget] = useState(null);
+  // EVENTS-1 item 1 — every number on a card opens its rows.
+  const [rowsPanel, setRowsPanel] = useState(null);
+  const openRows = async (event, key, label, sentence) => {
+    try {
+      const r = await apiFetch(`/events/${event.id}/rows?rows=${key}`);
+      setRowsPanel({ ...r, label, sentence, eventName: event.name });
+    } catch { setRowsPanel({ label, sentence, eventName: event.name, donors: [], count: 0 }); }
+  };
 
   const reload = async () => {
     try {
@@ -815,6 +1059,7 @@ export function Events({ data, isReadOnly }) {
               event={e}
               onManage={evt => setSelectedId(evt.id)}
               onAddAttendees={evt => setSelectedId(evt.id)}
+              onOpenRows={openRows}
             />
           ))}
         </div>
@@ -829,6 +1074,29 @@ export function Events({ data, isReadOnly }) {
 
       {addTarget && (
         <div style={{ position: "fixed", inset: 0, zIndex: 200, background: T.ink+"aa" }} onClick={() => setAddTarget(null)} />
+      )}
+
+      {/* EVERY NUMBER OPENS ITS ROWS. The same SQL the figure was built from,
+          re-run, so a count and its list cannot drift. */}
+      {rowsPanel && (
+        <Modal onClose={() => setRowsPanel(null)} width={620}
+          title={`${rowsPanel.label} · ${rowsPanel.count} · ${rowsPanel.eventName}`}>
+          <p style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginTop: 0 }}>{rowsPanel.sentence}</p>
+          <div style={{ maxHeight: 360, overflowY: "auto" }} data-testid="ev-rows">
+            {(rowsPanel.donors || []).map((r, i) => (
+              <div key={(r.id || r.donor_id || "") + i} style={{ padding: "8px 0", borderBottom: "1px solid " + T.bg3, display: "flex", gap: 10, justifyContent: "space-between" }}>
+                <span style={{ fontSize: 13.5, color: T.ink, fontWeight: 600 }}>{r.name}</span>
+                <span style={{ fontSize: 12.5, color: T.ink3, whiteSpace: "nowrap" }}>
+                  {r.amount != null ? fmtFull(Number(r.amount)) : ""}
+                  {r.level_name ? ` · ${r.level_name}` : ""}
+                  {r.table_label ? ` · ${r.table_label}` : ""}
+                  {r.quantity > 1 ? ` · ${r.quantity} places` : ""}
+                </span>
+              </div>
+            ))}
+            {!(rowsPanel.donors || []).length && <div style={{ fontSize: 13, color: T.ink3 }}>Nobody yet.</div>}
+          </div>
+        </Modal>
       )}
     </div>
   );

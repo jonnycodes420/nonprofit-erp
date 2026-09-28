@@ -811,10 +811,18 @@ async function main() {
            VALUES ($1,$2,$3,'event','completed',$4,$5,$6)`,
           [gala.campaignId, ORG, gala.name, 100000, orgTime.addDays(gala.date, -75), gala.date]);
   const galaRevenue = gifts.filter(g => g.campaignId === gala.campaignId).reduce((t, g) => t + g.amount, 0);
-  await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,created_by,created_by_name)
-           VALUES ($1,$2,$3,'gala',$4,$4,$5,$6,220,'completed',$7,$8,'u_b72demo','Dana Reyes')`,
+  // EVENTS-1 — the gala carries a GOAL and the campaign it raises into, so the
+  // card and the report have something to measure against.
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,goal_amount,campaign_id,created_by,created_by_name)
+           VALUES ($1,$2,$3,'gala',$4,$4,$5,$6,220,'completed',$7,$8,$9,$10,'u_b72demo','Dana Reyes')`,
           [gala.id, ORG, gala.name, gala.date, GALA.venue,
-           "Our annual gala: dinner, a student showcase, and a paddle raise for the scholarship fund.", galaRevenue, 41500]);
+           "Our annual gala: dinner, a student showcase, and a paddle raise for the scholarship fund.",
+           galaRevenue, 41500, 100000, gala.campaignId]);
+  await q(`UPDATE events SET public_slug='harbor-lights-gala' WHERE id=$1 AND org_id=$2`, [gala.id, ORG]);
+  // Every gala gift is STAMPED with the event, so "raised" is a sum over an id
+  // and the rows behind the number open. Without it the figure fell back to
+  // matching a campaign NAME, and the drill-through returned nothing.
+  await q(`UPDATE gifts SET event_id=$1 WHERE org_id=$2 AND campaign_id=$3`, [gala.id, ORG, gala.campaignId]);
   for (const [k, l] of gala.levels.entries())
     await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,recognition,position,created_by,created_by_name)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'u_b72demo','Dana Reyes')`,
@@ -825,8 +833,51 @@ async function main() {
     await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,email,status,level_id,quantity,registration_gift_id,recognition,gift_amount,table_label)
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [`att_b72_${pad(k + 1)}`, gala.id, ORG, g.donorId, d.name, d.email || "", g.status, g.level.id, g.qty, g.giftId,
-             g.recognition ? `${d.name}, ${g.recognition}` : null, g.amount, `Table ${1 + Math.floor(k / 5)}`]);
+             g.recognition ? `${d.name}, ${g.recognition}` : null, g.amount, `Table ${1 + (k % 12)}`]);
   }
+  // ── EVENTS-1 · THE NIGHT ITSELF ────────────────────────────────────────
+  // TWELVE tables, round-robin so every one of them is populated (they used to
+  // fill five at a time, so the first tables were full and the last were
+  // empty, which is not a seating chart anybody would print). A handful are
+  // left WITHOUT a seat on purpose: the people missing from the chart are the
+  // ones the chart exists to show.
+  await q(`UPDATE event_attendees SET table_label=NULL
+            WHERE org_id=$1 AND event_id=$2 AND id IN (
+              SELECT id FROM event_attendees WHERE org_id=$1 AND event_id=$2 ORDER BY id DESC LIMIT 4)`,
+          [ORG, gala.id]);
+  // Dietary notes on a few, because that is the column a caterer rings about.
+  const DIETS = ["Vegetarian", "Gluten free", "No shellfish", "Vegan", "Nut allergy"];
+  const dietRows = await q(`SELECT id FROM event_attendees WHERE org_id=$1 AND event_id=$2 ORDER BY id LIMIT 14`, [ORG, gala.id]);
+  for (const [i, r] of dietRows.entries())
+    await q(`UPDATE event_attendees SET dietary=$1 WHERE id=$2`, [DIETS[i % DIETS.length], r.id]);
+  // Everybody marked as having come was checked in at the door, a few minutes
+  // either side of the hour the doors opened.
+  await q(`UPDATE event_attendees SET checked_in_at = ($1::date + TIME '18:30') + (random() * INTERVAL '70 minutes')
+            WHERE org_id=$2 AND event_id=$3 AND status='attended'`, [gala.date, ORG, gala.id]);
+
+  // ── THE 5K THAT HAS NOT HAPPENED YET ───────────────────────────────────
+  // An event with a goal, two ticket levels and nobody registered: the state
+  // every event is in on the day it is created, and the one the Events home
+  // has to look right in.
+  const run5k = { id: "ev_b72_5k", date: orgTime.addDays(TODAY, 68) };
+  await q(`INSERT INTO campaigns (id,org_id,name,type,status,goal_amount,start_date,end_date)
+           VALUES ($1,$2,$3,'event','active',$4,$5,$6)`,
+          ["camp_b72_5k", ORG, `Harbour Run ${run5k.date.slice(0, 4)}`, 25000, TODAY, run5k.date]);
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,end_date,location,description,capacity,status,revenue,cost,goal_amount,campaign_id,created_by,created_by_name)
+           VALUES ($1,$2,$3,'other',$4,$4,$5,$6,400,'upcoming',0,3200,$7,$8,'u_b72demo','Dana Reyes')`,
+          [run5k.id, ORG, `Harbour Run ${run5k.date.slice(0, 4)}`, run5k.date, "North Shore Path, Harborlight",
+           "A five kilometre run and walk along the shore. Families welcome, and every runner raises for the scholarship fund.",
+           25000, "camp_b72_5k"]);
+  await q(`UPDATE events SET public_slug='harbour-run' WHERE id=$1 AND org_id=$2`, [run5k.id, ORG]);
+  const RUN_LEVELS = [
+    ["evl_b72_run_adult", "ticket", "Adult entry", 35, 12, null],
+    ["evl_b72_run_family", "ticket", "Family entry, up to four", 90, 30, null],
+    ["evl_b72_run_sponsor", "sponsor", "Mile sponsor", 1000, 0, "Mile sponsor"],
+  ];
+  for (const [k, [id, kind, name, price, fmv, recognition]] of RUN_LEVELS.entries())
+    await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv,recognition,position,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'u_b72demo','Dana Reyes')`,
+            [id, ORG, run5k.id, kind, name, price, fmv, recognition, k]);
 
   // ── Derived state: totals, stages, ledger stamps ───────────────────────
   console.log("[seed] recomputing donor summaries…");
