@@ -24,7 +24,7 @@ function mount(ctx) {
 const {
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog,
+  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -432,6 +432,11 @@ app.post("/volunteer/join", donateLimiter, express.urlencoded({ extended: false 
   if (availability)
     await run(`INSERT INTO volunteer_notes (id,org_id,person_id,kind,body,note_date,created_by,created_by_name) VALUES (?,?,?,'availability',?,?,?,?)`,
       ["vn_" + uuid().slice(0, 12), o.id, pid, availability, orgToday(await orgTz(o.id)), SIGNUP_ACTOR.id, SIGNUP_ACTOR.name]); // ORG_TZ_SEAM_OK
+  // THREAD-2a — the new_volunteer journey trigger. AFTER the response is
+  // composed and never in front of it: somebody signing up to help must get
+  // their thank-you page whether or not a journey starts behind it.
+  maybeStartJourneyFromServer(o.id, pid, "new_volunteer", {})
+    .catch(e => console.error("[journey] volunteer trigger:", e.message));
   res.send(thanks);
 }));
 }

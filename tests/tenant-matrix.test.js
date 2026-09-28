@@ -357,6 +357,12 @@ function bResolver(routePath, param) {
   // BUILD-99 (major gifts) Part 3 — the plan's three shapes, resolved by PATH
   // because all three use `:id` and their first segments differ.
   if (routePath.startsWith("/cultivation-templates/")) return `ct_${B}`;
+  // THREAD-2a — a journey IS a cultivation template, so the cross-tenant
+  // probe is org B's own template row. These three routes read, rewrite and
+  // APPLY a journey to people, which is the most consequential of the set:
+  // org A reaching org B's journey could start seven steps against org B's
+  // donors. They answer 404.
+  if (routePath.startsWith("/journeys/")) return `ct_${B}`;
   if (routePath.startsWith("/plan-steps/")) return `cs_${B}`;
   if (routePath.startsWith("/plans/")) return `cp_${B}`;
   if (routePath.startsWith("/agent/instructions/")) return `ai_${B}`;

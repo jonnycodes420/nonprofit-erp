@@ -2463,6 +2463,46 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS cult_step_one_open ON cultivation_plan_steps (plan_id) WHERE status = 'open'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_steps_thread ON cultivation_plan_steps (thread_id) WHERE thread_id IS NOT NULL`);
 
+  // ── THREAD-2a · A JOURNEY IS A PLAN WITH A TRIGGER ──────────────────────
+  // No parallel system, and no new tables: a journey IS a cultivation
+  // template, and a donor in one IS a cultivation plan. These columns are the
+  // only two things a journey has that a plan does not — the event that
+  // starts it, and which one wins when a donor qualifies for two. Every
+  // existing template reads as a by-hand plan with the default priority,
+  // which is exactly what it was, so nothing that already works changes.
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS trigger_key TEXT`);
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS trigger_amount_cents INTEGER`);
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 50`);
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS preset_key TEXT`);
+  // Off by default: a template somebody built by hand before journeys existed
+  // must not start firing at people because a column appeared.
+  await pool.query(`ALTER TABLE cultivation_templates ADD COLUMN IF NOT EXISTS journey_enabled BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_templates_trigger
+                    ON cultivation_templates (org_id, trigger_key, priority DESC)
+                    WHERE journey_enabled = true AND archived_at IS NULL`);
+
+  // WHY THIS DONOR IS IN THIS JOURNEY, AND WHAT IT REPLACED. A donor moved
+  // from one journey to another by a rule, with no record of why, is a person
+  // whose stewardship silently changed. `replaced_reason` is the sentence
+  // shown in the timeline, written by shared/journeyShape.js so the stored
+  // reason and the displayed one are one string.
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS trigger_key TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS replaced_plan_id TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS replaced_reason TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plans ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 50`);
+
+  // A step may carry a DRAFT — words Steward writes for her to read. It is
+  // not a send and it never becomes one; the step is still a thread that
+  // closes on a logged human action. tests/thread2a-no-send.test.js guards it.
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS draft_kind TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS owner_id TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS owner_name TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS skip_reason TEXT`);
+  await pool.query(`ALTER TABLE cultivation_plan_steps ADD COLUMN IF NOT EXISTS done_note TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cult_steps_due
+                    ON cultivation_plan_steps (org_id, status, due_date)
+                    WHERE status IN ('pending','open')`);
+
   // ── Development reporting cadence (BUILD-17) ─────────────────────────────
   // Append-only log of every digest email actually sent. The UNIQUE index on
   // (org_id, digest_type, period_key, recipient_user_id) is the idempotency

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Journeys · Direction A</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="_shared.css"/>
+<style>
+/* ── DIRECTION A · THE SPINE ────────────────────────────────────────────
+   The journey is ONE horizontal line with the steps hung off it, and the
+   line is time. You read a relationship left to right the way you read a
+   sentence, and the gaps between the nodes are the real gaps between the
+   touches — month 3 sits visibly further from week 1 than day 2 does.
+   Editing happens in a drawer UNDER the spine, so the shape of the whole
+   journey stays on screen while you change one step of it. */
+.spine-wrap{position:relative;padding:34px 8px 12px;overflow-x:auto}
+.spine{position:relative;min-width:680px;height:150px;margin-right:52px}  /* the last node is centred on 96%, so the spine needs room to its right or Check-in and Ask fall off the card — the first thing the 1440 shot caught */
+.spine:before{content:"";position:absolute;left:0;right:0;top:54px;height:2px;background:var(--cream2)}
+.spine .fill{position:absolute;left:0;top:54px;height:2px;background:var(--emerald);width:31%}
+.node{position:absolute;top:0;transform:translateX(-50%);width:96px;text-align:center}
+.node .bub{width:22px;height:22px;border-radius:50%;margin:44px auto 0;background:var(--white);border:2px solid var(--cream2);position:relative;z-index:2}
+.node.done .bub{background:var(--emerald);border-color:var(--emerald)}
+.node.today .bub{background:var(--ink);border-color:var(--ink);box-shadow:0 0 0 5px rgba(15,26,18,.10)}
+.node .when{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);height:34px}
+.node .what{font-size:12px;font-weight:600;margin-top:9px;line-height:1.35}
+.node .date{font-size:11.5px;color:var(--ink3);margin-top:2px}
+.node.sel .what{color:var(--emerald)}
+.drawer{border-top:1px solid var(--hair);background:var(--cream);border-radius:0 0 16px 16px;padding:20px 22px}
+.drawer-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:16px;align-items:end}
+.f label{display:block;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);margin-bottom:5px}
+.f .in{background:var(--white);border:1.5px solid var(--hair);border-radius:9px;padding:9px 11px;font-size:13.5px}
+.builder-grid{display:grid;grid-template-columns:1.85fr 1fr;gap:20px;align-items:start}
+.prev-row{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--rail-line)}
+.prev-row:last-child{border-bottom:none}
+.sent{font-size:14px;line-height:1.6;color:var(--ink3);margin-top:14px}
+.sent b{color:var(--ink);font-weight:600}
+.mini{display:flex;align-items:center;gap:5px;margin-top:9px}
+.mini i{width:22px;height:4px;border-radius:99px;background:var(--cream2);display:block}
+.mini i.dn{background:var(--emerald)} .mini i.nw{background:var(--ink)}
+.rail .mini i{background:var(--rail-line)} .rail .mini i.dn{background:#3E8B63} .rail .mini i.nw{background:var(--brass)}
+.ob{max-width:620px;margin:0 auto}
+.preset{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 18px}
+.preset button{font:inherit;font-size:13px;font-weight:600;border:1.5px solid var(--hair);background:var(--white);border-radius:11px;padding:11px 14px;cursor:pointer;text-align:left}
+.preset button.on{border-color:var(--emerald);box-shadow:inset 0 0 0 1px var(--emerald)}
+</style></head>
+<body><div class="wrap">
+
+<div class="hdr">
+  <div class="kicker">THREAD-2 · Direction A</div>
+  <h1>The spine</h1>
+  <p class="note" style="max-width:720px">The journey is one horizontal line, and the line is time. The gaps between the
+  nodes are the real gaps between the touches, so "seven touches over seven months" is something you
+  see rather than something you are told. Editing opens a drawer <em>under</em> the spine, so the shape of the
+  whole journey stays on screen while you change one step of it.</p>
+</div>
+
+<!-- ── 1 · THE BUILDER ─────────────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>The builder</h2><span class="chip">Settings → Journeys</span></div>
+  <div class="builder-grid">
+    <div class="card">
+      <div style="padding:18px 22px 0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:17px;font-weight:700">New donor, first year</div>
+          <div class="note">Starts when someone gives for the first time.</div>
+        </div>
+        <span class="chip">7 steps</span>
+      </div>
+
+      <div class="spine-wrap"><div class="spine">
+        <div class="fill"></div>
+        <div class="node done"   style="left:6%"><div class="when">Day 2</div><div class="bub"></div><div class="what">Thank-you call</div><div class="date">Oct 5</div></div>
+        <div class="node done"   style="left:19%"><div class="when">Week 1</div><div class="bub"></div><div class="what">Handwritten note</div><div class="date">Oct 10</div></div>
+        <div class="node today sel" style="left:37%"><div class="when">Month 3</div><div class="bub"></div><div class="what">Impact report</div><div class="date">Jan 3</div></div>
+        <div class="node"       style="left:53%"><div class="when">Month 4</div><div class="bub"></div><div class="what">Visit</div><div class="date">Feb 3</div></div>
+        <div class="node"       style="left:68%"><div class="when">Month 5</div><div class="bub"></div><div class="what">Event invitation</div><div class="date">Mar 3</div></div>
+        <div class="node"       style="left:83%"><div class="when">Month 6</div><div class="bub"></div><div class="what">Check-in</div><div class="date">Apr 3</div></div>
+        <div class="node"       style="left:96%"><div class="when">Month 7</div><div class="bub"></div><div class="what">Ask</div><div class="date">May 3</div></div>
+      </div></div>
+
+      <div class="drawer">
+        <div class="kicker" style="margin-bottom:12px">Editing · step 3 of 7</div>
+        <div class="drawer-grid">
+          <div class="f"><label>What happens</label><div class="in">Impact report</div></div>
+          <div class="f"><label>When</label><div class="in">3 months after the first gift</div></div>
+          <div class="f"><label>Whose job</label><div class="in">The relationship owner</div></div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:16px;flex-wrap:wrap">
+          <button class="btn">Add a step before this</button>
+          <button class="btn">Remove</button>
+          <span class="note" style="margin-left:auto">Drag a node along the spine to retime it.</span>
+        </div>
+      </div>
+
+      <div style="padding:16px 22px 20px;border-top:1px solid var(--hair)">
+        <p class="sent"><b>7 touches over 7 months. Nothing is sent without you.</b><br/>
+        Every step becomes a next step on your Thread on the day it is due. You mark it done, or you skip it and say why.</p>
+      </div>
+    </div>
+
+    <!-- LIVE PREVIEW, on the ink rail the donor profile already uses -->
+    <div class="rail">
+      <div class="rail-t">Live preview · a real donor</div>
+      <div class="rail-p">
+        <div style="font-size:15px;font-weight:700">Margaret Chen</div>
+        <div style="font-size:12px;color:var(--rail-dim);margin-top:2px">First gift $2,000 · 3 October 2026</div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="prev-row"><span class="dot d-done" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Thank-you call</div><div style="font-size:11.5px;color:var(--rail-dim)">Mon 5 Oct 2026 · done</div></div></div>
+        <div class="prev-row"><span class="dot d-done" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Handwritten note</div><div style="font-size:11.5px;color:var(--rail-dim)">Sat 10 Oct 2026 · done</div></div></div>
+        <div class="prev-row"><span class="dot d-late" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600;color:var(--brass)">Impact report</div><div style="font-size:11.5px;color:var(--rail-dim)">Sun 3 Jan 2027 · due now</div></div></div>
+        <div class="prev-row"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Visit</div><div style="font-size:11.5px;color:var(--rail-dim)">Wed 3 Feb 2027</div></div></div>
+        <div class="prev-row"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Event invitation</div><div style="font-size:11.5px;color:var(--rail-dim)">Wed 3 Mar 2027</div></div></div>
+        <div class="prev-row"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Check-in</div><div style="font-size:11.5px;color:var(--rail-dim)">Sat 3 Apr 2027</div></div></div>
+        <div class="prev-row"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Ask</div><div style="font-size:11.5px;color:var(--rail-dim)">Mon 3 May 2027</div></div></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--rail-dim);margin-top:14px;line-height:1.55">
+        Real dates on a real record, in Harborlight's timezone. Change a step above and these move.
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i class="dot d-done"></i>done</span><span><i class="dot d-today"></i>today</span>
+    <span><i class="dot d-late"></i>late (brass, never red)</span><span><i class="dot d-soon"></i>upcoming</span>
+  </div>
+</div>
+
+<!-- ── 2 · ONBOARDING ──────────────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>The onboarding step</h2><span class="chip">under 3 minutes · skippable</span></div>
+  <div class="card ob" style="padding:26px 28px">
+    <div class="kicker">Step 6 of 8</div>
+    <h3 style="font-size:25px;margin:8px 0 6px">How do you look after a new donor?</h3>
+    <p class="note">Pick the closest one. You can change every step of it afterwards, and nothing is ever sent without you.</p>
+    <div class="preset">
+      <button class="on"><b>New donor, first year</b><br/><span class="note">7 touches over 7 months</span></button>
+      <button><b>Major donor</b><br/><span class="note">5 touches over a year</span></button>
+      <button><b>Welcome back</b><br/><span class="note">3 touches over 6 weeks</span></button>
+      <button><b>Monthly giver</b><br/><span class="note">4 touches a year</span></button>
+      <button><b>New volunteer</b><br/><span class="note">3 touches over a month</span></button>
+    </div>
+    <div class="rail" style="border-radius:12px">
+      <div class="rail-t">On one of your donors</div>
+      <div style="font-size:13.5px;font-weight:600">Margaret Chen · first gift 3 October</div>
+      <div class="mini"><i class="dn"></i><i class="dn"></i><i class="nw"></i><i></i><i></i><i></i><i></i></div>
+      <div style="font-size:11.5px;color:var(--rail-dim);margin-top:8px">Next: impact report, 3 January.</div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:18px">
+      <button class="btn btn-go">Use this one →</button>
+      <button class="btn">Adjust the steps</button>
+      <a href="#" style="margin-left:auto;font-size:13px;color:var(--ink3)">I'll do this later</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── 3 · THE DONOR PROFILE ───────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>On the donor profile</h2><span class="chip">the approved profile is unchanged around it</span></div>
+  <div class="two" style="display:grid;grid-template-columns:1.55fr 1fr;gap:20px;align-items:start">
+    <div class="card" style="padding:22px 24px">
+      <div class="kicker">Main column · unchanged</div>
+      <h3 style="font-size:27px;margin:8px 0 2px">Margaret Chen</h3>
+      <div class="note">Seasonal giver · relationship owner Maria Alvarez</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px">
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Lifetime</div><div style="font-family:'DM Serif Display',serif;font-size:20px">$8,400</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Last gift</div><div style="font-family:'DM Serif Display',serif;font-size:20px">$2,000</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Last contact</div><div style="font-family:'DM Serif Display',serif;font-size:20px">84 days</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Open ask</div><div style="font-size:12.5px;color:var(--ink3);line-height:1.45">No open ask.</div></div>
+      </div>
+      <p class="note" style="margin-top:18px">In Direction A the journey chip sits in the RIGHT RAIL, with the rest of what is
+      true of the relationship. The main column stays about the person and their money.</p>
+    </div>
+    <div class="rail">
+      <div class="rail-t">Their journey</div>
+      <div class="rail-p">
+        <div style="font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--rail-dim)">Step 3 of 7</div>
+        <div style="font-size:15px;font-weight:700;margin-top:4px">Impact report</div>
+        <div style="font-size:12.5px;color:var(--brass);font-weight:600;margin-top:2px">due Jan 3</div>
+        <div class="mini"><i class="dn"></i><i class="dn"></i><i class="nw"></i><i></i><i></i><i></i><i></i></div>
+        <div style="display:flex;gap:7px;margin-top:13px">
+          <button class="btn btn-go" style="padding:8px 14px;font-size:13px">Mark done</button>
+          <button class="btn" style="padding:8px 14px;font-size:13px;color:var(--rail-text);border-color:var(--rail-line)">Skip</button>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--rail-dim);margin-top:11px;line-height:1.55">New donor, first year · started 3 October</div>
+    </div>
+  </div>
+</div>
+
+<p class="note" style="margin-top:44px;padding-top:18px;border-top:1px solid var(--hair)">
+  Direction A · static HTML, no build step. Palette: ink, white, cream, one emerald action, brass for late.
+  The donor profile's ink right rail is kept exactly as approved.
+</p>
+</div></body></html>

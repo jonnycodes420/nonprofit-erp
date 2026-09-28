@@ -34,7 +34,7 @@ const {
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkActiveDonorBand, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
@@ -8532,6 +8532,160 @@ async function planMod() { return import("../shared/planShape.js"); }
 // creates from the officer's own next step — the step stays PENDING and the next
 // close calls this again. So a plan can never be stalled by a race; it is only
 // ever waiting, and `planSentence` says so out loud.
+// ── THREAD-2a · THE JOURNEY ENGINE ────────────────────────────────────────
+//
+// ONE function starts a journey, and every trigger calls it. There is no
+// second place that decides who goes into what, which is why "a donor is in
+// at most one journey" can be true rather than aspirational.
+//
+// It uses the PLAN path underneath — the same `cultivation_plans` row, the
+// same partial unique index, the same `advanceCultivationPlan` — so a journey
+// and a plan an officer applied by hand are the same object, and every screen
+// that already reads plans reads journeys for free.
+//
+// IT NEVER SENDS ANYTHING. It writes a plan and its pending steps. Each step
+// becomes a thread when its turn comes, and a thread closes when a person
+// logs that they did something. tests/thread2a-no-send.test.js is the guard.
+async function journeyMod() { return import("../shared/journeyShape.js"); }
+
+// The actor on every write this engine makes. It is not a user: nobody
+// pressed anything, a rule fired, and the record has to say so rather than
+// attributing it to whoever happened to be signed in.
+const JOURNEY_ACTOR = { id: "system:journey", name: "Steward (journey)" };
+
+async function maybeStartJourney(orgId, donorId, triggerKey, opts = {}) {
+  const J = await journeyMod();
+  const PL = await planMod();
+  if (!J.TRIGGER_KEYS.includes(triggerKey)) return { started: false, reason: "unknown_trigger" };
+
+  const [donor] = await query(
+    `SELECT id, name, assigned_to, assigned_to_name FROM donors
+      WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!donor) return { started: false, reason: "donor_not_found" };
+
+  // A PERSON CHOOSING beats a rule picking. `forceJourneyId` is the by-hand
+  // path (and the "apply to everyone who qualifies" button): it names the
+  // journey, so `journey_enabled` is not consulted — arming a journey is
+  // about whether it fires ON ITS OWN, and somebody pressing a button has
+  // already answered that question for this donor.
+  const rows = opts.forceJourneyId
+    ? await query(`SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL`,
+        [opts.forceJourneyId, orgId])
+    : await query(
+        `SELECT * FROM cultivation_templates
+          WHERE org_id=? AND trigger_key=? AND journey_enabled=true AND archived_at IS NULL`,
+        [orgId, triggerKey]);
+  if (!rows.length) return { started: false, reason: opts.forceJourneyId ? "journey_not_found" : "no_journey_for_trigger" };
+
+  // `gift_over` is the one trigger that carries a number, and the number is
+  // the ORG's. A journey whose threshold this gift does not clear is simply
+  // not a candidate.
+  const amountCents = Number(opts.amountCents);
+  const eligible = rows.filter(t => {
+    if (opts.forceJourneyId) return true;      // named by a person, not matched by a rule
+    if (triggerKey !== "gift_over") return true;
+    const need = Number(t.trigger_amount_cents);
+    return Number.isFinite(need) && need > 0 && Number.isFinite(amountCents) && amountCents >= need;
+  });
+  if (!eligible.length) return { started: false, reason: "below_threshold" };
+
+  const winner = J.winningJourney(eligible);
+  if (!winner) return { started: false, reason: "no_winner" };
+
+  const v = J.validateJourney({
+    name: winner.name, trigger: winner.trigger_key, priority: winner.priority,
+    amountCents: winner.trigger_amount_cents, steps: winner.steps,
+  });
+  if (!v.ok) {
+    console.error(`[journey] ${winner.id} is armed but invalid: ${v.errors[0].message}`);
+    return { started: false, reason: "invalid_journey", detail: v.errors[0].message };
+  }
+
+  const org = await orgTz(orgId);
+  const today = opts.today || orgToday(org);                    // ORG_TZ_SEAM_OK
+  const steps = PL.planFromTemplate({ steps: v.steps, today }, orgTime.addDays);
+
+  // ── AT MOST ONE JOURNEY, AND THE REASON IS WRITTEN DOWN ────────────────
+  // A donor already working through something is left alone UNLESS the new
+  // one outranks it. Equal priority does not replace: being in a journey is a
+  // commitment somebody may already have acted on, and shuffling a donor
+  // between two equally good ones helps nobody.
+  const [current] = await query(
+    `SELECT id, template_name, priority FROM cultivation_plans
+      WHERE org_id=? AND donor_id=? AND status='active'`, [orgId, donorId]);
+  let replacedId = null, reason = null;
+  if (current) {
+    if (!J.shouldReplace({ priority: current.priority }, { priority: v.priority })) {
+      return { started: false, reason: "already_in_a_journey", currentPlanId: current.id,
+               currentName: current.template_name };
+    }
+    reason = J.replacementReason(current.template_name, v.name);
+    // Stopped, not deleted: the steps stay readable, and the row says what
+    // took its place.
+    await run(`UPDATE cultivation_plans SET status='abandoned', closed_at=NOW(), replaced_reason=?
+                WHERE id=? AND status='active'`, [reason, current.id]);
+    const [openStep] = await query(
+      `SELECT id, thread_id FROM cultivation_plan_steps WHERE plan_id=? AND status='open'`, [current.id]);
+    if (openStep) {
+      await run(`UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(),
+                   closed_by=?, closed_by_name=?, skip_reason=? WHERE id=?`,
+        [JOURNEY_ACTOR.id, JOURNEY_ACTOR.name, reason, openStep.id]);
+    }
+    replacedId = current.id;
+  }
+
+  const planId = "cp_" + uuid().slice(0, 10);
+  const ins = await query(
+    `INSERT INTO cultivation_plans (id,org_id,donor_id,template_id,template_name,applied_on,status,
+                                    owner_id,owner_name,created_by,created_by_name,
+                                    trigger_key,priority,replaced_plan_id,replaced_reason)
+     SELECT ?::text,?::text,?::text,?::text,?::text,?::text,'active',?::text,?::text,?::text,?::text,
+            ?::text,?::int,?::text,?::text
+      WHERE NOT EXISTS (SELECT 1 FROM cultivation_plans x WHERE x.org_id=?::text AND x.donor_id=?::text AND x.status='active')
+     RETURNING id`,
+    [planId, orgId, donor.id, winner.id, v.name, today,
+     donor.assigned_to || null, donor.assigned_to_name || null,
+     JOURNEY_ACTOR.id, JOURNEY_ACTOR.name,
+     // The trigger RECORDED is the journey's own, so a by-hand apply of a
+     // first-gift journey still says what kind of journey it is; `by_hand` is
+     // recorded only for a journey that genuinely has that trigger.
+     opts.forceJourneyId ? (winner.trigger_key || triggerKey) : triggerKey,
+     v.priority, replacedId, reason, orgId, donor.id]);
+  if (!ins.length) return { started: false, reason: "race_lost" };
+
+  for (const s of steps) {
+    const src = v.steps[s.seq - 1] || {};
+    await run(
+      `INSERT INTO cultivation_plan_steps (id,org_id,plan_id,seq,step_type,label,due_date,status,draft_kind,owner_id,owner_name)
+       VALUES (?,?,?,?,?,?,?,'pending',?,?,?)`,
+      ["cs_" + uuid().slice(0, 10), orgId, planId, s.seq, s.type, s.label, s.dueDate,
+       src.draft || null,
+       // The owner defaults to the RELATIONSHIP OWNER, which is the donor's
+       // assigned officer — the brief's own answer, and the one that makes
+       // the Thread owner-scoped without anybody configuring anything.
+       src.ownerMode === "specific" ? (src.ownerId || null) : (donor.assigned_to || null),
+       src.ownerMode === "specific" ? null : (donor.assigned_to_name || null)]);
+  }
+
+  await advanceCultivationPlan(orgId, donor.id,
+    { actorId: JOURNEY_ACTOR.id, actorName: JOURNEY_ACTOR.name, today });
+
+  // The timeline says it, in the same words the screen does.
+  const line = reason
+    ? reason
+    : `Journey started: ${v.name} (${steps.length} ${steps.length === 1 ? "step" : "steps"}).`;
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+     VALUES (?,?,?,'note',?,?,?,?)`,
+    ["int_" + uuid().slice(0, 10), orgId, donor.id, today, line, JOURNEY_ACTOR.id, JOURNEY_ACTOR.name])
+    .catch(e => console.error("[journey] timeline:", e.message));
+
+  console.log(`[journey] ${donor.id} → ${v.name} on ${triggerKey}`
+    + (replacedId ? ` (replaced ${replacedId})` : ""));
+  return { started: true, planId, journeyId: winner.id, name: v.name, trigger: triggerKey,
+           steps: steps.length, replacedPlanId: replacedId, reason };
+}
+
 async function advanceCultivationPlan(orgId, donorId, { actorId, actorName, today } = {}) {
   const PL = await planMod();
   const [plan] = await query(
@@ -8627,6 +8781,180 @@ app.delete("/cultivation-templates/:id", requireAuth, wrap(async (req, res) => {
   res.json({ success: true, archived: true });
 }));
 
+// The seam back to server.js, so `recordGift` can fire a trigger without this
+// file being importable from there (it is required after server.js's body).
+registerJourneyEngine(maybeStartJourney);
+
+// ── THREAD-2a · THE JOURNEY ROUTES ────────────────────────────────────────
+// Journeys live at Settings → Journeys and are reachable from Fundraising.
+// They read and write `cultivation_templates`, because a journey IS one.
+
+// The catalogue: the five presets, the triggers, and what this org has armed.
+app.get("/journeys", requireAuth, wrap(async (req, res) => {
+  const J = await journeyMod();
+  const rows = await query(
+    `SELECT * FROM cultivation_templates WHERE org_id=? AND archived_at IS NULL ORDER BY priority DESC, name`,
+    [req.user.orgId]);
+  // How many people are in each one right now, and how the steps are going.
+  const counts = await query(
+    `SELECT p.template_id,
+            COUNT(*) FILTER (WHERE p.status='active')                       AS active,
+            COUNT(*)                                                        AS ever
+       FROM cultivation_plans p WHERE p.org_id=? AND p.template_id IS NOT NULL
+      GROUP BY p.template_id`, [req.user.orgId]);
+  const byTpl = new Map(counts.map(c => [c.template_id, c]));
+  res.json({
+    triggers: J.TRIGGERS,
+    presets: J.PRESETS.map(p => ({ ...p, touches: J.touchesSentence(p.steps) })),
+    journeys: rows.map(t => ({
+      id: t.id, name: t.name, steps: t.steps, trigger: t.trigger_key,
+      amountCents: t.trigger_amount_cents, priority: t.priority,
+      presetKey: t.preset_key, enabled: !!t.journey_enabled,
+      touches: J.touchesSentence(t.steps || []),
+      inIt: Number((byTpl.get(t.id) || {}).active) || 0,
+      everIn: Number((byTpl.get(t.id) || {}).ever) || 0,
+    })),
+  });
+}));
+
+// Create one, from a preset or from scratch. `presetKey` fills the steps; the
+// body may then override any of them, which is what "pick a preset, adjust"
+// means in the onboarding step.
+app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const J = await journeyMod();
+  const b = req.body || {};
+  const preset = b.presetKey ? J.presetByKey(String(b.presetKey)) : null;
+  if (b.presetKey && !preset) return res.status(400).json({ error: "unknown_preset", message: "There is no preset by that name." });
+
+  const input = {
+    name: b.name || (preset && preset.name),
+    trigger: b.trigger || (preset && preset.trigger),
+    priority: b.priority !== undefined ? b.priority : (preset && preset.priority),
+    amountCents: b.amountCents,
+    steps: Array.isArray(b.steps) && b.steps.length ? b.steps : (preset && preset.steps),
+  };
+  const v = J.validateJourney(input);
+  if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
+
+  const id = "ct_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO cultivation_templates (id,org_id,name,steps,trigger_key,trigger_amount_cents,priority,preset_key,journey_enabled,created_by,created_by_name)
+     VALUES (?,?,?,?::jsonb,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, v.name, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+     preset ? preset.key : null,
+     // ARMED ONLY IF ASKED. Creating a journey and having it start firing at
+     // people in the same breath is not a thing anybody wants by surprise.
+     b.enabled === true, actor(req).id, actor(req).name]);
+  const [row] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=?", [id, req.user.orgId]);
+  res.status(201).json({ id, name: v.name, trigger: v.trigger, priority: v.priority,
+    steps: v.steps, enabled: !!row.journey_enabled, touches: J.touchesSentence(v.steps) });
+}));
+
+app.patch("/journeys/:id", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const J = await journeyMod();
+  const [cur] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!cur) return res.status(404).json({ error: "Not found" });
+  const b = req.body || {};
+  const v = J.validateJourney({
+    name: b.name !== undefined ? b.name : cur.name,
+    trigger: b.trigger !== undefined ? b.trigger : cur.trigger_key,
+    priority: b.priority !== undefined ? b.priority : cur.priority,
+    amountCents: b.amountCents !== undefined ? b.amountCents : cur.trigger_amount_cents,
+    steps: b.steps !== undefined ? b.steps : cur.steps,
+  });
+  if (!v.ok) return res.status(400).json({ error: "invalid_journey", errors: v.errors, message: v.errors[0].message });
+  await run(
+    `UPDATE cultivation_templates SET name=?, steps=?::jsonb, trigger_key=?, trigger_amount_cents=?,
+       priority=?, journey_enabled=?, updated_at=NOW() WHERE id=? AND org_id=?`,
+    [v.name, JSON.stringify(v.steps), v.trigger, v.amountCents, v.priority,
+     b.enabled !== undefined ? b.enabled === true : !!cur.journey_enabled,
+     req.params.id, req.user.orgId]);
+  // CHANGING A JOURNEY DOES NOT REWRITE THE PEOPLE ALREADY IN IT. Their steps
+  // were copied when they entered, exactly as a plan's are — somebody who has
+  // already had three of seven touches must not silently acquire two more.
+  res.json({ id: req.params.id, name: v.name, trigger: v.trigger, priority: v.priority,
+    steps: v.steps, touches: J.touchesSentence(v.steps),
+    note: "People already in this journey keep the steps they entered with." });
+}));
+
+// Who would qualify right now — the count the "apply to people who already
+// qualify" offer opens. A GET, and it writes nothing.
+app.get("/journeys/:id/qualifying", requireAuth, wrap(async (req, res) => {
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+  const days = Math.min(365, Math.max(1, Number(req.query.days) || 90));
+  const rows = await qualifyingDonors(req.user.orgId, t, days);
+  res.json({ journeyId: t.id, name: t.name, days, count: rows.length,
+    donorIds: rows.map(r => r.id).slice(0, 2000),
+    sentence: `${rows.length} ${rows.length === 1 ? "person" : "people"} already qualify — `
+      + `their trigger happened in the last ${days} days and they are not in another journey that outranks this one.` });
+}));
+
+// Who qualifies for a journey's trigger inside a window. One place, so the
+// COUNT the offer shows and the rows the apply writes cannot disagree.
+async function qualifyingDonors(orgId, t, days) {
+  const trigger = t.trigger_key;
+  if (trigger === "by_hand") return [];
+  const cut = `(CURRENT_DATE - ${Number(days)})`;
+  if (trigger === "first_gift") {
+    return await query(
+      `SELECT d.id FROM donors d
+        WHERE d.org_id=? AND d.deleted_at IS NULL
+          AND (SELECT COUNT(*) FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id) = 1
+          AND EXISTS (SELECT 1 FROM gifts g WHERE g.donor_id=d.id AND g.org_id=d.org_id
+                        AND g.date IS NOT NULL AND g.date <> '' AND g.date::date >= ${cut})`, [orgId]);
+  }
+  if (trigger === "gift_over") {
+    const need = Number(t.trigger_amount_cents) || 0;
+    if (!need) return [];
+    return await query(
+      `SELECT DISTINCT d.id FROM donors d JOIN gifts g ON g.donor_id=d.id AND g.org_id=d.org_id
+        WHERE d.org_id=? AND d.deleted_at IS NULL
+          AND g.date IS NOT NULL AND g.date <> '' AND g.date::date >= ${cut}
+          AND ROUND(g.amount*100) >= ?`, [orgId, need]);
+  }
+  if (trigger === "new_volunteer") {
+    return await query(
+      `SELECT DISTINCT d.id FROM donors d JOIN volunteers v ON v.person_id=d.id AND v.org_id=d.org_id
+        WHERE d.org_id=? AND d.deleted_at IS NULL AND v.created_at >= NOW() - (? || ' days')::interval`,
+      [orgId, String(days)]).catch(() => []);
+  }
+  // stage_change and lapsed_return are events rather than states: there is no
+  // honest way to look backwards for them, so the offer says none rather than
+  // guessing. They still fire forwards, which is what they are for.
+  return [];
+}
+
+// Put somebody in a journey by hand. This is the `by_hand` trigger and the
+// "apply to everyone who qualifies" button, and it goes through the SAME
+// engine as every automatic trigger — one path in.
+app.post("/journeys/:id/apply", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const [t] = await query("SELECT * FROM cultivation_templates WHERE id=? AND org_id=? AND archived_at IS NULL",
+    [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "Not found" });
+
+  let ids = Array.isArray(req.body && req.body.donorIds) ? req.body.donorIds.map(String) : null;
+  if (!ids && req.body && req.body.allQualifying === true) {
+    const days = Math.min(365, Math.max(1, Number(req.body.days) || 90));
+    ids = (await qualifyingDonors(req.user.orgId, t, days)).map(r => r.id);
+  }
+  if (!ids || !ids.length) return res.status(400).json({ error: "no_donors", message: "Name who should go in, or ask for everyone who qualifies." });
+  if (ids.length > 2000) return res.status(400).json({ error: "too_many", message: "That is more than 2,000 people at once. Narrow it first." });
+
+  const out = { started: [], skipped: [] };
+  for (const id of ids) {
+    // The engine is told the journey's OWN trigger, so a by-hand apply of a
+    // gift_over journey still records the trigger it belongs to. `forceId`
+    // pins the journey: this is a person choosing one, not a rule picking.
+    const r = await maybeStartJourney(req.user.orgId, id, "by_hand", { forceJourneyId: t.id });
+    (r.started ? out.started : out.skipped).push({ donorId: id, ...r });
+  }
+  res.json({ journeyId: t.id, name: t.name, started: out.started.length,
+    skipped: out.skipped.length, detail: out });
+}));
+
 // POST /donors/:id/plan — apply a template, dates offset from today.
 app.post("/donors/:id/plan", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const PL = await planMod();
@@ -8710,6 +9038,66 @@ app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
 
 // POST /plan-steps/:id/skip — skipping is RECORDED as skipped, never deleted and
 // never quietly marked done. "We decided not to do that" is the fact.
+// ── THREAD-2a · MARK DONE ASKS FOR ONE LINE, AND SCHEDULES THE NEXT ──────
+// The line is not paperwork: closing a thread has ALWAYS required a reason
+// (the BUILD-81 CHECK constraint), because a follow-up that closed with no
+// record of what happened is a follow-up nobody can learn from. This route is
+// that same close, named for what the officer is actually doing, and it
+// advances the plan so the next step opens in the same breath.
+//
+// IT SENDS NOTHING. It writes a logged interaction and opens the next step.
+// That is the entire definition of a journey step completing.
+app.post("/plan-steps/:id/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query(
+    `SELECT st.*, p.donor_id, p.status AS plan_status FROM cultivation_plan_steps st
+       JOIN cultivation_plans p ON p.id = st.plan_id
+      WHERE st.id=? AND st.org_id=?`, [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Step not found" });
+  if (s.status === "done" || s.status === "skipped") return res.status(409).json({ error: "That step is already closed." });
+
+  const note = String((req.body && req.body.note) || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!note) {
+    return res.status(400).json({
+      error: "note_required",
+      message: `One line about what happened. It goes on ${"their"} record, and it is what makes the next step worth anything.`,
+    });
+  }
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+
+  // THE INTERACTION IS WRITTEN FIRST, AND THE THREAD CLOSES ONTO IT.
+  //
+  // `threads_close_honest` only allows two honest closes: an OUTCOME, which
+  // must name the interaction that was its outcome, or a DISMISSAL, which
+  // must give a reason. A first cut of this route closed with
+  // `close_kind='done'` and the database refused it — correctly. A thread
+  // that closed with no logged thing behind it is exactly the hole that
+  // constraint exists to keep shut, and "mark done" is the most tempting
+  // place in the product to punch through it.
+  //
+  // So: the line becomes a real interaction on the record, and the thread
+  // closes pointing at it. That is also what makes a completed journey step
+  // count towards Last contact — a step done that left no trace would leave
+  // the record saying nobody had spoken to them.
+  const intId = "int_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [intId, orgId, s.donor_id,
+     s.step_type === "thank" ? "call" : s.step_type === "send" ? "email" : "note",
+     today, `${s.label}: ${note}`, actor(req).id, actor(req).name]);
+  if (s.thread_id) {
+    await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+                WHERE id=? AND org_id=? AND closed_at IS NULL`, [intId, s.thread_id, orgId]);
+  }
+  await run(`UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=?, done_note=?
+              WHERE id=? AND org_id=?`, [actor(req).id, actor(req).name, note, req.params.id, orgId]);
+
+  // AND SCHEDULES THE NEXT. Same call the rest of the plan machinery makes.
+  await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name, today });
+  res.json({ plan: await readPlan(orgId, s.plan_id), done: req.params.id, note, interactionId: intId });
+}));
+
 app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [s] = await query(
@@ -8725,11 +9113,24 @@ app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAcc
     await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE id=? AND org_id=? AND closed_at IS NULL",
       [s.thread_id, orgId]);
   }
-  await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND org_id=?",
-    [actor(req).id, actor(req).name, req.params.id, orgId]);
+  // THREAD-2a — SKIP ASKS WHY, IN ONE TAP. The reason is a short phrase, not
+  // an essay, and it is stored: six months later "why did nobody send her the
+  // impact report?" has an answer. It is optional at the route (an older
+  // client, a bulk skip during a replacement) and the screen makes it one tap.
+  const why = String((req.body && req.body.reason) || "").replace(/\s+/g, " ").trim().slice(0, 200) || null;
+  await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=?, skip_reason=? WHERE id=? AND org_id=?",
+    [actor(req).id, actor(req).name, why, req.params.id, orgId]);
+  if (why) {
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+       VALUES (?,?,?,'note',?,?,?,?)`,
+      ["int_" + uuid().slice(0, 10), orgId, s.donor_id, orgToday(await orgTz(orgId)),  // ORG_TZ_SEAM_OK
+       `Skipped "${s.label}": ${why}`, actor(req).id, actor(req).name])
+      .catch(e => console.error("[journey] skip note:", e.message));
+  }
   await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name });
   const out = await readPlan(orgId, s.plan_id);
-  res.json({ plan: out, skipped: req.params.id });
+  res.json({ plan: out, skipped: req.params.id, reason: why });
 }));
 
 // POST /plans/:id/stop — the officer decides the plan is over. The steps keep

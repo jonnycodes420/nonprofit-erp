@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Journeys · Direction B</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="_shared.css"/>
+<style>
+/* ── DIRECTION B · THE PLAYBOOK ─────────────────────────────────────────
+   The journey is a DOCUMENT you write: a stack of plain sentences, one per
+   step, in the order they happen. A compact ruler above shows the shape at a
+   glance, but the thing you edit is the sentence, in place, where it sits.
+   The bet: a fundraiser does not want a Gantt chart, she wants to read what
+   she has promised to do and change a word of it. Every row is a full
+   sentence, so the page can be read aloud and still make sense. */
+.ruler{display:flex;align-items:center;gap:0;padding:14px 22px 6px}
+.ruler .seg{flex:1;height:5px;background:var(--cream2);border-radius:99px;margin-right:4px;position:relative}
+.ruler .seg:last-child{margin-right:0}
+.ruler .seg.dn{background:var(--emerald)} .ruler .seg.nw{background:var(--ink)}
+.ruler .lbl{position:absolute;top:10px;left:0;font-size:10px;color:var(--ink3);white-space:nowrap}
+.step{display:flex;gap:14px;padding:15px 22px;border-top:1px solid var(--hair);align-items:flex-start;cursor:grab}
+.step:hover{background:var(--cream)}
+.step.sel{background:var(--cream);box-shadow:inset 3px 0 0 var(--emerald)}
+.grip{color:var(--ink3);font-size:15px;line-height:1.4;user-select:none;margin-top:1px}
+.num{width:24px;height:24px;border-radius:50%;background:var(--cream2);color:var(--ink3);font-size:11.5px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px}
+.step.done .num{background:var(--emerald);color:var(--white)}
+.step.now .num{background:var(--ink);color:var(--white)}
+.say{font-size:14.5px;line-height:1.55}
+.say b{font-weight:700}
+.say .ed{border-bottom:1.5px dashed rgba(15,26,18,.28);padding-bottom:1px}
+.meta{font-size:11.5px;color:var(--ink3);margin-top:4px}
+.inserter{text-align:center;padding:3px 0}
+.inserter button{font:inherit;font-size:11.5px;font-weight:700;color:var(--ink3);background:transparent;border:1px dashed var(--hair);border-radius:99px;padding:3px 12px;cursor:pointer}
+.builder-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start}
+.prev{padding:11px 0;border-bottom:1px solid var(--rail-line);display:flex;gap:10px;align-items:flex-start}
+.prev:last-child{border-bottom:none}
+.mini{display:flex;align-items:center;gap:5px;margin-top:9px}
+.mini i{width:22px;height:4px;border-radius:99px;background:var(--cream2);display:block}
+.mini i.dn{background:var(--emerald)} .mini i.nw{background:var(--ink)}
+.rail .mini i{background:var(--rail-line)} .rail .mini i.dn{background:#3E8B63} .rail .mini i.nw{background:var(--brass)}
+.ob{max-width:640px;margin:0 auto}
+.plist{display:flex;flex-direction:column;gap:8px;margin:16px 0 18px}
+.plist button{font:inherit;display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13.5px;border:1.5px solid var(--hair);background:var(--white);border-radius:11px;padding:12px 15px;cursor:pointer;text-align:left}
+.plist button.on{border-color:var(--emerald);box-shadow:inset 0 0 0 1px var(--emerald)}
+</style></head>
+<body><div class="wrap">
+
+<div class="hdr">
+  <div class="kicker">THREAD-2 · Direction B</div>
+  <h1>The playbook</h1>
+  <p class="note" style="max-width:720px">The journey is a document you write, not a chart you configure: one plain
+  sentence per step, in the order they happen, editable in place. The ruler above gives the shape at a glance.
+  The bet is that a fundraiser does not want a Gantt chart — she wants to read what she has promised
+  to do, and change a word of it.</p>
+</div>
+
+<!-- ── 1 · THE BUILDER ─────────────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>The builder</h2><span class="chip">Settings → Journeys</span></div>
+  <div class="builder-grid">
+    <div class="card">
+      <div style="padding:18px 22px 0;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:17px;font-weight:700">New donor, first year</div>
+          <div class="note">Starts when someone gives for the first time.</div>
+        </div>
+        <span class="chip">7 steps</span>
+      </div>
+
+      <div class="ruler">
+        <div class="seg dn"><span class="lbl">Day 2</span></div>
+        <div class="seg dn"><span class="lbl">Wk 1</span></div>
+        <div class="seg nw"><span class="lbl">Mo 3</span></div>
+        <div class="seg"><span class="lbl">Mo 4</span></div>
+        <div class="seg"><span class="lbl">Mo 5</span></div>
+        <div class="seg"><span class="lbl">Mo 6</span></div>
+        <div class="seg"><span class="lbl">Mo 7</span></div>
+      </div>
+      <div style="height:16px"></div>
+
+      <div class="step done"><span class="grip">⠿</span><span class="num">1</span><div>
+        <div class="say"><b>Two days after their first gift</b>, <span class="ed">call to say thank you</span>.</div>
+        <div class="meta">The relationship owner · no draft needed</div></div></div>
+
+      <div class="step done"><span class="grip">⠿</span><span class="num">2</span><div>
+        <div class="say"><b>One week in</b>, <span class="ed">send a handwritten note</span>.</div>
+        <div class="meta">The relationship owner · no draft needed</div></div></div>
+
+      <div class="inserter"><button>+ add a step here</button></div>
+
+      <div class="step now sel"><span class="grip">⠿</span><span class="num">3</span><div>
+        <div class="say"><b>Three months in</b>, <span class="ed">send the impact report</span>.</div>
+        <div class="meta">The relationship owner · Steward drafts it, you send it</div>
+        <div style="display:flex;gap:8px;margin-top:11px;flex-wrap:wrap">
+          <span class="chip">when: 3 months after the first gift</span>
+          <span class="chip">owner: relationship owner</span>
+          <span class="chip">draft: impact report</span>
+        </div></div></div>
+
+      <div class="step"><span class="grip">⠿</span><span class="num">4</span><div>
+        <div class="say"><b>Four months in</b>, <span class="ed">ask them for a visit</span>.</div>
+        <div class="meta">The relationship owner</div></div></div>
+
+      <div class="step"><span class="grip">⠿</span><span class="num">5</span><div>
+        <div class="say"><b>Five months in</b>, <span class="ed">invite them to something</span>.</div>
+        <div class="meta">The relationship owner</div></div></div>
+
+      <div class="step"><span class="grip">⠿</span><span class="num">6</span><div>
+        <div class="say"><b>Six months in</b>, <span class="ed">check in, no ask</span>.</div>
+        <div class="meta">The relationship owner</div></div></div>
+
+      <div class="step"><span class="grip">⠿</span><span class="num">7</span><div>
+        <div class="say"><b>Seven months in</b>, <span class="ed">make the ask</span>.</div>
+        <div class="meta">The relationship owner · Steward drafts it, you send it</div></div></div>
+
+      <div style="padding:16px 22px 20px;border-top:1px solid var(--hair)">
+        <p class="note" style="font-size:14px;line-height:1.6"><b style="color:var(--ink)">7 touches over 7 months. Nothing is sent without you.</b><br/>
+        Drag a row to reorder it. Click a phrase to change it. Every step becomes a next step on your Thread on the day it is due.</p>
+      </div>
+    </div>
+
+    <div class="rail">
+      <div class="rail-t">Live preview · a real donor</div>
+      <div class="rail-p">
+        <div style="font-size:15px;font-weight:700">Margaret Chen</div>
+        <div style="font-size:12px;color:var(--rail-dim);margin-top:2px">First gift $2,000 · 3 October 2026</div>
+      </div>
+      <div style="margin-top:12px">
+        <div class="prev"><span class="dot d-done" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Call to say thank you</div><div style="font-size:11.5px;color:var(--rail-dim)">Mon 5 Oct 2026 · done</div></div></div>
+        <div class="prev"><span class="dot d-done" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Send a handwritten note</div><div style="font-size:11.5px;color:var(--rail-dim)">Sat 10 Oct 2026 · done</div></div></div>
+        <div class="prev"><span class="dot d-late" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600;color:var(--brass)">Send the impact report</div><div style="font-size:11.5px;color:var(--rail-dim)">Sun 3 Jan 2027 · due now</div></div></div>
+        <div class="prev"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Ask them for a visit</div><div style="font-size:11.5px;color:var(--rail-dim)">Wed 3 Feb 2027</div></div></div>
+        <div class="prev"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Invite them to something</div><div style="font-size:11.5px;color:var(--rail-dim)">Wed 3 Mar 2027</div></div></div>
+        <div class="prev"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Check in, no ask</div><div style="font-size:11.5px;color:var(--rail-dim)">Sat 3 Apr 2027</div></div></div>
+        <div class="prev"><span class="dot d-soon" style="margin-top:6px"></span><div><div style="font-size:13px;font-weight:600">Make the ask</div><div style="font-size:11.5px;color:var(--rail-dim)">Mon 3 May 2027</div></div></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--rail-dim);margin-top:14px;line-height:1.55">
+        Real dates on a real record, in Harborlight's timezone. Edit a sentence and these move.
+      </div>
+    </div>
+  </div>
+  <div class="legend">
+    <span><i class="dot d-done"></i>done</span><span><i class="dot d-today"></i>today</span>
+    <span><i class="dot d-late"></i>late (brass, never red)</span><span><i class="dot d-soon"></i>upcoming</span>
+  </div>
+</div>
+
+<!-- ── 2 · ONBOARDING ──────────────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>The onboarding step</h2><span class="chip">under 3 minutes · skippable</span></div>
+  <div class="card ob" style="padding:26px 28px">
+    <div class="kicker">Step 6 of 8</div>
+    <h3 style="font-size:25px;margin:8px 0 6px">How do you look after a new donor?</h3>
+    <p class="note">Pick the closest one and read it back. You can change every word afterwards, and nothing is ever sent without you.</p>
+    <div class="plist">
+      <button class="on"><span><b>New donor, first year</b><br/><span class="note">Thank, note, report, visit, invite, check in, ask.</span></span><span class="chip">7 over 7 months</span></button>
+      <button><span><b>Major donor</b><br/><span class="note">Slower, fewer, and every one of them by a person.</span></span><span class="chip">5 over a year</span></button>
+      <button><span><b>Welcome back</b><br/><span class="note">For a lapsed donor who has just given again.</span></span><span class="chip">3 over 6 weeks</span></button>
+      <button><span><b>Monthly giver</b><br/><span class="note">Quiet. They already said yes every month.</span></span><span class="chip">4 a year</span></button>
+      <button><span><b>New volunteer</b><br/><span class="note">Thank, check the first shift, then ask how it went.</span></span><span class="chip">3 over a month</span></button>
+    </div>
+    <div class="rail" style="border-radius:12px">
+      <div class="rail-t">Read back, on one of your donors</div>
+      <div style="font-size:13.5px;line-height:1.6">
+        Margaret Chen gave $2,000 on 3 October. You called her on the 5th and wrote on the 10th.
+        <b style="color:var(--brass)">Her impact report is due 3 January.</b>
+      </div>
+      <div class="mini"><i class="dn"></i><i class="dn"></i><i class="nw"></i><i></i><i></i><i></i><i></i></div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:18px">
+      <button class="btn btn-go">Use this one →</button>
+      <button class="btn">Read it line by line</button>
+      <a href="#" style="margin-left:auto;font-size:13px;color:var(--ink3)">I'll do this later</a>
+    </div>
+  </div>
+</div>
+
+<!-- ── 3 · THE DONOR PROFILE ───────────────────────────────────────── -->
+<div class="sec">
+  <div class="sec-h"><h2>On the donor profile</h2><span class="chip">the approved profile is unchanged around it</span></div>
+  <div class="two" style="display:grid;grid-template-columns:1.5fr 1fr;gap:20px;align-items:start">
+    <div class="card" style="padding:22px 24px">
+      <div class="kicker">Main column</div>
+      <h3 style="font-size:27px;margin:8px 0 2px">Margaret Chen</h3>
+      <div class="note">Seasonal giver · relationship owner Maria Alvarez</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:18px">
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Lifetime</div><div style="font-family:'DM Serif Display',serif;font-size:20px">$8,400</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Last gift</div><div style="font-family:'DM Serif Display',serif;font-size:20px">$2,000</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Last contact</div><div style="font-family:'DM Serif Display',serif;font-size:20px">84 days</div></div>
+        <div style="border:1px solid var(--hair);border-radius:11px;padding:11px 13px"><div class="kicker" style="font-size:9px">Open ask</div><div style="font-size:12.5px;color:var(--ink3);line-height:1.45">No open ask.</div></div>
+      </div>
+      <!-- Direction B puts the journey as a SENTENCE under the four figures,
+           in the main column, because in this direction the journey is prose. -->
+      <div style="margin-top:18px;border:1px solid var(--hair);border-left:3px solid var(--brass);border-radius:11px;padding:14px 16px;background:var(--cream)">
+        <div style="font-size:14.5px;line-height:1.55"><b>Step 3 of 7 · Impact report · due Jan 3.</b></div>
+        <div class="mini"><i class="dn"></i><i class="dn"></i><i class="nw"></i><i></i><i></i><i></i><i></i></div>
+        <div class="note" style="margin-top:9px">New donor, first year · started 3 October</div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-go" style="padding:8px 14px;font-size:13px">Mark done</button>
+          <button class="btn" style="padding:8px 14px;font-size:13px">Skip</button>
+        </div>
+      </div>
+    </div>
+    <div class="rail">
+      <div class="rail-t">The rail · unchanged</div>
+      <div class="rail-p"><div style="font-size:13px;font-weight:600">Next step</div>
+        <div style="font-size:12px;color:var(--rail-dim);margin-top:3px">Impact report · 3 Jan</div></div>
+      <div class="rail-p" style="margin-top:9px"><div style="font-size:13px;font-weight:600">Open threads</div>
+        <div style="font-size:12px;color:var(--rail-dim);margin-top:3px">None</div></div>
+      <div style="font-size:11.5px;color:var(--rail-dim);margin-top:12px;line-height:1.55">
+        In Direction B the journey lives in the MAIN column as a sentence, and the rail keeps doing what it already did.
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="note" style="margin-top:44px;padding-top:18px;border-top:1px solid var(--hair)">
+  Direction B · static HTML, no build step. Palette: ink, white, cream, one emerald action, brass for late.
+  The donor profile's ink right rail is kept exactly as approved.
+</p>
+</div></body></html>
