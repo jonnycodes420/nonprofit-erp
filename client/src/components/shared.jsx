@@ -1702,7 +1702,7 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
           </div>
         )}
         <div className="fr-sub" style={{ fontSize: 15, lineHeight: 1.65, color: T.sage400, marginBottom: 30, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
-          This is yours. Your people, your giving, and the next conversation waiting to be picked back up —
+          This is yours. Your people, your giving, and the next conversation waiting to be picked back up,
           all in one place, in your words.
         </div>
         <button onClick={close} data-testid="first-run-go" autoFocus style={{
