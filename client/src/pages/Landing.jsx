@@ -95,6 +95,7 @@ export default function Landing() {
         <a href="#connections">Connections</a>
         <a href="#pricing">Pricing</a>
         <a href="/lost-and-found">Lost &amp; Found</a>
+        <a className="login-link" href="/login">Log in</a>
         <div className="nav-cta">
           <a className="button secondary" href={CAL} target="_blank" rel="noreferrer">Book a call</a>
           <a className="button" href="/signup">Start now</a>
@@ -476,6 +477,9 @@ const LANDING_CSS = `
     .nav-links { display: flex; align-items: center; gap: 25px; }
     .nav a { font-size: 13px; font-weight: 700; text-decoration: none; }
     .nav a:not(.button):hover { color: var(--emerald); }
+    /* The login link is set apart with a divider: findable for returning
+       customers, quiet enough not to compete with Start now. */
+    .nav .login-link { padding-left: 25px; border-left: 1px solid var(--line); }
 
     .hero {
       display: grid;
@@ -725,6 +729,7 @@ const LANDING_CSS = `
       .nav-inner { flex-wrap: wrap; gap: 10px 14px; padding-top: 10px; padding-bottom: 10px; min-height: 0; }
       .nav-links { flex-wrap: wrap; justify-content: flex-end; gap: 10px 14px; }
       .nav-links a:not(.button) { font-size: 12px; }
+      .nav .login-link { padding-left: 0; border-left: 0; }
       .nav-inner::before { content: "For nonprofit teams"; font-family: var(--serif); font-size: 17px; font-weight: 600; }
       .nav .button { min-height: 40px; padding: 0 14px; }
       .hero { padding: 54px 0 66px; }
