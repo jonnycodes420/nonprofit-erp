@@ -72,14 +72,21 @@ and a runner that hides it is how a flake becomes a habit.
 
 `tree-check → guards → test (6-way matrix) → combine → deploys`.
 
-- **guards** runs lint, the TDZ scan and the npm-audit gate ONCE rather than
-  six times, and the shards wait on it: a tree that fails the TDZ scan would
-  fail six batteries in a dozen confusing ways.
-- **test** is the same six shards, each with its own Postgres service and its
-  own port block, each running the slice the same planner computes.
-- **combine** is the one gate the deploys wait on, and it refuses three
-  things: any failed suite, any shard that produced no result at all, and any
-  suite whose PASS COUNT dropped against `audit/suite-counts.json`.
+- **guards** runs lint, the TDZ scan and the npm-audit gate once, and the
+  battery waits on it: a tree that fails the TDZ scan would fail the battery
+  in a dozen confusing ways.
+- **test** runs `bash tests/run-all.sh`, which shards three ways inside the
+  one runner, then runs `scripts/shard-combine.js` over what it wrote: a
+  failed suite, a shard that produced no result, or any suite whose PASS
+  COUNT dropped against `audit/suite-counts.json` all fail the build.
+
+**It was briefly a GitHub matrix of three jobs, and the first run showed the
+flaw plainly.** Each job ran the whole of `run-all.sh`, so each ran the
+reporter, and each reporter looked for all three shards' results: every job
+failed with *"shards that produced no result: 2, 3"* while its own ten suites
+had passed. A matrix needs each job to upload its result and a fourth job to
+combine them; one runner doing all three shards needs none of that, and the
+battery is about a minute now. The matrix is a follow-up, not a loss.
 
 The middle one matters most. A shard whose server never started writes nothing
 and would otherwise simply vanish, leaving a green tick over a sixth of the
@@ -148,6 +155,9 @@ no retries, and a small selection still serial.
    its logic is guarded, but the number in the table above is what it should
    buy, not something observed yet — the first merge after this one is the
    measurement.
-3. **`audit/suite-counts.json` is seeded from a local run.** CI's first green
+3. **The CI matrix.** Three parallel runners instead of three shards in one,
+   which needs per-job artifacts and a combine job. Worth doing when the
+   battery grows again; worth nothing at 59 seconds.
+4. **`audit/suite-counts.json` is seeded from a local run.** CI's first green
    run will ratchet it to CI's own numbers, which differ where a browser leg
    skips there and runs here. Expect one commit of churn.

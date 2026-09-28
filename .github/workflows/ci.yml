@@ -107,26 +107,25 @@ jobs:
 
 
   # ── CHORE-2 · THE BATTERY, SHARDED ────────────────────────────────────────
-  # Three jobs, each with its own Postgres and its own copy of the repo, each
-  # running the slice of the battery that tests/shard.sh is handed. The list
-  # is computed by the same planner the local run uses, from the same
-  # audit/suite-timings.json, so a shard here and a shard on a laptop contain
-  # the same suites.
+  # ONE job, three shards INSIDE it. `bash tests/run-all.sh` splits the
+  # battery across three workers itself — each with its own database, its own
+  # server on its own port block and its own preview — and prints one summary.
   #
-  # tests/shard.sh boots the API itself, per shard, on its own port block —
-  # so there is no "Boot the API server" step here any more, and no shared
-  # server for six workers to interleave behind.
+  # It was briefly a GitHub matrix of three jobs. That needs each job to
+  # upload its shard's result and a fourth job to combine them, and the first
+  # run showed the flaw plainly: every job ran the reporter, every reporter
+  # looked for all three results, and all three jobs failed with "shards that
+  # produced no result: 2, 3" while their own suites had passed. One runner
+  # doing all three shards needs none of that machinery, and the whole
+  # battery is about a minute now. The matrix is a follow-up, written up in
+  # docs/chore-2-NOTES.md.
   #
-  # The guards that are not suites (lint, TDZ, npm audit) run ONCE, in the
-  # `guards` job, rather than six times.
+  # The guards that are not suites (lint, TDZ, npm audit) still run ONCE, in
+  # the `guards` job, and the battery waits on them.
   test:
     runs-on: ubuntu-latest
     needs: [tree-check, guards]
     if: needs.tree-check.outputs.skip != 'true'
-    strategy:
-      fail-fast: false          # a red shard must not hide the other five
-      matrix:
-        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -213,27 +212,22 @@ jobs:
       # its own port block, waits for /health, runs its suites serially and
       # tears everything down. FIX-1 §11's demo seed happens inside the shard
       # that holds demo-shape, so it is seeded exactly once and never skipped.
-      - name: Battery — shard ${{ matrix.shard }} of 3
+      - name: The battery (three shards, one runner)
         run: bash tests/run-all.sh
         env:
-          SHARD_ONLY: ${{ matrix.shard }}
           SHARD_OUT: /tmp/steward-shards
           SUITE_LOG_DIR: /tmp/steward-suite-logs
 
-      - name: Server log on failure
-        if: failure()
-        run: tail -200 /tmp/steward-shards/server-${{ matrix.shard }}.log || true
+      # THE COUNT RATCHET. A suite can go green by asserting less, so the
+      # per-suite pass counts are compared against audit/suite-counts.json and
+      # a DROP fails the build. Runs on the shard results the battery just
+      # wrote, in the same job.
+      - name: No suite may assert less than it did
+        run: node scripts/shard-combine.js --in /tmp/steward-shards --shards 3 --baseline audit/suite-counts.json
 
-      # The combine job needs each shard's result and its per-suite pass
-      # counts. Uploaded ALWAYS, not just on failure, because the count
-      # ratchet has to read a green run too.
-      - name: Upload shard result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: shard-${{ matrix.shard }}
-          path: /tmp/steward-shards/
-          if-no-files-found: warn
+      - name: Server logs on failure
+        if: failure()
+        run: for f in /tmp/steward-shards/server-*.log; do echo "── $f"; tail -80 "$f"; done || true
 
       # run-all.sh keeps every suite's full output in /tmp/steward-suite-logs
       # (and already dumps a failing suite's output inline in the step log).
@@ -243,51 +237,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: suite-logs-${{ matrix.shard }}
+          name: suite-logs
           path: /tmp/steward-suite-logs/
           if-no-files-found: ignore
-
-  # ── CHORE-2 · COMBINE ─────────────────────────────────────────────────────
-  # The one place that says whether the battery passed. It fails if ANY shard
-  # failed, if any shard produced no result at all (a shard whose server never
-  # started would otherwise just vanish), or if any suite's pass count DROPPED
-  # against audit/suite-counts.json — because a suite can go green by
-  # asserting less, and that is the failure mode a green battery cannot see.
-  #
-  # Nothing deploys except through here.
-  combine:
-    runs-on: ubuntu-latest
-    needs: [tree-check, guards, test]
-    # Runs on a skip too, so the deploy jobs have one gate to wait on either
-    # way — and so the summary always says which it was.
-    if: always() && needs.tree-check.result == 'success'
-    steps:
-      - name: This tree already passed
-        if: needs.tree-check.outputs.skip == 'true'
-        run: |
-          echo "Skipping the battery: tree ${{ needs.tree-check.outputs.tree }} already passed in run ${{ needs.tree-check.outputs.trusted }}."
-          echo "Battery skipped — tree \`${{ needs.tree-check.outputs.tree }}\` already passed in [run ${{ needs.tree-check.outputs.trusted }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ needs.tree-check.outputs.trusted }})." >> $GITHUB_STEP_SUMMARY
-      - name: A shard failed, or the guards did
-        if: needs.tree-check.outputs.skip != 'true' && (needs.guards.result != 'success' || needs.test.result != 'success')
-        run: |
-          echo "guards=${{ needs.guards.result }} test=${{ needs.test.result }}"
-          exit 1
-      - uses: actions/checkout@v4
-        if: needs.tree-check.outputs.skip != 'true'
-      - uses: actions/setup-node@v4
-        if: needs.tree-check.outputs.skip != 'true'
-        with:
-          node-version: "22"
-      - name: Collect every shard's result
-        if: needs.tree-check.outputs.skip != 'true'
-        uses: actions/download-artifact@v4
-        with:
-          pattern: shard-*
-          path: /tmp/shards
-          merge-multiple: true
-      - name: One summary, and the count ratchet
-        if: needs.tree-check.outputs.skip != 'true'
-        run: node scripts/shard-combine.js --in /tmp/shards --shards 3 --baseline audit/suite-counts.json
 
   # ── Deploy gate: Railway backend (deploy rewire, 2026-08-11) ──────────────
   # Runs ONLY on push to main, ONLY after a green test job. The shared
@@ -299,8 +251,11 @@ jobs:
   # a local checkout — see audit/deploy-rewire.md.
   deploy-railway:
     runs-on: ubuntu-latest
-    needs: [combine]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [tree-check, test]
+    # `always()` because the battery is SKIPPED when this exact tree already
+    # passed, and a skipped job would otherwise take the deploy down with it.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && (needs.test.result == 'success' || needs.tree-check.outputs.skip == 'true')
     concurrency:
       group: deploy-main
       cancel-in-progress: false
@@ -363,8 +318,11 @@ jobs:
   # deploy. Enabled-but-no-token is a misconfiguration and fails loudly.
   deploy-vercel:
     runs-on: ubuntu-latest
-    needs: [combine]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.VERCEL_DEPLOY_ENABLED == 'true'
+    needs: [tree-check, test]
+    # `always()` because the battery is SKIPPED when this exact tree already
+    # passed, and a skipped job would otherwise take the deploy down with it.
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && (needs.test.result == 'success' || needs.tree-check.outputs.skip == 'true') && vars.VERCEL_DEPLOY_ENABLED == 'true'
     concurrency:
       group: deploy-main
       cancel-in-progress: false

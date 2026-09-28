@@ -22,14 +22,20 @@
 //
 // It writes `tree`, `skip` and `trusted` to $GITHUB_OUTPUT, and one line to
 // $GITHUB_STEP_SUMMARY saying which run it trusted or why it did not.
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 
 const out = (k, v) => { if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${k}=${v}\n`); };
 const summary = line => { if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, line + "\n"); };
-const sh = c => execSync(c, { encoding: "utf8" }).trim();
+// NEVER a shell string. The only variable that reaches git here is a commit
+// sha the GitHub API handed us, and interpolating it into a command line is
+// an injection shape whatever the values look like in practice (CodeQL
+// js/command-line-injection). So: an argument ARRAY, no shell, and the sha
+// is checked against the only thing it may be before it is used at all.
+const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
+const isSha = v => typeof v === "string" && /^[0-9a-f]{7,40}$/.test(v);
 
-const tree = sh("git rev-parse HEAD^{tree}");
+const tree = git("rev-parse", "HEAD^{tree}");
 out("tree", tree);
 
 const runFull = why => {
@@ -67,8 +73,9 @@ if (!repo || !token) runFull("no API credentials to check previous runs with");
     if (!sha) continue;
     // The run's head commit, and the tree it pointed at. A commit we do not
     // have locally is fetched from the API rather than guessed at.
+    if (!isSha(sha)) continue;              // not a commit id: not something to run git on
     let theirTree = null;
-    try { theirTree = sh(`git rev-parse ${sha}^{tree}`); }
+    try { theirTree = git("rev-parse", `${sha}^{tree}`); }
     catch {
       try { theirTree = (await api(`/git/commits/${sha}`)).tree.sha; } catch { continue; }
     }
