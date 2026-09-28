@@ -21,6 +21,33 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0a · THE PROD DEMO IS ONE COMMAND BEHIND (2026-09-28)
+
+VOL-1 and FIN-1 both changed `scripts/seed-demo.js`, so Harborlight on
+production has no volunteer programme and no finance month on it. Everything
+they added WORKS on prod; the demo org just has no data for it, which matters
+because Harborlight is what you show people.
+
+I did not run this. It DROPS AND RECREATES `org_b72demo`, and dropping the
+demo org on production while you are asleep is your call and not mine. It is
+deterministic and safe to run any time, including ten minutes before a call:
+
+    node scripts/seed-demo.js --i-know-this-is-prod
+
+Afterwards Harborlight has three volunteer opportunities with seven shifts
+(one full with two people waiting), 30 volunteers, a company group, 269 hours,
+six people who both give and volunteer, one lapsed background check and one
+expiring in eleven days; and three funds with a restricted grant holding
+$27,350 against a report due in 41 days.
+
+## 0b · SHIFT REMINDERS ARE OFF, FOR EVERY ORG (2026-09-28)
+
+VOL-1 can email a volunteer the day before their shift. It is OFF by default
+for every organisation and the demo org never sends at all. Turning it on for
+a real org is a decision about mail reaching their volunteers, so it is theirs
+to make in the product, not a default for us to set. Nothing is needed from
+you unless a customer asks.
+
 ## 0 · FIX-4 (2026-09-28) — the $1 test, end to end
 
 Nothing here blocks a deploy. Two of them are yours because only you can press
