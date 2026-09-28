@@ -1761,8 +1761,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       </div>
                       {it.kind!=="task"&&(
                         <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          {/* PROFILE-1 follow-up — an INK OUTLINE, not a second
+                              emerald. The mockup drew this filled, and the
+                              standing rule it did not account for is that
+                              emerald is the ONE action colour and exactly one
+                              control on a screen may mean "this is the
+                              button" (BUILD-86 C.1). The header's Log a
+                              conversation is that control. Caught by
+                              tests/fix2-c-cream §2c, which had been skipping
+                              in CI for want of a browser. */}
                           <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
-                            style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
+                            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
                           <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
                             style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
                           {/* BUILD-94 Part 5 — the same three outputs as the

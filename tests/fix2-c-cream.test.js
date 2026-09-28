@@ -15,7 +15,9 @@
 //       and a donor's record, the page those screens open most.
 //       (a) The page's content root has a cream or white ground, and none of
 //           its large children (a band, a hero card, a panel) is painted ink
-//           or a dark green. Ink belongs to the sidebar and the top bar only.
+//           or a dark green. Ink belongs to the sidebar, the top bar and the
+//           donor profile's right rail (PROFILE-1) — the three frames around
+//           the reading column — and to nothing inside that column.
 //       (b) The active rail item (1440) or mobile nav tab (390), and every
 //           selected tab / segmented control in the content, wears the light
 //           treatment: a light ground, ink text, weight ≥ 700 and a 3px
@@ -227,6 +229,14 @@ const PW = "loadtest1234";
         for (const el of content.querySelectorAll("*")) {
           if (el.closest("[data-agent-margin]")) continue;
           if (el.closest("[role=dialog]")) continue;
+          // PROFILE-1 — the donor profile's RIGHT RAIL is ink by decision, the
+          // way the sidebar and the top bar are: it frames the cream reading
+          // column from the other side, and CLAUDE.md's never-crossed list
+          // requires it to sit on a contrasting ground. So ink inside the rail
+          // is the rule being kept, not broken. Everything in the reading
+          // column is still cream or white, which is what this suite is for,
+          // and tests/hotfix1-profile §1 is what holds the rail to ink.
+          if (el.closest('[data-testid="dp-right-rail"]')) continue;
           const r = el.getBoundingClientRect();
           if (r.width < Math.min(280, cr.width * 0.6) || r.height < 120) continue;
           if (!F.visible(el)) continue;
@@ -234,6 +244,7 @@ const PW = "loadtest1234";
         }
         // Selected tabs and segmented controls in the content.
         const sel = [...content.querySelectorAll('[role=tab][aria-selected=true],[aria-current]:not(a),[aria-pressed=true]')]
+          .filter(el => !el.closest('[data-testid="dp-right-rail"]'))
           .filter(F.visible).map(el => ({ el: F.name(el), why: F.activeOk(el) })).filter(x => x.why.length);
         // The nav item for this screen.
         const navSel = window.innerWidth > 768 ? ".app-sidebar .side-nav-btn[aria-current]" : ".mobile-bottom-tab.active";
@@ -265,7 +276,12 @@ const PW = "loadtest1234";
         const EM = "rgb(13, 92, 58)";
         // A colour SWATCH (Settings › Branding's presets, its accent preview) is the
         // org's data drawn as a colour, not a control dressed in emerald.
-        const emerald = [...content.querySelectorAll("button,a,[role=button],[role=tab]")].filter(F.visible).filter(b => !b.closest("[data-swatch]"))
+        // The rail is its own ground (ink), so emerald ON it is the rail's
+        // selected-state treatment, not a second primary action competing
+        // with the one in the reading column. The rule this counts — ONE
+        // filled emerald — is about the column, and it still is.
+        const emerald = [...content.querySelectorAll("button,a,[role=button],[role=tab]")].filter(F.visible)
+          .filter(b => !b.closest("[data-swatch]")).filter(b => !b.closest('[data-testid="dp-right-rail"]'))
           .filter(b => getComputedStyle(b).backgroundColor === EM || /rgb\(13, 92, 58\)/.test(getComputedStyle(b).backgroundImage)).map(F.name);
         return { rootDark: F.isDark(rootGround), rootGround, dark, sel, unmarked, emerald, nav: nav ? { el: F.name(nav), why: F.activeOk(nav) } : null };
       }, PAGE_FNS.toString());
