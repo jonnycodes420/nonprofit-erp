@@ -1,6 +1,6 @@
 {
- "generatedAt": "2026-09-28T21:47:17.096Z",
- "count": 743,
+ "generatedAt": "2026-09-28T21:57:52.156Z",
+ "count": 744,
  "routes": [
   {
    "method": "POST",
@@ -15241,6 +15241,28 @@
   {
    "method": "POST",
    "path": "/you/:orgSlug/signout",
+   "line": null,
+   "auth": [],
+   "sourceSeen": false,
+   "layerCount": 3,
+   "params": {
+    "path": [
+     "orgSlug"
+    ],
+    "query": [],
+    "body": []
+   },
+   "identifiers": [
+    "orgSlug"
+   ],
+   "frontend": {
+    "probe": "/you",
+    "referenced": true
+   }
+  },
+  {
+   "method": "POST",
+   "path": "/you/:orgSlug/fundraiser-link",
    "line": null,
    "auth": [],
    "sourceSeen": false,

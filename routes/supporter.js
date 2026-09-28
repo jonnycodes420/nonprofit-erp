@@ -312,6 +312,11 @@ app.get("/you/:orgSlug", donateLimiter, wrap(async (req, res) => {
       <p class="muted">${esc(SP.money(Math.round(Number(f.raised || 0) * 100)))} raised${f.goal ? ` of ${esc(SP.money(Math.round(Number(f.goal) * 100)))}` : ""} for ${esc(f.page_title || "")}.</p>
       <p class="small">Raised counts every gift given through your own page, in cents, as it arrives.</p>
       <a class="btn quiet" href="/give/${esc(org.org_slug)}/${esc(f.page_slug)}/${esc(f.slug)}">Open my page</a>
+      <form method="post" action="/you/${esc(org.org_slug)}/fundraiser-link">
+        <input type="hidden" name="id" value="${esc(f.id)}">
+        <p class="small" style="margin-top:12px">Your dashboard, where you edit your story and see who has given, opens with its own link. It is a different link from this page, and it is the one thing on it that has to keep working after your session ends.</p>
+        <button class="btn quiet small" type="submit">Email me my dashboard link</button>
+      </form>
     </div>`).join("");
     sections.push(`<h2 style="margin:22px 2px 10px">Your fundraising</h2>${cards}`);
   }
@@ -499,6 +504,46 @@ async function mintSupporterSession(orgId, personId) {
   return token;
 }
 ctx.registerSupporterSession({ mint: mintSupporterSession, setCookie: setYouCookie });
+
+// ── BUILD-103 — the fundraiser's dashboard link, re-sent ─────────────────
+// The manage link is hashed at rest, so nobody can be handed the one they had:
+// this mints a FRESH one and the old one stops working, which is the right way
+// round. It goes to the address on the fundraiser record and nowhere else, and
+// the token never reaches this page.
+app.post("/you/:orgSlug/fundraiser-link", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
+  await READY;
+  const org = await orgBySlug(req.params.orgSlug);
+  if (!org) return res.status(404).send("Not found");
+  const sess = await youSession(req, org);
+  if (!sess) return res.redirect(303, `/you/${encodeURIComponent(req.params.orgSlug)}`);
+  // Scoped by the SESSION's email, so a fundraiser id from somebody else's
+  // page finds nothing rather than being refused by a check.
+  const [f] = await query(
+    `SELECT pf.id, pf.name, pf.email, gp.title AS page_title
+       FROM peer_fundraisers pf JOIN giving_pages gp ON gp.id = pf.giving_page_id
+      WHERE pf.id=? AND pf.org_id=? AND LOWER(pf.email)=? AND pf.status='active'`,
+    [String(req.body?.id || ""), org.id, String(sess.person.email || "").toLowerCase()]);
+  if (f) {
+    const token = crypto.randomBytes(32).toString("hex");
+    await run(`UPDATE peer_fundraisers SET edit_token_hash=?, edit_token=NULL, updated_at=NOW() WHERE id=?`,
+      [sha256hex(token), f.id]);
+    const brand = await brandOf(org.id, org.name);
+    const link = `${publicAppUrl()}/fundraiser/manage/${token}`;
+    const esc = PPG.escapeHtml;
+    const html = await brandEmailHeaderHtml(org.id) + `
+      <div style="font-family:Georgia,'Times New Roman',serif;max-width:520px;margin:0 auto;padding:24px;color:#0f1a12;">
+        <p>Here is the link to your fundraiser dashboard for <strong>${esc(f.page_title || "")}</strong>.</p>
+        <p style="text-align:center;margin:28px 0;">
+          <a href="${link}" style="background:${esc(brand.band)};color:${esc(brand.bandFg)};text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:700;display:inline-block;">Open my dashboard</a>
+        </p>
+        <p style="font-size:13px;color:#555;">Keep it. It is how you get back in, and there is no password. Any older dashboard link you had has stopped working.</p>
+      </div>`;
+    await sendDonorLifecycleEmail("fundraiser_manage_link", f.email,
+      `Your fundraiser dashboard at ${brand.displayName || org.name}`,
+      html, fromWithDisplayName(brand.displayName || org.name, DONOR_MAIL_ADDR()));
+  }
+  res.redirect(303, `/you/${encodeURIComponent(org.org_slug)}?saved=1`);
+}));
 
 // ── The member card, as a file ───────────────────────────────────────────
 app.get("/you/:orgSlug/card.pdf", donateLimiter, wrap(async (req, res) => {
