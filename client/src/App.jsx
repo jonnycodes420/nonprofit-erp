@@ -514,7 +514,15 @@ function AppShell() {
     {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg}}>
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
+      /* FIX-6 item 6 — the sidebar's CURRENT width, published so a full-screen
+         takeover can start where the content starts instead of at x=0. The
+         donor profile is a fixed z-200 layer and the sidebar is z-120, so a
+         takeover with left:0 painted over the ENTIRE nav: every item was
+         visible through the transparent gutter and none of them could be
+         clicked. Keyboard still worked, which is why it read as an Agent-item
+         problem rather than a dead nav. */
+      "--sidebar-w":(sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W)+"px"}}>
     <GlobalStyles/>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
 

@@ -9,6 +9,7 @@ import { errorMessage } from "../lib/domainError";
 // the box from ever being blank if that call fails.
 import { renderMergeFields, normalizeMergeFields, MERGE_FIELDS, templatesFor } from "../../../shared/emailTemplates";
 import { makeT } from "../../../shared/vocabulary";
+import { campaignStats, sentWord, openRateWord } from "../../../shared/campaignKind";
 
 // ── Campaign Briefing panel (rendered inside expanded row) ──────────────────
 function CampaignBriefing({ campaign }) {
@@ -1043,6 +1044,8 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const [campaigns, setCampaigns]     = useState([]);
   const [loading, setLoading]         = useState(true);
   const [expandedId, setExpandedId]   = useState(null);
+  // FIX-6 item 5 — which figure is open, and the rows behind it.
+  const [statRows, setStatRows] = useState(null);
   const [sendResult, setSendResult]   = useState(null);
 
   // Builder
@@ -1569,8 +1572,15 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
   const audDonors = allDonors.filter(activeSeg.filter);
 
   // ── Analytics ───────────────────────────────────────────────────────────────
-  const sentCampaigns = campaigns.filter(c => c.status === "sent");
-  const allTimeSent   = sentCampaigns.reduce((s, c) => s + (c.recipient_count || 0), 0);
+  // FIX-6 item 5 — OVER EMAIL CAMPAIGNS ONLY. `campaigns` holds fundraising
+  // goals too (shared/campaignKind.js says why), and counting them here is
+  // what made every figure on this screen empty: Harborlight's two rows are
+  // the Annual Fund and the gala, which are goals, so nothing was ever `sent`
+  // and the whole screen read as broken rather than as empty.
+  const cstats = campaignStats(campaigns);
+  const emailCampaigns = cstats.emails;
+  const sentCampaigns = cstats.totalSentRows;
+  const allTimeSent   = cstats.totalSent;
   const allTimeOpen   = sentCampaigns.reduce((s, c) => s + (c.open_count || 0), 0);
   const overallRate   = allTimeSent > 0 ? Math.round(allTimeOpen / allTimeSent * 100) : 0;
   const bestCampaign  = topByOpen[0] || null;
@@ -1785,17 +1795,20 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               </button>
             </div>
 
-            {/* Stat pills */}
-            <div style={{ display: "flex", gap: 10 }}>
+            {/* Stat pills — FIX-6 item 5: real values, and each one opens its rows. */}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {[
-                { label: "Total Sent", value: allTimeSent.toLocaleString() },
-                { label: "Avg Open Rate", value: overallRate + "%" },
-                { label: "Active", value: stats.active },
-              ].map(({ label, value }) => (
-                <div key={label} style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 16px", display: "flex", gap: 8, alignItems: "center" }}>
+                { key: "sent", label: "Total Sent", value: cstats.totalSentWord, rows: cstats.totalSentRows, sentence: cstats.totalSentSentence },
+                { key: "open", label: "Avg Open Rate", value: cstats.openRateWord, rows: cstats.openRateRows, sentence: cstats.openRateSentence },
+                { key: "active", label: "Active", value: cstats.activeWord, rows: cstats.activeRows, sentence: cstats.activeSentence },
+              ].map(({ key, label, value, rows, sentence }) => (
+                <button key={label} data-testid={"camp-stat-" + key} title={sentence}
+                  onClick={() => setStatRows({ label, value, rows, sentence })}
+                  style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 16px",
+                           display: "flex", gap: 8, alignItems: "center", cursor: "pointer", fontFamily: "inherit" }}>
                   <span style={{ fontSize: 11, color: T.ink3 }}>{label}</span>
                   <span style={{ fontSize: 14, fontWeight: 800, color: T.ink }}>{value}</span>
-                </div>
+                </button>
               ))}
             </div>
 
@@ -1841,6 +1854,32 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
               </div>
             )}
 
+            {/* ── FIX-6 item 5 · EVERY FIGURE OPENS ITS ROWS ────────────
+                The count and the list behind it come from ONE computation
+                (shared/campaignKind.js), so a number cannot stop matching the
+                campaigns it claims to be about. */}
+            {statRows && (
+              <Modal onClose={() => setStatRows(null)} title={`${statRows.label} · ${statRows.value}`} width={620}>
+                <p data-testid="camp-stat-sentence" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginTop: 0 }}>{statRows.sentence}</p>
+                <div style={{ maxHeight: 340, overflowY: "auto" }}>
+                  {statRows.rows.map(c => (
+                    <div key={c.id} data-testid="camp-stat-row" style={{ padding: "9px 0", borderBottom: "1px solid " + T.bg3 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: T.ink }}>{c.name}</div>
+                      <div style={{ fontSize: 12, color: T.ink3, marginTop: 2 }}>
+                        {sentWord(c)}{Number(c.recipient_count) > 0 ? ` · ${openRateWord(c)} opened` : ""}
+                        {c.sent_at ? ` · ${new Date(c.sent_at).toLocaleDateString()}` : c.scheduled_at ? ` · scheduled ${new Date(c.scheduled_at).toLocaleDateString()}` : ""}
+                      </div>
+                    </div>
+                  ))}
+                  {!statRows.rows.length && (
+                    <div data-testid="camp-stat-empty" style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
+                      No campaign yet. This number is zero because nothing has happened, not because something is missing.
+                    </div>
+                  )}
+                </div>
+              </Modal>
+            )}
+
             {/* Send result toast */}
             {sendResult && (
               <div style={{ background: T.green100, border: "1px solid " + T.green200, borderRadius: 10, padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1856,7 +1895,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             {/* Campaign table */}
             {loading ? (
               <div style={{ color: T.ink3, fontSize: 13, padding: "40px 0", textAlign: "center" }}>Loading…</div>
-            ) : campaigns.length === 0 ? (
+            ) : emailCampaigns.length === 0 ? (
               /* First-run signpost (BUILD-08 Phase D) — the gold "start
                  here" pattern from shared.jsx, not a bare "no data" box. */
               <StartHere
@@ -1874,7 +1913,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                   <span>Date</span>
                   <span>Actions</span>
                 </div>
-                {campaigns.map(c => {
+                {emailCampaigns.map(c => {
                   const raw = typeof c.segment === "string" ? JSON.parse(c.segment || "{}") : (c.segment || {});
                   const recs = c.recipients || [];
                   const sentCt = c.recipient_count || recs.filter(r => r.sent_at).length || 0;
@@ -1897,7 +1936,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{segLabel(raw)}</div>
                         <div><StatusBadge status={c.status} /></div>
-                        <div style={{ fontSize: 13, color: T.ink }}>{sentCt > 0 ? sentCt.toLocaleString() : "—"}</div>
+                        <div style={{ fontSize: 13, color: sentCt > 0 ? T.ink : T.ink3 }} data-testid="camp-row-sent">{sentWord(c)}</div>
                         <div>
                           {sentCt > 0 ? (
                             <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
@@ -1906,7 +1945,7 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
                                 <div style={{ height: "100%", width: `${Math.min(openRate, 100)}%`, background: openRate >= 25 ? T.greenMid : T.gold500, borderRadius: 99 }} />
                               </div>
                             </div>
-                          ) : <span style={{ fontSize: 11, color: T.ink3 }}>—</span>}
+                          ) : <span style={{ fontSize: 11, color: T.ink3 }} data-testid="camp-row-rate">{openRateWord(c)}</span>}
                         </div>
                         <div style={{ fontSize: 11, color: T.ink3 }}>
                           {c.sent_at ? new Date(c.sent_at).toLocaleDateString() : c.scheduled_at ? "⏰ " + new Date(c.scheduled_at).toLocaleDateString() : "—"}

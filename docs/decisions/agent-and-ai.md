@@ -3,6 +3,24 @@
 Read this when you touch anything a model or an automation does: drafts, the Anthropic gate, `askClaude`, workflows, or system actors.
 
 ## Rules
+- **Every waiting item has a door, and the door is not a send.** `POST /agent/waiting/:kind/:id/
+  approve` and `/skip` dispatch to the path that already exists for each kind, so there is no
+  second place a thank-you can be marked sent. Approve on a thank-you logs the interaction in
+  HER name, marks the gift acknowledged and closes the thank-you thread; on a renewal note it
+  logs the drafted note and closes the thread; on a drafted note it marks it `approved`, which
+  is deliberately not `sent` because Steward does not send it. A GIFT is refused by name: money
+  is confirmed by running its plan, and a generic approve button over a queue is exactly the
+  shortcut that rule exists to prevent. Skip takes an optional reason and never does the thing.
+  `tests/fix6-approval.test.js` drives the whole queue with a live mail sink and asserts the
+  sink stayed empty. (FIX-6)
+- **Reading the queue is not acting on it.** `GET /agent/waiting` writes nothing, asserted
+  directly: three reads leave every draft unsent, unskipped and unlogged. (FIX-6)
+- **A draft varies with the record, and invents nothing.** `thankYouDraft` chooses its sentence
+  from facts the CALLER passes: first gift, monthly, months since the last gift, how many came
+  before, the fund or campaign. A fact it is not given is a fact the letter does not mention, so
+  there is no "your continued support" for somebody whose history we were not told. This is the
+  template layer and it works with the Anthropic key off: the audit's three identical thank-yous
+  were the template, not the AI. (FIX-6)
 - **Refuse money by absence: `AGENT_EXECUTORS` has no executor for any `needsHuman:"always"` tool.** That means
   record_gift, refund, create_pledge, change_subscription and issue_receipt. `build97-agent` asserts the
   tool table and executors agree both ways; never add a "guarded" money executor. (BUILD-97)

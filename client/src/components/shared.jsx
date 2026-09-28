@@ -372,6 +372,15 @@ export function GlobalStyles() {
     button:not(:disabled):active{transform:scale(0.97);}
     .app-header{padding-top:env(safe-area-inset-top,0px);user-select:none;}
     .app-sidebar{user-select:none;}
+    /* FIX-6 item 6 - A TAKEOVER IS PAGE CONTENT, NOT AN OVERLAY OVER THE NAV.
+       .fullscreen-takeover is position:fixed with z-index 200 and the sidebar
+       is z-index 120, so left:0 put the donor profile and the grant profile on
+       top of the whole sidebar: you could see every nav item through the
+       gutter and click none of them. It starts where the content starts now,
+       and follows the sidebar when it collapses.
+       (No backticks in here: this block is inside a template literal and one
+       backtick ends the string. It did, and 'takeover' became an identifier.) */
+    .fullscreen-takeover{left:var(--sidebar-w,0px)!important;}
     .app-topbar{user-select:none;}
     .topbar-search::placeholder{color:rgba(240,237,230,0.7);}
     .topbar-search:focus{border-color:${T.gold500}!important;box-shadow:0 0 0 3px rgba(201,168,76,0.14)!important;}
@@ -572,7 +581,7 @@ export function GlobalStyles() {
       .app-header{display:flex!important;}
       /* Full-screen takeovers cover the whole screen on mobile (no fixed bar
          to sit under) — reset the desktop top:52 offset. */
-      .fullscreen-takeover{top:0!important;}
+      .fullscreen-takeover{top:0!important;left:0!important;}
       .app-signout{display:none!important;}
       .mobile-bottom-bar{display:flex!important;}
       .mobile-more-overlay{display:flex!important;}

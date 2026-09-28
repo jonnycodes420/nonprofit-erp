@@ -1386,14 +1386,56 @@ async function main() {
   // online gifts from people (the queue a real office opens on a Monday).
   // Written by the same template the server's queue uses; she sends them.
   const draftMod = await import("../shared/draftNote.js");
-  const recentOnline = await q(
-    `SELECT g.id, g.donor_id, g.amount::float amount, d.name FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
-      WHERE g.org_id=$1 AND g.stripe_payment_id IS NOT NULL AND g.recurring_subscription_id IS NULL
-        AND g.quid_pro_quo_value IS NULL AND d.kind IS NULL AND g.date <= $2
-      ORDER BY g.date DESC, g.id DESC LIMIT 3`, [ORG, TODAY]);
+  // FIX-6 follow-up 8 — the demo's three drafts have to read like three
+  // different people, because they are. Each gift carries its own history
+  // (how many came before it, how long since the last, what it came to), and
+  // the template chooses its sentence from those facts. Nothing is invented:
+  // the numbers below are read back out of the file that was just written.
+  // THREE DIFFERENT STORIES, because a real Monday queue is three different
+  // people: somebody new, somebody who gives regularly, and somebody who had
+  // gone quiet and came back. Taking "the three most recent online gifts"
+  // gave three FIRST-TIME givers, so the drafts were identical for a true
+  // reason and the demo still looked like a mail merge.
+  const queueShape = `
+    SELECT g.id, g.donor_id, g.amount::float amount, g.date, g.campaign, d.name,
+           (SELECT COUNT(*)::int FROM gifts x
+             WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.amount > 0) AS before,
+           (SELECT MAX(x.date) FROM gifts x
+             WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.date < g.date) AS last_date
+      FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+     WHERE g.org_id=$1 AND g.stripe_payment_id IS NOT NULL AND g.recurring_subscription_id IS NULL
+       AND g.quid_pro_quo_value IS NULL AND d.kind IS NULL AND g.date <= $2`;
+  const pick1 = async (having, order) => (await q(
+    `${queueShape} AND ${having} ORDER BY ${order} LIMIT 1`, [ORG, TODAY]))[0] || null;
+  const recentOnline = [];
+  const takeIf = r => { if (r && !recentOnline.some(x => x.id === r.id)) recentOnline.push(r); };
+  // somebody new
+  takeIf(await pick1(`(SELECT COUNT(*) FROM gifts x WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.amount > 0) = 0`, "g.date DESC, g.id DESC"));
+  // somebody who gives regularly
+  // A REGULAR giver, and one who has NOT been away: the template puts a long
+  // gap above loyalty (a year of silence is the more notable fact), so a
+  // regular giver who also happens to be a returner reads as a returner and
+  // the queue shows the same sentence twice.
+  takeIf(await pick1(
+    `(SELECT COUNT(*) FROM gifts x WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.amount > 0) >= 5
+     AND (SELECT MAX(x.date::date) FROM gifts x WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.date < g.date)
+         >= (g.date::date - INTERVAL '12 months')`, "g.date DESC, g.id DESC"));
+  // somebody who had gone quiet, and came back
+  takeIf(await pick1(`(SELECT MAX(x.date::date) FROM gifts x WHERE x.org_id=g.org_id AND x.donor_id=g.donor_id AND x.id <> g.id AND x.date < g.date) < (g.date::date - INTERVAL '12 months')`, "g.date DESC, g.id DESC"));
+  // and whatever else is newest, if any of the three shapes was not on file
+  for (const r of await q(`${queueShape} ORDER BY g.date DESC, g.id DESC LIMIT 6`, [ORG, TODAY])) {
+    if (recentOnline.length >= 3) break;
+    takeIf(r);
+  }
   for (const [k, g] of recentOnline.entries()) {
+    const months = g.last_date
+      ? Math.max(0, Math.round((new Date(g.date) - new Date(g.last_date)) / (1000 * 60 * 60 * 24 * 30.44)))
+      : null;
     const t = draftMod.thankYouDraft({ donorName: g.name, giftCents: Math.round(g.amount * 100), fundName: null,
-                                       orgName: "Harborlight Youth Collective", voice: { ready: false } });
+                                       orgName: "Harborlight Youth Collective", voice: { ready: false },
+                                       giftCountBefore: Number(g.before), isFirstGift: Number(g.before) === 0,
+                                       isRecurring: false, monthsSinceLastGift: months,
+                                       campaignName: g.campaign || null });
     await q(`INSERT INTO thank_you_drafts (id,org_id,donor_id,gift_id,body,voice) VALUES ($1,$2,$3,$4,$5,$6)`,
             [`ty_b72_${k + 1}`, ORG, g.donor_id, g.id, t.body, t.voice]);
   }

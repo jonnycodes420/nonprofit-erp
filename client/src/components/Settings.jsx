@@ -2173,6 +2173,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [sampleClearing,setSampleClearing]=useState(false);
   const [exporting,setExporting]=useState(false);
   const [exportingCsv,setExportingCsv]=useState(false);
+  // FIX-6 item 4 — the done state: what was built, and a link that still works.
+  const [csvExport,setCsvExport]=useState(null);
+  const [csvErr,setCsvErr]=useState("");
 
   useEffect(()=>{
     apiFetch("/org/team").then(setTeam).catch(()=>{});
@@ -2309,18 +2312,31 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     setExporting(false);
   }
 
+  // ── FIX-6 item 4 · AN EXPORT THAT SAYS WHAT IT DID ────────────────────
+  // It used to build the zip, click a hidden link, revoke the object URL and
+  // put the button back. If the browser saved the file quietly, nothing on
+  // screen said so; if it refused the download, nothing on screen said that
+  // either, and the two were indistinguishable. Now the result is kept: the
+  // filename, the row counts the server put in the zip, and a link that still
+  // works, so the download can be taken again without rebuilding anything.
+  // The object URL is NOT revoked while that link is on screen.
   async function exportCsv(){
-    setExportingCsv(true);
+    setExportingCsv(true); setCsvExport(null); setCsvErr("");
     try{
       const r=await fetch(`${API}/org/export/csv`,{headers:{Authorization:`Bearer ${getToken()}`}});
-      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||"Export failed");}
+      if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||e.message||"The export did not build.");}
       const blob=await r.blob();
+      if(!blob || !blob.size) throw new Error("The export came back empty. Nothing was downloaded.");
+      let counts=null;
+      try{ counts=JSON.parse(r.headers.get("X-Steward-Export-Counts")||"null"); }catch{ counts=null; }
+      const name=r.headers.get("X-Steward-Export-Filename")
+        ||`steward-export-${new Date().toISOString().split("T")[0]}.zip`;
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
-      a.href=url; a.download=`steward-export-${new Date().toISOString().split("T")[0]}.zip`;
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(url);
-    }catch(e){alert(errorMessage(e, "Export failed"));}
+      a.href=url; a.download=name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setCsvExport({url,name,counts,bytes:blob.size});
+    }catch(e){setCsvErr(errorMessage(e, "The export did not build. Nothing was downloaded."));}
     setExportingCsv(false);
   }
 
@@ -2890,6 +2906,32 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             {exporting?"Building export…":"Export as JSON"}
           </button>
         </div>
+
+        {csvErr&&<div role="alert" data-testid="csv-export-error"
+          style={{marginTop:14,fontSize:13,color:T.terra700,background:T.terra100,border:"1px solid "+T.terra200,borderRadius:9,padding:"10px 13px",lineHeight:1.6}}>
+          {csvErr}
+        </div>}
+
+        {csvExport&&<div role="status" data-testid="csv-export-done"
+          style={{marginTop:14,background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",maxWidth:560}}>
+          <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:4}}>Your export is ready.</div>
+          <div style={{fontSize:13,color:T.ink3,lineHeight:1.6,marginBottom:10}}>
+            {csvExport.name} · {Math.max(1,Math.round(csvExport.bytes/1024)).toLocaleString()} KB.
+            It should be in your downloads. If your browser blocked it, take it here.
+          </div>
+          <a href={csvExport.url} download={csvExport.name} data-testid="csv-export-link"
+            style={{display:"inline-block",background:T.greenDk,color:T.white,borderRadius:8,padding:"8px 16px",fontSize:13,fontWeight:700,textDecoration:"none"}}>
+            Download it again
+          </a>
+          {csvExport.counts&&<div style={{marginTop:12}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>What is in it</div>
+            <div data-testid="csv-export-counts" style={{fontSize:12.5,color:T.ink3,lineHeight:1.8}}>
+              {Object.entries(csvExport.counts).map(([k,n])=>(
+                <div key={k}>{k}.csv: {Number(n).toLocaleString()} {Number(n)===1?"row":"rows"}</div>
+              ))}
+            </div>
+          </div>}
+        </div>}
       </div>
 
       {/* BUILD-96 Part 3 — THE SUBPROCESSOR, SAID IN THE ORGANISATION'S OWN
