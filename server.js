@@ -2331,6 +2331,14 @@ async function recordMove(orgId, donorId, officerId, officerName, fromStage, toS
   await run(
     "INSERT INTO moves (id,org_id,donor_id,officer_id,officer_name,from_stage,to_stage,description) VALUES (?,?,?,?,?,?,?,?)",
     [id, orgId, donorId, officerId || null, officerName || "", fromStage || null, toStage, description]);
+  // THREAD-2a — the stage_change journey trigger. EVERY stage move goes
+  // through this function (a human one from the pipeline, an automatic
+  // lapse), so this is the one place the trigger can fire from and be sure it
+  // fires exactly once. A move that did not change the stage is not a change.
+  if (toStage && String(toStage) !== String(fromStage || "")) {
+    maybeStartJourneyFromServer(orgId, donorId, "stage_change", { fromStage, toStage })
+      .catch(e => console.error("[journey] stage trigger:", e.message));
+  }
   return id;
 }
 
@@ -8944,7 +8952,7 @@ require("./routes/finance").mount({
 require("./routes/volunteer").mount({
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,
   escapeHtml, express, insertShift, orgToday, orgTz, query, requireAuth, run, uuid,
-  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog,
+  volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog, maybeStartJourneyFromServer,
 });
 require("./routes/agent").mount({
   AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
@@ -8982,7 +8990,7 @@ require("./routes/crm").mount({
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkActiveDonorBand, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,

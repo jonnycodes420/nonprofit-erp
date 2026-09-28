@@ -34,7 +34,7 @@ const {
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkActiveDonorBand, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
@@ -9038,6 +9038,66 @@ app.get("/donors/:id/plan", requireAuth, wrap(async (req, res) => {
 
 // POST /plan-steps/:id/skip — skipping is RECORDED as skipped, never deleted and
 // never quietly marked done. "We decided not to do that" is the fact.
+// ── THREAD-2a · MARK DONE ASKS FOR ONE LINE, AND SCHEDULES THE NEXT ──────
+// The line is not paperwork: closing a thread has ALWAYS required a reason
+// (the BUILD-81 CHECK constraint), because a follow-up that closed with no
+// record of what happened is a follow-up nobody can learn from. This route is
+// that same close, named for what the officer is actually doing, and it
+// advances the plan so the next step opens in the same breath.
+//
+// IT SENDS NOTHING. It writes a logged interaction and opens the next step.
+// That is the entire definition of a journey step completing.
+app.post("/plan-steps/:id/done", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [s] = await query(
+    `SELECT st.*, p.donor_id, p.status AS plan_status FROM cultivation_plan_steps st
+       JOIN cultivation_plans p ON p.id = st.plan_id
+      WHERE st.id=? AND st.org_id=?`, [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Step not found" });
+  if (s.status === "done" || s.status === "skipped") return res.status(409).json({ error: "That step is already closed." });
+
+  const note = String((req.body && req.body.note) || "").replace(/\s+/g, " ").trim().slice(0, 500);
+  if (!note) {
+    return res.status(400).json({
+      error: "note_required",
+      message: `One line about what happened. It goes on ${"their"} record, and it is what makes the next step worth anything.`,
+    });
+  }
+  const today = orgToday(await orgTz(orgId));                 // ORG_TZ_SEAM_OK
+
+  // THE INTERACTION IS WRITTEN FIRST, AND THE THREAD CLOSES ONTO IT.
+  //
+  // `threads_close_honest` only allows two honest closes: an OUTCOME, which
+  // must name the interaction that was its outcome, or a DISMISSAL, which
+  // must give a reason. A first cut of this route closed with
+  // `close_kind='done'` and the database refused it — correctly. A thread
+  // that closed with no logged thing behind it is exactly the hole that
+  // constraint exists to keep shut, and "mark done" is the most tempting
+  // place in the product to punch through it.
+  //
+  // So: the line becomes a real interaction on the record, and the thread
+  // closes pointing at it. That is also what makes a completed journey step
+  // count towards Last contact — a step done that left no trace would leave
+  // the record saying nobody had spoken to them.
+  const intId = "int_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [intId, orgId, s.donor_id,
+     s.step_type === "thank" ? "call" : s.step_type === "send" ? "email" : "note",
+     today, `${s.label}: ${note}`, actor(req).id, actor(req).name]);
+  if (s.thread_id) {
+    await run(`UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+                WHERE id=? AND org_id=? AND closed_at IS NULL`, [intId, s.thread_id, orgId]);
+  }
+  await run(`UPDATE cultivation_plan_steps SET status='done', closed_at=NOW(), closed_by=?, closed_by_name=?, done_note=?
+              WHERE id=? AND org_id=?`, [actor(req).id, actor(req).name, note, req.params.id, orgId]);
+
+  // AND SCHEDULES THE NEXT. Same call the rest of the plan machinery makes.
+  await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name, today });
+  res.json({ plan: await readPlan(orgId, s.plan_id), done: req.params.id, note, interactionId: intId });
+}));
+
 app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [s] = await query(
@@ -9053,11 +9113,24 @@ app.post("/plan-steps/:id/skip", requireAuth, requirePlan("team"), checkWriteAcc
     await run("UPDATE threads SET closed_at=NOW(), close_kind='dismissed', close_reason='handled_outside' WHERE id=? AND org_id=? AND closed_at IS NULL",
       [s.thread_id, orgId]);
   }
-  await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=? WHERE id=? AND org_id=?",
-    [actor(req).id, actor(req).name, req.params.id, orgId]);
+  // THREAD-2a — SKIP ASKS WHY, IN ONE TAP. The reason is a short phrase, not
+  // an essay, and it is stored: six months later "why did nobody send her the
+  // impact report?" has an answer. It is optional at the route (an older
+  // client, a bulk skip during a replacement) and the screen makes it one tap.
+  const why = String((req.body && req.body.reason) || "").replace(/\s+/g, " ").trim().slice(0, 200) || null;
+  await run("UPDATE cultivation_plan_steps SET status='skipped', closed_at=NOW(), closed_by=?, closed_by_name=?, skip_reason=? WHERE id=? AND org_id=?",
+    [actor(req).id, actor(req).name, why, req.params.id, orgId]);
+  if (why) {
+    await run(
+      `INSERT INTO interactions (id,org_id,donor_id,type,date,note,created_by,logged_by_name)
+       VALUES (?,?,?,'note',?,?,?,?)`,
+      ["int_" + uuid().slice(0, 10), orgId, s.donor_id, orgToday(await orgTz(orgId)),  // ORG_TZ_SEAM_OK
+       `Skipped "${s.label}": ${why}`, actor(req).id, actor(req).name])
+      .catch(e => console.error("[journey] skip note:", e.message));
+  }
   await advanceCultivationPlan(orgId, s.donor_id, { actorId: actor(req).id, actorName: actor(req).name });
   const out = await readPlan(orgId, s.plan_id);
-  res.json({ plan: out, skipped: req.params.id });
+  res.json({ plan: out, skipped: req.params.id, reason: why });
 }));
 
 // POST /plans/:id/stop — the officer decides the plan is over. The steps keep

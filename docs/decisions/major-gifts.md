@@ -3,6 +3,32 @@
 Read this when you touch the pipeline, stage or status, moves, opportunities, portfolios and assignment, or wealth scoring.
 
 ## Rules
+- **A journey is a Plan with a trigger, and there is no second engine.** `cultivation_templates`
+  gains `trigger_key`, `priority`, `journey_enabled`; `cultivation_plans` gains `trigger_key`,
+  `priority`, `replaced_plan_id`, `replaced_reason`. Everything else is the BUILD-99 plan
+  machinery untouched, so old plans and sequences keep working and every screen that reads plans
+  reads journeys for free. (THREAD-2a)
+- **`maybeStartJourney` is the ONE way into a journey.** Every trigger calls it — first gift,
+  gift over the org's amount, stage change, lapsed return, new volunteer, by hand — which is what
+  makes "a donor is in at most one journey" true rather than aspirational. It is registered back
+  to server.js at mount time (`registerJourneyEngine`) because `recordGift` lives there and
+  requiring crm.js from server.js would be a cycle; a null engine is a no-op, never a throw, so a
+  broken journey can never refuse somebody's donation. (THREAD-2a)
+- **A higher priority replaces a lower one and writes down why.** Equal priority does not
+  replace. Major donor (90) outranks the first-year welcome (50) deliberately: a $25,000 first
+  gift is a major gift before it is a first gift. The replaced plan is `abandoned`, not deleted,
+  and `replacementReason()` writes one sentence that is stored on the row AND logged on the donor.
+  (THREAD-2a)
+- **No journey step sends anything.** A step is a thread; a thread closes on a logged human
+  action. A step may carry a DRAFT and a draft is not a send — `requiresConfirmation` is
+  unconditional, not a per-step setting. `tests/thread2a-no-send.test.js` runs the whole path
+  against a live mail sink with the org's mail switched ON and asserts the sink saw nothing.
+  (THREAD-2a)
+- **Mark done writes the interaction FIRST and closes the thread onto it.** `threads_close_honest`
+  allows an outcome naming its interaction, or a dismissal with a reason, and nothing else — the
+  first cut closed with `close_kind='done'` and the database refused it, correctly. That is also
+  what makes a completed step count towards Last contact. Skip stores its reason. (THREAD-2a)
+
 - **Assignment to an officer IS portfolio membership IS a place on their board; add no second flag.**
   `donors.in_pipeline` is retired and read by nothing. Unassigned donors live in the Directory only. (BUILD-30)
 - **Count portfolio and pipeline membership only through `portfolioMembership()` (server.js).**
