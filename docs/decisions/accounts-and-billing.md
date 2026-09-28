@@ -54,6 +54,24 @@ Read this when you touch sign-in, signup, onboarding, invites, roles, super admi
   whose `termsVersion` is stale is refused rather than recorded. The document lives in `legal/`,
   not `claude/`, because `.railwayignore` excludes `claude/` — the product must have the document
   it serves. (GTM-1a)
+- **An org is never moved between bands silently.** `checkActiveDonorBand` counts, records ONE
+  open notice (`orgs.tier_notice_*`), tells the admin in-app and by email, and dates the change at
+  least `TIER_NOTICE_DAYS` = 30 out. It never writes `orgs.plan`, never calls Stripe, and never
+  changes an amount. A second check that finds the same band is the same notice and does not
+  restart the clock; falling back inside the band withdraws it. Dismissing hides the banner and
+  keeps the notice. A legacy plan (core/team/founding) has no band and is never measured against
+  one. `tests/gtm1b-band-notice.test.js`. (GTM-1b)
+- **The active-donor count is the pricing page's sentence, in SQL.** A DISTINCT non-deleted donor
+  with a gift OR a conversation inside `activeDonorMonths`. Four gifts from one person is one
+  person. Changing the sentence changes the count. (GTM-1b)
+- **The founding discount is a COUPON, not a price.** `Gv9E1KkK` ($50 off, code `STEWARD50`) is
+  applied at checkout for any org with `orgs.founding_partner`, on whichever band they pick — a
+  price could not follow an org that grew, and a founding partner would have lost what they were
+  promised the day they outgrew the first band. Backfilled from `plan='founding'`. (GTM-1b)
+- **The Agent's free thirty days allow 25 plans, and the cap lifts at the first charge.** Counted
+  as rows in `agent_instructions` for the org, for ever — a deleted plan was still a model call, and
+  refunding the allowance on delete makes a cap advisory. Refused ABOVE `agentBuildPlan`, because a
+  refusal after the model answers has already spent what the cap exists to prevent. (GTM-1b)
 - **Every signup emails the founder, one message per signup.** Not `opsAlert`, which dedupes by
   kind and hour: two organisations signing up in the same hour is news, not a repeat. (GTM-1a)
 - **A configured price id is not a correct price.** The close link retrieves the Stripe price and compares

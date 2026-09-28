@@ -45,12 +45,63 @@ function planTierOf(billing){
 // Written once: the same due-count badge now rides a nav item AND the "More"
 // group that can be holding it. Two copies would be two hex literals, and the
 // palette census ratchets DOWN.
+// GTM-1b 5 — the two widths the rail has. Named once so the sidebar, the
+// main column's margin and the collapse button cannot disagree by a pixel.
+const SIDEBAR_W = 240, SIDEBAR_W_COLLAPSED = 64;
+
 const DUE_BADGE={background:T.terracotta,color:T.white,fontSize:9,fontWeight:800,borderRadius:99,padding:"1px 6px",lineHeight:"14px"};
 
 // ── App Shell ──────────────────────────────────────────────────────────────
 function AppShell() {
   const { auth, logout } = useAuth();
   const [tab,setTab]=useState("dashboard");
+
+  // ── GTM-1b 5 · THE SIDEBAR FOLDS ────────────────────────────────────────
+  // 240px of nav is a lot of a 1280 laptop to spend on where you already are.
+  // Collapsed it keeps the icons — a rail, not a disappearance, so the shape
+  // of the product stays on screen and nothing has to be remembered.
+  //
+  // REMEMBERED PER USER, not per browser: the key carries the user id, so two
+  // people sharing a laptop do not fight over it. localStorage rather than a
+  // column because it is a per-viewer convenience — losing it costs one click
+  // and it never needs to reach another device or be read back by anything.
+  // Every read and write is wrapped: a private window throws on access, and a
+  // sidebar is not worth a white screen.
+  // GTM-1b 1 — the over-band notice, read once on mount. The count itself is
+  // taken after an import (the thing that changes it), so this is a cheap
+  // read of what was already decided, not a scan.
+  const [donorBand,setDonorBand]=useState(null);
+  useEffect(()=>{
+    let live=true;
+    apiFetch("/billing/donor-band").then(d=>{ if(live)setDonorBand(d); }).catch(()=>{});
+    return ()=>{live=false;};
+  },[]);
+  async function dismissBandNotice(){
+    setDonorBand(d=>d?{...d,notice:{...d.notice,dismissedAt:new Date().toISOString()}}:d);
+    try { await apiFetch("/billing/donor-band/dismiss",{method:"POST"}); } catch { /* the banner is already hidden */ }
+  }
+
+  const sidebarKey = "npe_sidebar_collapsed_" + (auth?.user?.id || "anon");
+  const [sidebarCollapsed,setSidebarCollapsed]=useState(()=>{
+    try { return localStorage.getItem(sidebarKey) === "1"; } catch { return false; }
+  });
+  const toggleSidebar=()=>setSidebarCollapsed(v=>{
+    const next=!v;
+    try { localStorage.setItem(sidebarKey, next ? "1" : "0"); } catch { /* private window */ }
+    return next;
+  });
+  // Cmd+\ (Ctrl+\ elsewhere) — the shortcut every tool with a panel uses.
+  // Ignored while a field has focus so it cannot fire mid-typing.
+  useEffect(()=>{
+    const onKey=e=>{
+      if(e.key!=="\\"||!(e.metaKey||e.ctrlKey))return;
+      const t=e.target;
+      if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.isContentEditable))return;
+      e.preventDefault(); toggleSidebar();
+    };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  });
   const [data,setData]=useState(null);
   const [loading,setLoading]=useState(true);
   const [loadErr,setLoadErr]=useState("");
@@ -414,6 +465,7 @@ function AppShell() {
   // bar, and with the ink rail around it the green read as the whole app.
   const sideBtn=(active)=>({
     display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",
+    position:"relative",   // GTM-1b 5 — the collapsed rail's due dot anchors here
     background:"transparent",
     border:"none",
     borderRadius:"0 10px 10px 0",padding:"8px 12px 8px 16px",
@@ -452,19 +504,27 @@ function AppShell() {
     {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
         moved into the bar's left edge, user chip/sign-out live in the bar. */}
-    <div className="app-sidebar" style={{position:"fixed",left:0,top:52,bottom:0,width:240,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box"}}>
-      <div style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
+    <div className="app-sidebar" data-collapsed={sidebarCollapsed?"1":"0"}
+      style={{position:"fixed",left:0,top:52,bottom:0,width:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box",transition:"width 0.16s ease"}}>
+      <div id="app-sidebar-nav" style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {(()=>{
           const byId=Object.fromEntries(TABS.map(t=>[t.id,t]));
           const navItem=(t)=>{
             const active=tab===t.id;
             const locked=TEAM_GATED.has(t.id)&&isCoreTier;
-            return <button key={t.id} className="side-nav-btn" aria-current={active?"page":undefined} onClick={()=>navigateTo(t.id)} style={sideBtn(active)}>
+            // GTM-1b 5 — collapsed, the item is its icon and its title
+            // attribute. `aria-label` carries the name so a screen reader
+            // still hears "Donors" and not a glyph.
+            return <button key={t.id} className="side-nav-btn" aria-current={active?"page":undefined}
+              aria-label={sidebarCollapsed?t.label:undefined} title={sidebarCollapsed?t.label:undefined}
+              onClick={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
               <span style={{fontSize:14,width:18,textAlign:"center",color:active?T.ink:T.sage600,flexShrink:0}}>{t.icon}</span>
-              {t.label}
-              {locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
-              {t.id==="tasks"&&tasksDue>0&&<span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>}
+              {!sidebarCollapsed&&t.label}
+              {!sidebarCollapsed&&locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
+              {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+              {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
+                ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
+                : <span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>)}
             </button>;
           };
           // A portal-tier org's ENTIRE product is the portal tab — it is never
@@ -476,8 +536,19 @@ function AppShell() {
             {/* BUILD-86 — Dashboards sits directly under Home: it is the one
                 click the brief promises when somebody asks for a number. */}
             {primaryIds.map(id=>byId[id]).filter(Boolean).map(navItem)}
-            {moreIds.length>0&&(
-              <div style={{marginTop:12}}>
+            {/* GTM-1b 5 — IN THE COLLAPSED RAIL THERE IS NO "MORE" GROUP.
+                The disclosure is a word with a chevron, and 64px of rail
+                truncated it to "MO…" — the first thing the browser walk
+                caught. A rail that is only icons cannot carry a heading, so
+                collapsing OPENS the group and shows its items as icons like
+                every other item. Nothing is hidden behind a label nobody can
+                read; `navMoreOpen` itself is untouched, so expanding again
+                returns the sidebar to exactly the state it was left in. */}
+            {moreIds.length>0&&(sidebarCollapsed
+              ? <div style={{marginTop:12,borderTop:"1px solid "+T.bgElevated,paddingTop:10}}>
+                  {moreIds.map(id=>byId[id]).filter(Boolean).map(navItem)}
+                </div>
+              : <div style={{marginTop:12}}>
                 <button onClick={()=>setNavMoreOpen(o=>{try{localStorage.setItem(NAV_MORE_KEY,o?"0":"1");}catch{/* private mode */}return !o;})}
                   aria-expanded={navMoreOpen} aria-controls="side-nav-more"
                   className="side-nav-btn" style={{...sideBtn(false),color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 16px"}}>
@@ -495,16 +566,36 @@ function AppShell() {
       </div>
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid "+T.bgElevated,padding:"10px 10px 12px 0",flexShrink:0}}>
-        <button className="side-nav-btn" aria-current={tab==="settings"?"page":undefined} onClick={()=>navigateTo("settings")} style={sideBtn(tab==="settings")}>
+        <button className="side-nav-btn" aria-current={tab==="settings"?"page":undefined}
+          aria-label={sidebarCollapsed?"Settings":undefined} title={sidebarCollapsed?"Settings":undefined}
+          onClick={()=>navigateTo("settings")}
+          style={{...sideBtn(tab==="settings"),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
           <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?T.ink:T.sage600,flexShrink:0}}>⚙</span>
-          Settings
+          {!sidebarCollapsed&&"Settings"}
+        </button>
+        {/* GTM-1b 5 — THE PANEL BUTTON. Last in the rail, below Settings,
+            where every tool with a collapsible panel puts it. It says what it
+            does and what the shortcut is, so the shortcut is discoverable
+            from the button rather than from a changelog. */}
+        <button data-testid="sidebar-toggle" onClick={toggleSidebar}
+          aria-expanded={!sidebarCollapsed} aria-controls="app-sidebar-nav"
+          aria-label={sidebarCollapsed?"Expand the sidebar":"Collapse the sidebar"}
+          title={(sidebarCollapsed?"Expand":"Collapse")+" sidebar  (⌘\\)"}
+          style={{...sideBtn(false),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
+          <span aria-hidden="true" style={{fontSize:14,width:18,textAlign:"center",color:T.sage600,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+              <rect x="0.75" y="1.75" width="12.5" height="10.5" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+              <line x1={sidebarCollapsed?"5.1":"5.1"} y1="1.75" x2={sidebarCollapsed?"5.1":"5.1"} y2="12.25" stroke="currentColor" strokeWidth="1.3"/>
+            </svg>
+          </span>
+          {!sidebarCollapsed&&<>Collapse<span style={{marginLeft:"auto",fontSize:11,color:T.sage600,letterSpacing:"0.02em"}}>⌘\</span></>}
         </button>
       </div>
     </div>
 
     {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
         (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
-    <div className="app-main" style={{marginLeft:240,marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
+    <div className="app-main" style={{marginLeft:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,transition:"margin-left 0.16s ease",marginTop:52,display:"flex",flexDirection:"column",flex:1,minWidth:0}}>
 
     {/* Header — mobile only (display:none here; GlobalStyles' 768px block restores it) */}
     <div className="app-header" style={{borderBottom:"1px solid "+T.bgElevated,padding:"0 24px",display:"none",alignItems:"center",justifyContent:"space-between",background:T.ink,position:"sticky",top:0,zIndex:100,height:52,width:"100%",boxSizing:"border-box"}}>
@@ -556,6 +647,35 @@ function AppShell() {
             Your data →
           </button>
         )}
+      </div>
+    )}
+    {/* ── GTM-1b 1 · YOU HAVE GROWN PAST YOUR BAND ──────────────────────
+        Brass, not red: this is not a failure and nothing is wrong. It is
+        news, with a date attached, and the date is at least thirty days out.
+        It says plainly that nothing has changed — the single most important
+        sentence on it, because the natural reading of a billing banner is
+        that you have already been charged. */}
+    {donorBand?.notice&&!donorBand.notice.dismissedAt&&(
+      <div data-testid="band-notice" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
+        <span style={{flex:1,minWidth:240}}>
+          <strong style={{color:T.gold50}}>You have {Number(donorBand.notice.count||0).toLocaleString()} active donors</strong>
+          {" — more than your current plan's band. "}
+          {donorBand.notice.nextMonthlyUsd
+            ? <>The next band, {donorBand.notice.nextBandLabel}, is ${donorBand.notice.nextMonthlyUsd} a month. </>
+            : <>{donorBand.notice.nextBandLabel} is a conversation rather than a price. </>}
+          <strong style={{color:T.gold50}}>Nothing has changed</strong>
+          {donorBand.notice.effectiveAt
+            ? <>, and nothing will before {new Date(donorBand.notice.effectiveAt).toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}.</>
+            : <>.</>}
+        </span>
+        <button onClick={()=>navigateTo("settings",{section:"billing"})}
+          style={{background:T.gold500,border:"none",borderRadius:8,color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>
+          See the numbers →
+        </button>
+        <button data-testid="band-notice-dismiss" onClick={dismissBandNotice}
+          style={{background:"none",border:"1px solid "+T.gold100,borderRadius:8,color:T.gold100,fontSize:12,fontWeight:700,cursor:"pointer",padding:"4px 12px",whiteSpace:"nowrap"}}>
+          Got it
+        </button>
       </div>
     )}
     {showReadOnlyBanner&&<div style={{background:T.terra700,borderBottom:"1px solid "+T.terracotta,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.terra200,flexWrap:"wrap"}}>

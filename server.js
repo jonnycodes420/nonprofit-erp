@@ -266,6 +266,7 @@ const SYS_AUTO = { id: "system:auto", name: "Steward (automatic)" };
 const sysWorkflow = recipe => ({ id: `system:workflow:${recipe}`, name: `Steward (workflow: ${recipe})` });
 const { imageSize } = require("image-size");
 const { computeTrialEnd, computeReminderAt, isReminderDue, TRIAL_DAYS, REMINDER_LEAD_DAYS } = require("./trialEnd");
+const PRICING = require("./pricing");  // GTM-1b: the band a count falls in
 const { CLOSE_PLANS, closePlan, validateCloseLink, validateOrgClose, checkoutSessionParams,
         firstChargeSentence, formatChargeDate, usd: usdWhole, planAmountUsd } = require("./closeLink");
 
@@ -7239,11 +7240,11 @@ const PLAN_PRICE_ENV = {
 // GTM-1a — the tier prices join the mode check, so `/health.billing` reports a
 // live price id sitting behind a test key (or the reverse) for the bands that
 // are actually on sale, not only for the three legacy plans.
-for (const t of require("./pricing").TIERS) {
+for (const t of PRICING.TIERS) {
   PLAN_PRICE_ENV[`${t.id}_monthly`] = t.envMonthly;
   PLAN_PRICE_ENV[`${t.id}_yearly`] = t.envYearly;
 }
-PLAN_PRICE_ENV[require("./pricing").INTERNAL_TEST.id] = require("./pricing").INTERNAL_TEST.env;
+PLAN_PRICE_ENV[PRICING.INTERNAL_TEST.id] = PRICING.INTERNAL_TEST.env;
 
 // ── BUILD-90 90b · THE REMINDER AND THE CANCEL BUTTON ──────────────────────
 // NOTHING MOVES THE TRIAL END. Not an import, not a second import, not a
@@ -7268,6 +7269,189 @@ function signCancelToken(orgId) {
 
 // Find every org whose charge is seven days out and warn it once.
 // `now` is injectable so the suite can stand on day 23 without waiting.
+// ── GTM-1b 2 · WHAT THE AGENT COSTS DURING THE FREE THIRTY DAYS ───────────
+//
+// The Agent calls a paid model on somebody else's key, and thirty free days
+// with no ceiling is an invoice waiting to happen. Twenty-five PLANS is the
+// allowance — a plan is one instruction she wrote, which is the unit she
+// actually thinks in, not tokens or requests — and it lifts entirely the
+// moment the first charge lands.
+//
+// IT IS COUNTED PER ORG, FOR EVER, NOT PER DAY. A daily allowance would be
+// twenty-five a day for thirty days, which is not an allowance. The count is
+// rows in `agent_instructions`, so a plan she wrote and deleted still counts:
+// it was still a model call, and letting deletes refund the allowance is how
+// a cap becomes advisory.
+//
+// AFTER THE FIRST CHARGE THERE IS NO CAP. `subscription_status = 'active'`
+// means Stripe has taken money, which is exactly the line the brief drew.
+const AGENT_TRIAL_PLAN_ALLOWANCE = 25;
+
+async function agentTrialAllowance(orgId) {
+  const [org] = await query("SELECT subscription_status FROM orgs WHERE id=?", [orgId]);
+  const status = (org && org.subscription_status) || "trialing";
+  // Anything that is not still trialing is a paying (or formerly paying) org:
+  // active, past_due, canceled. Only the free window is capped.
+  if (status !== "trialing") return { capped: false, status };
+  const [row] = await query("SELECT COUNT(*)::int AS c FROM agent_instructions WHERE org_id=?", [orgId]);
+  const used = Number(row && row.c) || 0;
+  return {
+    capped: true, status, used, allowance: AGENT_TRIAL_PLAN_ALLOWANCE,
+    left: Math.max(0, AGENT_TRIAL_PLAN_ALLOWANCE - used),
+    exhausted: used >= AGENT_TRIAL_PLAN_ALLOWANCE,
+  };
+}
+
+// ── GTM-1b 1 · ACTIVE DONORS, AND THE BAND THEY PUT YOU IN ────────────────
+//
+// THE COUNT IS THE SENTENCE ON THE PRICING PAGE, IN SQL. `pricing.json`'s
+// activeDonorSentence says "a person or organization that has given a gift or
+// had a conversation logged in the last 24 months", and this is that and
+// nothing else: a DISTINCT donor with a gift OR a conversation inside the
+// window. Deleted donors do not count. The window comes from the catalogue,
+// so changing the sentence changes the count, which is the only way the two
+// can be kept honest.
+//
+// It is deliberately a count of DONORS, not of rows: an org with one donor and
+// four hundred gifts is a one-donor org.
+const ACTIVE_CONVERSATION_TYPES = ["call", "meeting", "email", "ask", "note", "stewardship"];
+
+async function countActiveDonors(orgId, { months = PRICING.ACTIVE_DONOR_MONTHS } = {}) {
+  const [row] = await query(
+    `SELECT COUNT(*) AS c FROM (
+        SELECT d.id
+          FROM donors d
+         WHERE d.org_id = ? AND d.deleted_at IS NULL
+           AND (
+             EXISTS (SELECT 1 FROM gifts g
+                      WHERE g.donor_id = d.id AND g.org_id = d.org_id
+                        AND g.date IS NOT NULL AND g.date <> ''
+                        AND g.date::date >= (CURRENT_DATE - (? || ' months')::interval))
+             OR EXISTS (SELECT 1 FROM interactions i
+                         WHERE i.donor_id = d.id AND i.org_id = d.org_id
+                           AND i.type = ANY(?)
+                           AND i.date IS NOT NULL AND i.date <> ''
+                           AND i.date::date >= (CURRENT_DATE - (? || ' months')::interval))
+           )
+     ) t`,
+    [orgId, String(months), ACTIVE_CONVERSATION_TYPES, String(months)]);
+  return Number(row && row.c) || 0;
+}
+
+// The band an org is PAYING for, read off its plan. A legacy plan (core, team,
+// founding) has no band in the new catalogue and is never told it is over one
+// — those organisations are on a price that was never sold by size, and
+// inventing a band for them would be inventing a bill.
+function bandOfPlan(plan) {
+  const id = String(plan || "");
+  if (!id.includes("_")) return null;
+  return PRICING.tierById(id.split("_")[0]);
+}
+
+// THIRTY DAYS. The agreement says the new price does not take effect for at
+// least thirty days after the org is told, and this is the one place that
+// arithmetic happens.
+const TIER_NOTICE_DAYS = 30;
+
+// Count, compare, and — only if they are over — record ONE open notice and
+// tell the admin. Returns what it found either way, so a caller can show the
+// count without having to know whether a notice was raised.
+//
+// IT NEVER TOUCHES THE SUBSCRIPTION. Not the plan column, not Stripe, not the
+// amount. The whole point is that the price does not move on its own; what
+// moves is that somebody now knows.
+async function checkActiveDonorBand(orgId, { send = true, now = Date.now() } = {}) {
+  const [org] = await query(
+    `SELECT id, name, plan, subscription_status, tier_notice_band, tier_notice_effective_at
+       FROM orgs WHERE id=?`, [orgId]);
+  if (!org) return { checked: false, reason: "org_not_found" };
+
+  const band = bandOfPlan(org.plan);
+  if (!band) return { checked: false, reason: "no_band_on_this_plan", plan: org.plan };
+
+  const count = await countActiveDonors(orgId);
+  const fits = count <= band.maxDonors;
+  const shouldBe = PRICING.tierForDonorCount(count);   // null = above the top band
+
+  if (fits) {
+    // Back inside the band they pay for (donors deleted, or an import undone):
+    // the open notice is withdrawn rather than left standing. A warning that
+    // is no longer true is worse than no warning.
+    if (org.tier_notice_band) {
+      await run(`UPDATE orgs SET tier_notice_band=NULL, tier_notice_at=NULL,
+                   tier_notice_effective_at=NULL, tier_notice_count=NULL, tier_notice_dismissed_at=NULL
+                 WHERE id=?`, [orgId]);
+      console.log(`[tier] ${orgId} is back inside ${band.band} (${count}) — the open notice is withdrawn`);
+    }
+    return { checked: true, over: false, count, band: band.id, maxDonors: band.maxDonors };
+  }
+
+  const nextBandId = shouldBe ? shouldBe.id : PRICING.TALK_TO_US.id;
+  // The SAME notice, not a new one: a second import that finds the same band
+  // must not restart the thirty days or send a second email.
+  if (org.tier_notice_band === nextBandId) {
+    return { checked: true, over: true, count, band: band.id, maxDonors: band.maxDonors,
+             nextBand: nextBandId, alreadyNoticed: true,
+             effectiveAt: org.tier_notice_effective_at };
+  }
+
+  const effectiveAt = new Date(now + TIER_NOTICE_DAYS * 24 * 60 * 60 * 1000);
+  await run(
+    `UPDATE orgs SET tier_notice_band=?, tier_notice_at=NOW(), tier_notice_effective_at=?,
+       tier_notice_count=?, tier_notice_dismissed_at=NULL WHERE id=?`,
+    [nextBandId, effectiveAt.toISOString(), count, orgId]);
+  console.log(`[tier] ${orgId} (${org.name}) has ${count} active donors, over ${band.band}. `
+    + `Notice raised for ${nextBandId}, effective ${effectiveAt.toISOString()}. Nothing has been charged differently.`);
+
+  let mailed = { sent: false, skipped: "not_requested" };
+  if (send) mailed = await sendTierNoticeEmail({ orgId, orgName: org.name, count, band, nextBandId, effectiveAt })
+    .catch(e => ({ sent: false, failed: e.message }));
+
+  return { checked: true, over: true, count, band: band.id, maxDonors: band.maxDonors,
+           nextBand: nextBandId, effectiveAt: effectiveAt.toISOString(), mailed };
+}
+
+// The email. To the org's own admin, through the org mail gate like every
+// other org-addressed send — a new org has mail off until a super-admin turns
+// it on, so this is correctly refused there and says so in the log. The
+// IN-APP notice is what carries the message in that case, which is why the
+// notice is recorded before the email is attempted.
+async function sendTierNoticeEmail({ orgId, orgName, count, band, nextBandId, effectiveAt }) {
+  const admins = await query(
+    `SELECT email, name FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL
+      ORDER BY created_at ASC LIMIT 1`, [orgId]);
+  if (!admins.length) return { sent: false, skipped: "no_admin" };
+  const to = admins[0].email;
+  const tz = await orgTzName(orgId);
+  const when = formatChargeDate(effectiveAt, tz);
+  const next = PRICING.tierById(nextBandId);
+  const priceLine = next
+    ? `The next band is ${next.band}, at $${next.monthlyUsd} a month or $${next.yearlyUsd} a year.`
+    : `You are above every published band, so the next step is a conversation rather than a price.`;
+
+  const { sent, error } = await (async () => {
+    const r = await resend.emails.send({
+      _stewardOrgId: orgId, _stewardKind: "tier_notice",
+      from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
+      to, replyTo: process.env.FOUNDER_EMAIL || undefined,
+      subject: `${orgName} has grown past its plan band`,
+      html: `<div style="font-family:Georgia,serif;font-size:15px;color:#0f1a12;line-height:1.7;max-width:520px">
+  <p>Steward now counts <strong>${count.toLocaleString("en-US")} active donors</strong> on ${escapeHtml(orgName)}.</p>
+  <p>${PRICING.ACTIVE_DONOR_SENTENCE}</p>
+  <p>You are paying for ${escapeHtml(band.band)}. ${escapeHtml(priceLine)}</p>
+  <p><strong>Nothing has changed, and nothing will change before ${escapeHtml(when)}.</strong>
+     Your card has not been charged differently and your plan has not moved. If the count looks
+     wrong to you, it usually means a file imported more people than you expected — reply to this
+     message and we will look at it together.</p>
+  <p style="color:#5A554F;font-size:13px">Steward &middot; stewardapp.dev</p>
+</div>`,
+    });
+    return { sent: !r.error, error: r.error };
+  })();
+  if (!sent) console.warn(`[tier] notice email to ${orgId} was not sent: ${error && error.message}`);
+  return { sent, to, error: error ? error.name : null };
+}
+
 async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   const out = { considered: 0, sent: [], skipped: [] };
   const orgs = await query(
@@ -7348,7 +7532,7 @@ const PLAN_LIMITS = {
 // conversation and thirty days' notice, never a door that shuts. GTM-1b 1 is
 // the notice.
 for (const p of require("./closeLink").TIER_CLOSE_PLANS) {
-  const tier = require("./pricing").tierById(p.tierId);
+  const tier = PRICING.tierById(p.tierId);
   PLAN_LIMITS[p.id] = { seats: 999999999, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
 }
 PLAN_LIMITS.internal_test = { seats: 999999999, records: 999999999, extraSeatPrice: null };
@@ -8745,11 +8929,12 @@ require("./routes/billing").mount({
   validateOrgClose, wrap,
   // GTM-1a — the pricing catalogue, the amount/cadence helpers for a plan that
   // may be yearly, and the click-through agreement.
-  PRICING: require("./pricing"),
+  PRICING,
   planAmountUsd: require("./closeLink").planAmountUsd,
   planInterval: require("./closeLink").planInterval,
   SELLABLE_CLOSE_PLANS: require("./closeLink").SELLABLE_CLOSE_PLANS,
   customerAgreement: require("./customerAgreement"),
+  checkActiveDonorBand,
 });
 require("./routes/finance").mount({
   actor, checkWriteAccess, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
@@ -8762,7 +8947,7 @@ require("./routes/volunteer").mount({
   volunteerSummary, wrap, markVolunteer, publicAppUrl, writeAuditLog,
 });
 require("./routes/agent").mount({
-  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate,
+  AGENT_MODEL, ALL_PIPELINE_STAGES, Anthropic, SEQ_READY, WORKFLOW_RECIPE_MAP, actor, agentGate, agentTrialAllowance,
   aiGate, asJson, autoEnroll, checkWriteAccess, donorOnly, enrollInSequences, ensureWorkflows,
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
@@ -8797,7 +8982,7 @@ require("./routes/crm").mount({
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
   allocateReceiptNumber, apiLimiter, applyReceiptTokens, asJson, autoLapseOrg,
   bookkeeperRefusalMessage, bookkeeperRefusals, brandEmailHeaderHtml, bulkSendAddressGate,
-  checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
+  checkActiveDonorBand, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
