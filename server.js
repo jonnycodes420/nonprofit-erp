@@ -785,6 +785,27 @@ async function orgUnrestrictedFundId(orgId) {
 // recordGift(o) → { gift, duplicate } — `duplicate` means the conflict key had
 // already claimed this gift and NOTHING was written a second time (no donor
 // delta, no ledger stamp, no timeline entry). Every caller must honour it.
+// ── THREAD-2a · THE ONE SEAM BETWEEN recordGift AND THE JOURNEY ENGINE ────
+// `maybeStartJourney` lives in routes/crm.js, beside `advanceCultivationPlan`
+// and the plan reader it is built on — moving it here would split the plan
+// machinery across two files for no gain. But `recordGift` lives HERE and is
+// the only honest place to know a gift was someone's first.
+//
+// So crm.js hands its engine back at mount time, and this is the holder. It
+// is a function, not a direct import, because routes/crm.js is required AFTER
+// this file's body has run; a top-level require would be a cycle.
+//
+// A NULL ENGINE IS A NO-OP, NOT A THROW. Suites that boot only part of the
+// app, and the window between this file's body and mount(), must not turn a
+// donation into a 500 because a journey could not start.
+let _journeyEngine = null;
+function registerJourneyEngine(fn) { _journeyEngine = fn; }
+async function maybeStartJourneyFromServer(orgId, donorId, trigger, opts) {
+  if (typeof _journeyEngine !== "function") return { started: false, reason: "engine_not_mounted" };
+  try { return await _journeyEngine(orgId, donorId, trigger, opts); }
+  catch (e) { console.error(`[journey] ${trigger} for ${donorId}:`, e.message); return { started: false, reason: "error" }; }
+}
+
 async function recordGift(o) {
   const orgId = o.orgId;
   const amount = round2(Number(o.amount) || 0);
@@ -1026,6 +1047,43 @@ async function recordGift(o) {
       }
     }
   } catch (e) { console.error("[seq] gift trigger:", e.message); }
+
+  // ── THREAD-2a · THE JOURNEY TRIGGERS A GIFT CAN FIRE ────────────────────
+  // Three of the six live here, for the same reason the sequence triggers do:
+  // this is the one place where "is this their first gift" is unambiguous,
+  // because the rollup has already happened and `gift_count` is the answer.
+  //
+  //   first_gift     — gift_count reached 1
+  //   gift_over      — this gift clears the amount the ORG set
+  //   lapsed_return  — they were marked lapsed and have just given
+  //
+  // A journey that does not exist, is not armed, or loses on priority is a
+  // no-op that says why. This never throws into the gift path: a gift is
+  // written whether or not a journey starts, and the reverse would mean a
+  // broken journey could refuse somebody's donation.
+  try {
+    const [d] = await query(
+      `SELECT gift_count, stage, status FROM donors WHERE id=? AND org_id=?`, [o.donorId, orgId]);
+    if (d) {
+      const cents = Math.round(amount * 100);
+      // ORDER MATTERS, and it is the priority order, not this list's order:
+      // each call independently asks the engine, and the engine replaces a
+      // lower-priority journey with a higher one. So a $25,000 first gift
+      // starts the first-gift journey and is then correctly replaced by the
+      // major-donor one, with the reason written down — which is the
+      // behaviour the brief asks for, arrived at without a special case.
+      if (Number(d.gift_count) === 1) {
+        await maybeStartJourneyFromServer(orgId, o.donorId, "first_gift", { amountCents: cents });
+      }
+      await maybeStartJourneyFromServer(orgId, o.donorId, "gift_over", { amountCents: cents });
+      // A LAPSED DONOR WHO GIVES AGAIN. `status`/`stage` still said lapsed at
+      // the moment this gift landed, which is exactly the fact that makes it
+      // a return rather than an ordinary gift.
+      if (Number(d.gift_count) > 1 && (d.status === "lapsed" || d.stage === "lapsed")) {
+        await maybeStartJourneyFromServer(orgId, o.donorId, "lapsed_return", { amountCents: cents });
+      }
+    }
+  } catch (e) { console.error("[journey] gift trigger:", e.message); }
 
 
   // BUILD-98 Part 1 — soft credits, a tribute, an expected match. Checked by
