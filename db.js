@@ -3960,6 +3960,13 @@ async function initSchema() {
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_instr_org ON agent_instructions (org_id, status)`);
+  // AGENTS-1 — WHICH OF THE SIX WROTE THIS. Nullable on purpose: NULL means the
+  // general agent, which is what every instruction written before this build
+  // was, and what an instruction arriving from a screen that does not offer the
+  // choice still is. The registry (shared/agentPersonas.js) validates the value;
+  // this column stores a word and constrains nothing, because a persona added
+  // next year must not need a migration.
+  await pool.query(`ALTER TABLE agent_instructions ADD COLUMN IF NOT EXISTS persona TEXT`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS agent_runs (
