@@ -73,6 +73,22 @@ const CANNOT = {
   issue_receipt: "Issue a tax receipt. A receipt belongs to a specific gift and comes from the path that took the money.",
 };
 const EYEBROW = { fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 };
+// ── FIX-8 Part C · THE STAFF MARKS ─────────────────────────────────────────
+// A monogram apiece, drawn from the four colours and nothing else: ink,
+// emerald, brass on its wash, and cream on ink. No fifth hue arrives to mark
+// a seventh persona; the list wraps, which is the point of keeping it short.
+const MARK = [
+  { bg: T.greenDk,  fg: T.white },
+  { bg: T.ink,      fg: T.bg    },
+  { bg: T.gold100,  fg: T.gold700 },
+  { bg: T.bg2,      fg: T.ink   },
+  { bg: T.greenDk,  fg: T.white },
+  { bg: T.gold100,  fg: T.gold700 },
+];
+// "Steward Data" → "SD", "Writer" → "W". Two letters at most, so the mark
+// stays a mark rather than becoming a label.
+const monogram = name => String(name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
+
 // AGENTS-1 — the badge that says which of the six. Quiet by design: it labels
 // a row, it is not a thing to click, and it is never the emerald on a screen.
 const PERSONA_BADGE = { display: "inline-block", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.06em",
@@ -364,6 +380,10 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   // own, so a seventh persona appears here without a client change.
   const [personas, setPersonas] = useState(null);
   const [persona, setPersona] = useState("");
+  // FIX-8 Part C — which card's "How it works" is open, and how many items
+  // each persona has waiting. The counts come from the queue Steward already
+  // returns, so no screen invents a number of its own.
+  const [howOpen, setHowOpen] = useState("");
   const [focusDrafting, setFocusDrafting] = useState(false);
   // FIX-6 item 1 — what the queue has decided this visit, and anything that
   // refused. Held by the room, because the view is drawn and never mounted.
@@ -494,6 +514,17 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const open = list.find(p => p.id === openId) || list[0] || null;
   const asked = askedId ? list.find(p => p.id === askedId) : null;
   const waitCount = waiting ? waiting.count : null;
+  // FIX-8 Part C — what each of the six has waiting, counted from the one
+  // queue. An item with no persona (the general agent, and everything written
+  // before AGENTS-1) belongs to nobody and is counted against nobody.
+  const waitingFor = useMemo(() => {
+    const out = {};
+    for (const it of (waiting && waiting.items) || []) {
+      if (!it.persona) continue;
+      out[it.persona] = (out[it.persona] || 0) + 1;
+    }
+    return out;
+  }, [waiting]);
   const running = list.filter(p => p.run && runIsLive(p.run)).length;
   // What the agent is doing, in brass on the margin.
   const activity = running ? `Steward is running ${running === 1 ? "a plan" : running + " plans"} now.`
@@ -623,38 +654,88 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
         {view === "ask" && (
           <div data-testid="agent-view-ask">
             {notice}
-            {/* AGENTS-1 — THE SIX, AS CARDS. Not a wizard: picking one is one
-                press, picking none is the general agent, and the choice is
-                visible beside the box rather than buried in a setting. Each
-                card says what it does and what it never does, in the
-                registry's words. */}
+            {/* ── FIX-8 Part C · YOUR STAFF ──────────────────────────────────
+                AGENTS-1 shipped the six as six grey slabs under a small
+                "WHO SHOULD DO IT" label, which is the least sellable way to
+                draw the most sellable thing in the product. They are staff.
+                So: a headline, a monogram in the brand's own palette, the
+                one-line job, the one thing that person will never do, and
+                what they have waiting right now. The long description moves
+                behind "How it works" on the card, where somebody who wants it
+                can open it and nobody else has to read it. */}
             {personas?.personas?.length > 0 && (
-              <div data-testid="agent-personas" style={{ marginBottom: 20 }}>
-                <div style={{ ...EYEBROW, marginBottom: 8 }}>Who should do it</div>
-                <div style={{ display: "grid", gap: 10,
-                  gridTemplateColumns: wide ? "repeat(auto-fill, minmax(230px, 1fr))" : "1fr" }}>
-                  {personas.personas.map(p => {
+              <div data-testid="agent-personas" style={{ marginBottom: 26 }}>
+                <h2 style={{ fontFamily: SERIF, fontWeight: 400, fontSize: wide ? 27 : 23,
+                  margin: "2px 0 4px", color: T.ink }}>Your staff.</h2>
+                <div style={{ fontSize: 14, color: T.ink3, lineHeight: 1.55, marginBottom: 14, maxWidth: "62ch" }}>
+                  Six specialists who do the tedious work, then wait for your yes.
+                </div>
+                <div style={{ display: "grid", gap: 12,
+                  gridTemplateColumns: wide ? "repeat(3, minmax(0, 1fr))" : "1fr" }}>
+                  {personas.personas.map((p, i) => {
                     const on = persona === p.id;
+                    const openHow = howOpen === p.id;
+                    const n = waitingFor[p.id] || 0;
                     return (
-                      <button key={p.id} data-testid="agent-persona-card" aria-pressed={on}
-                        onClick={() => setPersona(on ? "" : p.id)}
-                        style={{ textAlign: "left", background: on ? T.white : T.bg2,
-                          border: "1px solid " + (on ? T.greenDk : T.bg3), borderRadius: 12,
-                          padding: "12px 14px", cursor: "pointer", fontFamily: "inherit",
-                          display: "flex", flexDirection: "column", gap: 5 }}>
-                        <span style={{ fontSize: 15, fontWeight: 800, color: on ? T.greenDk : T.ink, fontFamily: SERIF }}>{p.name}</span>
-                        <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{p.tagline}</span>
-                        <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.45 }}>{p.description}</span>
-                      </button>);
+                      <div key={p.id} data-testid="agent-persona-card" data-persona={p.id}
+                        style={{ background: T.white, border: "1px solid " + (on ? T.greenDk : T.bg3),
+                          borderRadius: 14, padding: "14px 16px", boxShadow: T.shadow,
+                          display: "flex", flexDirection: "column", gap: 7,
+                          outline: on ? "1px solid " + T.greenDk : "none" }}>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <span aria-hidden="true" style={{ width: 32, height: 32, borderRadius: 9, flex: "none",
+                            display: "grid", placeItems: "center", fontSize: 13, fontWeight: 800,
+                            fontFamily: SERIF, letterSpacing: ".02em",
+                            background: MARK[i % MARK.length].bg, color: MARK[i % MARK.length].fg }}>
+                            {monogram(p.name)}
+                          </span>
+                          <span style={{ fontSize: 16, fontWeight: 700, color: T.ink, fontFamily: SERIF }}>{p.name}</span>
+                          {n > 0 && <span data-testid="agent-persona-waiting" style={{ marginLeft: "auto", fontSize: 11.5,
+                            fontWeight: 700, color: T.gold700, background: T.gold100, border: "1px solid " + T.gold300,
+                            borderRadius: 99, padding: "2px 9px", whiteSpace: "nowrap" }}>
+                            {n} {n === 1 ? "draft" : "drafts"} waiting</span>}
+                        </div>
+                        <div style={{ fontSize: 13.5, color: T.ink2, lineHeight: 1.45 }}>{p.tagline}</div>
+                        {/* The guardrail note VERBATIM. It is already a whole
+                            sentence naming what this one can and cannot do
+                            ("It can tag and note. It never merges two people")
+                            so prefixing it with "Never:" made it read as a
+                            list of things it will not do, starting with one it
+                            does. The registry's words, unedited. */}
+                        <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.45,
+                          borderLeft: "2px solid " + T.bg3, paddingLeft: 9 }}>{p.guardrailNote}</div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: "auto", paddingTop: 4 }}>
+                          <button data-testid="agent-persona-ask"
+                            onClick={() => { setPersona(on ? "" : p.id); setView("ask");
+                              requestAnimationFrame(() => document.querySelector('[data-testid="agent-ask-input"]')?.focus()); }}
+                            style={{ background: on ? T.greenDk : "transparent", color: on ? T.white : T.greenDk,
+                              border: "1.5px solid " + T.greenDk, borderRadius: 9, padding: "6px 13px",
+                              fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                            {/* The FULL name. `firstWord` turned "Steward Data"
+                                into "Ask Steward", which is the product's own
+                                name and reads as asking the whole product. */}
+                            {(on ? "Asking " : "Ask ") + p.name}
+                          </button>
+                          <button data-testid="agent-persona-how" aria-expanded={openHow}
+                            onClick={() => setHowOpen(openHow ? "" : p.id)}
+                            style={{ background: "none", border: "none", padding: 0, color: T.ink3,
+                              fontSize: 12.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+                              textDecoration: "underline dotted" }}>
+                            {openHow ? "Hide" : "How it works"}
+                          </button>
+                        </div>
+                        {openHow && <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5,
+                          borderTop: "1px solid " + T.bg2, paddingTop: 8 }}>{p.description}</div>}
+                      </div>);
                   })}
                 </div>
-                <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 10, lineHeight: 1.5 }}>
                   {persona
-                    ? `${personas.personas.find(p => p.id === persona)?.name} will write the plan. Press it again to choose nobody.`
+                    ? `${personas.personas.find(p => p.id === persona)?.name} will write the plan. Press the button again to choose nobody.`
                     : "Pick one, or ask Steward and it will use everything it can do."}
                 </div>
               </div>)}
-            <div style={{ ...EYEBROW, marginBottom: 10 }}>Ask · in your own words</div>
+            <div style={{ ...EYEBROW, marginBottom: 10 }}>Or ask in your own words</div>
             {/* FIX-3 B — the box and its go button, side by side (the button
                 under the box at phone width). Enter plans; Shift+Enter is a new line. */}
             <div style={{ display: "flex", gap: 12, flexDirection: wide ? "row" : "column", alignItems: wide ? "flex-end" : "stretch" }}>
