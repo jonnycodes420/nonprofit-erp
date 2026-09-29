@@ -123,6 +123,9 @@ function logoDataUri() {
   let reg = await api("POST", "/auth/register-org", null, {
     orgName: ORG_NAME, userName: OWNER_NAME, email: OWNER_EMAIL, password,
     provisioned: true,
+    // Provisioned, but NOT a demonstration org: this account holds no invented
+    // data at all, so it must not carry the banner that says it does.
+    demoData: false,
   });
   if (reg.status === 201) {
     created = true;
