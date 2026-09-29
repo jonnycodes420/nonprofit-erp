@@ -112,6 +112,130 @@ function ItemMapping({ isReadOnly, isAdmin }) {
   );
 }
 
+// ── INT-2 · THE BOOKKEEPER'S END ───────────────────────────────────────────
+// The mapping, set once, and the month's agreement beside it. Nothing is sent
+// until every fund, the fee and each bank account point somewhere: a fund with
+// no account is a MISSING mapping and not a default, because a default here
+// silently posts restricted money to the wrong place and nobody notices until
+// an auditor does.
+function Bookkeeping({ isReadOnly, isAdmin }) {
+  const [d, setD] = useState(null);
+  const [openId, setOpenId] = useState("");
+  const [agree, setAgree] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [msg, setMsg] = useState("");
+  const load = () => apiFetch("/bookkeeping").then(r => { setD(r); setDraft(null); }).catch(() => setD(null));
+  useEffect(() => { load(); }, []);
+  if (!d || !(d.connections || []).length) return null;
+  const save = async c => {
+    try {
+      const r = await apiFetch(`/bookkeeping/${c.id}/mapping`, { method: "PUT",
+        body: JSON.stringify({ mapping: draft?.mapping ?? c.mapping, donorNames: draft?.donorNames ?? c.donorNames }) });
+      setMsg(r.sentence || "Saved."); load();
+    } catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+  const openAgreement = async c => {
+    if (openId === c.id) { setOpenId(""); return; }
+    setOpenId(c.id); setAgree(null);
+    try { setAgree(await apiFetch(`/bookkeeping/${c.id}/agreement`)); }
+    catch (e) { setAgree({ sentence: errorMessage(e, "That did not load.") }); }
+  };
+  return (
+    <>
+      {d.connections.map(c => {
+        const mapping = draft?.id === c.id ? draft.mapping : c.mapping;
+        const donorNames = draft?.id === c.id ? draft.donorNames : c.donorNames;
+        const setMap = patch => setDraft({ id: c.id, donorNames,
+          mapping: { ...mapping, ...patch } });
+        return (
+          <Card key={c.id} data-testid="bookkeeping-card" style={{ padding: "14px 16px" }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 15, color: T.ink }}>{c.vendorLabel}</strong>
+              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+                color: c.ready ? T.greenDk : T.gold700 }}>{c.ready ? "Ready to send" : "Not sending yet"}</span>
+              <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-agreement"
+                onClick={() => openAgreement(c)}>Do the two agree?</button>
+            </div>
+            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.definition}</div>
+            {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginTop: 8 }}>{msg}</div>}
+
+            <div style={{ marginTop: 10 }}>
+              <div style={h}>Each fund posts to</div>
+              {(d.funds || []).map(f => (
+                <div key={f.id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+                  padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
+                  <span style={{ minWidth: 160 }}>{f.name}{f.restricted ? " (restricted)" : ""}</span>
+                  <input disabled={isReadOnly || !isAdmin} placeholder="Income account"
+                    value={(mapping.funds || {})[f.id] || ""}
+                    onChange={e => setMap({ funds: { ...(mapping.funds || {}), [f.id]: e.target.value } })}
+                    style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8,
+                      padding: "5px 8px", fontSize: 12.5, width: 210 }} />
+                  <input disabled={isReadOnly || !isAdmin} placeholder={c.secondAxisLabel || "Class"}
+                    value={(mapping.classes || {})[f.id] || ""}
+                    onChange={e => setMap({ classes: { ...(mapping.classes || {}), [f.id]: e.target.value } })}
+                    style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8,
+                      padding: "5px 8px", fontSize: 12.5, width: 160 }} />
+                </div>))}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+                padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
+                <span style={{ minWidth: 160 }}>Processing fees</span>
+                <input disabled={isReadOnly || !isAdmin} placeholder="Expense account"
+                  value={mapping.feeAccountId || ""}
+                  onChange={e => setMap({ feeAccountId: e.target.value })}
+                  style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8,
+                    padding: "5px 8px", fontSize: 12.5, width: 210 }} />
+              </div>
+              {(d.sources || []).map(src => (
+                <div key={src} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+                  padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
+                  <span style={{ minWidth: 160 }}>{src} settles to</span>
+                  <input disabled={isReadOnly || !isAdmin} placeholder="Bank account"
+                    value={(mapping.depositAccounts || {})[src] || ""}
+                    onChange={e => setMap({ depositAccounts: { ...(mapping.depositAccounts || {}), [src]: e.target.value } })}
+                    style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8,
+                      padding: "5px 8px", fontSize: 12.5, width: 210 }} />
+                </div>))}
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: T.ink,
+                marginTop: 10, cursor: "pointer" }}>
+                <input type="checkbox" disabled={isReadOnly || !isAdmin} checked={!!donorNames}
+                  onChange={e => setDraft({ id: c.id, mapping, donorNames: e.target.checked })} style={{ marginTop: 2 }} />
+                <span>
+                  <strong>Put donor names on the accounting lines</strong>
+                  <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>{d.donorNamesDefault}</span>
+                </span>
+              </label>
+              {!c.ready && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 8, lineHeight: 1.5 }}>{c.sentence}</div>}
+              {!isReadOnly && isAdmin && draft?.id === c.id && (
+                <button style={{ ...btn(true), marginTop: 10 }} data-testid="bookkeeping-save" onClick={() => save(c)}>Save the mapping</button>)}
+            </div>
+
+            {openId === c.id && (
+              <div data-testid="bookkeeping-agreement-rows" style={{ marginTop: 12, background: T.bg2,
+                border: "1px solid " + T.bg3, borderRadius: 10, padding: "10px 12px" }}>
+                {!agree ? <div style={{ fontSize: 12.5, color: T.ink3 }}>Loading…</div> : <>
+                  <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55 }}>{agree.sentence}</div>
+                  <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 6 }}>{agree.definition}</div>
+                  {(agree.onlyInSteward || []).map(r => (
+                    <div key={r.payoutId} style={{ fontSize: 12.5, color: T.gold700, padding: "3px 0" }}>
+                      Steward sent {money(r.netCents)} for {r.payoutId} and it is not there.
+                    </div>))}
+                  {(agree.differing || []).map(r => (
+                    <div key={r.payoutId} style={{ fontSize: 12.5, color: T.gold700, padding: "3px 0" }}>
+                      {r.payoutId}: Steward {money(r.stewardCents)}, the books {money(r.vendorCents)}.
+                    </div>))}
+                  {(agree.held || []).map(r => (
+                    <div key={r.payoutId} style={{ fontSize: 12.5, color: T.ink3, padding: "3px 0" }}>
+                      {r.payoutId} is held ({r.status}) and has not been sent.
+                    </div>))}
+                </>}
+              </div>)}
+          </Card>);
+      })}
+    </>
+  );
+}
+
 export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
@@ -163,6 +287,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
 
       <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />
+      <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />
 
       {(d.cards || []).map(c => (
         <Card key={c.id} data-testid="connection-card" data-status={c.status} style={{ padding: "14px 16px" }}>

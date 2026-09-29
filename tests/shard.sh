@@ -70,6 +70,7 @@ start_server() {
   PORT="$api" TEST_MODE=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
   RESEND_BASE_URL="http://localhost:$sink" DEMO_SMTP_FROM=noreply@stewardapp.dev \
   STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
+  INTUIT_API_BASE="http://localhost:$((api + 5))" XERO_API_BASE="http://localhost:$((api + 6))" \
   PAYPAL_WEBHOOK_ID="$(node -e 'process.stdout.write(require("./tests/fixtures/paypal-webhook-test-key").WEBHOOK_ID)')" \
   PAYPAL_WEBHOOK_TEST_CERT="$(node -e 'process.stdout.write(require("./tests/fixtures/paypal-webhook-test-key").PUBLIC_PEM)')" \
   RESEND_WEBHOOK_SECRET=whsec_YnVpbGQ5NC1sb2NhbC13ZWJob29rLXNlY3JldCE= \
@@ -132,6 +133,10 @@ export DB_SSL="${DB_SSL:-disable}"
 export SINK_PORT="$sink"
 export STRIPE_MOCK_PORT="$stripe"
 export BILLING_MOCK_PORT="$billing"
+# INT-2 — the accounting-system mock this shard's server was told to call. It
+# lives inside the shard's own block of ten (+5/+6), like every other mock.
+export BOOKKEEPING_MOCK_PORT="$((api + 5))"
+export XERO_MOCK_PORT="$((api + 6))"
 
 # ── THE DEMO SEED ──────────────────────────────────────────────────────────
 # FIVE suites read the demo org, not one: demo-shape, fix3-c-demo-people,

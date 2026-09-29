@@ -16,6 +16,7 @@
 #        PORT=5601 TEST_MODE=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
 #        RESEND_BASE_URL=http://localhost:5602 DEMO_SMTP_FROM=noreply@stewardapp.dev \
 #        STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
+#        INTUIT_API_BASE=http://localhost:5632 XERO_API_BASE=http://localhost:5633 \
 #        PAYPAL_WEBHOOK_ID=WH-INT1-LOCALTEST \
 #        PAYPAL_WEBHOOK_TEST_CERT="$(node -e 'process.stdout.write(require(\"./tests/fixtures/paypal-webhook-test-key\").PUBLIC_PEM)')" \
 #        RESEND_WEBHOOK_SECRET=whsec_YnVpbGQ5NC1sb2NhbC13ZWJob29rLXNlY3JldCE= \
@@ -117,6 +118,7 @@ CORE=(
   agents1-persona-scope
   int1-paypal-webhook
   intpos-sale-is-not-a-gift
+  int2-send-once
   script-guards
   build96-ai-gate
   incident-mail-gate

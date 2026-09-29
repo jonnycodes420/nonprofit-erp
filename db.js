@@ -3524,6 +3524,73 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_person ON pos_sales (org_id, person_id, occurred_on)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_event ON pos_sales (org_id, event_id)`);
 
+  // ── INT-2 · THE BOOKKEEPER NEVER RETYPES A GIFT ───────────────────────────
+  // The connection to an accounting system, its mapping, and the one row per
+  // payout that makes sending idempotent.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bookkeeping_connections (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      vendor TEXT NOT NULL,                       -- quickbooks | xero
+      status TEXT NOT NULL DEFAULT 'active',      -- active | error | disconnected
+      realm_id TEXT,                              -- Intuit's company id / Xero's tenant id
+      credentials_sealed TEXT,
+      -- The mapping, saved as one document because it is edited as one screen
+      -- and read as one object. Nothing is sent until it is present and
+      -- complete, and "complete" is decided by shared/bookkeeping.js, not here.
+      mapping JSONB,
+      donor_names BOOLEAN NOT NULL DEFAULT false, -- OFF by default, deliberately
+      last_sent_at TIMESTAMPTZ,
+      last_error TEXT,
+      last_error_at TIMESTAMPTZ,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT bookkeeping_vendor CHECK (vendor IN ('quickbooks','xero')),
+      CONSTRAINT bookkeeping_status CHECK (status IN ('active','error','disconnected')),
+      CONSTRAINT bookkeeping_sealed_only CHECK (
+        credentials_sealed IS NULL OR credentials_sealed LIKE 'v1.%'
+      )
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS bookkeeping_one_live
+                      ON bookkeeping_connections (org_id, vendor) WHERE status <> 'disconnected'`);
+
+  // ONE ROW PER PAYOUT, PER VENDOR, AND IT IS THE WHOLE SAFETY MODEL.
+  // A daily send, a manual send and a retry after a timeout are three things
+  // that happen to one payout on one afternoon. Two deposits for one payout
+  // DOUBLES a nonprofit's recorded revenue in its own books, which is worse
+  // than sending nothing.
+  //
+  // The row is claimed BEFORE the call (status 'sending') and kept afterwards
+  // whatever happened, because a timeout means Steward does not know whether
+  // the first call landed and only the vendor can answer that. The unique
+  // index is the guarantee; the vendor's idempotency key is the second belt.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bookkeeping_deposits (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      connection_id TEXT REFERENCES bookkeeping_connections(id) ON DELETE CASCADE,
+      vendor TEXT NOT NULL,
+      payout_id TEXT NOT NULL,
+      source_key TEXT,
+      idempotency_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'sending',     -- sending | sent | refused | failed
+      vendor_deposit_id TEXT,
+      net_cents INTEGER NOT NULL DEFAULT 0,
+      deposit_on TEXT,
+      lines JSONB,
+      refusal TEXT,
+      last_error TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS bookkeeping_one_per_payout
+                      ON bookkeeping_deposits (org_id, vendor, payout_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bookkeeping_deposits_month
+                      ON bookkeeping_deposits (org_id, vendor, deposit_on)`);
+
   // A gift can be reported under more than one provider's id. `external_id`
   // stays the FIRST one (it is the dedupe key and the unique index is on it);
   // the others ride here, so answering "same gift" once means the question is

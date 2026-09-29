@@ -1851,6 +1851,39 @@ async function main() {
   }
   console.log(`[assert] the register: ${posSales.length} sales, $${(posTotal / 100).toLocaleString()} taken, none of it a gift · ${posUnmapped} unmapped line · 4 buyers who have never given, one of them drifting on attendance`);
 
+  // ── INT-2 · THE BOOKKEEPER'S END ───────────────────────────────────────
+  // QuickBooks connected with its mapping finished, so the demo shows the
+  // screen an organisation actually reaches: every fund pointing somewhere,
+  // the fee account set, and the bank account each source settles to. Xero is
+  // deliberately NOT connected, so the "not connected" state is on the screen
+  // beside the connected one.
+  //
+  // No credentials are written and INTUIT_API_BASE is unset in the demo, so a
+  // Send pressed during a demo builds the deposit, refuses to send it, and
+  // says why — which is the honest behaviour and the one worth showing.
+  {
+    const demoFunds = await q(`SELECT id, name FROM fin_funds WHERE org_id=$1 ORDER BY name`, [ORG]);
+    const fundMap = {}, classMap = {};
+    for (const [k, f] of demoFunds.entries()) {
+      fundMap[f.id] = k === 0 ? "acct_4010_contributions" : `acct_40${20 + k}_${f.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      if (/boat|scholarship|restricted/i.test(f.name)) classMap[f.id] = `class_${f.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+    }
+    const mapping = {
+      funds: fundMap, classes: classMap,
+      revenueAccounts: { raffle: "acct_4200_event_income", auction: "acct_4200_event_income",
+                         bar: "acct_4200_event_income", other: "acct_4300_other_income" },
+      feeAccountId: "acct_6110_processing_fees",
+      depositAccounts: { stripe: "acct_1010_operating", paypal: "acct_1020_paypal",
+                         givebutter: "acct_1010_operating", square: "acct_1010_operating" },
+    };
+    await q(`INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,mapping,donor_names,
+                                                  created_by,created_by_name)
+             VALUES ('bkc_b72_qbo',$1,'quickbooks','active','demo-realm',$2::jsonb,false,
+                     'system:seed-demo','The demonstration file')`,
+      [ORG, JSON.stringify(mapping)]);
+    console.log(`[assert] the books: QuickBooks connected, ${Object.keys(fundMap).length} funds mapped, fees and ${Object.keys(mapping.depositAccounts).length} bank accounts set · Xero not connected · donor names off`);
+  }
+
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
   // Six planned instructions, one from each of the six agents, each about
   // people who are really in this file. They sit in Plans as PLANNED: nothing
