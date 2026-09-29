@@ -384,6 +384,9 @@ function bResolver(routePath, param) {
   // BUILD-99 (major gifts) Part 1 — a proposal IS a row in `opportunities`
   // (shared/proposalShape.js says why there is no second table), so the
   // cross-tenant probe is org B's own opportunity id.
+  // INT-POS — the register's event report is read by EVENT id, so org A asking
+  // for what org B's gala took at the till must answer 404 like anything else.
+  if (routePath.startsWith("/pos/event/")) return `ev_${B}`;
   if (routePath.startsWith("/proposals/")) return `op_${B}`;
   // BUILD-99 (major gifts) Part 3 — the plan's three shapes, resolved by PATH
   // because all three use `:id` and their first segments differ.

@@ -40,6 +40,78 @@ const shortDate = v => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : String(v);
 };
 
+// ── INT-POS · THE ITEM MAPPING ─────────────────────────────────────────────
+// A register cannot tell a donation from a drink, so the organisation does,
+// once. Every item the till has actually sold, with what it is — and a count
+// of the ones nobody has said anything about, because "twelve items nobody has
+// classified" is the sentence that gets somebody to spend four minutes here
+// and an empty list is the sentence that does not.
+//
+// The default is "everything else", which is the safety property: guessing
+// wrong toward revenue costs a click, and guessing wrong toward a gift puts a
+// lesson fee on somebody's lifetime giving and can reach a tax receipt.
+function ItemMapping({ isReadOnly, isAdmin }) {
+  const [d, setD] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [msg, setMsg] = useState("");
+  const load = () => apiFetch("/pos/mapping").then(r => { setD(r); setDraft({}); }).catch(() => setD({ items: [] }));
+  useEffect(() => { load(); }, []);
+  if (!d) return null;
+  if (!(d.items || []).length) return null;
+  const set = (key, patch) => setDraft(x => ({ ...x, [key]: { ...(x[key] || {}), ...patch } }));
+  const valueOf = it => ({ ...it, ...(draft[it.itemKey] || {}) });
+  const save = async () => {
+    const items = Object.entries(draft).map(([k, v]) => {
+      const it = d.items.find(i => i.itemKey === k) || {};
+      return { itemName: it.itemName || k, class: v.class || it.class, eventId: v.eventId ?? it.eventId };
+    });
+    if (!items.length) return;
+    try { const r = await apiFetch("/pos/mapping", { method: "PUT", body: JSON.stringify({ items }) });
+      setMsg(r.sentence || "Saved."); load(); }
+    catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+  return (
+    <Card data-testid="pos-mapping" style={{ padding: "14px 16px" }}>
+      <div style={h}>What the register sells</div>
+      <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: "6px 0 10px" }}>{d.definition}</div>
+      {d.unmapped > 0 && (
+        <div style={{ fontSize: 13, color: T.ink, marginBottom: 10 }}>
+          {d.unmapped} {d.unmapped === 1 ? "item has" : "items have"} not been classified. Until somebody says, they are
+          counted as revenue and never as a gift.
+        </div>)}
+      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, marginBottom: 8 }}>{msg}</div>}
+      {d.items.map(it => {
+        const v = valueOf(it);
+        return (
+          <div key={it.itemKey} data-testid="pos-item-row" style={{ display: "flex", gap: 10, alignItems: "center",
+            flexWrap: "wrap", padding: "7px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
+            <strong style={{ minWidth: 150, color: it.mapped ? T.ink : T.gold700 }}>{it.itemName}</strong>
+            <span style={{ color: T.ink3, minWidth: 130 }}>{it.times} {it.times === 1 ? "sale" : "sales"} · {money(it.cents)}</span>
+            <select disabled={isReadOnly || !isAdmin} value={v.class}
+              onChange={e => set(it.itemKey, { class: e.target.value })}
+              style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 8px", fontSize: 12.5 }}>
+              {Object.values(d.classes || {}).map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            </select>
+            {v.class === "event" && (
+              <select disabled={isReadOnly || !isAdmin} value={v.eventId || ""}
+                onChange={e => set(it.itemKey, { eventId: e.target.value || null })}
+                style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "5px 8px", fontSize: 12.5 }}>
+                <option value="">Whichever event was on that day</option>
+                {(d.events || []).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>)}
+          </div>);
+      })}
+      {!isReadOnly && isAdmin && Object.keys(draft).length > 0 && (
+        <button style={{ ...btn(true), marginTop: 10 }} data-testid="pos-mapping-save" onClick={save}>
+          Save {Object.keys(draft).length} {Object.keys(draft).length === 1 ? "change" : "changes"}
+        </button>)}
+      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 10 }}>
+        {(d.classes || {}).donation?.definition}
+      </div>
+    </Card>
+  );
+}
+
 export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
@@ -89,6 +161,8 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
           <div style={{ fontSize: 13.5, color: T.ink, lineHeight: 1.5 }}>{d.attentionSentence}</div>
         </Card>)}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
+
+      <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />
 
       {(d.cards || []).map(c => (
         <Card key={c.id} data-testid="connection-card" data-status={c.status} style={{ padding: "14px 16px" }}>
