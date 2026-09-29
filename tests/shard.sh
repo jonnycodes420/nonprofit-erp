@@ -70,6 +70,8 @@ start_server() {
   PORT="$api" TEST_MODE=1 SESSION_CACHE_TTL_MS=0 RESEND_API_KEY=re_dummy_local \
   RESEND_BASE_URL="http://localhost:$sink" DEMO_SMTP_FROM=noreply@stewardapp.dev \
   STRIPE_SECRET_KEY=sk_test_dummy STRIPE_WEBHOOK_SECRET=whsec_localtest \
+  PAYPAL_WEBHOOK_ID="$(node -e 'process.stdout.write(require("./tests/fixtures/paypal-webhook-test-key").WEBHOOK_ID)')" \
+  PAYPAL_WEBHOOK_TEST_CERT="$(node -e 'process.stdout.write(require("./tests/fixtures/paypal-webhook-test-key").PUBLIC_PEM)')" \
   RESEND_WEBHOOK_SECRET=whsec_YnVpbGQ5NC1sb2NhbC13ZWJob29rLXNlY3JldCE= \
   STRIPE_API_BASE="http://localhost:$stripe" \
   DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \

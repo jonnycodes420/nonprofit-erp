@@ -1389,7 +1389,120 @@ app.post("/resend/webhook", resendWebhookLimiter, express.raw({ type: "applicati
   }
 });
 
-// Idempotency: reserve the Stripe event id BEFORE mutating anything. Returns
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-1 · THE PAYPAL WEBHOOK
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// PayPal's own reading path (sources/paypal.js) polls Transaction Search every
+// few hours, and Transaction Search publishes up to three hours late. A gift
+// that arrives at nine in the morning can therefore be invisible until lunch,
+// which is the wrong answer to "did the Hendersons' gift come through?".
+//
+// This is the other half: PayPal tells Steward the moment something happens.
+// It changes NOTHING about how a gift is written — every payment still goes
+// through recordGift, still dedupes on the provider's own id, and the poll
+// still runs and still finds the same row, harmlessly, because dedupe is the
+// thing that makes two readers of one account safe.
+//
+// THE SIGNATURE IS THE WHOLE SECURITY MODEL. Anybody can POST JSON to a public
+// URL claiming a gift arrived. What is verified, in order, and what each
+// refusal protects:
+//
+//   1. a webhook id is configured           — otherwise there is nothing to
+//                                             verify against, and Steward
+//                                             refuses rather than trusting
+//   2. the signature headers are present    — an unsigned POST is a stranger
+//   3. the algorithm is the one PayPal uses — not "close enough"
+//   4. the certificate URL is a PAYPAL host — THE attack: the URL comes out of
+//                                             the request, and an attacker who
+//                                             picks the cert signs anything
+//   5. the RSA-SHA256 signature verifies    — over PayPal's own signed string
+//
+// 1 to 4 are pure and live in shared/paypalWebhook.js so they can be handed a
+// forged header directly. 5 needs node:crypto and a socket, so it is here.
+//
+// NOTHING IS WRITTEN BEFORE THE SIGNATURE PASSES. Not a gift, not a donor, not
+// a log row, not a "we saw something" marker. tests/int1-paypal-webhook.test.js
+// asserts exactly that on a forged request.
+const PAYPAL_CERT_CACHE = new Map();      // certUrl → { pem, at }
+const PAYPAL_CERT_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function paypalCertificate(certUrl) {
+  const hit = PAYPAL_CERT_CACHE.get(certUrl);
+  if (hit && Date.now() - hit.at < PAYPAL_CERT_TTL_MS) return hit.pem;
+  const r = await fetch(certUrl, { method: "GET" });
+  if (!r.ok) throw new Error(`certificate fetch answered ${r.status}`);
+  const pem = await r.text();
+  PAYPAL_CERT_CACHE.set(certUrl, { pem, at: Date.now() });
+  return pem;
+}
+
+const paypalWebhookLimiter = rateLimit({
+  windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false,
+  skip: () => rateLimitDisabled(), handler: rateLimitHandler,
+});
+
+app.post("/paypal/webhook", paypalWebhookLimiter, express.raw({ type: "application/json" }), async (req, res) => {
+  const PW = await import("../shared/paypalWebhook.js");
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID || null;
+  const prep = PW.prepareVerification({ headers: req.headers, rawBody: req.body, webhookId });
+  if (!prep.ok) {
+    console.warn(`[paypal-webhook] refused: ${prep.reason}`);
+    return res.status(prep.reason === "no_webhook_id" ? 503 : 400)
+      .json({ error: prep.reason, sentence: prep.sentence });
+  }
+  // TEST_MODE gives the verification a key it can actually check against,
+  // exactly as the Stripe and Resend webhooks take a known secret: the suite
+  // needs a request that PASSES as well as one that fails, or "refused" proves
+  // only that everything is refused.
+  try {
+    const pem = process.env.PAYPAL_WEBHOOK_TEST_CERT || await paypalCertificate(prep.certUrl);
+    const v = crypto.createVerify("RSA-SHA256");
+    v.update(prep.signedString);
+    v.end();
+    if (!v.verify(pem, String(prep.signature), "base64")) {
+      console.warn("[paypal-webhook] refused: bad_signature");
+      return res.status(400).json({ error: "bad_signature", sentence: PW.REFUSALS.bad_signature });
+    }
+  } catch (e) {
+    console.warn("[paypal-webhook] refused:", e.message);
+    return res.status(400).json({ error: "bad_signature", sentence: PW.REFUSALS.bad_signature });
+  }
+
+  // From here the request is PayPal's. Everything below is ordinary work.
+  let event = null;
+  try { event = JSON.parse(Buffer.from(req.body).toString("utf8")); } catch { event = null; }
+  const kind = PW.eventKind(event && event.event_type);
+  if (!event || !kind) return res.json({ received: true, acted: false });
+
+  // WHICH ORGANISATION. Never from the payload: the merchant id is matched
+  // against the PayPal source this org connected, the same rule the Stripe
+  // webhook follows (BUILD-37 B9). An unrecognised merchant is acknowledged
+  // and acted on for nobody, because a webhook that cannot be attributed is
+  // not a gift; it is a stranger with a valid-looking envelope.
+  const merchantId = event?.resource?.payee?.merchant_id
+    || event?.resource?.merchant_id || event?.resource?.payee?.email_address || null;
+  const [source] = merchantId
+    ? await query(`SELECT id, org_id FROM giving_sources
+                    WHERE provider='paypal' AND status <> 'disconnected' AND provider_account_id = ?
+                    LIMIT 1`, [String(merchantId)])
+    : [];
+  if (!source) {
+    console.log(`[paypal-webhook] ${event.event_type} — no connected account matches ${merchantId || "(no merchant on the payload)"}`);
+    return res.json({ received: true, acted: false });
+  }
+
+  // A webhook NUDGES the reader; it is not a second writer. The poll and the
+  // webhook would otherwise be two paths that write a gift, and two writers of
+  // one gift is the class BUILD-23 exists to prevent. So: stamp the source as
+  // having news, and let syncSource — the one path — write it.
+  await run(`UPDATE giving_sources SET webhook_seen_at=NOW(), webhook_pending=true, updated_at=NOW()
+              WHERE id=? AND org_id=?`, [source.id, source.org_id]).catch(() => {});
+  console.log(`[paypal-webhook] ${event.event_type} (${kind}) for org=${source.org_id} — queued a check`);
+  res.json({ received: true, acted: true, kind });
+});
+
+// Idempotency: reserve the Stripe event id BEFORE mutating anything. Returns// Idempotency: reserve the Stripe event id BEFORE mutating anything. Returns
 // true if this event was already processed (redelivery/retry) → caller no-ops.
 async function billingEventAlreadyProcessed(eventId, type, orgId) {
   if (!eventId) return false;

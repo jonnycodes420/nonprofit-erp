@@ -54,6 +54,11 @@ process.env.STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "whsec_
 process.env.DONOR_ACCOUNTS_ENABLED = "1";   // flag-off 404s are byte-identical to unknown routes BY DESIGN — the wall is only probeable with the surface on
 process.env.NETWORK_SIGNUP_ENABLED = "1";
 process.env.RESEND_WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET || "whsec_resend_dummy"; // so the unsigned probe gets the 400, not the unconfigured 503
+// INT-1 — same reasoning one provider along: with no webhook id the PayPal
+// endpoint answers 503 (not configured), and this suite reads any 5xx on a
+// public probe as a fault. Configured here, an unsigned probe gets the 400 it
+// should, which is the thing worth probing.
+process.env.PAYPAL_WEBHOOK_ID = process.env.PAYPAL_WEBHOOK_ID || "WH-MATRIX-DUMMY";
 
 const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
@@ -348,6 +353,10 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
+    // INT-1 — a CONNECTION is a giving_sources row (the Connections screen is
+    // a view over them, not a second table), so org A asking for org B's
+    // connection, its gift rows or its sync log must answer 404 like any other.
+    connections: `gsrc_${B}`,
     "import-merges": `mrg_${B}`,   // BUILD-80 Part 6.2 — merge-review undo
     threads: `th_${B}`,            // BUILD-81 — the Thread (dismiss route)
     imports: `imp_${B}`,           // BUILD-87 Part 1 — the import-history receipt
