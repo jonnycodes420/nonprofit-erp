@@ -1688,7 +1688,7 @@ const HERD = [
   { scale: 0.64, bottom: "17%", opacity: 0.17, dur: "10.5s", delay: "-0.5s"  },
 ];
 
-export function FirstRunWelcome({ firstName, orgName, mission, motif, words = [], onDone }) {
+export function FirstRunWelcome({ firstName, orgName, mission, motif, words = [], line, nextStep, logo, funds = [], onDone }) {
   const [leaving, setLeaving] = useState(false);
   const close = () => { setLeaving(true); setTimeout(() => onDone && onDone(), 420); };
   // Escape closes it, like every other takeover in the product.
@@ -1724,6 +1724,21 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
       ))}
 
       <div className="fr-card" style={{ position: "relative", maxWidth: 620, textAlign: "center", zIndex: 2 }}>
+        {/* CKRH-1 — THEIR mark, on a light plaque. A logo drawn straight onto
+            the ink loses every dark colour in it, and most nonprofit logos have
+            one: the plaque is how a logo is presented everywhere else it is
+            presented, and it keeps the screen inside the four colours while the
+            only brand on it is genuinely theirs. */}
+        {logo && (
+          <div className="fr-logo" style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            background: T.white, borderRadius: 16, padding: "18px 26px", marginBottom: 22,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.28)",
+          }}>
+            <img src={logo} alt={orgName || "Organization logo"}
+              style={{ maxWidth: 220, maxHeight: 76, display: "block" }}/>
+          </div>
+        )}
         {orgName && (
           <div className="fr-eyebrow" style={{
             fontSize: 11, fontWeight: 800, letterSpacing: "0.18em", textTransform: "uppercase",
@@ -1739,12 +1754,24 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
         <div className="fr-rule" aria-hidden="true" style={{
           height: 3, width: 76, background: T.gold500, margin: "20px auto 22px", borderRadius: 2,
         }}/>
-        {mission && (
+        {/* CKRH-1 — ONE SENTENCE, NOT TWO. An org that has written its own line
+            gets that line here, in the display face, and its mission statement
+            does NOT also appear: a mission is a paragraph written for funders,
+            and at 390 it ran to seven lines and buried the one warm sentence
+            underneath it. The greeting is the org talking to its own person, so
+            the sentence it wrote for her outranks the one it wrote for a grant
+            application. With no line of its own, the mission still speaks. */}
+        {line ? (
+          <div className="fr-line" style={{
+            fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 26, lineHeight: 1.45,
+            color: T.bg, marginBottom: 26, maxWidth: 440, marginLeft: "auto", marginRight: "auto",
+          }}>{line}</div>
+        ) : mission ? (
           <div className="fr-line" style={{
             fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 21, lineHeight: 1.5,
             color: T.sage400, marginBottom: 18, fontStyle: "italic",
           }}>&ldquo;{mission}&rdquo;</div>
-        )}
+        ) : null}
         {words.length > 0 && (
           <div className="fr-words" style={{
             display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginBottom: 26,
@@ -1753,10 +1780,44 @@ export function FirstRunWelcome({ firstName, orgName, mission, motif, words = []
             {words.map((w, i) => <span key={w}>{i > 0 && <span style={{ opacity: 0.5, marginRight: 14 }}>·</span>}{w}</span>)}
           </div>
         )}
-        <div className="fr-sub" style={{ fontSize: 15, lineHeight: 1.65, color: T.sage400, marginBottom: 30, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
-          This is yours. Your people, your giving, and the next conversation waiting to be picked back up,
-          all in one place, in your words.
-        </div>
+        {/* Steward talking about Steward — only when the org has said nothing of
+            its own. Saying both is how a calm screen becomes a busy one. */}
+        {!line && (
+          <div className="fr-sub" style={{ fontSize: 15, lineHeight: 1.65, color: T.sage400, marginBottom: 30, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
+            This is yours. Your people, your giving, and the next conversation waiting to be picked back up,
+            all in one place, in your words.
+          </div>
+        )}
+        {/* What is ALREADY here, named. Funds come from the org's own rows, so
+            this is never a promise — it is a description of the account she is
+            about to open. */}
+        {funds.length > 0 && (
+          <div className="fr-funds" style={{
+            display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginBottom: nextStep ? 22 : 30,
+          }}>
+            {funds.map(f => (
+              <span key={f} style={{
+                border: "1px solid rgba(240,237,230,0.22)", borderRadius: 999, padding: "7px 14px",
+                fontSize: 12.5, fontWeight: 600, color: T.sage400, background: "rgba(240,237,230,0.05)",
+              }}>{f}</span>
+            ))}
+          </div>
+        )}
+        {/* ONE next step. Never a list: a first run that opens with three things
+            to do is a to-do list, and she has not seen the product yet. */}
+        {nextStep && (
+          <div className="fr-next" style={{
+            border: "1px solid rgba(201,168,76,0.34)", borderRadius: 14, padding: "14px 18px",
+            marginBottom: 30, textAlign: "left", display: "flex", gap: 12, alignItems: "flex-start",
+            background: "rgba(201,168,76,0.07)", maxWidth: 460, marginLeft: "auto", marginRight: "auto",
+          }}>
+            <span aria-hidden="true" style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase",
+              color: T.gold500, paddingTop: 3, whiteSpace: "nowrap",
+            }}>Next</span>
+            <span style={{ fontSize: 14, lineHeight: 1.6, color: T.bg }}>{nextStep}</span>
+          </div>
+        )}
         <button onClick={close} data-testid="first-run-go" autoFocus style={{
           background: T.greenDk, border: "none", borderRadius: 12, padding: "14px 34px",
           color: T.white, fontSize: 15, fontWeight: 800, cursor: "pointer", letterSpacing: "0.01em",

@@ -52,6 +52,12 @@ const GUARDED_WRITERS = [
   "migrate-build51-theme-assets", "migrate-build51b-impact-photos",
   "migrate-plans-core-team", "restore-asset", "seed-build45-asks",
   "seed-build45-portal-demo",
+  // CKRH-1 — provisions ONE REAL CUSTOMER's org (Central Kentucky Riding for
+  // Hope). It writes no donors and no sample data, but it creates an org, a
+  // login and three funds, so it is a writer and is guarded like one: creating
+  // a real customer's account off a mistyped BASE is precisely the accident
+  // this guard exists to prevent.
+  "ckrh-provision",
   // BUILD-86 Part B — the demo org's own words.
   "seed-build86-vocabulary",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",

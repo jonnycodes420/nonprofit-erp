@@ -45,6 +45,26 @@ her greeting is hers and this build was told not to touch her org — so the
 gate is this document plus `BLOCKED.md`, and the answer is needed before she
 signs in rather than after.
 
+## CKRH's logo — `client/src/assets/orgs/ckrh-logo.svg`
+
+**Whose:** Central Kentucky Riding for Hope (Lexington, KY), a Steward customer.
+**Where from:** downloaded from their own website,
+`https://ckrh.org/wp-content/uploads/2024/01/CKRH-LOGO-01.svg`, on 2026-09-29.
+The file is committed unmodified, which is the step the horse row records as
+missing — it can be inspected and compared against the source at any time.
+
+**Why it is here at all:** it is uploaded to `orgs.logo_data` for their own org
+by `scripts/ckrh-provision.js`, so it appears on their own receipts, their own
+giving pages and their own first-run greeting. Steward does not use it to
+identify Steward, does not put it on marketing, and does not show it to any
+other organisation. That is a customer displaying their own mark inside their
+own account, which is what every logo-upload field in the product is for.
+
+**Open:** nothing blocking. The one thing worth doing, when convenient, is
+telling Sarah it is there — an organisation should know which of its files a
+vendor holds. If CKRH ever asks for it to be removed, delete this file and this
+row and clear `orgs.logo_data` for their org; nothing else references it.
+
 ## What is NOT in this file, and why
 
 Everything else Steward draws is geometry with no origin to trace: the

@@ -526,6 +526,7 @@ function AppShell() {
   return <PhotoContext.Provider value={photoCtx}>
     {welcome&&<FirstRunWelcome firstName={welcome.firstName} orgName={welcome.orgName}
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
+      line={welcome.line} nextStep={welcome.nextStep} logo={welcome.logo} funds={welcome.funds||[]}
       onDone={dismissWelcome}/>}
     <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
       /* FIX-6 item 6 — the sidebar's CURRENT width, published so a full-screen
