@@ -3556,6 +3556,38 @@ async function initSchema() {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS bookkeeping_one_live
                       ON bookkeeping_connections (org_id, vendor) WHERE status <> 'disconnected'`);
 
+  // ── INT-OAUTH · THE HALF-FINISHED HANDSHAKE ───────────────────────────────
+  // Between "start" and "callback" there are two things a multi-instance
+  // deploy cannot keep in memory: the PKCE verifier, and the fact that THIS
+  // state was issued by us a moment ago. A row, with an expiry, and it is
+  // consumed on use so a replayed callback finds nothing.
+  //
+  // It holds no token. The verifier is worthless without the code, the row is
+  // gone within minutes either way, and the tokens themselves are sealed onto
+  // the connection row they belong to.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      code_verifier TEXT,
+      redirect_uri TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_oauth_states_expiry ON oauth_states (expires_at)`);
+
+  // The tokens live on the connection they belong to, sealed by
+  // shared/secretBox.js with the ORG as the AAD, so a blob copied from one
+  // tenant's row into another's fails to open rather than handing over
+  // somebody else's books. `token_expires_at` is what the refresh reads.
+  await pool.query(`ALTER TABLE bookkeeping_connections ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE bookkeeping_connections ADD COLUMN IF NOT EXISTS connected_by TEXT`);
+  await pool.query(`ALTER TABLE bookkeeping_connections ADD COLUMN IF NOT EXISTS connected_by_name TEXT`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS token_expires_at TIMESTAMPTZ`);
+
   // ONE ROW PER PAYOUT, PER VENDOR, AND IT IS THE WHOLE SAFETY MODEL.
   // A daily send, a manual send and a retry after a timeout are three things
   // that happen to one payout on one afternoon. Two deposits for one payout

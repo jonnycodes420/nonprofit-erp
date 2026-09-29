@@ -489,6 +489,15 @@ const PARAM_EXEMPT = [
   // tests/fix2-a-footing.test.js §2 (org B asking for org A's donor gets none).
   [/^\/figures\/:source\/rows$/, "param is a figure SOURCE NAME from a fixed registry, not a row id — see fix2-a-footing.test.js §2"],
   [/^\/portfolio\/officers\/:userId\/color$/, "cross-org userId probed via bResolver userId map"], // resolved, listed for clarity
+  // INT-OAUTH — the param is a PROVIDER KEY from the fixed registry in
+  // shared/oauth.js (xero · intuit · square), never a row id, and an unknown
+  // one is a 404. There is no "org B's provider" to probe: the org on every
+  // one of these routes comes from the token and is written into the state, the
+  // sealed credentials and each row. What these routes could cross is proven
+  // directly in tests/oauth-state.test.js, which fails the callback when the
+  // signed state names a different org and shows org A's sealed tokens will
+  // not open for org B.
+  [/^\/oauth\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — see oauth-state.test.js"],
 ];
 
 function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, opts); }

@@ -1882,6 +1882,23 @@ async function main() {
                      'system:seed-demo','The demonstration file')`,
       [ORG, JSON.stringify(mapping)]);
     console.log(`[assert] the books: QuickBooks connected, ${Object.keys(fundMap).length} funds mapped, fees and ${Object.keys(mapping.depositAccounts).length} bank accounts set · Xero not connected · donor names off`);
+    // INT-OAUTH — THE DEMO IS CONNECTED AND HOLDS NOTHING. Every connection in
+    // this file is a row with no sealed credentials, so the screens read the
+    // way a connected organisation's do while the demo can reach no provider
+    // and no provider can be charged, read or written on its behalf. This is
+    // asserted rather than assumed, because a real token reaching the demo org
+    // would be a real organisation's books behind a public login.
+    const [held] = await q(
+      `SELECT COUNT(*)::int n FROM (
+         SELECT credentials_sealed FROM giving_sources WHERE org_id=$1
+         UNION ALL
+         SELECT credentials_sealed FROM bookkeeping_connections WHERE org_id=$1) x
+        WHERE credentials_sealed IS NOT NULL`, [ORG]);
+    if (Number(held.n) !== 0) {
+      throw new Error(`REFUSED: the demo org holds ${held.n} set of provider credentials. `
+        + `The demonstration file is connected on screen and holds nothing.`);
+    }
+    console.log("[assert] the demo holds no provider credentials: 0 sealed rows across every connection");
   }
 
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
