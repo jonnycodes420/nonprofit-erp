@@ -40,7 +40,7 @@ const {
   recordAssetPointerHistory, recordGift, refreshCardsOnFile, requireAdmin, requireAuth, requireFlag,
   resend, resolveWidgetsPublic, run, sendDonorLifecycleEmail, sendDunningEmail, signToken,
   slugifyGivingPage, sourceAdapters, sourceConfig, sourceErrorSentence, stripe,
-  stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, syncSource, testMode, toCents,
+  stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, sweepQuietConnections, syncSource, testMode, toCents,
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 } = ctx;
 let app = routers.r0;
@@ -166,6 +166,198 @@ app.get("/giving-sources/providers", requireAuth, wrap(async (req, res) => {
 }));
 
 // "Where giving comes in." One row per source, with the sentence 89f renders.
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-1 · CONNECTIONS — ONE PLACE THAT SAYS WHETHER THE MONEY IS ARRIVING
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The org's own Stripe, every API source it has connected, and the statements
+// somebody drops in, on ONE screen, each with the same four things: is it
+// healthy, when did it last work, what came through it in thirty days, and
+// does the money match. The judgement is shared/connections.js; this route
+// only fetches rows and hands them over, so the sentence on the screen and the
+// sentence in an email are the same computation.
+//
+// EVERY NUMBER OPENS. `gifts30` and `dollars30` are counted from the gift rows
+// themselves, and `/connections/:id/gifts` returns exactly those rows, which is
+// what makes the figure checkable rather than asserted.
+app.get("/connections", requireAuth, wrap(async (req, res) => {
+  const C = await import("../shared/connections.js");
+  const { PROVIDERS, providerLabel } = await import("../shared/givingSources.js");
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
+  const since30 = orgTime.addDays(today, -30);
+
+  const [org] = await query(
+    `SELECT stripe_account_id, stripe_connected, other_giving_sources FROM orgs WHERE id=?`, [orgId]);
+  const sources = await query(
+    `SELECT * FROM giving_sources WHERE org_id=? ORDER BY created_at ASC`, [orgId]);
+
+  // The gift rows every card's figures are counted from, in one round trip.
+  // `giving_source_id IS NULL` with a Stripe payment id is the org's OWN
+  // Stripe — money taken through Steward's own donation path, which is a
+  // connection like any other and was the one nothing ever said anything about.
+  const giftRows = await query(
+    `SELECT giving_source_id, stripe_payment_id, date::text AS d,
+            (amount * 100)::bigint AS cents
+       FROM gifts WHERE org_id=? AND date >= ? AND amount > 0`, [orgId, orgTime.addDays(today, -C.RHYTHM_WINDOW_DAYS)]);
+  const bucket = new Map();
+  const put = (key, r) => {
+    let b = bucket.get(key);
+    if (!b) bucket.set(key, b = { dates: [], gifts30: 0, cents30: 0, last: null });
+    b.dates.push(r.d);
+    if (r.d >= since30) { b.gifts30++; b.cents30 += Number(r.cents) || 0; }
+    if (!b.last || r.d > b.last) b.last = r.d;
+  };
+  for (const r of giftRows) {
+    if (r.giving_source_id) put(r.giving_source_id, r);
+    else if (r.stripe_payment_id) put("own_stripe", r);
+  }
+  const empty = { dates: [], gifts30: 0, cents30: 0, last: null };
+
+  const cards = [];
+  // 1 · The org's own Stripe. Connected means Connect is finished, not that a
+  // key exists somewhere.
+  {
+    const b = bucket.get("own_stripe") || empty;
+    // Connected means Stripe Connect is finished OR money has demonstrably come
+    // through this path. A card that says "not connected" above forty gifts it
+    // took last month is a card nobody believes again.
+    const connected = !!(org && org.stripe_connected && org.stripe_account_id) || b.gifts30 > 0;
+    cards.push({
+      id: "own_stripe", kind: "own_stripe", provider: "stripe", label: "Your Stripe",
+      subtitle: "Donations taken through your own giving pages.",
+      connected, canDisconnect: false,
+      lastSyncedAt: null, liveSentence: "Stripe pays Steward the moment a gift is taken; there is nothing to check on a schedule.",
+      ...connectionState(C.assessConnection({ connected, lastError: null, lastGiftDate: b.last, giftDates: b.dates, today })),
+      gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
+      figureSource: { key: "connection-gifts", params: { connection: "own_stripe" } },
+    });
+  }
+  // 2 · Every API source, connected or not. A provider the registry knows and
+  // this org has not connected is a CARD, not an absence: "not connected" is a
+  // state worth showing, because money taken through it is not in any figure
+  // on any screen, and silence about that is how a total goes quietly wrong.
+  const byProvider = new Map(sources.filter(s => s.status !== "disconnected").map(s => [s.provider, s]));
+  for (const key of Object.keys(PROVIDERS)) {
+    const s = byProvider.get(key);
+    const b = (s && bucket.get(s.id)) || empty;
+    const connected = !!s && s.status !== "disconnected";
+    cards.push({
+      id: s ? s.id : `unconnected:${key}`, kind: "source", provider: key,
+      label: s ? s.display_name : providerLabel(key),
+      subtitle: PROVIDERS[key].mode === "file"
+        ? "A statement you drop in. Steward reads the file; it never reaches the provider."
+        : "Steward reads it on a schedule. It never writes to it.",
+      connected, canDisconnect: !!s,
+      lastSyncedAt: s ? s.last_synced_at : null,
+      lastTriedAt: s ? (s.last_tried_at || s.last_error_at || s.last_synced_at) : null,
+      ...connectionState(C.assessConnection({ connected, lastError: s ? s.last_error : null,
+                              lastGiftDate: b.last, giftDates: b.dates, today })),
+      gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
+      figureSource: s ? { key: "connection-gifts", params: { connection: s.id } } : null,
+    });
+  }
+  // 3 · Statement imports. Not a connection anybody can break: a file arrives
+  // or it does not, and the card says when the last one did.
+  {
+    const [imp] = await query(
+      `SELECT MAX(committed_at) AS last, COUNT(*)::int AS n FROM imports
+        WHERE org_id=? AND shape <> 'source' AND committed_at IS NOT NULL`, [orgId]);
+    const last = imp && imp.last ? String(imp.last).slice(0, 10) : null;
+    cards.push({
+      id: "statements", kind: "statements", provider: "statements", label: "Statement imports",
+      subtitle: "Files somebody drops in: a bank statement, a spreadsheet, a report from somewhere with no API.",
+      connected: !!(imp && imp.n), canDisconnect: false,
+      lastSyncedAt: imp && imp.last ? imp.last : null,
+      status: imp && imp.n ? "healthy" : "not_connected",
+      label_: null,
+      sentence: last ? `The last file was brought in on ${last}.` : C.STATUSES.not_connected.definition,
+      gifts30: 0, dollars30Cents: 0, lastGiftDate: last,
+      importCount: (imp && imp.n) || 0,
+    });
+  }
+
+  cards.sort((a, b) => (C.STATUS_RANK[a.status] ?? 9) - (C.STATUS_RANK[b.status] ?? 9));
+  const needsAttention = cards.filter(c => c.status === "broken" || c.status === "quiet");
+  res.json({
+    cards, statuses: C.STATUSES,
+    needsAttention: needsAttention.length,
+    // Home and Finance link here when this is above zero, and say this.
+    attentionSentence: needsAttention.length
+      ? `${needsAttention.length} ${needsAttention.length === 1 ? "connection needs" : "connections need"} a look: ${needsAttention.map(c => c.label).join(", ")}.`
+      : null,
+    definition: "Every way money reaches this organisation, whether Steward can see it, and whether what arrived matches what was given. Gifts and dollars are the last thirty days, counted from the gift rows themselves.",
+  });
+}));
+
+// The assessment's own `label`/`key`/`definition` are about the STATUS, and a
+// card already has a label of its own — spreading the whole object put "Quiet"
+// where "PayPal" belongs, on the screen and in the attention sentence. Only the
+// four fields the card actually wants cross over.
+function connectionState(a) {
+  return { status: a.status, sentence: a.sentence, statusDefinition: a.definition,
+           rhythmSentence: a.rhythm ? a.rhythm.sentence : null,
+           silentDays: a.silentDays ?? null, quietAfterDays: a.quietAfterDays ?? null };
+}
+
+// The rows behind one card's figure. EVERY NUMBER OPENS: this is what makes
+// "14 gifts, $2,300" a figure somebody can check rather than one they have to
+// believe.
+app.get("/connections/:id/gifts", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
+  const since = orgTime.addDays(today, -30);
+  const own = req.params.id === "own_stripe";
+  if (!own) {
+    const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+    if (!s) return res.status(404).json({ error: "Not found" });
+  }
+  const rows = await query(
+    `SELECT g.id, g.date::text AS date, g.amount, g.fee_amount, d.id AS donor_id, d.name AS donor_name
+       FROM gifts g JOIN donors d ON d.id = g.donor_id AND d.org_id = g.org_id
+      WHERE g.org_id=? AND g.date >= ? AND g.amount > 0
+        AND ${own ? "g.giving_source_id IS NULL AND g.stripe_payment_id IS NOT NULL" : "g.giving_source_id = ?"}
+      ORDER BY g.date DESC, g.id DESC LIMIT 500`,
+    own ? [orgId, since] : [orgId, since, req.params.id]);
+  const totalCents = rows.reduce((t, r) => t + Math.round(Number(r.amount) * 100), 0);
+  res.json({
+    rows: rows.map(r => ({ id: r.id, date: r.date, amountCents: Math.round(Number(r.amount) * 100),
+      feeCents: Math.round(Number(r.fee_amount || 0) * 100), donorId: r.donor_id, donorName: r.donor_name })),
+    count: rows.length, totalCents,
+    definition: "Every gift Steward recorded through this connection in the last thirty days, newest first. It foots to the figure on the card, in cents.",
+  });
+}));
+
+// THE SYNC LOG — every check, in sentences. One row per check, read from the
+// import rows the sync already writes (shape 'source'), so there is no second
+// record of the same event to disagree with the first.
+app.get("/connections/:id/log", requireAuth, wrap(async (req, res) => {
+  const C = await import("../shared/connections.js");
+  const orgId = req.user.orgId;
+  const [s] = await query("SELECT * FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Not found" });
+  const runs = await query(
+    `SELECT id, committed_at, summary_json FROM imports
+      WHERE org_id=? AND shape='source' AND summary_json->>'sourceId' = ?
+      ORDER BY committed_at DESC LIMIT 50`, [orgId, s.id]);
+  const lines = runs.map(r => {
+    const x = typeof r.summary_json === "string" ? JSON.parse(r.summary_json || "{}") : (r.summary_json || {});
+    return { id: r.id, ...C.syncLogLine({ at: r.committed_at, ok: true, rowsRead: x.rowsRead,
+      giftsCreated: x.giftsCreated, centsCreated: x.centsCreated, duplicates: x.duplicates,
+      dropped: x.dropped, duplicateQuestions: x.duplicateQuestions, reason: x.reason }),
+      skipped: Object.entries(x.dropped || {}).map(([k, n]) => `${n} ${C.dropWords(k)}`),
+      notices: x.notices || [] };
+  });
+  // The failure that is STILL standing goes at the top, because it is the one
+  // thing on this screen somebody has to do something about.
+  if (s.last_error) {
+    lines.unshift({ id: "current", ...C.syncLogLine({ at: s.last_error_at || s.last_tried_at, ok: false, error: s.last_error }),
+      skipped: [], notices: [] });
+  }
+  res.json({ lines, count: lines.length,
+    definition: "Every time Steward checked this connection, newest first, in plain sentences. What came in, what was skipped and why, and what failed." });
+}));
+
 app.get("/giving-sources", requireAuth, wrap(async (req, res) => {
   const { providerLabel } = await import("../shared/givingSources.js");
   const orgRow = await query(`SELECT other_giving_sources FROM orgs WHERE id = ?`, [req.user.orgId]);
@@ -679,6 +871,17 @@ app.post("/giving-sources/run-schedule", requireAuth, requireAdmin, wrap(async (
 app.post("/giving-recurring/sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
   const out = await sweepMissedRecurring(req.user.orgId, { today: req.body?.today || null });
   res.json(out);
+}));
+
+// INT-1 · the watching sweep, drivable with a pinned date for the same reason
+// the recurring sweep is: a connection going quiet is a fact about the
+// calendar, and a suite must be able to state the day rather than wait for it.
+// Same bar as every other scheduled path: admin only.
+app.post("/connections/sweep", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const out = await sweepQuietConnections({ orgId: req.user.orgId, today: req.body?.today || null,
+                                            notify: req.body?.notify !== false });
+  res.json({ ...out,
+    definition: "Steward looked at every connection against its own rhythm. A connection that has gone quiet or stopped working gets one task and one email, once per incident." });
 }));
 
 function verifyRecoveryToken(token) {

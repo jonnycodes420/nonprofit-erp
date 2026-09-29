@@ -3444,6 +3444,25 @@ async function initSchema() {
   // match between two sources in that relationship resolves as the same gift
   // WITHOUT asking, forever. Everything else asks, once, and never guesses.
   await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS sits_on_top_of TEXT`);
+  // ── INT-1 · THE WEBHOOK HALF ──────────────────────────────────────────────
+  // `provider_account_id` is the merchant id the provider stamps on its own
+  // webhooks, and it is how an incoming event is attributed to an org. It is
+  // never read off the payload as the org: the payload names a merchant, and
+  // THIS column is what says which organisation that merchant is.
+  //   `webhook_seen_at` / `webhook_pending` are the nudge. A webhook does not
+  // write a gift — two writers of one gift is the class BUILD-23 exists to
+  // prevent — it marks the source as having news, and the one sync path writes
+  // it on the next pass.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS provider_account_id TEXT`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS webhook_seen_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS webhook_pending BOOLEAN DEFAULT false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_sources_provider_acct
+                      ON giving_sources (provider, provider_account_id) WHERE provider_account_id IS NOT NULL`);
+  // INT-1 · WATCHING. One incident per quiet or broken connection, not one per
+  // sync: `quiet_notified_at` is what makes the admin email once rather than
+  // every six hours, and it is cleared the moment money arrives again.
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS quiet_notified_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS quiet_incident TEXT`);
 
   // A gift can be reported under more than one provider's id. `external_id`
   // stays the FIRST one (it is the dedupe key and the unique index is on it);

@@ -1716,6 +1716,53 @@ async function main() {
             [`ty_b72_${k + 1}`, ORG, g.donor_id, g.id, t.body, t.voice]);
   }
 
+  // ── INT-1 · THE CONNECTIONS, IN EVERY STATE THE SCREEN CAN SHOW ────────
+  // A demo where every connection is green proves only that green renders.
+  // Harborlight shows Stripe healthy, PayPal healthy, Givebutter QUIET (the
+  // state that costs an organisation real money and the one nothing used to
+  // say), and the statement imports it already has. No credentials are
+  // written: `credentials_sealed` stays NULL, so nothing here can call a
+  // provider, and a check pressed during a demo fails honestly rather than
+  // reaching somebody's real PayPal.
+  //
+  // The gifts are REAL gifts already in this file, re-pointed at a source, so
+  // every figure on the card foots to rows a person can open. Nothing new is
+  // created and no total moves.
+  const DEMO_SOURCES = [
+    ["gsrc_b72_stripe", "stripe", "Stripe", 0, 40],      // healthy: gifts up to yesterday
+    ["gsrc_b72_paypal", "paypal", "PayPal", 0, 26],      // healthy
+    ["gsrc_b72_gb", "givebutter", "Givebutter", 64, 30], // quiet: nothing for 64 days
+  ];
+  for (const [id, provider, label, quietDays, count] of DEMO_SOURCES) {
+    await q(`INSERT INTO giving_sources (id,org_id,provider,display_name,status,last_synced_at,last_tried_at,
+                                         backfilled_at,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,'active',NOW(),NOW(),NOW(),'system:seed-demo','The demonstration file')`,
+      [id, ORG, provider, label]);
+    // Its gifts: real online rows from this file, newest first, shifted back by
+    // the quiet gap so the card's own rhythm reads the way the state needs.
+    // Every source takes an INTERLEAVED slice of the online gifts rather than
+    // the newest ones, so the first source through this loop does not eat every
+    // recent row and leave the second looking quiet by accident. The quiet one
+    // is quiet because its window ENDS 64 days ago, which is a property of the
+    // fixture and not of the order this loop happens to run in.
+    const rows = await q(
+      `SELECT id FROM (
+         SELECT id, row_number() OVER (ORDER BY date DESC, id) AS rn
+           FROM gifts WHERE org_id=$1 AND stripe_payment_id IS NOT NULL AND giving_source_id IS NULL
+            AND date <= $2) x
+        WHERE rn % 3 = $4 ORDER BY rn LIMIT $3`,
+      [ORG, dAdd(TODAY, -quietDays), count, DEMO_SOURCES.findIndex(d => d[0] === id)]);
+    if (rows.length)
+      await q(`UPDATE gifts SET giving_source_id=$1 WHERE id = ANY($2::text[])`, [id, rows.map(r => r.id)]);
+  }
+  {
+    const st = await q(
+      `SELECT s.provider, COUNT(g.id)::int AS n, MAX(g.date)::text AS last
+         FROM giving_sources s LEFT JOIN gifts g ON g.giving_source_id = s.id
+        WHERE s.org_id=$1 GROUP BY s.provider ORDER BY s.provider`, [ORG]);
+    console.log(`[assert] connections: ${st.map(r => `${r.provider} ${r.n} gifts, last ${r.last || "never"}`).join(" · ")}`);
+  }
+
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
   // Six planned instructions, one from each of the six agents, each about
   // people who are really in this file. They sit in Plans as PLANNED: nothing

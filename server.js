@@ -1597,6 +1597,100 @@ async function raiseToldFailures(orgId, source, failures, day) {
   return opened;
 }
 
+// ── INT-1 · WATCHING · A CONNECTION THAT GOES QUIET SAYS SO ────────────────
+//
+// A broken connection announces itself: the next check fails and the card goes
+// red. A connection that has simply STOPPED SENDING looks identical to a quiet
+// fortnight, and that is the one that costs an organisation real money — the
+// PayPal key whose permission lapsed in March and was noticed in July.
+//
+// The judgement is shared/connections.js and it is the connection's OWN
+// rhythm, never a fixed number of days: four gifts a week means twelve days of
+// silence is wrong, and one gift a quarter means twelve WEEKS is fine.
+//
+// ONE INCIDENT, ONE EMAIL. `quiet_notified_at` is what makes this an incident
+// rather than a six-hourly reminder, and `notifyUserOnce` dedupes underneath
+// it as well, keyed on the incident. The moment money arrives again, both are
+// cleared, so the NEXT time it goes quiet is a new incident that says so.
+//
+// The next step is a TASK, not a Thread row: a thread is keyed to a donor
+// (`threads.donor_id` is NOT NULL, by design — a thread is a relationship with
+// a person), and "PayPal has stopped sending" is work for the office, which is
+// exactly what a task is.
+async function sweepQuietConnections({ orgId = null, today = null, notify = true } = {}) {
+  const C = await import("./shared/connections.js");
+  const { providerLabel } = await givingSourcesMod();
+  const out = { checked: 0, quiet: 0, recovered: 0, tasksOpened: 0, emailed: 0 };
+  const sources = await query(
+    `SELECT * FROM giving_sources WHERE status <> 'disconnected'${orgId ? " AND org_id=?" : ""}`,
+    orgId ? [orgId] : []);
+  for (const s of sources) {
+    out.checked++;
+    const org = await orgTz(s.org_id);
+    const day = today || orgToday(org);                            // ORG_TZ_SEAM_OK
+    const rows = await query(
+      `SELECT date::text AS d FROM gifts
+        WHERE org_id=? AND giving_source_id=? AND amount > 0 AND date >= ?`,
+      [s.org_id, s.id, orgTime.addDays(day, -C.RHYTHM_WINDOW_DAYS)]);
+    const dates = rows.map(r => r.d);
+    const last = dates.length ? dates.slice().sort().pop() : null;
+    const a = C.assessConnection({ connected: true, lastError: s.last_error, lastGiftDate: last,
+                                   giftDates: dates, today: day });
+
+    // MONEY CAME BACK. The incident is over; clear it so the next silence is
+    // its own incident with its own email rather than a permanently-set flag.
+    if (a.status === "healthy") {
+      if (s.quiet_notified_at) {
+        await run(`UPDATE giving_sources SET quiet_notified_at=NULL, quiet_incident=NULL, updated_at=NOW()
+                    WHERE id=?`, [s.id]);
+        out.recovered++;
+      }
+      continue;
+    }
+    if (a.status !== "quiet" && a.status !== "broken") continue;
+    out.quiet++;
+
+    // The incident's identity: what went wrong, and the day it started. A
+    // second sweep on the same day for the same reason is the same incident.
+    const incident = `${a.status}:${last || "never"}`;
+    if (s.quiet_incident === incident) continue;
+
+    const label = providerLabel(s.provider) || s.display_name;
+    const line = a.status === "broken"
+      ? `${label} stopped working. ${a.sentence}`
+      : `${label} has not sent a gift in ${a.silentDays} days. ${a.rhythm?.sentence || ""} Check the connection.`.trim();
+
+    // The next step, as a task for whoever runs this office.
+    const [admin] = await query(
+      `SELECT id, name, email FROM users WHERE org_id=? AND role='admin' AND deactivated_at IS NULL
+        ORDER BY created_at ASC LIMIT 1`, [s.org_id]);
+    if (admin) {
+      const existing = await query(
+        `SELECT id FROM tasks WHERE org_id=? AND completed=false AND title=? LIMIT 1`, [s.org_id, line]);
+      if (!existing.length) {
+        await run(
+          `INSERT INTO tasks (id,org_id,title,due_date,priority,assigned_to,assigned_to_name,created_by,created_by_name)
+           VALUES (?,?,?,?,'high',?,?,?,?)`,
+          ["tsk_" + uuid().slice(0, 8), s.org_id, line, today || orgToday(org),
+           admin.id, admin.name || admin.email, SYS_SOURCE.id, SYS_SOURCE.name]).catch(() => {});
+        out.tasksOpened++;
+      }
+      if (notify) {
+        const r = await notifyUserOnce({
+          org: { id: s.org_id }, userId: admin.id, email: admin.email,
+          eventKey: `connection:${s.id}:${incident}`, channel: "email", prefKind: null,
+          subject: a.status === "broken" ? `${label} has stopped working` : `${label} has gone quiet`,
+          bodyHtml: `<p>${line}</p><p>Open Settings, then Connections, to see what Steward last read and when.</p>`,
+        }).catch(() => ({ sent: false }));
+        if (r && r.sent) out.emailed++;
+      }
+    }
+    await run(`UPDATE giving_sources SET quiet_notified_at=NOW(), quiet_incident=?, updated_at=NOW() WHERE id=?`,
+      [incident, s.id]);
+  }
+  return out;
+}
+
 // syncSource(orgId, sourceId) - the one entry point. Returns a run summary;
 // never throws for a provider problem (that becomes `last_error` and a
 // sentence a human can act on).
@@ -9166,7 +9260,7 @@ require("./routes/give").mount({
   recordAssetPointerHistory, recordGift, refreshCardsOnFile, requireAdmin, requireAuth, requireFlag,
   resend, resolveWidgetsPublic, run, sendDonorLifecycleEmail, sendDunningEmail, signToken,
   slugifyGivingPage, sourceAdapters, sourceConfig, sourceErrorSentence, stripe,
-  stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, syncSource, testMode, toCents,
+  stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, sweepQuietConnections, syncSource, testMode, toCents,
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({

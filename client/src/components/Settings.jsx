@@ -12,6 +12,7 @@ import { useDirtyGuard, confirmIfDirty } from "../lib/dirtyGuard";
 import { PortalBannerCrop, PORTAL_IMPACT_PHOTO_RATIO } from "./PortalBanner";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { ApiKeysPanel } from "./ApiKeysPanel";
+import { ConnectionsView } from "./Connections";
 import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
@@ -1927,6 +1928,12 @@ const SETTINGS_TABS=[
   // `sources` survives as a deep-link alias below rather than a tab, so every
   // saved link and every nav intent still lands somewhere real.
   {id:"integrations",label:"Integrations"},
+  // INT-1 — CONNECTIONS is its own tab, beside Integrations rather than
+  // inside it, because they answer two different questions. Integrations is
+  // "set this up"; Connections is "is it still working, and does the money
+  // match" — which is a thing somebody opens on a Tuesday morning, not once
+  // during onboarding.
+  {id:"connections",label:"Connections"},
   {id:"giving",label:"Giving Pages"},
   {id:"customization",label:"Customization"},
   // BUILD-86 Part B — the five questions, reachable forever after the first run.
@@ -2719,6 +2726,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       </div>
       {isAdmin&&<div style={{marginTop:20}}><ApiKeysPanel isReadOnly={isReadOnly}/></div>}
       </>}
+
+      {/* ── INT-1 · Connections ───────────────────────────────────────────── */}
+      {section==="connections"&&
+        <ConnectionsView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}/>}
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}
       {section==="giving"&&<>
