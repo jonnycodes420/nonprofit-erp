@@ -22,7 +22,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  actor, checkWriteAccess, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
+  actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
 } = ctx;
@@ -437,6 +437,358 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
 // reaching back into somebody's books to tidy up after itself.
 const bookkeepingMod = () => import("../shared/bookkeeping.js");
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-OAUTH · THE CONNECT BUTTONS ACTUALLY CONNECT
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// One flow for every provider, from shared/oauth.js: start, callback, refresh,
+// disconnect. Owner or admin only, because connecting an accounting system is
+// handing somebody write access to the books.
+//
+// WHAT NEVER HAPPENS HERE. A secret is never logged, never returned to the
+// browser and never stored unsealed: shared/secretBox.js has no plaintext path
+// and throws without a key, which becomes a typed 503 and writes nothing. The
+// authorize URL is built from the registry's scopes, so a request cannot widen
+// what is asked for. And the callback verifies the signed state against the
+// SIGNED-IN admin before it stores anything.
+const oauthMod = () => import("../shared/oauth.js");
+
+// The state is signed with the server's own secret. The signature is what
+// makes a state we did not issue useless; the row in oauth_states is what
+// makes one we DID issue single-use.
+function signState(raw) {
+  return crypto.createHmac("sha256", process.env.JWT_SECRET || "").update(String(raw)).digest("base64url");
+}
+function stateMatches(raw, sig) {
+  const a = Buffer.from(signState(raw)), b = Buffer.from(String(sig || ""));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function oauthEnv(provider, ENV) {
+  const names = ENV[provider] || {};
+  const out = {};
+  for (const [k, name] of Object.entries(names)) out[k] = process.env[name] || null;
+  return { values: out, names };
+}
+
+// WHAT IS CONFIGURED, WITHOUT PRINTING ANY OF IT. The Connections screen asks
+// this so a Connect button can say "waiting on Intuit's review" instead of
+// opening a page nobody can complete. It answers with booleans and variable
+// NAMES, never a value, never a prefix of one.
+app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const out = {};
+  for (const key of O.PROVIDER_KEYS) {
+    const { values, names } = oauthEnv(key, O.ENV_VARS);
+    const missing = Object.entries(names)
+      .filter(([k]) => k === "clientId" || k === "clientSecret" || k === "redirectUri")
+      .filter(([k]) => !values[k]).map(([, name]) => name);
+    out[key] = {
+      label: O.PROVIDERS[key].label, kind: O.PROVIDERS[key].kind,
+      ready: missing.length === 0, missing,
+      scopes: O.PROVIDERS[key].scopes,
+      note: O.PROVIDERS[key].sandboxNote || null,
+      sentence: missing.length
+        ? `Steward cannot open ${O.PROVIDERS[key].label}'s consent screen yet: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set.`
+        : `Ready. Steward will ask ${O.PROVIDERS[key].label} for ${O.PROVIDERS[key].scopes.length} scopes and nothing else.`,
+    };
+  }
+  // PayPal is not an OAuth provider here, and the card says why rather than
+  // offering a button that opens a page nobody can complete.
+  out.paypal = { label: "PayPal", kind: "source", ready: false, missing: [],
+    waiting: true, sentence: O.PAYPAL_WAITING,
+    // INT-OAUTH item 5 — whether the webhook id is set, WITHOUT printing it.
+    webhookConfigured: !!process.env.PAYPAL_WEBHOOK_ID };
+  res.json({ providers: out,
+    definition: "Which connections Steward can open a consent screen for right now. Steward never shows a secret; this says only whether one is set." });
+}));
+
+// START. Mints the state, keeps the PKCE verifier, and hands back the URL for
+// the browser to visit. A GET that WRITES one short-lived row is the exception
+// the rule allows for: nothing about the organisation changes, and the row is
+// the anti-forgery token itself.
+app.post("/oauth/:provider/start", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+  const { values, names } = oauthEnv(key, O.ENV_VARS);
+  if (!values.clientId || !values.clientSecret || !values.redirectUri) {
+    return res.status(503).json({ error: "not_configured",
+      missing: Object.entries(names).filter(([k]) => ["clientId", "clientSecret", "redirectUri"].includes(k))
+        .filter(([k]) => !values[k]).map(([, n]) => n),
+      sentence: `Steward cannot open ${O.PROVIDERS[key].label}'s consent screen: it has no app credentials on this server yet.` });
+  }
+  const nonce = crypto.randomBytes(16).toString("base64url");
+  const raw = O.encodeState({ orgId: req.user.orgId, userId: req.user.userId, nonce });
+  const state = `${raw}.${signState(raw)}`;
+  const verifier = O.PROVIDERS[key].pkce ? crypto.randomBytes(48).toString("base64url") : null;
+  const challenge = verifier ? crypto.createHash("sha256").update(verifier).digest("base64url") : null;
+  await run(
+    `INSERT INTO oauth_states (state,org_id,user_id,provider,code_verifier,redirect_uri,expires_at)
+     VALUES (?,?,?,?,?,?, NOW() + INTERVAL '15 minutes')`,
+    [state, req.user.orgId, req.user.userId, key, verifier, values.redirectUri]);
+  res.json({ url: O.authorizeUrl(key, { clientId: values.clientId, redirectUri: values.redirectUri,
+    state, codeChallenge: challenge }), provider: key,
+    sentence: `You will be asked to approve ${O.PROVIDERS[key].scopes.length} permissions and nothing else.` });
+}));
+
+// THE LANDING, AND WHY IT IS NOT WHERE THE TOKEN IS STORED.
+//
+// A provider's redirect is a top-level browser navigation. It carries no
+// Authorization header, so it cannot be an authenticated route, and it is a
+// GET, so by the standing rule it may not write. Both problems have the same
+// answer: the provider lands the person on the APP, the app shows them what is
+// happening, and the app finishes the job with an authenticated POST carrying
+// the code. That also makes the signed-in-admin wall below mean something,
+// because by then there is a signed-in admin to check against.
+//
+// This route exists only for a redirect URI registered against the API host by
+// mistake or by a provider that insists on it. It reads nothing and writes
+// nothing; it forwards the query to the app and stops.
+app.get("/oauth/:provider/callback", wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+  const app_ = (process.env.APP_URL || "https://www.stewardapp.dev").replace(/\/$/, "");
+  const qs = new URLSearchParams(req.query || {}).toString();
+  res.redirect(302, `${app_}/oauth/${key}/callback${qs ? "?" + qs : ""}`);
+}));
+
+// COMPLETE. The app sends the code and the state back here, signed in.
+// Nothing is stored until the state verifies AGAINST THE SIGNED-IN ADMIN: a
+// forged, copied or stale callback writes no token.
+app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+
+  const state = String(req.body?.state || "");
+  const [raw, sig] = state.split(".");
+  const refuse = (reason, sentence) => res.status(400).json({ error: reason, sentence });
+  if (!raw || !sig || !stateMatches(raw, sig))
+    return refuse("bad_state", "That sign-in did not come from Steward. Nothing was connected.");
+  const claim = O.decodeState(raw);
+  if (!claim) return refuse("bad_state", "That sign-in did not come from Steward. Nothing was connected.");
+  // THE WALL: the state names an org and an admin, and the person standing
+  // here must be that admin of that org.
+  if (claim.orgId !== req.user.orgId || claim.userId !== req.user.userId)
+    return refuse("state_mismatch", "That sign-in was started by somebody else, or for a different organisation. Nothing was connected.");
+
+  // Single use, and only if we issued it. The UPDATE is the claim: a second
+  // callback with the same state changes no rows and is refused.
+  const claimed = await query(
+    `UPDATE oauth_states SET used_at=NOW() WHERE state=? AND org_id=? AND provider=?
+       AND used_at IS NULL AND expires_at > NOW() RETURNING code_verifier, redirect_uri`,
+    [state, req.user.orgId, key]);
+  if (!claimed.length)
+    return refuse("state_spent", "That sign-in has already been used or has expired. Start again and it will take a moment.");
+
+  const code = String(req.body?.code || "");
+  if (!code) return refuse("no_code", "The provider did not send a code back. Nothing was connected.");
+
+  const { values } = oauthEnv(key, O.ENV_VARS);
+  const reqSpec = O.tokenRequest(key, { code, redirectUri: claimed[0].redirect_uri || values.redirectUri,
+    clientId: values.clientId, clientSecret: values.clientSecret, codeVerifier: claimed[0].code_verifier });
+  let tokens = null;
+  try {
+    const r = await fetch(reqSpec.url, { method: "POST",
+      headers: { ...reqSpec.headers,
+        ...(reqSpec.basic ? { Authorization: "Basic " + Buffer.from(reqSpec.basic).toString("base64") } : {}) },
+      body: reqSpec.body });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body?.error_description || body?.error || `the provider answered ${r.status}`);
+    tokens = O.readTokens(body);
+    if (!tokens) throw new Error("the provider sent no access token");
+  } catch (e) {
+    // The message may quote the provider; it never quotes a secret, because
+    // the only secrets in this request are in headers we built and did not log.
+    console.error(`[oauth] ${key} token exchange failed:`, e.message);
+    return res.status(502).json({ error: "exchange_failed",
+      sentence: `${O.PROVIDERS[key].label} refused to finish the connection: ${e.message}. Nothing was connected.` });
+  }
+
+  const sealed = await sealTokens(req.user.orgId, tokens);
+  const expiresAt = tokens.expiresInSeconds
+    ? new Date(Date.now() + tokens.expiresInSeconds * 1000).toISOString() : null;
+  const who = actor(req);
+  const account = key === "intuit" ? String(req.body?.realmId || "") || null : (tokens.merchantId || null);
+
+  const vendorKey = O.vendorKeyOf(key);
+  if (O.PROVIDERS[key].kind === "bookkeeping") {
+    await run(
+      `INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,credentials_sealed,token_expires_at,
+                                            mapping,connected_by,connected_by_name,created_by,created_by_name)
+       VALUES (?,?,?, 'active', ?, ?, ?, '{}'::jsonb, ?,?,?,?)
+       ON CONFLICT (org_id, vendor) WHERE status <> 'disconnected'
+       DO UPDATE SET status='active', realm_id=EXCLUDED.realm_id, credentials_sealed=EXCLUDED.credentials_sealed,
+                     token_expires_at=EXCLUDED.token_expires_at, last_error=NULL, updated_at=NOW()`,
+      ["bkc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, account, sealed, expiresAt,
+       who.id, who.name, who.id, who.name]);
+  } else {
+    await run(
+      `INSERT INTO giving_sources (id,org_id,provider,display_name,status,credentials_sealed,token_expires_at,
+                                   provider_account_id,created_by,created_by_name)
+       VALUES (?,?,?,?, 'active', ?, ?, ?, ?, ?)
+       ON CONFLICT (org_id, provider) WHERE status <> 'disconnected'
+       DO UPDATE SET status='active', credentials_sealed=EXCLUDED.credentials_sealed,
+                     token_expires_at=EXCLUDED.token_expires_at,
+                     provider_account_id=EXCLUDED.provider_account_id, last_error=NULL, updated_at=NOW()`,
+      ["gsrc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, O.PROVIDERS[key].label, sealed, expiresAt,
+       account, who.id, who.name]);
+  }
+  await writeAuditLog(req.user.orgId, who.id, who.name, "oauth_connected", "connection", key, {}).catch(() => {});
+
+  // ── XERO'S SECOND QUESTION ────────────────────────────────────────────
+  // A Xero login can hold several organisations, and consent does not say
+  // which one. One is chosen for you; more than one is a question, never a
+  // guess. Posting a deposit to the wrong Xero organisation is not a setting
+  // somebody notices later, it is somebody else's books.
+  let tenants = null;
+  if (key === "xero") {
+    tenants = await xeroTenants(tokens.accessToken);
+    if (tenants && tenants.length === 1) {
+      await run(`UPDATE bookkeeping_connections SET realm_id=?, updated_at=NOW() WHERE org_id=? AND vendor='xero' AND status <> 'disconnected'`,
+        [tenants[0].id, req.user.orgId]);
+    }
+  }
+  const needsTenantChoice = key === "xero" && (!tenants || tenants.length !== 1);
+  res.json({ ok: true, provider: key, account, needsTenantChoice, tenants,
+    sentence: needsTenantChoice
+      ? `${O.PROVIDERS[key].label} is connected. It holds ${tenants ? tenants.length : "several"} organisations, so choose which one Steward should post to before anything is sent.`
+      : `${O.PROVIDERS[key].label} is connected. Steward asked for ${O.PROVIDERS[key].scopes.length} permissions and holds the tokens encrypted.` });
+}));
+
+// The OAuth provider a stored vendor key came from: the reverse of
+// `vendorKeyOf`, so the send path can ask for a token by the name it has.
+function oauthKeyFor(vendor) {
+  return String(vendor) === "quickbooks" ? "intuit" : String(vendor);
+}
+
+// Which Xero organisations this consent covers. Returns null if Xero could not
+// be asked, which is a reason to ASK the person rather than to pick for them.
+async function xeroTenants(accessToken) {
+  try {
+    const r = await fetch("https://api.xero.com/connections",
+      { headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" } });
+    if (!r.ok) return null;
+    const body = await r.json();
+    if (!Array.isArray(body)) return null;
+    return body.map(t => ({ id: t.tenantId, name: t.tenantName || t.tenantId, type: t.tenantType || null }));
+  } catch { return null; }
+}
+
+// THE ANSWER TO THAT QUESTION. The id is checked against Xero's own live list
+// rather than taken from the browser: a tenant id typed into a request is not
+// evidence that this consent covers it.
+app.post("/oauth/xero/tenant", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [c] = await query(`SELECT * FROM bookkeeping_connections WHERE org_id=? AND vendor='xero' AND status <> 'disconnected'`, [orgId]);
+  if (!c) return res.status(404).json({ error: "not_connected" });
+  const token = await accessTokenFor(orgId, c, "xero");
+  if (!token.ok) return res.status(token.status).json(token.body);
+  const tenants = await xeroTenants(token.accessToken);
+  if (!tenants) return res.status(502).json({ error: "xero_unreachable",
+    sentence: "Xero did not answer when Steward asked which organisations this connection covers. Nothing was changed." });
+  const wanted = String(req.body?.tenantId || "");
+  const match = tenants.find(t => t.id === wanted);
+  if (!match) return res.status(400).json({ error: "unknown_tenant", tenants,
+    sentence: "That is not one of the organisations this Xero connection covers, so Steward did not choose it." });
+  await run(`UPDATE bookkeeping_connections SET realm_id=?, updated_at=NOW() WHERE id=? AND org_id=?`, [match.id, c.id, orgId]);
+  await writeAuditLog(orgId, actor(req).id, actor(req).name, "oauth_tenant_chosen", "connection", "xero",
+    { tenantId: match.id, tenantName: match.name }).catch(() => {});
+  res.json({ ok: true, tenantId: match.id, tenantName: match.name,
+    sentence: `Steward will post to ${match.name}, and to no other Xero organisation.` });
+}));
+
+// ── A LIVE ACCESS TOKEN, REFRESHED BEFORE IT EXPIRES ──────────────────────
+// Every path that talks to a provider asks for the token here rather than
+// reading the sealed blob itself. It refreshes with five minutes to spare,
+// because a token that expires halfway through a send turns one deposit into a
+// retry, and INT-2's whole safety model is about not retrying into a second
+// deposit. A 401 from the provider is the other trigger, once: the caller
+// passes `force` and gets a fresh token or a typed refusal.
+//
+// Nothing here is logged. The refusal a caller may show says the connection
+// needs signing in again; it never says what was in the blob.
+async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
+  const O = await oauthMod();
+  const refuse = (status, error, sentence) => ({ ok: false, status, body: { error, sentence } });
+  if (!row?.credentials_sealed)
+    return refuse(409, "not_connected", `${O.PROVIDERS[providerKey].label} is not connected, so Steward has nothing to send with.`);
+  let bag;
+  try {
+    const { openBag } = await import("../shared/secretBox.js");
+    bag = openBag(row.credentials_sealed, { aad: orgId });
+  } catch {
+    // A blob that will not open for THIS org is either a missing key or a row
+    // that does not belong here. Either way it is a refusal, never a retry.
+    return refuse(503, "credentials_unreadable",
+      `Steward could not open the stored ${O.PROVIDERS[providerKey].label} credentials. Disconnect and connect again, and nothing already imported is affected.`);
+  }
+  const stale = force || O.needsRefresh(row.token_expires_at ? new Date(row.token_expires_at).toISOString() : null,
+                                        new Date().toISOString());
+  if (!stale) return { ok: true, accessToken: bag.accessToken };
+  if (!bag.refreshToken)
+    return refuse(409, "reauth_needed", `${O.PROVIDERS[providerKey].label} needs signing in again: this connection has no refresh token.`);
+
+  const { values } = oauthEnv(providerKey, O.ENV_VARS);
+  const spec = O.tokenRequest(providerKey, { refreshToken: bag.refreshToken,
+    clientId: values.clientId, clientSecret: values.clientSecret });
+  let fresh;
+  try {
+    const r = await fetch(spec.url, { method: "POST",
+      headers: { ...spec.headers,
+        ...(spec.basic ? { Authorization: "Basic " + Buffer.from(spec.basic).toString("base64") } : {}) },
+      body: spec.body });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body?.error_description || body?.error || `the provider answered ${r.status}`);
+    fresh = O.readTokens(body);
+    if (!fresh) throw new Error("the provider sent no access token");
+  } catch (e) {
+    console.error(`[oauth] ${providerKey} refresh failed:`, e.message);
+    return refuse(409, "reauth_needed",
+      `${O.PROVIDERS[providerKey].label} would not renew Steward's access: ${e.message}. Connect it again when you have a moment.`);
+  }
+  // A refresh usually ROTATES the refresh token, and losing the new one locks
+  // the connection out at the next renewal, so the whole bag is re-sealed.
+  const sealed = await sealTokens(orgId, { accessToken: fresh.accessToken,
+    refreshToken: fresh.refreshToken || bag.refreshToken, scope: fresh.scope || bag.scope || null });
+  const expiresAt = fresh.expiresInSeconds ? new Date(Date.now() + fresh.expiresInSeconds * 1000).toISOString() : null;
+  const bookkeeping = O.PROVIDERS[providerKey].kind === "bookkeeping";
+  await run(bookkeeping
+    ? `UPDATE bookkeeping_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND vendor=? AND status <> 'disconnected'`
+    : `UPDATE giving_sources SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND provider=? AND status <> 'disconnected'`,
+    [sealed, expiresAt, orgId, O.vendorKeyOf(providerKey)]);
+  return { ok: true, accessToken: fresh.accessToken, refreshed: true };
+}
+
+// DISCONNECT. Revokes where the provider supports it, deletes the tokens, and
+// keeps every record already imported: what came in is the organisation's own
+// history and Steward has no business deleting it to tidy up after itself.
+app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
+  const bookkeeping = O.PROVIDERS[key].kind === "bookkeeping";
+  const table = bookkeeping ? "bookkeeping_connections" : "giving_sources";
+  const col = bookkeeping ? "vendor" : "provider";
+  const r = await run(
+    `UPDATE ${table} SET status='disconnected', credentials_sealed=NULL, token_expires_at=NULL, updated_at=NOW()
+      WHERE org_id=? AND ${col}=? AND status <> 'disconnected'`, [req.user.orgId, O.vendorKeyOf(key)]);
+  if (r && r.changes === 0) return res.status(404).json({ error: "not_connected" });
+  await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name, "oauth_disconnected", "connection", key, {}).catch(() => {});
+  res.json({ ok: true,
+    sentence: `Disconnected. Steward will not read or send anything else through ${O.PROVIDERS[key].label}, and every record it already brought in is still here.` });
+}));
+
+// The sealer, with its no-plaintext rule intact: a missing key is a refusal,
+// never a fallback. The org is the AAD, which is what makes a blob copied
+// between tenants fail to open.
+async function sealTokens(orgId, tokens) {
+  const { sealBag } = await import("../shared/secretBox.js");
+  return sealBag({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken,
+                   scope: tokens.scope || null }, { aad: orgId });
+}
+
 // The accounting connection, its mapping, and whether it is ready to send.
 app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
   const BK = await bookkeepingMod();
@@ -449,6 +801,11 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
     `SELECT DISTINCT provider FROM giving_sources WHERE org_id=? AND status <> 'disconnected'`, [orgId]))
     .map(r => r.provider).concat(["stripe"]);
   const sources = [...new Set(sourceKeys)];
+  // FIX-9 Part A.6 — A PROVIDER IS ITS LABEL. The mapping screen printed the
+  // raw registry keys ("givebutter settles to", "paypal settles to"), which is
+  // the database talking to the person filling in their bank accounts.
+  const { providerLabel } = await import("../shared/givingSources.js");
+  const sourceLabels = Object.fromEntries(sources.map(k => [k, providerLabel(k) || k]));
   const connections = rows.map(r => {
     const mapping = (typeof r.mapping === "string" ? JSON.parse(r.mapping || "{}") : r.mapping) || {};
     const ready = BK.mappingReady({
@@ -465,7 +822,7 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
   res.json({
     connections, vendors: BK.VENDORS, mappingParts: BK.MAPPING_PARTS,
     funds: funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
-    sources,
+    sources, sourceLabels,
     // Said once, here, because it is the sentence an organisation needs before
     // it hands Steward write access to its books.
     definition: "Steward sends one deposit per payout: the gifts inside it split by fund, the processing fee as a negative line, and a net that equals what hit the bank. It never sends the same payout twice, it never sends event or shop takings as donations, and it sends donor names only if you turn that on.",
@@ -558,7 +915,12 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
     // is the state every organisation is in until Jonathan's Intuit and Xero
     // apps exist. The ledger row stays, marked, so the next attempt is still
     // the SAME payout rather than a second one.
-    const base = c.vendor === "quickbooks" ? process.env.INTUIT_API_BASE : process.env.XERO_API_BASE;
+    // Where to send. The env var still wins, because it is how a sandbox is
+    // pointed at; what changed with INT-OAUTH is that an org holding real
+    // tokens is connected whether or not anybody set one.
+    const base = (c.vendor === "quickbooks" ? process.env.INTUIT_API_BASE : process.env.XERO_API_BASE)
+      || (c.credentials_sealed ? (c.vendor === "quickbooks"
+            ? "https://quickbooks.api.intuit.com/v3" : "https://api.xero.com/api.xro/2.0") : null);
     if (!base) {
       await run(`UPDATE bookkeeping_deposits SET status='failed', last_error=?, updated_at=NOW()
                   WHERE org_id=? AND vendor=? AND payout_id=?`,
@@ -569,13 +931,31 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
       continue;
     }
     try {
-      const r = await fetch(`${base}/deposits`, {
+      // THE TOKEN, REFRESHED BEFORE IT EXPIRES. `accessTokenFor` renews with
+      // five minutes to spare; a 401 from the vendor is the one other trigger,
+      // and it is retried ONCE against the same claimed deposit row, so a
+      // stale token costs a renewal and never a second deposit.
+      const post = tok => fetch(`${base}/deposits`, {
         method: "POST",
         headers: { "Content-Type": "application/json",
                    "Idempotency-Key": built.deposit.idempotencyKey,
+                   ...(tok ? { Authorization: "Bearer " + tok } : {}),
                    ...(c.realm_id ? { "X-Realm-Id": c.realm_id } : {}) },
         body: JSON.stringify(built.deposit),
       });
+      // A connection WITHOUT sealed credentials is one pointed at an explicit
+      // base by env: the sandbox and the local mock, which is how INT-2's
+      // one-deposit guarantee is exercised and how every org sat before this
+      // build. It sends unauthenticated, exactly as it did. A connection that
+      // holds tokens takes the token path, and only that path refreshes.
+      let tok = c.credentials_sealed ? await accessTokenFor(orgId, c, oauthKeyFor(c.vendor)) : null;
+      if (tok && !tok.ok) throw new Error(tok.body.sentence);
+      let r = await post(tok ? tok.accessToken : null);
+      if (r.status === 401 && tok) {
+        tok = await accessTokenFor(orgId, c, oauthKeyFor(c.vendor), { force: true });
+        if (!tok.ok) throw new Error(tok.body.sentence);
+        r = await post(tok.accessToken);
+      }
       const body = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(body?.error || `the accounting system answered ${r.status}`);
       await run(`UPDATE bookkeeping_deposits SET status='sent', vendor_deposit_id=?, sent_at=NOW(), last_error=NULL, updated_at=NOW()

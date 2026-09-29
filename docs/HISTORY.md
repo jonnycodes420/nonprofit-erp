@@ -32,6 +32,122 @@ Central Kentucky Riding for Hope (Lexington, KY) is Steward's first real custome
 - **Their logo sits on a light plaque.** Drawn straight onto the ink, every dark colour in a logo disappears, and most nonprofit logos have one. The plaque is also what keeps the screen inside the four colours while the only brand on it is genuinely theirs. `docs/ASSETS.md` carries the row, with the source URL and the date, in the same commit as the file — the step the horse row records as missing.
 - **`change-plan`'s plan list had gone stale and nobody could see it.** It predates the tiers, so a super admin could not name Seed, Sapling or Orchard — the three plans the pricing page actually sells. It now reads `pricing.json`, so the one price list stays the one price list. **And granting a plan no longer ends a free trial that is still running**: an invoice-only customer is put on their plan on day ONE, and flattening `trialing` to `active` there told Settings, the band check and `orgPlanTier` that the free period was over on the day it began.
 - **Gotchas this build paid for:** `PRICING.TIERS` is uppercase, and `PRICING.tiers` silently yielded an empty tier list — a 400 "Invalid plan" that looked like a bad request and was a bad property name. And **script-guards was right**: a script that creates a real customer's org off a mistyped `BASE` is exactly what `prodGuard` exists to prevent, so it defaults to loopback and prod needs the confirm flag (proven by running it and watching the refusal).
+## HOME-CALM — the corrected Part E (2026-09-29)
+
+FIX-8 Part E added a first thing and folded the rest. It did not take anything
+away, and the point of the brief was in its title: HOME-CALM removes, it does
+not add. So Home opened with five blocks before the work — an alert box, a
+nudge card with a green bar, a heading with a brass rule under it, a counts
+line, and a summary paragraph — and then hid the list behind two "Show them"
+links. Jonathan named all five and the summary sentence with them. This is that
+screen, deleted.
+
+**What is left is the date, First thing, and the list.** First thing is
+unchanged: `threadList[0]`, said in a sentence, with the three things you can
+do to it. Then the rest of the list is ROWS again — everything overdue and
+everything due today — because the list she opens Home for has to be on the
+screen. Next week is still one folded line, because next week is not this
+morning's work. The band headers came off with the counts line: OVERDUE 4 above
+four rows that each state their own age is the same tally in another typeface.
+The Dashboard keeps all of it — the bands, the counts, the crossover, the
+recurring line — because the board's screen is read once a month by somebody
+who wants the sections marked off.
+
+**The stopped card became a row, and that is the part worth keeping.** It was
+an alert above everything, carrying a count and naming nobody: "1 card stopped
+this month." A stopped card is money that was already moving and quietly
+stopped, which makes it the most actionable thing on the screen. It now names
+her, says what to do, and takes its place in the list by age. It borrows the
+row's shape and none of its controls — there is no thread id, no Done, no
+snooze, because logging a conversation is not what fixes a declined card.
+`/recurring/exceptions` already returned `donorName`; only the count was being
+kept.
+
+**Two defects the browser caught that nothing else would have.** The first was
+the TDZ rule for the FOURTH time: `homeCalm` reads `threadAllOpen`, whose
+`useState` sat two hundred lines below beside the crossover's fetch. That is
+not a lint error, it is a blank Home and "Cannot access 'ys' before
+initialization" in a minified bundle. `tdz-scan` had said "15 reads-above" and
+was not re-run with `--all`. The second: the demo's stopped card has no
+`last_failed_at`, only a `first_failed_at` in July, so the row printed "Today"
+— a date nothing in the data supports, on a card that stopped two months ago.
+It falls back to the first failure, reads "60 days · stopped", and with neither
+date prints no figure at all rather than guessing one.
+
+51 suites green, one known skip (the portal tab, hidden from the CRM). No new
+test: this is a screen, and screens are covered by the smoke walk.
+
+Still open, and deliberately untouched: at 390 the Today rail still stacks
+first, so the phone opens on three counts before the date. That is BUILD-89's
+decision, not Part E's, and it was not on the list.
+
+## INT-OAUTH — the Connect buttons actually connect (2026-09-29)
+
+INT-1, INT-POS and INT-2 each shipped the data side of a connection and stopped
+at the handshake, because the handshake needed a developer account nobody had
+yet. FIX-8 Part F went looking for the authorize route and found there wasn't
+one, for any provider. This build is that one missing piece: `shared/oauth.js`
+is one registry (Xero, Intuit, Square) with one state format, one authorize-URL
+builder and one token exchange, so a fifth provider is an entry and nothing
+else. A request cannot widen what is asked for, because the scopes come from
+the registry and not from the caller. Square's are five read-only scopes and
+nothing with WRITE in its name.
+
+**The callback could never have fired as first written, and the reason is worth
+keeping.** It was `GET /oauth/:provider/callback` behind `requireAuth`. A
+provider's redirect is a plain browser navigation with no Authorization header,
+so it would have been a 401 every time; and it wrote, which the standing rule
+forbids on a GET. Both problems have one answer: the provider lands the person
+on the **app** (`/oauth/:provider/callback`, a real page), and the app finishes
+the job with an authenticated POST to `/oauth/:provider/complete`. That is not
+a workaround. It is what makes the wall mean anything — by the time the server
+checks the signed state against a signed-in admin, there is one to check.
+
+**The state carries three facts and is signed: the org, the admin, and a
+nonce.** Without the org, an admin of org A could start a flow and have org B's
+tokens land on A's row. `tests/oauth-state.test.js` is the one test this build
+earned and it pins exactly that: a missing, unsigned or wrongly signed state is
+refused; a validly signed state replayed by another org is refused; a colleague
+in the same org cannot finish somebody else's sign-in; the state is single-use
+and expires; after every refusal no connection row and no token exists anywhere;
+and org A's sealed tokens will not open under org B's binding, so a row copied
+between tenants is unreadable rather than useful. Proven able to fail twice:
+removing the org/user check turns §2 and §3 red, and fixing the AAD to a
+constant turns §7 red.
+
+**Three defects the build found in its own earlier work.** The provider key and
+the stored vendor key disagreed — OAuth calls it `intuit`, `shared/bookkeeping.js`
+calls it `quickbooks` — so a finished connection would have been filed under a
+vendor no screen reads; the registry now spells the stored key out. The Xero
+tenant was going to be guessed: a Xero login can hold several organisations and
+consent does not say which, so one is chosen for you and more than one is a
+question, checked against Xero's own live list rather than taken from the
+browser. And the send path had no Authorization header at all, because until
+today there was no token to put in one; it now asks `accessTokenFor`, which
+refreshes five minutes before expiry and once more on a 401, re-sealing the
+whole bag because a refresh usually rotates the refresh token too.
+
+**A connection that holds no sealed credentials still sends unauthenticated**,
+which is how INT-2's mock and every sandbox works, and how every org sat before
+today. Making the token unconditional turned `int2-send-once` red, which is the
+suite doing its job. The demo is the same shape on purpose and now asserts it:
+`seed-demo.js` refuses outright if `org_b72demo` holds a single set of provider
+credentials, because a real token reaching the demo org would be a real
+organisation's books behind a public login.
+
+The tenant matrix's §1 coverage gate caught the three new parameterized routes
+on the first run, which is FIX-9's repair of `readSource.js` paying for itself a
+second time. `:provider` is an enum from a fixed registry, not a row id, so it
+took a reasoned `PARAM_EXEMPT` entry pointing at the suite that actually proves
+the tenancy. 51 suites green, tenant matrix 47/47, one known skip (the portal
+tab, hidden from the CRM).
+
+Also fixed: `OAuthCallback.jsx` hand-rolled a palette and the brand guard caught
+two hexes inside a minute — `publicTheme.js` exists precisely to stop that, and
+the page takes its tokens from there now. A stale `node server.js` from the
+finished AGENTS-1 worktree was holding the mail sink's port and made two suites
+red for reasons that had nothing to do with the code; that is the `:4173`
+squatter again, wearing a different port.
 
 ## FIX-AUTH — a revoked session is refused, and the client acts on it (2026-09-28)
 

@@ -43,6 +43,10 @@ const SignupPage         = React.lazy(() => import("./pages/SignupPage"));
 // section), so this lazy route resolves from the already-loaded entry chunk.
 const InvitationPage     = React.lazy(() => import("./pages/Invitation"));
 const AdminDashboard     = React.lazy(() => import("./pages/AdminDashboard"));
+// INT-OAUTH — where a provider puts the person down after consent. It is the
+// app, not the API, because a redirect carries no session and a GET may not
+// write; this page finishes the connection with an authenticated POST.
+const OAuthCallback      = React.lazy(() => import("./pages/OAuthCallback"));
 const ForgotPasswordPage = React.lazy(() => import("./pages/ForgotPasswordPage"));
 const ResetPasswordPage  = React.lazy(() => import("./pages/ResetPasswordPage"));
 const TermsPage          = React.lazy(() => import("./pages/TermsPage"));
@@ -224,6 +228,7 @@ function Root() {
           <Route path="/give/:orgSlug/:pageSlug/:fundraiserSlug" element={<Donate />} />
           <Route path="/fundraiser/manage/:token" element={<ManageFundraiser />} />
           <Route path="/admin"             element={<RequireSuperAdmin><AdminDashboard /></RequireSuperAdmin>} />
+          <Route path="/oauth/:provider/callback" element={<OAuthCallback />} />
           <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
           <Route path="/reset-password"   element={<ResetPasswordPage />} />
           <Route path="/terms"            element={<TermsPage />} />

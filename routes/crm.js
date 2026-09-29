@@ -20327,10 +20327,15 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
 
 app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   const [row] = await query(
-    `SELECT id, name, email, kind, person_types, gift_count FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    `SELECT id, name, email, kind, person_types, gift_count, first_gift_date
+       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
     [req.params.id, req.user.orgId]);
   if (!row) return res.status(404).json({ error: "Person not found" });
-  res.json(personOut(row, await donorLock(req.user.orgId, row)));
+  // FIX-8 Part B.2 — the roles line reads "Donor since 2021", and the year is
+  // a fact about the person, so it travels with the person rather than being
+  // dug out of a gift list the header does not have.
+  res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
+             first_gift_date: row.first_gift_date || null });
 }));
 
 // One chip, one write: the person's own row, person_types, nothing else. Adding
@@ -20682,6 +20687,12 @@ const namedOrGivingSql = (a = "d") =>
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
 giftHooks.calcWealthScore = calcWealthScore;
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
+// FIX-9 Part B.4 — `sendReportCsv` is THE csv writer: the injection guard and
+// the header rules live in it, so the volunteer group's export uses this one
+// rather than growing a second. It is declared inside mount() like everything
+// else in this file, so it is handed out the way `run` is rather than exported
+// from module scope, where it does not exist.
+reportHooks.sendCsv = sendReportCsv;
 }
 
 module.exports = { routers, mount, giftHooks, reportHooks };

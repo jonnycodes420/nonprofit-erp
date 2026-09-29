@@ -248,7 +248,10 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
 // The dismiss control for an open thread — the short fixed list, nothing
 // else. "Revisit" asks for the date; it is a snooze, and the thread comes
 // back on that day.
-export function ThreadDismissMenu({ thread, onDone }) {
+// FIX-8 Part E — `label` draws the trigger as a named button ("Not today")
+// rather than the quiet "…", for the one place on Home where this menu IS the
+// third action rather than a row's overflow. What it opens is unchanged.
+export function ThreadDismissMenu({ thread, onDone, label }) {
   const [open, setOpen] = useState(false);
   const [revisitOpen, setRevisitOpen] = useState(false);
   const [revisitOn, setRevisitOn] = useState(addCivilDays(todayLocal(), 30));
@@ -278,9 +281,13 @@ export function ThreadDismissMenu({ thread, onDone }) {
           weight and the eye had to choose before it had read the name. It is a
           quiet overflow menu now; what it opens is unchanged. */}
       <button onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}
-        aria-label={"More actions for " + (thread?.donorName || "this follow-up")} title="More"
-        style={{ background: "transparent", border: "none", borderRadius: 7, padding: "6px 8px", color: T.ink3, fontSize: 16, lineHeight: 1, fontWeight: 700, cursor: "pointer", minWidth: 32 }}>
-        <span aria-hidden>{"\u2026"}</span>
+        aria-label={label ? label + " for " + (thread?.donorName || "this follow-up")
+                          : "More actions for " + (thread?.donorName || "this follow-up")}
+        title={label || "More"}
+        style={label
+          ? { background: T.white, border: "1.5px solid " + T.bg3, borderRadius: 9, padding: "8px 14px", color: T.ink2, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }
+          : { background: "transparent", border: "none", borderRadius: 7, padding: "6px 8px", color: T.ink3, fontSize: 16, lineHeight: 1, fontWeight: 700, cursor: "pointer", minWidth: 32 }}>
+        {label ? label : <span aria-hidden>{"\u2026"}</span>}
       </button>
       {open && (
         <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: T.white, border: "1px solid " + T.bg3, borderRadius: 10, boxShadow: "0 8px 28px rgba(15,26,18,0.14)", padding: 6, zIndex: 50, minWidth: 220 }}>

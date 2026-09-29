@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FIX-8 Part E: Home says one thing at a time</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f0ede6; --bg2:#e8e4db; --bg3:#d4cfc6; --white:#fff;
+    --ink:#0f1a12; --ink2:#2d2d2d; --ink3:#5a554f;
+    --green:#0d5c3a; --gold:#c9a84c; --gold700:#8a6d1f; --gold100:#f6eccf;
+    --shadow:0 1px 3px rgba(10,10,10,.08),0 4px 16px rgba(10,10,10,.06);
+    --serif:'DM Serif Display',Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  .page{max-width:1240px;margin:0 auto;padding:36px 24px 80px}
+  h1{font-family:var(--serif);font-weight:400;font-size:34px;margin:0 0 4px}
+  .lede{color:var(--ink3);font-size:15px;margin:0 0 10px;max-width:74ch}
+  .warn{background:var(--gold100);border:1px solid var(--gold);border-radius:10px;
+        padding:11px 14px;font-size:13.5px;color:var(--ink2);margin:0 0 26px;max-width:80ch}
+  h2{font-family:var(--serif);font-weight:400;font-size:24px;margin:44px 0 6px}
+  .note{color:var(--ink3);font-size:13.5px;margin:0 0 16px;max-width:80ch}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:980px){.cols{grid-template-columns:1fr}}
+  .tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.1em;
+       text-transform:uppercase;padding:3px 9px;border-radius:99px;margin-bottom:8px}
+  .tag.before{background:var(--bg2);color:var(--ink3);border:1px solid var(--bg3)}
+  .tag.after{background:var(--green);color:#fff}
+  .frame{background:var(--bg);border:1px solid var(--bg3);border-radius:14px;padding:18px;overflow:hidden}
+
+  .greet{font-family:var(--serif);font-size:27px;line-height:1.15}
+  .day{font-size:12.5px;color:var(--ink3);margin-top:2px}
+  .panel{background:var(--white);border:1px solid var(--bg3);border-radius:14px;
+         box-shadow:var(--shadow);padding:16px 18px;margin-top:14px}
+  .block{padding:12px 0;border-top:1px solid var(--bg2)}
+  .block:first-child{border-top:none;padding-top:0}
+  .k{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)}
+  .brassbar{background:var(--gold100);border:1px solid var(--gold);border-radius:10px;
+            padding:9px 12px;font-size:13px;margin-top:10px}
+  .row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--bg2);min-height:52px}
+  .av{width:28px;height:28px;border-radius:99px;background:var(--green);color:#fff;
+      display:grid;place-items:center;font-weight:800;font-size:11px;flex:none}
+  .sent{font-size:13px;line-height:1.45;flex:1;min-width:0}
+  .late{font-size:11.5px;color:var(--gold700);font-weight:700;flex:none}
+  .ctl{display:flex;gap:5px;flex:none}
+  .ctl span{font-size:10.5px;border:1px solid var(--bg3);border-radius:7px;padding:2px 6px;color:var(--ink3);background:var(--white)}
+  .rail{background:var(--ink);color:#e9e7e1;border-radius:12px;padding:14px 16px}
+  .rail .n{font-family:var(--serif);font-size:26px;line-height:1.1}
+  .rail .l{font-size:11.5px;color:#9d998f}
+  .rail .t{padding:10px 0;border-top:1px solid #23301f}
+  .rail .t:first-of-type{border-top:none;padding-top:0}
+  .btn{font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:9px;
+       border:1px solid var(--bg3);background:var(--white);color:var(--ink);cursor:default;display:inline-block}
+  .btn.go{background:var(--green);color:#fff;border-color:var(--green)}
+  .fold{font-size:12.5px;color:var(--green);font-weight:700;padding:9px 0;border-top:1px solid var(--bg2)}
+  .x{color:#b8593f;font-weight:700}
+  .ok{color:var(--green);font-weight:700}
+  ul.pts{margin:10px 0 0;padding-left:18px;font-size:13.5px;color:var(--ink2)}
+  ul.pts li{margin:5px 0}
+  .phone{width:390px;max-width:100%;margin:0 auto}
+  .one{font-family:var(--serif);font-size:20px;line-height:1.35;margin:2px 0 4px}
+  .grid2{display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start}
+  @media(max-width:700px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Part E &middot; Home says one thing at a time</h1>
+<p class="lede">The approved model is unchanged: a header, one <code>.home-shell</code> panel, a 340px Today rail,
+and a Thread row that keeps Drift's shape. What changes is how much arrives at once.</p>
+
+<div class="warn"><strong>Read this before approving.</strong> The brief says "Build
+<code>claude/HOME-CALM.md</code> as written". That file does not exist in the repo, in any worktree, or in any
+branch's history &mdash; I searched all three. So this mockup is <strong>my reading of the title</strong>, not of your
+spec. If HOME-CALM.md exists somewhere else, send it and I will rebuild this against it before writing any code.</div>
+
+<h2>At 1440</h2>
+<p class="note">Left is production today, from the 29 Sep walk. Right is the proposal.</p>
+
+<div class="cols">
+
+  <!-- ─────────────── BEFORE ─────────────── -->
+  <div>
+    <span class="tag before">Today</span>
+    <div class="frame">
+      <div class="greet">Good evening, Dana</div>
+      <div class="day">Monday, September 28 &nbsp; <span style="color:#8a857d">Edit</span></div>
+      <div class="brassbar">&#9681; 1 card stopped this month. 2 more recurring items need a person.
+        <span style="color:var(--green);font-weight:700">Open Recurring &rarr;</span></div>
+      <div class="panel">
+        <div class="block">
+          <div style="font-size:14px;font-weight:700">Ask the 26 volunteers who have never been asked</div>
+          <div style="font-size:12.5px;color:var(--ink3);margin-top:3px">They already say yes to Harborlight Youth
+            Collective with their time. Nobody has asked them for a gift.</div>
+        </div>
+        <div class="block">
+          <div class="k">The Thread</div>
+          <div style="font-size:13px;margin-top:4px">Three people are waiting on you; Underhill has been waiting a
+            month. 11 donors have gone quiet.</div>
+          <div style="font-size:11.5px;color:var(--ink3);margin-top:6px">
+            <span class="btn" style="padding:3px 9px">Mine</span>
+            <span class="btn" style="padding:3px 9px">Everyone</span>
+            &nbsp; 10 open &middot; 3 overdue &middot; oldest 81 days &nbsp;
+            <span class="btn" style="padding:3px 9px">Plan a follow-up</span></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--gold700);margin-top:10px">OVERDUE 3</div>
+          <div class="row"><div class="av">CU</div><div class="sent">Toured the studio after the spring showcase.
+            Asked what this year's scholarship students went on to do a month ago. Next: send the scholarship outcomes
+            letter.<div style="font-size:11px;color:var(--ink3);margin-top:3px">Meeting &middot; Aug 28 &middot; Dana</div></div>
+            <div class="late">31 days</div><div class="ctl"><span>Done</span><span>Cal</span><span>&hellip;</span></div></div>
+          <div class="row"><div class="av">CC</div><div class="sent">Planned three weeks ago. Next: send a handwritten
+            note.<div style="font-size:11px;color:var(--ink3);margin-top:3px">Planned &middot; Sep 10 &middot; Steward &middot; Dana</div></div>
+            <div class="late">18 days</div><div class="ctl"><span>Done</span><span>Cal</span><span>&hellip;</span></div></div>
+          <div class="row"><div class="av">LG</div><div class="sent">Said the family board meets in July and decides its
+            giving then. Asked us to call the first week of the month two weeks ago. Next: call before the family board
+            meets.<div style="font-size:11px;color:var(--ink3);margin-top:3px">Top tenth of your donors by lifetime giving</div></div>
+            <div class="late">12 days</div><div class="ctl"><span>Done</span><span>Cal</span><span>&hellip;</span></div></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--ink3);margin-top:10px">TODAY 1</div>
+          <div class="row"><div class="av">RP</div><div class="sent">A check for the studio fund came in Monday's mail,
+            with a handwritten card three days ago. Next: write a thank-you for the studio fund gift.</div>
+            <div class="late" style="color:var(--ink3)">Today</div><div class="ctl"><span>Done</span><span>Cal</span><span>&hellip;</span></div></div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--ink3);margin-top:10px">COMING UP 6</div>
+          <div class="row"><div class="av">EC</div><div class="sent">$161 received two days ago. Next: call to say thank
+            you.<div style="font-size:11px;color:var(--ink3);margin-top:3px">Their first gift. This decides whether there
+            is a second.</div></div><div class="late" style="color:var(--ink3)">09-29</div>
+            <div class="ctl"><span>Done</span><span>Cal</span><span>&hellip;</span></div></div>
+          <div style="font-size:12px;color:var(--ink3);padding:8px 0">&hellip; five more rows &hellip;</div>
+        </div>
+        <div class="block"><div class="k">Thank-yous waiting</div>
+          <div style="font-size:12.5px;margin-top:4px">Osric Cranmoor &nbsp;<span class="btn" style="padding:2px 8px">Read the draft</span>
+          &nbsp; Lavinia Dellacroix &nbsp;<span class="btn" style="padding:2px 8px">Read the draft</span></div></div>
+        <div class="block"><div class="k">Ask Steward</div>
+          <div style="font-size:12.5px;color:var(--ink3);margin-top:4px">Tell Steward what to do&hellip; <span class="btn" style="padding:2px 8px">Go</span></div></div>
+        <div class="block"><div class="k">Your words</div>
+          <div style="font-size:12.5px;margin-top:4px"><span class="btn" style="padding:2px 8px">Set your words</span>
+          <span class="btn" style="padding:2px 8px">Keep Steward's words</span></div></div>
+      </div>
+    </div>
+    <ul class="pts">
+      <li><span class="x">Ten Thread rows open</span>, each three lines and four controls. 5,940 characters on one screen.</li>
+      <li><span class="x">Five things compete for first</span>: the brass bar, the volunteer nudge, the Thread, the
+        drafts, the ask box.</li>
+      <li><span class="x">Three headings that are counts</span> (OVERDUE 3, TODAY 1, COMING UP 6) rather than a decision.</li>
+      <li><span class="x">"09-29"</span> among "Today", "Sep 26", "31 days".</li>
+      <li>No Today rail on this screen at all, though the model calls for one.</li>
+    </ul>
+  </div>
+
+  <!-- ─────────────── AFTER ─────────────── -->
+  <div>
+    <span class="tag after">Proposed</span>
+    <div class="frame">
+      <div class="greet">Good evening, Dana</div>
+      <div class="day">Monday, September 28</div>
+
+      <div class="panel">
+        <!-- THE ONE THING -->
+        <div class="block">
+          <div class="k">First thing</div>
+          <div class="one">Cuthbert Underhill has been waiting a month for the scholarship outcomes letter.</div>
+          <div style="font-size:12.5px;color:var(--ink3)">You met on Aug 28 and said you would send it.</div>
+          <div style="margin-top:11px;display:flex;gap:7px;flex-wrap:wrap">
+            <span class="btn go">Open Cuthbert</span>
+            <span class="btn">Mark it done</span>
+            <span class="btn">Not today</span>
+          </div>
+        </div>
+
+        <!-- THEN THE REST, FOLDED -->
+        <div class="fold">Two more are overdue &middot; <span style="text-decoration:underline">Show them</span></div>
+        <div class="fold">One is due today, six are coming up &middot; <span style="text-decoration:underline">Show the week</span></div>
+        <div class="fold">Two thank-yous are drafted and waiting &middot; <span style="text-decoration:underline">Read them</span></div>
+        <div class="fold">1 card stopped this month &middot; <span style="text-decoration:underline">Open Recurring</span></div>
+
+        <div class="block" style="margin-top:4px">
+          <div class="k">Ask Steward</div>
+          <div style="font-size:12.5px;color:var(--ink3);margin-top:5px">
+            Tell Steward what to do&hellip; <span class="btn" style="padding:3px 9px">Go</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px" class="grid2">
+      <div></div>
+      <div class="rail">
+        <div class="t"><div class="n">11</div><div class="l">donors have gone quiet</div></div>
+        <div class="t"><div class="n">$4,356</div><div class="l">given this week</div></div>
+        <div class="t"><div class="n">26</div><div class="l">volunteers never asked</div></div>
+      </div>
+    </div>
+
+    <ul class="pts">
+      <li><span class="ok">One thing first</span>, in a sentence, with the three things you can do to it.
+        It is the oldest overdue row, chosen by the server, not by scrolling.</li>
+      <li><span class="ok">Everything else folds to one line each</span> and opens in place. Nothing is removed.</li>
+      <li><span class="ok">The Today rail comes back</span> with its three numbers, each opening its list:
+        the state the model already calls for.</li>
+      <li><span class="ok">Human dates everywhere.</span> "09-29" becomes "Tue, Sep 29".</li>
+      <li>Roughly 900 characters before the first fold, against 5,940 today.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>At 390</h2>
+<p class="note">The rail stacks first, as the model says below 1100px. The one thing stays one thing.</p>
+
+<div class="cols">
+  <div>
+    <span class="tag before">Today</span>
+    <div class="frame phone">
+      <div class="greet" style="font-size:22px">Good evening, Dana</div>
+      <div class="day">Monday, September 28</div>
+      <div class="brassbar">&#9681; 1 card stopped this month. 2 more recurring items need a person.</div>
+      <div class="panel">
+        <div class="block"><div style="font-size:13.5px;font-weight:700">Ask the 26 volunteers who have never been asked</div>
+          <div style="font-size:12px;color:var(--ink3);margin-top:3px">They already say yes with their time. Nobody has
+            asked them for a gift.</div></div>
+        <div class="block"><div class="k">The Thread</div>
+          <div style="font-size:12.5px;margin-top:4px">Three people are waiting on you; Underhill has been waiting a
+            month. 11 donors have gone quiet.</div>
+          <div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--gold700);margin-top:9px">OVERDUE 3</div>
+          <div class="row"><div class="av">CU</div><div class="sent">Toured the studio after the spring showcase&hellip;
+            Next: send the scholarship outcomes letter.</div></div>
+          <div class="row"><div class="av">CC</div><div class="sent">Planned three weeks ago. Next: send a handwritten note.</div></div>
+          <div class="row"><div class="av">LG</div><div class="sent">Said the family board meets in July&hellip; Next: call
+            before the family board meets.</div></div>
+          <div style="font-size:12px;color:var(--ink3);padding:8px 0">&hellip; seven more rows &hellip;</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <span class="tag after">Proposed</span>
+    <div class="frame phone">
+      <div class="greet" style="font-size:22px">Good evening, Dana</div>
+      <div class="day">Monday, September 28</div>
+      <div class="rail" style="margin-top:12px;display:flex;gap:18px">
+        <div><div class="n" style="font-size:21px">11</div><div class="l">quiet</div></div>
+        <div><div class="n" style="font-size:21px">$4,356</div><div class="l">this week</div></div>
+        <div><div class="n" style="font-size:21px">26</div><div class="l">never asked</div></div>
+      </div>
+      <div class="panel">
+        <div class="block">
+          <div class="k">First thing</div>
+          <div class="one" style="font-size:18px">Cuthbert Underhill has been waiting a month for the scholarship
+            outcomes letter.</div>
+          <div style="font-size:12.5px;color:var(--ink3)">You met on Aug 28 and said you would send it.</div>
+          <div style="margin-top:11px;display:flex;gap:6px;flex-wrap:wrap">
+            <span class="btn go">Open Cuthbert</span><span class="btn">Mark it done</span><span class="btn">Not today</span></div>
+        </div>
+        <div class="fold">Two more are overdue &middot; <span style="text-decoration:underline">Show them</span></div>
+        <div class="fold">One due today, six coming up &middot; <span style="text-decoration:underline">Show the week</span></div>
+        <div class="fold">Two thank-yous waiting &middot; <span style="text-decoration:underline">Read them</span></div>
+        <div class="fold">1 card stopped &middot; <span style="text-decoration:underline">Open Recurring</span></div>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink3);margin-top:10px;text-align:center">
+        Bottom bar is Home &middot; Donors &middot; Fundraising &middot; Agent &middot; More (FIX-9 Part E)</div>
+    </div>
+  </div>
+</div>
+
+<h2>What this does not change</h2>
+<ul class="pts">
+  <li>One <code>.home-shell</code> panel, the 340px Today rail, and the rail stacking first below 1100px.</li>
+  <li>A Thread row keeps Drift's shape when it is shown: face, wrapping sentence ending "Next: &hellip;", one fact
+      on the right. <code>min-height:64px</code>, and the main region is still a real link to the donor.</li>
+  <li>Lateness is still computed once on the server (<code>overdueDays</code>). The fold counts read that value.</li>
+  <li>Nothing asks her to create a task. Nothing is sent. No row is removed from Home, only folded.</li>
+</ul>
+
+<h2>Three judgement calls to confirm or overrule</h2>
+<ul class="pts">
+  <li><strong>Which row is "first thing"?</strong> I have it as the oldest overdue thread. The alternatives are
+      the largest donor waiting, or the one whose next step is soonest. Say which.</li>
+  <li><strong>"Not today"</strong> is a snooze. <code>threads.snoozed_until</code> already exists, so this writes
+      nothing new. Confirm the wording.</li>
+  <li><strong>When nothing is overdue</strong>, "first thing" becomes the day's due row; when there is nothing at
+      all it reads "Nothing is waiting on you." and the folds still list the week. No empty panel.</li>
+</ul>
+
+</div>
+</body>
+</html>

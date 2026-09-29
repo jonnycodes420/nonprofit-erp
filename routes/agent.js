@@ -414,7 +414,23 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   const PS = await agentPersonasMod();
   const who = PS.getPersona(persona);
   const allowed = new Set(who.tools);
+  // ── FIX-8 Part D.1 · WHERE THE TIME GOES ────────────────────────────────
+  // Jonathan typed "Make a thank you note to everyone that gave in the last 3
+  // months in my voice" and sat on "Planning..." for a long time. Before
+  // changing anything, the wait is SPLIT and logged, because "it feels slow"
+  // and "the model spends 40 seconds writing 200 notes nobody has read yet"
+  // call for different fixes.
+  //
+  // Three numbers, every plan, on one line:
+  //   rows    reading the org's people out of Postgres
+  //   model   the single Anthropic call
+  //   filter  citation, threshold and persona checks over what came back
+  // and, because it is the thing actually suspected, how many of the returned
+  // steps carry a DRAFTED BODY. A plan that drafts two hundred notes before
+  // she has said yes is the cost, and this is the line that proves it.
+  const _t0 = Date.now();
   const people = await agentReadPeople(orgId, { ids: scope });
+  const _tRows = Date.now();
   const V = await import("../shared/vocabulary.js");
   const [orgRow] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
   const words = V.normalizeVocabulary(orgRow && orgRow.vocabulary_json);
@@ -468,8 +484,14 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     tool_choice: { type: "tool", name: "plan" },
     messages: [{ role: "user", content: user }],
   });
+  const _tModel = Date.now();
   const block = (msg.content || []).find(b => b.type === "tool_use" && b.name === "plan");
   const raw = block && block.input ? block.input : { steps: [], sends: 0 };
+  // A truncated tool_use block is a real failure mode here and it looks like a
+  // bad plan rather than a full one: max_tokens is 8000, and one step per
+  // person WITH a body is far past that for a few hundred people. Say so.
+  const _truncated = msg.stop_reason === "max_tokens";
+  if (_truncated) console.warn(`[agent] the model hit max_tokens: the plan is TRUNCATED (${(raw.steps || []).length} steps returned)`);
   await run(`INSERT INTO ai_log (id,org_id,user_id,type,prompt_summary,prompt_full,response_full)
              VALUES (?,?,?,'agent_plan',?,?,?)`,
     ["log_" + uuid().slice(0, 8), orgId, userId || null, String(instructionText).slice(0, 100),
@@ -499,7 +521,15 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     if (TH.ungroundedClaims(text, { groundedValues }).length) { withheld++; continue; }
     steps.push(s);
   }
-  return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable };
+  const _tEnd = Date.now();
+  const drafted = steps.filter(x => x && typeof x.body === "string" && x.body.trim().length > 0).length;
+  console.log(`[agent-timing] org=${orgId} people=${reachable.length} steps=${steps.length} drafted=${drafted}`
+    + ` | rows ${_tRows - _t0}ms · model ${_tModel - _tRows}ms · filter ${_tEnd - _tModel}ms · total ${_tEnd - _t0}ms`
+    + (_truncated ? " | TRUNCATED at max_tokens" : ""));
+  return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable,
+           timing: { rowsMs: _tRows - _t0, modelMs: _tModel - _tRows, filterMs: _tEnd - _tModel,
+                     totalMs: _tEnd - _t0, people: reachable.length, steps: steps.length, drafted,
+                     truncated: _truncated } };
 }
 
 // ── A GIFT SHE TELLS IT ABOUT ──────────────────────────────────────────────
@@ -886,6 +916,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
       : `your ${built.people.length} people`;
     plan = A.compilePlan(built.steps, { people: built.people, reads: readNames, withheld: built.withheld });
+    if (built.timing) plan.timing = built.timing;   // FIX-8 Part D.1
     plan.sends = Math.max(plan.sends, built.sends);
     plan.readIds = named.scope || null;
     plan.confirmLabel = A.confirmLabel(plan);
@@ -902,6 +933,9 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
 
   res.status(201).json({ id, kind, trigger, authorization: auth, plan,
     persona, personaName: PS.getPersona(persona).name,
+    // FIX-8 Part D.1 — the split, on the response, so the number can be read
+    // without shell access to a production log.
+    ...(plan && plan.timing ? { timing: plan.timing } : {}),
     // A standing instruction is never retroactive, and the screen says so with
     // the count it would have caught — so she can do those by hand rather than
     // find the gap in March (BUILD-94's enrolment rule, carried over).

@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FIX-8 Part B: the donor profile header</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f0ede6; --bg2:#e8e4db; --bg3:#d4cfc6; --white:#fff;
+    --ink:#0f1a12; --ink2:#2d2d2d; --ink3:#5a554f;
+    --green:#0d5c3a; --gold:#c9a84c; --gold700:#8a6d1f; --gold100:#f6eccf;
+    --shadow:0 1px 3px rgba(10,10,10,.08),0 4px 16px rgba(10,10,10,.06);
+    --serif:'DM Serif Display',Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+  .page{max-width:1180px;margin:0 auto;padding:36px 24px 80px}
+  h1{font-family:var(--serif);font-weight:400;font-size:34px;margin:0 0 4px}
+  .lede{color:var(--ink3);font-size:15px;margin:0 0 28px;max-width:70ch}
+  h2{font-family:var(--serif);font-weight:400;font-size:24px;margin:44px 0 6px}
+  .note{color:var(--ink3);font-size:13.5px;margin:0 0 16px;max-width:78ch}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start}
+  @media(max-width:900px){.cols{grid-template-columns:1fr}}
+  .tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.1em;
+       text-transform:uppercase;padding:3px 9px;border-radius:99px;margin-bottom:8px}
+  .tag.before{background:var(--bg2);color:var(--ink3);border:1px solid var(--bg3)}
+  .tag.after{background:var(--green);color:#fff}
+  .frame{background:var(--bg);border:1px solid var(--bg3);border-radius:14px;padding:18px;overflow:hidden}
+  .card{background:var(--white);border:1px solid var(--bg3);border-radius:12px;box-shadow:var(--shadow)}
+
+  /* ── shared profile bits ─────────────────────────────────────────── */
+  .back{font-size:12.5px;color:var(--ink3);margin-bottom:12px}
+  .av{width:44px;height:44px;border-radius:99px;background:var(--green);color:#fff;
+      display:grid;place-items:center;font-weight:800;font-size:15px;flex:none}
+  .pill{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+        padding:3px 10px;border-radius:99px;background:var(--gold100);color:var(--gold700);
+        border:1px solid var(--gold);flex:none}
+  .chip{font-size:11.5px;padding:4px 10px;border-radius:99px;border:1px solid var(--bg3);
+        background:var(--white);color:var(--ink3)}
+  .btn{font-size:13px;font-weight:700;padding:8px 13px;border-radius:9px;border:1px solid var(--bg3);
+       background:var(--white);color:var(--ink);cursor:default}
+  .btn.go{background:var(--green);color:#fff;border-color:var(--green)}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}
+  .stat{background:var(--white);border:1px solid var(--bg3);border-radius:12px;padding:12px 14px}
+  .stat .k{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)}
+  .stat .v{font-family:var(--serif);font-size:23px;margin-top:5px;line-height:1.1}
+  .stat .v.dotted{border-bottom:1px dotted var(--bg3);display:inline-block}
+  .stat .v.quiet{font-family:inherit;font-size:14px;font-weight:400;color:var(--ink3)}
+  .tabs{display:flex;gap:16px;margin-top:16px;border-bottom:1px solid var(--bg3);padding-bottom:9px;
+        font-size:13.5px;color:var(--ink3);flex-wrap:wrap}
+  .tabs b{color:var(--ink);border-bottom:3px solid var(--green);padding-bottom:9px;margin-bottom:-12px}
+
+  .x{color:#b8593f;font-weight:700}
+  .ok{color:var(--green);font-weight:700}
+  ul.pts{margin:10px 0 0;padding-left:18px;font-size:13.5px;color:var(--ink2)}
+  ul.pts li{margin:5px 0}
+  .rail{background:var(--ink);color:#e9e7e1;border-radius:12px;padding:14px 16px;font-size:12.5px}
+  .rail .k{font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;
+           color:#9d998f;margin-bottom:3px}
+  .rail .row{padding:9px 0;border-top:1px solid #23301f}
+  .rail .row:first-of-type{border-top:none;padding-top:0}
+  .phone{width:390px;max-width:100%;margin:0 auto}
+  .mut{color:var(--ink3)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Part B &middot; the donor profile header</h1>
+<p class="lede">One glance, not four. The approved structure underneath is untouched: the ink right rail,
+the four figures that open to the cent, and giving by year. This is the header only.</p>
+
+<h2>At 1440</h2>
+<p class="note">Left is production today (Octavian Cobbleworth, a real Harborlight record). Right is the proposal.</p>
+
+<div class="cols">
+
+  <!-- ─────────────── BEFORE ─────────────── -->
+  <div>
+    <span class="tag before">Today</span>
+    <div class="frame">
+      <div class="back">&larr; Back</div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div class="av">OC</div>
+        <div style="font-family:var(--serif);font-size:26px">Octavian Cobbleworth</div>
+        <span class="pill">Cultivate</span>
+      </div>
+      <div style="font-size:13px;color:var(--ink3);margin-top:7px">octavian.cobbleworth@example.demo</div>
+      <div style="display:flex;gap:7px;margin-top:10px;flex-wrap:wrap">
+        <span class="chip">Donor &middot; set by giving</span>
+        <span class="chip">+ Volunteer</span>
+        <span class="chip">+ Staff and board</span>
+      </div>
+      <div style="font-size:14px;margin-top:11px"><strong>$167,916 lifetime</strong> <span class="mut">&middot; 4 gifts</span></div>
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+        <span class="btn">Log a conversation</span><span class="btn">Plan a follow-up</span><span class="btn">More &#9662;</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Lifetime?</div><div class="v dotted">$167,916</div></div>
+        <div class="stat"><div class="k">Last gift?</div><div class="v dotted">$42,111</div></div>
+        <div class="stat"><div class="k">Last contact?</div><div class="v dotted">Never contacted.</div></div>
+        <div class="stat"><div class="k">Open ask?</div><div class="v dotted">No open ask.</div></div>
+      </div>
+      <div class="tabs"><b>Overview</b><span>Gifts &amp; Pledges 4</span><span>Funds</span><span>Related</span><span>Materials</span><span>Activity</span></div>
+    </div>
+    <ul class="pts">
+      <li><span class="x">Lifetime is said twice</span>: the line and the first card.</li>
+      <li><span class="x">Three role chips</span> where two of them are actions, not facts.</li>
+      <li><span class="x">"Never contacted." in display type</span>: an absence at headline weight.</li>
+      <li>The email competes with the name for the first read.</li>
+      <li>Dotted underlines on all four cards, always on.</li>
+    </ul>
+  </div>
+
+  <!-- ─────────────── AFTER ─────────────── -->
+  <div>
+    <span class="tag after">Proposed</span>
+    <div class="frame">
+      <div class="back">&larr; Back</div>
+      <div style="display:flex;gap:13px;align-items:center;flex-wrap:wrap">
+        <div class="av">OC</div>
+        <div style="font-family:var(--serif);font-size:32px;line-height:1.1">Octavian Cobbleworth</div>
+        <span class="pill">Cultivate</span>
+      </div>
+      <div style="font-size:13px;color:var(--ink3);margin-top:9px;display:flex;gap:8px;align-items:center">
+        <span>Donor since 2021 &middot; Volunteer</span>
+        <span style="border:1px solid var(--bg3);border-radius:99px;width:20px;height:20px;
+                     display:grid;place-items:center;font-size:13px;color:var(--ink3);background:var(--white)">+</span>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <span class="btn go">Log a conversation</span><span class="btn">Plan a follow-up</span><span class="btn">More &#9662;</span>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="k">Lifetime?</div><div class="v">$167,916</div></div>
+        <div class="stat"><div class="k">Last gift?</div><div class="v">$42,111</div></div>
+        <div class="stat"><div class="k">Last contact?</div><div class="v quiet">Never contacted.</div></div>
+        <div class="stat"><div class="k">Open ask?</div><div class="v quiet">No open ask.</div></div>
+      </div>
+      <div class="tabs"><b>Overview</b><span>Gifts &amp; Pledges 4</span><span>Funds</span><span>Related</span><span>Materials</span><span>Activity</span></div>
+      <div style="margin-top:16px;display:grid;grid-template-columns:1fr 250px;gap:14px;align-items:start">
+        <div style="font-size:12.5px;color:var(--ink3);padding:10px 2px">
+          &hellip; next step, proposals, giving by year, unchanged &hellip;
+        </div>
+        <div class="rail">
+          <div class="row"><div class="k">Contact</div>
+            <div>octavian.cobbleworth@example.demo</div>
+            <div style="color:#9d998f">(207) 555-0148</div></div>
+          <div class="row"><div class="k">Officer</div><div>Dana Reyes</div></div>
+          <div class="row"><div class="k">Giving by year</div><div style="color:#9d998f">2021 &ndash; 2026</div></div>
+        </div>
+      </div>
+    </div>
+    <ul class="pts">
+      <li><span class="ok">Name at 32px</span> with the stage beside it. One thing to read first.</li>
+      <li><span class="ok">One quiet roles line</span>; the two add-actions collapse into the <strong>+</strong>.</li>
+      <li><span class="ok">The lifetime line is gone.</span> The card already says it.</li>
+      <li><span class="ok">Email and phone move to the rail's contact block</span>, where you look when you are about to call.</li>
+      <li>Absences read as sentences. Dotted underline on hover and focus only.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>At 390</h2>
+<p class="note">The same header, stacked. The four figures go two-up rather than four-up; nothing else changes.</p>
+
+<div class="cols">
+  <div>
+    <span class="tag before">Today</span>
+    <div class="frame phone">
+      <div class="back">&larr; Back</div>
+      <div class="av" style="margin-bottom:9px">OC</div>
+      <div style="font-family:var(--serif);font-size:22px;line-height:1.15">Octavian Cobbleworth</div>
+      <div style="margin-top:7px"><span class="pill">Cultivate</span></div>
+      <div style="font-size:12.5px;color:var(--ink3);margin-top:8px;word-break:break-all">octavian.cobbleworth@example.demo</div>
+      <div style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">
+        <span class="chip">Donor &middot; set by giving</span><span class="chip">+ Volunteer</span><span class="chip">+ Staff and board</span>
+      </div>
+      <div style="font-size:13.5px;margin-top:10px"><strong>$167,916 lifetime</strong> <span class="mut">&middot; 4 gifts</span></div>
+      <div style="display:flex;gap:6px;margin-top:11px;flex-wrap:wrap">
+        <span class="btn">Log a conversation</span><span class="btn">Plan a follow-up</span>
+      </div>
+      <div class="stats" style="grid-template-columns:1fr 1fr">
+        <div class="stat"><div class="k">Lifetime?</div><div class="v dotted">$167,916</div></div>
+        <div class="stat"><div class="k">Last gift?</div><div class="v dotted">$42,111</div></div>
+        <div class="stat"><div class="k">Last contact?</div><div class="v dotted" style="font-size:15px">Never contacted.</div></div>
+        <div class="stat"><div class="k">Open ask?</div><div class="v dotted" style="font-size:15px">No open ask.</div></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <span class="tag after">Proposed</span>
+    <div class="frame phone">
+      <div class="back">&larr; Back</div>
+      <div style="display:flex;gap:11px;align-items:center">
+        <div class="av">OC</div>
+        <div style="font-family:var(--serif);font-size:24px;line-height:1.12">Octavian<br>Cobbleworth</div>
+      </div>
+      <div style="margin-top:9px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="pill">Cultivate</span>
+        <span style="font-size:12.5px;color:var(--ink3)">Donor since 2021 &middot; Volunteer</span>
+        <span style="border:1px solid var(--bg3);border-radius:99px;width:20px;height:20px;
+                     display:grid;place-items:center;font-size:13px;color:var(--ink3);background:var(--white)">+</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:13px;flex-wrap:wrap">
+        <span class="btn go">Log a conversation</span><span class="btn">Plan a follow-up</span>
+      </div>
+      <div class="stats" style="grid-template-columns:1fr 1fr">
+        <div class="stat"><div class="k">Lifetime?</div><div class="v">$167,916</div></div>
+        <div class="stat"><div class="k">Last gift?</div><div class="v">$42,111</div></div>
+        <div class="stat"><div class="k">Last contact?</div><div class="v quiet">Never contacted.</div></div>
+        <div class="stat"><div class="k">Open ask?</div><div class="v quiet">No open ask.</div></div>
+      </div>
+      <div class="rail" style="margin-top:12px">
+        <div class="row"><div class="k">Contact</div>
+          <div style="word-break:break-all">octavian.cobbleworth@example.demo</div>
+          <div style="color:#9d998f">(207) 555-0148</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>What this does not change</h2>
+<ul class="pts">
+  <li>The ink right rail stays, on its contrasting ground. It gains the contact block.</li>
+  <li>All four figures stay, and each still opens to the rows behind it, footing to the cent.</li>
+  <li>Giving by year, the next step, proposals and every tab are untouched.</li>
+  <li>The roles themselves are unchanged. Only how they are drawn changes. The <strong>+</strong> menu holds the same
+      "Volunteer" and "Staff and board" actions.</li>
+</ul>
+
+<h2>The one judgement call</h2>
+<p class="note">"Donor since 2021" needs a first-gift year. Where a record has no gifts the line reads
+<strong>"Prospect &middot; Volunteer"</strong>, and where a person has no role at all it renders nothing rather than
+an empty line. Say if you would rather it always show something.</p>
+
+</div>
+</body>
+</html>
