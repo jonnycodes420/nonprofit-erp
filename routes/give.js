@@ -40,6 +40,7 @@ const {
   recordAssetPointerHistory, recordGift, refreshCardsOnFile, requireAdmin, requireAuth, requireFlag,
   resend, resolveWidgetsPublic, run, sendDonorLifecycleEmail, sendDunningEmail, signToken,
   slugifyGivingPage, sourceAdapters, sourceConfig, sourceErrorSentence, stripe,
+  ingestPosSale,
   stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, sweepQuietConnections, syncSource, testMode, toCents,
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 } = ctx;
@@ -166,6 +167,160 @@ app.get("/giving-sources/providers", requireAuth, wrap(async (req, res) => {
 }));
 
 // "Where giving comes in." One row per source, with the sentence 89f renders.
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-POS · THE REGISTER
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Steward never takes the payment. The point of sale keeps the money; Steward
+// reads it, and the only question it has to get right is what each line WAS.
+// shared/posItems.js holds that judgement and server.js's ingestPosSale is the
+// one way a sale reaches the database. These routes are the screen over both.
+
+// The item mapping: what the organisation says each thing on the till is.
+// Unmapped items are counted rather than hidden, because "twelve items nobody
+// has classified" is the sentence that gets somebody to spend four minutes on
+// this screen, and an empty list is the sentence that does not.
+app.get("/pos/mapping", requireAuth, wrap(async (req, res) => {
+  const POS = await import("../shared/posItems.js");
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT id, source_id, item_key, item_name, item_class, event_id FROM pos_item_mappings
+      WHERE org_id=? ORDER BY item_name`, [orgId]);
+  // Every item the register has actually sold, from the sales themselves — so
+  // the screen lists what this organisation really sells rather than a
+  // catalogue somebody has to type.
+  const seen = await query(
+    `SELECT DISTINCT lower(btrim(l->>'name')) AS item_key, (l->>'name') AS item_name,
+            COUNT(*)::int AS times, SUM((l->>'amountCents')::bigint)::bigint AS cents
+       FROM pos_sales s, jsonb_array_elements(s.lines) l
+      WHERE s.org_id=? AND btrim(coalesce(l->>'name','')) <> ''
+      GROUP BY 1,2 ORDER BY cents DESC LIMIT 200`, [orgId]);
+  const mapped = new Map(rows.map(r => [r.item_key, r]));
+  const items = seen.map(x => ({
+    itemKey: x.item_key, itemName: x.item_name,
+    times: Number(x.times), cents: Number(x.cents),
+    class: mapped.get(x.item_key)?.item_class || POS.DEFAULT_CLASS,
+    eventId: mapped.get(x.item_key)?.event_id || null,
+    mapped: mapped.has(x.item_key),
+  }));
+  const events = await query(
+    `SELECT id, name, date::text AS date FROM events WHERE org_id=? AND status <> 'cancelled'
+      ORDER BY date DESC LIMIT 50`, [orgId]);
+  res.json({
+    items, events, classes: POS.CLASS_META, unmapped: items.filter(i => !i.mapped).length,
+    definition: "Everything the register has sold, and what your organisation says each one is. Anything nobody has said about is counted as revenue and never as a gift.",
+  });
+}));
+
+app.put("/pos/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const POS = await import("../shared/posItems.js");
+  const orgId = req.user.orgId;
+  const list = Array.isArray(req.body?.items) ? req.body.items : [];
+  if (!list.length) return res.status(400).json({ error: "nothing_to_save" });
+  let saved = 0;
+  for (const it of list.slice(0, 500)) {
+    const key = POS.itemKey(it.itemName || it.itemKey);
+    if (!key || !POS.isValidClass(it.class)) continue;
+    // An event id is honoured only if it is THIS org's event. An id off a
+    // request body is never trusted to be one.
+    let eventId = null;
+    if (it.class === POS.CLASS_EVENT && it.eventId) {
+      const [e] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [it.eventId, orgId]);
+      eventId = e ? e.id : null;
+    }
+    await run(
+      `INSERT INTO pos_item_mappings (id,org_id,source_id,item_key,item_name,item_class,event_id,created_by,created_by_name)
+       VALUES (?,?,NULL,?,?,?,?,?,?)
+       ON CONFLICT (org_id, COALESCE(source_id,''), item_key)
+       DO UPDATE SET item_class=EXCLUDED.item_class, event_id=EXCLUDED.event_id,
+                     item_name=EXCLUDED.item_name, updated_at=NOW()`,
+      ["pim_" + uuid().slice(0, 10), orgId, key, String(it.itemName || key).slice(0, 200),
+       it.class, eventId, actor(req).id, actor(req).name]);
+    saved++;
+  }
+  res.json({ ok: true, saved,
+    sentence: "Saved. It applies from the next time Steward reads the register; sales already read keep what they were counted as until they are read again." });
+}));
+
+// One sale, through the one path. This is what the register's sync calls, and
+// what the demo seed and the suite call: there is no second way in.
+app.post("/pos/sales", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const out = await ingestPosSale(req.user.orgId, req.body?.sale || {}, {
+    sourceId: req.body?.sourceId || null, actorId: actor(req).id, actorName: actor(req).name,
+    today: req.body?.today || null });
+  if (!out.ok) return res.status(400).json(out);
+  res.json(out);
+}));
+
+// ── THE SIGNAL THIS BUILD EXISTS FOR ───────────────────────────────────────
+// "Buys or attends, has never given." A person who spends $200 a year at the
+// gala and has never made a donation is invisible to a CRM that stores only
+// gifts, and they are the most askable person in the file.
+app.get("/pos/buys-never-given", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT d.id, d.name, d.email, d.person_types,
+            COUNT(s.id)::int AS visits,
+            SUM(s.total_cents)::bigint AS spent_cents,
+            MIN(s.occurred_on) AS first_seen, MAX(s.occurred_on) AS last_seen
+       FROM pos_sales s JOIN donors d ON d.id = s.person_id AND d.org_id = s.org_id
+      WHERE s.org_id=? AND d.deleted_at IS NULL
+        AND COALESCE(d.total_giving,0) = 0
+      GROUP BY d.id, d.name, d.email, d.person_types
+      ORDER BY spent_cents DESC LIMIT 200`, [req.user.orgId]);
+  const totalCents = rows.reduce((t, r) => t + Number(r.spent_cents || 0), 0);
+  res.json({
+    rows: rows.map(r => ({ id: r.id, name: r.name, email: r.email || null,
+      visits: Number(r.visits), spentCents: Number(r.spent_cents || 0),
+      firstSeen: r.first_seen, lastSeen: r.last_seen })),
+    count: rows.length, totalCents,
+    definition: "People who have bought something or come to something and have never given. Their spending is not giving and is not counted as any part of it; this is a list of people worth asking.",
+  });
+}));
+
+// Attendance drift: somebody who came regularly and stopped. Same engine and
+// the same wording as giving drift, LABELLED as attendance, and it never feeds
+// giving drift, LYBUNT or SYBUNT — a person who stopped buying coffee has not
+// stopped giving, and letting one stand for the other is how a retention
+// figure quietly becomes fiction.
+app.get("/pos/attendance-drift", requireAuth, wrap(async (req, res) => {
+  const POS = await import("../shared/posItems.js");
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
+  const rows = await query(
+    `SELECT s.person_id, d.name, array_agg(s.occurred_on ORDER BY s.occurred_on) AS visits
+       FROM pos_sales s JOIN donors d ON d.id = s.person_id AND d.org_id = s.org_id
+      WHERE s.org_id=? AND d.deleted_at IS NULL AND d.deceased IS NOT TRUE
+      GROUP BY s.person_id, d.name`, [orgId]);
+  const drifting = [];
+  for (const r of rows) {
+    const a = POS.attendanceDrift(r.visits, today);
+    if (a.state === "drifting") drifting.push({ donorId: r.person_id, donorName: r.name, ...a });
+  }
+  drifting.sort((a, b) => b.visits - a.visits);
+  res.json({ rows: drifting, count: drifting.length, today,
+    definition: "People who came on a rhythm of their own and have stopped. This is attendance, not giving: it never changes a drift badge, a LYBUNT list or a retention figure." });
+}));
+
+// Register sales on an event's own report, footing to the POS rows.
+app.get("/pos/event/:id/revenue", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [e] = await query("SELECT id, name FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!e) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT id, occurred_on, buyer_name, location_name, event_cents, other_cents, gift_cents, lines
+       FROM pos_sales WHERE org_id=? AND event_id=? ORDER BY occurred_on, id`, [orgId, e.id]);
+  const eventCents = rows.reduce((t, r) => t + Number(r.event_cents || 0), 0);
+  const giftCents = rows.reduce((t, r) => t + Number(r.gift_cents || 0), 0);
+  res.json({
+    eventId: e.id, eventName: e.name, sales: rows.length,
+    eventRevenueCents: eventCents, giftsAtRegisterCents: giftCents,
+    rows: rows.map(r => ({ id: r.id, on: r.occurred_on, who: r.buyer_name, where: r.location_name,
+      eventCents: Number(r.event_cents || 0), giftCents: Number(r.gift_cents || 0),
+      lines: (typeof r.lines === "string" ? JSON.parse(r.lines || "[]") : r.lines) || [] })),
+    definition: "What the register took at this event. Tickets, raffle, auction, the bar and merchandise are EVENT REVENUE and are never gifts; anything mapped as a donation is a gift on the giver's own record and is shown separately here.",
+  });
+}));
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  INT-1 · CONNECTIONS — ONE PLACE THAT SAYS WHETHER THE MONEY IS ARRIVING
 // ═══════════════════════════════════════════════════════════════════════════

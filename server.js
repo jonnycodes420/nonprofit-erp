@@ -1597,6 +1597,107 @@ async function raiseToldFailures(orgId, source, failures, day) {
   return opened;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-POS · WHAT HAPPENS TO A SALE
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ONE FUNCTION, and it is the only way a register's money reaches Steward.
+// Its whole job is the sentence "a sale is not a gift": it classifies every
+// line against what the organisation said the item IS (shared/posItems.js),
+// and only the lines classified as a DONATION are handed to recordGift. The
+// rest are written to pos_sales as revenue, where no giving total, lifetime
+// figure, drift computation, LYBUNT list or receipt reads them.
+//
+// WHY THE REST ARE WRITTEN AT ALL. A person who spends $200 a year at the gala
+// and has never made a donation is invisible to a CRM that stores only gifts,
+// and they are the most askable person in the file. "Buys or attends, has
+// never given" is the reason this build exists, and it is answerable only
+// because the non-gift money is kept.
+//
+// NOTHING IS MERGED WITHOUT A CONFIRM. A buyer is matched by email, then
+// phone, then an exact name; anything less certain is stored with
+// `needs_confirm` and a person decides. A buyer with no match becomes a GUEST
+// — a person record typed guest, never a donor, because they have not given a
+// penny.
+async function ingestPosSale(orgId, sale, { sourceId = null, actorId = null, actorName = null, today = null } = {}) {
+  const POS = await import("./shared/posItems.js");
+  const org = await orgTz(orgId);
+  const day = today || orgToday(org);                               // ORG_TZ_SEAM_OK
+  const externalId = String(sale?.externalId || "").trim();
+  if (!externalId) return { ok: false, reason: "no_external_id" };
+
+  // Asked once. A second read of the same night writes nothing twice.
+  const [seen] = await query("SELECT id FROM pos_sales WHERE org_id=? AND external_id=?", [orgId, externalId]);
+  if (seen) return { ok: true, duplicate: true, saleId: seen.id };
+
+  const mapRows = await query(
+    `SELECT item_key, item_class, event_id FROM pos_item_mappings
+      WHERE org_id=? AND (source_id IS NULL OR source_id=?)`, [orgId, sourceId]);
+  const mapping = new Map(mapRows.map(r => [r.item_key, { class: r.item_class, eventId: r.event_id }]));
+  const events = await query(
+    `SELECT id, date::text AS date, location FROM events WHERE org_id=? AND status <> 'cancelled'`, [orgId]);
+
+  const occurredOn = String(sale.occurredAt || day).slice(0, 10);
+  const classed = POS.classifySale({ lines: (sale.lines || []).map(l => ({ ...l, occurredAt: occurredOn,
+    locationName: sale.locationName || l.locationName })) }, mapping, { events });
+
+  // WHO BOUGHT IT. Never merged on a guess.
+  const people = await query(
+    `SELECT id, name, email, phone FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
+  const match = POS.matchBuyer(sale.buyer || {}, people);
+  let personId = match.confident ? match.personId : null;
+  let needsConfirm = !match.confident && (match.candidates || []).length > 0;
+  if (!personId && !needsConfirm && (sale.buyer?.name || sale.buyer?.email)) {
+    // A stranger at the till becomes a GUEST. Typed guest, never donor: they
+    // have not given a penny, and putting them in a donor list would be the
+    // same mistake as typing a peer-to-peer fundraiser as a donor (BUILD-103).
+    personId = "d_" + uuid().slice(0, 10);
+    await run(
+      `INSERT INTO donors (id,org_id,name,email,phone,stage,status,tags,person_types,created_by,created_by_name)
+       VALUES (?,?,?,?,?,'prospect','active','[]','["guest"]'::jsonb,?,?)`,
+      [personId, orgId, String(sale.buyer.name || sale.buyer.email).slice(0, 200),
+       sale.buyer.email || null, sale.buyer.phone || null,
+       actorId || SYS_SOURCE.id, actorName || SYS_SOURCE.name]).catch(() => {});
+  }
+
+  // THE ONLY GIFT PATH. One gift for the donation lines of this sale, through
+  // recordGift, with the fee. Never a second writer, and never for a line the
+  // organisation did not call a donation.
+  let giftId = null;
+  if (classed.giftCents > 0 && personId) {
+    const written = await recordGift({
+      orgId, donorId: personId, amount: classed.giftCents / 100, date: occurredOn,
+      type: "cash", paymentMethod: "Card",
+      externalId: `pos:${externalId}`, conflict: "external",   // BUILD-92's dedupe: the same money arriving another way is not written twice
+      givingSourceId: sourceId,
+      processorFeeAmount: sale.feeCents ? sale.feeCents / 100 : 0,
+      notes: `At the register${sale.locationName ? `, ${sale.locationName}` : ""}.`,
+      actorId: actorId || SYS_SOURCE.id, actorName: actorName || SYS_SOURCE.name,
+      defaultFund: false,
+    }).catch(e => { console.error("[pos] gift:", e.message); return null; });
+    giftId = written?.gift?.id || null;
+  }
+
+  const eventId = classed.lines.find(l => l.eventId)?.eventId || null;
+  const id = "pos_" + uuid().slice(0, 10);
+  await run(
+    `INSERT INTO pos_sales (id,org_id,source_id,external_id,occurred_on,person_id,match_by,needs_confirm,
+                            buyer_name,buyer_email,buyer_phone,location_name,event_id,
+                            total_cents,gift_cents,event_cents,other_cents,unmapped_lines,lines,
+                            created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, orgId, sourceId, externalId, occurredOn, personId, match.by || null, needsConfirm,
+     sale.buyer?.name || null, sale.buyer?.email || null, sale.buyer?.phone || null,
+     sale.locationName || null, eventId,
+     classed.totalCents, classed.giftCents, classed.eventCents, classed.otherCents,
+     classed.unmapped, JSON.stringify(classed.lines),
+     actorId || SYS_SOURCE.id, actorName || SYS_SOURCE.name]);
+
+  return { ok: true, saleId: id, giftId, personId, needsConfirm,
+           giftCents: classed.giftCents, eventCents: classed.eventCents, otherCents: classed.otherCents,
+           unmapped: classed.unmapped, sentence: classed.sentence };
+}
+
 // ── INT-1 · WATCHING · A CONNECTION THAT GOES QUIET SAYS SO ────────────────
 //
 // A broken connection announces itself: the next check fails and the card goes
@@ -9260,6 +9361,7 @@ require("./routes/give").mount({
   recordAssetPointerHistory, recordGift, refreshCardsOnFile, requireAdmin, requireAuth, requireFlag,
   resend, resolveWidgetsPublic, run, sendDonorLifecycleEmail, sendDunningEmail, signToken,
   slugifyGivingPage, sourceAdapters, sourceConfig, sourceErrorSentence, stripe,
+  ingestPosSale,
   stripeChargesEnabled, sustainerFileFacts, sweepMissedRecurring, sweepQuietConnections, syncSource, testMode, toCents,
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });

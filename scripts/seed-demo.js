@@ -1763,6 +1763,94 @@ async function main() {
     console.log(`[assert] connections: ${st.map(r => `${r.provider} ${r.n} gifts, last ${r.last || "never"}`).join(" · ")}`);
   }
 
+  // ── INT-POS · THE REGISTER, ON GALA NIGHT AND AT THE 5K ────────────────
+  // Square connected and healthy, with the sales an org this size really
+  // takes: raffle tickets, an auction win and the bar at the gala; shirts and
+  // a donate button at the 5K. Three buyers who have never given — the list
+  // this build exists for — and one attendee who came on a rhythm and stopped.
+  // One item ("Harbor tote") is deliberately LEFT UNMAPPED, so the mapping
+  // screen has something to do and the unmapped counter is not zero.
+  //
+  // None of it touches the eleven drifted donors: the buyers are their own
+  // people, and no gift here lands on anybody the story depends on.
+  console.log("[seed] the register…");
+  const POS_SRC = "gsrc_b72_square";
+  await q(`INSERT INTO giving_sources (id,org_id,provider,display_name,status,last_synced_at,last_tried_at,
+                                       backfilled_at,created_by,created_by_name)
+           VALUES ($1,$2,'square','Square','active',NOW(),NOW(),NOW(),'system:seed-demo','The demonstration file')`,
+    [POS_SRC, ORG]);
+  const POS_MAP = [
+    ["Raffle ticket", "event", gala.id],
+    ["Auction win", "event", gala.id],
+    ["Bar", "event", gala.id],
+    ["Harbor Run shirt", "event", run5k.id],
+    ["Donate $25", "donation", null],
+    ["Cafe", "other", null],
+    // "Harbor tote" is left out on purpose.
+  ];
+  for (const [name, cls, evId] of POS_MAP)
+    await q(`INSERT INTO pos_item_mappings (id,org_id,source_id,item_key,item_name,item_class,event_id,created_by,created_by_name)
+             VALUES ($1,$2,NULL,$3,$4,$5,$6,'system:seed-demo','The demonstration file')`,
+      [`pim_b72_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`, ORG,
+       name.toLowerCase().replace(/\s+/g, " "), name, cls, evId]);
+
+  // Three people who buy and never give, and one who came every month and
+  // stopped. Their own records, typed guest: they have not given a penny.
+  const POS_PEOPLE = [
+    ["d_b72_pos1", "Ottoline Braithwaite", "ottoline.braithwaite@example.demo"],
+    ["d_b72_pos2", "Caspian Threlfall", "caspian.threlfall@example.demo"],
+    ["d_b72_pos3", "Marisol Quintrell", "marisol.quintrell@example.demo"],
+    ["d_b72_pos4", "Ambrose Wyndecott", "ambrose.wyndecott@example.demo"],
+  ];
+  for (const [id, name, email] of POS_PEOPLE)
+    await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,'prospect','active','[]','["guest"]'::jsonb,'system:seed-demo','The demonstration file')`,
+      [id, ORG, name, email]);
+
+  // The sales. Written straight, not through ingestPosSale: the seed is not a
+  // second ingest path, it is a fixture of what ingest PRODUCES, and it writes
+  // no gift at all — every line here is event or shop money, which is exactly
+  // the point being demonstrated.
+  const posSales = [];
+  const galaDay = gala.date;
+  posSales.push(["sq_b72_gala_1", galaDay, "d_b72_pos1", "Ottoline Braithwaite", gala.id, "Harbor Center",
+    [["Raffle ticket", 5000], ["Bar", 2400]]]);
+  posSales.push(["sq_b72_gala_2", galaDay, "d_b72_pos2", "Caspian Threlfall", gala.id, "Harbor Center",
+    [["Auction win", 42000], ["Bar", 1800]]]);
+  posSales.push(["sq_b72_gala_3", galaDay, "d_b72_pos3", "Marisol Quintrell", gala.id, "Harbor Center",
+    [["Raffle ticket", 2500], ["Harbor tote", 3200]]]);
+  // The 5K: shirts and the donate button, on the day of the run.
+  // The first three only: the fourth person is the attendance-drift fixture and
+  // a shirt bought this week would make them the opposite of drifting.
+  for (let i = 0; i < 3; i++)
+    posSales.push([`sq_b72_5k_${i}`, dAdd(TODAY, -2 - i), POS_PEOPLE[i][0], POS_PEOPLE[i][1],
+      run5k.id, "North Shore Path", [["Harbor Run shirt", 3000]]]);
+  // The one who came every month and stopped: five cafe visits, then silence.
+  for (let m = 9; m >= 5; m--)
+    posSales.push([`sq_b72_cafe_${m}`, dAdd(TODAY, -m * 30), "d_b72_pos4", "Ambrose Wyndecott",
+      null, "Harbor Center", [["Cafe", 650]]]);
+
+  const posMapByKey = new Map(POS_MAP.map(([n, c, e]) => [n.toLowerCase().replace(/\s+/g, " "), { c, e }]));
+  let posTotal = 0, posEventCents = 0, posOtherCents = 0, posUnmapped = 0;
+  for (const [ext, on, personId, buyerName, eventId, place, lines] of posSales) {
+    let ev = 0, other = 0, unmapped = 0;
+    const shaped = lines.map(([name, cents]) => {
+      const m = posMapByKey.get(name.toLowerCase().replace(/\s+/g, " "));
+      const cls = m ? m.c : "other";
+      if (!m) unmapped++;
+      if (cls === "event") ev += cents; else other += cents;
+      return { name, amountCents: cents, class: cls, eventId: m && m.e ? m.e : null, mapped: !!m };
+    });
+    posTotal += ev + other; posEventCents += ev; posOtherCents += other; posUnmapped += unmapped;
+    await q(`INSERT INTO pos_sales (id,org_id,source_id,external_id,occurred_on,person_id,match_by,
+                                    buyer_name,location_name,event_id,total_cents,gift_cents,event_cents,
+                                    other_cents,unmapped_lines,lines,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,$5,$6,'email',$7,$8,$9,$10,0,$11,$12,$13,$14,'system:seed-demo','The demonstration file')`,
+      [`pos_b72_${ext}`, ORG, POS_SRC, ext, on, personId, buyerName, place, eventId,
+       ev + other, ev, other, unmapped, JSON.stringify(shaped)]);
+  }
+  console.log(`[assert] the register: ${posSales.length} sales, $${(posTotal / 100).toLocaleString()} taken, none of it a gift · ${posUnmapped} unmapped line · 4 buyers who have never given, one of them drifting on attendance`);
+
   // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
   // Six planned instructions, one from each of the six agents, each about
   // people who are really in this file. They sit in Plans as PLANNED: nothing

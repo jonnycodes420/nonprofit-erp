@@ -97,8 +97,11 @@ export const PROVIDERS = {
       "Copy the key.",
     ],
   },
+  // INT-POS — `pos: true` marks a register rather than a giving platform. It
+  // is what tells a screen that a row here is a SALE, whose lines have to be
+  // classified before any of it can be a gift (shared/posItems.js).
   square: {
-    key: "square", label: "Square", mode: "api", recurring: "inferred",
+    key: "square", label: "Square", mode: "api", pos: true, recurring: "inferred",
     credentialFields: [{ name: "accessToken", label: "Access token", secret: true }],
     // Square is a POINT OF SALE, and that is the whole difficulty: a lesson
     // fee and a donation are the same shape to it. The org has to say which
@@ -123,6 +126,27 @@ export const PROVIDERS = {
     key: "venmo", label: "Venmo", mode: "file", recurring: "inferred",
     credentialFields: [],
     help: "Venmo has no API that reads an account. Once a month you drop the statement in and Steward reads it.",
+  },
+  // ── INT-POS · TOAST ────────────────────────────────────────────────────
+  // Toast HAS an API, and it is gated behind their partner programme: an
+  // application, a review and an approved integration before a single call is
+  // possible. Steward does not have that yet, and a card that offered a
+  // "Connect" button which cannot work would be a lie on a screen.
+  //
+  // So Toast is `mode: "file"` TODAY, which is true: an organisation exports
+  // its orders and payments from Toast and drops the file in, and the mapping,
+  // the classification and every signal work identically because they run on
+  // the sale, not on how the sale arrived. The moment partner access exists it
+  // becomes `mode: "api"` and nothing downstream changes.
+  toast: {
+    key: "toast", label: "Toast", mode: "file", recurring: "inferred", pos: true,
+    credentialFields: [],
+    help: "Toast's API is behind their partner programme. Until that is approved, export Orders and Payments from Toast and drop the file in; Steward reads the same sales either way.",
+    steps: [
+      "Open Toast Web and go to Reports.",
+      "Export the Orders report and the Payments report for the period.",
+      "Drop both files into Steward's import.",
+    ],
   },
 };
 

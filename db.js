@@ -3464,6 +3464,66 @@ async function initSchema() {
   await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS quiet_notified_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE giving_sources ADD COLUMN IF NOT EXISTS quiet_incident TEXT`);
 
+  // ── INT-POS · A SALE IS NOT A GIFT ────────────────────────────────────────
+  // What the register sold, and what the organisation said each item IS. The
+  // key is the item's own NAME, folded: a catalogue id changes when somebody
+  // re-creates the item in Square, and the name is what the person mapping it
+  // recognises. One row per item per source, set once.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pos_item_mappings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      source_id TEXT REFERENCES giving_sources(id) ON DELETE CASCADE,
+      item_key TEXT NOT NULL,
+      item_name TEXT NOT NULL,
+      item_class TEXT NOT NULL,
+      event_id TEXT,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT pos_item_class CHECK (item_class IN ('donation','event','other'))
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS pos_item_one_per_source
+                      ON pos_item_mappings (org_id, COALESCE(source_id,''), item_key)`);
+
+  // EVERY SALE THE REGISTER TOOK, whether or not any of it was a gift. This is
+  // the table that makes "buys, has never given" answerable at all: a person
+  // who spends $200 a year at the gala and has never made a donation is
+  // invisible to a CRM that only stores gifts, and they are the single most
+  // askable person in the file.
+  //
+  // `gift_cents` is the part that became gifts through recordGift and nothing
+  // else; `event_cents` and `other_cents` are REVENUE and never reach a giving
+  // total, a lifetime figure, Drift, LYBUNT or a receipt.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pos_sales (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      source_id TEXT REFERENCES giving_sources(id) ON DELETE SET NULL,
+      external_id TEXT NOT NULL,
+      occurred_on TEXT NOT NULL,
+      person_id TEXT,
+      match_by TEXT,
+      needs_confirm BOOLEAN DEFAULT false,
+      buyer_name TEXT, buyer_email TEXT, buyer_phone TEXT,
+      location_name TEXT,
+      event_id TEXT,
+      total_cents INTEGER NOT NULL DEFAULT 0,
+      gift_cents INTEGER NOT NULL DEFAULT 0,
+      event_cents INTEGER NOT NULL DEFAULT 0,
+      other_cents INTEGER NOT NULL DEFAULT 0,
+      unmapped_lines INTEGER NOT NULL DEFAULT 0,
+      lines JSONB,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  // The register's own id is the dedupe key, per org. A second read of the
+  // same night writes nothing twice.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS pos_sales_external
+                      ON pos_sales (org_id, external_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_person ON pos_sales (org_id, person_id, occurred_on)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_event ON pos_sales (org_id, event_id)`);
+
   // A gift can be reported under more than one provider's id. `external_id`
   // stays the FIRST one (it is the dedupe key and the unique index is on it);
   // the others ride here, so answering "same gift" once means the question is

@@ -116,6 +116,7 @@ CORE=(
   build103-soft-credit
   agents1-persona-scope
   int1-paypal-webhook
+  intpos-sale-is-not-a-gift
   script-guards
   build96-ai-gate
   incident-mail-gate
