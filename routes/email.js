@@ -245,6 +245,20 @@ async function orgMaySendEmail(orgId) {
   }
 }
 
+// ── FIX-7 Part 6.2 · WHAT WOULD HAVE BEEN SENT, AND TO WHOM ───────────────
+// The demonstration organisation mails nobody, which is right and is not going
+// to change. What was wrong was the SILENCE: on a demo, somebody pressed
+// "Offer a place" or "Send their page link" and the screen either said "Sent"
+// (untrue) or said nothing at all (unexplained). This returns the one sentence
+// those screens now show. It is COPY. It performs no send, reads no mailbox,
+// and returns null for every org that is not the demonstration one, so a real
+// org's screens are byte-identical to what they were.
+async function demoMailNote(orgId, { what, to }) {
+  const gate = await orgMaySendEmail(orgId);
+  if (gate.send || gate.reason !== "demo_org") return null;
+  return `Nothing was sent: this is the demonstration organisation. In a real organisation, ${what} would have gone to ${to}.`;
+}
+
 async function donorMailDecision(kind, email, orgId) {
   const cls = DONOR_MAIL_POLICY[kind];
   if (!cls) return { send: false, reason: "unclassified_kind:" + kind };
@@ -644,6 +658,7 @@ async function linkEmailToAccounts(orgId, email) {
 module.exports = {
   mount,
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
+  demoMailNote,
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
   trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,

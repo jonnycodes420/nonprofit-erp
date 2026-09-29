@@ -208,6 +208,91 @@ const orgTotal = async () => {
     named.who === "Ines" && !JSON.stringify(named).includes("Northcote"), named);
   ok("no donor line ever carries an email", !Object.keys(named).some(k => /mail/i.test(k)), Object.keys(named));
 
+  // ── FIX-7 PART 1 · A SOFT CREDIT NEVER RESETS A CADENCE ─────────────────
+  // The build's one earned test. The demo's production re-seed failed because
+  // five of the eleven drifted donors stopped drifting, and the first
+  // explanation reached for was "their soft credits read as recent giving".
+  // That explanation was WRONG (the cause was a nondeterministic pick in the
+  // seed, fixed there), but the property it assumed is the one that actually
+  // has to hold, and nothing pinned it: a soft credit is not a gift from that
+  // person, so it may not move their drift, their last gift, their lifetime
+  // giving or their LYBUNT standing.
+  //
+  // HOW IT WOULD GO RED: have any of those four read gift_soft_credits, or
+  // write a soft credit as a second gift row on the credited person. Verified
+  // by planting a soft-credited row into the drift aggregate query.
+  //
+  // The fixture is a drifting donor: five years of a steady October gift, and
+  // nothing this year. Then a $100 gift from somebody else, soft-credited to
+  // them, dated today.
+  const DRIFTER = "d_p2p_drifter";
+  const thisYear = Number(new Date().toISOString().slice(0, 4));
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
+           VALUES ($1,$2,'Perpetua Quillon',$3,'steward','active','[]','system:test','p2p suite')`,
+    [DRIFTER, ORG, `perpetua.quillon.${suffix}@p2p1.test`]);
+  for (let k = 6; k >= 2; k--) {
+    await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,created_by,created_by_name)
+             VALUES ($1,$2,$3,2000,$4,'cash','system:test','p2p suite')`,
+      [`g_drift_${k}_${suffix}`, ORG, DRIFTER, `${thisYear - k}-10-04`]);
+  }
+  await q(`UPDATE donors SET total_giving=10000, gift_count=5, last_gift_date=$2 WHERE id=$1`,
+    [DRIFTER, `${thisYear - 2}-10-04`]);
+
+  const driftOf = async () => {
+    const r = await api("GET", "/drift?all=1&includeMedium=1", tok);
+    const rows = Array.isArray(r.body?.list) ? r.body.list : [];
+    const mine = rows.find(x => (x.donorId || x.id) === DRIFTER);
+    return { status: r.status, found: !!mine, confidence: mine?.confidence || null,
+             driftingHigh: r.body?.counts?.driftingHigh ?? null };
+  };
+  const recordOf = async () => {
+    const [d] = await q(`SELECT total_giving::float AS total, gift_count, last_gift_date FROM donors WHERE id=$1`, [DRIFTER]);
+    return { total: Number(d.total), giftCount: Number(d.gift_count), last: String(d.last_gift_date).slice(0, 10) };
+  };
+  const lybuntHas = async () => {
+    const r = await api("GET", `/reports/lybunt?year=${thisYear}&yearMode=calendar`, tok);
+    return JSON.stringify(r.body || {}).includes(DRIFTER);
+  };
+
+  const driftBefore = await driftOf();
+  const recordBefore = await recordOf();
+  const lybuntBefore = await lybuntHas();
+  ok("the fixture is a DRIFTING donor before anything is soft-credited",
+     driftBefore.found, driftBefore);
+
+  // Somebody else's $100, brought in by Perpetua, dated TODAY.
+  const TODAY_CIVIL = new Date().toISOString().slice(0, 10);
+  await q(`INSERT INTO donors (id,org_id,name,email,stage,status,tags,created_by,created_by_name)
+           VALUES ($1,$2,'Corwin Halloway',$3,'prospect','active','[]','system:test','p2p suite')`,
+    [`d_p2p_giver_${suffix}`, ORG, `corwin.halloway.${suffix}@p2p1.test`]);
+  await q(`INSERT INTO gifts (id,org_id,donor_id,amount,date,type,giving_page_id,created_by,created_by_name)
+           VALUES ($1,$2,$3,100,$4,'cash',$5,'system:test','p2p suite')`,
+    [`g_soft_${suffix}`, ORG, `d_p2p_giver_${suffix}`, TODAY_CIVIL, PAGE]);
+  await q(`INSERT INTO gift_soft_credits (id,org_id,gift_id,donor_id,amount,pct,role,created_by,created_by_name)
+           VALUES ($1,$2,$3,$4,100,100,'peer_fundraiser','system:test','p2p suite')`,
+    [`gsc_${suffix}`, ORG, `g_soft_${suffix}`, DRIFTER]);
+
+  const driftAfter = await driftOf();
+  const recordAfter = await recordOf();
+  const lybuntAfter = await lybuntHas();
+
+  ok("FIX-7: a soft credit leaves a drifting donor DRIFTING",
+     driftAfter.found && driftAfter.confidence === driftBefore.confidence
+       && driftAfter.driftingHigh === driftBefore.driftingHigh,
+     { before: driftBefore, after: driftAfter });
+  ok("FIX-7: …their last gift, lifetime giving and gift count are untouched",
+     JSON.stringify(recordAfter) === JSON.stringify(recordBefore), { before: recordBefore, after: recordAfter });
+  ok("FIX-7: …and their LYBUNT standing does not change",
+     lybuntAfter === lybuntBefore, { before: lybuntBefore, after: lybuntAfter });
+  // And the record SAYS what they raised, separately, in the fundraiser's words.
+  const scView = await api("GET", `/donors/${DRIFTER}/soft-credit`, tok);
+  ok("FIX-7: the record says what they raised, and for which page",
+     Array.isArray(scView.body?.raisedFor) && scView.body.raisedFor.length === 1
+       && scView.body.raisedFor[0].amountCents === 10000 && scView.body.raisedFor[0].pageTitle === "Shore Run",
+     scView.body?.raisedFor);
+  ok("FIX-7: …and it is labelled as recognition, not their own giving",
+     /not their own giving/i.test(String(scView.body?.raisedForSentence || "")), scView.body?.raisedForSentence);
+
   // Tidy up.
   await reset();
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});

@@ -2040,6 +2040,19 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                       <div style={{fontSize:16,fontWeight:800,color:c}}>{fmtFull(v||0)}</div>
                     </div>))}
                 </div>
+                {/* FIX-7 Part 1 — what they RAISED, said the way a fundraiser
+                    would say it. A soft credit is not a gift from this person:
+                    it leaves their lifetime total, their last gift, their
+                    drift and their LYBUNT standing exactly where they were. */}
+                {softCredit.raisedFor?.length>0&&(
+                  <div data-testid="raised-for" style={{display:"flex",flexDirection:"column",gap:3}}>
+                    {softCredit.raisedFor.map(rf=>(
+                      <div key={rf.pageId} style={{fontSize:13,color:T.ink,fontWeight:700}}>
+                        Raised {fmtFull((rf.amountCents||0)/100)} for {rf.pageTitle}
+                        <span style={{fontWeight:400,color:T.ink3}}> · {rf.giftCount} {rf.giftCount===1?"gift":"gifts"}</span>
+                      </div>))}
+                    <div style={{fontSize:11.5,color:T.ink3,lineHeight:1.5}}>{softCredit.raisedForSentence}</div>
+                  </div>)}
                                 <div style={{display:"flex",flexDirection:"column",gap:4}}>
                   {softCredit.giftSoftCredits.slice(0,8).map(sc=>(
                     <div key={sc.id} style={{display:"flex",gap:8,fontSize:12,color:T.ink}}>

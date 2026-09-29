@@ -27,15 +27,19 @@ import { displayDate } from "../../../shared/displayDate";
 // The Team plan's padlock, the one the sidebar used for the Pipeline.
 const lockIcon = color => LockGlyph({ size: 10, color });
 
+// FIX-7 Part 5 — three states, and each one shows the two shares it compared.
+// "Ahead" exists now because a campaign ten points past its schedule was being
+// told it was on pace, which is the sentence that makes a badge furniture.
 const PACE_META = {
   met:      { label: "Goal reached",  color: T.gold,       bg: T.gold50 },
+  ahead:    { label: "Ahead",         color: T.greenDk,    bg: T.bg2 },
   on_track: { label: "On pace",       color: T.ink,        bg: T.bg2 },
-  behind:   { label: "Behind pace",   color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
+  behind:   { label: "Behind",        color: T.gold700,    bg: T.gold100 },   // FIX-2 C: behind is brass, never red
 };
 
 // Horizontal thermometer. Gold fill; the fill goes celebratory (deeper gold)
 // at 100%. No goal → caller renders totals instead of this.
-function Thermometer({ raised, goal, percent, rawPercent, over, paceState, big }) {
+function Thermometer({ raised, goal, percent, rawPercent, over, paceState, paceSentence, big }) {
   const pct = percent == null ? 0 : percent;         // bar width — capped at 100
   const shown = rawPercent == null ? pct : rawPercent; // number — true, uncapped
   const met = pct >= 100;
@@ -54,8 +58,9 @@ function Thermometer({ raised, goal, percent, rawPercent, over, paceState, big }
         <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 99, transition: "width 0.5s cubic-bezier(.22,1,.36,1)", background: met ? T.gold500 : T.gold600 }} />
       </div>
       {paceState && PACE_META[paceState] && (
-        <div style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
-          {paceState === "met" ? "✦" : paceState === "on_track" ? "↗" : "↘"} {paceLabel}
+        <div data-testid="pace-badge" style={{ marginTop: big ? 10 : 8, display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: PACE_META[paceState].color, background: PACE_META[paceState].bg, borderRadius: 99, padding: "3px 11px" }}>
+          {paceState === "met" ? "✦" : paceState === "behind" ? "↘" : "↗"} {paceLabel}
+          {paceSentence && paceState !== "met" && <span style={{ fontWeight: 400, color: T.ink3 }}>· {paceSentence}</span>}
         </div>
       )}
     </div>
@@ -102,6 +107,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
   const [pages, setPages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // {mode:'new'|'edit', campaign}
+  // FIX-7 Part 4 — a campaign created WITH peer-to-peer lands on its own
+  // Peer-to-peer tab, on its own page, with Add a team and the public link
+  // already there. Nobody has to go looking for the switch they just set.
+  const [p2pOpenPageId, setP2pOpenPageId] = useState("");
   const orgSlug = data?.org?.org_slug || "";
 
   const load = () => {
@@ -250,7 +259,7 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
 
       {/* BUILD-103 Part 6 — the screen an org runs a walk from. */}
       {!loading && subtab === "p2p" && (
-        <PeerToPeerView isReadOnly={isReadOnly} orgSlug={orgSlug} onNavigate={onNavigate} />
+        <PeerToPeerView isReadOnly={isReadOnly} orgSlug={orgSlug} onNavigate={onNavigate} openPageId={p2pOpenPageId} />
       )}
 
       {!loading && subtab === "recurring" && (
@@ -270,7 +279,10 @@ export function Fundraising({ data, isReadOnly, onNavigate, initialSection, init
       {modal && (
         <CampaignModal mode={modal.mode} campaign={modal.campaign} campaigns={campaigns}
           onClose={() => setModal(null)}
-          onSaved={() => { setModal(null); load(); }} />
+          onSaved={(r) => {
+            setModal(null); load();
+            if (r?.openP2pPageId) { setP2pOpenPageId(r.openP2pPageId); goto("p2p"); }
+          }} />
       )}
     </div>
   );
@@ -349,7 +361,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           <RollupThermometer rollup={rollup} />
           {rollup.activeGoalCount > 1 && (
             <div style={{ marginTop: 14, fontSize: 13, color: T.ink3 }}>
-              Combined progress across {rollup.activeGoalCount} goals — each tracks its own gifts automatically.
+              Combined progress across {rollup.activeGoalCount} goals. Each tracks its own gifts automatically.
             </div>
           )}
         </div>
@@ -403,7 +415,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           {overview.campaigns.top ? (
             <div>
               <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 14 }}>{overview.campaigns.top.name}</div>
-              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} rawPercent={overview.campaigns.top.rawPercent} over={overview.campaigns.top.over} paceState={overview.campaigns.top.paceState} />
+              <Thermometer raised={overview.campaigns.top.raised} goal={overview.campaigns.top.goalAmount} percent={overview.campaigns.top.percent} rawPercent={overview.campaigns.top.rawPercent} over={overview.campaigns.top.over} paceState={overview.campaigns.top.paceState} paceSentence={overview.campaigns.top.paceSentence} />
               <div style={{ marginTop: 12, fontSize: 12, color: T.ink3 }}>
                 {overview.campaigns.top.donorCount} donor{overview.campaigns.top.donorCount === 1 ? "" : "s"}
                 {daysLeftText(overview.campaigns.top.daysLeft) ? ` · ${daysLeftText(overview.campaigns.top.daysLeft)}` : ""}
@@ -488,6 +500,7 @@ function GoalCard({ g, allGoals, onClick }) {
   const rawPercent = g.isOverarching ? g.rolledRawPercent : g.rawPercent;
   const over = g.isOverarching ? g.rolledOver : g.over;
   const paceState = g.isOverarching ? g.rolledPaceState : g.paceState;
+  const paceSentence = g.isOverarching ? g.rolledPaceSentence : g.paceSentence;
   const children = g.isOverarching ? allGoals.filter(x => g.childIds.includes(x.id)) : [];
   return (
     <div {...interactive(onClick, { label: `View ${g.name}` })}
@@ -496,7 +509,7 @@ function GoalCard({ g, allGoals, onClick }) {
         <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 17, color: T.ink, lineHeight: 1.25, minWidth: 0 }}>{g.name}</div>
         <CategoryBadge g={g} />
       </div>
-      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} />
+      <Thermometer raised={raised} goal={g.goalAmount} percent={percent} rawPercent={rawPercent} over={over} paceState={paceState} paceSentence={paceSentence} />
       {g.isOverarching ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Rolls up {g.childCount} goal{g.childCount === 1 ? "" : "s"}</div>
@@ -595,9 +608,9 @@ function CampaignCard({ g, allGoals, editBtn }) {
         {editBtn(g)}
       </div>
       {over ? (
-        <Thermometer raised={g.rolledRaised} goal={g.goalAmount} percent={g.rolledPercent} rawPercent={g.rolledRawPercent} over={g.rolledOver} paceState={g.rolledPaceState} />
+        <Thermometer raised={g.rolledRaised} goal={g.goalAmount} percent={g.rolledPercent} rawPercent={g.rolledRawPercent} over={g.rolledOver} paceState={g.rolledPaceState} paceSentence={g.rolledPaceSentence} />
       ) : (
-        <Thermometer raised={g.raised} goal={g.goalAmount} percent={g.percent} rawPercent={g.rawPercent} over={g.over} paceState={g.paceState} />
+        <Thermometer raised={g.raised} goal={g.goalAmount} percent={g.percent} rawPercent={g.rawPercent} over={g.over} paceState={g.paceState} paceSentence={g.paceSentence} />
       )}
       {over ? (
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -643,11 +656,15 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
   const [dfHero, setDfHero] = useState(campaign?.heroImageUrl || "");   // stored path OR fresh data URI
   const [dfHeroCrop, setDfHeroCrop] = useState(campaign?.heroCrop || null); // BUILD-65 Part 3 — non-destructive crop
   const [goalPublic, setGoalPublic] = useState(campaign?.goalProgressPublic === true);
+  // FIX-7 Part 4 — peer-to-peer lives on a giving page, and until now the only
+  // way to find that out was to make a campaign, then go and make a page, then
+  // find the switch. On a NEW campaign it is one line here.
+  const [p2p, setP2p] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
   const [dirty, setDirty] = useState(false);
   const close = () => {
-    if (dirty && !window.confirm("You have unsaved changes — discard them?")) return;
+    if (dirty && !window.confirm("You have unsaved changes. Discard them?")) return;
     onClose();
   };
 
@@ -668,9 +685,20 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
         donorStory: textToStory(dfStory), heroImageData: dfHero || "", heroCrop: dfHero ? dfHeroCrop : "",
         goalProgressPublic: goalPublic,
       };
-      if (mode === "edit") await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) });
-      else await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
-      onSaved();
+      if (mode === "edit") { await apiFetch(`/fundraising/campaigns/${campaign.id}`, { method: "PUT", body: JSON.stringify(body) }); onSaved(); return; }
+      const made = await apiFetch("/fundraising/campaigns", { method: "POST", body: JSON.stringify(body) });
+      // The giving page, through the ONE page-creation path (POST
+      // /giving-pages) — the same route Giving pages & forms posts to. Its
+      // name, goal, description and photo are the campaign's, so nobody types
+      // them twice. Off: nothing below this line happens at all.
+      let page = null;
+      if (p2p) {
+        page = await apiFetch("/giving-pages", { method: "POST", body: JSON.stringify({
+          title: (dfName.trim() || name.trim()), goalAmount: g, story: dfDesc.trim(),
+          imageUrl: made?.heroImageUrl || "", campaignId: made?.id, p2pEnabled: true,
+        }) });
+      }
+      onSaved(page ? { openP2pPageId: page.id } : undefined);
     } catch (e) { setErr(errorMessage(e, "Could not save")); setSaving(false); }
   };
 
@@ -737,7 +765,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
             Donors will see this campaign by name on their gifts. Add a description and photo so their gift means something.
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={lbl}>Donor-facing name <span style={{ color: T.ink3, fontWeight: 400 }}>(optional — defaults to the campaign name)</span></label>
+            <label style={lbl}>Donor-facing name <span style={{ color: T.ink3, fontWeight: 400 }}>(optional, defaults to the campaign name)</span></label>
             <input value={dfName} onChange={e => setDfName(e.target.value)} placeholder={name.trim() || "e.g. Steeples and Studios Campaign"} style={field} />
           </div>
           <div style={{ marginBottom: 14 }}>
@@ -746,7 +774,7 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
               placeholder="One or two sentences, in your own words, on what this campaign is doing." style={{ ...field, resize: "vertical" }} />
           </div>
           <div style={{ marginBottom: 14 }}>
-            <label style={lbl}>Story <span style={{ color: T.ink3, fontWeight: 400 }}>(optional — blank line = new paragraph, "## " = heading, "- " = list)</span></label>
+            <label style={lbl}>Story <span style={{ color: T.ink3, fontWeight: 400 }}>(optional: blank line = new paragraph, "## " = heading, "- " = list)</span></label>
             <textarea value={dfStory} onChange={e => setDfStory(e.target.value)} rows={5}
               placeholder="The longer story donors read on their giving page." style={{ ...field, resize: "vertical" }} />
           </div>
@@ -769,12 +797,24 @@ function CampaignModal({ mode, campaign, campaigns = [], onClose, onSaved }) {
               </div>
             )}
           </div>
+          {mode !== "edit" && (
+            <label data-testid="campaign-p2p" style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer", marginBottom: 14 }}>
+              <input type="checkbox" checked={p2p} onChange={e => setP2p(e.target.checked)} style={{ marginTop: 2 }} />
+              <span>
+                <strong>Let supporters fundraise for this (peer-to-peer)</strong>
+                <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>
+                  Creates this campaign's giving page with fundraising turned on, using the name, goal, description and
+                  photo above. Supporters get their own page under it, and every gift counts on this campaign.
+                </span>
+              </span>
+            </label>
+          )}
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: T.ink, cursor: "pointer" }}>
             <input type="checkbox" checked={goalPublic} onChange={e => setGoalPublic(e.target.checked)} style={{ marginTop: 2 }} />
             <span>
               <strong>Show goal progress to donors</strong>
               <span style={{ display: "block", fontSize: 12, color: T.ink3, marginTop: 2 }}>
-                Off by default. When on, donors who gave to this campaign see the goal, amount raised, and percent —
+                Off by default. When on, donors who gave to this campaign see the goal, amount raised, and percent,
                 never donor counts and never anyone else's gifts.
               </span>
             </span>

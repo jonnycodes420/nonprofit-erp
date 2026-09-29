@@ -2816,6 +2816,7 @@ async function givingAccountEntry(org) {
 }
 const {
   brandEmailHeaderHtml, consumerEmailHtml, donorFromAddress, donorMailDecision, linkAccountEmail,
+  demoMailNote,
   linkEmailToAccounts, orgMaySendEmail, sendCardExpiringEmail, sendDigestEmail, sendDunningEmail,
   sendGiftAlertEmail, sendPledgeReminderEmail, sendRawEmail, sendReceiptEmail, sendWorkflowEmail,
   trialReminderEmailHtml, unsubscribeEmailFooterHtml, unsubscribeHeaders, userWantsEmail,
@@ -9125,7 +9126,7 @@ require("./routes/volunteer").mount({
 let _supporterSession = null;
 require("./routes/supporter").mount({
   registerSupporterSession: fns => { _supporterSession = fns; },
-  DONOR_MAIL_ADDR, actor, brandEmailHeaderHtml, checkWriteAccess, crypto, donateLimiter,
+  DONOR_MAIL_ADDR, actor, brandEmailHeaderHtml, checkWriteAccess, crypto, demoMailNote, donateLimiter,
   donorFacingOrgName, fromWithDisplayName, orgSendingIdentity, orgToday, orgTz, publicAppUrl,
   query, requireAuth, resend, resolveOrgBrandTheme, run, sendDonorLifecycleEmail, stripe, testMode,
   uuid, volunteerSummary, withAdvisoryLock, wrap, writeAuditLog,
@@ -9180,7 +9181,7 @@ require("./routes/crm").mount({
   checkActiveDonorBand, registerJourneyEngine, checkGiftExtras, checkPlanLimit, checkThemeImageDimensions, checkWriteAccess,
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
-  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
+  computeStewardshipDebtBreakdown, computeThreadHealth, crypto, demoMailNote, displayNameCase, donateLimiter,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,

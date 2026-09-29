@@ -37,7 +37,7 @@ const routers = {
 
 function mount(ctx) {
 const {
-  actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName, orgSendingIdentity,
+  actor, checkWriteAccess, crypto, demoMailNote, donateLimiter, donorFacingOrgName, orgSendingIdentity,
   orgToday, orgTz, publicAppUrl, query, requireAuth, resolveOrgBrandTheme, resend, run,
   sendDonorLifecycleEmail, stripe, testMode, uuid, volunteerSummary, withAdvisoryLock, wrap,
   brandEmailHeaderHtml, fromWithDisplayName, DONOR_MAIL_ADDR, writeAuditLog,
@@ -707,8 +707,12 @@ app.post("/donors/:id/your-page-link", requireAuth, checkWriteAccess, wrap(async
   // the token reaches one place, the person's own mailbox: a staff member who
   // could read it could open somebody else's page, and the whole point of
   // this page is that they cannot.
-  res.json({ ok: true, ...(testMode() ? { link } : {}),
-    message: `Sent to ${person.email}. The link works once and lasts ${LINK_MINUTES} minutes; their page then stays open on that device for ${SESSION_DAYS} days.` });
+  // FIX-7 Part 6.2 — on the demonstration org nothing leaves the building, and
+  // the screen says so instead of claiming a send that did not happen.
+  const demo = await demoMailNote(orgId, { what: "a link to their own page", to: person.email });
+  res.json({ ok: true, ...(testMode() ? { link } : {}), demo: !!demo,
+    message: demo
+      || `Sent to ${person.email}. The link works once and lasts ${LINK_MINUTES} minutes; their page then stays open on that device for ${SESSION_DAYS} days.` });
 }));
 }
 

@@ -38,6 +38,7 @@ const {
   composeActivityReport, composeOfficerMonthly, composeWeekInReview, computeAtRiskCandidates,
   computeDriftForDonors, computeFirstTouchDelay, computeRetentionRate, computeStewardshipDebt,
   computeStewardshipDebtBreakdown, computeThreadHealth, crypto, displayNameCase, donateLimiter,
+  demoMailNote,
   donorByNameOrCreate, donorFacingOrgName, donorFromAddress, donorMailDecision, donorOnly,
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
@@ -84,6 +85,9 @@ let RB = null;
 RB_READY.then(m => { RB = m; });
 let VH = null;
 VH_READY.then(m => { VH = m; });
+// FIX-7 Part 5 — the one pace function. Pure, no clock of its own.
+let PACE = null;
+const PACE_READY = import("../shared/pace.js").then(m => { PACE = m; return m; });
 let app = routers.r0;
 // BUILD-57 §2b — BULK-IMPORT ids carry FULL uuid entropy (32 hex). The 8-hex
 // ids minted elsewhere are fine one-at-a-time, but the import writes 500 rows
@@ -1151,7 +1155,9 @@ async function computeDashboard(orgId, key, { isTeam = false } = {}) {
             fig({ key: "campaign-goal", params: { campaign: g.id } }),
             fig({ key: "goal-progress", params: { campaign: g.id } }),
           ]);
+          // FIX-7 Part 5 — the badge carries the reason it is a badge.
           return { label: g.name, kind: "money", value: raised.value, source: raised.source, pace: g.paceState || null,
+            paceSentence: g.paceSentence || null,
             also: [
               { key: "goal", label: "The goal", kind: "money", value: target.value, source: target.source,
                 definition: "The target set on this goal's record." },
@@ -6976,19 +6982,38 @@ app.get("/donors/:id/soft-credit", requireAuth, wrap(async (req, res) => {
   // different thing from the household view above: a DAF recommender, the
   // spouse on a joint cheque, the board member who asked. Hard stays hard;
   // "with soft credit" is its own figure, beside it and labelled.
+  // FIX-7 Part 1 — the PAGE a peer-to-peer soft credit came through, so the
+  // record can say "raised $1,900 for Harbor Run" in the one sentence a
+  // fundraiser would use. A soft credit is never this person's giving: it
+  // does not move their lifetime total, their last gift, their drift, their
+  // LYBUNT or their retention, and every one of those reads `gifts` alone.
   const scRows = await query(
     `SELECT sc.id, sc.amount, sc.pct, sc.role, g.id AS gift_id, g.date, g.amount AS gift_amount,
-            dg.id AS giver_id, dg.name AS giver_name
+            dg.id AS giver_id, dg.name AS giver_name,
+            gp.id AS page_id, gp.title AS page_title
        FROM gift_soft_credits sc
        JOIN gifts g ON g.id = sc.gift_id AND g.org_id = sc.org_id
        JOIN donors dg ON dg.id = g.donor_id AND dg.org_id = g.org_id
+       LEFT JOIN giving_pages gp ON gp.id = g.giving_page_id AND gp.org_id = g.org_id
       WHERE sc.org_id=? AND sc.donor_id=? ORDER BY g.date DESC LIMIT 200`, [req.user.orgId, req.params.id]);
   const giftSoftCents = scRows.reduce((t, r) => t + Math.round(Number(r.amount) * 100), 0);
+  // One line per page they raised for, newest gift first, in cents.
+  const raisedFor = [];
+  for (const r of scRows) {
+    if (r.role !== "peer_fundraiser" || !r.page_id) continue;
+    let row = raisedFor.find(x => x.pageId === r.page_id);
+    if (!row) raisedFor.push(row = { pageId: r.page_id, pageTitle: r.page_title, amountCents: 0, giftCount: 0 });
+    row.amountCents += Math.round(Number(r.amount) * 100);
+    row.giftCount += 1;
+  }
   res.json({ donorId: d[0].id, householdId, hardCredit, softCredit, householdCombined,
     giftSoftCredit: giftSoftCents / 100,
     hardPlusGiftSoft: (Math.round(hardCredit * 100) + giftSoftCents) / 100,
+    raisedFor,
+    raisedForSentence: "Money other people gave through their fundraiser page. It is recognition, not their own giving, and it changes nothing about their record.",
     giftSoftCredits: scRows.map(r => ({ id: r.id, amount: Number(r.amount), pct: r.pct == null ? null : Number(r.pct), role: r.role,
-      giftId: r.gift_id, date: r.date, giftAmount: Number(r.gift_amount), giverId: r.giver_id, giverName: r.giver_name })) });
+      giftId: r.gift_id, date: r.date, giftAmount: Number(r.gift_amount), giverId: r.giver_id, giverName: r.giver_name,
+      pageId: r.page_id || null, pageTitle: r.page_title || null })) });
 }));
 
 
@@ -14269,21 +14294,28 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
     daysLeft = Math.ceil((new Date(endDate) - now) / 86400000);
     if (daysLeft < 0) { lifecycle = "ended"; daysLeft = 0; }
   }
-  // Pace only when we have a goal, a start, an end, and time has elapsed.
-  let paceState = null, expected = null;
-  if (g > 0 && startDate && endDate) {
+  // ── FIX-7 Part 5 · PACE IS ONE FUNCTION, AND IT SAYS WHY ────────────────
+  // shared/pace.js owns the definition (raised share against the share of the
+  // campaign's OWN window that has gone) and the ten-point band. This used to
+  // be a 2%-of-expected-dollars test living here, and a separate 8-point test
+  // living in Dashboard.jsx, which is how two screens said different things
+  // about the same money. No start or no deadline: no pace at all — the caller
+  // shows raised against goal, which is the honest thing to show.
+  let paceState = null, expected = null, paceSentence = null, paceRaisedPct = null, paceElapsedPct = null;
+  const p = PACE && PACE.paceOf({ raised: r, goal: g, start: startDate, end: endDate, today: now.toISOString().slice(0, 10) });
+  if (p) {
+    paceState = p.state === "on_pace" ? "on_track" : p.state;   // the wire word the screens already read
+    paceSentence = p.sentence;
+    paceRaisedPct = p.raisedPct;
+    paceElapsedPct = p.elapsedPct;
     const total = new Date(endDate) - new Date(startDate);
     const elapsed = Math.max(0, Math.min(total, now - new Date(startDate)));
-    if (total > 0) {
-      expected = g * (elapsed / total);
-      if (r >= g) paceState = "met";
-      else if (r >= expected * 0.98) paceState = "on_track";
-      else paceState = "behind";
-    }
+    expected = total > 0 ? g * (elapsed / total) : null;
   } else if (g > 0 && r >= g) {
     paceState = "met";
   }
-  return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected };
+  return { percent, rawPercent, over, daysLeft, lifecycle, paceState, expected,
+           paceSentence, paceRaisedPct, paceElapsedPct };
 }
 
 // Live totals for a set of campaigns, matched the same way
@@ -14306,6 +14338,7 @@ function computeFundraisingPace(raised, goal, startDate, endDate) {
 //     as gifts (which inherit the pledge's campaign), so pledge+payments in
 //     one number would double-count and a treasurer would catch it.
 async function fundraisingCampaignRows(orgId) {
+  await PACE_READY;
   const campaigns = await query(
     `SELECT id, name, goal_amount, start_date, end_date, status, type, goal_category, parent_goal_id, created_at,
             donor_facing_name, donor_description, donor_story, hero_image_url, hero_crop, hero_focal_x, hero_focal_y, goal_progress_public
@@ -14419,6 +14452,7 @@ function fundraisingGoalsPortfolio(rows) {
       rolledRawPercent: isOverarching ? rolled.rawPercent : r.rawPercent,
       rolledOver: isOverarching ? rolled.over : r.over,
       rolledPaceState: isOverarching ? rolled.paceState : r.paceState,
+      rolledPaceSentence: isOverarching ? rolled.paceSentence : r.paceSentence,
     };
   });
   // Org roll-up header: total raised vs total goal across ACTIVE top-level goals
@@ -14443,6 +14477,7 @@ function fundraisingGoalsPortfolio(rows) {
 // the prior period (same FY/calendar basis as Finance — one source of truth),
 // campaign + giving-page rollups, and recent real gifts.
 app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
+  await PACE_READY;
   const { orgId } = req.user;
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
@@ -15405,7 +15440,11 @@ app.post("/org/:orgSlug/giving-page/:pageSlug/fundraisers", donateLimiter, wrap(
   // send is visible instead of silently stranding the supporter.
   const emailSent = await sendFundraiserManageEmail(org, { name: name.trim(), email: email.trim() }, givingPage, manageUrl);
 
-  res.status(201).json({ id, slug, publicUrl, emailSent, teamId });
+  // FIX-7 Part 6.2 — the demonstration org mails nobody. The sign-up still
+  // works and the page still exists; the screen says what would have arrived
+  // and where, rather than showing a failed send or nothing at all.
+  const demoNote = await demoMailNote(org.id, { what: "the link to their fundraiser dashboard", to: cleanEmail });
+  res.status(201).json({ id, slug, publicUrl, emailSent, teamId, ...(demoNote ? { demoNote } : {}) });
 }));
 
 // Public — fundraiser's own page: name/image/story/goal + real live
@@ -18937,10 +18976,24 @@ const PPG_READY = import("../shared/publicPage.js").then(m => { PPG = m; return 
 const evPage = opts => PPG.publicPage({ footer: "Registration by Steward.", ...opts });
 const EV_PUBLIC_READY = Promise.all([EV_READY, PPG_READY]);
 
+// FIX-7 Part 2 — A PUBLIC EVENT SLUG CARRIES NO ORG, SO IT MUST NAME ONE
+// EVENT. `/e/:slug` has no organisation in the path: the slug IS the address.
+// The uniqueness index behind it is (org_id, public_slug), which permits two
+// organisations to hold `harbor-run`, and this lookup used to take whichever
+// row the planner handed back FIRST — one org's link quietly serving another
+// org's event, which is the whole class Part 2 is sweeping for. Nothing in the
+// product mints a public slug yet (only the demo seed sets one), so no live
+// pair exists; the read is made safe now rather than after one does. Two
+// claimants means the address is ambiguous, and an ambiguous address resolves
+// to NOTHING, loudly in the log, rather than to a coin toss.
 async function publicEvent(slug) {
-  const [e] = await query(
-    `SELECT * FROM events WHERE public_slug=? AND status <> 'cancelled' LIMIT 1`, [String(slug || "")]);
-  return e || null;
+  const rows = await query(
+    `SELECT * FROM events WHERE public_slug=? AND status <> 'cancelled' LIMIT 2`, [String(slug || "")]);
+  if (rows.length > 1) {
+    console.error(`[events] public slug "${slug}" is claimed by ${rows.length} organisations — refusing to guess`);
+    return null;
+  }
+  return rows[0] || null;
 }
 const evDayWords = iso => {
   // `events.date` is a DATE column and pg hands it back as a Date OBJECT, so
@@ -19571,7 +19624,11 @@ app.post("/events/:id/waitlist/:wid/offer", requireAuth, checkWriteAccess, wrap(
     </div>`;
   await sendDonorLifecycleEmail("event_waitlist_offer", w.email, `A place has come free at ${event.name}`,
     html, fromWithDisplayName(display || event.name, DONOR_MAIL_ADDR())).catch(e => console.error("[event] waitlist offer:", e.message));
-  res.json({ ok: true, sentence: `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.` });
+  // FIX-7 Part 6.2 — the demonstration org sends no ticket email; the screen
+  // says what would have gone out and to whom rather than implying it did.
+  const demoNote = await demoMailNote(orgId, { what: "the offer of a place, with the event's link", to: w.email });
+  res.json({ ok: true, demo: !!demoNote,
+    sentence: demoNote || `Offered to ${w.name}. Nothing is held and nothing is charged: they still have to buy the ticket.` });
 }));
 
 app.get("/events", requireAuth, async (req, res) => {

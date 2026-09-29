@@ -885,7 +885,10 @@ function validateGivingPageFields(title, story, imageUrl, goalAmount) {
 }
 
 app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const { title, goalAmount, story, imageUrl, fundId, slug, campaignId } = req.body;
+  // FIX-7 Part 4 — `p2pEnabled` on the way IN. Creating a campaign with
+  // "let supporters fundraise for this" ticked comes through HERE, the one
+  // page-creation path, rather than through a second one written beside it.
+  const { title, goalAmount, story, imageUrl, fundId, slug, campaignId, p2pEnabled } = req.body;
   if (!title || !title.trim()) return res.status(400).json({ error: "title required" });
   const validationErr = validateGivingPageFields(title, story, imageUrl, goalAmount);
   if (validationErr) return res.status(400).json({ error: validationErr });
@@ -903,9 +906,9 @@ app.post("/giving-pages", requireAuth, requireAdmin, checkWriteAccess, wrap(asyn
   const finalSlug = await uniqueGivingPageSlug(req.user.orgId, base);
   const id = "gp_" + uuid().slice(0, 8);
   await run(
-    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, created_by, created_by_name)
-     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?)`,
-    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, actor(req).id, actor(req).name]
+    `INSERT INTO giving_pages (id, org_id, slug, title, goal_amount, story, image_url, fund_id, status, campaign_id, p2p_enabled, created_by, created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,'active',?,?,?,?)`,
+    [id, req.user.orgId, finalSlug, title.trim(), goalAmount ? parseFloat(goalAmount) : null, story || "", imageUrl || "", fundId || null, campaignId || null, p2pEnabled === true, actor(req).id, actor(req).name]
   );
   const rows = await query("SELECT *, 0 AS raised_amount FROM giving_pages WHERE id=?", [id]);
   res.status(201).json(rows[0]);
@@ -2139,8 +2142,11 @@ app.post("/donate/:orgSlug", donateLimiter, wrap(donateHandler));
 // one success shape into a redirect and its failures into the event page's own
 // words on the event page's own brand.
 app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: false }), wrap(async (req, res) => {
-  const [ev] = await query(`SELECT e.*, o.org_slug FROM events e JOIN orgs o ON o.id=e.org_id
-                             WHERE e.public_slug=? AND e.status <> 'cancelled' LIMIT 1`, [String(req.params.slug || "")]);
+  // FIX-7 Part 2 — the same refusal as publicEvent(): an address claimed by two
+  // organisations names neither, and never the one the planner returned first.
+  const evRows = await query(`SELECT e.*, o.org_slug FROM events e JOIN orgs o ON o.id=e.org_id
+                             WHERE e.public_slug=? AND e.status <> 'cancelled' LIMIT 2`, [String(req.params.slug || "")]);
+  const ev = evRows.length === 1 ? evRows[0] : null;
   if (!ev) return res.status(404).send("Not found");
   // The honeypot, the same field the registration form carries.
   if (String(req.body?.website || "").trim()) return res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}?thanks=1`);
@@ -2149,6 +2155,14 @@ app.post("/e/:slug/checkout", donateLimiter, express.urlencoded({ extended: fals
   const parts = name.split(/\s+/);
   const back = msg => res.redirect(303, `/e/${encodeURIComponent(ev.public_slug)}?problem=${encodeURIComponent(String(msg).slice(0, 200))}`);
   if (!name || !email.includes("@")) return back("A name and an email, so they know who is coming and how to reach you.");
+  // FIX-7 Part 2 — THE LEVEL MUST BELONG TO THE EVENT IN THE SLUG. donateHandler
+  // scopes a ticket level to the ORG, which is the tenancy wall and holds; but
+  // the page somebody is standing on names ONE event, and a level id from
+  // another of the org's events would have been sold through it. Scoped here,
+  // the same way POST /e/:slug/register and /e/:slug/waitlist already do it.
+  const [lvl] = await query("SELECT id FROM event_levels WHERE id=? AND event_id=? AND org_id=?",
+    [String(req.body?.levelId || ""), ev.id, ev.org_id]);
+  if (!lvl) return back("That option is no longer available.");
 
   const inner = {
     params: { orgSlug: ev.org_slug },
