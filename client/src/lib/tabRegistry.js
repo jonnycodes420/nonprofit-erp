@@ -45,23 +45,30 @@ const TABS=[
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
+// ── FIX-9 Part E — THE BOTTOM BAR IS THE RAIL, IN THE RAIL'S ORDER ────────
+// At 390 the bar gave GRANTS a primary slot while Fundraising and Agent sat
+// behind More, so the phone taught a different product from the desktop: the
+// rail is Home, Donors, Fundraising, Volunteers, Agent, Reports and Finance,
+// and Grants is not on it at all. The four primary slots are now the first
+// four of the rail's own order, with everything else behind More. Grants
+// keeps its place in More, where it has always been reachable.
 const BOTTOM_TABS=[
   {id:"dashboard",label:"Home",icon:"◉"},
   {id:"donors",label:"Donors",icon:"♦"},
-  {id:"grants",label:"Grants",icon:"◉"},
-  {id:"settings",label:"Settings",icon:"⚙"},
+  {id:"fundraising",label:"Fundraising",icon:"↗"},
+  {id:"agent",label:"Agent",icon:"✦"},
 ];
 const MORE_TABS=[
   {id:"board",label:"Dashboards",icon:"▤"},
-  {id:"fundraising",label:"Fundraising",icon:"↗"},
+  {id:"grants",label:"Grants",icon:"◉"},
   {id:"journeys",label:"Journeys",icon:"⇢"},
   {id:"communications",label:"Communications",icon:"◑"},
   {id:"portal",label:"Donor Portal",icon:"◫"},
   {id:"tasks",label:"Tasks",icon:"◻"},
   {id:"volunteers",label:"Volunteers",icon:"◎"},
-  {id:"agent",label:"Agent",icon:"✦"},
   {id:"reports",label:"Reports",icon:"▤"},
   {id:"finance",label:"Finance",icon:"◇"},
+  {id:"settings",label:"Settings",icon:"⚙"},
   // DEPRIORITIZED — pivoting to donor dashboard focus, code kept intact, re-enable by uncommenting
   // {id:"events",label:"Events",icon:"◎"},
   // {id:"volunteers",label:"Volunteers",icon:"◎",earlyAccess:true},

@@ -549,7 +549,10 @@ export function GlobalStyles() {
 
     /* ── Mobile bottom nav (hidden on desktop) ─────────────────────────── */
     .mobile-bottom-bar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:150;background:${T.white};border-top:1px solid ${T.bg2};box-shadow:0 -4px 20px rgba(15,26,18,.06);padding-bottom:env(safe-area-inset-bottom,0px);}
-    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:9px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;min-height:60px;transition:color .15s;}
+    /* FIX-9 Part E — TITLE CASE. The bar shouted HOME DONORS GRANTS SETTINGS
+       MORE in uppercase while every other label in the product is sentence
+       case, and it is the first thing anybody sees on a phone. */
+    .mobile-bottom-tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;background:transparent;border:none;cursor:pointer;padding:8px 4px;color:${T.ink3};font-family:'DM Sans',system-ui,sans-serif;font-size:10px;font-weight:600;letter-spacing:.01em;min-height:60px;transition:color .15s;}
     .mobile-bottom-tab .mob-icon{font-size:18px;line-height:1.2;margin-bottom:1px;display:block;}
     /* FIX-2 C — the light active treatment (activeMark's, in CSS): cream's
        shade, ink, 700, a 3px emerald rule on the edge that meets the page. */
@@ -919,13 +922,24 @@ export function Spin({dark}={}) {
 export function Pill({label,color}) {
   return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
 }
-export function Card({children,selected,accent,onClick,style={},variant}) {
+// FIX-9 Part A.7 — A CARD FORWARDS ITS data-* PROPS.
+// `<Card data-testid="connection-card">` silently dropped the attribute,
+// because every prop this component was not itself named landed nowhere. The
+// 29 Sep walk could not select a single Connections card and had to read them
+// by their position on the page, which is the kind of test that passes after
+// the screen has been rebuilt underneath it. Fixed here, once, for every card
+// in the product rather than by threading one more named prop through.
+// Only `data-*` and `aria-*` cross over: this is a div, and forwarding
+// arbitrary props onto it is how an unknown React attribute reaches the DOM.
+export function Card({children,selected,accent,onClick,style={},variant,...rest}) {
   const base = variant==="dark"
     ? {background:T.ink,border:`1px solid ${selected?T.gold500:T.bgElevated}`,color:T.inkInverse}
     : variant==="elevated"
     ? {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadowMd}
     : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
-  return <div onClick={onClick} className={onClick?"card-click":""} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+  const passThrough = Object.fromEntries(
+    Object.entries(rest).filter(([k]) => k.startsWith("data-") || k.startsWith("aria-") || k === "id" || k === "role" || k === "title"));
+  return <div onClick={onClick} className={onClick?"card-click":""} {...passThrough} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 // Horizontal section-nav tabs across the top of a tab's content area — the
 // in-section counterpart of the app sidebar (Communications, Reports,

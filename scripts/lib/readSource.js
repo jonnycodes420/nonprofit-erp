@@ -34,7 +34,17 @@ const ROOT = path.join(__dirname, "..", "..");
 
 // Where each split file's pieces live now. Each split commit adds its files.
 const FILES = {
-  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js"],
+  // FIX-9 — `routes/volunteerScheduling.js` and `routes/supporter.js` were
+  // MISSING from this list, and the cost was not cosmetic. The route inventory
+  // walks the live router for WHICH routes exist and reads this stitched
+  // source for what guards each one; a file that is not here contributes
+  // routes with `auth: []`, so tests/tenant-matrix.test.js classified all 36
+  // of them as PUBLIC and skipped both the auth wall (§2) and the cross-tenant
+  // probe (§3) on every one. Two whole route files, VOL-2's scheduling and
+  // MEMBERS-2's supporter surface, were outside the security battery while
+  // reading as covered. Found when FIX-9 added three group routes and §1
+  // passed without probing them.
+  "server.js": ["server.js", "routes/webhooks.js", "routes/billing.js", "routes/finance.js", "routes/volunteer.js", "routes/volunteerScheduling.js", "routes/supporter.js", "routes/agent.js", "routes/give.js", "routes/crm.js", "routes/jobs.js", "routes/email.js"],
   "client/src/App.jsx": ["client/src/App.jsx", "client/src/lib/tabRegistry.js"],
   "client/src/components/Donors.jsx": ["client/src/components/Donors.jsx", "client/src/components/donorShared.jsx",
     "client/src/components/DonorImport.jsx", "client/src/components/DonorProfile.jsx", "client/src/components/DonorDirectory.jsx"],

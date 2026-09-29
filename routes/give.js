@@ -392,24 +392,61 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   // this org has not connected is a CARD, not an absence: "not connected" is a
   // state worth showing, because money taken through it is not in any figure
   // on any screen, and silence about that is how a total goes quietly wrong.
+  // FIX-9 Part A.5 — A REGISTER COUNTS ITS OWN MONEY. A POS card read
+  // "Connected. Nothing has come through it yet." while Square held eleven
+  // sales worth $691.50, because the card counted GIFTS and a register's
+  // takings are mostly not gifts. That is the one sentence this whole build
+  // exists to make true, said backwards on the card that should say it best.
+  const posRows = await query(
+    `SELECT source_id, occurred_on, total_cents, gift_cents, event_cents, other_cents
+       FROM pos_sales WHERE org_id=? AND occurred_on >= ?`, [orgId, since30]);
+  const posBy = new Map();
+  for (const r of posRows) {
+    if (!r.source_id) continue;
+    let x = posBy.get(r.source_id);
+    if (!x) posBy.set(r.source_id, x = { sales: 0, totalCents: 0, giftCents: 0, last: null });
+    x.sales++; x.totalCents += Number(r.total_cents) || 0; x.giftCents += Number(r.gift_cents) || 0;
+    if (!x.last || r.occurred_on > x.last) x.last = r.occurred_on;
+  }
+
   const byProvider = new Map(sources.filter(s => s.status !== "disconnected").map(s => [s.provider, s]));
   for (const key of Object.keys(PROVIDERS)) {
     const s = byProvider.get(key);
     const b = (s && bucket.get(s.id)) || empty;
     const connected = !!s && s.status !== "disconnected";
+    const isFile = PROVIDERS[key].mode === "file";
+    const isPos = PROVIDERS[key].pos === true;
+    const pos = (s && posBy.get(s.id)) || null;
+    const state = connectionState(C.assessConnection({ connected, lastError: s ? s.last_error : null,
+      // A register's rhythm is its SALES, not its gifts.
+      lastGiftDate: isPos ? (pos?.last || b.last) : b.last,
+      giftDates: isPos && pos ? [] : b.dates, today }));
     cards.push({
-      id: s ? s.id : `unconnected:${key}`, kind: "source", provider: key,
+      id: s ? s.id : `unconnected:${key}`, kind: isPos ? "pos" : "source", provider: key,
       label: s ? s.display_name : providerLabel(key),
-      subtitle: PROVIDERS[key].mode === "file"
-        ? "A statement you drop in. Steward reads the file; it never reaches the provider."
+      mode: PROVIDERS[key].mode,
+      subtitle: isFile
+        ? "A file somebody drops in. Steward reads the file; it never reaches the provider."
         : "Steward reads it on a schedule. It never writes to it.",
       connected, canDisconnect: !!s,
+      // FIX-9 Part A.4 — NO CARD OFFERS AN ACTION IT CANNOT DO. A file-mode
+      // provider has no API to connect to, and its own card said so and then
+      // offered a Connect button underneath. The verb matches the mode.
+      action: connected ? null : isFile ? "import" : "connect",
+      actionLabel: connected ? null : isFile ? "Import a file" : "Connect",
       lastSyncedAt: s ? s.last_synced_at : null,
       lastTriedAt: s ? (s.last_tried_at || s.last_error_at || s.last_synced_at) : null,
-      ...connectionState(C.assessConnection({ connected, lastError: s ? s.last_error : null,
-                              lastGiftDate: b.last, giftDates: b.dates, today })),
+      ...state,
+      // A POS card leads with its takings and says plainly how much of it was
+      // giving, which on a register is usually none of it.
+      ...(isPos && pos ? {
+        sales30: pos.sales, takings30Cents: pos.totalCents,
+        sentence: `${pos.sales} ${pos.sales === 1 ? "sale" : "sales"} in the last thirty days, ${C.money(pos.totalCents)} taken, `
+          + (pos.giftCents ? `${C.money(pos.giftCents)} of it given.` : "none of it gifts."),
+      } : {}),
       gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
       figureSource: s ? { key: "connection-gifts", params: { connection: s.id } } : null,
+      posFigureSource: isPos && s ? { key: "connection-sales", params: { connection: s.id } } : null,
     });
   }
   // 3 · Statement imports. Not a connection anybody can break: a file arrives
@@ -445,20 +482,35 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     const byVendor = new Map(books.map(b => [b.vendor, b]));
     for (const key of BK.VENDOR_KEYS) {
       const b = byVendor.get(key);
+      // FIX-9 Part A.3 — AN ACCOUNTING CONNECTION HAS ITS OWN SHAPE. It was
+      // reusing the money-in card, so QuickBooks and Xero each read
+      // "$0 in the last 30 days · 0 gifts · never last gift". An accounting
+      // system has no gifts: what it has is deposits sent, anything held, and
+      // whether the two sides agree. Those are the figures now, and the
+      // gift-shaped ones are deliberately ABSENT rather than zero.
       const [sentRow] = b ? await query(
-        `SELECT COUNT(*)::int AS n, COALESCE(SUM(net_cents),0)::bigint AS cents FROM bookkeeping_deposits
-          WHERE org_id=? AND vendor=? AND status='sent' AND deposit_on >= ?`, [orgId, key, since30]) : [{ n: 0, cents: 0 }];
+        `SELECT COUNT(*) FILTER (WHERE status='sent')::int AS sent,
+                COALESCE(SUM(net_cents) FILTER (WHERE status='sent'),0)::bigint AS cents,
+                COUNT(*) FILTER (WHERE status <> 'sent')::int AS held
+           FROM bookkeeping_deposits WHERE org_id=? AND vendor=? AND deposit_on >= ?`,
+        [orgId, key, since30]) : [{ sent: 0, cents: 0, held: 0 }];
+      const sentN = Number(sentRow.sent) || 0, heldN = Number(sentRow.held) || 0;
       cards.push({
         id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
         label: BK.VENDORS[key].label,
         subtitle: "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
+        action: b ? null : "connect", actionLabel: b ? null : "Connect",
+        lastSentAt: b ? b.last_sent_at : null,
         lastSyncedAt: b ? b.last_sent_at : null,
         status: !b ? "not_connected" : b.last_error ? "broken" : "healthy",
         sentence: !b ? C.STATUSES.not_connected.definition
           : b.last_error ? String(b.last_error)
-          : `${Number(sentRow.n)} deposit${Number(sentRow.n) === 1 ? "" : "s"} sent in the last thirty days.`,
-        gifts30: Number(sentRow.n) || 0, dollars30Cents: Number(sentRow.cents) || 0, lastGiftDate: null,
+          : sentN
+            ? `${sentN} deposit${sentN === 1 ? "" : "s"} sent this month, ${C.money(Number(sentRow.cents))} in all.`
+            : "Connected. Nothing has been sent this month yet.",
+        deposits30: sentN, deposits30Cents: Number(sentRow.cents) || 0, held30: heldN,
+        heldSentence: heldN ? `${heldN} ${heldN === 1 ? "deposit is" : "deposits are"} held and not sent.` : null,
       });
     }
   }
@@ -511,6 +563,29 @@ app.get("/connections/:id/gifts", requireAuth, wrap(async (req, res) => {
       feeCents: Math.round(Number(r.fee_amount || 0) * 100), donorId: r.donor_id, donorName: r.donor_name })),
     count: rows.length, totalCents,
     definition: "Every gift Steward recorded through this connection in the last thirty days, newest first. It foots to the figure on the card, in cents.",
+  });
+}));
+
+// FIX-9 Part A.5 — the SALES behind a register's figure. Every number opens,
+// and a POS card's number is its takings, so this is what opens.
+app.get("/connections/:id/sales", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
+  const since = orgTime.addDays(today, -30);
+  const [s] = await query("SELECT id FROM giving_sources WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!s) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT id, occurred_on, buyer_name, location_name, total_cents, gift_cents, event_cents, other_cents
+       FROM pos_sales WHERE org_id=? AND source_id=? AND occurred_on >= ?
+      ORDER BY occurred_on DESC, id DESC LIMIT 500`, [orgId, req.params.id, since]);
+  const sum = k => rows.reduce((t, r) => t + (Number(r[k]) || 0), 0);
+  res.json({
+    rows: rows.map(r => ({ id: r.id, on: r.occurred_on, who: r.buyer_name, where: r.location_name,
+      totalCents: Number(r.total_cents) || 0, giftCents: Number(r.gift_cents) || 0,
+      eventCents: Number(r.event_cents) || 0, otherCents: Number(r.other_cents) || 0 })),
+    count: rows.length, totalCents: sum("total_cents"), giftCents: sum("gift_cents"),
+    eventCents: sum("event_cents"), otherCents: sum("other_cents"),
+    definition: "Every sale the register took through this connection in the last thirty days. Only the lines your organisation classified as a donation became gifts; the rest is revenue and is never on a giving receipt.",
   });
 }));
 
