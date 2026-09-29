@@ -9304,7 +9304,7 @@ require("./routes/billing").mount({
   checkActiveDonorBand,
 });
 require("./routes/finance").mount({
-  actor, checkWriteAccess, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
+  actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
 });

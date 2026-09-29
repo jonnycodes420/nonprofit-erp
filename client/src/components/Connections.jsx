@@ -289,6 +289,30 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
     .catch(e => { setD({ cards: [] }); setMsg(errorMessage(e, "Connections did not load.")); });
   useEffect(() => { load(); }, []);
 
+  // INT-OAUTH — WHETHER A CONNECT BUTTON CAN ACTUALLY FINISH. The server says
+  // which providers have app credentials on this deployment, in booleans and
+  // variable NAMES; it never sends a secret or any part of one. A button that
+  // cannot complete is disabled and says why, rather than opening a consent
+  // screen that ends in the provider's own error page.
+  const [oauth, setOauth] = useState(null);
+  useEffect(() => { apiFetch("/oauth/status").then(r => setOauth(r.providers)).catch(() => setOauth({})); }, []);
+  // null while the answer is still coming: the button stays live rather than
+  // flickering disabled, and a click in that window is refused by the server
+  // with the same sentence this would have shown.
+  const oauthReady = c => (oauth && c.oauthProvider) ? !!oauth[c.oauthProvider]?.ready : null;
+
+  // START. The browser leaves Steward here; it comes back to /oauth/:p/callback.
+  const startConnect = async c => {
+    setBusy("connect:" + c.id); setMsg("");
+    try {
+      const r = await apiFetch(`/oauth/${encodeURIComponent(c.oauthProvider)}/start`, { method: "POST" });
+      window.location.href = r.url;
+    } catch (e) {
+      setBusy("");
+      setMsg(e?.body?.sentence || errorMessage(e, "That connection could not be started."));
+    }
+  };
+
   const openFigure = async c => {
     if (openId === c.id + ":gifts") { setOpenId(""); return; }
     setOpenId(c.id + ":gifts"); setRows(null); setLog(null); setSales(null);
@@ -365,14 +389,53 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                 file-mode provider has no API to connect to, and its own
                 subtitle says so, so it offers "Import a file" and never
                 "Connect". No card offers an action it cannot do. */}
+            {/* INT-OAUTH — the button that really connects. A card naming an
+                OAuth provider starts the handshake here; one that does not
+                keeps the settings link it had; one whose provider has no
+                credentials on this deployment is disabled and says why
+                underneath, because a button that opens a page nobody can
+                complete is worse than no button. */}
             {!c.connected && c.action && !isReadOnly && isAdmin && (
-              <button style={{ ...btn(true), marginLeft: "auto" }} data-testid="connection-connect"
-                data-action={c.action}
-                onClick={() => onNavigate && onNavigate("settings",
-                  c.action === "import" ? "imports" : "integrations")}>{c.actionLabel}</button>)}
+              c.oauthProvider ? (
+                <button style={{ ...btn(oauthReady(c) !== false), marginLeft: "auto",
+                                 opacity: oauthReady(c) === false ? 0.5 : 1,
+                                 cursor: oauthReady(c) === false ? "not-allowed" : "pointer" }}
+                  data-testid="connection-connect" data-action="oauth"
+                  data-provider={c.oauthProvider} data-ready={String(oauthReady(c) !== false)}
+                  disabled={oauthReady(c) === false || busy === "connect:" + c.id}
+                  title={oauthReady(c) === false ? (oauth?.[c.oauthProvider]?.sentence || "") : ""}
+                  onClick={() => startConnect(c)}>
+                  {busy === "connect:" + c.id ? "Opening…" : c.actionLabel}
+                </button>
+              ) : (
+                <button style={{ ...btn(true), marginLeft: "auto" }} data-testid="connection-connect"
+                  data-action={c.action}
+                  onClick={() => onNavigate && onNavigate("settings",
+                    c.action === "import" ? "imports" : "integrations")}>{c.actionLabel}</button>
+              ))}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
           <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
+          {/* Why a Connect button is greyed out, in the server's own words,
+              and what this connection will be allowed to see if it opens. */}
+          {!c.connected && c.oauthProvider && oauthReady(c) === false && (
+            <div data-testid="connection-not-ready"
+                 style={{ fontSize: 12, color: T.gold700, lineHeight: 1.5, marginTop: 6 }}>
+              {oauth[c.oauthProvider].sentence}
+            </div>)}
+          {!c.connected && c.oauthProvider && oauthReady(c) === true && oauth[c.oauthProvider].note && (
+            <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 6 }}>
+              {oauth[c.oauthProvider].note}
+            </div>)}
+          {/* PayPal has no consent screen to open yet, and the card says so
+              instead of offering a button that goes nowhere. */}
+          {!c.connected && !c.oauthProvider && c.provider === "paypal" && oauth?.paypal?.sentence && (
+            <div data-testid="connection-paypal-waiting"
+                 style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 6 }}>
+              {oauth.paypal.sentence}
+              {oauth.paypal.webhookConfigured === false &&
+                " Steward is also not set up to hear PayPal's webhooks on this deployment yet."}
+            </div>)}
           {c.connected && c.kind === "source" && c.provider !== "stripe" && (
             <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
               This provider does not publish its payouts to Steward, so the money in the bank cannot be matched to these

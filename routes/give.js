@@ -338,6 +338,16 @@ app.get("/pos/event/:id/revenue", requireAuth, wrap(async (req, res) => {
 app.get("/connections", requireAuth, wrap(async (req, res) => {
   const C = await import("../shared/connections.js");
   const { PROVIDERS, providerLabel } = await import("../shared/givingSources.js");
+  // INT-OAUTH — the two directions between a card's key and an OAuth provider,
+  // derived from the registry so a fifth provider is one entry there and
+  // nothing here. A key absent from these is a card with no consent screen to
+  // open, which is how PayPal's card ends up with no Connect button.
+  const O = await import("../shared/oauth.js");
+  const OAUTH_BY_SOURCE = {}, OAUTH_BY_VENDOR = {};
+  for (const k of O.PROVIDER_KEYS) {
+    const v = O.vendorKeyOf(k);
+    if (O.PROVIDERS[k].kind === "bookkeeping") OAUTH_BY_VENDOR[v] = k; else OAUTH_BY_SOURCE[v] = k;
+  }
   const orgId = req.user.orgId;
   const today = orgToday(await orgTz(orgId));                       // ORG_TZ_SEAM_OK
   const since30 = orgTime.addDays(today, -30);
@@ -434,6 +444,11 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       // offered a Connect button underneath. The verb matches the mode.
       action: connected ? null : isFile ? "import" : "connect",
       actionLabel: connected ? null : isFile ? "Import a file" : "Connect",
+      // INT-OAUTH — WHICH CONSENT SCREEN THIS CARD'S BUTTON OPENS, if any.
+      // A card that names one gets a button that really starts a handshake;
+      // a card that names none keeps the settings link it had. PayPal is
+      // deliberately none, and its own sentence says why.
+      oauthProvider: isFile ? null : (OAUTH_BY_SOURCE[key] || null),
       lastSyncedAt: s ? s.last_synced_at : null,
       lastTriedAt: s ? (s.last_tried_at || s.last_error_at || s.last_synced_at) : null,
       ...state,
@@ -501,6 +516,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
         subtitle: "Steward sends one deposit per payout. It never sends the same payout twice.",
         connected: !!b, canDisconnect: !!b,
         action: b ? null : "connect", actionLabel: b ? null : "Connect",
+        oauthProvider: OAUTH_BY_VENDOR[key] || null,
         lastSentAt: b ? b.last_sent_at : null,
         lastSyncedAt: b ? b.last_sent_at : null,
         status: !b ? "not_connected" : b.last_error ? "broken" : "healthy",
