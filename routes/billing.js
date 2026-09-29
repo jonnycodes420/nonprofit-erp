@@ -297,8 +297,23 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   // can do by passing it is create an org that sends nothing — which is not a
   // capability worth a guard, and a guard here would be one more thing to get
   // wrong on the night somebody needs to provision in a hurry.
-  const { orgName, userName, email, password, provisioned } = req.body;
+  const { orgName, userName, email, password, provisioned, demoData } = req.body;
   const isProvisioned = provisioned === true;
+  // CKRH-1 — "CREATED FOR SOMEBODY" AND "FULL OF FICTION" ARE TWO DIFFERENT
+  // FACTS, and this route conflated them because the org that prompted the
+  // flag happened to be both. `is_demo_org` is not a quiet bookkeeping bit: it
+  // puts a NON-DISMISSIBLE banner across the top of every screen reading "This
+  // is a demonstration organisation. Everything in it is invented." On a real
+  // customer's first sign-in that sentence is simply false, and it is the first
+  // thing she would read after her welcome.
+  //
+  // So it stays the default for a provisioned org — the flag exists because
+  // provisioning usually means invented data, and defaulting the other way
+  // would silently un-mark every future demo — but a caller that KNOWS the org
+  // holds nothing invented can say so. Mail is off either way: `emails_enabled`
+  // is false for every new org regardless, so this changes what she is TOLD,
+  // never what is sent.
+  const isDemoData = demoData === undefined ? isProvisioned : demoData === true;
   if (!orgName || !userName || !email || !password) {
     return res.status(400).json({ error: "All fields are required" });
   }
@@ -339,7 +354,7 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
     // 2026-09-24 — mail OFF for every new org (opt-in, super-admin only);
     // `provisioned` still marks the org as fiction.
     [orgId, orgName, isProvisioned ? 1 : 0, orgSlug, signedAt.toISOString(), trialEndsAt,
-     false, isProvisioned]
+     false, isDemoData]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
   await ensureOrgLedger(orgId).catch(e => console.error("[org] ledger provisioning:", e.message));
@@ -392,7 +407,8 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
       console.error("[onboarding] failed to start sequence:", e.message)
     );
   } else {
-    console.log(`[provision] org ${orgId} created with mail OFF and no onboarding drip`);
+    console.log(`[provision] org ${orgId} created with mail OFF and no onboarding drip` +
+      (isDemoData ? " (marked as a demonstration org)" : " (REAL org — holds no invented data)"));
   }
 }));
 
