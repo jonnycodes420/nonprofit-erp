@@ -449,6 +449,11 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
     `SELECT DISTINCT provider FROM giving_sources WHERE org_id=? AND status <> 'disconnected'`, [orgId]))
     .map(r => r.provider).concat(["stripe"]);
   const sources = [...new Set(sourceKeys)];
+  // FIX-9 Part A.6 — A PROVIDER IS ITS LABEL. The mapping screen printed the
+  // raw registry keys ("givebutter settles to", "paypal settles to"), which is
+  // the database talking to the person filling in their bank accounts.
+  const { providerLabel } = await import("../shared/givingSources.js");
+  const sourceLabels = Object.fromEntries(sources.map(k => [k, providerLabel(k) || k]));
   const connections = rows.map(r => {
     const mapping = (typeof r.mapping === "string" ? JSON.parse(r.mapping || "{}") : r.mapping) || {};
     const ready = BK.mappingReady({
@@ -465,7 +470,7 @@ app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
   res.json({
     connections, vendors: BK.VENDORS, mappingParts: BK.MAPPING_PARTS,
     funds: funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
-    sources,
+    sources, sourceLabels,
     // Said once, here, because it is the sentence an organisation needs before
     // it hands Steward write access to its books.
     definition: "Steward sends one deposit per payout: the gifts inside it split by fund, the processing fee as a negative line, and a net that equals what hit the bank. It never sends the same payout twice, it never sends event or shop takings as donations, and it sends donor names only if you turn that on.",

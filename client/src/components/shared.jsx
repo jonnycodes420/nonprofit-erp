@@ -919,13 +919,24 @@ export function Spin({dark}={}) {
 export function Pill({label,color}) {
   return <span style={{fontSize:10,fontWeight:700,letterSpacing:"0.06em",textTransform:"uppercase",padding:"4px 10px",borderRadius:99,background:(color||T.ink3)+"1a",color:color||T.ink3,whiteSpace:"nowrap",border:`1px solid ${(color||T.ink3)}28`}}>{label}</span>;
 }
-export function Card({children,selected,accent,onClick,style={},variant}) {
+// FIX-9 Part A.7 — A CARD FORWARDS ITS data-* PROPS.
+// `<Card data-testid="connection-card">` silently dropped the attribute,
+// because every prop this component was not itself named landed nowhere. The
+// 29 Sep walk could not select a single Connections card and had to read them
+// by their position on the page, which is the kind of test that passes after
+// the screen has been rebuilt underneath it. Fixed here, once, for every card
+// in the product rather than by threading one more named prop through.
+// Only `data-*` and `aria-*` cross over: this is a div, and forwarding
+// arbitrary props onto it is how an unknown React attribute reaches the DOM.
+export function Card({children,selected,accent,onClick,style={},variant,...rest}) {
   const base = variant==="dark"
     ? {background:T.ink,border:`1px solid ${selected?T.gold500:T.bgElevated}`,color:T.inkInverse}
     : variant==="elevated"
     ? {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadowMd}
     : {background:T.white,border:`1px solid ${selected?accent||T.greenDk:T.bg3}`,boxShadow:T.shadow};
-  return <div onClick={onClick} className={onClick?"card-click":""} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
+  const passThrough = Object.fromEntries(
+    Object.entries(rest).filter(([k]) => k.startsWith("data-") || k.startsWith("aria-") || k === "id" || k === "role" || k === "title"));
+  return <div onClick={onClick} className={onClick?"card-click":""} {...passThrough} style={{...base,borderRadius:14,padding:"20px 24px",cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 }
 // Horizontal section-nav tabs across the top of a tab's content area — the
 // in-section counterpart of the app sidebar (Communications, Reports,

@@ -54,6 +54,7 @@ function ItemMapping({ isReadOnly, isAdmin }) {
   const [d, setD] = useState(null);
   const [draft, setDraft] = useState({});
   const [msg, setMsg] = useState("");
+  const [open, setOpen] = useState(false);
   const load = () => apiFetch("/pos/mapping").then(r => { setD(r); setDraft({}); }).catch(() => setD({ items: [] }));
   useEffect(() => { load(); }, []);
   if (!d) return null;
@@ -70,9 +71,27 @@ function ItemMapping({ isReadOnly, isAdmin }) {
       setMsg(r.sentence || "Saved."); load(); }
     catch (e) { setMsg(errorMessage(e, "That did not save.")); }
   };
+  // FIX-9 Part A.1 — folded to one line until somebody opens it. The summary
+  // still carries the number that matters, so folding hides no count.
+  const mapped = d.items.filter(i => i.mapped).length;
+  if (!open) return (
+    <Card data-testid="pos-mapping" data-open="false" style={{ padding: "12px 16px" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 13.5, color: T.ink }}>What the register sells</strong>
+        <span style={{ fontSize: 12.5, color: d.unmapped ? T.gold700 : T.ink3 }}>
+          {mapped} {mapped === 1 ? "item" : "items"} mapped
+          {d.unmapped ? `, ${d.unmapped} not classified` : ""}.
+        </span>
+        <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="pos-mapping-open"
+          onClick={() => setOpen(true)}>Review</button>
+      </div>
+    </Card>);
   return (
-    <Card data-testid="pos-mapping" style={{ padding: "14px 16px" }}>
-      <div style={h}>What the register sells</div>
+    <Card data-testid="pos-mapping" data-open="true" style={{ padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <div style={h}>What the register sells</div>
+        <button style={{ ...btn(false), marginLeft: "auto" }} onClick={() => setOpen(false)}>Close</button>
+      </div>
       <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, margin: "6px 0 10px" }}>{d.definition}</div>
       {d.unmapped > 0 && (
         <div style={{ fontSize: 13, color: T.ink, marginBottom: 10 }}>
@@ -121,12 +140,31 @@ function ItemMapping({ isReadOnly, isAdmin }) {
 function Bookkeeping({ isReadOnly, isAdmin }) {
   const [d, setD] = useState(null);
   const [openId, setOpenId] = useState("");
+  const [openMap, setOpenMap] = useState("");
   const [agree, setAgree] = useState(null);
   const [draft, setDraft] = useState(null);
   const [msg, setMsg] = useState("");
   const load = () => apiFetch("/bookkeeping").then(r => { setD(r); setDraft(null); }).catch(() => setD(null));
   useEffect(() => { load(); }, []);
   if (!d || !(d.connections || []).length) return null;
+  // FIX-9 Part A.2 — ONE CARD PER ACCOUNTING CONNECTION. QuickBooks appeared
+  // twice on this screen: once as this panel's own heading and again as a
+  // connection card further down. The connection is the CARD; this is the
+  // mapping that opens from it, so it is folded to a line and named for what
+  // it is rather than for the vendor.
+  const anyOpen = d.connections.some(c => openMap === c.id);
+  if (!anyOpen) return (
+    <Card data-testid="bookkeeping-mapping" data-open="false" style={{ padding: "12px 16px" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+        <strong style={{ fontSize: 13.5, color: T.ink }}>Where the money posts</strong>
+        {d.connections.map(c => (
+          <span key={c.id} style={{ fontSize: 12.5, color: c.ready ? T.ink3 : T.gold700 }}>
+            {c.vendorLabel}: {c.ready ? "every fund, the fee and each bank account are mapped" : "not sending yet"}.
+          </span>))}
+        <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-open"
+          onClick={() => setOpenMap(d.connections[0].id)}>Review</button>
+      </div>
+    </Card>);
   const save = async c => {
     try {
       const r = await apiFetch(`/bookkeeping/${c.id}/mapping`, { method: "PUT",
@@ -142,7 +180,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
   };
   return (
     <>
-      {d.connections.map(c => {
+      {d.connections.filter(c => openMap === c.id).map(c => {
         const mapping = draft?.id === c.id ? draft.mapping : c.mapping;
         const donorNames = draft?.id === c.id ? draft.donorNames : c.donorNames;
         const setMap = patch => setDraft({ id: c.id, donorNames,
@@ -155,6 +193,7 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
                 color: c.ready ? T.greenDk : T.gold700 }}>{c.ready ? "Ready to send" : "Not sending yet"}</span>
               <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="bookkeeping-agreement"
                 onClick={() => openAgreement(c)}>Do the two agree?</button>
+              <button style={btn(false)} onClick={() => setOpenMap("")}>Close</button>
             </div>
             <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
             <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.definition}</div>
@@ -189,7 +228,8 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
               {(d.sources || []).map(src => (
                 <div key={src} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
                   padding: "6px 0", borderTop: "1px solid " + T.bg3, fontSize: 13 }}>
-                  <span style={{ minWidth: 160 }}>{src} settles to</span>
+                  {/* FIX-9 Part A.6 — the provider's LABEL, never its key. */}
+                  <span style={{ minWidth: 160 }}>{(d.sourceLabels || {})[src] || src} settles to</span>
                   <input disabled={isReadOnly || !isAdmin} placeholder="Bank account"
                     value={(mapping.depositAccounts || {})[src] || ""}
                     onChange={e => setMap({ depositAccounts: { ...(mapping.depositAccounts || {}), [src]: e.target.value } })}
@@ -242,6 +282,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [openId, setOpenId] = useState("");
   const [rows, setRows] = useState(null);
   const [log, setLog] = useState(null);
+  const [sales, setSales] = useState(null);
   const [busy, setBusy] = useState("");
 
   const load = () => apiFetch("/connections").then(setD)
@@ -250,13 +291,20 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
 
   const openFigure = async c => {
     if (openId === c.id + ":gifts") { setOpenId(""); return; }
-    setOpenId(c.id + ":gifts"); setRows(null); setLog(null);
+    setOpenId(c.id + ":gifts"); setRows(null); setLog(null); setSales(null);
     try { setRows(await apiFetch(`/connections/${encodeURIComponent(c.id)}/gifts`)); }
     catch (e) { setRows({ rows: [], definition: errorMessage(e, "Those rows did not load.") }); }
   };
+  // FIX-9 Part A.5 — the sales behind a register's figure.
+  const openSales = async c => {
+    if (openId === c.id + ":sales") { setOpenId(""); return; }
+    setOpenId(c.id + ":sales"); setRows(null); setLog(null); setSales(null);
+    try { setSales(await apiFetch(`/connections/${encodeURIComponent(c.id)}/sales`)); }
+    catch (e) { setSales({ rows: [], definition: errorMessage(e, "Those rows did not load.") }); }
+  };
   const openLog = async c => {
     if (openId === c.id + ":log") { setOpenId(""); return; }
-    setOpenId(c.id + ":log"); setRows(null); setLog(null);
+    setOpenId(c.id + ":log"); setRows(null); setLog(null); setSales(null);
     try { setLog(await apiFetch(`/connections/${encodeURIComponent(c.id)}/log`)); }
     catch (e) { setLog({ lines: [], definition: errorMessage(e, "The log did not load.") }); }
   };
@@ -286,9 +334,11 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
         </Card>)}
       {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
 
-      <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />
-      <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />
-
+      {/* FIX-9 Part A.1 — THE CARDS COME FIRST. The screen's job is "is the
+          money still arriving", and it led with two long forms: the register's
+          item mapping and the whole QuickBooks account mapping, so the first
+          card was about sixty per cent down the page. The forms are below now,
+          each folded to one line until somebody opens it. */}
       {(d.cards || []).map(c => (
         <Card key={c.id} data-testid="connection-card" data-status={c.status} style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -311,9 +361,15 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
             {c.connected && (c.kind === "own_stripe" || c.provider === "stripe") && (
               <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="connection-reconcile"
                 onClick={() => onNavigate && onNavigate("finance", "deposits")}>Does it match?</button>)}
-            {!c.connected && c.kind === "source" && !isReadOnly && isAdmin && (
+            {/* FIX-9 Part A.4 — the verb the SERVER says this card can do. A
+                file-mode provider has no API to connect to, and its own
+                subtitle says so, so it offers "Import a file" and never
+                "Connect". No card offers an action it cannot do. */}
+            {!c.connected && c.action && !isReadOnly && isAdmin && (
               <button style={{ ...btn(true), marginLeft: "auto" }} data-testid="connection-connect"
-                onClick={() => onNavigate && onNavigate("settings", "integrations")}>Connect</button>)}
+                data-action={c.action}
+                onClick={() => onNavigate && onNavigate("settings",
+                  c.action === "import" ? "imports" : "integrations")}>{c.actionLabel}</button>)}
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
           <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
@@ -323,27 +379,77 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
               gifts automatically. A statement import does it by hand.
             </div>)}
 
+          {/* FIX-9 Parts A.3 and A.5 — THREE SHAPES, BECAUSE THERE ARE THREE
+              KINDS OF CONNECTION. An accounting system has no gifts, and a
+              register's money is mostly not gifts; both were drawing the
+              money-in card, so QuickBooks read "0 gifts · never last gift"
+              and Square read "nothing has come through" over eleven sales. */}
           <div style={{ display: "flex", gap: 22, flexWrap: "wrap", marginTop: 10 }}>
-            <div>
-              <button data-testid="connection-gifts-figure" onClick={() => openFigure(c)}
-                disabled={!c.figureSource}
-                title="The gifts behind this figure"
-                style={{ background: "none", border: "none", padding: 0, cursor: c.figureSource ? "pointer" : "default",
-                  fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif",
-                  borderBottom: c.figureSource ? "1px dashed " + T.bg3 : "none" }}>
-                {money(c.dollars30Cents)}
-              </button>
-              <div style={{ fontSize: 11.5, color: T.ink3 }}>in the last 30 days</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.gifts30}</div>
-              <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.gifts30 === 1 ? "gift" : "gifts"}</div>
-            </div>
-            <div>
-              <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSyncedAt || c.lastGiftDate)}</div>
-              <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.lastSyncedAt ? "last successful check" : "last gift"}</div>
-            </div>
+            {c.kind === "bookkeeping" ? <>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.deposits30 ?? 0}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{(c.deposits30 ?? 0) === 1 ? "deposit sent" : "deposits sent"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{money(c.deposits30Cents)}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>sent this month</div>
+              </div>
+              {c.held30 > 0 && <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.gold700, fontFamily: "'DM Serif Display',serif" }}>{c.held30}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>held, not sent</div>
+              </div>}
+              <div>
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSentAt)}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>last sent</div>
+              </div>
+            </> : c.kind === "pos" ? <>
+              <div>
+                <button data-testid="connection-sales-figure" onClick={() => openSales(c)}
+                  disabled={!c.posFigureSource} title="The sales behind this figure"
+                  style={{ background: "none", border: "none", padding: 0, cursor: c.posFigureSource ? "pointer" : "default",
+                    fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif",
+                    borderBottom: c.posFigureSource ? "1px dashed " + T.bg3 : "none" }}>
+                  {money(c.takings30Cents || 0)}
+                </button>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>taken in the last 30 days</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.sales30 || 0}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{(c.sales30 || 0) === 1 ? "sale" : "sales"}</div>
+              </div>
+              <div>
+                <button data-testid="connection-gifts-figure" onClick={() => openFigure(c)}
+                  disabled={!c.figureSource} title="The gifts behind this figure"
+                  style={{ background: "none", border: "none", padding: 0, cursor: c.figureSource ? "pointer" : "default",
+                    fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif",
+                    borderBottom: c.figureSource ? "1px dashed " + T.bg3 : "none" }}>
+                  {money(c.dollars30Cents)}
+                </button>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>of it given</div>
+              </div>
+            </> : <>
+              <div>
+                <button data-testid="connection-gifts-figure" onClick={() => openFigure(c)}
+                  disabled={!c.figureSource}
+                  title="The gifts behind this figure"
+                  style={{ background: "none", border: "none", padding: 0, cursor: c.figureSource ? "pointer" : "default",
+                    fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif",
+                    borderBottom: c.figureSource ? "1px dashed " + T.bg3 : "none" }}>
+                  {money(c.dollars30Cents)}
+                </button>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>in the last 30 days</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{c.gifts30}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.gifts30 === 1 ? "gift" : "gifts"}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSyncedAt || c.lastGiftDate)}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.lastSyncedAt ? "last successful check" : "last gift"}</div>
+              </div>
+            </>}
           </div>
+          {c.heldSentence && <div style={{ fontSize: 12.5, color: T.gold700, marginTop: 6 }}>{c.heldSentence}</div>}
 
           {openId === c.id + ":gifts" && (
             <div data-testid="connection-rows" style={{ marginTop: 12, background: T.bg2, border: "1px solid " + T.bg3,
@@ -364,6 +470,27 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
               </>}
             </div>)}
 
+          {openId === c.id + ":sales" && (
+            <div data-testid="connection-sales-rows" style={{ marginTop: 12, background: T.bg2, border: "1px solid " + T.bg3,
+              borderRadius: 10, padding: "10px 12px" }}>
+              {!sales ? <div style={{ fontSize: 12.5, color: T.ink3 }}>Loading…</div> : <>
+                <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginBottom: 8 }}>{sales.definition}</div>
+                {(sales.rows || []).slice(0, 40).map(r => (
+                  <div key={r.id} style={{ display: "flex", gap: 10, fontSize: 12.5, color: T.ink, padding: "3px 0" }}>
+                    <span style={{ color: T.ink3, width: 86 }}>{r.on}</span>
+                    <span style={{ flex: 1, minWidth: 0 }}>{r.who || "At the register"}</span>
+                    {r.giftCents > 0 && <span style={{ color: T.greenDk, fontWeight: 700 }}>{money(r.giftCents)} given</span>}
+                    <span style={{ fontWeight: 700 }}>{money(r.totalCents)}</span>
+                  </div>))}
+                <div style={{ display: "flex", gap: 10, fontSize: 12.5, borderTop: "1px solid " + T.bg3,
+                  marginTop: 6, paddingTop: 6, fontWeight: 800, color: T.ink }}>
+                  <span style={{ flex: 1 }}>{sales.count} {sales.count === 1 ? "sale" : "sales"}</span>
+                  {sales.giftCents > 0 && <span style={{ color: T.greenDk }}>{money(sales.giftCents)} given</span>}
+                  <span>{money(sales.totalCents)}</span>
+                </div>
+              </>}
+            </div>)}
+
           {openId === c.id + ":log" && (
             <div data-testid="connection-log-rows" style={{ marginTop: 12, background: T.bg2, border: "1px solid " + T.bg3,
               borderRadius: 10, padding: "10px 12px" }}>
@@ -379,6 +506,10 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
               </>}
             </div>)}
         </Card>))}
+
+      {/* The two mappings, below the cards, each a line until it is opened. */}
+      <ItemMapping isReadOnly={isReadOnly} isAdmin={isAdmin} />
+      <Bookkeeping isReadOnly={isReadOnly} isAdmin={isAdmin} />
     </div>
   );
 }
