@@ -456,8 +456,16 @@ app.get("/volunteer-hub/person/:id", requireAuth, wrap(async (req, res) => {
 
   const coordinator = req.user.role === COORD;
   const gave = Number(p.total_giving) > 0;
+  // FIX-9 Part D.1 — "Volunteer since 2023". The earliest shift on file is the
+  // honest answer: a person's donors row does not know when they started
+  // volunteering, and the first shift is the first time anybody recorded them
+  // doing it. Null when they have never been on one, and the header then just
+  // says "Volunteer".
+  const [firstShift] = await query(
+    `SELECT MIN(date)::text AS since FROM volunteer_shifts WHERE org_id=? AND person_id=?`, [orgId, p.id]);
   res.json({
     id: p.id, name: p.name, email: p.email, phone: p.phone,
+    since: (firstShift && firstShift.since) || null,
     personTypes: p.person_types || [],
     hours: { ...summary, sentence: summary.shiftCount
       ? `${summary.totalHours} hours across ${summary.shiftCount} ${summary.shiftCount === 1 ? "shift" : "shifts"}`

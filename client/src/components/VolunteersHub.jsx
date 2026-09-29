@@ -196,7 +196,13 @@ export function VolunteersHub({ isReadOnly, onNavigate, role }) {
       {part === "credentials" && <CredentialsView isReadOnly={isReadOnly} onOpenRecord={openRecord} />}
       {part === "report" && <HoursReportView narrow={narrow} />}
       {part === "crossover" && <CrossoverView onOpenRecord={openRecord} />}
-      {open && <PersonPanel person={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onChanged={loadRoster} onOpenRecord={id => { setOpen(null); openRecord(id); }} />}
+      {/* FIX-9 Part D.5 — the two actions go to the screens that already own
+          them, with this person carried across, rather than growing a second
+          hours form inside a drawer. */}
+      {open && <PersonPanel person={open} isReadOnly={isReadOnly} onClose={() => setOpen(null)} onChanged={loadRoster}
+        onOpenRecord={id => { setOpen(null); openRecord(id); }}
+        onLogHours={() => { setOpen(null); setSection("records"); setPartOf(m => ({ ...m, records: "shifts" })); }}
+        onAddToShift={() => { setOpen(null); setSection("schedule"); setPartOf(m => ({ ...m, schedule: "opportunities" })); }} />}
       {adding && <AddVolunteerModal onClose={() => setAdding(false)} onDone={loadRoster} />}
       {importing && <VolunteerImport onClose={() => setImporting(false)} parseFile={parseFileToSheets} onDone={loadRoster} />}
     </div>
@@ -483,7 +489,7 @@ function GiversView({ narrow, onOpenRecord, onOpen }) {
 }
 
 // ── One volunteer: internal notes, a shift, their own link ─────────────────
-function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
+function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord, onLogHours, onAddToShift }) {
   const [hours, setHours] = useState(null);
   const [notes, setNotes] = useState(null);
   const [form, setForm] = useState({ kind: "training", noteDate: "", body: "" });
@@ -494,6 +500,8 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
   // payload at all: a volunteer coordinator does not receive it, whatever
   // this screen would have chosen to draw.
   const [view, setView] = useState(null);
+  // FIX-9 Part D.6 — notes are shut until somebody wants them.
+  const [notesOpen, setNotesOpen] = useState(false);
   const load = useCallback(() => {
     apiFetch(`/volunteer-hub/person/${person.id}`).then(setView).catch(() => setView(null));
     apiFetch(`/donors/${person.id}/volunteer-hours`).then(setHours).catch(() => setHours(null));
@@ -520,16 +528,53 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
   return (
     <Modal onClose={() => { onChanged(); onClose(); }} width={560} ariaLabel={`${person.name}, volunteer`} padding={24}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="vol-person">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink }}>{person.name}</div>
+        {/* ── FIX-9 Part D · THE DRAWER IS CALM ─────────────────────────
+            Jonathan: confusing and chaotic. It said the same things two and
+            three times in different weights: "Open their record" twice, the
+            hours as a number AND as a sentence AND as a tooltip, a grey box
+            around what is coming up, "They also give" as a whole section when
+            the header could say it in two words, and dates like 2026-09-21.
+            One header, three facts, plain rows, status lines, one row of
+            actions, and the notes folded. */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink, lineHeight: 1.15 }}>{person.name}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>
+              {view?.since ? `Volunteer since ${String(view.since).slice(0, 4)}` : "Volunteer"}
+              {view && view.giving && <>
+                {" · "}
+                <button onClick={() => onOpenRecord(person.id)} data-testid="vol-person-also-gives"
+                  style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>Also gives</button>
+              </>}
+            </div>
+          </div>
           <button onClick={() => onOpenRecord(person.id)} style={btnLink}>Open their record</button>
         </div>
+
+        {/* THREE FACTS IN ONE ROW. The hours were a number, then the same
+            number in a sentence, then the same sentence again in a tooltip. */}
+        {hours && (
+          <div data-testid="vol-person-hours" style={{ display: "flex", gap: 26, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{hrs(hours.hundredths)}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3 }}>hours</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{hours.shiftCount}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3 }}>{hours.shiftCount === 1 ? "shift" : "shifts"}</div>
+            </div>
+            {hours.lastShift && <div>
+              <div style={{ fontSize: 14, color: T.ink, marginTop: 4 }}>{displayDate(hours.lastShift)}</div>
+              <div style={{ fontSize: 11.5, color: T.ink3 }}>last shift</div>
+            </div>}
+          </div>
+        )}
         {/* ── THE VOLUNTEER VIEW, FIRST ──────────────────────────────
             What is coming up, what they have given in hours, whether they
             may work, and who they come with. This is the order a coordinator
             asks in, and it is the order the panel answers in. */}
         {view && (
-          <div data-testid="vol-person-upcoming" style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 12, padding: "12px 14px" }}>
+          <div data-testid="vol-person-upcoming">
             <div style={{ ...eyebrow, marginBottom: 6 }}>Coming up</div>
             {view.upcoming.length ? view.upcoming.map(u => (
               <div key={u.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>
@@ -541,26 +586,40 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
           </div>
         )}
 
-        {hours && (
-          <div title={hours.sentence} data-testid="vol-person-hours">
-            <span style={{ fontSize: 20, fontWeight: 800, color: T.ink }}>{hrs(hours.hundredths)}</span>
-            <span style={{ fontSize: 13, color: T.ink3 }}> hours across {hours.shiftCount} {hours.shiftCount === 1 ? "shift" : "shifts"}{hours.lastShift ? `, the last on ${hours.lastShift}` : ""}.</span>
-            <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>{hours.sentence}</div>
-          </div>
-        )}
-
         {/* WAIVERS AND CHECKS. An expiry is not a deadline, so a lapsed one is
             brass and not red: it is a thing to book, not a thing that broke. */}
         {view && (
           <div data-testid="vol-person-credentials">
             <div style={{ ...eyebrow, marginBottom: 6 }}>Waivers and checks</div>
-            {view.credentials.length ? view.credentials.map(c => (
-              <div key={c.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.7 }}>
-                {c.kind === "waiver" ? "Waiver" : "Background check"} signed {displayDate(c.signed_on)}
-                {c.expires_on && <span style={{ color: c.expires_on < new Date().toISOString().slice(0, 10) ? T.gold700 : T.ink3 }}>
-                  {" "}· {c.expires_on < new Date().toISOString().slice(0, 10) ? "expired" : "expires"} {displayDate(c.expires_on)}</span>}
-              </div>
-            )) : <div style={{ fontSize: 13, color: T.ink3 }}>Nothing on file yet.</div>}
+            {/* FIX-9 Part D.4 — A STATUS ROW, not a sentence about a signing
+                date nobody asked for. Amber inside ninety days, because that
+                is when somebody can still book it; red only once it has
+                actually expired, which is the one state that stops a person
+                working. An expiry is a thing to book, not a thing that broke,
+                so "expires in 74 days" says the number. */}
+            {view.credentials.length ? view.credentials.map(c => {
+              const todayIso = new Date().toISOString().slice(0, 10);
+              const kind = c.kind === "waiver" ? "Waiver" : "Background check";
+              if (!c.expires_on) return (
+                <div key={c.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.8 }}>
+                  <strong style={{ fontWeight: 700 }}>{kind}</strong>
+                  <span style={{ color: T.ink3 }}> · on file, no expiry</span>
+                </div>);
+              const days = Math.round((Date.parse(c.expires_on + "T00:00:00Z") - Date.parse(todayIso + "T00:00:00Z")) / 86400000);
+              const expired = days < 0;
+              const soon = !expired && days <= 90;
+              return (
+                <div key={c.id} data-testid="vol-credential" style={{ fontSize: 13, color: T.ink, lineHeight: 1.8 }}>
+                  <span aria-hidden="true" style={{ display: "inline-block", width: 7, height: 7, borderRadius: 99,
+                    marginRight: 7, background: expired ? T.terracotta : soon ? T.gold600 : T.greenDk }} />
+                  <strong style={{ fontWeight: 700 }}>{kind}</strong>
+                  <span style={{ color: expired ? T.terra700 : soon ? T.gold700 : T.ink3 }}>
+                    {expired
+                      ? ` · expired ${displayDate(c.expires_on)}`
+                      : ` · ${soon ? "expires" : "valid until"} ${displayDate(c.expires_on)}${soon ? `, in ${days} day${days === 1 ? "" : "s"}` : ""}`}
+                  </span>
+                </div>);
+            }) : <div style={{ fontSize: 13, color: T.ink3 }}>Nothing on file yet.</div>}
           </div>
         )}
 
@@ -571,30 +630,48 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
           </div>
         )}
 
-        {!isReadOnly && <button onClick={copyLink} style={{ ...btnLink, fontSize: 12 }}>Copy their link to log their own hours</button>}
+        {/* FIX-9 Part D.5 — ONE ROW OF ACTIONS. Logging hours and adding
+            somebody to a shift are the two things a coordinator opens this
+            drawer to do, and neither was here: the only control was a link to
+            copy another link. They go to the screens that already own them,
+            with this person carried across. */}
+        {!isReadOnly && (
+          <div data-testid="vol-person-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <button onClick={() => onLogHours && onLogHours(person)} style={btnPrimary} data-testid="vol-log-hours">Log hours</button>
+            <button onClick={() => onAddToShift && onAddToShift(person)} style={btnQuiet} data-testid="vol-add-shift">Add to a shift</button>
+            <button onClick={copyLink} style={btnQuiet} data-testid="vol-copy-self-log">Copy their self-log link</button>
+          </div>)}
 
         {/* ── GIVING, SECOND AND CONDITIONAL ─────────────────────────────
             Present only when they have actually given, and the server does
             not send it at all to a volunteer coordinator. It is one sentence
             and a door, not a giving history: giving is DEFINED on the donor
             record and this screen does not get a second copy of it. */}
-        {view && view.giving && (
-          <div data-testid="vol-person-giving" style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
-            <div style={{ ...eyebrow, marginBottom: 6 }}>They also give</div>
-            <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.65 }}>
-              {view.giving.sentence}{" "}
-              <button onClick={() => onOpenRecord(person.id)} style={{ ...btnLink, fontSize: 13 }}>Open their record</button>
-            </div>
-          </div>
-        )}
+        {/* FIX-9 Part D.6 — the "They also give" section is gone. The header
+            says "Also gives" and links to the record, which is the same two
+            facts in four words instead of a section, a sentence and a second
+            copy of a button already at the top right. */}
         {view && view.givingHidden && (
           <div data-testid="vol-person-giving-hidden" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6 }}>{view.givingHidden}</div>
         )}
 
+        {/* FIX-9 Part D.6 — NOTES FOLD. The form and a paragraph of hint text
+            sat open on every volunteer whether or not anybody had ever written
+            a note, which is most of the drawer's height spent on an empty
+            textarea. The count is on the label, so folding hides nothing. */}
         <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 12 }}>
-          <div style={{ ...eyebrow, marginBottom: 4 }}>Internal notes</div>
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, marginBottom: 10 }}>{notes ? notes.sentence : ""}</div>
-          {!isReadOnly && (
+          <button data-testid="vol-notes-toggle" onClick={() => setNotesOpen(o => !o)}
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit",
+              display: "flex", gap: 8, alignItems: "baseline" }}>
+            <span style={eyebrow}>Notes ({notes ? notes.notes.length : 0})</span>
+            <span style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700 }}>
+              {notesOpen ? "Hide" : (notes && notes.notes.length ? "Show" : "Add a note")}
+            </span>
+          </button>
+          {notesOpen && <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.6, margin: "8px 0 10px" }}>
+            {notes ? notes.sentence : ""}
+          </div>}
+          {notesOpen && !isReadOnly && (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select aria-label="Kind of note" value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} style={inp}>
@@ -606,8 +683,8 @@ function PersonPanel({ person, isReadOnly, onClose, onChanged, onOpenRecord }) {
               <div><button onClick={add} disabled={!form.body.trim()} style={{ ...btnPrimary, opacity: form.body.trim() ? 1 : 0.5 }} data-testid="vol-note-add">Add note</button></div>
             </div>
           )}
-          {notes && !notes.notes.length && <div style={{ fontSize: 13, color: T.ink3 }}>No notes yet.</div>}
-          {notes && notes.notes.map(n => (
+          {notesOpen && notes && !notes.notes.length && <div style={{ fontSize: 13, color: T.ink3 }}>No notes yet.</div>}
+          {notesOpen && notes && notes.notes.map(n => (
             <div key={n.id} data-testid="vol-note" style={{ padding: "9px 0", borderBottom: "1px solid " + T.bg2 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 12, color: T.ink3, flexWrap: "wrap" }}>
                 <strong style={{ color: T.ink }}>{KIND_LABEL[n.kind] || n.kind}</strong>
@@ -702,9 +779,14 @@ function OpportunitiesView({ isReadOnly, narrow }) {
           {o.location && <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>{o.location}</div>}
           {o.description && <div style={{ fontSize: 13, color: T.ink2, marginTop: 6, lineHeight: 1.5 }}>{o.description}</div>}
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
-            <code data-testid="vol-opp-url" style={{ fontSize: 11.5, background: T.bg, border: "1px solid " + T.bg3, borderRadius: 7, padding: "5px 9px", color: T.ink2, wordBreak: "break-all" }}>{o.publicUrl}</code>
-            <button onClick={() => { try { navigator.clipboard.writeText(o.publicUrl); setNote("Link copied. Share it wherever your volunteers will see it."); } catch { setNote(o.publicUrl); } }}
-              style={btnQuiet}>Copy the link</button>
+            {/* FIX-9 Part C — THE PRINTED URL IS NOISE. Every opportunity on
+                this screen carried its full sign-up URL in a monospace box, on
+                every row, which is a string nobody reads and nobody types:
+                they press the button. One button, and it confirms. */}
+            <button data-testid="vol-opp-copy"
+              onClick={() => { try { navigator.clipboard.writeText(o.publicUrl); setNote("Link copied."); }
+                               catch { setNote(o.publicUrl); } }}
+              style={btnQuiet}>Copy sign-up link</button>
             {!isReadOnly && <button data-testid={"vol-new-slot-" + o.id} onClick={() => setNewSlot(o.id)} style={btnQuiet}>Add a shift</button>}
           </div>
 
