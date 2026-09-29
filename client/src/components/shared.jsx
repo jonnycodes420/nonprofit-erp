@@ -361,10 +361,23 @@ export function GlobalStyles() {
     *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
     body{font-family:'DM Sans',system-ui,sans-serif;color:${T.ink};}
     h1,h2,h3{font-family:'DM Serif Display',Georgia,serif;letter-spacing:-0.02em;}
-    ::-webkit-scrollbar{width:5px;height:5px;}
-    ::-webkit-scrollbar-track{background:${T.bg2};}
-    ::-webkit-scrollbar-thumb{background:${T.gold500};border-radius:99px;}
-    ::-webkit-scrollbar-thumb:hover{background:${T.gold600};}
+    /* ── FIX-8 Part A · THE STRAY BRASS BAR WAS A SCROLLBAR ────────────────
+       The thumb was painted gold500, the brand's brass, so on a Mac set to
+       "Show scroll bars: Always" every region that overflowed by a rounding
+       pixel drew a brass bar. It read as a design element nobody could
+       explain: at the right end of the Fundraising, Volunteers and Finance
+       tab strips, down the donor profile, and above the Fundraising tabs.
+       Brass is one of the four colours and it MEANS something (overdue, needs
+       a look). Spending it on chrome is what made those bars unreadable.
+       A scrollbar is now a quiet warm grey, and wide enough to grab. */
+    ::-webkit-scrollbar{width:9px;height:9px;}
+    ::-webkit-scrollbar-track{background:transparent;}
+    ::-webkit-scrollbar-thumb{background:${T.bg3};border-radius:99px;border:2px solid transparent;background-clip:padding-box;}
+    ::-webkit-scrollbar-thumb:hover{background:${T.ink3};background-clip:padding-box;}
+    *{scrollbar-width:thin;scrollbar-color:${T.bg3} transparent;}
+    /* FIX-8 Part B.4 — a figure says it opens when somebody reaches for it. */
+    .figure-inline{text-decoration:none;}
+    .figure-inline:hover,.figure-inline:focus-visible{text-decoration:underline;text-decoration-style:dotted;text-decoration-color:${T.ink3};text-underline-offset:4px;text-decoration-thickness:2px;}
     ::selection{background:${T.greenDk}22;color:${T.ink};}
     input,textarea,select{background:${T.gold50};border:1.5px solid ${T.bg3};border-radius:8px;color:${T.ink};transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:${T.greenDk}!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
@@ -675,7 +688,11 @@ export function GlobalStyles() {
          size is its content's min-content (the 537px tab row) — without it
          the whole column blows out sideways. */
       .donor-profile-body>div{overflow:visible!important;height:auto!important;border-right:none!important;min-width:0!important;max-width:100%!important;}
-      .dp-tabs{overflow-x:auto!important;}
+      /* FIX-8 Part A.1 — the phone keeps horizontal scroll on both tab
+         strips. Wrapping six tabs at 390 costs three rows of vertical space
+         before any content; scrolling costs a swipe. The desktop wraps. */
+      .dp-tabs{overflow-x:auto!important;flex-wrap:nowrap!important;}
+      .section-tabbar{overflow-x:auto!important;flex-wrap:nowrap!important;}
       /* Header stays ONE row: compact "←" back (word hidden) beside the donor
          name — the full-width Back bar wasted ~60px of a 700px fold. */
       .donor-profile-header{flex-wrap:wrap!important;padding:10px 14px!important;gap:8px!important;}
@@ -922,7 +939,19 @@ export function SectionTabs({tabs,active,onSelect,className,style,dataKey,stripP
          tabs end. It used to run the full width of the content, which
          left a bare tan bar past the last tab that read as a stray
          brass line. maxWidth keeps the phone overflow-scroll. */
-    style={{display:"flex",alignItems:"center",gap:2,borderBottom:"1.5px solid "+T.bg3,overflowX:"auto",flexShrink:0,marginBottom:18,width:"fit-content",maxWidth:"100%",...style}}>
+    /* FIX-8 Part A.1 — A TAB STRIP NEVER SCROLLS ON A DESKTOP.
+       `overflowX:auto` here is what drew the brass bar at the right end of
+       Fundraising, Volunteers and Finance: the strip overflowed its own
+       `width:fit-content` box by a rounding pixel, and a Mac set to
+       "Show scroll bars: Always" drew a thumb for it. Even with the thumb now
+       grey, a strip that scrolls by one pixel is a strip whose last tab can
+       be half-hidden for no reason anybody can see.
+       So it WRAPS instead. Every tab stays visible and reachable at any
+       width, the rule under them still ends where the tabs end, and the
+       phone keeps its horizontal scroll through `.section-tabbar` in the
+       media block below, where wrapping four rows of tabs would cost more
+       than it saves. */
+    style={{display:"flex",alignItems:"center",gap:2,flexWrap:"wrap",borderBottom:"1.5px solid "+T.bg3,flexShrink:0,marginBottom:18,width:"fit-content",maxWidth:"100%",...style}}>
     {tabs.map(t=>{
       const on=active===t.id;
       return <button key={t.id} role="tab" aria-selected={on} {...(dataKey?{["data-"+dataKey]:t.id}:{})} onClick={()=>onSelect(t.id)} className={on?"section-tab-on":undefined} style={{
