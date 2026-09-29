@@ -416,6 +416,239 @@ app.get("/finance/funds-detail/rows", requireAuth, wrap(async (req, res) => {
 }));
 
 // ── FIN-1 · THE BOOKKEEPER'S EXPORT, IN THE SHAPE THEIR TOOL WANTS ───────
+// ═══════════════════════════════════════════════════════════════════════════
+//  INT-2 · SENDING TO THE ACCOUNTING SYSTEM
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Steward knows every gift; QuickBooks needs DEPOSITS. shared/bookkeeping.js
+// turns the first into the second and refuses any deposit whose lines do not
+// foot to what arrived in the bank, in cents. These routes are the connection,
+// the mapping, the send and the monthly agreement.
+//
+// THE SEND IS IDEMPOTENT BY PAYOUT, and the guarantee is Steward's own ledger
+// rather than the vendor's good manners: one row per (org, vendor, payout),
+// claimed BEFORE the call and kept afterwards whatever happened. Two deposits
+// for one payout doubles a nonprofit's recorded revenue in its own books,
+// which is worse than sending nothing at all.
+//
+// THE EXPORT STAYS. FIN-1's QuickBooks-ready and Xero-ready CSV is the
+// fallback and is untouched below, and disconnecting deletes nothing in the
+// accounting system: what was sent was sent, and Steward has no business
+// reaching back into somebody's books to tidy up after itself.
+const bookkeepingMod = () => import("../shared/bookkeeping.js");
+
+// The accounting connection, its mapping, and whether it is ready to send.
+app.get("/bookkeeping", requireAuth, wrap(async (req, res) => {
+  const BK = await bookkeepingMod();
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT id, vendor, status, realm_id, mapping, donor_names, last_sent_at, last_error, last_error_at
+       FROM bookkeeping_connections WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
+  const funds = await query(`SELECT id, name, restricted FROM fin_funds WHERE org_id=? ORDER BY name`, [orgId]);
+  const sourceKeys = (await query(
+    `SELECT DISTINCT provider FROM giving_sources WHERE org_id=? AND status <> 'disconnected'`, [orgId]))
+    .map(r => r.provider).concat(["stripe"]);
+  const sources = [...new Set(sourceKeys)];
+  const connections = rows.map(r => {
+    const mapping = (typeof r.mapping === "string" ? JSON.parse(r.mapping || "{}") : r.mapping) || {};
+    const ready = BK.mappingReady({
+      funds: funds.map(f => ({ id: f.id, name: f.name, accountId: (mapping.funds || {})[f.id] || null })),
+      feeAccountId: mapping.feeAccountId || null,
+      depositAccounts: mapping.depositAccounts || {},
+    }, { sources });
+    return { id: r.id, vendor: r.vendor, vendorLabel: BK.VENDORS[r.vendor]?.label || r.vendor,
+      secondAxisLabel: BK.VENDORS[r.vendor]?.secondAxisLabel || null,
+      status: r.status, realmId: r.realm_id || null, donorNames: r.donor_names === true,
+      lastSentAt: r.last_sent_at, lastError: r.last_error, lastErrorAt: r.last_error_at,
+      mapping, ...ready };
+  });
+  res.json({
+    connections, vendors: BK.VENDORS, mappingParts: BK.MAPPING_PARTS,
+    funds: funds.map(f => ({ id: f.id, name: f.name, restricted: f.restricted === true })),
+    sources,
+    // Said once, here, because it is the sentence an organisation needs before
+    // it hands Steward write access to its books.
+    definition: "Steward sends one deposit per payout: the gifts inside it split by fund, the processing fee as a negative line, and a net that equals what hit the bank. It never sends the same payout twice, it never sends event or shop takings as donations, and it sends donor names only if you turn that on.",
+    donorNamesDefault: "Off. Most organisations do not want their donor list mirrored into a bookkeeping system.",
+  });
+}));
+
+// The mapping, saved as one document because it is edited as one screen.
+// NOTHING IS SENT UNTIL IT IS SAVED, and that is literal: the send route
+// re-asks shared/bookkeeping.js and refuses.
+app.put("/bookkeeping/:id/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const BK = await bookkeepingMod();
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT id FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const m = req.body?.mapping;
+  if (!m || typeof m !== "object") return res.status(400).json({ error: "mapping_required" });
+  // Fund ids are checked against THIS org's funds. An id off a request body is
+  // never trusted to be one, for the same reason a campaign id never is.
+  const funds = await query("SELECT id FROM fin_funds WHERE org_id=?", [orgId]);
+  const mine = new Set(funds.map(f => f.id));
+  const clean = {
+    funds: Object.fromEntries(Object.entries(m.funds || {}).filter(([k]) => mine.has(k))),
+    classes: Object.fromEntries(Object.entries(m.classes || {}).filter(([k]) => mine.has(k))),
+    revenueAccounts: m.revenueAccounts && typeof m.revenueAccounts === "object" ? m.revenueAccounts : {},
+    feeAccountId: m.feeAccountId ? String(m.feeAccountId) : null,
+    depositAccounts: m.depositAccounts && typeof m.depositAccounts === "object" ? m.depositAccounts : {},
+  };
+  const donorNames = req.body?.donorNames === true;
+  await run(`UPDATE bookkeeping_connections SET mapping=?::jsonb, donor_names=?, updated_at=NOW()
+              WHERE id=? AND org_id=?`, [JSON.stringify(clean), donorNames, req.params.id, orgId]);
+  res.json({ ok: true, mapping: clean, donorNames,
+    sentence: "Saved. Nothing has been sent; press Send, or leave it and Steward sends once a day." });
+}));
+
+// ── THE SEND ───────────────────────────────────────────────────────────────
+// One payout, once, ever. The ledger row is claimed FIRST: an INSERT that
+// conflicts means somebody (or yesterday's scheduled run, or a retry after a
+// timeout) already has this payout, and the honest answer is to report that
+// rather than to send a second deposit.
+app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const BK = await bookkeepingMod();
+  const orgId = req.user.orgId, who = actor(req);
+  const [c] = await query("SELECT * FROM bookkeeping_connections WHERE id=? AND org_id=? AND status <> 'disconnected'",
+    [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const mapping = { ...((typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping) || {}),
+                    donorNames: c.donor_names === true };
+
+  const payouts = Array.isArray(req.body?.payouts) ? req.body.payouts : [];
+  if (!payouts.length) return res.status(400).json({ error: "no_payouts",
+    sentence: "Steward had no payouts to send. Payouts arrive from the connections that settle to your bank." });
+
+  const out = { sent: 0, alreadySent: 0, refused: 0, results: [] };
+  for (const p of payouts.slice(0, 200)) {
+    const payoutId = String(p?.payout?.id || "").trim();
+    if (!payoutId) { out.refused++; out.results.push({ payoutId: null, status: "refused", sentence: "A payout with no id cannot be sent once, so it is not sent at all." }); continue; }
+
+    const built = BK.buildDeposit(p.payout, p.gifts || [], p.revenue || [], mapping);
+    if (!built.ok) {
+      out.refused++;
+      out.results.push({ payoutId, status: "refused", sentence: built.sentence, problem: built.problem,
+        differenceCents: built.differenceCents ?? null });
+      continue;
+    }
+
+    // CLAIM IT FIRST. The unique index on (org, vendor, payout) is the
+    // guarantee, and a conflict here is the correct, quiet answer to "send
+    // everything again".
+    const claimed = await query(
+      `INSERT INTO bookkeeping_deposits (id,org_id,connection_id,vendor,payout_id,source_key,idempotency_key,
+                                         status,net_cents,deposit_on,lines,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,'sending',?,?,?::jsonb,?,?)
+       ON CONFLICT (org_id, vendor, payout_id) DO NOTHING
+       RETURNING id`,
+      ["bkd_" + uuid().slice(0, 10), orgId, c.id, c.vendor, payoutId, built.deposit.sourceKey || null,
+       built.deposit.idempotencyKey, built.deposit.netCents, built.deposit.date,
+       JSON.stringify(built.deposit.lines), who.id, who.name]);
+    if (!claimed.length) {
+      const [existing] = await query(
+        `SELECT status, vendor_deposit_id, net_cents FROM bookkeeping_deposits
+          WHERE org_id=? AND vendor=? AND payout_id=?`, [orgId, c.vendor, payoutId]);
+      out.alreadySent++;
+      out.results.push({ payoutId, status: "already_sent", vendorDepositId: existing?.vendor_deposit_id || null,
+        sentence: "This payout has already been sent to your accounting system. Steward did not send it again." });
+      continue;
+    }
+
+    // THE VENDOR CALL. Without credentials there is nothing to call, and that
+    // is the state every organisation is in until Jonathan's Intuit and Xero
+    // apps exist. The ledger row stays, marked, so the next attempt is still
+    // the SAME payout rather than a second one.
+    const base = c.vendor === "quickbooks" ? process.env.INTUIT_API_BASE : process.env.XERO_API_BASE;
+    if (!base) {
+      await run(`UPDATE bookkeeping_deposits SET status='failed', last_error=?, updated_at=NOW()
+                  WHERE org_id=? AND vendor=? AND payout_id=?`,
+        ["not connected to the accounting system yet", orgId, c.vendor, payoutId]);
+      out.refused++;
+      out.results.push({ payoutId, status: "not_connected",
+        sentence: `Steward built the deposit and did not send it: this organisation is not connected to ${BK.VENDORS[c.vendor].label} yet. The deposit is held against this payout, so connecting later sends it once.` });
+      continue;
+    }
+    try {
+      const r = await fetch(`${base}/deposits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json",
+                   "Idempotency-Key": built.deposit.idempotencyKey,
+                   ...(c.realm_id ? { "X-Realm-Id": c.realm_id } : {}) },
+        body: JSON.stringify(built.deposit),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.error || `the accounting system answered ${r.status}`);
+      await run(`UPDATE bookkeeping_deposits SET status='sent', vendor_deposit_id=?, sent_at=NOW(), last_error=NULL, updated_at=NOW()
+                  WHERE org_id=? AND vendor=? AND payout_id=?`,
+        [body?.id || null, orgId, c.vendor, payoutId]);
+      out.sent++;
+      out.results.push({ payoutId, status: "sent", vendorDepositId: body?.id || null, sentence: built.sentence });
+    } catch (e) {
+      // NOT deleted. A timeout means Steward does not know whether the call
+      // landed; deleting the row here is what turns one deposit into two.
+      await run(`UPDATE bookkeeping_deposits SET status='failed', last_error=?, updated_at=NOW()
+                  WHERE org_id=? AND vendor=? AND payout_id=?`,
+        [String(e.message || e).slice(0, 300), orgId, c.vendor, payoutId]);
+      out.refused++;
+      out.results.push({ payoutId, status: "failed", sentence: `Steward could not finish sending this one: ${e.message}. It is held against this payout, so a retry sends it once, not twice.` });
+    }
+  }
+  await run(`UPDATE bookkeeping_connections SET last_sent_at=NOW(), updated_at=NOW() WHERE id=? AND org_id=?`,
+    [c.id, orgId]);
+  res.json({ ...out,
+    definition: "One deposit per payout, ever. A payout Steward has already sent is reported as already sent and is not sent again." });
+}));
+
+// ── DO THE TWO AGREE? ──────────────────────────────────────────────────────
+// A month of Steward's deposits beside the accounting system's, matched on the
+// payout. Anything on either side with no partner is LISTED rather than netted
+// off, because the row that is missing is the whole value of the view.
+app.get("/bookkeeping/:id/agreement", requireAuth, wrap(async (req, res) => {
+  const BK = await bookkeepingMod();
+  const orgId = req.user.orgId;
+  const [c] = await query("SELECT * FROM bookkeeping_connections WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const month = /^\d{4}-\d{2}$/.test(String(req.query.month || "")) ? String(req.query.month)
+    : String(orgToday(await orgTz(orgId))).slice(0, 7);                // ORG_TZ_SEAM_OK
+  const mine = await query(
+    `SELECT payout_id, net_cents, deposit_on, status, vendor_deposit_id FROM bookkeeping_deposits
+      WHERE org_id=? AND vendor=? AND deposit_on LIKE ? ORDER BY deposit_on`, [orgId, c.vendor, `${month}%`]);
+  // The vendor's side. Without credentials Steward has nothing to compare
+  // against and says so rather than showing a one-sided view that reads like
+  // agreement.
+  let theirs = null;
+  const base = c.vendor === "quickbooks" ? process.env.INTUIT_API_BASE : process.env.XERO_API_BASE;
+  if (base) {
+    try {
+      const r = await fetch(`${base}/deposits?month=${encodeURIComponent(month)}`,
+        { headers: c.realm_id ? { "X-Realm-Id": c.realm_id } : {} });
+      const body = await r.json().catch(() => ({}));
+      theirs = Array.isArray(body?.deposits) ? body.deposits : [];
+    } catch { theirs = null; }
+  }
+  const stewardSide = mine.filter(m => m.status === "sent")
+    .map(m => ({ payoutId: m.payout_id, netCents: Number(m.net_cents), on: m.deposit_on }));
+  const result = theirs
+    ? BK.agree(stewardSide, theirs, { month })
+    : { month, matched: [], onlyInSteward: stewardSide, onlyInVendor: [], differing: [],
+        stewardCents: stewardSide.reduce((t, s) => t + s.netCents, 0), vendorCents: null,
+        agreed: null,
+        sentence: `Steward sent ${stewardSide.length} deposit${stewardSide.length === 1 ? "" : "s"} this month. It cannot read ${BK.VENDORS[c.vendor].label} back yet, so it is not claiming the two agree.` };
+  res.json({ ...result, vendor: c.vendor, vendorLabel: BK.VENDORS[c.vendor].label,
+    held: mine.filter(m => m.status !== "sent").map(m => ({ payoutId: m.payout_id, status: m.status, netCents: Number(m.net_cents) })),
+    definition: "Every deposit Steward sent this month beside the ones in your accounting system, matched on the payout. Anything on either side with no partner is listed, never quietly netted off." });
+}));
+
+// Disconnecting stops the sending and DELETES NOTHING, in Steward or in the
+// accounting system. What was sent was sent.
+app.post("/bookkeeping/:id/disconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run(`UPDATE bookkeeping_connections SET status='disconnected', credentials_sealed=NULL, updated_at=NOW()
+                        WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (r && r.changes === 0) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true,
+    sentence: "Disconnected. Steward will not send anything else. Every deposit it already sent is still in your accounting system, and every record of what it sent is still here." });
+}));
+
 // BUILD-87 gave Steward one bookkeeper's export: one row per gift, a fixed
 // column list, and an assertion in cents before a single byte is written.
 // That file is correct and a bookkeeper still has to re-map its columns by

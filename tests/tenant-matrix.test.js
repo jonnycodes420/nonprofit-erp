@@ -95,6 +95,7 @@ async function reset() {
       // cascade covers a page delete, and this list has to survive an ORG delete
       // too.
       "form_events",
+      "bookkeeping_deposits", "bookkeeping_connections", "pos_sales", "pos_item_mappings",
       "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
       // `grants` delete below would usually take them — but `grant_id` is
@@ -182,6 +183,11 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO imports (id,org_id,name,shape,rows_in) VALUES ($1,$2,$3,'volunteers',1)`,
     [`vimp_${o}`, o, `${mark} Volunteer import`]);
   await q(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash) VALUES ($1,$2,'Zapier','stw_xxxxxx',$3)`, [`ak_${o}`, o, `hash_${o}`]);
+  // INT-2 — an accounting connection per org, so the four /bookkeeping routes
+  // have a real row to fail against rather than 404ing for a missing fixture.
+  await q(`INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,mapping,created_by,created_by_name)
+           VALUES ($1,$2,'quickbooks','active',$3,'{}'::jsonb,'system:test','matrix')`,
+    [`bkc_${o}`, o, `realm_${o}`]).catch(() => {});
   await q(`INSERT INTO membership_levels (id,org_id,name,price,fmv,term) VALUES ($1,$2,'Family',100,25,'12_months')`, [`mbl_${o}`, o]);
   await q(`INSERT INTO memberships (id,org_id,donor_id,level_id,joined_on,starts_on,expires_on,status) VALUES ($1,$2,$3,$4,$5,$5,$5,'active')`, [`mb_${o}`, o, `d_${o}`, `mbl_${o}`, TODAY]);
   // BUILD-98 (switch) Part 4 — a ticket level, so /event-levels/:id is probed.
@@ -384,6 +390,11 @@ function bResolver(routePath, param) {
   // BUILD-99 (major gifts) Part 1 — a proposal IS a row in `opportunities`
   // (shared/proposalShape.js says why there is no second table), so the
   // cross-tenant probe is org B's own opportunity id.
+  // INT-2 — an accounting connection is org B's own books. Org A mapping its
+  // funds into them, sending a deposit to them, reading their month or
+  // disconnecting them would each be a different kind of disaster, and all four
+  // must answer 404.
+  if (routePath.startsWith("/bookkeeping/")) return `bkc_${B}`;
   // INT-POS — the register's event report is read by EVENT id, so org A asking
   // for what org B's gala took at the till must answer 404 like anything else.
   if (routePath.startsWith("/pos/event/")) return `ev_${B}`;

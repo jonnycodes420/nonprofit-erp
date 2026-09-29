@@ -432,6 +432,37 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     });
   }
 
+  // 4 · INT-2 · the accounting system. Not a money-in door: a door money goes
+  // OUT of Steward through, to the books. It belongs on this screen because
+  // the question is the same one ("is it still working?") and because an
+  // organisation that has connected QuickBooks and stopped noticing that the
+  // send is failing has a month-end it does not know about yet.
+  {
+    const BK = await import("../shared/bookkeeping.js");
+    const books = await query(
+      `SELECT id, vendor, status, last_sent_at, last_error FROM bookkeeping_connections
+        WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
+    const byVendor = new Map(books.map(b => [b.vendor, b]));
+    for (const key of BK.VENDOR_KEYS) {
+      const b = byVendor.get(key);
+      const [sentRow] = b ? await query(
+        `SELECT COUNT(*)::int AS n, COALESCE(SUM(net_cents),0)::bigint AS cents FROM bookkeeping_deposits
+          WHERE org_id=? AND vendor=? AND status='sent' AND deposit_on >= ?`, [orgId, key, since30]) : [{ n: 0, cents: 0 }];
+      cards.push({
+        id: b ? b.id : `unconnected:${key}`, kind: "bookkeeping", provider: key,
+        label: BK.VENDORS[key].label,
+        subtitle: "Steward sends one deposit per payout. It never sends the same payout twice.",
+        connected: !!b, canDisconnect: !!b,
+        lastSyncedAt: b ? b.last_sent_at : null,
+        status: !b ? "not_connected" : b.last_error ? "broken" : "healthy",
+        sentence: !b ? C.STATUSES.not_connected.definition
+          : b.last_error ? String(b.last_error)
+          : `${Number(sentRow.n)} deposit${Number(sentRow.n) === 1 ? "" : "s"} sent in the last thirty days.`,
+        gifts30: Number(sentRow.n) || 0, dollars30Cents: Number(sentRow.cents) || 0, lastGiftDate: null,
+      });
+    }
+  }
+
   cards.sort((a, b) => (C.STATUS_RANK[a.status] ?? 9) - (C.STATUS_RANK[b.status] ?? 9));
   const needsAttention = cards.filter(c => c.status === "broken" || c.status === "quiet");
   res.json({
