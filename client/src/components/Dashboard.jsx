@@ -325,10 +325,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // "3 cards stopped this month." A stopped card is money already moving
   // that quietly stopped; the rest of the exceptions ride behind it.
   const [recurringFailed,setRecurringFailed]=useState(0);
+  // HOME-CALM — the stopped cards THEMSELVES, because on Home each one is a
+  // row that names her. The route already returned donorName and lastFailedAt
+  // for every one of them; only the count was being kept.
+  const [failedCardList,setFailedCardList]=useState([]);
   useEffect(()=>{
     apiFetch("/recurring/exceptions").then(d=>{
       const c=d?.counts||{};
       setRecurringFailed(c.failedCards||0);
+      setFailedCardList(Array.isArray(d?.failedCards)?d.failedCards:[]);
       setRecurringAttention((c.failedCards||0)+(c.aboutToLapse||0)+(c.pendingProposals||0)+(c.anniversaries||0));
     }).catch(()=>{});
   },[]);
@@ -832,7 +837,13 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // right thing on the landing page, which is where it stays.
   // BUILD-88d — 18px, and the brass underline stays. A section title at 21px
   // competed with the headline; at 18 it labels the card it sits in.
-  const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:18,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25,borderBottom:"3px solid "+T.gold500,paddingBottom:2};
+  // HOME-CALM — THE BRASS UNDERLINE IS DECORATION, AND IT IS THE LOUDEST
+  // thing on a screen somebody opens at 7:40: a gold rule under every section
+  // heading, drawing the eye to the NAME of a list rather than to anything in
+  // it. It comes off Home. The Dashboard is the board's screen, read once a
+  // month by somebody who wants the sections marked off, and keeps it.
+  const sSerif={fontFamily:"'DM Serif Display',Georgia,serif",fontSize:18,fontWeight:400,letterSpacing:"-0.01em",color:T.ink,lineHeight:1.25,
+                ...(surface==="home"?{}:{borderBottom:"3px solid "+T.gold500,paddingBottom:2})};
   const sLink={background:"transparent",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer"};
   // BUILD-88d — the hairline is bg2 (#e8e4db), the radius is 12, and nothing
   // on this page casts a shadow. bg3 (#d4cfc6) drew a card's edge harder than
@@ -1720,10 +1731,34 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // destructive confirm; a late follow-up is emphasis, not danger, and a
   // screen that shouts in red every morning stops being read.
   const BAND_STYLE={overdue:{label:"Overdue",color:T.gold700},today:{label:"Today",color:T.gold600},ahead:{label:"Coming up",color:T.ink3}};
+  // FIX-8 Part E — Home shows the first thing and folds the rest. This is the
+  // fold's state, and it is per visit rather than remembered: the point of the
+  // screen is that it opens calm every morning.
+  //
+  // THE TDZ RULE, PAID FOR A FOURTH TIME. This sat two hundred lines below,
+  // beside the crossover's fetch, and `homeCalm` reads it — which is a blank
+  // Home and "Cannot access 'ys' before initialization" in a minified bundle,
+  // not a lint error. A const is declared above every line that reads it.
+  const [threadAllOpen,setThreadAllOpen]=useState(false);
+
+  // ── HOME-CALM · WHAT THE LIST SHOWS ON HOME ───────────────────────────
+  // First thing takes threadList[0] and says it properly, so the rest of the
+  // list starts at [1]. Everything overdue and everything due today is a ROW;
+  // next week folds to one line, because the list she opens Home for has to
+  // be ON the screen and next week is not this morning's work.
+  //
+  // The band headers come off here too. They label three blocks in a list of
+  // six, and every row already carries its own age on the right; OVERDUE 4
+  // above four rows each saying how late it is, is the count line again in
+  // another typeface. The Dashboard keeps them: on the board the bands ARE
+  // the shape of the answer.
+  const homeCalm = surface==="home" && !threadAllOpen;
+  const rowSource = homeCalm ? threadList.slice(1).filter(t=>t.band!=="ahead") : threadList;
   const threadRows=[];
+  const homeRows=[];                       // {age, el} — so a stopped card can be placed by age
   let lastBand=null;
-  threadList.forEach((t,i)=>{
-    if(t.band!==lastBand){
+  rowSource.forEach((t,i)=>{
+    if(!homeCalm&&t.band!==lastBand){
       lastBand=t.band;
       const b=BAND_STYLE[t.band]||BAND_STYLE.ahead;
       threadRows.push(
@@ -1743,7 +1778,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           <span style={{fontSize:11,color:T.ink3,marginLeft:8}}>{(threadsData?.bands||[]).find(x=>x.key===t.band)?.count||0}</span>
         </li>);
     }
-    threadRows.push(
+    // HOME-CALM — a home row remembers how old it is, so a stopped card can
+    // be placed among these by age rather than dropped at one end.
+    (homeCalm?(el=>homeRows.push({age:t.overdue?rowFigure(t):-1,el})):(el=>threadRows.push(el)))(
     // ── FIX (2026-09-18) — THE THREAD ROW TAKES DRIFT'S SHAPE ──────────────
     // Drift sat directly under this list looking twice as good, and the
     // difference was not colour: a Drift row gives you a face, a whole
@@ -1762,7 +1799,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     // SIBLING, never nested (keyboard and new-tab both break otherwise).
     <li key={t.id} className="attn-row"
       data-railsel={railView.kind==="donor"&&railView.donorId===t.donorId?"1":undefined}
-      style={{display:"flex",alignItems:"stretch",borderBottom:i<threadList.length-1?"1px solid "+T.bg2:"none",
+      style={{display:"flex",alignItems:"stretch",borderBottom:i<rowSource.length-1?"1px solid "+T.bg2:"none",
               borderLeft:"3px solid "+(t.overdue?T.gold500:T.greenDk)}}>
       {/* BUILD-89 — a plain click opens the donor in the RAIL, beside the list,
           instead of throwing the whole screen away and landing on a profile. It
@@ -1840,6 +1877,68 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     </li>);
   });
 
+  // ── HOME-CALM · THE STOPPED CARD IS A ROW ─────────────────────────────
+  // It used to be an alert box above everything, naming nobody and carrying
+  // a count: "1 card stopped this month." A stopped card is money that was
+  // already moving and quietly stopped, which makes it the most actionable
+  // thing on the screen — so it says who, and what to do, and it takes its
+  // place in the list by age like every other row.
+  //
+  // It is NOT a thread: there is no thread id, no "Done", no snooze. Logging
+  // a conversation is not what fixes a declined card; sending her a link is.
+  // So it borrows the row's SHAPE and none of its controls, and the one
+  // action opens Recurring where that link is sent.
+  if(homeCalm&&failedCardList.length){
+    const today=new Date();
+    failedCardList.forEach(f=>{
+      // The day it stopped: the last failure if there was more than one,
+      // otherwise the first. If the row carries neither, the age is UNKNOWN
+      // and the row says "stopped" with no figure — it does not print a day
+      // count it cannot source.
+      const failedOn=f.lastFailedAt||f.firstFailedAt||null;
+      const age=failedOn?daysDiff(failedOn):-1;
+      const el=(
+        <li key={"stopped-"+f.subId} className="attn-row"
+          style={{display:"flex",alignItems:"stretch",borderBottom:"1px solid "+T.bg2,
+                  borderLeft:"3px solid "+T.gold500}}>
+          <a href={`/donors/${f.donorId}`} className="attn-row-main"
+            style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,
+                    padding:"14px 16px 14px 13px",textDecoration:"none",color:"inherit"}}
+            onClick={e=>{if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;e.preventDefault();
+              openRailDonor(f.donorId);}}>
+            <PersonMark id={f.donorId} name={f.donorName} size={38}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div className="attn-donor-name" style={{fontSize:15,fontWeight:700,color:T.ink}}>{f.donorName}</div>
+              <div className="attn-clause" style={{marginTop:3,fontSize:13.5,lineHeight:1.5,color:T.ink2}}>
+                {f.amount?`Their $${f.amount.toLocaleString()} ${f.interval==="year"?"yearly":"monthly"} gift stopped`:"Their recurring gift stopped"}
+                {failedOn?` ${agoPhrase(age)}`:""} when the card was declined.{" "}
+                <span style={{color:T.gold700,fontWeight:600}}>Next: send her a link to update it.</span>
+              </div>
+            </div>
+            <div className="attn-row-next" style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2,flexShrink:0,minWidth:78}}>
+              <div style={{fontSize:14,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.gold700}}>
+                {age>=1?`${age} day${age===1?"":"s"}`:age===0?"Today":"—"}
+              </div>
+              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>
+                stopped
+              </div>
+            </div>
+          </a>
+          <div className="attn-row-actions" style={{display:"flex",gap:8,flexShrink:0,alignItems:"center",padding:"8px 16px 8px 8px"}}>
+            <button className="attn-row-action" data-testid="home-stopped-card"
+              onClick={()=>onNavigate("fundraising",{frSection:"recurring"})}
+              style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:8,padding:"7px 14px",
+                      color:T.ink,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>Send the link</button>
+          </div>
+        </li>);
+      // By age, among the rows that have one. A card stopped nine days ago
+      // sits between the twelve-day row and the eight-day row, which is the
+      // only ordering that lets one list be read straight down.
+      const at=homeRows.findIndex(r=>r.age>=0&&r.age<age);
+      if(at<0)homeRows.push({age,el});else homeRows.splice(at,0,{age,el});
+    });
+  }
+
   // The thank queue items fold into the thread rows themselves once a gift
   // opens its thread — a donor with an open thread never shows a second
   // "thank" line below.
@@ -1853,10 +1952,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // disagree about the number or the sentence. A failure is silence: a
   // crossover that will not load must never break the morning screen.
   const [crossover,setCrossover]=useState(null);
-  // FIX-8 Part E — Home shows the first thing and folds the rest. This is the
-  // fold's state, and it is per visit rather than remembered: the point of the
-  // screen is that it opens calm every morning.
-  const [threadAllOpen,setThreadAllOpen]=useState(false);
   useEffect(()=>{
     if(surface!=="home")return undefined;
     let live=true;
@@ -1864,15 +1959,38 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
     return ()=>{live=false;};
   },[surface]);
 
+  // HOME-CALM — the crossover's Home rendering, defined once here and placed
+  // at the foot of the panel. Silent when there is nothing to say.
+  const homeCrossoverCard = surface==="home"&&crossover&&crossover.nextStep ? (
+    <button data-testid="home-volunteer-crossover"
+      onClick={()=>onNavigate&&onNavigate("volunteers")}
+      style={{textAlign:"left",width:"100%",background:T.white,border:"1px solid "+T.bg3,borderRadius:12,
+              padding:"13px 16px",cursor:"pointer",fontFamily:"inherit",display:"flex",gap:12,
+              alignItems:"center",flexWrap:"wrap",marginTop:8}}>
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"block",fontSize:13.5,fontWeight:700,color:T.ink}}>{crossover.nextStep.label}</span>
+        <span style={{display:"block",fontSize:12.5,color:T.ink3,marginTop:2,lineHeight:1.5}}>{crossover.nextStep.why}</span>
+      </span>
+      <span style={{fontSize:12.5,fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>Open Volunteers →</span>
+    </button>
+  ) : null;
+
   const threadSection=(
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {/* ── VOL-1 · THE CROSSOVER, ON HOME ────────────────────────────
-              The thing nobody else does, said in one line above the work:
-              the people who already say yes with their time and have never
-              been asked for a gift. It sits here rather than in a card of
-              its own because it is a NEXT STEP, and next steps belong above
-              the Thread. It is silent when there is nothing to say. */}
-          {surface==="home"&&crossover&&crossover.nextStep&&(
+          {/* ── VOL-1 · THE CROSSOVER ─────────────────────────────────────
+              The thing nobody else does: the people who already say yes with
+              their time and have never been asked for a gift.
+
+              HOME-CALM — IT IS NOT ABOVE THE WORK ANY MORE. VOL-1 put it
+              there reasoning that a next step belongs above the Thread, and
+              that was true of a next step somebody is waiting on. This one
+              is an IDEA — a good one, worth having, and worth having after
+              the four people who are actually waiting rather than in front
+              of them, with a green bar making it the brightest thing on a
+              screen opened at 7:40. On Home it renders once, plain, at the
+              very bottom (see homeCrossoverCard). The Dashboard keeps it
+              here, where it reads as one of the board's standing ideas. */}
+          {surface!=="home"&&crossover&&crossover.nextStep&&(
             <button data-testid="home-volunteer-crossover"
               onClick={()=>onNavigate&&onNavigate("volunteers")}
               style={{textAlign:"left",background:T.white,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.greenDk,
@@ -1893,19 +2011,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div className="dash-cpad" style={{...cPad,...sHdrPad,...sHdr}}>
               <span style={{display:"flex",flexDirection:"column",gap:6,minWidth:0}}>
                 <span style={{...sSerif,alignSelf:"flex-start"}}>The Thread</span>
-                {/* BUILD-89 — the morning sentence lives HERE now, under the
-                    name of the list it is about, at reading size rather than
-                    as the first thing the screen says to you. */}
-                {surface==="home"&&threadsData&&(
-                  <span className="thread-note" style={{fontSize:14,color:T.ink2,lineHeight:1.45,maxWidth:"46ch"}}>
-                    {homeNote({threads:threadsData,drift:driftData,atRisk:recurringHealth?.atRisk,
-                               latePledgeInstallments:homeData?.latePledgeInstallments,
-                               membershipsExpiringThisMonth:homeData?.membershipsExpiringThisMonth,
-                               grantDeadlinesSoon:homeData?.grantDeadlinesSoon,
-                               grantDeadlineWindowDays:homeData?.grantDeadlineWindowDays,
-                               vocabulary:data.org?.vocabulary})}
-                  </span>
-                )}
+                {/* HOME-CALM — THE MORNING SENTENCE IS GONE FROM HOME, and it
+                    is gone because First thing says the same thing better. It
+                    read "Four people are waiting on you; Underhill has been
+                    waiting a month" forty pixels above a row that said
+                    Underhill had been waiting a month. Every fact it carried
+                    still has a place: the people waiting ARE the rows, the
+                    stopped card is now a row of its own, and the donors who
+                    have gone quiet keep their own section further down.
+                    homeNote() itself is untouched — the digest email and the
+                    Dashboard still use it. */}
               </span>
               <span className="thread-hdr-tools" style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
                 {/* BUILD-85 — the scope toggle appears ONLY for an admin at a
@@ -1920,7 +2035,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     ))}
                   </span>
                 )}
-                {threadStat&&threadStat.open>0&&(
+                {/* HOME-CALM — "10 open · 4 overdue · oldest 82 days" is a
+                    tally, not a decision: the machine showing its arithmetic
+                    beside a list that already shows every one of those rows
+                    with its own age on the right. It stays on the Dashboard,
+                    where counting IS the job. */}
+                {surface!=="home"&&threadStat&&threadStat.open>0&&(
                   <span style={{fontSize:11.5,color:T.ink3}}>
                     {/* "oldest 0 days" is the same non-phrase as "day 0": a
                         queue planned this morning has no age yet, and saying
@@ -1956,16 +2076,6 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 view) the list stays as it was: this is Home's problem. */}
             {threadList.length>0&&surface==="home"&&!threadAllOpen&&(()=>{
               const first=threadList[0];
-              const bands=threadsData?.bands||[];
-              const bandCount=k=>(bands.find(x=>x.key===k)?.count||0);
-              const rest=Math.max(0,bandCount("overdue")-(first.band==="overdue"?1:0));
-              const today=bandCount("today")-(first.band==="today"?1:0);
-              const ahead=bandCount("ahead")-(first.band==="ahead"?1:0);
-              const folds=[];
-              if(rest>0)folds.push(`${rest} more ${rest===1?"is":"are"} overdue`);
-              if(today>0||ahead>0)folds.push([
-                today>0?`${today} ${today===1?"is":"are"} due today`:null,
-                ahead>0?`${ahead} ${ahead===1?"is":"are"} coming up`:null].filter(Boolean).join(" and "));
               return (
                 <div data-testid="home-first-thing" style={{...cPad,paddingTop:4,paddingBottom:16}}>
                   <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",
@@ -1999,17 +2109,33 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                         revisit reason). It writes nothing new. */}
                     <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
                   </div>
-                  <div style={{marginTop:14,display:"flex",flexDirection:"column"}}>
-                    {folds.map(line=>(
-                      <button key={line} data-testid="home-fold" onClick={()=>setThreadAllOpen(true)}
-                        style={{textAlign:"left",background:"none",border:"none",borderTop:"1px solid "+T.bg2,
-                          padding:"10px 0",fontSize:12.5,color:T.ink2,cursor:"pointer",fontFamily:"inherit"}}>
-                        {line} · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
-                      </button>))}
-                  </div>
                 </div>);
             })()}
-            {threadList.length>0&&(surface!=="home"||threadAllOpen)&&(
+            {/* HOME-CALM — AND THEN THE LIST, on the screen. Part E folded it
+                behind two "Show them" links, which made the one thing she
+                opened Home for the one thing not on it. */}
+            {homeCalm&&homeRows.length>0&&(
+              <ul data-testid="home-thread-list" style={{listStyle:"none",margin:0,padding:0}}>
+                {homeRows.map(r=>r.el)}
+              </ul>
+            )}
+            {/* Next week is still folded, because next week is not this
+                morning's work. */}
+            {homeCalm&&threadList.length>0&&(()=>{
+              const bands=threadsData?.bands||[];
+              const first=threadList[0];
+              const ahead=(bands.find(x=>x.key==="ahead")?.count||0)-(first.band==="ahead"?1:0);
+              if(ahead<=0)return null;
+              return (
+                <div style={{...cPad,paddingTop:0,paddingBottom:12}}>
+                  <button data-testid="home-fold" onClick={()=>setThreadAllOpen(true)}
+                    style={{textAlign:"left",background:"none",border:"none",borderTop:"1px solid "+T.bg2,
+                      width:"100%",padding:"11px 0 0",fontSize:12.5,color:T.ink2,cursor:"pointer",fontFamily:"inherit"}}>
+                    {ahead} {ahead===1?"is":"are"} coming up this week · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
+                  </button>
+                </div>);
+            })()}
+            {threadList.length>0&&!homeCalm&&(
               <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
             )}
             {surface==="home"&&threadAllOpen&&threadList.length>0&&(
@@ -2738,8 +2864,16 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           under Fundraising → Recurring Giving). Home keeps one tab and no
           tab bar; when any recurring count is non-zero, ONE line below links
           across. Recurring is a place you go, not a thing you scan every
-          morning. */}
-      {recurringAttention>0&&(
+          morning.
+
+          HOME-CALM — AND ON HOME IT IS NOT A LINE ABOVE THE WORK EITHER. A
+          stopped card is money that was already moving and quietly stopped:
+          that is the most actionable thing on the screen, and it was being
+          said as an alert with a COUNT in it, above everything, naming
+          nobody. It is a Thread row now — it names her, it says what to do,
+          and it takes its place in the list by age like every other row. The
+          Dashboard keeps the line, because the board is reading totals. */}
+      {surface!=="home"&&recurringAttention>0&&(
         <div {...interactive(()=>onNavigate("fundraising",{frSection:"recurring"}),{label:"Open recurring giving"})}
           style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"10px 16px",display:"flex",alignItems:"center",gap:10}}>
           <span aria-hidden style={{color:T.terracotta,fontSize:13,lineHeight:1}}>◑</span>
@@ -2825,9 +2959,14 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       </div>{/* /home-shell-top */}
       {/* FIX-3 A (finding 1) — the lower half runs the full width of the
           panel, below the Thread and the rail (see sectionStack). */}
-      {surface==="home"&&(sectionStack?.lower||(wordsOffer&&!editMode))&&(
+      {surface==="home"&&(sectionStack?.lower||homeCrossoverCard||(wordsOffer&&!editMode))&&(
       <div className="home-shell-lower">
       {sectionStack?.lower}
+      {/* HOME-CALM — THE VOLUNTEER IDEA, LAST AND PLAIN. Same words, same
+          number, same route; no green bar, and below the work rather than
+          in front of it. It is the last thing she reads, which is where an
+          idea belongs on a morning screen. */}
+      {homeCrossoverCard}
       {/* BUILD-89 — BUILD-86 Part B's one line, once, at the FOOT of the
           panel. It used to sit between the day and the first card, so the
           second thing anybody read on their own Home was Steward asking a
