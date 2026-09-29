@@ -36,11 +36,47 @@ const money = cents => {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: n % 1 ? 2 : 0, maximumFractionDigits: 2 });
 };
 
-export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNavigate }) {
+// FIX-7 Part 3.3 — "$950 of $500" reads as a mistake the first time and as
+// arithmetic the second. Past the goal, the sentence says so in the one action
+// colour; short of it, the fraction is the honest shape.
+function goalLine(raisedCents, goalCents) {
+  if (!goalCents) return <span>{money(raisedCents)}</span>;
+  if (raisedCents > goalCents) return (
+    <span style={{ color: T.greenDk, fontWeight: 700 }}>{money(raisedCents)}, goal {money(goalCents)} passed</span>);
+  return <span>{money(raisedCents)} of {money(goalCents)}</span>;
+}
+
+// FIX-7 Part 3.2 — taking somebody's page down is not a button you can brush
+// past on the way to somewhere else. It lives behind More, it says what will
+// happen in the words it will happen in, and it can be undone.
+function RowMenu({ label, confirmText, onConfirm }) {
+  const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  if (asking) return (
+    <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", gap: 6, maxWidth: 340 }}>
+      <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5 }}>{confirmText}</div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button style={btn(true)} data-testid="p2p-row-confirm"
+          onClick={() => { setAsking(false); setOpen(false); onConfirm(); }}>{label}</button>
+        <button style={btn(false)} onClick={() => { setAsking(false); setOpen(false); }}>Cancel</button>
+      </div>
+    </div>);
+  return (
+    <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+      {open && <button style={btn(false)} data-testid="p2p-row-action" onClick={() => setAsking(true)}>{label}</button>}
+      <button style={{ ...btn(false), padding: "6px 10px" }} data-testid="p2p-row-more"
+        aria-expanded={open} aria-label={open ? "Fewer options" : "More options"}
+        onClick={() => setOpen(x => !x)}>{open ? "Close" : "More"}</button>
+    </div>);
+}
+
+export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNavigate, openPageId = "" }) {
   const [pages, setPages] = useState(null);
   const [pageId, setPageId] = useState("");
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
+  const [undo, setUndo] = useState(null);
+  const [openRaised, setOpenRaised] = useState(false);
   const [newTeam, setNewTeam] = useState(null);
 
   useEffect(() => {
@@ -48,10 +84,14 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
       .then(r => {
         const list = (Array.isArray(r) ? r : r.pages || []).filter(p => p.status !== "archived");
         setPages(list);
-        setPageId(x => x || list.find(p => p.p2p_enabled)?.id || list[0]?.id || "");
+        // FIX-7 Part 4 — a page the caller asked for wins, so a campaign just
+        // created with peer-to-peer on opens on its OWN page, not on whichever
+        // one happens to be first.
+        setPageId(x => (openPageId && list.some(p => p.id === openPageId) ? openPageId : x)
+          || list.find(p => p.p2p_enabled)?.id || list[0]?.id || "");
       })
       .catch(() => setPages([]));
-  }, []);
+  }, [openPageId]);
 
   const load = () => {
     if (!pageId) return;
@@ -59,13 +99,16 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
   };
   useEffect(() => { load(); }, [pageId]);
 
-  const takedown = async (kind, id, status) => {
-    setMsg("");
+  const takedown = async (kind, id, status, name) => {
+    setMsg(""); setUndo(null);
     try {
       const r = kind === "team"
         ? await apiFetch(`/p2p-teams/${id}`, { method: "PUT", body: JSON.stringify({ status }) })
         : await apiFetch(`/peer-fundraisers/${id}`, { method: "PUT", body: JSON.stringify({ status }) });
-      setMsg(r.sentence || (status === "archived" ? "Taken down. Its gifts are still counted on the campaign." : "Back up."));
+      setMsg(r.sentence || (status === "archived"
+        ? `${name} is off the public site. Past gifts still count.`
+        : `${name} is back up.`));
+      setUndo({ kind, id, name, status: status === "archived" ? "active" : "archived" });
       load();
     } catch (e) { setMsg(errorMessage(e, "That did not go through.")); }
   };
@@ -100,7 +143,11 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
           onClick={() => openAuthed("/reports/p2p-fundraisers?format=csv", "fundraisers-by-campaign.csv", { download: true })
             .catch(e => setMsg(errorMessage(e, "The file could not be made.")))}>Fundraisers CSV</button>
       </div>
-      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink }}>{msg}</div>}
+      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span>{msg}</span>
+        {undo && <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} data-testid="p2p-undo"
+          onClick={() => takedown(undo.kind, undo.id, undo.status, undo.name)}>Undo</button>}
+      </div>}
 
       {d && !d.page.p2pEnabled && (
         <Card style={{ padding: "16px 18px" }}>
@@ -116,19 +163,48 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
         {/* THE TOTALS, AND THE IDENTITY THEY FOOT TO. Printed, not assumed. */}
         <Card style={{ padding: "16px 18px" }}>
           <div style={h}>{d.page.title}</div>
+          {/* FIX-7 Part 3.1 — the identity lives BEHIND the total, where a
+              figure's rows live everywhere else in this app. Somebody who
+              wants to check the number opens it; everybody else reads four
+              numbers and gets on with the walk. */}
           <div style={{ display: "flex", gap: 26, flexWrap: "wrap", marginBottom: 8 }}>
             {[["Raised", money(t.pageCents)], ["Through people", money(t.throughPeopleCents)],
               ["Given directly", money(t.directCents)],
               ["Goal", d.page.goalCents ? money(d.page.goalCents) : "None set"]].map(([label, value]) => (
               <div key={label}>
-                <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{value}</div>
+                {label === "Raised"
+                  ? <button data-testid="p2p-raised" aria-expanded={openRaised} onClick={() => setOpenRaised(x => !x)}
+                      title="What this is made of" style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
+                        fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif",
+                        borderBottom: "1px dashed " + T.bg3 }}>{value}</button>
+                  : <div style={{ fontSize: 22, fontWeight: 800, color: T.ink, fontFamily: "'DM Serif Display',serif" }}>{value}</div>}
                 <div style={{ fontSize: 11.5, color: T.ink3 }}>{label}</div>
               </div>))}
           </div>
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }} data-testid="p2p-foots">{t.footsSentence}</div>
-          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{d.sentence}</div>
-          {orgSlug && <div style={{ fontSize: 12, color: T.ink3, marginTop: 8 }}>
-            The public page: <span style={{ color: T.ink, wordBreak: "break-all" }} data-testid="p2p-public-url">/give/{orgSlug}/{d.page.slug}</span>
+          {openRaised && (
+            <div data-testid="p2p-foots" style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5,
+              background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 9, padding: "10px 12px", marginBottom: 8 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 6 }}>
+                {[["Through teams", t.teamCents], ["Through fundraisers with no team", t.soloCents],
+                  ["Given to the page directly", t.directCents]].map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", gap: 10 }}>
+                    <span>{l}</span><span style={{ marginLeft: "auto", color: T.ink, fontWeight: 700 }}>{money(v)}</span>
+                  </div>))}
+                <div style={{ display: "flex", gap: 10, borderTop: "1px solid " + T.bg3, paddingTop: 3 }}>
+                  <span>Raised</span><span style={{ marginLeft: "auto", color: T.ink, fontWeight: 800 }}>{money(t.pageCents)}</span>
+                </div>
+              </div>
+              {t.footsSentence} {d.sentence}
+            </div>)}
+          {orgSlug && <div style={{ fontSize: 12, color: T.ink3, marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span>The public page:</span>
+            <span style={{ color: T.ink, wordBreak: "break-all" }} data-testid="p2p-public-url">/give/{orgSlug}/{d.page.slug}</span>
+            <button style={{ ...btn(false), padding: "4px 10px", fontSize: 12 }} data-testid="p2p-copy-link"
+              onClick={() => {
+                const url = `${window.location.origin}/give/${orgSlug}/${d.page.slug}`;
+                if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => setMsg("Link copied.")).catch(() => setMsg(url));
+                else setMsg(url);
+              }}>Copy link</button>
           </div>}
         </Card>
 
@@ -157,11 +233,14 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
             <div key={tm.id} data-testid="p2p-team-row" style={{ display: "flex", gap: 12, alignItems: "baseline", fontSize: 13,
               color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap", opacity: tm.status === "active" ? 1 : 0.55 }}>
               <strong style={{ minWidth: 170 }}>{tm.name}{tm.status === "archived" ? " (taken down)" : ""}</strong>
-              <span>{money(tm.raisedCents)}{tm.goalCents ? ` of ${money(tm.goalCents)}` : ""}</span>
+              {goalLine(tm.raisedCents, tm.goalCents)}
               <span style={{ color: T.ink3 }}>{tm.members} {tm.members === 1 ? "fundraiser" : "fundraisers"}</span>
-              {!isReadOnly && isAdmin && <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="p2p-team-takedown"
-                onClick={() => takedown("team", tm.id, tm.status === "active" ? "archived" : "active")}>
-                {tm.status === "active" ? "Take it down" : "Put it back"}</button>}
+              {!isReadOnly && isAdmin && <RowMenu
+                label={tm.status === "active" ? "Take it down" : "Put it back"}
+                confirmText={tm.status === "active"
+                  ? `${tm.name} comes off the public site and stops taking gifts. Its past gifts still count. You can put it back.`
+                  : `${tm.name} goes back on the public site and can take gifts again.`}
+                onConfirm={() => takedown("team", tm.id, tm.status === "active" ? "archived" : "active", tm.name)} />}
             </div>))}
           {newTeam && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
             <input placeholder="Team name" value={newTeam.name} onChange={e => setNewTeam(x => ({ ...x, name: e.target.value }))} style={{ ...inp, width: 190 }} />
@@ -185,13 +264,16 @@ export function PeerToPeerView({ isReadOnly, isAdmin = true, orgSlug = "", onNav
               color: T.ink, padding: "8px 0", borderTop: "1px solid " + T.bg3, flexWrap: "wrap", opacity: f.status === "active" ? 1 : 0.55 }}>
               <span style={{ color: T.ink3, width: 22 }}>{i + 1}</span>
               <strong style={{ minWidth: 160 }}>{f.name}{f.status === "archived" ? " (taken down)" : ""}</strong>
-              <span>{money(f.raisedCents)}{f.goalCents ? ` of ${money(f.goalCents)}` : ""}</span>
+              {goalLine(f.raisedCents, f.goalCents)}
               {f.teamName && <span style={{ color: T.ink3 }}>{f.teamName}</span>}
               <span style={{ color: T.ink3 }}>{f.giftCount} {f.giftCount === 1 ? "gift" : "gifts"}</span>
               {!f.isPerson && <span style={{ color: T.ink3 }} title="This fundraiser is not matched to a person in the CRM, so no soft credit is being recorded for them. Matching is by exact email only.">no record matched</span>}
-              {!isReadOnly && isAdmin && <button style={{ ...btn(false), marginLeft: "auto" }} data-testid="p2p-fundraiser-takedown"
-                onClick={() => takedown("fundraiser", f.id, f.status === "active" ? "archived" : "active")}>
-                {f.status === "active" ? "Take it down" : "Put it back"}</button>}
+              {!isReadOnly && isAdmin && <RowMenu
+                label={f.status === "active" ? "Take it down" : "Put it back"}
+                confirmText={f.status === "active"
+                  ? `${f.name}'s page comes off the public site and stops taking gifts. Their past gifts still count. You can put it back.`
+                  : `${f.name}'s page goes back on the public site and can take gifts again.`}
+                onConfirm={() => takedown("fundraiser", f.id, f.status === "active" ? "archived" : "active", f.name)} />}
             </div>))}
         </Card>
       </>}

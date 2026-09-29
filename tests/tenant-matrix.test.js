@@ -163,8 +163,10 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO imports (id,org_id,name,source_filename,shape,rows_in,gifts_created,donors_created,rows_set_aside,rows_errored,dollars_in,dollars_created,summary_json)
            VALUES ($1,$2,$3,$4,'workbook',1,1,1,0,0,$5,$5,$6)`,
     [`imp_${o}`, o, `${mark} Import`, `${mark}-file.xlsx`, amt, JSON.stringify({ dollarsSetAside: 0, dollarsErrored: 0 })]);
-  await q(`INSERT INTO events (id,org_id,name,event_type,date,status) VALUES ($1,$2,$3,'gala',$4,'upcoming')`,
-    [`ev_${o}`, o, `${mark} Event`, TODAY]);
+  // FIX-7 Part 2 — a PUBLIC slug on the event, so §9 can stand on org A's own
+  // event page and try to spend org B's ticket level through it.
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status,public_slug) VALUES ($1,$2,$3,'gala',$4,'upcoming',$5)`,
+    [`ev_${o}`, o, `${mark} Event`, TODAY, `matrix-${tag}-event`]);
   await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'invited')`,
     [`ea_${o}`, `ev_${o}`, o, `d_${o}`, `${mark} Attendee`]);
   await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role) VALUES ($1,$2,$3,$4,3,'Barn')`, [`vs_${o}`, o, `d_${o}`, TODAY]);
@@ -764,6 +766,68 @@ function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, 
     doneRow.length === 1 && doneRow[0].created_by === `u_${A}_staff`, doneRow);
 
   // ── §5 · org B is byte-identical after the whole battery ───────────────────
+  // ── §9 · THE PUBLIC SLUG SURFACES · FIX-7 Part 2 ─────────────────────────
+  // §3 probes routes behind `requireAuth`. The slug-scoped PUBLIC surfaces
+  // (/e, /you, /give, /fundraiser) are skipped there — `isPublic(r)` returns
+  // before the cross-tenant probe — so until now nothing in this file stood on
+  // ORG A's public page and handed it ORG B's row id. That is exactly the
+  // shape the brief named: the scoping rule for a public route is "the org the
+  // SLUG belongs to", and a body field is not a slug.
+  //
+  // Each probe below stands on org A's own event page and offers org B's
+  // ticket level. Status codes are not the assertion (these routes redirect on
+  // every outcome, which is correct for a form post): the assertion is the
+  // DATABASE. Nothing in org A may end up pointing at org B's level, and
+  // nothing may appear in org B at all. §5's hash catches the second; the
+  // counts here catch the first, which a hash of B would never see.
+  console.log("\n— §9 · public slug surfaces: A's page, B's row id —");
+  const bLevel = `evl_${B}`, aSlug = "matrix-a-event";
+  const form = async (path, body) => {
+    const r = await fetch(M + path, { method: "POST", redirect: "manual",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(body).toString() });
+    return { status: r.status, location: r.headers.get("location") || "", text: await r.text() };
+  };
+  // The refusal this file is asserting, in the words the route sends back.
+  const REFUSED = "option is no longer available";
+  const countCross = async () => {
+    const [w] = await q(`SELECT COUNT(*)::int n FROM event_waitlist WHERE org_id=$1 AND level_id=$2`, [A, bLevel]);
+    const [a] = await q(`SELECT COUNT(*)::int n FROM event_attendees WHERE org_id=$1 AND level_id=$2`, [A, bLevel]);
+    return Number(w.n) + Number(a.n);
+  };
+  const before9 = await countCross();
+  await form(`/e/${aSlug}/waitlist`, { name: "Crosser", email: "crosser@mx.local", levelId: bLevel });
+  const regB = await form(`/e/${aSlug}/register`, { name: "Crosser Two", email: "crosser2@mx.local", levelId: bLevel, quantity: "1" });
+  const payB = await form(`/e/${aSlug}/checkout`, { name: "Crosser Three", email: "crosser3@mx.local", levelId: bLevel, quantity: "1" });
+  const after9 = await countCross();
+  ok("§9 A's event page wrote no row against B's ticket level (waitlist, register, checkout)",
+     after9 === before9, { before: before9, after: after9 });
+  // Rows alone are not enough for checkout: it hands off to Stripe and writes
+  // nothing on the way, so a missing row would be "green" with the guard gone.
+  // The REFUSAL itself is the assertion there, on both doors.
+  ok("§9 register refuses B's level in words, not by accident",
+     /option is no longer available/i.test(regB.text) || /option is no longer available/i.test(decodeURIComponent(regB.location)),
+     { status: regB.status, location: regB.location, head: regB.text.slice(0, 160) });
+  ok("§9 checkout refuses B's level in words, not by accident",
+     new RegExp(REFUSED, "i").test(decodeURIComponent(payB.location)) || new RegExp(REFUSED, "i").test(payB.text),
+     { status: payB.status, location: payB.location, head: payB.text.slice(0, 160) });
+
+  // The same wall one step in: A's page, A's OWN level but from A's OTHER
+  // event. Not a tenancy break — it is inside one org — but it is the same
+  // sentence ("the id in the body is scoped to the thing in the slug"), and
+  // it is the one /e/:slug/checkout was actually missing.
+  await q(`INSERT INTO events (id,org_id,name,event_type,date,status,public_slug) VALUES ($1,$2,'Matrix A Second','gala',$3,'upcoming','matrix-a-event-2')
+           ON CONFLICT (id) DO NOTHING`, [`ev2_${A}`, A, TODAY]).catch(() => {});
+  await q(`INSERT INTO event_levels (id,org_id,event_id,kind,name,price,fmv) VALUES ($1,$2,$3,'ticket','Second Level',150,60)
+           ON CONFLICT (id) DO NOTHING`, [`evl2_${A}`, A, `ev2_${A}`]).catch(() => {});
+  const [ev2Before] = await q(`SELECT COUNT(*)::int n FROM event_attendees WHERE org_id=$1 AND level_id=$2`, [A, `evl2_${A}`]);
+  await form(`/e/${aSlug}/register`, { name: "Wrong Event", email: "wrongevent@mx.local", levelId: `evl2_${A}`, quantity: "1" });
+  const wrongPay = await form(`/e/${aSlug}/checkout`, { name: "Wrong Event Two", email: "wrongevent2@mx.local", levelId: `evl2_${A}`, quantity: "1" });
+  const [ev2After] = await q(`SELECT COUNT(*)::int n FROM event_attendees WHERE org_id=$1 AND level_id=$2`, [A, `evl2_${A}`]);
+  ok("§9 one event's page cannot sell another event's level, even inside one org",
+     Number(ev2After.n) === Number(ev2Before.n) && new RegExp(REFUSED, "i").test(decodeURIComponent(wrongPay.location) + wrongPay.text),
+     { before: ev2Before.n, after: ev2After.n, location: wrongPay.location });
+
   console.log("\n— §5 · B-integrity: the battery wrote nothing across the wall —");
   const bAfter = await hashOrgB();
   ok("org B's rows hash byte-identical before and after ~1,000 hostile probes", bBefore === bAfter, { bBefore: bBefore.slice(0, 12), bAfter: bAfter.slice(0, 12) });

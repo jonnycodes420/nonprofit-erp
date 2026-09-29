@@ -1455,13 +1455,44 @@ async function main() {
              VALUES ($1,$2,$3,$4,$5,$6,'system:p2p-signup','The fundraiser, from the sign-up page')`,
       [id, ORG, P2P_PAGE, name, slug, goal]);
 
+  // ── FIX-7 Part 1 · THE STORY IS NEVER DRAWN INTO THE 5K ──────────────────
+  // A peer-to-peer page hands out two things: a soft credit to the fundraiser
+  // and a REAL gift, dated this week, to whoever gave through it. The second
+  // one is what matters here. This block used to choose its people with
+  // `ORDER BY created_at LIMIT 12` — and every donor in this file is written
+  // in a single statement, so created_at is identical on all of them and
+  // Postgres returned whatever heap order it felt like. On this machine that
+  // was a scattered dozen. On production on 28 Sep it was FIVE OF THE ELEVEN,
+  // each of whom got a gift dated a few days ago and stopped drifting; the
+  // shape assertion refused the seed, which is exactly what it is for.
+  //
+  // Two rules now, and an assertion under them:
+  //   1. nobody the story names — the eleven, the lapsed major, the two
+  //      household members, the merge fixture, the cents donor, the pledges,
+  //      the recurring donor, the organisations, the Thread's six;
+  //   2. only somebody who has given inside the last sixty days ANYWAY, and
+  //      is on no subscription and no open pledge, so one more recent gift
+  //      cannot change a single thing a cadence surface says about them.
+  // ORDER BY id, so the same people are drawn on every machine, every run.
+  const storyIds = [...new Set([...driftedIds, lapsedMajor, twoAddr, twoAddrB, hh1, hh2, centsDonor,
+                                pledgeDonorA, pledgeDonorB, recurDonor,
+                                ...orgDonors.map(([id]) => id), ...threadDonors].filter(Boolean))];
+  const NO_STORY_SQL = `
+    SELECT d.id, d.name, d.email FROM donors d
+     WHERE d.org_id=$1 AND d.deleted_at IS NULL AND d.kind IS NULL
+       AND d.id <> ALL($2::text[])
+       AND d.total_giving > 0 AND d.email IS NOT NULL AND d.email <> ''
+       AND d.last_gift_date::date >= $3::date - INTERVAL '60 days'
+       AND NOT EXISTS (SELECT 1 FROM recurring_subscriptions rs WHERE rs.org_id=d.org_id AND rs.donor_id=d.id)
+       AND NOT EXISTS (SELECT 1 FROM pledges p WHERE p.org_id=d.org_id AND p.donor_id=d.id)
+     ORDER BY d.id`;
+  const noStory = await q(NO_STORY_SQL, [ORG, storyIds, TODAY]);
+
   // Five fundraisers. THREE are people who already exist in the CRM, matched
   // by exact email, so their soft credits land on the record the office
   // already knows; TWO are strangers, who become people typed VOLUNTEER —
   // never donors, because they have not given a penny.
-  const p2pPeople = await q(
-    `SELECT id, name, email FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
-       AND email IS NOT NULL AND email <> '' ORDER BY total_giving DESC OFFSET 7 LIMIT 3`, [ORG]);
+  const p2pPeople = noStory.slice(0, 3);
   const P2P_STRANGERS = [
     ["Rosalind Quillfeather", "rosalind.quillfeather@example.org"],
     ["Emeka Beaumaris", "emeka.beaumaris@example.org"],
@@ -1491,10 +1522,8 @@ async function main() {
 
   // A dozen gifts through their pages, from people who already give. One is
   // anonymous to the fundraiser (the default), the rest chose to be seen.
-  const p2pDonors = await q(
-    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND total_giving > 0
-       AND id <> ALL($2::text[]) ORDER BY created_at LIMIT 12`,
-    [ORG, fundraisers.map(f => f.personId).filter(Boolean)]);
+  const fundraiserPersonIds = new Set(fundraisers.map(f => f.personId).filter(Boolean));
+  const p2pDonors = noStory.filter(d => !fundraiserPersonIds.has(d.id)).slice(0, 12);
   const P2P_AMOUNTS = [250, 100, 50, 500, 75, 100, 25, 150, 200, 50, 100, 300];
   let p2pRaised = 0, p2pSoft = 0;
   for (const [i, dn] of p2pDonors.entries()) {
@@ -1518,7 +1547,23 @@ async function main() {
       p2pSoft += amount;
     }
   }
-  console.log(`[assert] peer-to-peer: ${P2P_TEAMS.length} teams, ${fundraisers.length} fundraisers (2 of them new people typed volunteer), $${p2pRaised.toLocaleString()} raised through their pages, $${p2pSoft.toLocaleString()} of it soft-credited, one gift anonymous to its fundraiser`);
+  // FIX-7 Part 1 — the rule, asserted rather than trusted to the query above.
+  // Refuse the seed here rather than let the shape assertion 200 lines below
+  // explain it as "one of the eleven is NOT drifting", which is a true
+  // sentence about the wrong file.
+  const p2pTouched = [...p2pDonors.map(d => d.id), ...fundraisers.map(f => f.personId)].filter(Boolean);
+  const storySet = new Set(storyIds);
+  const trespass = p2pTouched.filter(id => storySet.has(id));
+  if (trespass.length) {
+    console.error(`\nREFUSED: the 5K drew ${trespass.length} of the story's own people (${trespass.join(", ")}).`);
+    console.error("  A peer-to-peer gift is dated this week. Nobody the demo's story depends on may receive one.");
+    process.exit(1);
+  }
+  if (p2pDonors.length < 12 || p2pPeople.length < 3) {
+    console.error(`\nREFUSED: only ${p2pDonors.length} givers and ${p2pPeople.length} fundraisers with no giving story were available (need 12 and 3).`);
+    process.exit(1);
+  }
+  console.log(`[assert] peer-to-peer: ${P2P_TEAMS.length} teams, ${fundraisers.length} fundraisers (2 of them new people typed volunteer), $${p2pRaised.toLocaleString()} raised through their pages, $${p2pSoft.toLocaleString()} of it soft-credited, one gift anonymous to its fundraiser · none of the ${storyIds.length} story people was drawn into it`);
 
   // ── MEMBERS-2 · THE MEMBER SIDE ────────────────────────────────────────
   // Three levels an org this size would really sell, and four people whose

@@ -181,7 +181,7 @@ function ErrorFallback({ label, onReload, onHome, onRetry }) {
       <div style={{ maxWidth: 440, textAlign: "center", background: T.white, border: "1px solid " + T.bg3, borderRadius: 16, padding: "28px 26px", boxShadow: T.shadow }}>
         <div style={{ fontSize: 22, color: T.terracotta, fontFamily: "'DM Serif Display',serif", marginBottom: 6 }}>Something went wrong</div>
         <div style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.6, marginBottom: 18 }}>
-          This view hit an unexpected error{label ? ` while loading ${label}` : ""}. Your data is safe — the issue has been reported. Try reloading, or head back Home.
+          This view hit an unexpected error{label ? ` while loading ${label}` : ""}. Your data is safe. The issue has been reported. Try reloading, or head back Home.
         </div>
         <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
           {onRetry && <button onClick={onRetry} style={{ background: "transparent", border: "1px solid " + T.bg3, borderRadius: 10, padding: "9px 16px", color: T.ink, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Try again</button>}
@@ -310,7 +310,7 @@ export function retentionRisk(d) {
   if (days > 270) reasons.push(`${days}d since last gift`);
   if (d.gifts < 2) reasons.push("one-time donor");
   if (d.status === "lapsed") reasons.push("marked lapsed");
-  const actions = { high:"Call this week — personal touch required", medium:"Send a targeted update in next 2 weeks", low:"Keep on regular cadence" };
+  const actions = { high:"Call this week, in person", medium:"Send a targeted update in next 2 weeks", low:"Keep on regular cadence" };
   return { risk, level, reason: reasons.join(", ") || "steady engagement", action: actions[level] };
 }
 
@@ -348,7 +348,7 @@ export function contactGap(d) {
   // value null + a blank sentence IS the answer: nobody has logged one.
   if (f.value === null || f.value === undefined)
     return { known: true, days: null, everContacted: false,
-             phrase: "never — no conversation has ever been logged with this person" };
+             phrase: "never: no conversation has ever been logged with this person" };
   const days = Number(f.value);
   return { known: true, days, everContacted: true,
            phrase: days === 0 ? "today" : days === 1 ? "1 day ago" : `${days} days ago` };
@@ -978,7 +978,7 @@ export function EmptyState({title,message,action,onAction}) {
   return <div className="fade-in" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"52px 24px",gap:12,textAlign:"center"}}>
     <div aria-hidden style={{width:32,height:3,borderRadius:2,background:T.gold500,opacity:0.9,marginBottom:6}}/>
     <div style={{fontSize:15,fontWeight:700,color:T.ink2}}>{title||"Nothing here yet"}</div>
-    <div style={{fontSize:13,color:T.ink3,maxWidth:340,lineHeight:1.65}}>{message||"Nothing here yet — this is where the magic starts."}</div>
+    <div style={{fontSize:13,color:T.ink3,maxWidth:340,lineHeight:1.65}}>{message||"Nothing here yet. This is where it starts."}</div>
     {action&&<button onClick={onAction} style={{marginTop:8,background:T.greenDk,border:"none",borderRadius:10,padding:"9px 18px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 10px rgba(26,107,74,0.2)"}}>{action}</button>}
   </div>;
 }
@@ -1100,7 +1100,7 @@ export function LockedFeature({title,blurb,cta="See plans",onCta,children,minHei
           </div>
           <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:23,color:T.ink,margin:"7px 0 9px",lineHeight:1.2}}>{title}</div>
           <div style={{fontSize:14,color:T.ink2||T.ink3,lineHeight:1.6}}>{blurb}</div>
-          {onCta&&<button onClick={onCta} style={{marginTop:18,background:T.gold500||T.gold,border:"none",borderRadius:T.radiusSm||8,padding:"10px 20px",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer"}}>Unlock with Team — {cta} →</button>}
+          {onCta&&<button onClick={onCta} style={{marginTop:18,background:T.gold500||T.gold,border:"none",borderRadius:T.radiusSm||8,padding:"10px 20px",fontSize:14,fontWeight:700,color:T.ink,cursor:"pointer"}}>Unlock with Team: {cta} →</button>}
         </div>
       </div>
     </div>
@@ -1205,7 +1205,7 @@ export function GivingByYearChart({gifts, onOpenYear, currency=fmtFull}) {
               ? <rect x={x} y={top} width={bw} height={h} rx={3} fill={T.greenDk}/>
               : <rect x={x} y={pad.t+ph-3} width={bw} height={3} rx={1.5} fill={T.bg3}/>}
             <text x={x+bw/2} y={H-10} textAnchor="middle" fontSize={10} fill={T.ink3}>{y}</text>
-            <title>{v>0?`${currency(v)} in ${y}${open?" — open these gifts":""}`:`Nothing recorded in ${y}`}</title>
+            <title>{v>0?`${currency(v)} in ${y}${open?", open these gifts":""}`:`Nothing recorded in ${y}`}</title>
           </g>
         );
       })}
@@ -1358,7 +1358,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
       timerRef.current=setInterval(()=>setElapsed(s=>s+1),1000);
       setPhase("recording");
     }catch(e){
-      setError("Couldn't access the microphone — check your browser permissions.");
+      setError("Could not reach the microphone. Check your browser permissions.");
     }
   };
 
@@ -1385,7 +1385,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
       setIncludeDetail(false); setIncludeAction(false);
       setPhase("review");
     }catch(e){
-      setError(errorMessage(e, "Transcription failed — please try again."));
+      setError(errorMessage(e, "Transcription failed. Try again."));
       setPhase("recorded");
     }
   };
@@ -1401,7 +1401,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
       onSaved?.(selectedDonor,r);
       close();
     }catch(e){
-      setError(errorMessage(e, "Could not save — please try again."));
+      setError(errorMessage(e, "Could not save. Try again."));
       setPhase("review");
     }
   };
@@ -1461,7 +1461,7 @@ export function VoiceMemoModal({donor,donors,onClose,onSaved}){
               <div style={{textAlign:"center",padding:"24px 0"}}>
                 <button onClick={stopRecording} style={{width:64,height:64,borderRadius:12,background:T.terracotta,border:"none",color:T.white,fontSize:20,cursor:"pointer",boxShadow:"0 4px 16px rgba(184,89,63,0.35)"}}>■</button>
                 <div style={{fontSize:18,fontWeight:700,color:T.ink,marginTop:12,fontFamily:"monospace"}}>{mm}:{ss}</div>
-                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Recording — tap to stop</div>
+                <div style={{fontSize:12,color:T.ink3,marginTop:4}}>Recording. Tap to stop</div>
               </div>
             )}
 

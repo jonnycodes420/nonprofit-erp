@@ -7,6 +7,7 @@ import { mergeLayout, sectionMeta, isDefaultLayout, moveToTop, surfaceOf } from 
 // which read like a log line ("Chen is at day 7.").
 import { homeNote, agoPhrase } from "../../../shared/homeNote";
 import { rowFigure } from "../../../shared/threadFigures";
+import { paceOf } from "../../../shared/pace";
 import { makeT, capitalize, giverCountWord } from "../../../shared/vocabulary";
 import { YourWords } from "./YourWords";
 import { greetingForHour } from "../lib/greeting";
@@ -980,11 +981,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       paceLabel="Just getting started";
       paceSub="too early in the period to gauge pace";
     }else{
-      const expectedPercent=Math.round((elapsedDays/totalDays)*100);
-      const paceDeltaPts=goal.percent-expectedPercent;
-      if(paceDeltaPts>=8){paceLabel="Ahead of pace";paceColor=T.gold;paceSub=`${paceDeltaPts}pt ahead of schedule`;}
-      else if(paceDeltaPts<=-8){paceLabel="Behind pace";paceColor=T.terracotta;paceSub=`${Math.abs(paceDeltaPts)}pt behind schedule`;}
-      else{paceLabel="On pace";paceColor="rgba(240,237,230,0.7)";paceSub=Math.abs(paceDeltaPts)>=1?`within ${Math.abs(paceDeltaPts)}pt of schedule`:"right on schedule";}
+      // FIX-7 Part 5 — the SAME function the campaign thermometer uses
+      // (shared/pace.js). This block used to carry its own 8-point band and
+      // its own wording, so Home and Fundraising could describe one number
+      // two ways. The sub-line is now the reason, not a restatement.
+      const p=paceOf({raised:goal.currentAmount,goal:goal.goalAmount,
+                      start:goal.periodStart,end:goal.periodEnd,
+                      today:new Date().toISOString().slice(0,10)});
+      if(!p){paceLabel=null;paceSub=null;}
+      else{
+        paceLabel=p.label;
+        paceSub=p.sentence;
+        paceColor=p.state==="ahead"?T.gold:p.state==="behind"?T.terracotta:"rgba(240,237,230,0.7)";
+      }
     }
   }
   // Trivially small vs. the goal (under 1%) reads as discouraging stated
@@ -1016,8 +1025,9 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Project=terracotta — all T tokens, no raw hex.
   const CAT_META={annual:{label:"Annual",color:T.gold},capital:{label:"Capital",color:T.greenMid},project:{label:"Project",color:T.terracotta}};
   const catMeta=c=>CAT_META[c]||CAT_META.project;
-  // Faithful to computeFundraisingPace's states — no invented "ahead".
-  const paceText=s=>s==="met"?"Goal met":s==="on_track"?"On pace":s==="behind"?"Behind pace":"In progress";
+  // FIX-7 Part 5 — the four states shared/pace.js actually returns, in its
+  // words. "Ahead" is no longer invented here; it is one of the three.
+  const paceText=s=>s==="met"?"Goal met":s==="ahead"?"Ahead":s==="on_track"?"On pace":s==="behind"?"Behind":"In progress";
   const catPaceColor=s=>s==="behind"?T.terracotta:s==="met"?T.gold:"rgba(240,237,230,0.7)";
   // Exceeded-goal display rule: a beaten goal reads as a win, not a misleading
   // flat "100%". The big number shows the TRUE (uncapped) percent; the sub line

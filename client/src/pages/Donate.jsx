@@ -151,7 +151,7 @@ function StartFundraiserModal({ orgSlug, pageSlug, th, onClose, onCreated }) {
           <button type="button" onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: T.ink3, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ fontSize: 13, color: T.ink3, marginBottom: 18, lineHeight: 1.5 }}>
-          Get your own personal page to share with friends and family — no account needed.
+          Get your own personal page to share with friends and family. No account needed.
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 600, color: T.ink3, marginBottom: 4 }}>Your name</div>
@@ -341,6 +341,7 @@ export default function Donate() {
   const [cardUpdated, setCardUpdated] = useState(false);
   const [showStartFundraiser, setShowStartFundraiser] = useState(false);
   const [justCreatedEmailSent, setJustCreatedEmailSent] = useState(null);
+  const [justCreatedDemoNote, setJustCreatedDemoNote] = useState("");
 
   // BUILD-60 Part 2 — RECURRING IS THE HERO. Frequency comes first and Monthly
   // is pre-selected; the amount ladder is per-frequency; the second tier of the
@@ -421,6 +422,9 @@ export default function Donate() {
     }
     if (params.get("fundraiser_created") === "true") {
       setJustCreatedEmailSent(params.get("email_sent") === "true");
+      // FIX-7 Part 6.2 — the demonstration organisation mails nobody, and the
+      // page says what would have arrived instead of showing a failed send.
+      setJustCreatedDemoNote(params.get("demo_note") || "");
       window.history.replaceState({}, "", basePath);
     }
     // BUILD-77 Part 6 — the reconnect link: an imported sustainer arriving
@@ -699,7 +703,8 @@ export default function Donate() {
         <StartFundraiserModal
           orgSlug={orgSlug} pageSlug={pageSlug} th={th}
           onClose={() => setShowStartFundraiser(false)}
-          onCreated={d => { window.location.href = `${d.publicUrl}?fundraiser_created=true&email_sent=${d.emailSent}`; }}
+          onCreated={d => { window.location.href = `${d.publicUrl}?fundraiser_created=true&email_sent=${d.emailSent}`
+            + (d.demoNote ? `&demo_note=${encodeURIComponent(d.demoNote)}` : ""); }}
         />
       )}
 
@@ -710,13 +715,17 @@ export default function Donate() {
         peerFundraiser ? (
           <div style={{ width: "100%", maxWidth: 480, marginBottom: 28 }}>
             {justCreatedEmailSent !== null && (
-              justCreatedEmailSent ? (
+              justCreatedDemoNote ? (
+                <div data-testid="fundraiser-demo-note" style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 12, padding: "10px 14px", fontSize: 12, color: T.ink2, marginBottom: 14 }}>
+                  Your fundraiser is live. {justCreatedDemoNote}
+                </div>
+              ) : justCreatedEmailSent ? (
                 <div style={{ background: th.primary + "10", border: "1px solid " + th.primary + "30", borderRadius: 12, padding: "10px 14px", fontSize: 12, color: T.ink2, marginBottom: 14 }}>
-                  Your fundraiser is live! Check your email for a link to manage it later — bookmark it, there's no password.
+                  Your fundraiser is live. Check your email for a link to manage it later: bookmark it, there is no password.
                 </div>
               ) : (
                 <div style={{ background: T.terra100, border: "1px solid "+T.terra200, borderRadius: 12, padding: "10px 14px", fontSize: 12, color: T.terra700, marginBottom: 14 }}>
-                  Your fundraiser is live! We couldn't send your management email though — contact {org.name} directly if you need to update your page later.
+                  Your fundraiser is live. We could not send your management email, so contact {org.name} directly if you need to update your page later.
                 </div>
               )
             )}
