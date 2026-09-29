@@ -128,7 +128,7 @@ function ImpactLine({ impact }) {
 
   const head = watching > 0
       ? <>Steward is watching <strong style={{ color: T.ink }}>{watching}</strong> recurring donor{watching === 1 ? "" : "s"} for failed cards — no platform fee, no donor tip, gifts settle in your own Stripe.</>
-      : <>No platform fee, no donor tip — <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
+      : <>No platform fee, no donor tip. <strong style={{ color: T.green600 }}>$0</strong> to Steward on every gift, settled in your own Stripe.</>;
 
   const row = (label, value, note) => (
     <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "7px 0", borderTop: "1px solid " + T.bg3 }}>
@@ -265,7 +265,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
                 <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>
-                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving — an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine} — ${meta.why}` : meta.why)}
+                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving: an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine} — ${meta.why}` : meta.why)}
                 </span>
               </span>
               <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{giftGap ? "Re-import" : meta.cta} →</span>
@@ -273,7 +273,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
             {giftGap && isAdmin && (
               <button onClick={() => { apiFetch("/org/setup-confirm-no-gifts", { method: "POST", body: "{}" }).then(() => window.location.reload()).catch(() => {}); }}
                 style={{ background: "transparent", border: "none", padding: "0 0 6px 30px", color: T.ink3, fontSize: 11, cursor: "pointer", textDecoration: "underline" }}>
-                My file genuinely had no gifts — mark this done
+                My file genuinely had no gifts, mark this done
               </button>
             )}
           </div>
@@ -1323,7 +1323,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               </div>
               {noOutreachYet&&(myStats.visitsYtd===0||myStats.madeYtd===0)&&(
                 <div style={{padding:"8px 14px",borderTop:"1px solid "+T.bg3,fontSize:11,color:T.ink3,textAlign:"center",background:T.bg}}>
-                  No outreach logged yet — this is normal right after import. Log your first call from a donor's profile to start tracking this.
+                  No outreach logged yet. This is normal right after import. Log your first call from a donor's profile to start tracking this.
                 </div>
               )}
             </>);
@@ -1361,7 +1361,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                     window-closed subset — never three competing figures. */}
                 {false
                   ?null
-                  :<>Giving from donors quietly past their own pattern — each is on the Drifting list below, with the reason, while a call still works.</>}
+                  :<>Giving from donors quietly past their own pattern. Each is on the Drifting list below, with the reason, while a call still works.</>}
               </div>
             </div>
           )}
@@ -1562,7 +1562,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <span style={sSerif}>Drift</span>
             <span style={{fontSize:11.5,color:T.ink3}}>
               {driftData.counts.driftingHigh>0
-                ?`${fmtFull(driftData.atRiskAmount)} at risk — the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
+                ?`${fmtFull(driftData.atRiskAmount)} at risk, the sum of what these donors usually give · ${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern`
                 :"watching every donor's own giving pattern"}
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
             </span>
@@ -1668,7 +1668,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {driftData.institutional?.length > 0 && (
           <div style={{...cPad,...(onPanel?{marginTop:12,paddingTop:14}:{}),borderTop:"1px solid "+T.bg3}}>
             <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>
-              Institutional giving — foundations, DAFs, churches and businesses
+              Institutional giving: foundations, DAFs, churches and businesses
             </div>
             {driftData.institutional.slice(0,8).map(inst=>(
               <div key={inst.donorId} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,color:T.ink2,padding:"3px 0"}}>
@@ -1853,6 +1853,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // disagree about the number or the sentence. A failure is silence: a
   // crossover that will not load must never break the morning screen.
   const [crossover,setCrossover]=useState(null);
+  // FIX-8 Part E — Home shows the first thing and folds the rest. This is the
+  // fold's state, and it is per visit rather than remembered: the point of the
+  // screen is that it opens calm every morning.
+  const [threadAllOpen,setThreadAllOpen]=useState(false);
   useEffect(()=>{
     if(surface!=="home")return undefined;
     let live=true;
@@ -1939,9 +1943,81 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                 :<OneLineEmpty flush={onPanel} testId="thread-empty-state" line="No conversations logged yet."
                     detail="Log your first call from a donor's record and the next step will come back to you."/>
             )}
-            {threadList.length>0&&(
+            {/* ── FIX-8 Part E · HOME SAYS ONE THING AT A TIME ──────────────
+                From the approved mockup. Ten Thread rows, each three lines and
+                four controls, put 5,940 characters on the screen somebody
+                opens at 7:40, and nothing on it was first. So the top row gets
+                said properly, in a sentence, with the three things you can do
+                to it; the rest fold to one line each and open in place.
+                NOTHING IS REMOVED, and nothing is recomputed: the first row is
+                threadList[0], which is shared/threadRank.js's own answer to
+                "why this one first", and the fold counts are the bands the
+                server already returns. On the Dashboard surface (the board
+                view) the list stays as it was: this is Home's problem. */}
+            {threadList.length>0&&surface==="home"&&!threadAllOpen&&(()=>{
+              const first=threadList[0];
+              const bands=threadsData?.bands||[];
+              const bandCount=k=>(bands.find(x=>x.key===k)?.count||0);
+              const rest=Math.max(0,bandCount("overdue")-(first.band==="overdue"?1:0));
+              const today=bandCount("today")-(first.band==="today"?1:0);
+              const ahead=bandCount("ahead")-(first.band==="ahead"?1:0);
+              const folds=[];
+              if(rest>0)folds.push(`${rest} more ${rest===1?"is":"are"} overdue`);
+              if(today>0||ahead>0)folds.push([
+                today>0?`${today} ${today===1?"is":"are"} due today`:null,
+                ahead>0?`${ahead} ${ahead===1?"is":"are"} coming up`:null].filter(Boolean).join(" and "));
+              return (
+                <div data-testid="home-first-thing" style={{...cPad,paddingTop:4,paddingBottom:16}}>
+                  <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",
+                    color:T.ink3,marginBottom:6}}>First thing</div>
+                  <a href={`/donors/${first.donorId}`}
+                    onClick={e=>{e.preventDefault();onNavigate&&onNavigate("donors",{selectDonorId:first.donorId});}}
+                    style={{display:"block",textDecoration:"none",color:"inherit"}}>
+                    <div style={{fontFamily:"'DM Serif Display',serif",fontSize:20,lineHeight:1.35,color:T.ink,
+                      maxWidth:"52ch"}}>
+                      {first.donorName} {threadClause(first).replace(/^./,c=>c.toLowerCase())}
+                    </div>
+                    <div style={{fontSize:13,color:T.ink3,marginTop:4,lineHeight:1.5,maxWidth:"52ch"}}>
+                      Next: {String(first.nextStep?.label||"").replace(/^./,c=>c.toLowerCase())}
+                      {first.overdue?` · ${rowFigure(first)} day${rowFigure(first)===1?"":"s"} ${rowFigure(first)>(first.overdueDays||0)?"waiting":"overdue"}`:""}
+                    </div>
+                  </a>
+                  <div style={{display:"flex",gap:8,marginTop:12,flexWrap:"wrap",alignItems:"center"}}>
+                    <button data-testid="home-first-open"
+                      onClick={()=>onNavigate&&onNavigate("donors",{selectDonorId:first.donorId})}
+                      style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 15px",color:T.white,
+                        fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                      Open {firstNameOf(first.donorName)||first.donorName}
+                    </button>
+                    <button data-testid="home-first-done" disabled={isReadOnly}
+                      onClick={()=>setConvoFor({donor:{id:first.donorId,name:first.donorName},thread:first})}
+                      style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"8px 14px",
+                        color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",
+                        opacity:isReadOnly?0.45:1,fontFamily:"inherit"}}>Mark it done</button>
+                    {/* "Not today" is the snooze that already exists
+                        (threads.snoozed_until, through the dismiss menu's
+                        revisit reason). It writes nothing new. */}
+                    <ThreadDismissMenu thread={first} onDone={()=>loadThreads()} label="Not today"/>
+                  </div>
+                  <div style={{marginTop:14,display:"flex",flexDirection:"column"}}>
+                    {folds.map(line=>(
+                      <button key={line} data-testid="home-fold" onClick={()=>setThreadAllOpen(true)}
+                        style={{textAlign:"left",background:"none",border:"none",borderTop:"1px solid "+T.bg2,
+                          padding:"10px 0",fontSize:12.5,color:T.ink2,cursor:"pointer",fontFamily:"inherit"}}>
+                        {line} · <span style={{color:T.greenDk,fontWeight:700,textDecoration:"underline"}}>Show them</span>
+                      </button>))}
+                  </div>
+                </div>);
+            })()}
+            {threadList.length>0&&(surface!=="home"||threadAllOpen)&&(
               <ul style={{listStyle:"none",margin:0,padding:0}}>{threadRows}</ul>
             )}
+            {surface==="home"&&threadAllOpen&&threadList.length>0&&(
+              <div style={{...cPad,paddingBottom:12}}>
+                <button data-testid="home-fold-shut" onClick={()=>setThreadAllOpen(false)}
+                  style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12.5,fontWeight:700,
+                    cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Show one at a time</button>
+              </div>)}
             {/* THE CAP IS THE FEATURE, and the remainder is STATED. A list you
                 cannot finish is a list you stop opening; a list that hides its
                 own size is worse. */}
