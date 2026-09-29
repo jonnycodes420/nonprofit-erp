@@ -72,10 +72,18 @@ export function Figure({ value, kind = "count", label, definition, source, blank
   if (variant === "inline" || variant === "cell") {
     return (
       <>
+        {/* FIX-8 Part B.4 — THE DOTTED UNDERLINE IS A HOVER STATE, NOT A
+            PERMANENT MARK. It was drawn in brass under every figure on every
+            screen, always on: a fifth place the one attention colour was
+            spent on chrome, and four of them in a row across the donor
+            profile read as four things wanting to be noticed. The affordance
+            is kept and moved to :hover and :focus-visible (`.figure-inline`
+            in GlobalStyles), so a figure still says it opens at the moment
+            somebody reaches for it. */}
         <button type="button" onClick={act} onKeyDown={onKey} title={definition} aria-label={aria} {...data}
+          className={openable ? "figure-inline" : undefined}
           style={{ background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit",
-                   cursor: openable ? "pointer" : "default", textDecoration: "underline", textDecorationStyle: "dotted",
-                   textDecorationColor: T.gold, textUnderlineOffset: 4, textDecorationThickness: 2,
+                   cursor: openable ? "pointer" : "default",
                    fontWeight: variant === "cell" ? 700 : "inherit", whiteSpace: "nowrap" }}>
           {text}
         </button>

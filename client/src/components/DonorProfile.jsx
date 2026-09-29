@@ -707,9 +707,15 @@ function DonorPhotoControl({donor,isReadOnly,photoUrl,onChanged}){
 // off, and it says why — the SERVER's sentence (GET /people/:id), and the
 // server refuses the removal too, so the chip and the rule cannot disagree.
 const ROLE_CHIPS=PERSON_TYPES.filter(t=>t.key!=="other");
-function RoleChips({donor,isReadOnly}){
+function RoleLine({donor,isReadOnly}){
   const [types,setTypes]=useState(donor.personTypes||["donor"]);
   const [lock,setLock]=useState({locked:false,reason:null});
+  // FIX-8 Part B.2 — the year the roles line says "since". It comes from the
+  // same /people/:id read the roles already do, because the ADAPTED donor
+  // object does not carry first_gift_date (the adaptDonor field-name trap
+  // BUILD-89 hit): reading donor.firstGiftDate here returned undefined and the
+  // line silently read "Donor" with no year.
+  const [firstGiftYear,setFirstGiftYear]=useState(null);
   const [busy,setBusy]=useState(null);
   const [note,setNote]=useState("");
   useEffect(()=>{setTypes(donor.personTypes||["donor"]);},[donor.id,JSON.stringify(donor.personTypes||[])]);
@@ -719,6 +725,8 @@ function RoleChips({donor,isReadOnly}){
       if(gone||!r)return;
       if(Array.isArray(r.person_types))setTypes(r.person_types);
       setLock({locked:!!r.donorLocked,reason:r.donorLockedReason||null});
+      const y=String(r.first_gift_date||"").slice(0,4);
+      if(/^\d{4}$/.test(y))setFirstGiftYear(y);
     }).catch(()=>{});
     return()=>{gone=true;};
   },[donor.id]);
@@ -736,38 +744,44 @@ function RoleChips({donor,isReadOnly}){
     }catch(e){setNote(errorMessage(e,"Could not change this person's role"));}
     setBusy(null);
   };
+  // ── FIX-8 Part B.2 · ONE QUIET LINE, AND A "+" ──────────────────────────
+  // "Donor since 2021 · Volunteer" is what this person IS. The roles they do
+  // not have are not facts about them, so they are not drawn as chips beside
+  // the ones they do have; they live behind the "+", which is where somebody
+  // goes to change something rather than to read something.
+  // The toggles themselves are unchanged: the same PUT /people/:id/roles, the
+  // same lock on removing "donor" from somebody who has given.
+  const [openAdd,setOpenAdd]=useState(false);
+  const have=ROLE_CHIPS.filter(c=>types.includes(c.key));
+  const missing=ROLE_CHIPS.filter(c=>!types.includes(c.key));
+  const sinceYear=firstGiftYear;
+  const roleWords=have.map(c=>
+    c.key==="donor"&&sinceYear?`Donor since ${sinceYear}`:c.label).join(" · ");
   return (
-    <div data-testid="role-chips" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:5}}>
-      {ROLE_CHIPS.map(c=>{
-        const on=types.includes(c.key);
-        const locked=c.key==="donor"&&on&&lock.locked;
-        return (
-          <button key={c.key} type="button" data-testid={"role-chip-"+c.key} aria-pressed={on}
-            disabled={isReadOnly||busy===c.key} onClick={()=>toggle(c.key)}
-            title={locked?lock.reason:(isReadOnly?c.label:(on?`Remove ${c.label}`:`Add ${c.label}`))}
-            style={{fontSize:11,fontWeight:on?700:600,padding:"3px 10px",lineHeight:1.35,
-              cursor:isReadOnly?"default":(locked?"help":"pointer"),opacity:busy===c.key?0.55:1,
-              // FIX-4 4 — NO COLOURED UNDERLINE ON A CHIP. These carried
-              // activeMark(on,"bottom"), which is an inset 3px emerald rule —
-              // the tab treatment, borrowed for a state. On a chip it read as
-              // a green bar that appeared when you clicked and stayed there,
-              // and on the Donor chip (which is set by giving and cannot be
-              // toggled) it appeared for a click that did nothing at all. The
-              // on-state is what the comment above this component always said
-              // it was: cream, ink text, an emerald hairline. No second
-              // action colour, and nothing that arrives on focus.
-              background:on?T.bg2:T.white,color:on?T.ink:T.ink3,
-              border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:7}}>
-            {on?c.label:"+ "+c.label}
-            {locked&&<span style={{fontWeight:600,color:T.ink3}}> · set by giving</span>}
-          </button>
-        );
-      })}
-      {note&&<span role="status" data-testid="role-chip-note" style={{fontSize:11.5,color:T.ink2,lineHeight:1.4}}>{note}</span>}
+    <div data-testid="role-line" style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginTop:5,position:"relative"}}>
+      {roleWords&&<span style={{fontSize:12.5,color:T.ink3,lineHeight:1.4}}>{roleWords}</span>}
+      {!isReadOnly&&missing.length>0&&(
+        <button type="button" data-testid="role-add" aria-haspopup="menu" aria-expanded={openAdd}
+          aria-label="Add a role" title="Add a role" onClick={()=>setOpenAdd(o=>!o)}
+          style={{width:20,height:20,borderRadius:99,border:"1px solid "+T.bg3,background:T.white,
+            color:T.ink3,fontSize:13,lineHeight:1,cursor:"pointer",display:"grid",placeItems:"center",
+            fontFamily:"inherit",padding:0}}>+</button>)}
+      {openAdd&&(
+        <div role="menu" data-testid="role-add-menu" style={{position:"absolute",top:"calc(100% + 6px)",left:0,zIndex:60,
+          background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",
+          minWidth:190,padding:6}}>
+          {missing.map(c=>(
+            <button key={c.key} type="button" role="menuitem" data-testid={"role-add-"+c.key}
+              disabled={busy===c.key} onClick={()=>{setOpenAdd(false);toggle(c.key);}}
+              style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,
+                padding:"8px 10px",color:T.ink,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              {c.label}
+            </button>))}
+        </div>)}
+      {note&&<span style={{fontSize:11.5,color:T.gold700,lineHeight:1.4}}>{note}</span>}
     </div>
   );
 }
-
 // The four figures on the profile, in the order they are read: what they
 // have given, the last of it, how long since anybody spoke to them, and what
 // is being asked for now. One list, so the tiles, their definitions and their
@@ -1635,7 +1649,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           <DonorPhotoControl donor={donor} isReadOnly={isReadOnly} photoUrl={photoUrl} onChanged={setPhotoUrl}/>
           <div style={{minWidth:0}}>
             <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-              <span style={{fontSize:16,fontWeight:800,color:T.ink,letterSpacing:"-0.01em"}}>{donor.name}</span>
+              {/* FIX-8 Part B.1 — ONE THING TO READ FIRST. The name was 16px
+                  and sat in a row with the stage, the email, four safety
+                  flags and a drift badge, so nothing in the header was the
+                  first thing. It is display type now; the email moved to the
+                  rail's contact block, where somebody looks when they are
+                  about to call. */}
+              <span className="dph-name" style={{fontSize:26,fontWeight:400,color:T.ink,letterSpacing:"-0.01em",
+                fontFamily:"'DM Serif Display',Georgia,serif",lineHeight:1.12}}>{donor.name}</span>
               {/* FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm, so
                   it is brass (the overdue colour), never terracotta. */}
               <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:99,background:stage.id==="lapsed"?T.gold100:stage.color+"22",color:stageTone(stage)}}>{stage.label}</span>
@@ -1645,10 +1666,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
               {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
               {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks — excluded from the drift list, re-engage, suggested outreach, and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
               {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
-              <span style={{fontSize:11,color:T.ink3}}>{donor.email}</span>
             </div>
-            {/* FIX-1 D — the roles, under the name, one tap each. */}
-            <RoleChips donor={donor} isReadOnly={isReadOnly}/>
+            {/* FIX-8 Part B.2 — the roles are ONE QUIET LINE, and the two
+                add-actions live in a "+" beside it. Three chips put two verbs
+                ("+ Volunteer", "+ Staff and board") where the reader expects
+                facts, so the header said what this person IS and what you
+                could do to them in the same breath, in the same shape. */}
+            <RoleLine donor={donor} isReadOnly={isReadOnly}/>
             {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
                 to read donors.total_giving while the tile below it now reads
                 the gifts themselves (figureSources donor-lifetime), and on the
@@ -1657,11 +1681,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                 it is computed once, so this line reads the figure the tile
                 reads, and falls back to the column only before the figures
                 have loaded. */}
-            <div className="dph-meta" style={{fontSize:11,color:T.ink3,marginTop:2,display:"flex",flexWrap:"wrap",gap:"0 4px"}}>
-              <span style={{whiteSpace:"nowrap"}}>{fmtFull(donor.figures?.lifetime?.value ?? donor.total)} lifetime</span>
-              <span style={{whiteSpace:"nowrap"}}>·</span>
-              <span style={{whiteSpace:"nowrap"}}>{donor.gifts} gifts</span>
-            </div>
+            {/* FIX-8 Part B.3 — the "$167,916 lifetime · 4 gifts" line is
+                gone. The Lifetime card four inches below says the same number
+                from the same computation, and PROFILE-1 already had to fix
+                these two disagreeing by $60,000. One number, one place. */}
             {/* BUILD-76 — the drift reason, inline on the record (hover-only
                 would hide the one sentence that explains the badge). */}
             {donor.drift&&<div style={{fontSize:11.5,color:T.gold600,fontWeight:600,marginTop:3,lineHeight:1.4}}>{donor.drift.reason}</div>}
@@ -1790,7 +1813,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",lineHeight:1.1,
                                  color:key==="contact"&&urg.level!=="ok"?urg.urgencyColor:T.ink}}>
                       {f.value===null||f.value===undefined
-                        ?<span data-figure={"profile."+key} data-figure-key={"profile."+key} data-blank="" style={{fontSize:12.5,fontWeight:400,color:T.ink3,lineHeight:1.45}}>{f.blankShort||f.blank}</span>
+                        ?<span data-figure={"profile."+key} data-figure-key={"profile."+key} data-blank=""
+                          /* FIX-8 Part B.4 — an absence is a SENTENCE, so it is
+                             set in the body face. It was already quiet at
+                             12.5px, but it inherited the display serif from
+                             the figure above it, which is the face this app
+                             uses for numbers and headings. */
+                          style={{fontSize:12.5,fontWeight:400,color:T.ink3,lineHeight:1.45,
+                            fontFamily:"'DM Sans',system-ui,sans-serif"}}>{f.blankShort||f.blank}</span>
                         :<Figure value={f.value} kind={kind} suffix={suffix||""} label={label} definition={def}
                           source={f.source} blank={f.blank} blankShort={f.blankShort}
                           figureKey={"profile."+key} variant="inline"/>}
@@ -2914,7 +2944,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
             is the design system's own answer for secondary text on ink. */}
         <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
 
-          <RailSection title="Relationship owner" testid="dp-rail-owner" first
+          {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
+              email lived in the header's name row, competing with the name
+              for the first read, while this section, which already held the
+              email, the phone, the named contact and an honest empty state,
+              sat below the stage picker and the quick actions. Nothing here
+              is new: the section is the one that already existed, moved to
+              where somebody looks when they are about to pick up the phone. */}
+          <RailSection title="Contact" testid="dp-rail-contact" first>
+            <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
+              {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
+              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
+              {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
+            </dl>
+          </RailSection>
+
+          <RailSection title="Relationship owner" testid="dp-rail-owner"
             actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
               style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":"Reassign"}</button>}>
             <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
@@ -3196,16 +3243,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
           </>,{title:"Major-gift tools",blurb:"Outreach drafting and the suggested next move — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:180})}
 
           {/* How to reach them: what an officer copies out of this screen. */}
-          <RailSection title="Contact" testid="dp-rail-contact">
-            <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
-              {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
-              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
-              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
-              {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
-            </dl>
-          </RailSection>
-
           {/* Folded by default: the things she opens when she needs them, and
               not before. Each one says how much is inside on its own label,
               so folding never hides a count. */}

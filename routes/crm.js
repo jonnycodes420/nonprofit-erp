@@ -20299,10 +20299,15 @@ app.get("/people", requireAuth, wrap(async (req, res) => {
 
 app.get("/people/:id", requireAuth, wrap(async (req, res) => {
   const [row] = await query(
-    `SELECT id, name, email, kind, person_types, gift_count FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
+    `SELECT id, name, email, kind, person_types, gift_count, first_gift_date
+       FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`,
     [req.params.id, req.user.orgId]);
   if (!row) return res.status(404).json({ error: "Person not found" });
-  res.json(personOut(row, await donorLock(req.user.orgId, row)));
+  // FIX-8 Part B.2 — the roles line reads "Donor since 2021", and the year is
+  // a fact about the person, so it travels with the person rather than being
+  // dug out of a gift list the header does not have.
+  res.json({ ...personOut(row, await donorLock(req.user.orgId, row)),
+             first_gift_date: row.first_gift_date || null });
 }));
 
 // One chip, one write: the person's own row, person_types, nothing else. Adding

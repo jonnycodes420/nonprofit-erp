@@ -375,6 +375,9 @@ export function GlobalStyles() {
     ::-webkit-scrollbar-thumb{background:${T.bg3};border-radius:99px;border:2px solid transparent;background-clip:padding-box;}
     ::-webkit-scrollbar-thumb:hover{background:${T.ink3};background-clip:padding-box;}
     *{scrollbar-width:thin;scrollbar-color:${T.bg3} transparent;}
+    /* FIX-8 Part B.4 — a figure says it opens when somebody reaches for it. */
+    .figure-inline{text-decoration:none;}
+    .figure-inline:hover,.figure-inline:focus-visible{text-decoration:underline;text-decoration-style:dotted;text-decoration-color:${T.ink3};text-underline-offset:4px;text-decoration-thickness:2px;}
     ::selection{background:${T.greenDk}22;color:${T.ink};}
     input,textarea,select{background:${T.gold50};border:1.5px solid ${T.bg3};border-radius:8px;color:${T.ink};transition:border-color 0.15s,box-shadow 0.15s;}
     input:focus,textarea:focus,select:focus{border-color:${T.greenDk}!important;box-shadow:0 0 0 3px rgba(13,92,58,0.12)!important;outline:none!important;}
