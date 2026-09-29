@@ -133,6 +133,19 @@ function logoDataUri() {
     orgId = reg.body.org.id; userId = reg.body.user.id; trialEndsAt = reg.body.org.trial_ends_at;
     console.log(`  ✓ org created         ${orgId}`);
     console.log(`  ✓ admin created       ${userId}  ${OWNER_EMAIL}`);
+    // A CREDENTIAL IS PRINTED THE INSTANT IT EXISTS, NEVER AT THE END.
+    // The first prod run of this script proved why: the password was printed
+    // in the closing summary, the plan grant threw on a bad super-admin
+    // login, and the ONLY copy of a real customer's password died with the
+    // process — leaving an account on production that nobody could sign in
+    // to. Everything after this line is recoverable by re-running; this is
+    // the one value that is not.
+    console.log("");
+    console.log("  ┌─ HER SIGN-IN — COPY THIS NOW, IT IS NOT SHOWN AGAIN ─────────");
+    console.log(`  │  ${OWNER_EMAIL}`);
+    console.log(`  │  ${password}`);
+    console.log("  └──────────────────────────────────────────────────────────────");
+    console.log("");
   } else if (reg.status === 409) {
     // Already provisioned — sign in and update in place. Re-running this
     // script must never produce a second Central Kentucky Riding for Hope.
@@ -147,21 +160,34 @@ function logoDataUri() {
     throw new Error(`register-org ${reg.status}: ${JSON.stringify(reg.body)}`);
   }
 
+  // ONCE THE ACCOUNT EXISTS, NOTHING BELOW MAY ABORT THE RUN. Every step
+  // after this point is idempotent and re-runnable, so a failure is worth
+  // REPORTING and finishing around — aborting only costs the operator the
+  // summary, and the summary is where the recovery instructions are.
+  const problems = [];
+  const step = async (label, fn) => {
+    try { const out = await fn(); console.log(`  ✓ ${label.padEnd(20)} ${out || ""}`); }
+    catch (e) { problems.push(`${label}: ${e.message}`); console.log(`  ✗ ${label.padEnd(20)} ${e.message}`); }
+  };
+
   // 2 · THEIR BRAND. Their real logo file and the blue out of it.
-  const brand = await api("PUT", "/orgs/branding", token, {
-    logoData: logoDataUri(), brandAccent: BRAND_ACCENT,
+  await step("logo + accent", async () => {
+    const brand = await api("PUT", "/orgs/branding", token, {
+      logoData: logoDataUri(), brandAccent: BRAND_ACCENT,
+    });
+    if (brand.status !== 200) throw new Error(`${brand.status}: ${JSON.stringify(brand.body)}`);
+    return brand.body.brand_accent + (brand.body.adjusted ? `  (darkened from ${BRAND_ACCENT} for contrast)` : "");
   });
-  if (brand.status !== 200) throw new Error(`branding ${brand.status}: ${JSON.stringify(brand.body)}`);
-  console.log(`  ✓ logo + accent       ${brand.body.brand_accent}` +
-    (brand.body.adjusted ? `  (darkened from ${BRAND_ACCENT} for contrast)` : ""));
 
   // 3 · THE ORG'S OWN RECORD, including the two lines the greeting reads.
-  const patch = await api("PATCH", `/orgs/${orgId}`, token, {
-    mission: MISSION, website: WEBSITE, timezone: TIMEZONE,
-    welcomeLine: WELCOME_LINE, welcomeNextStep: WELCOME_NEXT,
+  await step("org record", async () => {
+    const patch = await api("PATCH", `/orgs/${orgId}`, token, {
+      mission: MISSION, website: WEBSITE, timezone: TIMEZONE,
+      welcomeLine: WELCOME_LINE, welcomeNextStep: WELCOME_NEXT,
+    });
+    if (patch.status !== 200) throw new Error(`${patch.status}: ${JSON.stringify(patch.body)}`);
+    return "mission, website, timezone, greeting";
   });
-  if (patch.status !== 200) throw new Error(`patch org ${patch.status}: ${JSON.stringify(patch.body)}`);
-  console.log(`  ✓ mission, website, timezone, greeting`);
 
   // 4 · THE THREE FUNDS. Created only if absent, by name.
   const existing = await api("GET", "/finance/funds", token);
@@ -169,9 +195,11 @@ function logoDataUri() {
     .map(f => String(f.name).trim().toLowerCase()));
   for (const f of FUNDS) {
     if (have.has(f.name.trim().toLowerCase())) { console.log(`  · fund exists         ${f.name}`); continue; }
-    const r = await api("POST", "/finance/funds", token, f);
-    if (r.status >= 300) throw new Error(`fund "${f.name}" ${r.status}: ${JSON.stringify(r.body)}`);
-    console.log(`  ✓ fund                ${f.name}`);
+    await step("fund", async () => {
+      const r = await api("POST", "/finance/funds", token, f);
+      if (r.status >= 300) throw new Error(`"${f.name}" ${r.status}: ${JSON.stringify(r.body)}`);
+      return f.name;
+    });
   }
 
   // 5 · THE PLAN. Super-admin only, and the one step that needs Jonathan.
@@ -180,13 +208,15 @@ function logoDataUri() {
   //     reminder requires a real stripe_subscription_id — BUILD-90).
   const superEmail = process.env.SUPER_EMAIL, superPassword = process.env.SUPER_PASSWORD;
   if (superEmail && superPassword) {
-    const su = await api("POST", "/auth/login", null, { email: superEmail, password: superPassword });
-    if (su.status !== 200) throw new Error(`super-admin login ${su.status}: ${JSON.stringify(su.body)}`);
-    const plan = await api("POST", `/admin/orgs/${orgId}/change-plan`, su.body.token, {
-      plan: PLAN, foundingPartner: FOUNDING_PARTNER,
+    await step("plan", async () => {
+      const su = await api("POST", "/auth/login", null, { email: superEmail, password: superPassword });
+      if (su.status !== 200) throw new Error(`super-admin login ${su.status}: ${JSON.stringify(su.body)} — re-run just this step, the org is already correct`);
+      const plan = await api("POST", `/admin/orgs/${orgId}/change-plan`, su.body.token, {
+        plan: PLAN, foundingPartner: FOUNDING_PARTNER,
+      });
+      if (plan.status !== 200) throw new Error(`change-plan ${plan.status}: ${JSON.stringify(plan.body)}`);
+      return `${plan.body.plan} (founding partner: ${plan.body.founding_partner}) · status ${plan.body.subscription_status}`;
     });
-    if (plan.status !== 200) throw new Error(`change-plan ${plan.status}: ${JSON.stringify(plan.body)}`);
-    console.log(`  ✓ plan                ${plan.body.plan} (founding partner: ${plan.body.founding_partner}) · status ${plan.body.subscription_status}`);
   } else {
     console.log(`  ! plan NOT SET        run with SUPER_EMAIL / SUPER_PASSWORD, or:`);
     console.log(`      POST /admin/orgs/${orgId}/change-plan  {"plan":"${PLAN}","foundingPartner":true}`);
@@ -198,5 +228,10 @@ function logoDataUri() {
   if (created) console.log(`  password      ${password}`);
   console.log(`  first charge  ${trialEndsAt}`);
   console.log(`\n  Mail is OFF for this org. Turn it on deliberately when her data is in:`);
-  console.log(`      POST /admin/orgs/${orgId}/email-switch  {"emailsEnabled":true,"isDemoOrg":false}\n`);
+  console.log(`      POST /admin/orgs/${orgId}/email-switch  {"emailsEnabled":true,"isDemoOrg":false}`);
+  if (problems.length) {
+    console.log(`\n  ${problems.length} STEP(S) DID NOT LAND — the org and her login are fine, re-run to finish:`);
+    for (const p of problems) console.log(`    · ${p}`);
+  }
+  console.log("");
 })().catch(e => { console.error("\nFAILED:", e.message, "\n"); process.exit(1); });
