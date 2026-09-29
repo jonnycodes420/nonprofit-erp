@@ -73,6 +73,14 @@ const CANNOT = {
   issue_receipt: "Issue a tax receipt. A receipt belongs to a specific gift and comes from the path that took the money.",
 };
 const EYEBROW = { fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: T.ink3 };
+// AGENTS-1 — the badge that says which of the six. Quiet by design: it labels
+// a row, it is not a thing to click, and it is never the emerald on a screen.
+const PERSONA_BADGE = { display: "inline-block", fontSize: 10.5, fontWeight: 800, letterSpacing: "0.06em",
+  textTransform: "uppercase", color: T.ink3, background: T.bg2, border: "1px solid " + T.bg3,
+  borderRadius: 99, padding: "2px 8px", whiteSpace: "nowrap" };
+const personaBadge = name => (name
+  ? <span data-testid="agent-persona-badge" style={PERSONA_BADGE}>{name}</span>
+  : null);
 // A panel ON the sheet: white on cream, a hairline, never a second dark card.
 const PANEL = { background: T.white, color: T.ink, border: "1px solid " + T.bg2, borderRadius: 12 };
 const OUTLINE_BTN = { background: "transparent", color: T.ink, border: "1.5px solid " + T.ink, borderRadius: 10,
@@ -352,6 +360,10 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   const [busyId, setBusyId] = useState(null);
   const [sheetErr, setSheetErr] = useState("");
   const [status, setStatus] = useState(null);
+  // AGENTS-1 — the six, read from the server. The client keeps no list of its
+  // own, so a seventh persona appears here without a client change.
+  const [personas, setPersonas] = useState(null);
+  const [persona, setPersona] = useState("");
   const [focusDrafting, setFocusDrafting] = useState(false);
   // FIX-6 item 1 — what the queue has decided this visit, and anything that
   // refused. Held by the room, because the view is drawn and never mounted.
@@ -363,7 +375,8 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
   }).catch(() => { setPlans([]); return []; }), []);
   const loadWaiting = useCallback(() => apiFetch("/agent/waiting").then(setWaiting).catch(() => setWaiting({ count: 0, items: [] })), []);
   const loadStatus = useCallback(() => apiFetch("/agent/status").then(setStatus).catch(() => setStatus(null)), []);
-  useEffect(() => { loadPlans(); loadWaiting(); loadStatus(); }, [loadPlans, loadWaiting, loadStatus]);
+  const loadPersonas = useCallback(() => apiFetch("/agent/personas").then(setPersonas).catch(() => setPersonas(null)), []);
+  useEffect(() => { loadPlans(); loadWaiting(); loadStatus(); loadPersonas(); }, [loadPlans, loadWaiting, loadStatus, loadPersonas]);
   // Guardrails' state: every instruction, every run, every write with its undo.
   const [guardData, setGuardData] = useState(null);
   const [guardInstr, setGuardInstr] = useState(null);
@@ -414,7 +427,11 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
     if (!said || asking) return;
     setAsking(true); setAskErr(""); setAskedId(null); setRead(null); setWhich(null);
     try {
-      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify(picks && picks.length ? { text: said, personId: picks } : { text: said }) });
+      const r = await apiFetch("/agent/instructions", { method: "POST", body: JSON.stringify({
+        text: said,
+        ...(picks && picks.length ? { personId: picks } : {}),
+        ...(persona ? { persona } : {}),
+      }) });
       if (r && r.read) { setRead({ ...r.read, text: said }); setText(""); }
       // One name, several records: ask which, and keep her words for the pick.
       // Her earlier picks ride along, one per name ("Margaret and Robert").
@@ -431,7 +448,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
       if (e && (e.error === "agent_unavailable" || e.error === "ai_disabled")) loadStatus();
     }
     setAsking(false);
-  }, [asking, loadPlans, loadWaiting, loadStatus]);
+  }, [asking, loadPlans, loadWaiting, loadStatus, persona]);
 
   // Home's one-line entry carried her words here, and she already pressed.
   useEffect(() => { if (autoAsk && initialText) ask(initialText); /* once, on arrival */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -537,9 +554,10 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
               padding: "13px 8px 13px 12px", border: "none", borderBottom: "1px solid " + T.bg3,
               borderLeft: "3px solid " + (on ? T.greenDk : "transparent"), background: on ? T.white : "transparent" }}>
             <div style={{ fontSize: 14, color: T.ink, lineHeight: 1.45, fontWeight: on ? 700 : 400, overflowWrap: "anywhere" }}>{p.text}</div>
-            <div style={{ fontSize: 12, color: T.ink3, marginTop: 4 }}>
+            <div style={{ fontSize: 12, color: T.ink3, marginTop: 4, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+              {personaBadge(p.personaName)}
               <span style={{ color: st.brass ? T.gold700 : T.ink3, fontWeight: st.brass ? 700 : 400 }}>{st.word}</span>
-              {" · "}{fmtWhen(p.created_at)}
+              <span>· {fmtWhen(p.created_at)}</span>
             </div>
           </button>
         );
@@ -605,6 +623,37 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
         {view === "ask" && (
           <div data-testid="agent-view-ask">
             {notice}
+            {/* AGENTS-1 — THE SIX, AS CARDS. Not a wizard: picking one is one
+                press, picking none is the general agent, and the choice is
+                visible beside the box rather than buried in a setting. Each
+                card says what it does and what it never does, in the
+                registry's words. */}
+            {personas?.personas?.length > 0 && (
+              <div data-testid="agent-personas" style={{ marginBottom: 20 }}>
+                <div style={{ ...EYEBROW, marginBottom: 8 }}>Who should do it</div>
+                <div style={{ display: "grid", gap: 10,
+                  gridTemplateColumns: wide ? "repeat(auto-fill, minmax(230px, 1fr))" : "1fr" }}>
+                  {personas.personas.map(p => {
+                    const on = persona === p.id;
+                    return (
+                      <button key={p.id} data-testid="agent-persona-card" aria-pressed={on}
+                        onClick={() => setPersona(on ? "" : p.id)}
+                        style={{ textAlign: "left", background: on ? T.white : T.bg2,
+                          border: "1px solid " + (on ? T.greenDk : T.bg3), borderRadius: 12,
+                          padding: "12px 14px", cursor: "pointer", fontFamily: "inherit",
+                          display: "flex", flexDirection: "column", gap: 5 }}>
+                        <span style={{ fontSize: 15, fontWeight: 800, color: on ? T.greenDk : T.ink, fontFamily: SERIF }}>{p.name}</span>
+                        <span style={{ fontSize: 13, color: T.ink2, lineHeight: 1.45 }}>{p.tagline}</span>
+                        <span style={{ fontSize: 12, color: T.ink3, lineHeight: 1.45 }}>{p.description}</span>
+                      </button>);
+                  })}
+                </div>
+                <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 8, lineHeight: 1.5 }}>
+                  {persona
+                    ? `${personas.personas.find(p => p.id === persona)?.name} will write the plan. Press it again to choose nobody.`
+                    : "Pick one, or ask Steward and it will use everything it can do."}
+                </div>
+              </div>)}
             <div style={{ ...EYEBROW, marginBottom: 10 }}>Ask · in your own words</div>
             {/* FIX-3 B — the box and its go button, side by side (the button
                 under the box at phone width). Enter plans; Shift+Enter is a new line. */}
@@ -645,7 +694,7 @@ export function Agent({ data, isReadOnly, onNavigate, initialView, initialText =
         )}
 
         {view === "guardrails" && guardrails({ wide, isReadOnly, data: guardData, instr: guardInstr, busy: guardBusy, err: guardErr,
-          act: guardAct, status, focusDrafting, setDrafting })}
+          act: guardAct, status, focusDrafting, setDrafting, personas })}
       </section>
     </div>
   );
@@ -752,6 +801,7 @@ function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm,
             gridTemplateColumns: wide ? "180px minmax(0,1fr) auto" : "minmax(0,1fr)", gap: wide ? 16 : 8, alignItems: "start" }}>
           <div>
             {pill(it.kind === "gift_to_confirm" ? "confirm" : "waiting", WAIT_KIND[it.kind] || "Waiting")}
+            {it.personaName && <div style={{ marginTop: 6 }}>{personaBadge(it.personaName)}</div>}
             <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>{fmtWhen(it.createdAt)}</div>
           </div>
           <div style={{ minWidth: 0 }}>
@@ -776,7 +826,7 @@ function waitingView({ wide, waiting, isReadOnly, busyId, onNavigate, onConfirm,
 // activity (BUILD-97 Part 3). A plain function over state the room holds (see
 // guard* in Agent), so the view is drawn, never mounted twice with its own copy
 // of the truth.
-function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, focusDrafting, setDrafting }) {
+function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, focusDrafting, setDrafting, personas }) {
   const pausedAll = !!(instr && instr.pausedAll);
   const can = AGENT_TOOLS.filter(x => x.needsHuman === "never");
   const signature = AGENT_TOOLS.filter(x => x.needsHuman === "signature");
@@ -835,6 +885,25 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, foc
       </section>
       {err && <div style={{ ...card, borderLeft: "4px solid " + T.gold, fontSize: 13.5 }}>{err}</div>}
 
+      {/* AGENTS-1 — EACH OF THE SIX, AND THE ONE LINE THAT BOUNDS IT. Under
+          it, the mechanisms that are REAL: plan-then-confirm, draft by
+          default, an undoable write, and the exclusion of anybody the record
+          says not to contact. No thresholds, no auto-pause, no managed
+          no-contact list: none of those exist, and a guardrail somebody
+          believes in that is not there is worse than none. */}
+      {personas?.personas?.length > 0 && (
+        <section data-testid="agent-guardrail-personas" style={card}>
+          <div style={eyebrow}>The six, and what each one cannot do</div>
+          {personas.personas.map(p => (
+            <div key={p.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline",
+              fontSize: 14, lineHeight: 1.5, padding: "9px 0", borderTop: "1px solid " + T.bg2 }}>
+              <strong style={{ minWidth: 120 }}>{p.name}</strong>
+              <span style={{ color: T.ink2, flex: 1, minWidth: 220 }}>{p.guardrailNote}</span>
+            </div>))}
+          {(personas.guardrails || []).map(g => (
+            <div key={g} style={{ fontSize: 13.5, color: T.ink3, lineHeight: 1.55, padding: "7px 0 0" }}>{g}</div>))}
+        </section>)}
+
       <div style={{ display: "grid", gridTemplateColumns: wide ? "1fr 1fr" : "minmax(0,1fr)", gap: 16 }}>
         <section style={{ ...card, marginBottom: 0 }}>
           <div style={eyebrow}>What Steward does on its own</div>
@@ -889,6 +958,7 @@ function guardrails({ wide, isReadOnly, data, instr, busy, err, act, status, foc
           : data.runs.map(r => (
             <div key={r.id} data-testid="agent-run" style={{ borderTop: "1px solid " + T.bg2, padding: "10px 0" }}>
               <div style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>{r.instruction_text || "(instruction removed)"}</div>
+              {r.personaName && <div style={{ marginTop: 4 }}>{personaBadge(r.personaName)}</div>}
               <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 4, lineHeight: 1.5 }}>
                 {fmtWhen(r.started_at)} · read {r.read_summary || "nothing"} · drafted {r.drafted} · sent {r.sent} · declined {r.declined} · withheld {r.withheld}
               </div>

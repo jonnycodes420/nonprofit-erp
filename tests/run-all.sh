@@ -112,6 +112,7 @@ CORE=(
   members2-isolation
   events2-checkout
   build103-soft-credit
+  agents1-persona-scope
   script-guards
   build96-ai-gate
   incident-mail-gate

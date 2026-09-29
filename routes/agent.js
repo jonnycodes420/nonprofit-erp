@@ -128,6 +128,9 @@ Return ONLY a JSON object like: {"Original Header": "fieldName", "Another Header
 // ABSENCE of a code path, which is the only kind of refusal a model cannot
 // argue with.
 async function agentShapeMod() { return import("../shared/agentShape.js"); }
+// AGENTS-1 — the six personas, loaded the same way the shape module is. The
+// registry is data: this file names no persona id anywhere.
+async function agentPersonasMod() { return import("../shared/agentPersonas.js"); }
 
 const AGENT_ACTOR = { id: "system:agent", name: "Steward (agent)" };
 
@@ -402,9 +405,15 @@ async function agentUndoWrite(w, orgId) {
 // headline; Steward writes the headline from those steps (compilePlan), and
 // the run executes exactly those steps. The model sees only the rows the
 // instruction names, or the organisation when it names nobody.
-async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null }) {
+async function agentBuildPlan(orgId, instructionText, { authorization, scope = null, userId = null, persona = null }) {
   const A = await agentShapeMod();
   const TH = await thresholdsMod();
+  // AGENTS-1 — THE PERSONA NARROWS; IT NEVER WIDENS. `getPersona` answers with
+  // the general agent for null and for anything it does not recognise, so this
+  // function behaves exactly as it did before when no persona was chosen.
+  const PS = await agentPersonasMod();
+  const who = PS.getPersona(persona);
+  const allowed = new Set(who.tools);
   const people = await agentReadPeople(orgId, { ids: scope });
   const V = await import("../shared/vocabulary.js");
   const [orgRow] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
@@ -413,12 +422,18 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
   // sees them (BUILD-83's rule: fiction and the no-ask family generate nothing).
   const reachable = people.filter(p => !p.deceased && !p.do_not_contact && !p.is_sample);
   const client = new Anthropic();
+  // The model is shown the persona's OWN tools, not the whole table. An
+  // Analyst that is never offered set_stage rarely asks for it; the filter
+  // below is what guarantees it, and this is what makes the plan sensible.
   const toolList = A.AGENT_TOOLS
-    .filter(t => A.PLANNABLE.includes(t.name))
+    .filter(t => A.PLANNABLE.includes(t.name) && allowed.has(t.name))
     .map(t => `  ${t.name} — ${t.what}`).join("\n");
 
   const system = [
-    "You are planning work inside a nonprofit's own CRM, for the person who runs it.",
+    // AGENTS-1 — the persona's own words, first. The general persona's line is
+    // the sentence that used to be hard-coded here, verbatim, so an instruction
+    // with no persona builds from a byte-identical prompt.
+    who.systemPrompt,
     "",
     "You may ONLY use these tools:",
     toolList,
@@ -470,7 +485,13 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     .map(Number).filter(Number.isFinite);
   const steps = [];
   let withheld = 0;
+  let outOfScope = 0;
   for (const s of Array.isArray(raw.steps) ? raw.steps : []) {
+    // AGENTS-1 — A STEP OUTSIDE THE PERSONA'S TOOLS IS DROPPED AT PLAN TIME,
+    // not at confirm time. She must never read a plan that says the Analyst
+    // will move somebody's stage and then watch that step quietly not happen:
+    // the plan she reads is the plan that runs.
+    if (PS.dropOutOfScope(who.id, [s]).droppedCount) { outOfScope++; withheld++; continue; }
     if (!A.PLANNABLE.includes(s.tool)) { steps.push(s); continue; }
     if (s.donorId && !byId.has(s.donorId)) { withheld++; continue; }
     if (A.citationProblems(s, { knownRowIds }).length) { withheld++; continue; }
@@ -478,7 +499,7 @@ async function agentBuildPlan(orgId, instructionText, { authorization, scope = n
     if (TH.ungroundedClaims(text, { groundedValues }).length) { withheld++; continue; }
     steps.push(s);
   }
-  return { steps, sends: Number(raw.sends) || 0, withheld, people: reachable };
+  return { steps, sends: Number(raw.sends) || 0, withheld, outOfScope, persona: who.id, people: reachable };
 }
 
 // ── A GIFT SHE TELLS IT ABOUT ──────────────────────────────────────────────
@@ -713,6 +734,31 @@ app.get("/agent/status", requireAuth, wrap(async (req, res) => {
     ...A.draftingState({ configured, enabled, paused: !!org.agent_paused_at, isAdmin, admins }) });
 }));
 
+// ── AGENTS-1 · THE SIX, AS DATA ────────────────────────────────────────────
+// The Ask tab's cards, the badges and the Guardrails list all read THIS. The
+// client holds no persona list of its own, so a seventh persona is one entry
+// in shared/agentPersonas.js and nothing else. A read: it writes nothing and
+// touches no org row, but it stays behind requireAuth because it describes
+// what this product's agent can do.
+app.get("/agent/personas", requireAuth, wrap(async (req, res) => {
+  const PS = await agentPersonasMod();
+  res.json({
+    personas: PS.PERSONAS.map(p => ({ id: p.id, name: p.name, tagline: p.tagline,
+      description: p.description, tools: p.tools, suggestedTriggers: p.suggestedTriggers,
+      guardrailNote: p.guardrailNote })),
+    // Said once, here, so the Guardrails tab states the real mechanisms and
+    // nothing else: no thresholds, no auto-pause, no managed no-contact list.
+    guardrails: [
+      "Every instruction shows you its plan before anything runs, and nothing runs until you confirm it.",
+      "Drafts are drafts. Steward writes them into your queue and you press send.",
+      "Every write the agent makes is logged with the instruction that caused it, and can be undone for thirty days.",
+      "Anybody the record marks deceased or do-not-contact is removed before the agent sees them.",
+      "No agent can move money. There is no tool for it, not a setting that turns it off.",
+    ],
+    sentence: "Six agents, one engine. Each one can do less than the engine can, never more.",
+  });
+}));
+
 // ── ROUTES ─────────────────────────────────────────────────────────────────
 // THE PLAN. Writes an instruction and a plan; runs NOTHING.
 app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, res) => {
@@ -742,6 +788,19 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   // the DATABASE default is 'draft', so an instruction that arrives without one
   // drafts.
   const auth = req.body?.authorization === A.AUTH_SEND ? A.AUTH_SEND : A.AUTH_DRAFT;
+
+  // AGENTS-1 — WHICH OF THE SIX. Optional: absent means the general agent, and
+  // an instruction that arrives without one behaves exactly as it did before
+  // this build. An id the registry does not know is a 400 rather than a silent
+  // fallback, because silently planning as somebody else is worse than a
+  // refusal she can read.
+  const PS = await agentPersonasMod();
+  const rawPersona = req.body?.persona == null || req.body.persona === "" ? null : String(req.body.persona);
+  if (rawPersona !== null && !PS.isValidPersona(rawPersona))
+    return res.status(400).json({ error: "unknown_persona",
+      sentence: `Steward has no agent called "${rawPersona.slice(0, 40)}".`,
+      personas: PS.PERSONA_IDS });
+  const persona = rawPersona;
 
   // FIX-1 §A — WHO SHE NAMED decides what is read. FIX-3 B: `personId` is her
   // answer to "which one?", and it must be one of the records the name matched.
@@ -821,7 +880,7 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
       });
     }
     let built;
-    try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId }); }
+    try { built = await agentBuildPlan(req.user.orgId, text, { authorization: auth, scope: named.scope, userId: req.user.userId, persona }); }
     catch (e) { console.error("[agent] plan failed", e?.message || e); return res.status(503).json({ error: "agent_unavailable" }); }
     const readNames = named.scope
       ? built.people.map(p => A.nameInSentence(p)).join(", ") + (built.people.length === 1 ? "'s record" : "'s records")
@@ -836,12 +895,13 @@ app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, 
   if (!check.ok) return res.status(422).json({ error: "plan_refused", reasons: check.errors });
 
   const id = "ai_" + uuid().slice(0, 10);
-  await run(`INSERT INTO agent_instructions (id,org_id,text,kind,trigger,status,send_authorization,plan,last_count,created_by,created_by_name)
-             VALUES (?,?,?,?,?,'planned',?,?,?,?,?)`,
-    [id, req.user.orgId, text, kind, trigger, auth, JSON.stringify(plan),
+  await run(`INSERT INTO agent_instructions (id,org_id,text,kind,trigger,status,send_authorization,persona,plan,last_count,created_by,created_by_name)
+             VALUES (?,?,?,?,?,'planned',?,?,?,?,?,?)`,
+    [id, req.user.orgId, text, kind, trigger, auth, persona, JSON.stringify(plan),
      plan.expectedCount || 0, actor(req).id, actor(req).name]);
 
   res.status(201).json({ id, kind, trigger, authorization: auth, plan,
+    persona, personaName: PS.getPersona(persona).name,
     // A standing instruction is never retroactive, and the screen says so with
     // the count it would have caught — so she can do those by hand rather than
     // find the gap in March (BUILD-94's enrolment rule, carried over).
@@ -918,13 +978,17 @@ app.post("/agent/instructions/:id/confirm", requireAuth, checkWriteAccess, wrap(
 }));
 
 app.get("/agent/instructions", requireAuth, wrap(async (req, res) => {
+  const PS = await agentPersonasMod();
   const rows = await query(
-    `SELECT id, text, kind, trigger, status, send_authorization, plan, created_at,
+    `SELECT id, text, kind, trigger, status, send_authorization, persona, plan, created_at,
             turned_on_by_name, turned_on_at, paused_at
        FROM agent_instructions WHERE org_id=? ORDER BY created_at DESC LIMIT 200`,
     [req.user.orgId]);
   const [org] = await query("SELECT agent_paused_at FROM orgs WHERE id=?", [req.user.orgId]);
-  res.json({ instructions: rows, pausedAll: !!(org && org.agent_paused_at) });
+  // AGENTS-1 — the badge's words come from the registry, not from the row, so
+  // renaming a persona renames it everywhere at once.
+  res.json({ instructions: rows.map(r => ({ ...r, personaName: r.persona ? PS.getPersona(r.persona).name : null })),
+             pausedAll: !!(org && org.agent_paused_at) });
 }));
 
 // PAUSE ANY INSTRUCTION WITH ONE BUTTON.
@@ -962,9 +1026,10 @@ app.get("/agent/activity", requireAuth, wrap(async (req, res) => {
   const runs = await query(
     `SELECT r.id, r.instruction_id, r.started_at, r.finished_at, r.status, r.read_summary,
             r.drafted, r.sent, r.declined, r.withheld, r.withheld_reason, r.error,
-            i.text AS instruction_text, i.kind
+            i.text AS instruction_text, i.kind, i.persona
        FROM agent_runs r LEFT JOIN agent_instructions i ON i.id = r.instruction_id
       WHERE r.org_id=? ORDER BY r.started_at DESC LIMIT 50`, [req.user.orgId]);
+  const PSa = await agentPersonasMod();
   const writes = await query(
     `SELECT w.id, w.run_id, w.tool, w.entity_table, w.entity_id, w.cites, w.created_at,
             w.undone_at, w.undone_by_name
@@ -975,7 +1040,7 @@ app.get("/agent/activity", requireAuth, wrap(async (req, res) => {
     `SELECT COUNT(*) FILTER (WHERE status='pending')::int AS pending FROM agent_drafts WHERE org_id=?`,
     [req.user.orgId]);
   res.json({
-    runs,
+    runs: runs.map(r => ({ ...r, personaName: r.persona ? PSa.getPersona(r.persona).name : null })),
     writes: writes.map(w => ({ ...w,
       // Undoable while it is inside the window AND has not already been undone.
       undoable: !w.undone_at && new Date(w.created_at).getTime() >= cutoff })),
@@ -1027,10 +1092,13 @@ app.get("/agent/runs/:id", requireAuth, wrap(async (req, res) => {
 // what each step came to.
 app.get("/agent/plans", requireAuth, wrap(async (req, res) => {
   const A = await agentShapeMod();
-  const rows = await query(
-    `SELECT id, text, kind, trigger, status, send_authorization, plan, created_at, created_by_name,
+  const PSp = await agentPersonasMod();
+  const rows = (await query(
+    `SELECT id, text, kind, trigger, status, send_authorization, persona, plan, created_at, created_by_name,
             turned_on_by_name, turned_on_at
-       FROM agent_instructions WHERE org_id=? ORDER BY created_at DESC LIMIT 100`, [req.user.orgId]);
+       FROM agent_instructions WHERE org_id=? ORDER BY created_at DESC LIMIT 100`, [req.user.orgId]))
+    // AGENTS-1 — the badge's words, from the registry.
+    .map(r => ({ ...r, personaName: r.persona ? PSp.getPersona(r.persona).name : null }));
   const runs = await query(
     `SELECT DISTINCT ON (instruction_id) id, instruction_id, status, started_at, finished_at, read_summary,
             actions, drafted, sent, declined, withheld, withheld_reason, error
@@ -1120,8 +1188,9 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
   const [org] = await query("SELECT vocabulary_json FROM orgs WHERE id=?", [orgId]);
   const words = org && org.vocabulary_json;
   const items = [];
+  const PSw = await agentPersonasMod();
   const ins = await query(
-    `SELECT id, text, plan, created_at, created_by_name FROM agent_instructions
+    `SELECT id, text, plan, persona, created_at, created_by_name FROM agent_instructions
       WHERE org_id=? AND status='planned' ORDER BY created_at ASC LIMIT 200`, [orgId]);
   const giftDonors = new Map();
   for (const i of ins) {
@@ -1138,6 +1207,7 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
     const d = dById.get(x.g.donorId);
     if (!d) continue;
     items.push({ kind: "gift_to_confirm", id: i.id, createdAt: i.created_at, donorId: d.id,
+      persona: i.persona || null, personaName: i.persona ? PSw.getPersona(i.persona).name : null,
       title: `A gift of ${A.formatCents(x.g.amountCents)} from ${A.nameInSentence(d)}, to confirm`,
       who: `${d.name} · ${V.giverWordFor(d, words)}`, body: `“${G.plainText(i.text)}”`,
       confirmLabel: A.confirmLabel(x.plan) });
@@ -1163,11 +1233,16 @@ app.get("/agent/waiting", requireAuth, wrap(async (req, res) => {
         AND d.deleted_at IS NULL ORDER BY t.created_at ASC LIMIT 200`, [orgId]);
   for (const t of th) items.push({ kind: "renewal_note", id: t.id, createdAt: t.created_at, donorId: t.donor_id,
     title: G.plainText(t.next_step_label), who: t.name, body: G.plainText(t.draft_note) });
+  // AGENTS-1 — a draft says which of the six wrote it, through the instruction
+  // it came from. LEFT JOIN, because a draft from before this build (and one
+  // written by the general agent) has no persona and shows no badge.
   const ad = await query(
-    `SELECT a.id, a.donor_id, a.subject, a.body, a.created_at, d.name
+    `SELECT a.id, a.donor_id, a.subject, a.body, a.created_at, d.name, i.persona
        FROM agent_drafts a JOIN donors d ON d.id = a.donor_id AND d.org_id = a.org_id
+       LEFT JOIN agent_instructions i ON i.id = a.instruction_id AND i.org_id = a.org_id
       WHERE a.org_id=? AND a.status='pending' AND d.deleted_at IS NULL ORDER BY a.created_at ASC LIMIT 200`, [orgId]);
   for (const a of ad) items.push({ kind: "agent_draft", id: a.id, createdAt: a.created_at, donorId: a.donor_id,
+    persona: a.persona || null, personaName: a.persona ? PSw.getPersona(a.persona).name : null,
     title: `A note Steward drafted for ${a.name}${a.subject ? ": " + G.plainText(a.subject) : ""}`, who: a.name,
     body: G.plainText(a.body) });
   items.sort((x, y) => new Date(x.createdAt) - new Date(y.createdAt));

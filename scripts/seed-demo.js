@@ -1716,6 +1716,40 @@ async function main() {
             [`ty_b72_${k + 1}`, ORG, g.donor_id, g.id, t.body, t.voice]);
   }
 
+  // ── AGENTS-1 · ONE PLAN PER PERSONA, SO THE DEMO SHOWS ALL SIX ─────────
+  // Six planned instructions, one from each of the six agents, each about
+  // people who are really in this file. They sit in Plans as PLANNED: nothing
+  // confirmed, nothing run, nothing drafted, nothing sent — which is what the
+  // product does before somebody presses confirm, and the only honest thing to
+  // seed. The badge on each row is what this build added.
+  const personasMod = await import("../shared/agentPersonas.js");
+  const agentSeedPeople = await q(
+    `SELECT id, name FROM donors WHERE org_id=$1 AND deleted_at IS NULL AND kind IS NULL AND total_giving > 0
+      ORDER BY id LIMIT 6`, [ORG]);
+  const AGENT_ASKS = {
+    data: "Find the records with no email address and tag them so I can work through them.",
+    researcher: "Write me a brief on this donor before Thursday's meeting.",
+    writer: "Draft a thank-you for everybody who gave this week.",
+    analyst: "How much did we raise from monthly givers this year?",
+    recurring: "Who has gone quiet past their own pattern this month?",
+    onboarding: "Draft the welcome for everybody who gave for the first time this month.",
+  };
+  for (const [k, persona] of personasMod.PERSONAS.entries()) {
+    const person = agentSeedPeople[k % Math.max(1, agentSeedPeople.length)];
+    if (!person) break;
+    const plan = {
+      steps: [{ tool: "find_people", label: `Read ${person.name}'s record`, citesRows: [person.id], donorId: person.id },
+              { tool: "count", label: "Count what that found", citesRows: [person.id] }],
+      sends: 0, expectedCount: 1,
+      reads: `${person.name}'s record`,
+      confirmLabel: "Run it",
+    };
+    await q(`INSERT INTO agent_instructions (id,org_id,text,kind,status,send_authorization,persona,plan,last_count,created_by,created_by_name)
+             VALUES ($1,$2,$3,'task','planned','draft',$4,$5,1,'u_b72demo','Maren Ashgrove')`,
+      [`ai_b72_${persona.id}`, ORG, AGENT_ASKS[persona.id], persona.id, JSON.stringify(plan)]);
+  }
+  console.log(`[assert] the agent: ${personasMod.PERSONAS.length} plans waiting, one from each of the six, none of them run`);
+
   // ── THE SHAPE ASSERTION ON THE GENERATED FILE (BUILD-76 follow-up) ──────
   // Asserted HERE, after the write, on every target including production —
   // the committed guard is tests/demo-shape.test.js, but that suite never
