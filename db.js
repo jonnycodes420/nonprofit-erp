@@ -3995,6 +3995,14 @@ async function initSchema() {
   // organisation is actually about. One column, one switch, and a motif an org
   // does not have simply does not draw.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS welcome_motif TEXT`);
+  // CKRH-1 — the greeting's own SENTENCE and its ONE next step, both the org's
+  // own words. `welcome_line` replaces the generic "This is yours…" paragraph
+  // for an org that has something better to say to its own people; NULL keeps
+  // the default, so no existing org's greeting changes. `welcome_next_step` is
+  // a single instruction, never a list: a first run that opens with three
+  // things to do is a to-do list, not a welcome.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS welcome_line TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS welcome_next_step TEXT`);
   // The two or three words an organisation actually says about itself
   // ("Recreation · Restoration · Education"). Their words, stored, never
   // computed — the BUILD-86 rule, applied to the one screen that greets them.

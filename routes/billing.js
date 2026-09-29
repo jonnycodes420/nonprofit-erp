@@ -323,13 +323,22 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   const signedAt = new Date();
   const trialEndsAt = computeTrialEnd(signedAt).toISOString();
 
+  // CKRH-1 — A PROVISIONED ORG HAS ALREADY BEEN ONBOARDED, BY THE PERSON
+  // PROVISIONING IT. The wizard exists to collect the org's name, mission,
+  // timezone and first funds; a handover arrives with every one of those
+  // already filled in from the customer's own website, so sending her through
+  // it would ask her to retype what is on the screen behind it — and, worse,
+  // `POST /onboarding/complete` calls `seedOrgData`, which would put invented
+  // donors and gifts into a REAL organisation's account. The first-run
+  // greeting is what a provisioned org opens on instead, which is the whole
+  // point of arming it. A self-serve signup is unchanged and still onboards.
   await run(
     `INSERT INTO orgs (id, name, onboarding_complete, org_slug, plan, subscription_status,
                        signed_at, trial_ends_at, emails_enabled, is_demo_org)
-     VALUES (?,?,0,?,'trial','trialing',?,?,?,?)`,
+     VALUES (?,?,?,?,'trial','trialing',?,?,?,?)`,
     // 2026-09-24 — mail OFF for every new org (opt-in, super-admin only);
     // `provisioned` still marks the org as fiction.
-    [orgId, orgName, orgSlug, signedAt.toISOString(), trialEndsAt,
+    [orgId, orgName, isProvisioned ? 1 : 0, orgSlug, signedAt.toISOString(), trialEndsAt,
      false, isProvisioned]
   );
   // BUILD-58 W-3: every org is born with a usable ledger.
@@ -2060,11 +2069,36 @@ app.post("/admin/orgs/:id/extend-trial", requireAuth, requireSuperAdmin, wrap(as
 }));
 
 app.post("/admin/orgs/:id/change-plan", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
-  const { plan } = req.body;
-  const valid = ["trial", "core", "team", "founding", "seed", "growth", "impact"];
+  const { plan, foundingPartner } = req.body;
+  // CKRH-1 — the list was written before the tiers existed and had gone stale:
+  // Seed, Sapling and Orchard are what the pricing page sells, and a super
+  // admin could not name any of them here. It is now the LEGACY list plus
+  // whatever `pricing.json` currently holds, so the one price list stays the
+  // one price list and this route cannot drift from it again.
+  const tierIds = [];
+  for (const t of (PRICING.TIERS || [])) { tierIds.push(t.id, `${t.id}_monthly`, `${t.id}_yearly`); }
+  const valid = ["trial", "core", "team", "founding", "seed", "growth", "impact", ...tierIds];
   if (!valid.includes(plan)) return res.status(400).json({ error: "Invalid plan" });
-  const status = plan === "trial" ? "trialing" : "active";
-  await run("UPDATE orgs SET plan=?, subscription_status=? WHERE id=?", [plan, status, req.params.id]);
+
+  // GRANTING A PLAN DOES NOT END A FREE TRIAL THAT IS STILL RUNNING. An
+  // invoice-only customer is put on their plan on day ONE — the plan is what
+  // they have agreed to pay for, and the thirty days is when they start paying
+  // for it. Flattening `trialing` to `active` here charged that customer
+  // nothing (there is no subscription) but told Settings, the band check and
+  // `orgPlanTier` that the free period was over on the day it began.
+  const [before] = await query(
+    "SELECT subscription_status, trial_ends_at FROM orgs WHERE id=?", [req.params.id]);
+  if (!before) return res.status(404).json({ error: "Org not found" });
+  const trialRunning = before.subscription_status === "trialing"
+    && before.trial_ends_at && new Date(before.trial_ends_at).getTime() > Date.now();
+  const status = (plan === "trial" || trialRunning) ? "trialing" : "active";
+
+  const sets = ["plan=?", "subscription_status=?"], params = [plan, status];
+  // The founding discount is a COUPON that follows the org across bands
+  // (GTM-1b), so it is a flag on the org and not a plan of its own.
+  if (foundingPartner !== undefined) { sets.push("founding_partner=?"); params.push(foundingPartner === true); }
+  params.push(req.params.id);
+  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, params);
   const orgs = await query("SELECT * FROM orgs WHERE id=?", [req.params.id]);
   res.json(orgs[0]);
 }));

@@ -1451,10 +1451,20 @@ async function orgRow(orgId) { const [o] = await query("SELECT * FROM orgs WHERE
 // user has not been welcomed yet, and the org has something to say.
 app.get("/org/welcome", requireAuth, wrap(async (req, res) => {
   const [org] = await query(
-    `SELECT name, mission, welcome_motif, welcome_words FROM orgs WHERE id = ?`, [req.user.orgId]);
+    `SELECT name, mission, welcome_motif, welcome_words, welcome_line, welcome_next_step, logo_data
+       FROM orgs WHERE id = ?`, [req.user.orgId]);
   const [me] = await query(
     `SELECT name, welcomed_at FROM users WHERE id = ?`, [req.user.userId]);
   const first = String(me?.name || "").trim().split(/\s+/)[0] || null;
+  // CKRH-1 — the funds the org already has, by name, at most three. A greeting
+  // that can say "Horse Care is already here" is telling her something TRUE
+  // about her own account; the same screen with invented funds on it would be
+  // the exact thing a real org must never be shown. Sample funds are excluded
+  // for that reason, and an org with none simply shows none.
+  const funds = await query(
+    `SELECT name FROM fin_funds
+      WHERE org_id = ? AND COALESCE(is_sample, false) = false
+      ORDER BY restricted DESC, created_at, name LIMIT 3`, [req.user.orgId]);
   res.json({
     show: !!me && me.welcomed_at == null,
     firstName: first,
@@ -1462,6 +1472,13 @@ app.get("/org/welcome", requireAuth, wrap(async (req, res) => {
     mission: org?.mission || null,
     motif: org?.welcome_motif || null,
     words: Array.isArray(org?.welcome_words) ? org.welcome_words.slice(0, 4).map(String) : [],
+    line: org?.welcome_line || null,
+    nextStep: org?.welcome_next_step || null,
+    // The org's OWN logo, the one already on its receipts — not a second upload
+    // and not a copy, so the greeting cannot show a brand the product has since
+    // been told to stop using.
+    logo: org?.logo_data || null,
+    funds: funds.map(f => String(f.name)),
   });
 }));
 
@@ -1673,6 +1690,17 @@ app.patch("/orgs/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   if (req.body.welcomeMotif !== undefined) {
     const m = String(req.body.welcomeMotif || "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
     await run(`UPDATE orgs SET welcome_motif=? WHERE id=?`, [m || null, req.params.id]);
+  }
+  // CKRH-1 — the sentence and the one next step, on the same route and with the
+  // same opt-in rule as the motif and the words: touched only when sent, and an
+  // empty string clears back to the product default rather than storing "".
+  if (req.body.welcomeLine !== undefined) {
+    const l = String(req.body.welcomeLine || "").trim().slice(0, 240);
+    await run(`UPDATE orgs SET welcome_line=? WHERE id=?`, [l || null, req.params.id]);
+  }
+  if (req.body.welcomeNextStep !== undefined) {
+    const n = String(req.body.welcomeNextStep || "").trim().slice(0, 240);
+    await run(`UPDATE orgs SET welcome_next_step=? WHERE id=?`, [n || null, req.params.id]);
   }
   if (req.body.welcomeWords !== undefined) {
     // At most four, each short — this is an eyebrow, not a paragraph.
