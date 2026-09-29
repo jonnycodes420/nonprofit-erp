@@ -21,6 +21,81 @@ source, tests and CI all name this file instead.
 
 ---
 
+## 0-NOW · THE PROD DEMO RE-SEED, AFTER FIX-7 THROUGH INT-2 (2026-09-28)
+
+The 28 September re-seed failed its shape assertion and FIX-7 found why: the
+peer-to-peer block picked its twelve givers with an unordered `ORDER BY
+created_at`, and on production that returned five of the eleven drifted donors,
+each of whom then got a gift dated that week. It is deterministic now, and it
+refuses outright if any story person is drawn into the 5K.
+
+Run it when you are ready. It DROPS AND RECREATES `org_b72demo` and is safe to
+run ten minutes before a call:
+
+    DATABASE_URL=<prod> BASE=https://nonprofit-erp-production.up.railway.app \
+      node scripts/seed-demo.js --i-know-this-is-prod
+
+Afterwards Harborlight also has: six agent plans, one from each of the six
+personas, none of them run (AGENTS-1); Stripe healthy, PayPal healthy and
+Givebutter QUIET on the Connections screen (INT-1); Square connected with gala
+and 5K takings, four buyers who have never given, one attendee drifting and one
+unmapped item (INT-POS); and QuickBooks connected with its mapping finished,
+Xero not connected (INT-2).
+
+## 0-KEYS · THE DEVELOPER ACCOUNTS THESE THREE BUILDS WAIT ON (2026-09-28)
+
+Everything downstream of each token is built, tested and merged. What is
+missing in every case is an account only you can open.
+
+**PayPal** (INT-1). The webhook receiver is live and its signature verification
+is proven against forged requests. To turn it on:
+  · a REST app on your live PayPal account with a webhook subscribed to
+    `PAYMENT.CAPTURE.COMPLETED`, `PAYMENT.CAPTURE.REFUNDED`,
+    `PAYMENT.SALE.COMPLETED`, `BILLING.SUBSCRIPTION.ACTIVATED`,
+    `BILLING.SUBSCRIPTION.CANCELLED` and `BILLING.SUBSCRIPTION.PAYMENT.FAILED`,
+    pointed at `https://nonprofit-erp-production.up.railway.app/paypal/webhook`
+  · Railway variable: **`PAYPAL_WEBHOOK_ID`** (the webhook's id, not a secret)
+  · native OAuth onboarding ("Log in with PayPal" / Partner Referrals) needs an
+    approved PayPal **partner** account, which is an application and a review.
+    Until then an org connects with its own client id and secret, which works.
+
+**Square** (INT-POS). The item mapping, the classification and every signal are
+finished and exercised. To read a real register:
+  · a Square developer account and an application, with read-only scopes:
+    `PAYMENTS_READ`, `ORDERS_READ`, `ITEMS_READ`, `CUSTOMERS_READ`,
+    `MERCHANT_PROFILE_READ`
+  · Railway variables: **`SQUARE_APP_ID`**, **`SQUARE_APP_SECRET`**,
+    **`SQUARE_WEBHOOK_SIGNATURE_KEY`**
+  · Square reviews an application before production OAuth is enabled.
+
+**Toast** (INT-POS). Toast's API is behind their partner programme. Steward
+ships Toast as a file import today, which is the truth rather than a
+placeholder, and the mapping and signals are identical either way. To apply:
+Toast Partner Connect, "Integration Partner", which asks for a company, an
+integration description and a review. Until it is approved there is nothing to
+paste and nothing is waiting on it.
+
+**Intuit / QuickBooks Online** (INT-2). The mapping, the deposit builder, the
+send-once ledger and the monthly agreement are finished and proven against a
+mock. To send to a real company file:
+  · an Intuit developer account and an app with the `com.intuit.quickbooks.accounting`
+    scope, and Intuit's review before production keys are issued
+  · Railway variables: **`INTUIT_CLIENT_ID`**, **`INTUIT_CLIENT_SECRET`**,
+    **`INTUIT_REDIRECT_URI`**, **`INTUIT_API_BASE`**
+    (sandbox: `https://sandbox-quickbooks.api.intuit.com`)
+
+**Xero** (INT-2). Same code, same mapping, tracking categories instead of
+classes.
+  · a Xero developer account and an app with `accounting.transactions` and
+    `accounting.settings`, plus Xero's app review for production
+  · Railway variables: **`XERO_CLIENT_ID`**, **`XERO_CLIENT_SECRET`**,
+    **`XERO_REDIRECT_URI`**, **`XERO_API_BASE`**
+
+None of these is set on production today, and none of them breaks anything by
+being absent: every screen says plainly that the organisation is not connected,
+and the send route builds the deposit, holds it against its payout and refuses
+to send rather than pretending.
+
 ## 0-NEW · THE DEMO ORG HAS NO CONNECTED STRIPE ACCOUNT (2026-09-28, EVENTS-2)
 
 EVENTS-2 lets the public event page take a card, and the whole path is proven
