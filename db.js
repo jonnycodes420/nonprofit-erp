@@ -3524,6 +3524,7 @@ async function initSchema() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_person ON pos_sales (org_id, person_id, occurred_on)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_pos_sales_event ON pos_sales (org_id, event_id)`);
 
+
   // ── INT-2 · THE BOOKKEEPER NEVER RETYPES A GIFT ───────────────────────────
   // The connection to an accounting system, its mapping, and the one row per
   // payout that makes sending idempotent.
@@ -4618,6 +4619,31 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_groups_org ON volunteer_groups (org_id, name)`);
+
+  // ── FIX-9 Part B · A GROUP HAS MEMBERS BEFORE IT HAS A SHIFT ──────────────
+  // Membership was carried entirely by `volunteer_signups.group_id`, and that
+  // row requires a slot: somebody could only be "in" a church group by being
+  // on a date with it. So a coordinator could not build the group first and
+  // schedule it second, which is the order every group actually arrives in.
+  // This table is membership itself. Sign-ups keep their group_id, because a
+  // shift somebody worked WITH a group is a fact about that shift, and the
+  // group's member list is the union of the two.
+  //
+  // It holds no hours, no giving and no second name: a member is a donors row
+  // (one person, one record) and this says only that they belong.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS volunteer_group_members (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      group_id TEXT NOT NULL REFERENCES volunteer_groups(id) ON DELETE CASCADE,
+      person_id TEXT NOT NULL REFERENCES donors(id) ON DELETE CASCADE,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS vol_group_member_once
+                      ON volunteer_group_members (org_id, group_id, person_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vol_group_members_group
+                      ON volunteer_group_members (org_id, group_id)`);
 
   // ONE SIGN-UP PER PERSON PER SLOT, decided by the database. Capacity that
   // is only checked by an if-statement is capacity that is advisory, and the

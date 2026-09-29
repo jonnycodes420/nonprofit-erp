@@ -349,6 +349,155 @@ app.get("/volunteer-hub/groups", requireAuth, wrap(async (req, res) => {
     sentence: "A group is a label on a set of sign-ups. Every member is still their own record with their own hours." });
 }));
 
+// ── FIX-9 Part B · A GROUP YOU CAN OPEN ────────────────────────────────────
+// "Groups on file" was a list of names and a count you could not press. A
+// group is how a church, a company or a family arrives, and the coordinator's
+// questions about one are: who is in it, what have they given in hours, when
+// did they last come, do any of them also give, and what have they signed up
+// for. All of that is one read.
+//
+// EVERY MEMBER IS STILL THEIR OWN RECORD. The group is a label on sign-ups,
+// never a second kind of person, so the hours below are each member's own and
+// the group's total is their sum rather than a figure kept beside them.
+app.get("/volunteer-hub/groups/:id", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT * FROM volunteer_groups WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Not found" });
+
+  const coordinator = req.user.role === "volunteer_coordinator";
+  const members = await query(
+    `SELECT d.id, d.name, d.email, d.total_giving,
+            COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
+                       WHERE vs.org_id=d.org_id AND vs.person_id=d.id
+                         AND vs.date >= date_trunc('year', CURRENT_DATE)::text),0)::float AS hours_this_year,
+            (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
+               WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
+       FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.id IN (
+        SELECT m.person_id FROM volunteer_group_members m WHERE m.org_id=? AND m.group_id=?
+        UNION
+        SELECT su.person_id FROM volunteer_signups su
+         WHERE su.org_id=? AND su.group_id=? AND su.status <> 'cancelled')
+      ORDER BY d.name`, [orgId, orgId, g.id, orgId, g.id]);
+
+  const shifts = await query(
+    `SELECT DISTINCT s.id, s.date::text AS date, o.name AS opportunity, o.location,
+            (SELECT COUNT(*)::int FROM volunteer_signups x
+              WHERE x.slot_id=s.id AND x.group_id=? AND x.status <> 'cancelled') AS from_group
+       FROM volunteer_signups su
+       JOIN volunteer_slots s ON s.id = su.slot_id
+       JOIN volunteer_opportunities o ON o.id = s.opportunity_id
+      WHERE su.org_id=? AND su.group_id=? AND su.status <> 'cancelled'
+      ORDER BY s.date DESC LIMIT 60`, [g.id, orgId, g.id]);
+
+  // The lead is a PERSON on file, never a name typed twice.
+  const [lead] = g.contact_person_id
+    ? await query("SELECT id, name, email FROM donors WHERE id=? AND org_id=?", [g.contact_person_id, orgId])
+    : [];
+  const totalHours = members.reduce((t, m) => t + (Number(m.hours_this_year) || 0), 0);
+  res.json({
+    id: g.id, name: g.name, kind: g.kind,
+    lead: lead ? { id: lead.id, name: lead.name, email: lead.email || null } : null,
+    members: members.map(m => ({
+      id: m.id, name: m.name, email: m.email || null,
+      hoursThisYear: Math.round((Number(m.hours_this_year) || 0) * 100) / 100,
+      lastShift: m.last_shift || null,
+      // The "gives" mark is a YES or NOTHING, never an amount: this is the
+      // volunteer side, and a coordinator does not get giving figures at all.
+      gives: coordinator ? null : Number(m.total_giving) > 0,
+    })),
+    shifts: shifts.map(x => ({ id: x.id, date: x.date, opportunity: x.opportunity,
+      location: x.location || null, fromGroup: Number(x.from_group) || 0 })),
+    totalHoursThisYear: Math.round(totalHours * 100) / 100,
+    sentence: `${members.length} ${members.length === 1 ? "person" : "people"} in ${g.name}`
+      + `, ${Math.round(totalHours * 100) / 100} hours between them this year.`,
+    definition: "Everybody signed up under this group's name. Each one is their own record with their own hours; the group is a label on their sign-ups, never a second kind of person.",
+  });
+}));
+
+// FIX-9 Part B.4 — the group's members as a file, through the ONE csv writer.
+app.get("/volunteer-hub/groups/:id/csv", requireAuth, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId;
+  const [g] = await query("SELECT id, name FROM volunteer_groups WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Not found" });
+  const rows = await query(
+    `SELECT d.name, d.email,
+            COALESCE((SELECT SUM(vs.hours) FROM volunteer_shifts vs
+                       WHERE vs.org_id=d.org_id AND vs.person_id=d.id
+                         AND vs.date >= date_trunc('year', CURRENT_DATE)::text),0)::float AS hours,
+            (SELECT MAX(vs.date)::text FROM volunteer_shifts vs
+               WHERE vs.org_id=d.org_id AND vs.person_id=d.id) AS last_shift
+       FROM donors d
+      WHERE d.org_id=? AND d.deleted_at IS NULL AND d.id IN (
+        SELECT m.person_id FROM volunteer_group_members m WHERE m.org_id=? AND m.group_id=?
+        UNION
+        SELECT su.person_id FROM volunteer_signups su
+         WHERE su.org_id=? AND su.group_id=? AND su.status <> 'cancelled')
+      ORDER BY d.name`, [orgId, orgId, g.id, orgId, g.id]);
+  const { reportHooks } = require("./crm");
+  reportHooks.sendCsv(res, `${String(g.name).toLowerCase().replace(/[^a-z0-9]+/g, "-")}-members.csv`,
+    ["Name", "Email", "Hours this year", "Last shift"],
+    rows.map(r => [r.name, r.email || "", r.hours, r.last_shift || ""]));
+}));
+
+// FIX-9 Part B.2 — ADD PEOPLE TO A GROUP, and take them out again. Adding
+// somebody who is already on file uses THAT record (one person, one record);
+// a name nobody has seen becomes a volunteer, never a donor, because they have
+// not given a penny. Removing takes them off the group's sign-ups and leaves
+// every hour they logged exactly where it is.
+app.post("/volunteer-hub/groups/:id/members", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await READY;
+  const orgId = req.user.orgId, who = actor(req);
+  const [g] = await query("SELECT id, name FROM volunteer_groups WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!g) return res.status(404).json({ error: "Not found" });
+  const remove = req.body?.remove === true;
+  let personId = req.body?.personId ? String(req.body.personId) : null;
+
+  if (personId) {
+    const [p] = await query("SELECT id FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL", [personId, orgId]);
+    if (!p) return res.status(404).json({ error: "Not found", message: "That person is not in this organisation." });
+  }
+
+  if (remove) {
+    if (!personId) return res.status(400).json({ error: "person_required" });
+    // Membership goes; the shifts they worked WITH the group keep their label,
+    // because that is a fact about those shifts and not about the list.
+    const r = await run(`DELETE FROM volunteer_group_members WHERE org_id=? AND group_id=? AND person_id=?`,
+      [orgId, g.id, personId]);
+    return res.json({ ok: true, removed: (r && r.changes) || 0,
+      sentence: `Taken out of ${g.name}. Every hour they logged is still on their record, and so is every shift.`,
+      undo: { personId, groupId: g.id } });
+  }
+
+  if (!personId) {
+    const name = String(req.body?.name || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!name && !email) return res.status(400).json({ error: "name_or_email_required" });
+    if (email) {
+      const hit = await query(
+        `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL ORDER BY created_at LIMIT 2`,
+        [orgId, email]);
+      if (hit.length === 1) personId = hit[0].id;
+    }
+    if (!personId) {
+      personId = "d_" + uuid().slice(0, 10);
+      await run(
+        `INSERT INTO donors (id,org_id,name,email,stage,status,tags,person_types,created_by,created_by_name)
+         VALUES (?,?,?,?,'prospect','active','[]','["volunteer"]'::jsonb,?,?)`,
+        [personId, orgId, name || email, email || null, who.id, who.name]);
+    }
+  }
+  // A member with no shift yet is still a member. Asked once: adding somebody
+  // twice is not an error, it is the same membership.
+  await run(
+    `INSERT INTO volunteer_group_members (id,org_id,group_id,person_id,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?) ON CONFLICT (org_id, group_id, person_id) DO NOTHING`,
+    ["vgm_" + uuid().slice(0, 10), orgId, g.id, personId, who.id, who.name]);
+  res.json({ ok: true, personId, sentence: `Added to ${g.name}. They keep their own record and their own hours.` });
+}));
+
 // A group signs up together: one action, many people, each of them their own
 // record. Anybody whose email is already on file joins on THAT record — one
 // person, one record — and the rest are created as volunteers.

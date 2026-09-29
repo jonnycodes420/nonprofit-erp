@@ -20659,6 +20659,12 @@ const namedOrGivingSql = (a = "d") =>
 giftHooks.autoUnlapseOnGift = autoUnlapseOnGift;
 giftHooks.calcWealthScore = calcWealthScore;
 reportHooks.run = async (orgId, key, q = {}) => REPORT_HANDLERS[key](orgId, parseReportParams(q, await orgForYears(orgId)));   // ORG_TZ_SEAM_OK
+// FIX-9 Part B.4 — `sendReportCsv` is THE csv writer: the injection guard and
+// the header rules live in it, so the volunteer group's export uses this one
+// rather than growing a second. It is declared inside mount() like everything
+// else in this file, so it is handed out the way `run` is rather than exported
+// from module scope, where it does not exist.
+reportHooks.sendCsv = sendReportCsv;
 }
 
 module.exports = { routers, mount, giftHooks, reportHooks };

@@ -938,6 +938,7 @@ function SlotPeopleModal({ slotId, onClose, isReadOnly }) {
 // waiting list, and the answer says which.
 function GroupsView({ isReadOnly, narrow, onOpenRecord }) {
   const [data, reload, err] = useLoad("/volunteer-hub/groups");
+  const [openGroup, setOpenGroup] = useState(null);
   const [opps] = useLoad("/volunteer-hub/opportunities");
   const [form, setForm] = useState(null);      // {slotId, groupName, kind, people}
   const [out, setOut] = useState(null);
@@ -1044,19 +1045,156 @@ function GroupsView({ isReadOnly, narrow, onOpenRecord }) {
         </div>
       )}
 
+      {/* FIX-9 Part B.1 — A GROUP ROW OPENS THE GROUP. It was a name, a kind
+          and a count you could not press, so "14 people" was a fact about a
+          group nobody could look at. */}
       <div style={card}>
         <div style={{ ...eyebrow, marginBottom: 10 }}>Groups on file</div>
         {!data.groups.length && <div style={{ fontSize: 13, color: T.ink3 }}>No groups yet.</div>}
         {data.groups.map(g => (
-          <div key={g.id} data-testid="vol-group-row"
-            style={{ display: "flex", gap: 12, alignItems: "baseline", padding: "10px 2px", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap" }}>
+          <button key={g.id} data-testid="vol-group-row" onClick={() => setOpenGroup(g.id)}
+            style={{ display: "flex", width: "100%", textAlign: "left", gap: 12, alignItems: "baseline",
+              padding: "10px 2px", borderBottom: "1px solid " + T.bg2, flexWrap: "wrap",
+              background: "none", border: "none", borderBottomStyle: "solid", cursor: "pointer", fontFamily: "inherit" }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{g.name}</span>
             <span style={{ fontSize: 12.5, color: T.ink3 }}>{(data.kinds.find(k => k.key === g.kind) || {}).label || g.kind}</span>
-            <span style={{ fontSize: 12.5, color: T.ink3, marginLeft: "auto" }}>{g.people} {g.people === 1 ? "person" : "people"}</span>
-          </div>
+            <span style={{ fontSize: 12.5, color: T.greenDk, fontWeight: 700, marginLeft: "auto" }}>
+              {g.people} {g.people === 1 ? "person" : "people"}</span>
+          </button>
         ))}
       </div>
+      {openGroup && <GroupPanel groupId={openGroup} isReadOnly={isReadOnly} onOpenRecord={onOpenRecord}
+        onClose={() => { setOpenGroup(null); reload(); }} onSignUp={gid => { setOpenGroup(null); setForm({ groupId: gid }); }} />}
     </div>
+  );
+}
+
+// ── FIX-9 Part B · THE GROUP ────────────────────────────────────────────────
+// Who is in it, what each of them has given in hours, when they last came,
+// whether they also give, what the group has signed up for, and the lead. Add
+// somebody or take them out, and sign the whole group up for a shift through
+// the group sign-up that already exists.
+//
+// EVERY MEMBER IS STILL THEIR OWN RECORD. A name here opens that person, the
+// hours are theirs, and removing somebody from the list takes away a label and
+// not an hour.
+function GroupPanel({ groupId, isReadOnly, onClose, onOpenRecord, onSignUp }) {
+  const [g, setG] = useState(null);
+  const [msg, setMsg] = useState("");
+  const [undo, setUndo] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [pick, setPick] = useState({ q: "", name: "", email: "" });
+  const [roster, setRoster] = useState([]);
+  const load = useCallback(() => {
+    apiFetch(`/volunteer-hub/groups/${groupId}`).then(setG).catch(() => setG(null));
+  }, [groupId]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!adding) return undefined;
+    apiFetch("/volunteer-hub/roster").then(r => setRoster(r.people || [])).catch(() => setRoster([]));
+    return undefined;
+  }, [adding]);
+
+  const add = async body => {
+    setMsg("");
+    try { const r = await apiFetch(`/volunteer-hub/groups/${groupId}/members`, { method: "POST", body: JSON.stringify(body) });
+      setMsg(r.sentence || "Added."); setAdding(false); setPick({ q: "", name: "", email: "" }); setUndo(null); load(); }
+    catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+  const remove = async m => {
+    setMsg("");
+    try { const r = await apiFetch(`/volunteer-hub/groups/${groupId}/members`, { method: "POST",
+            body: JSON.stringify({ personId: m.id, remove: true }) });
+      setMsg(r.sentence || "Removed."); setUndo({ personId: m.id, name: m.name }); load(); }
+    catch (e) { setMsg(errorMessage(e, "That did not save.")); }
+  };
+
+  const inGroup = new Set((g?.members || []).map(m => m.id));
+  const matches = roster.filter(p => !inGroup.has(p.id)
+    && (!pick.q || (p.name || "").toLowerCase().includes(pick.q.toLowerCase()))).slice(0, 8);
+
+  return (
+    <Modal onClose={onClose} width={580} ariaLabel={g ? g.name : "Group"} padding={24}>
+      {!g ? <div style={{ fontSize: 13, color: T.ink3 }}>Loading…</div> : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-testid="vol-group-panel">
+          <div>
+            <div style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontSize: 24, color: T.ink, lineHeight: 1.15 }}>{g.name}</div>
+            <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 3 }}>{g.sentence}</div>
+            {g.lead && (
+              <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 2 }}>
+                Lead: <button onClick={() => onOpenRecord(g.lead.id)} style={{ ...btnLink, fontSize: 12.5, fontWeight: 600 }}>{g.lead.name}</button>
+                {g.lead.email ? ` · ${g.lead.email}` : ""}
+              </div>)}
+          </div>
+
+          {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span>{msg}</span>
+            {undo && <button style={{ ...btnQuiet, padding: "4px 10px", fontSize: 12 }} data-testid="vol-group-undo"
+              onClick={() => add({ personId: undo.personId })}>Undo</button>}
+          </div>}
+
+          <div data-testid="vol-group-members">
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <div style={eyebrow}>{g.members.length} {g.members.length === 1 ? "person" : "people"}</div>
+              <button style={{ ...btnQuiet, marginLeft: "auto" }} data-testid="vol-group-csv"
+                onClick={() => { window.location.href = `${API}/volunteer-hub/groups/${groupId}/csv`; }}>CSV</button>
+              {!isReadOnly && <button style={btnQuiet} data-testid="vol-group-add"
+                onClick={() => setAdding(a => !a)}>{adding ? "Cancel" : "Add people"}</button>}
+            </div>
+            {adding && !isReadOnly && (
+              <div style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                <input aria-label="Search your volunteers" placeholder="Search your volunteers…" value={pick.q}
+                  onChange={e => setPick({ ...pick, q: e.target.value })} style={inp} data-testid="vol-group-search" />
+                {matches.map(m => (
+                  <button key={m.id} onClick={() => add({ personId: m.id })} data-testid="vol-group-pick"
+                    style={{ textAlign: "left", background: T.white, border: "1px solid " + T.bg3, borderRadius: 8,
+                      padding: "7px 10px", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{m.name}</button>))}
+                <div style={{ fontSize: 12, color: T.ink3 }}>Or add somebody new:</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input aria-label="Name" placeholder="Name" value={pick.name}
+                    onChange={e => setPick({ ...pick, name: e.target.value })} style={{ ...inp, flex: "1 1 150px" }} />
+                  <input aria-label="Email" placeholder="Email (optional)" value={pick.email}
+                    onChange={e => setPick({ ...pick, email: e.target.value })} style={{ ...inp, flex: "1 1 170px" }} />
+                  <button disabled={!pick.name.trim() && !pick.email.trim()} data-testid="vol-group-add-new"
+                    onClick={() => add({ name: pick.name, email: pick.email })}
+                    style={{ ...btnPrimary, opacity: (pick.name.trim() || pick.email.trim()) ? 1 : 0.5 }}>Add</button>
+                </div>
+                <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>
+                  Somebody already on file joins on that record. A new name becomes a volunteer, never a donor.
+                </div>
+              </div>)}
+            {!g.members.length && <div style={{ fontSize: 13, color: T.ink3, marginTop: 8 }}>Nobody in this group yet.</div>}
+            {g.members.map(m => (
+              <div key={m.id} data-testid="vol-group-member" style={{ display: "flex", gap: 10, alignItems: "baseline",
+                padding: "8px 0", borderTop: "1px solid " + T.bg2, flexWrap: "wrap", fontSize: 13 }}>
+                <button onClick={() => onOpenRecord(m.id)} style={{ ...btnLink, fontSize: 13, fontWeight: 700 }}>{m.name}</button>
+                {m.gives && <span title="They also give" style={{ fontSize: 11, fontWeight: 700, color: T.greenDk,
+                  background: T.green100, borderRadius: 99, padding: "1px 8px" }}>gives</span>}
+                <span style={{ color: T.ink3 }}>{m.hoursThisYear} {m.hoursThisYear === 1 ? "hour" : "hours"} this year</span>
+                <span style={{ color: T.ink3 }}>{m.lastShift ? `last on ${displayDate(m.lastShift)}` : "no shifts yet"}</span>
+                {!isReadOnly && <button onClick={() => remove(m)} data-testid="vol-group-remove"
+                  style={{ ...btnLink, color: T.ink3, fontSize: 12, fontWeight: 600, marginLeft: "auto" }}>Remove</button>}
+              </div>))}
+          </div>
+
+          <div data-testid="vol-group-shifts">
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <div style={eyebrow}>What they have signed up for</div>
+              {!isReadOnly && <button style={{ ...btnQuiet, marginLeft: "auto" }} data-testid="vol-group-signup"
+                onClick={() => onSignUp && onSignUp(g.id)}>Sign this group up for a shift</button>}
+            </div>
+            {!g.shifts.length && <div style={{ fontSize: 13, color: T.ink3, marginTop: 6 }}>Nothing yet.</div>}
+            {g.shifts.map(x => (
+              <div key={x.id} style={{ fontSize: 13, color: T.ink, lineHeight: 1.8 }}>
+                {displayDate(x.date)} · {x.opportunity}
+                {x.location && <span style={{ color: T.ink3 }}> · {x.location}</span>}
+                <span style={{ color: T.ink3 }}> · {x.fromGroup} {x.fromGroup === 1 ? "person" : "people"}</span>
+              </div>))}
+          </div>
+
+          <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5 }}>{g.definition}</div>
+        </div>)}
+    </Modal>
   );
 }
 

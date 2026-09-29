@@ -95,6 +95,7 @@ async function reset() {
       // cascade covers a page delete, and this list has to survive an ORG delete
       // too.
       "form_events",
+      "volunteer_group_members", "volunteer_signups", "volunteer_slots", "volunteer_opportunities", "volunteer_groups",
       "bookkeeping_deposits", "bookkeeping_connections", "pos_sales", "pos_item_mappings",
       "gift_soft_credits", "p2p_teams", "peer_fundraisers", "giving_pages", "event_waitlist", "event_seat_holds", "event_attendees", "event_levels", "events", "volunteers", "board_members",
       // BUILD-100 (grants): both FK `grants` with ON DELETE CASCADE, so the
@@ -176,6 +177,22 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO event_attendees (id,event_id,org_id,donor_id,name,status) VALUES ($1,$2,$3,$4,$5,'invited')`,
     [`ea_${o}`, `ev_${o}`, o, `d_${o}`, `${mark} Attendee`]);
   await q(`INSERT INTO volunteer_shifts (id,org_id,person_id,date,hours,role) VALUES ($1,$2,$3,$4,3,'Barn')`, [`vs_${o}`, o, `d_${o}`, TODAY]);
+  // FIX-9 — VOL-2's SCHEDULING ROWS. Until this build the whole of
+  // routes/volunteerScheduling.js was invisible to this suite (readSource did
+  // not stitch the file, so every route in it read `auth: []` and was
+  // classified public), and ten parameterized routes went un-probed. These are
+  // the rows org A's token is pointed at.
+  await q(`INSERT INTO volunteer_opportunities (id,org_id,name,slug) VALUES ($1,$2,$3,$4)`,
+    [`vopp_${o}`, o, `${mark} Opportunity`, `opp-${o}`]).catch(() => {});
+  await q(`INSERT INTO volunteer_slots (id,org_id,opportunity_id,date,start_time,end_time)
+           VALUES ($1,$2,$3,$4,'09:00','12:00')`, [`vslot_${o}`, o, `vopp_${o}`, TODAY]).catch(() => {});
+  await q(`INSERT INTO volunteer_groups (id,org_id,name,kind) VALUES ($1,$2,$3,'company')`,
+    [`vgrp_${o}`, o, `${mark} Group`]).catch(() => {});
+  await q(`INSERT INTO volunteer_signups (id,org_id,slot_id,person_id,group_id,status)
+           VALUES ($1,$2,$3,$4,$5,'confirmed')`,
+    [`vsu_${o}`, o, `vslot_${o}`, `d_${o}`, `vgrp_${o}`]).catch(() => {});
+  await q(`INSERT INTO volunteer_group_members (id,org_id,group_id,person_id)
+           VALUES ($1,$2,$3,$4)`, [`vgm_${o}`, o, `vgrp_${o}`, `d_${o}`]).catch(() => {});
   // VOL-2 — a VOLUNTEERS-shaped import per org, for the undo probe. The
   // `imp_${o}` row above is shape 'workbook' and the volunteer undo only
   // answers for shape 'volunteers', so probing with it would have 404'd
@@ -346,6 +363,9 @@ function bResolver(routePath, param) {
     // EVENTS-2 — a place on a waiting list belongs to one org's event, and
     // offering it is an email to a person. Org A must not be able to send it.
     wid: `ewl_${B}`,
+    // FIX-9 — the check-in board names its param `slotId`, and the path
+    // prefixes below are only consulted for `:id`, so it needs a name here.
+    slotId: `vslot_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;
@@ -413,6 +433,15 @@ function bResolver(routePath, param) {
   // person is a `donors` row (the one-person-one-record rule).
   if (routePath.startsWith("/volunteer-hub/import/")) return `vimp_${B}`;
   if (routePath.startsWith("/volunteer-hub/person/")) return `d_${B}`;
+  // FIX-9 — the scheduling surface. Each of these acts on somebody else's
+  // volunteers: archiving org B's opportunity, cancelling its shift, reading
+  // who is coming to it, opening or adding to its group, or marking one of its
+  // people a no-show. All of them answer 404.
+  if (routePath.startsWith("/volunteer-hub/opportunities/")) return `vopp_${B}`;
+  if (routePath.startsWith("/volunteer-hub/slots/")) return `vslot_${B}`;
+  if (routePath.startsWith("/volunteer-hub/groups/")) return `vgrp_${B}`;
+  if (routePath.startsWith("/volunteer-hub/kiosk/")) return `vslot_${B}`;
+  if (routePath.startsWith("/volunteer-hub/signups/")) return `vsu_${B}`;
   // THREAD-2a — a journey IS a cultivation template, so the cross-tenant
   // probe is org B's own template row. These three routes read, rewrite and
   // APPLY a journey to people, which is the most consequential of the set:
