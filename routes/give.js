@@ -2966,7 +2966,8 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
   await expireStaleProposals(orgId);
   const [failed, exhausted, proposals, activeSubs] = await Promise.all([
     query(
-      `SELECT rs.id, rs.amount, rs.interval, rs.status, rs.last_failed_at, rs.dunning_step, rs.failure_count,
+      `SELECT rs.id, rs.amount, rs.interval, rs.status, rs.last_failed_at, rs.first_failed_at,
+              rs.dunning_step, rs.failure_count,
               rs.donor_id, d.name AS donor_name
          FROM recurring_subscriptions rs
          JOIN donors d ON d.id = rs.donor_id AND d.org_id = rs.org_id AND d.deleted_at IS NULL
@@ -3019,7 +3020,13 @@ app.get("/recurring/exceptions", requireAuth, wrap(async (req, res) => {
   const mapSub = s => ({
     subId: s.id, donorId: s.donor_id, donorName: s.donor_name,
     amount: s.amount != null ? parseFloat(s.amount) : null, interval: s.interval || "month",
-    lastFailedAt: s.last_failed_at || null, dunningStep: s.dunning_step, failureCount: s.failure_count,
+    lastFailedAt: s.last_failed_at || null,
+    // HOME-CALM — a subscription that has failed ONCE has a first_failed_at
+    // and no last_failed_at, and Home's stopped-card row needs a date it can
+    // stand behind. Without this it had none, and "Today" is not a safe guess
+    // for a card that stopped in July.
+    firstFailedAt: s.first_failed_at || null,
+    dunningStep: s.dunning_step, failureCount: s.failure_count,
   });
   // BUILD-83 Part 5.2 — the file's own stopped monthly donors are an exception
   // too. Without them the tab could say "nothing needs you" while 160 people
