@@ -42,6 +42,59 @@ and 5K takings, four buyers who have never given, one attendee drifting and one
 unmapped item (INT-POS); and QuickBooks connected with its mapping finished,
 Xero not connected (INT-2).
 
+## 0-INBOX · GMAIL AND OUTLOOK, AND WHAT EACH REVIEW NEEDS (2026-09-30)
+
+INT-4 moved Gmail onto the same signed-state, sealed-token handshake every other
+connection uses, and added Outlook beside it. Three things in the OLD Gmail
+integration are fixed by that move and are worth knowing about, because they
+were live: the state was the bare user id and unsigned, the tokens were stored
+in plaintext, and it held a `gmail.send` scope this product must never use.
+
+**Nothing is needed from you for the deploy itself.** `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` are already set, the old
+`/gmail/callback` path still works as a forwarder, and existing connections are
+sealed automatically on the first boot after this ships.
+
+**Google, to go past 100 connected people.** Gmail read scopes are RESTRICTED.
+  · Testing mode works today and is capped at 100 connected accounts, which is
+    plenty for CKRH and the next several customers.
+  · Production needs OAuth app verification AND an independent security
+    assessment (a CASA assessment through a Google-approved lab). It is a real
+    cost and a several-week process, so it is worth starting only when the
+    hundredth mailbox is in sight.
+  · Steward now asks only for `gmail.readonly`, which is the narrowest scope
+    that can read a body. Dropping `gmail.send` also removes the hardest part
+    of that review to justify.
+
+**Microsoft, for Outlook.**
+  · Register an app at entra.microsoft.com → App registrations, multi-tenant
+    ("Accounts in any organizational directory and personal Microsoft accounts").
+  · Redirect URI, on the APP: `https://www.stewardapp.dev/oauth/microsoft/callback`
+  · Railway variables: **`MICROSOFT_CLIENT_ID`**, **`MICROSOFT_CLIENT_SECRET`**,
+    **`MICROSOFT_REDIRECT_URI`**.
+  · Scopes Steward asks for and cannot widen: `Mail.Read`, `User.Read`,
+    `offline_access`, `openid`, `email`. Nothing that sends.
+  · Publisher verification is needed for the consent screen to stop warning
+    people, and a customer whose own tenant requires admin consent will need
+    their IT to approve Steward once.
+
+**The BCC path, which is built and switched off.** BUILD-87 built the whole
+inbound route provider-agnostic and deliberately left the provider unchosen,
+because receiving mail is a new subprocessor and a DNS change. Resend does
+support inbound. To turn it on:
+  · Pick a subdomain that carries no mail today, so existing delivery is
+    untouched. `log.stewardapp.dev` is the one the code assumes.
+  · In Resend → Domains, add that subdomain for RECEIVING. Resend shows you an
+    MX record for it; the value is specific to your account and region, so copy
+    it from their dashboard rather than from anywhere else. It must be the
+    lowest-priority MX on that subdomain.
+  · In Resend → Webhooks, add `https://nonprofit-erp-production.up.railway.app/resend/inbound`
+    and subscribe it to **`email.received`**. It is verified with the same Svix
+    signature the existing Resend webhook uses, so there is no new secret.
+  · Railway variables: **`INBOUND_EMAIL_ENABLED=1`** and
+    **`INBOUND_EMAIL_DOMAIN=log.stewardapp.dev`**.
+  · Each org then BCCs `log+<org-slug>@log.stewardapp.dev`.
+
 ## 0-EMAIL · THE TWO EMAIL TOOLS NEED THEIR APPS REGISTERED (2026-09-30)
 
 INT-3 built both sides of Mailchimp and Constant Contact: the audience sync out,

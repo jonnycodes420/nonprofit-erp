@@ -2030,6 +2030,100 @@ function StaffBoardList({onNavigate}){
   );
 }
 
+// ── INT-4 Part 3 · HER SWITCHES ────────────────────────────────────────────
+//
+// A pause, and a list of people Steward must never log. Both belong to the
+// person whose mailbox it is: every route behind them is scoped to her user id
+// and an admin colleague cannot reach them. That is the point. A fundraiser is
+// being asked to let a work system read her personal inbox, and the only
+// version of that anyone should accept is one where she can stop it at any
+// moment and name, in advance, who is none of its business.
+function MailboxControls() {
+  const [d, setD] = useState(null);
+  const [pattern, setPattern] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = () => apiFetch("/mailbox").then(setD).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const google = (d?.providers || []).find(p => p.key === "google");
+  if (!d || !google) return null;
+
+  const togglePause = async () => {
+    setBusy(true);
+    try {
+      const r = await apiFetch("/mailbox/google/pause", { method: "POST", body: JSON.stringify({ paused: !google.paused }) });
+      setMsg(r.sentence); load();
+    } catch (e) { setMsg(e?.sentence || "That did not change."); }
+    setBusy(false);
+  };
+  const add = async () => {
+    const v = pattern.trim();
+    if (!v) return;
+    setBusy(true);
+    try {
+      const r = await apiFetch("/mailbox/never-log", { method: "POST", body: JSON.stringify({ pattern: v }) });
+      setMsg(r.sentence); setPattern(""); load();
+    } catch (e) { setMsg(e?.error || e?.sentence || "That did not save."); }
+    setBusy(false);
+  };
+  const remove = async id => {
+    setBusy(true);
+    try { const r = await apiFetch(`/mailbox/never-log/${id}`, { method: "DELETE" }); setMsg(r.sentence); load(); }
+    catch { setMsg("That did not change."); }
+    setBusy(false);
+  };
+
+  return (
+    <div data-testid="mailbox-controls" style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
+      <div style={{fontSize:12,color:T.ink3,lineHeight:1.55,marginBottom:10}}>{d.fieldsSentence}</div>
+
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+        <button data-testid="mailbox-pause" onClick={togglePause} disabled={busy}
+          style={{background:google.paused?T.green:"transparent",border:"1px solid "+(google.paused?T.green:T.ink),
+                  borderRadius:8,padding:"7px 14px",color:google.paused?T.white:T.ink,
+                  fontSize:12,fontWeight:700,cursor:busy?"not-allowed":"pointer"}}>
+          {google.paused ? "Turn logging back on" : "Pause logging"}
+        </button>
+        <span style={{fontSize:12,color:T.ink3}}>
+          {google.paused
+            ? "Paused. Nothing new is being read from your mailbox."
+            : "On. Only messages to or from someone on file are kept."}
+        </span>
+      </div>
+
+      <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Never log these</div>
+      <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:8}}>
+        An email address, or a whole domain. Nobody here can see this list but you.
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <input data-testid="mailbox-never-input" value={pattern} onChange={e=>setPattern(e.target.value)}
+          placeholder="doctor@surgery.example or surgery.example"
+          style={{flex:"1 1 260px",minWidth:0,padding:"8px 10px",fontFamily:"inherit",fontSize:13,
+                  border:"1px solid "+T.bg3,borderRadius:8,background:T.white,color:T.ink}}/>
+        <button data-testid="mailbox-never-add" onClick={add} disabled={busy||!pattern.trim()}
+          style={{background:T.ink,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,
+                  fontSize:12,fontWeight:700,cursor:busy||!pattern.trim()?"not-allowed":"pointer",
+                  opacity:busy||!pattern.trim()?0.5:1}}>Add</button>
+      </div>
+      {(d.neverLog||[]).map(n=>(
+        <div key={n.id} data-testid="mailbox-never-row"
+          style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,
+                  padding:"6px 0",borderTop:"1px solid "+T.bg3}}>
+          <span style={{fontSize:13,color:T.ink}}>{n.pattern}</span>
+          <button onClick={()=>remove(n.id)} disabled={busy}
+            style={{background:"transparent",border:"none",fontSize:12,color:T.terra700,
+                    cursor:"pointer",fontWeight:600}}>Remove</button>
+        </div>
+      ))}
+      {!(d.neverLog||[]).length && (
+        <div style={{fontSize:12,color:T.ink3}}>Nothing on the list yet.</div>
+      )}
+      <div style={{fontSize:11.5,color:T.ink3,lineHeight:1.5,marginTop:12}}>{d.touchSentence}</div>
+      {msg && <div data-testid="mailbox-msg" style={{marginTop:10,fontSize:12.5,color:T.ink}}>{msg}</div>}
+    </div>
+  );
+}
+
 export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const isPortalTier=auth?.org?.plan==="portal";
   const visibleTabs=SETTINGS_TABS.filter(t=>!t.portalTierOnly||isPortalTier);
@@ -2242,11 +2336,16 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     }
   },[]);
 
+  // INT-4 — the handshake runs through shared/oauth.js like every other
+  // provider now: a SIGNED state carrying the org, the user and a nonce, the
+  // provider landing on the app, and the app finishing with an authenticated
+  // POST. The old /gmail/auth-url sent the bare user id as the state and the
+  // public callback believed it.
   async function connectGmail(){
     try{
-      const r=await apiFetch("/gmail/auth-url",{method:"POST"});
+      const r=await apiFetch("/oauth/google/start",{method:"POST"});
       window.location.href=r.url;
-    }catch(e){ alert(errorMessage(e, "Failed to start Gmail connect")); }
+    }catch(e){ alert(e?.sentence || errorMessage(e, "Failed to start Gmail connect")); }
   }
 
   async function disconnectGmail(){
@@ -2744,6 +2843,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             ✓ {gmailToast}
           </div>
         )}
+        {/* INT-4 Part 3 — HER SWITCHES, not the organisation's. A rule she
+            cannot override is a rule she will not turn on in the first place,
+            so the pause and the never-log list sit with the connection rather
+            than somewhere she has to go looking for them. */}
+        {gmailStatus?.connected && <MailboxControls/>}
       </div>
 
       {/* BUILD-95 §4 — the OTHER half of setting up online giving, on the same

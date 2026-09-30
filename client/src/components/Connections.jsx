@@ -310,7 +310,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
   const chosen = Object.entries(groups).filter(([, t]) => String(t || "").trim());
   const runPreview = () => {
     setBusy("preview");
-    apiFetch(`/email-marketing/${provider}/preview`, { method: "POST", body: { groups } })
+    apiFetch(`/email-marketing/${provider}/preview`, { method: "POST", body: JSON.stringify({ groups }) })
       .then(r => { setPreview(r); setBusy(""); })
       .catch(e => { setBusy(""); onError(e?.sentence || e?.body?.sentence || errorMessage(e, "The preview did not run.")); });
   };
@@ -318,7 +318,7 @@ function EmailToolMapping({ card, onSaved, onError }) {
     setBusy("save");
     const a = (audiences || []).find(x => x.id === audienceId);
     apiFetch(`/email-marketing/${provider}/mapping`, { method: "POST",
-      body: { audienceId, audienceName: a ? a.name : null, groups } })
+      body: JSON.stringify({ audienceId, audienceName: a ? a.name : null, groups }) })
       .then(r => { setBusy(""); onSaved(r.sentence); })
       .catch(e => { setBusy(""); onError(e?.sentence || e?.body?.sentence || errorMessage(e, "That did not save.")); });
   };

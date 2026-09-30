@@ -461,6 +461,7 @@ const bookkeepingMod = () => import("../shared/bookkeeping.js");
 // SIGNED-IN admin before it stores anything.
 const oauthMod = () => import("../shared/oauth.js");
 const emailMarketingMod = () => import("../shared/emailMarketing.js");
+const mailboxMod = () => import("../shared/mailboxLog.js");
 
 // The state is signed with the server's own secret. The signature is what
 // makes a state we did not issue useless; the row in oauth_states is what
@@ -527,7 +528,27 @@ app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
 // the browser to visit. A GET that WRITES one short-lived row is the exception
 // the rule allows for: nothing about the organisation changes, and the row is
 // the anti-forgery token itself.
-app.post("/oauth/:provider/start", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+// ── INT-4 · WHO MAY START AND FINISH A HANDSHAKE ───────────────────────────
+// An org connection (Xero, Square, Mailchimp) is the organisation's, so it
+// takes an owner or admin. A MAILBOX is not: it is one person's own inbox, her
+// own consent and her own switch to turn off, and requiring an admin to connect
+// it would be both wrong and useless, because the admin cannot pass Google's
+// consent screen as her anyway. So the wall moves rather than disappearing: for
+// a mailbox provider the caller must be a signed-in user, and every row written
+// is keyed to that user id.
+function requireAdminUnlessMailbox(req, res, next) {
+  let kind = null;
+  try { kind = PROVIDER_KIND[String(req.params.provider || "")] || null; } catch { kind = null; }
+  if (kind === "mailbox") return next();
+  return requireAdmin(req, res, next);
+}
+// Filled at mount from the registry, so a new provider is one entry there.
+const PROVIDER_KIND = {};
+import("../shared/oauth.js").then(O => {
+  for (const k of O.PROVIDER_KEYS) PROVIDER_KIND[k] = O.PROVIDERS[k].kind;
+}).catch(() => {});
+
+app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, checkWriteAccess, wrap(async (req, res) => {
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
@@ -577,7 +598,7 @@ app.get("/oauth/:provider/callback", wrap(async (req, res) => {
 // COMPLETE. The app sends the code and the state back here, signed in.
 // Nothing is stored until the state verifies AGAINST THE SIGNED-IN ADMIN: a
 // forged, copied or stale callback writes no token.
-app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, checkWriteAccess, wrap(async (req, res) => {
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
@@ -649,6 +670,33 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAcces
   // ACCOUNT, not of Steward. Asking for it after the exchange is the only way
   // to know it; hardcoding one works for the first customer and fails for the
   // second.
+  // ── INT-4 · A MAILBOX ROW IS KEYED TO THE PERSON ─────────────────────────
+  // The signed state already proved this is the same signed-in user who
+  // started the flow; that user id is what the row is written against, so one
+  // person's consent can never land on another person's record even inside one
+  // organisation. The address comes from the provider, never from the browser.
+  if (O.PROVIDERS[key].kind === "mailbox") {
+    const who_ = actor(req);
+    const address = await mailboxAddress(key, tokens.accessToken);
+    if (!address) {
+      return res.status(502).json({ error: "address_unknown",
+        sentence: `${O.PROVIDERS[key].label} approved the connection but would not say which mailbox it is, so Steward cannot tell whose it is. Try connecting again.` });
+    }
+    await run(
+      `INSERT INTO mailbox_connections
+         (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,created_by,created_by_name)
+       VALUES (?,?,?,?,?, 'active', ?,?,?,?)
+       ON CONFLICT (user_id, provider) WHERE status <> 'disconnected'
+       DO UPDATE SET address=EXCLUDED.address, credentials_sealed=EXCLUDED.credentials_sealed,
+                     token_expires_at=EXCLUDED.token_expires_at, status='active',
+                     last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
+      ["mbx_" + uuid().slice(0, 10), req.user.orgId, req.user.userId, key, address, sealed, expiresAt,
+       who_.id, who_.name]);
+    await writeAuditLog(req.user.orgId, who_.id, who_.name, "mailbox_connected", "mailbox", key, {}).catch(() => {});
+    const ML = await mailboxMod();
+    return res.json({ ok: true, provider: key, account: address, needsTenantChoice: false, tenants: null,
+      sentence: `${address} is connected, and Steward holds the permission encrypted. ${ML.FIELDS_SENTENCE}` });
+  }
   if (O.PROVIDERS[key].kind === "email") {
     let prefix = null, accountName = null;
     if (O.PROVIDERS[key].metadataUrl) {
@@ -730,6 +778,25 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAcces
 // `vendorKeyOf`, so the send path can ask for a token by the name it has.
 function oauthKeyFor(vendor) {
   return String(vendor) === "quickbooks" ? "intuit" : String(vendor);
+}
+
+
+// ── INT-4 · WHOSE MAILBOX IS THIS ──────────────────────────────────────────
+// Asked of the provider, never taken from the browser. A connection whose
+// address Steward cannot establish is refused rather than stored under a guess:
+// the address is how every later message is judged inbound or outbound, and a
+// wrong one silently mislabels every line on every record.
+async function mailboxAddress(providerKey, accessToken) {
+  try {
+    const url = providerKey === "google"
+      ? "https://gmail.googleapis.com/gmail/v1/users/me/profile"
+      : "https://graph.microsoft.com/v1.0/me";
+    const r = await fetch(url, { headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" } });
+    if (!r.ok) { console.error(`[mailbox] ${providerKey} profile answered ${r.status}`); return null; }
+    const b = await r.json();
+    const addr = providerKey === "google" ? b.emailAddress : (b.mail || b.userPrincipalName);
+    return addr ? String(addr).trim().toLowerCase() : null;
+  } catch (e) { console.error(`[mailbox] ${providerKey} profile failed:`, e.message); return null; }
 }
 
 // ── INT-3 — WHICH DATA CENTRE THIS MAILCHIMP ACCOUNT LIVES IN ──────────────
@@ -847,6 +914,16 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
   // then presents a refresh token the provider has already retired, and the
   // connection locks itself out. The kind picks the table, once.
   const kind = O.PROVIDERS[providerKey].kind;
+  // INT-4 — a mailbox row is keyed by USER, so its update is too. A rotated
+  // Google refresh token written against the org would change no rows and the
+  // connection would lock itself out at the next renewal.
+  if (kind === "mailbox") {
+    await run(
+      `UPDATE mailbox_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW()
+        WHERE org_id=? AND provider=? AND status <> 'disconnected' AND user_id=?`,
+      [sealed, expiresAt, orgId, providerKey, row.user_id]);
+    return { ok: true, accessToken: fresh.accessToken, refreshed: true };
+  }
   const sql = kind === "bookkeeping"
     ? `UPDATE bookkeeping_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND vendor=? AND status <> 'disconnected'`
     : kind === "email"
@@ -859,7 +936,7 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
 // DISCONNECT. Revokes where the provider supports it, deletes the tokens, and
 // keeps every record already imported: what came in is the organisation's own
 // history and Steward has no business deleting it to tidy up after itself.
-app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+app.post("/oauth/:provider/disconnect", requireAuth, requireAdminUnlessMailbox, checkWriteAccess, wrap(async (req, res) => {
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
@@ -868,6 +945,36 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAcc
   // on a donor's timeline and the opt-outs they produced do not vanish because
   // somebody unplugged the tool that reported them.
   const kind = O.PROVIDERS[key].kind;
+  // ── INT-4 · DISCONNECTING A MAILBOX, AND THE SECOND CHOICE ──────────────
+  // The default keeps what was already logged: those conversations are the
+  // organisation's record of its own relationships, and they do not belong to
+  // whoever happened to be holding the mailbox. But she may also say "and
+  // remove everything I logged", because she is entitled to undo what her own
+  // consent put there. It is HER rows only, matched by the actor that wrote
+  // them, never another colleague's.
+  if (kind === "mailbox") {
+    const purge = req.body && req.body.removeLogged === true;
+    const r = await run(
+      `UPDATE mailbox_connections SET status='disconnected', credentials_sealed=NULL, token_expires_at=NULL,
+              paused=false, updated_at=NOW()
+        WHERE org_id=? AND provider=? AND user_id=? AND status <> 'disconnected'`,
+      [req.user.orgId, key, req.user.userId]);
+    if (r && r.changes === 0) return res.status(404).json({ error: "not_connected" });
+    let removed = 0;
+    if (purge) {
+      const d = await run(
+        `DELETE FROM interactions
+          WHERE org_id=? AND type='email' AND created_by=?`,
+        [req.user.orgId, `system:mailbox/${key}/${req.user.userId}`]);
+      removed = (d && d.changes) || 0;
+    }
+    await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name,
+      purge ? "mailbox_disconnected_purged" : "mailbox_disconnected", "mailbox", key, { removed }).catch(() => {});
+    return res.json({ ok: true, removed,
+      sentence: purge
+        ? `Disconnected, and the ${removed} conversation${removed === 1 ? "" : "s"} you logged from that mailbox ${removed === 1 ? "has" : "have"} been removed.`
+        : "Disconnected. Steward will not read anything else from that mailbox, and the conversations already logged are still on the records." });
+  }
   const table = kind === "bookkeeping" ? "bookkeeping_connections"
               : kind === "email" ? "email_marketing_connections" : "giving_sources";
   const col = kind === "bookkeeping" ? "vendor" : "provider";
@@ -878,6 +985,118 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAcc
   await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name, "oauth_disconnected", "connection", key, {}).catch(() => {});
   res.json({ ok: true,
     sentence: `Disconnected. Steward will not read or send anything else through ${O.PROVIDERS[key].label}, and every record it already brought in is still here.` });
+}));
+
+// ═══ INT-4 · HER OWN INBOX ═════════════════════════════════════════════════
+//
+// Every route here is scoped to `req.user.userId` and not to the org. An admin
+// cannot read, pause, purge or disconnect a colleague's mailbox from any of
+// them: the connection is hers, and the only thing the organisation gets is the
+// conversations she chose to log.
+//
+// WHAT IS NEVER HERE: a send. There is no route below that writes a message,
+// and the scopes in shared/oauth.js could not authorise one if there were.
+
+// WHAT IS CONNECTED, FOR ME. Never another person's row.
+app.get("/mailbox", requireAuth, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const ML = await mailboxMod();
+  const mine = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected'`,
+    [req.user.userId, req.user.orgId]);
+  const never = await query(
+    `SELECT id, pattern, kind FROM mailbox_never_log WHERE user_id=? ORDER BY pattern`, [req.user.userId]);
+  const byProvider = Object.fromEntries(mine.map(r => [r.provider, r]));
+  const providers = O.PROVIDER_KEYS.filter(k => O.PROVIDERS[k].kind === "mailbox").map(k => {
+    const p = O.PROVIDERS[k];
+    const row = byProvider[k] || null;
+    const { values, names } = oauthEnv(k, O.ENV_VARS);
+    const missing = ["clientId", "clientSecret", "redirectUri"].filter(f => !values[f]).map(f => names[f]);
+    return {
+      key: k, label: p.label, scopes: p.scopes, configured: missing.length === 0, missing,
+      connected: !!row, address: row?.address || null, paused: row?.paused === true,
+      lastSyncedAt: row?.last_synced_at || null, lastLoggedCount: row?.last_logged_count ?? null,
+      lastError: row?.last_error || null,
+      reviewNote: p.reviewNote || null,
+      sentence: missing.length
+        ? `Steward cannot open ${p.label}'s consent screen yet: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set.`
+        : row
+          ? (row.paused ? `Paused. Nothing new is being read from ${row.address}.`
+                        : `Connected to ${row.address}. Only messages to or from someone on file are kept.`)
+          : `Connect your own ${p.label} and your conversations with people on file will log themselves.`,
+    };
+  });
+  res.json({
+    providers, neverLog: never,
+    fieldsLogged: ML.FIELDS_LOGGED, fieldsSentence: ML.FIELDS_SENTENCE,
+    touchSentence: ML.TOUCH_SENTENCE,
+    definition: "Your own mailbox. Steward logs only the messages to or from a person already in Steward, and keeps nothing at all about any other message.",
+  });
+}));
+
+// PAUSE. Hers, and a switch rather than a disconnect: the tokens stay so she
+// can turn it back on without another consent screen.
+app.post("/mailbox/:provider/pause", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key) || O.PROVIDERS[key].kind !== "mailbox")
+    return res.status(404).json({ error: "unknown_provider" });
+  const paused = req.body?.paused !== false;
+  const r = await run(
+    `UPDATE mailbox_connections SET paused=?, updated_at=NOW()
+      WHERE user_id=? AND org_id=? AND provider=? AND status <> 'disconnected'`,
+    [paused, req.user.userId, req.user.orgId, key]);
+  if (r && r.changes === 0) return res.status(404).json({ error: "not_connected" });
+  res.json({ ok: true, paused,
+    sentence: paused
+      ? "Paused. Steward will read nothing new from your mailbox until you turn it back on, and what is already logged stays."
+      : "On again. Steward will pick up from where it stopped." });
+}));
+
+// THE NEVER-LOG LIST. Hers alone: no admin route reads or writes this table.
+app.post("/mailbox/never-log", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const ML = await mailboxMod();
+  const v = ML.validateNeverLog(req.body?.pattern);
+  if (!v.ok) return res.status(400).json({ error: v.error });
+  await run(
+    `INSERT INTO mailbox_never_log (id,user_id,org_id,pattern,kind) VALUES (?,?,?,?,?)
+     ON CONFLICT (user_id, pattern) DO NOTHING`,
+    ["nvr_" + uuid().slice(0, 8), req.user.userId, req.user.orgId, v.value, v.kind]);
+  res.status(201).json({ ok: true, pattern: v.value, kind: v.kind,
+    sentence: v.kind === "domain"
+      ? `Nothing from anyone at ${v.value} will be logged, and nothing already logged from them is kept.`
+      : `Nothing to or from ${v.value} will be logged.` });
+}));
+
+app.delete("/mailbox/never-log/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const r = await run(`DELETE FROM mailbox_never_log WHERE id=? AND user_id=?`,
+    [req.params.id, req.user.userId]);
+  if (!r.changes) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, sentence: "Removed from your never-log list. Steward does not go back for anything it skipped." });
+}));
+
+// "DO NOT LOG THIS ONE" — removes the interaction AND remembers, so the next
+// sync does not put it straight back. Remembering is the whole point: without
+// the exclusion row, deleting a logged email lasts until the next pass.
+app.post("/mailbox/forget", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const interactionId = String(req.body?.interactionId || "");
+  if (!interactionId) return res.status(400).json({ error: "interactionId is required" });
+  const [row] = await query(
+    `SELECT id, org_id, metadata FROM interactions WHERE id=? AND org_id=?`,
+    [interactionId, req.user.orgId]);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  const meta = typeof row.metadata === "string" ? JSON.parse(row.metadata || "{}") : (row.metadata || {});
+  const provider = String(meta.provider || "google");
+  const messageId = String(meta.message_id || meta.gmail_message_id || "");
+  if (messageId) {
+    await run(
+      `INSERT INTO mailbox_exclusions (id,org_id,user_id,provider,message_id) VALUES (?,?,?,?,?)
+       ON CONFLICT (org_id, provider, message_id) DO NOTHING`,
+      ["mex_" + uuid().slice(0, 8), req.user.orgId, req.user.userId, provider, messageId]);
+  }
+  await run(`DELETE FROM interactions WHERE id=? AND org_id=?`, [interactionId, req.user.orgId]);
+  res.json({ ok: true,
+    sentence: "Removed, and Steward will not log that message again." });
 }));
 
 // ═══ INT-3 · THE EMAIL TOOL SHE ALREADY PAYS FOR ═══════════════════════════

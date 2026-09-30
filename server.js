@@ -7883,146 +7883,251 @@ async function checkPlanLimit(org, dimension) {
 
 // ── Gmail integration ──────────────────────────────────────────────────────
 
-async function syncGmail(userId, orgId) {
-  const conns = await query("SELECT * FROM gmail_connections WHERE user_id=? AND status='active'", [userId]);
-  if (!conns.length) return;
-  const conn = conns[0];
+// ── INT-4 · ONE MAILBOX SYNC, FOR GMAIL AND OUTLOOK ────────────────────────
+//
+// THE DEFAULT IS THAT NOTHING IS STORED. The provider is asked only for
+// messages involving an address that already belongs to somebody on file, and
+// every message that comes back still has to pass `classifyMailboxMessage`
+// before a single field of it is written. Her doctor, her children's school and
+// her job applications are not merely filtered out of the record: they are
+// never fetched, never counted and never named.
+//
+// What replaced the first version of this, and why:
+//   · the tokens are SEALED now, not plaintext columns;
+//   · the actor is stamped (`system:mailbox/<provider>/<userId>`), which the
+//     old writer left NULL against the standing rule, and which is also what
+//     makes "remove everything I logged" able to find her rows and only hers;
+//   · the body is the real message with the quoted reply trimmed, not Gmail's
+//     snippet, because a record of a conversation that stops at 100 characters
+//     is not a record of the conversation;
+//   · her never-log list and her pause switch are consulted every run.
+async function syncMailbox(userId, orgId, providerKey) {
+  const ML = await import("./shared/mailboxLog.js");
+  const [conn] = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+    [userId, orgId, providerKey]);
+  if (!conn) return { logged: 0, reason: "not_connected" };
+  if (conn.paused === true) return { logged: 0, reason: "paused" };
 
-  const oauth2Client = makeOAuth2Client();
-  oauth2Client.setCredentials({
-    access_token:  conn.access_token,
-    refresh_token: conn.refresh_token,
-    expiry_date:   conn.token_expiry ? new Date(conn.token_expiry).getTime() : undefined,
-  });
+  const token = await mailboxAccessToken(conn, orgId, providerKey);
+  if (!token) return { logged: 0, reason: "no_token" };
 
-  // Persist refreshed tokens automatically
-  oauth2Client.on("tokens", async (tokens) => {
-    const sets = [];
-    const vals = [];
-    if (tokens.access_token) { sets.push("access_token=?"); vals.push(tokens.access_token); }
-    if (tokens.expiry_date)  { sets.push("token_expiry=?");  vals.push(new Date(tokens.expiry_date).toISOString()); }
-    if (sets.length) { vals.push(conn.id); await run(`UPDATE gmail_connections SET ${sets.join(",")} WHERE id=?`, vals); }
-  });
-
-  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-
-  // Get all donor emails for this org
   const donors = await query(
-    "SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email != '' AND deleted_at IS NULL",
-    [orgId]
-  );
-  if (!donors.length) return;
+    `SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email <> '' AND deleted_at IS NULL`,
+    [orgId]);
+  if (!donors.length) return { logged: 0, reason: "no_people" };
+  const donorsByEmail = new Map();
+  for (const d of donors) donorsByEmail.set(String(d.email).trim().toLowerCase(), d.id);
 
-  const donorByEmail = {};
-  donors.forEach(d => { donorByEmail[d.email.toLowerCase().trim()] = d; });
-  const donorEmails = Object.keys(donorByEmail);
+  const staffRows = await query(`SELECT email FROM users WHERE org_id=?`, [orgId]);
+  const staffEmails = staffRows.map(r => String(r.email || "").trim().toLowerCase()).filter(Boolean);
+  const neverRows = await query(`SELECT pattern FROM mailbox_never_log WHERE user_id=?`, [userId]);
+  const neverLog = neverRows.map(r => r.pattern);
+  // Both exclusion tables, so anything removed under the old integration stays
+  // removed under this one.
+  const exRows = await query(
+    `SELECT message_id FROM mailbox_exclusions WHERE org_id=? AND provider=?
+     UNION ALL SELECT gmail_message_id FROM gmail_sync_exclusions WHERE org_id=?`,
+    [orgId, providerKey, orgId]);
+  const excludedIds = exRows.map(r => r.message_id).filter(Boolean);
 
-  // Messages whose interaction a staff member deleted — never re-insert
-  // (see DELETE /interactions/:id).
-  const exclusionRows = await query(
-    "SELECT gmail_message_id FROM gmail_sync_exclusions WHERE org_id=?",
-    [orgId]
-  );
-  const excludedMsgIds = new Set(exclusionRows.map(r => r.gmail_message_id));
+  const messages = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()]);
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const actorId = `system:mailbox/${providerKey}/${userId}`;
+  const [me] = await query(`SELECT name FROM users WHERE id=?`, [userId]);
+  const staffName = me?.name || null;
 
-  // Process in chunks of 20 emails to stay within query length limits
-  const CHUNK = 20;
-  for (let i = 0; i < donorEmails.length; i += CHUNK) {
-    const chunk = donorEmails.slice(i, i + CHUNK);
-    const q = chunk.map(e => `from:${e} OR to:${e}`).join(" OR ");
+  let logged = 0;
+  const dropped = {};
+  for (const m of messages) {
+    const decision = ML.classifyMailboxMessage(m, {
+      paused: false, neverLog, excludedIds, mailboxAddress: conn.address,
+      staffEmails, donorsByEmail, today,
+    });
+    if (decision.action !== "log") { dropped[decision.reason] = (dropped[decision.reason] || 0) + 1; continue; }
 
-    let pageToken;
-    let fetched = 0;
-    do {
-      let listRes;
-      try {
-        listRes = await gmail.users.messages.list({ userId: "me", q, maxResults: 50, ...(pageToken ? { pageToken } : {}) });
-      } catch (e) {
-        // A revoked/expired refresh token surfaces from the token endpoint as
-        // invalid_grant with HTTP 400 (message "invalid_grant", not a 401) —
-        // catch it alongside a genuine 401 so it stops being retried forever.
-        const isInvalidGrant = e.message === "invalid_grant" || e.response?.data?.error === "invalid_grant";
-        if (e.code === 401 || e.status === 401 || isInvalidGrant) {
-          await run("UPDATE gmail_connections SET status='disconnected' WHERE id=?", [conn.id]);
-          if (isInvalidGrant) {
-            console.error(`[gmail-sync] Connection ${conn.id} (${conn.email || conn.user_id}) refresh token revoked (invalid_grant) — marked disconnected, will not retry until reconnected.`);
-          }
-          throw new Error("Gmail token revoked");
-        }
-        throw e;
-      }
+    // Idempotent on the provider's own message id, per org.
+    const seen = await query(
+      `SELECT id FROM interactions WHERE org_id=? AND metadata->>'message_id'=? LIMIT 1`, [orgId, String(m.id)]);
+    if (seen.length) continue;
 
-      pageToken = listRes.data.nextPageToken;
-      const messages = listRes.data.messages || [];
-      fetched += messages.length;
-
-      for (const { id: msgId } of messages) {
-        // Staff-deleted message — deletion sticks, never resync
-        if (excludedMsgIds.has(msgId)) continue;
-        // Idempotency: skip if already logged
-        const existing = await query(
-          "SELECT id FROM interactions WHERE org_id=? AND metadata->>'gmail_message_id'=?",
-          [orgId, msgId]
-        );
-        if (existing.length) continue;
-
-        let msgRes;
-        try {
-          msgRes = await gmail.users.messages.get({
-            userId: "me", id: msgId, format: "metadata",
-            metadataHeaders: ["From", "To", "Subject", "Date"],
-          });
-        } catch { continue; }
-
-        const headers = msgRes.data.payload?.headers || [];
-        const hdr = (name) => headers.find(h => h.name.toLowerCase() === name.toLowerCase())?.value || "";
-        const from    = hdr("From");
-        const to      = hdr("To");
-        const subject = hdr("Subject") || "(no subject)";
-        const dateStr = hdr("Date");
-        const snippet = (msgRes.data.snippet || "").slice(0, 500);
-
-        // Parse bare email from "Name <email@example.com>" format
-        const parseAddr = (s) => { const m = s.match(/<([^>]+)>/); return (m ? m[1] : s).toLowerCase().trim(); };
-        const fromEmail = parseAddr(from);
-        const toEmails  = to.split(",").map(parseAddr);
-
-        // Match to donor (from = inbound, to = outbound)
-        let matchedDonor = donorByEmail[fromEmail];
-        let direction    = "inbound";
-        if (!matchedDonor) {
-          for (const te of toEmails) {
-            if (donorByEmail[te]) { matchedDonor = donorByEmail[te]; direction = "outbound"; break; }
-          }
-        }
-        if (!matchedDonor) continue;
-
-        // Parse message date
-        let msgDate = new Date(dateStr);
-        if (isNaN(msgDate.getTime())) msgDate = new Date();
-        const dateIso = msgDate.toISOString().split("T")[0];
-
-        await run(
-          `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_at, metadata)
-           VALUES (?, ?, ?, 'email', ?, ?, ?, ?)`,
-          [
-            `int_${uuid().slice(0, 8)}`,
-            orgId,
-            matchedDonor.id,
-            `Subject: ${subject}\n\n${snippet}`,
-            dateIso,
-            msgDate.toISOString(),
-            JSON.stringify({ gmail_message_id: msgId, from, to, subject, direction }),
-          ]
-        );
-      }
-
-      if (fetched >= 100) break; // Safety cap per chunk
-    } while (pageToken);
+    const note = ML.conversationNote(decision, { staffName });
+    const body = decision.body ? `${note}\n\n${decision.body}` : note;
+    for (const donorId of decision.donorIds) {
+      const intId = `int_${uuid().slice(0, 8)}`;
+      await run(
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_at, created_by, logged_by_name, metadata)
+         VALUES (?,?,?,'email',?,?,?,?,?,?)`,
+        [intId, orgId, donorId, body, decision.date,
+         m.receivedAt || new Date().toISOString(), actorId, staffName,
+         JSON.stringify({ message_id: String(m.id), provider: providerKey, direction: decision.direction,
+                          subject: decision.subject, attachments: decision.attachmentCount,
+                          logged_by: userId })]);
+      logged++;
+      // A CONVERSATION IS A TOUCH, AND NOTHING MORE. It can close a Thread
+      // step that asked for exactly this contact. It does not move giving,
+      // drift, LYBUNT, SYBUNT or the stage, and there is no code below that
+      // could: the only write is to `interactions` and to an open thread step.
+      await closeThreadStepForContact(orgId, donorId, decision.date, intId).catch(() => {});
+    }
   }
 
-  await run("UPDATE gmail_connections SET last_synced_at=NOW() WHERE id=?", [conn.id]);
+  await run(
+    `UPDATE mailbox_connections SET last_synced_at=NOW(), last_tried_at=NOW(), last_logged_count=?,
+            last_error=NULL, last_error_at=NULL, updated_at=NOW() WHERE id=?`, [logged, conn.id]);
+  return { logged, dropped };
 }
+
+// A mailbox token, refreshed through the same seam every other connection
+// uses. Returns null rather than throwing so one broken mailbox never stops
+// the tick for everybody else.
+async function mailboxAccessToken(conn, orgId, providerKey) {
+  try {
+    const { openBag } = await import("./shared/secretBox.js");
+    const O = await import("./shared/oauth.js");
+    const bag = openBag(conn.credentials_sealed, { aad: orgId });
+    const stale = O.needsRefresh(conn.token_expires_at ? new Date(conn.token_expires_at).toISOString() : null,
+                                 new Date().toISOString());
+    if (!stale) return bag.accessToken;
+    if (!bag.refreshToken) throw new Error("no refresh token");
+    const { values } = (() => {
+      const names = O.ENV_VARS[providerKey] || {};
+      const out = {};
+      for (const [k, n] of Object.entries(names)) out[k] = process.env[n] || null;
+      return { values: out };
+    })();
+    const spec = O.tokenRequest(providerKey, { refreshToken: bag.refreshToken,
+      clientId: values.clientId, clientSecret: values.clientSecret });
+    const r = await fetch(spec.url, { method: "POST",
+      headers: { ...spec.headers, ...(spec.basic ? { Authorization: "Basic " + Buffer.from(spec.basic).toString("base64") } : {}) },
+      body: spec.body });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(body?.error || `token endpoint ${r.status}`);
+    const fresh = O.readTokens(body);
+    if (!fresh) throw new Error("no access token");
+    const { sealBag } = await import("./shared/secretBox.js");
+    const sealed = sealBag({ accessToken: fresh.accessToken,
+      refreshToken: fresh.refreshToken || bag.refreshToken, scope: fresh.scope || null }, { aad: orgId });
+    await run(`UPDATE mailbox_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE id=?`,
+      [sealed, fresh.expiresInSeconds ? new Date(Date.now() + fresh.expiresInSeconds * 1000).toISOString() : null, conn.id]);
+    return fresh.accessToken;
+  } catch (e) {
+    console.error(`[mailbox] ${providerKey} token for ${conn.id}:`, e.message);
+    await run(`UPDATE mailbox_connections SET status='error', last_error=?, last_error_at=NOW() WHERE id=?`,
+      ["That mailbox needs connecting again. Steward's permission was withdrawn or expired.", conn.id]).catch(() => {});
+    return null;
+  }
+}
+
+/**
+ * ONLY MESSAGES THAT ALREADY INVOLVE SOMEBODY ON FILE ARE ASKED FOR.
+ * The query sent to the provider names the addresses; anything else in the
+ * mailbox is never returned, so Steward never holds it even in memory.
+ */
+async function fetchMailboxMessages(providerKey, token, donorEmails) {
+  const out = [];
+  const CHUNK = 15, CAP = 120;
+  for (let i = 0; i < donorEmails.length && out.length < CAP; i += CHUNK) {
+    const chunk = donorEmails.slice(i, i + CHUNK);
+    try {
+      if (providerKey === "google") {
+        const q = chunk.map(e => `from:${e} OR to:${e} OR cc:${e}`).join(" OR ");
+        const list = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=${encodeURIComponent(q)}`,
+          { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
+        for (const { id } of (list?.messages || [])) {
+          if (out.length >= CAP) break;
+          const full = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`,
+            { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
+          if (full) out.push(gmailToMessage(full));
+        }
+      } else {
+        const filter = chunk.map(e =>
+          `from/emailAddress/address eq '${e.replace(/'/g, "''")}'`).join(" or ");
+        const list = await fetch(
+          `https://graph.microsoft.com/v1.0/me/messages?$top=40&$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,hasAttachments&$filter=${encodeURIComponent(filter)}`,
+          { headers: { Authorization: "Bearer " + token } }).then(r => r.ok ? r.json() : null);
+        for (const m of (list?.value || [])) {
+          if (out.length >= CAP) break;
+          out.push(graphToMessage(m));
+        }
+      }
+    } catch (e) { console.error(`[mailbox] ${providerKey} fetch:`, e.message); }
+  }
+  return out;
+}
+
+const addrOf = s => { const m = String(s || "").match(/<([^>]+)>/); return (m ? m[1] : String(s || "")).trim().toLowerCase(); };
+
+function gmailToMessage(full) {
+  const headers = full.payload?.headers || [];
+  const hdr = n => headers.find(h => h.name.toLowerCase() === n)?.value || "";
+  const walk = (part, acc) => {
+    if (!part) return acc;
+    if (part.mimeType === "text/plain" && part.body?.data) {
+      acc.text += Buffer.from(part.body.data, "base64").toString("utf8");
+    }
+    if (part.filename && part.body?.attachmentId) acc.attachments++;
+    for (const p of part.parts || []) walk(p, acc);
+    return acc;
+  };
+  const acc = walk(full.payload, { text: "", attachments: 0 });
+  return {
+    id: full.id,
+    from: addrOf(hdr("from")),
+    to: hdr("to").split(",").map(addrOf).filter(Boolean),
+    cc: hdr("cc").split(",").map(addrOf).filter(Boolean),
+    subject: hdr("subject"),
+    bodyText: acc.text || full.snippet || "",
+    attachmentCount: acc.attachments,
+    date: new Date(Number(full.internalDate) || Date.now()).toISOString().slice(0, 10),
+    receivedAt: new Date(Number(full.internalDate) || Date.now()).toISOString(),
+  };
+}
+
+function graphToMessage(m) {
+  const html = m.body?.contentType === "html";
+  const text = String(m.body?.content || "");
+  return {
+    id: m.id,
+    from: addrOf(m.from?.emailAddress?.address),
+    to: (m.toRecipients || []).map(r => addrOf(r.emailAddress?.address)).filter(Boolean),
+    cc: (m.ccRecipients || []).map(r => addrOf(r.emailAddress?.address)).filter(Boolean),
+    subject: m.subject || "",
+    bodyText: html ? text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : text,
+    attachmentCount: m.hasAttachments ? 1 : 0,
+    date: String(m.receivedDateTime || "").slice(0, 10),
+    receivedAt: m.receivedDateTime || new Date().toISOString(),
+  };
+}
+
+/**
+ * A logged conversation closes an open Thread that asked for exactly this
+ * contact with exactly this person. "Call or write to Marion" is done when
+ * Marion gets an email.
+ *
+ * IT CLOSES AS AN OUTCOME, POINTING AT THE CONVERSATION. `threads_close_honest`
+ * requires a closing interaction for an outcome close, which is the right
+ * constraint: a thread that claims it was resolved has to name the thing that
+ * resolved it. So this passes the interaction it just wrote.
+ *
+ * Only contact-shaped steps. A pledge reminder, a membership renewal or a
+ * check-in on an ask are about something happening, not about having written,
+ * and having written does not finish them.
+ */
+async function closeThreadStepForContact(orgId, donorId, date, interactionId) {
+  const ML = await import("./shared/mailboxLog.js");
+  await query(
+    `UPDATE threads SET closed_at=NOW(), close_kind='outcome', closing_interaction_id=?
+      WHERE org_id=? AND donor_id=? AND closed_at IS NULL
+        AND next_step_type = ANY(?)
+        AND opened_on <= ?`,
+    [interactionId, orgId, donorId, ML.CONTACT_STEP_TYPES, String(date || "9999-12-31")]).catch(() => {});
+}
+
+// The old name, kept so the job tick and the manual button keep working.
+async function syncGmail(userId, orgId) { return syncMailbox(userId, orgId, "google"); }
 
 // ── Events ────────────────────────────────────────────────────────────────────
 

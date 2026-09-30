@@ -135,6 +135,54 @@ export const PROVIDERS = {
     tokenStyle: "basic",
     sandboxNote: "Connect a Constant Contact developer account first. Its access token lasts a day and Steward refreshes it.",
   },
+  // ── INT-4 · THE TWO MAILBOXES ────────────────────────────────────────────
+  // `kind: "mailbox"` is the fourth kind, and the only one that belongs to a
+  // PERSON rather than to an organisation. Dana connects Dana's mailbox; it is
+  // her consent, her tokens and her switch to turn off, and an admin cannot
+  // connect it for her. That is why the stored row is keyed by user.
+  //
+  // READ-ONLY, AND NARROWLY. Neither scope below can send, delete or modify a
+  // message, and there is no code path in Steward that could use one if it
+  // were granted. The product's whole promise is that a human sends; a CRM
+  // holding send access to a fundraiser's personal mailbox is the opposite of
+  // that promise, and it is also the difference between a Google review that
+  // asks for a security assessment and one that does not.
+  google: {
+    key: "google", label: "Gmail", kind: "mailbox", vendor: "google",
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    tokenUrl: "https://oauth2.googleapis.com/token",
+    // `gmail.readonly` is the narrowest scope that can read headers and bodies.
+    // There is no narrower Gmail read scope: `metadata` returns headers only,
+    // which cannot produce the body the record needs.
+    //
+    // NOTE what is NOT here: `gmail.send`, which the first Gmail integration
+    // asked for. Nothing in INT-4 sends, so asking for it bought a permission
+    // this product must never exercise.
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly", "openid", "email"],
+    pkce: true,
+    tokenStyle: "body",
+    // Google needs these two or a refresh token never arrives, and a mailbox
+    // connection without one stops working in an hour.
+    extraAuthParams: { access_type: "offline", prompt: "consent" },
+    restricted: true,
+    reviewNote: "Gmail read scopes are restricted: Google requires app verification and an independent security assessment before more than 100 people can connect. Testing mode is capped at 100 users.",
+    sandboxNote: "Google testing mode allows up to 100 connected accounts before verification.",
+  },
+  microsoft: {
+    key: "microsoft", label: "Outlook", kind: "mailbox", vendor: "microsoft",
+    // The `common` tenant so both a work account and a personal one can
+    // connect. A single-tenant URL would refuse every customer but ours.
+    authorizeUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    // Mail.Read is read-only. `offline_access` is what makes a refresh token
+    // exist. Nothing here is Mail.Send or Mail.ReadWrite.
+    scopes: ["offline_access", "openid", "email", "User.Read", "Mail.Read"],
+    pkce: true,
+    tokenStyle: "body",
+    restricted: true,
+    reviewNote: "Microsoft requires publisher verification, and an organisation's own admin may need to grant consent before its staff can connect.",
+    sandboxNote: "Connect a Microsoft developer tenant first.",
+  },
   // PayPal is deliberately ABSENT as an OAuth provider. Its native onboarding
   // (Partner Referrals / Log in with PayPal for a merchant's transactions) is
   // behind an approved partner account, which is an application and a review.
@@ -188,6 +236,13 @@ export const ENV_VARS = {
                redirectUri: "MAILCHIMP_REDIRECT_URI" },
   constantcontact: { clientId: "CONSTANT_CONTACT_CLIENT_ID", clientSecret: "CONSTANT_CONTACT_CLIENT_SECRET",
                      redirectUri: "CONSTANT_CONTACT_REDIRECT_URI" },
+  // INT-4 — Google's variables already existed for the first Gmail
+  // integration, so the SAME names are reused rather than a second pair
+  // introduced beside them.
+  google: { clientId: "GOOGLE_CLIENT_ID", clientSecret: "GOOGLE_CLIENT_SECRET",
+            redirectUri: "GOOGLE_REDIRECT_URI" },
+  microsoft: { clientId: "MICROSOFT_CLIENT_ID", clientSecret: "MICROSOFT_CLIENT_SECRET",
+               redirectUri: "MICROSOFT_REDIRECT_URI" },
 };
 
 // ── THE STATE ──────────────────────────────────────────────────────────────
@@ -227,6 +282,12 @@ export function authorizeUrl(providerKey, { clientId, redirectUri, state, codeCh
     q.set("code_challenge", String(codeChallenge));
     q.set("code_challenge_method", "S256");
   }
+  // A provider that needs fixed extra parameters declares them in the
+  // registry. Google needs access_type=offline and prompt=consent or it never
+  // issues a refresh token, and a mailbox connection without one dies in an
+  // hour. They come from the registry, never from the caller, for the same
+  // reason the scopes do.
+  for (const [k, v] of Object.entries(p.extraAuthParams || {})) q.set(k, String(v));
   return `${p.authorizeUrl}?${q.toString()}`;
 }
 

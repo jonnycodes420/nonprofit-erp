@@ -1820,6 +1820,63 @@ async function main() {
   // None of it touches the eleven drifted donors: the people with campaign
   // activity below are chosen from outside that story, and the one gift shown
   // beside a campaign is a gift this file already wrote.
+  // ── INT-4 · DANA'S OWN INBOX ──────────────────────────────────────────
+  // One staff member connected, five conversations logged, and one Thread
+  // closed because she wrote to the person it asked her to write to. NO
+  // TOKENS: `credentials_sealed` stays NULL exactly as every other connection
+  // in this file, so nothing here can reach a real mailbox and the assertion
+  // at the end covers it.
+  //
+  // The five people are chosen from outside the eleven drifted donors, whose
+  // silence is the demo's argument: logging a warm exchange with one of them
+  // would undercut the thing the screen is trying to show.
+  console.log("[seed] the inbox…");
+  const { conversationNote: mbNote } = await import("../shared/mailboxLog.js");
+  await q(`INSERT INTO mailbox_connections
+             (id,org_id,user_id,provider,address,status,last_synced_at,last_tried_at,last_logged_count,
+              created_by,created_by_name)
+           VALUES ('mbx_b72_dana',$1,'u_b72demo','google','dana@harborlight.demo','active',
+                   NOW(), NOW(), 5, 'system:seed-demo','The demonstration file')`, [ORG]);
+
+  const MB_CONVOS = [
+    ["d_b72_pos1", 12, "outbound", "The autumn tour",            "Thought you might like to see the new workshop before the open evening."],
+    ["d_b72_pos1",  9, "inbound",  "Re: The autumn tour",        "Yes please, Thursday suits me. Will there be parking?"],
+    ["d_b72_pos3", 21, "outbound", "Your gift and what it built","A short note about where this year's scholarship money went."],
+    ["d_b72_pos2", 34, "inbound",  "A question about the gala",  "Could I bring a colleague to the table I booked?"],
+    ["d_b72_pos3",  4, "inbound",  "Re: Your gift and what it built", "This is lovely to read. Thank you for taking the time."],
+  ];
+  for (const [donorId, daysAgo, direction, subject, body] of MB_CONVOS) {
+    const [d] = await q(`SELECT id FROM donors WHERE id=$1 AND org_id=$2`, [donorId, ORG]);
+    if (!d) continue;
+    const note = mbNote({ direction, subject, attachmentCount: 0 }, { staffName: "Dana Reyes" });
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_at,created_by,logged_by_name,metadata)
+             VALUES ($1,$2,$3,'email',$4,(NOW() - ($5 || ' days')::interval)::date::text,
+                     NOW() - ($5 || ' days')::interval,'system:mailbox/google/u_b72demo','Dana Reyes',$6::jsonb)`,
+      [`int_b72_mbx_${donorId.slice(-4)}_${daysAgo}`, ORG, donorId, `${note}\n\n${body}`, String(daysAgo),
+       JSON.stringify({ message_id: `demo_${donorId}_${daysAgo}`, provider: "google", direction,
+                        subject, attachments: 0, logged_by: "u_b72demo" })]);
+  }
+
+  // ONE THREAD CLOSED BY AN EMAIL. It closes as an OUTCOME and names the
+  // conversation that closed it, which is what `threads_close_honest` requires
+  // and what makes the closure checkable rather than asserted.
+  {
+    const [closer] = await q(
+      `SELECT id, donor_id, date FROM interactions
+        WHERE org_id=$1 AND created_by='system:mailbox/google/u_b72demo' AND donor_id='d_b72_pos1'
+        ORDER BY date DESC LIMIT 1`, [ORG]);
+    if (closer) {
+      await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+                                    owner_id,owner_name,created_by,created_by_name,
+                                    closed_at,close_kind,closing_interaction_id)
+               VALUES ($1,$2,$3,'follow_up','Call or write to Ottoline',
+                       (NOW() - interval '14 days')::date::text,(NOW() - interval '18 days')::date::text,
+                       'u_b72demo','Dana Reyes','system:seed-demo','The demonstration file',
+                       NOW() - interval '12 days','outcome',$4)`,
+        [`th_b72_mbx`, ORG, closer.donor_id, closer.id]).catch(() => {});
+    }
+  }
+
   console.log("[seed] the email tool…");
   // The SAME sentence builder the sync uses, so the demo's timeline lines and
   // a real org's are written by one function rather than two that drift.
@@ -2026,7 +2083,12 @@ async function main() {
          -- INT-3: the email tool is a connection like any other, and a real
          -- Mailchimp token on the demo org would be a real organisation's
          -- mailing list behind a public login.
-         SELECT credentials_sealed FROM email_marketing_connections WHERE org_id=$1) x
+         SELECT credentials_sealed FROM email_marketing_connections WHERE org_id=$1
+         UNION ALL
+         -- INT-4: a staff mailbox is the most sensitive connection in the
+         -- product, and a real token on the demo org would be a real person's
+         -- inbox behind a public login.
+         SELECT credentials_sealed FROM mailbox_connections WHERE org_id=$1) x
         WHERE credentials_sealed IS NOT NULL`, [ORG]);
     if (Number(held.n) !== 0) {
       throw new Error(`REFUSED: the demo org holds ${held.n} set of provider credentials. `

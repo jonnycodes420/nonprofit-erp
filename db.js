@@ -707,6 +707,125 @@ async function initSchema() {
       UNIQUE(org_id, gmail_message_id)
     )
   `);
+  // ── INT-4 — A MAILBOX BELONGS TO A PERSON, AND ITS TOKENS ARE SEALED ──────
+  //
+  // `gmail_connections` above stored `access_token` and `refresh_token` as bare
+  // TEXT: a staff member's entire mailbox, in plaintext, while every other
+  // connection in this product seals its credentials with the org as AAD. This
+  // table replaces it. The tokens live in one `credentials_sealed` envelope,
+  // the row is keyed by USER because the consent is hers and not the
+  // organisation's, and `paused` is her switch rather than an admin's.
+  //
+  // The old rows are migrated below and the plaintext columns are emptied.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_connections (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      address TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      credentials_sealed TEXT,
+      token_expires_at TIMESTAMPTZ,
+      paused BOOLEAN DEFAULT false,
+      history_cursor TEXT,
+      last_synced_at TIMESTAMPTZ,
+      last_tried_at TIMESTAMPTZ,
+      last_logged_count INTEGER,
+      last_error TEXT,
+      last_error_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT mailbox_sealed_only CHECK (
+        credentials_sealed IS NULL OR credentials_sealed LIKE 'v1.%'
+      ),
+      CONSTRAINT mailbox_status CHECK (status IN ('active','error','disconnected'))
+    )`);
+  // One live mailbox per person per provider. She may connect Gmail AND
+  // Outlook; she may not have two live Gmail rows racing each other.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mailbox_one_live
+                    ON mailbox_connections (user_id, provider) WHERE status <> 'disconnected'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mailbox_org ON mailbox_connections (org_id, status)`);
+
+  // HER LIST, NOT THE ORGANISATION'S. An address or a bare domain she never
+  // wants logged: her doctor, her children's school, the job she is applying
+  // for. Keyed by user, and no admin route reads or writes it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_never_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      pattern TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mailbox_never_log_once
+                    ON mailbox_never_log (user_id, pattern)`);
+
+  // "Do not log this one", for good. The same idea as gmail_sync_exclusions,
+  // widened to carry the provider so an Outlook message id cannot collide with
+  // a Gmail one. The old table is read alongside it so nothing she already
+  // removed comes back.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mailbox_exclusions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      user_id TEXT,
+      provider TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mailbox_exclusions_once
+                    ON mailbox_exclusions (org_id, provider, message_id)`);
+
+  // ── THE ONE-SHOT MIGRATION OFF PLAINTEXT ─────────────────────────────────
+  // Every live gmail_connections row is sealed into mailbox_connections and
+  // its plaintext columns are then emptied, so a connected person keeps
+  // working and the cleartext stops existing.
+  //
+  // IT FAILS CLOSED. Without STEWARD_CREDENTIAL_KEY there is no sealing, and
+  // the honest response is to leave the rows exactly as they are and say so
+  // loudly rather than either inventing a plaintext fallback (which is the
+  // thing being removed) or deleting somebody's working connection to tidy up.
+  try {
+    const [{ rows: pending }] = [await pool.query(
+      `SELECT g.* FROM gmail_connections g
+        WHERE g.refresh_token IS NOT NULL AND g.refresh_token <> ''
+          AND NOT EXISTS (SELECT 1 FROM mailbox_connections m
+                           WHERE m.user_id = g.user_id AND m.provider = 'google')`)];
+    if (pending.length) {
+      const { sealBag, credentialsConfigured } = await import("./shared/secretBox.js");
+      if (!credentialsConfigured()) {
+        console.error(`[mailbox] ${pending.length} Gmail connection(s) still hold PLAINTEXT tokens: STEWARD_CREDENTIAL_KEY is not set, so they were left untouched. Set it and restart to seal them.`);
+      } else {
+        let done = 0;
+        for (const g of pending) {
+          try {
+            const sealed = sealBag(
+              { accessToken: g.access_token || null, refreshToken: g.refresh_token, scope: null },
+              { aad: g.org_id });
+            await pool.query(
+              `INSERT INTO mailbox_connections
+                 (id, org_id, user_id, provider, address, status, credentials_sealed, token_expires_at,
+                  history_cursor, last_synced_at, created_by, created_by_name)
+               VALUES ($1,$2,$3,'google',$4,$5,$6,$7,$8,$9,'system:mailbox-migration','INT-4 migration')
+               ON CONFLICT DO NOTHING`,
+              [`mbx_${g.id}`, g.org_id, g.user_id, g.email,
+               g.status === "active" ? "active" : "disconnected",
+               sealed, g.token_expiry, g.history_id, g.last_synced_at]);
+            // The cleartext goes only after the sealed copy is committed.
+            await pool.query(
+              `UPDATE gmail_connections SET access_token='', refresh_token='' WHERE id=$1`, [g.id]);
+            done++;
+          } catch (e) { console.error(`[mailbox] could not migrate gmail_connections ${g.id}:`, e.message); }
+        }
+        if (done) console.log(`[mailbox] sealed ${done} Gmail connection(s) and cleared their plaintext tokens`);
+      }
+    }
+  } catch (e) { console.error("[mailbox] migration check failed:", e.message); }
+
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS metadata JSONB`);
   await pool.query(`ALTER TABLE custom_fields ADD COLUMN IF NOT EXISTS show_in_directory BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
