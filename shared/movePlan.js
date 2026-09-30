@@ -57,7 +57,10 @@ export const MOVE_TILES = [
   { key: "neon",            kind: "preset", presetKey: "neon" },
   { key: "littlegreenlight", kind: "preset", presetKey: "littlegreenlight" },
   { key: "ekyros",          kind: "spreadsheet", label: "eKYROS",
-    sub: "your donors are most likely in a spreadsheet" },
+    // FIX-10 E — the subline is the ACTION, not a guess about where her donors
+    // are. They are in eKYROS's donor module, which is the whole reason this
+    // tile exists; see EKYROS_PAGE.
+    sub: "Export your donors to a spreadsheet" },
   { key: "zeffy",           kind: "preset", presetKey: "zeffy" },
   { key: "givebutter",      kind: "preset", presetKey: "givebutter" },
   { key: "kindful",         kind: "preset", presetKey: "kindful" },
@@ -145,19 +148,33 @@ function titleCaseHeader(h) {
     .join(" ");
 }
 
-// What eKYROS's page says instead of a checklist. It is not a preset and the
-// copy never implies one: it says where the donor list really is.
+// ── FIX-10 E · eKYROS ──────────────────────────────────────────────────────
+// This page was wrong about the product and wrong about the reader.
+//
+// It said "It is not where your donors live". Pregnancy centres DO keep their
+// donors in eKYROS's donor module, and getting them out of it is exactly the
+// pain this tile exists for. Telling somebody her donors are not where she
+// knows they are is the fastest way to lose her. It then ended in a grey box
+// explaining our own naming ("the spreadsheet path with eKYROS's name on the
+// door"), which is a developer's note about the code, printed at a customer.
+//
+// What is still true, and is the ONE claim this page makes: Steward reads a
+// file, not eKYROS. That is in step 1 as an instruction rather than as a
+// correction, and no integration is claimed anywhere.
 const EKYROS_PAGE = {
+  title: "Getting your donors out of eKYROS",
   steps: [
-    "eKYROS holds your clients, appointments and services. It is not where your donors live, and Steward does not read it.",
-    "Your donor list is almost certainly a spreadsheet, your bank's deposit report, or QuickBooks. Find the file you use at year end for your accountant.",
-    "Save it as CSV or Excel and import it here. The mapper will ask you which column is the name, the date and the amount, and nothing else.",
-    "If your gifts are only on paper or in a chequebook, start with the last two years. You can add more later, and a second file never duplicates a gift.",
+    "In eKYROS, export your donor records and their gifts to Excel. If you can't find the export, eKYROS support or your admin can point you to it.",
+    "Include the donor's name, email, address, gift date, gift amount and fund if you have them.",
+    "Import that file here. The mapper asks which column is which, once.",
+    "Compare the total on the Move Report with eKYROS's own donation total for the same dates.",
   ],
   loses: [
-    "Nothing from eKYROS: client records are not donor records and are deliberately left where they are",
+    "Client records, appointments and services. Steward is for your donors, and client information stays in eKYROS.",
   ],
-  note: "Steward has no eKYROS integration and does not claim one. This is the spreadsheet path with eKYROS's name on the door, because that is the honest description of it.",
+  // No grey box. The page says what to do and what stays behind, and that is
+  // the whole of it.
+  note: null,
 };
 
 const SPREADSHEET_PAGE = {
@@ -192,6 +209,10 @@ const NPSP_PAGE = {
   note: null,
 };
 
+// The default page title. A vendor page is about getting the FILE out; only
+// eKYROS overrides it, because its export is specifically the donor module.
+export const moveHowToTitle = label => `Getting your file out of ${label}`;
+
 // moveHowTo(key) -> the whole page, or null for an unknown tile.
 //   label          the vendor, spelled the way the preset spells it
 //   kind           preset | npsp | spreadsheet
@@ -214,6 +235,7 @@ export function moveHowTo(key) {
     ];
     return {
       key, label, sub: tile.sub || null, kind: tile.kind, claimsPreset: true,
+      title: moveHowToTitle(label),
       files: 2,
       steps: NPSP_PAGE.steps,
       columnGroups: groups,
@@ -228,6 +250,11 @@ export function moveHowTo(key) {
     const page = key === "ekyros" ? EKYROS_PAGE : SPREADSHEET_PAGE;
     return {
       key, label, sub: tile.sub || null, kind: tile.kind, claimsPreset: false,
+      // FIX-10 E — the page names itself. The screen and the printable both
+      // used "Getting your file out of X", which is wrong for eKYROS: what she
+      // is getting out is her DONORS. One field, so the screen and the PDF
+      // cannot disagree.
+      title: page.title || moveHowToTitle(label),
       files: 1,
       steps: page.steps,
       // The generic path maps by asking, so there is no documented column list
@@ -243,6 +270,7 @@ export function moveHowTo(key) {
   if (!p) return null;
   return {
     key, label, sub: tile.sub || null, kind: "preset", claimsPreset: true,
+    title: moveHowToTitle(label),
     files: 1,
     steps: p.checklist || [],
     includeColumns: deriveIncludeColumns(p.columns),

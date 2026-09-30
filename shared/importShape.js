@@ -1119,20 +1119,40 @@ export function buildGiftItemsFromLedger(rows = [], tx = {}, idCol = "") {
 }
 
 // Column-role probes on header text (deliberately loose — a human can override).
-const isDateHdr   = h => /\b(date|when)\b|gift ?date|donation ?date/i.test(String(h)) && !YEAR_HDR_PAT.test(String(h).replace(/date/ig, ""));
+// FIX-10 E — NORMALISE THE HEADER BEFORE MATCHING IT. These five predicates
+// are the whole evidence base detectImportShape stands on, and every one of
+// them ran its regex over the RAW header. An underscore is a word character,
+// so `\bdate\b` does not match `gift_date`, `^gift ?amount` does not match
+// `gift_amount`, and `^(first|last)\s*name$` does not match `first_name`.
+//
+// The cost, on the plainest per-gift export there is:
+//
+//   first_name,last_name,email,gift_date,gift_amount,gift_channel
+//   → "only 1 column recognised — not enough evidence to pick a shape"
+//
+// One recognised column out of six, on a file where five of them are the
+// signals. Snake_case is how a CRM's CSV export actually spells its headers,
+// which is the same lesson TRANS-1 learned on `donor_id`. `normalizeHeader`
+// already turns `gift_date` into `gift date`, so every predicate reads it.
+const isDateHdr   = h => { const s = normalizeHeader(h);
+  return /\b(date|when)\b|gift ?date|donation ?date/i.test(s) && !YEAR_HDR_PAT.test(s.replace(/date/ig, "")); };
 const isAmountHdr = h => {
-  const s = String(h).trim();
+  const s = normalizeHeader(h);
   if (YEAR_HDR_PAT.test(s)) return false;
   return /^(amount|gift ?amount|donation ?amount|gift|giving|donation|sum|contribution|paid)\b/i.test(s);
 };
-const isTotalHdr  = h => /^total$/i.test(String(h).trim()) || /(total|lifetime|cumulative)\s*(giv|donat|amount|contrib|raised)/i.test(String(h));
-const isNameHdr   = h => /^(name|full ?name|donor ?name|donor|contact|constituent)$/i.test(String(h).trim());
+const isTotalHdr  = h => { const s = normalizeHeader(h);
+  return /^total$/i.test(s) || /(total|lifetime|cumulative)\s*(giv|donat|amount|contrib|raised)/i.test(s); };
+const isNameHdr   = h => /^(name|full ?name|donor ?name|donor|contact|constituent)$/i.test(normalizeHeader(h));
 // "Donor Email" is the most common real-world gift-export header there is —
 // the old ^email$ anchor missed it and Import-both silently fell back to
 // LINK BY NAME, splitting donor histories (BUILD-57 §2b finding 2). Accepts
 // an optional donor/contact/primary/billing qualifier; still anchored so
 // "Emailed Receipt" can never false-positive.
-const isEmailHdr  = h => /^(donor|contact|primary|billing)?\s*e-?mail(\s*address)?$/i.test(String(h).trim());
+// FIX-10 E — `normalizeHeader` turns "E-mail" into "e mail" (the hyphen is a
+// separator like the underscore), so the hyphen alternative has to be a SPACE
+// alternative too, or normalising loses a spelling the raw regex caught.
+const isEmailHdr  = h => /^(donor|contact|primary|billing)?\s*e[-\s]?mail(\s*address)?$/i.test(normalizeHeader(h));
 
 // detectImportShape(headers, rows) → { shape, yearCols, signals… }
 // `rows` is the parsed row objects (keyed by header). Only a sample is scanned.
@@ -1177,13 +1197,18 @@ export function detectImportShape(headers = [], rows = []) {
   const recognized = [];
   for (const h of hs) {
     if (isDateHdr(h)) recognized.push({ header: h, as: "gift date" });
-    else if (isAmountHdr(h)) recognized.push({ header: h, as: "amount" });
+    // FIX-10 E — a column is listed AS AMOUNT only when it carries numbers.
+    // `gift_channel` starts with "gift", so the header test alone called it
+    // money, and the banner then explained the file with a claim about a text
+    // column. `amountCols` is the same list the shape decision uses.
+    else if (amountCols.includes(h)) recognized.push({ header: h, as: "amount" });
+    else if (isAmountHdr(h)) recognized.push({ header: h, as: "possible amount" });
     else if (isTotalHdr(h)) recognized.push({ header: h, as: "lifetime total" });
     else if (isNameHdr(h)) recognized.push({ header: h, as: "donor name" });
     else if (isEmailHdr(h)) recognized.push({ header: h, as: "email" });
     else if (yearCols.includes(h)) recognized.push({ header: h, as: "year column" });
-    else if (/^(first|last)\s*name$/i.test(h.trim())) recognized.push({ header: h, as: h.trim().toLowerCase() });
-    else if (/^phone(\s*(number|#))?$/i.test(h.trim())) recognized.push({ header: h, as: "phone" });
+    else if (/^(first|last)\s*name$/i.test(normalizeHeader(h))) recognized.push({ header: h, as: normalizeHeader(h) });
+    else if (/^phone(\s*(number|#))?$/i.test(normalizeHeader(h))) recognized.push({ header: h, as: "phone" });
     // BUILD-101 Part 6 — a membership file's level and dates are evidence of
     // ONE ROW PER PERSON: each row is somebody's membership, not a gift.
     else if (memberCols.has(h)) recognized.push({ header: h, as: "membership" });
