@@ -18984,162 +18984,75 @@ const PLAN_MONTHLY_COST = {
 };
 
 // POST /gmail/auth-url — returns OAuth URL for frontend to redirect to
-app.post("/gmail/auth-url", requireAuth, wrap(async (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).json({ error: "Gmail not configured" });
-  const oauth2Client = makeOAuth2Client();
-  const url = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: [
-      "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/gmail.send",
-    ],
-    state: req.user.userId,
-    prompt: "consent",
-  });
-  res.json({ url });
-}));
-
-// GET /gmail/callback — OAuth callback from Google (public)
+// ── INT-4 · THE OLD GMAIL HANDSHAKE IS GONE ────────────────────────────────
+//
+// What used to be here was `/gmail/auth-url` and a public `GET /gmail/callback`,
+// and it had three problems that INT-OAUTH had already solved for every other
+// provider:
+//
+//   1. THE STATE WAS THE BARE USER ID, UNSIGNED, and the callback trusted it.
+//      Whoever completed a Google consent decided, by typing a different id in
+//      the URL, whose Steward record the mailbox was filed against. Nothing
+//      proved the person finishing the flow was the person who started it.
+//   2. IT WROTE ON A GET, against the standing rule, from a route with no
+//      session at all.
+//   3. IT ASKED FOR `gmail.send`, a permission this product must never use.
+//
+// The flow now runs through `shared/oauth.js` like everything else: a signed
+// state carrying the org, the user and a nonce; the provider lands the person
+// on the APP; the app finishes with an authenticated POST; the tokens are
+// sealed. Connect and disconnect are `/oauth/google/start`, `/oauth/google/complete`
+// and `/oauth/google/disconnect`; the rest of the mailbox lives under /mailbox.
+//
+// `/gmail/status` and `/gmail/sync` are kept as thin readers over the new table
+// so the Settings screen and the manual button keep working.
+// THE OLD REDIRECT URI STILL WORKS, AND WRITES NOTHING.
+//
+// `GOOGLE_REDIRECT_URI` and the Google console both still name this path, and a
+// deploy that broke every existing Gmail connection because a URL moved would
+// be a self-inflicted outage. So this stays as a FORWARD-ONLY route: it reads
+// nothing, writes nothing, and hands the query to the app, which finishes the
+// handshake with an authenticated POST exactly as it does for every other
+// provider. The token exchange replays the same redirect_uri that was stored
+// when the flow started, so the value Google sees never disagrees with itself.
 app.get("/gmail/callback", wrap(async (req, res) => {
-  const { code, state: userId, error } = req.query;
-  const frontendUrl = publicAppUrl();
-  if (error || !code) return res.redirect(`${frontendUrl}/dashboard?gmailError=access_denied`);
-
-  try {
-    const oauth2Client = makeOAuth2Client();
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-
-    const gmail   = google.gmail({ version: "v1", auth: oauth2Client });
-    const profile = await gmail.users.getProfile({ userId: "me" });
-    const email   = profile.data.emailAddress;
-
-    // Look up the user to get their org
-    const users = await query("SELECT id, org_id FROM users WHERE id=?", [userId]);
-    if (!users.length) return res.redirect(`${frontendUrl}/dashboard?gmailError=user_not_found`);
-    const orgId = users[0].org_id;
-
-    await run(
-      `INSERT INTO gmail_connections (id, org_id, user_id, email, access_token, refresh_token, token_expiry, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-       ON CONFLICT (user_id) DO UPDATE SET
-         email=EXCLUDED.email, access_token=EXCLUDED.access_token,
-         refresh_token=EXCLUDED.refresh_token, token_expiry=EXCLUDED.token_expiry,
-         status='active'`,
-      [
-        `gc_${uuid().slice(0, 8)}`,
-        orgId,
-        userId,
-        email,
-        tokens.access_token,
-        tokens.refresh_token || "",
-        tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
-      ]
-    );
-
-    // Kick off an initial sync in the background
-    syncGmail(userId, orgId).catch(e => console.error("[gmail-connect-sync]", e.message));
-
-    res.redirect(`${frontendUrl}/dashboard?gmailConnected=true`);
-  } catch (e) {
-    console.error("[gmail-callback]", e.message);
-    res.redirect(`${frontendUrl}/dashboard?gmailError=callback_failed`);
-  }
+  const app_ = (process.env.APP_URL || "https://www.stewardapp.dev").replace(/\/$/, "");
+  const qs = new URLSearchParams(req.query || {}).toString();
+  res.redirect(302, `${app_}/oauth/google/callback${qs ? "?" + qs : ""}`);
 }));
 
-// GET /gmail/status — returns connection info for current user
 app.get("/gmail/status", requireAuth, wrap(async (req, res) => {
-  const rows = await query(
-    "SELECT email, status, last_synced_at FROM gmail_connections WHERE user_id=?",
-    [req.user.userId]
-  );
-  if (!rows.length) return res.json({ connected: false });
-  const c = rows[0];
+  const [row] = await query(
+    `SELECT address, status, paused, last_synced_at FROM mailbox_connections
+      WHERE user_id=? AND org_id=? AND provider='google' AND status <> 'disconnected'`,
+    [req.user.userId, req.user.orgId]);
   res.json({
-    connected: c.status === "active",
-    disconnected: c.status === "disconnected",
-    email: c.email,
-    lastSyncedAt: c.last_synced_at,
+    connected: !!row, email: row?.address || null, status: row?.status || null,
+    paused: row?.paused === true, lastSyncedAt: row?.last_synced_at || null,
   });
 }));
 
-// DELETE /gmail/disconnect — revokes token and removes connection
-app.delete("/gmail/disconnect", requireAuth, wrap(async (req, res) => {
-  const rows = await query("SELECT * FROM gmail_connections WHERE user_id=?", [req.user.userId]);
-  if (!rows.length) return res.json({ ok: true });
-  const conn = rows[0];
-  try {
-    const oauth2Client = makeOAuth2Client();
-    await oauth2Client.revokeToken(conn.access_token);
-  } catch { /* ignore revocation errors */ }
-  await run("DELETE FROM gmail_connections WHERE user_id=?", [req.user.userId]);
-  res.json({ ok: true });
-}));
-
-// POST /gmail/sync — manually trigger sync for current user
 app.post("/gmail/sync", requireAuth, wrap(async (req, res) => {
-  const rows = await query("SELECT status FROM gmail_connections WHERE user_id=?", [req.user.userId]);
-  if (!rows.length) return res.status(404).json({ error: "No Gmail connection found" });
-  if (rows[0].status !== "active") return res.status(400).json({ error: "Gmail connection is not active" });
-  // Run sync async — respond immediately
+  const [row] = await query(
+    `SELECT id, paused FROM mailbox_connections
+      WHERE user_id=? AND org_id=? AND provider='google' AND status='active'`,
+    [req.user.userId, req.user.orgId]);
+  if (!row) return res.status(404).json({ error: "No Gmail connection found" });
+  if (row.paused === true) return res.status(400).json({ error: "paused",
+    sentence: "Logging is paused. Turn it back on and Steward will pick up from where it stopped." });
   syncGmail(req.user.userId, req.user.orgId).catch(e => console.error("[gmail-manual-sync]", e.message));
   res.json({ ok: true, message: "Sync started" });
 }));
 
-// POST /gmail/send — send email via user's connected Gmail and log to interactions
-app.post("/gmail/send", requireAuth, wrap(async (req, res) => {
-  const { donorId, to, subject, body } = req.body;
-  if (donorId) {
-    const donorCheck = await query("SELECT id FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
-    if (!donorCheck.length) return res.status(404).json({ error: "Donor not found" });
-  }
-  const conns = await query("SELECT * FROM gmail_connections WHERE user_id=? AND status='active'", [req.user.userId]);
-  if (!conns.length) return res.status(400).json({ error: "Gmail not connected" });
-  const conn = conns[0];
-
-  const oauth2Client = makeOAuth2Client();
-  oauth2Client.setCredentials({
-    access_token: conn.access_token,
-    refresh_token: conn.refresh_token,
-    expiry_date: conn.token_expiry ? new Date(conn.token_expiry).getTime() : undefined,
-  });
-  oauth2Client.on("tokens", async (tokens) => {
-    const sets = [], vals = [];
-    if (tokens.access_token) { sets.push("access_token=?"); vals.push(tokens.access_token); }
-    if (tokens.expiry_date) { sets.push("token_expiry=?"); vals.push(new Date(tokens.expiry_date).toISOString()); }
-    if (sets.length) { vals.push(conn.id); await run(`UPDATE gmail_connections SET ${sets.join(",")} WHERE id=?`, vals); }
-  });
-
-  const emailLines = [`To: ${to}`, `Subject: ${subject}`, `Content-Type: text/plain; charset=utf-8`, ``, body];
-  const raw = Buffer.from(emailLines.join("\r\n")).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const gmail = google.gmail({ version: "v1", auth: oauth2Client });
-
-  let sendResp;
-  try {
-    sendResp = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
-  } catch (e) {
-    if (e.code === 401) {
-      try {
-        await oauth2Client.refreshAccessToken();
-        sendResp = await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
-      } catch {
-        await run("UPDATE gmail_connections SET status='disconnected' WHERE id=?", [conn.id]);
-        return res.status(401).json({ error: "Failed to send — reconnect Gmail in Settings" });
-      }
-    } else throw e;
-  }
-
-  const msgId = sendResp.data.id;
-  if (donorId) {
-    const id = Math.random().toString(36).slice(2);
-    const note = `Subject: ${subject}\n\n${body.slice(0, 500)}`;
-    const metadata = JSON.stringify({ gmail_message_id: msgId, from: conn.email, to, subject, direction: "outbound" });
-    await run(
-      `INSERT INTO interactions (id, org_id, donor_id, type, note, date, metadata, created_at) VALUES (?, ?, ?, 'email', ?, ?, ?, NOW())`,
-      [id, req.user.orgId, donorId, note, new Date().toISOString().split("T")[0], metadata]
-    );
-  }
-  res.json({ success: true, messageId: msgId });
+app.delete("/gmail/disconnect", requireAuth, wrap(async (req, res) => {
+  const r = await run(
+    `UPDATE mailbox_connections SET status='disconnected', credentials_sealed=NULL, token_expires_at=NULL,
+            paused=false, updated_at=NOW()
+      WHERE user_id=? AND org_id=? AND provider='google' AND status <> 'disconnected'`,
+    [req.user.userId, req.user.orgId]);
+  if (r && r.changes === 0) return res.status(404).json({ error: "No Gmail connection found" });
+  res.json({ ok: true,
+    sentence: "Disconnected. Steward will not read anything else from that mailbox, and the conversations already logged are still on the records." });
 }));
 
 // GET /gmail/thread/:donorId — last 20 email interactions for AI context

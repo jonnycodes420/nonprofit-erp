@@ -79,6 +79,13 @@ async function reset() {
   for (const org of [A, B]) {
     for (const t of ["memberships", "membership_levels", "api_keys", "volunteer_shifts", "saved_report_sends", "saved_reports", "tribute_notices", "gift_soft_credits", "agent_writes", "agent_drafts", "agent_runs", "agent_instructions",
       "audiences", "statement_mappings", "gift_duplicate_questions",
+      // INT-3 and INT-4 — the email tool and the staff mailbox. Ordered here,
+      // before the org delete, for exactly the reason the ack_letter_templates
+      // note below gives: a teardown list one table short is a suite that
+      // passes once and then dies on its own leftovers with an FK error that
+      // reads like a product bug.
+      "email_marketing_activity", "email_marketing_campaigns", "email_marketing_connections",
+      "mailbox_exclusions", "mailbox_never_log", "mailbox_connections",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
       // `DELETE FROM orgs` fails its foreign key and the whole suite aborts
@@ -319,6 +326,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // INT-4 — a never-log entry belonging to THIS org's own user, so org A
+  // aimed at org B's entry is refused because it is somebody else's, not
+  // because the row was never there.
+  await q(`INSERT INTO mailbox_never_log (id,user_id,org_id,pattern,kind)
+           VALUES ($1,$2,$3,$4,'domain') ON CONFLICT DO NOTHING`,
+    [`nvr_${o}`, `u_${o}_staff`, o, `private-${o}.invalid`]).catch(() => {});
   // INT-3 — a campaign the org's own email tool sent, per org, for the same
   // reason the audience above is seeded: org A aimed at org B's campaign must be
   // refused because it belongs to org B, not because the row was never there.
@@ -390,6 +403,9 @@ function bResolver(routePath, param) {
     // campaign's opens or clicks, which is donor data. Org A asking for org B's
     // campaign must get nothing, and this maps the probe onto a real org B row.
     "email-marketing": `emcamp_${B}`,
+    // INT-4 — /mailbox/never-log/:id deletes one person's private never-log
+    // entry. Org A must not be able to remove org B's.
+    mailbox: `nvr_${B}`,
     // INT-1 — a CONNECTION is a giving_sources row (the Connections screen is
     // a view over them, not a second table), so org A asking for org B's
     // connection, its gift rows or its sync log must answer 404 like any other.
@@ -521,6 +537,17 @@ const PARAM_EXEMPT = [
   // NOTE the campaign route is deliberately NOT exempt here: its `:id` is a real
   // org-scoped row, so it resolves through bResolver onto org B's own campaign.
   [/^\/email-marketing\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — see int3-optout.test.js §7"],
+  // INT-4 — the param is a PROVIDER KEY from the fixed registry in
+  // shared/oauth.js (google · microsoft), never a row id. These routes are not
+  // org-scoped at all: they are USER-scoped, and the wall they need is that one
+  // person's mailbox is not reachable by a colleague, which the tenant matrix
+  // (one token per org) cannot express. It is proven directly in
+  // tests/int4-mailbox.test.js §7, where an ADMIN colleague in the SAME org
+  // cannot see, pause or disconnect her mailbox.
+  //
+  // NOTE /mailbox/never-log/:id is deliberately NOT exempt: its param is a real
+  // row id and it resolves through bResolver onto org B's own entry.
+  [/^\/mailbox\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — the wall is per-USER, see int4-mailbox.test.js §7"],
 ];
 
 function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, opts); }
