@@ -707,7 +707,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
             </> : c.kind === "email_marketing" ? <>
               <div>
                 <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>
-                  {c.audienceName || (c.connected ? "None chosen yet" : "—")}
+                  {c.audienceName || (c.connected ? "None chosen yet" : "not connected")}
                 </div>
                 <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.audienceNoun || "audience"} kept in step</div>
               </div>
