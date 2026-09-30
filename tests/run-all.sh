@@ -122,6 +122,7 @@ CORE=(
   oauth-state
   int3-optout
   int4-mailbox
+  int5-api-keys
   script-guards
   build96-ai-gate
   incident-mail-gate

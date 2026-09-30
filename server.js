@@ -8126,6 +8126,120 @@ async function closeThreadStepForContact(orgId, donorId, date, interactionId) {
     [interactionId, orgId, donorId, ML.CONTACT_STEP_TYPES, String(date || "9999-12-31")]).catch(() => {});
 }
 
+// ── INT-5 · EMITTING A WEBHOOK, AND DELIVERING IT ──────────────────────────
+//
+// `emitWebhook` QUEUES. It never posts inline, and it never throws into the
+// caller: a donation must not fail because somebody's Zapier endpoint is down,
+// and a gift write must not wait on a third party's server to answer.
+async function emitWebhook(orgId, event, data) {
+  const W = await import("./shared/webhookOut.js");
+  if (!W.isEvent(event)) return 0;
+  const endpoints = await query(
+    `SELECT id, events FROM webhook_endpoints WHERE org_id=? AND paused_at IS NULL`, [orgId]);
+  let queued = 0;
+  for (const e of endpoints) {
+    const subscribed = Array.isArray(e.events) ? e.events : [];
+    if (!subscribed.includes(event)) continue;
+    const id = "whd_" + uuid().slice(0, 12);
+    const payload = W.eventPayload({ event, orgId, data, id, sentAt: new Date().toISOString() });
+    await run(
+      `INSERT INTO webhook_deliveries (id,org_id,endpoint_id,event,payload,attempt,next_attempt_at)
+       VALUES (?,?,?,?,?::jsonb,0,NOW())`,
+      [id, orgId, e.id, event, JSON.stringify(payload)]).catch(() => {});
+    queued++;
+  }
+  return queued;
+}
+
+/**
+ * THE DELIVERY PASS. Everything due, signed and posted, with the outcome and
+ * the next attempt written back.
+ *
+ * The signature covers the timestamp AND the body, and the receiver is told to
+ * reject anything older than five minutes. A bare HMAC of the body proves where
+ * it came from and nothing about when, so anyone who captures one delivery can
+ * replay it for ever.
+ */
+async function deliverWebhooks() {
+  const W = await import("./shared/webhookOut.js");
+  const due = await query(
+    `SELECT d.*, e.url, e.secret, e.consecutive_failures
+       FROM webhook_deliveries d JOIN webhook_endpoints e ON e.id = d.endpoint_id
+      WHERE d.delivered_at IS NULL AND d.gave_up_at IS NULL
+        AND d.next_attempt_at IS NOT NULL AND d.next_attempt_at <= NOW()
+        AND e.paused_at IS NULL
+      ORDER BY d.next_attempt_at ASC LIMIT 50`);
+  let sent = 0, failed = 0;
+  for (const d of due) {
+    const attempt = (Number(d.attempt) || 0) + 1;
+    const body = JSON.stringify(d.payload);
+    const t = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac("sha256", d.secret).update(W.signatureBase(t, body)).digest("hex");
+    let status = 0, errText = null;
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10000);
+      const r = await fetch(d.url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json",
+                   [W.SIGNATURE_HEADER]: W.signatureHeader(t, sig),
+                   "user-agent": "Steward-Webhooks/1" },
+        body, signal: ctrl.signal,
+      });
+      clearTimeout(timer);
+      status = r.status;
+    } catch (e) { status = 0; errText = String(e.message || e).slice(0, 200); }
+
+    const outcome = W.deliveryOutcome(status);
+    if (outcome.ok) {
+      await run(`UPDATE webhook_deliveries SET attempt=?, status=?, outcome=?, delivered_at=NOW(), next_attempt_at=NULL WHERE id=?`,
+        [attempt, status, outcome.reason, d.id]);
+      await run(`UPDATE webhook_endpoints SET consecutive_failures=0, last_delivered_at=NOW(), last_status=?, updated_at=NOW() WHERE id=?`,
+        [status, d.endpoint_id]);
+      sent++;
+      continue;
+    }
+    failed++;
+    const delay = outcome.retry ? W.nextAttemptDelay(attempt) : null;
+    await run(
+      `UPDATE webhook_deliveries SET attempt=?, status=?, outcome=?, error=?,
+              next_attempt_at=${delay ? "NOW() + (? || ' seconds')::interval" : "NULL"},
+              gave_up_at=${delay ? "NULL" : "NOW()"}
+        WHERE id=?`,
+      delay ? [attempt, status, outcome.reason, errText, String(delay), d.id]
+            : [attempt, status, outcome.reason, errText, d.id]);
+    const fails = (Number(d.consecutive_failures) || 0) + 1;
+    await run(`UPDATE webhook_endpoints SET consecutive_failures=?, last_status=?, updated_at=NOW() WHERE id=?`,
+      [fails, status, d.endpoint_id]);
+    // AN ENDPOINT THAT KEEPS FAILING IS PAUSED AND SOMEBODY IS TOLD. A webhook
+    // that died quietly is how an organisation finds out in March that its
+    // automation stopped in January.
+    if (W.shouldPause(fails)) {
+      await run(`UPDATE webhook_endpoints SET paused_at=NOW() WHERE id=? AND paused_at IS NULL`, [d.endpoint_id]);
+      await openWebhookThread(d.org_id, d.url, fails).catch(() => {});
+    }
+  }
+  return { sent, failed };
+}
+
+// The admin's Thread step when an endpoint is paused. It uses the Thread that
+// already exists rather than a second notification system.
+async function openWebhookThread(orgId, url, failures) {
+  const W = await import("./shared/webhookOut.js");
+  const [admin] = await query(`SELECT id, name FROM users WHERE org_id=? AND role='admin' ORDER BY created_at LIMIT 1`, [orgId]);
+  if (!admin) return;
+  const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
+  const [d] = await query(`SELECT id FROM donors WHERE org_id=? AND deleted_at IS NULL ORDER BY created_at LIMIT 1`, [orgId]);
+  if (!d) return;   // a Thread hangs off a person; with nobody on file there is nowhere to put it
+  await run(
+    `INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,
+                          owner_id,owner_name,created_by,created_by_name)
+     VALUES (?,?,?,'follow_up',?,?,?,?,?,'system:webhooks','Webhook delivery')
+     ON CONFLICT DO NOTHING`,
+    ["th_wh_" + uuid().slice(0, 8), orgId, d.id,
+     W.pauseSentence(url, failures).slice(0, 200), today, today, admin.id, admin.name]).catch(() => {});
+}
+
 // The old name, kept so the job tick and the manual button keep working.
 async function syncGmail(userId, orgId) { return syncMailbox(userId, orgId, "google"); }
 
@@ -9500,6 +9614,9 @@ require("./routes/give").mount({
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({
+  // INT-5 — queueing a webhook. It never posts inline: a gift must not fail
+  // because somebody's endpoint is down.
+  emitWebhook,
   ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
   Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
@@ -9539,6 +9656,8 @@ require("./routes/crm").mount({
   widgetMod, withAdvisoryLock, withTransaction, wrap, writeAuditLog, writeGiftExtras,
 });
 require("./routes/jobs").mount({
+  // INT-5 — the webhook delivery pass, on the existing tick.
+  deliverWebhooks,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
