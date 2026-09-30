@@ -45,6 +45,19 @@ Read this when you touch Home, the Dashboard, the Thread, Drift, tasks and follo
   outcome are banned from rendered text. Nudge subjects are facts. (BUILD-81)
 - **`drift.js` is the one definition and `computeDriftForDonors` the one integration point.** Drift is computed
   on read and never cached without write-path invalidation. Its reasons are spoken sentences about money at risk. (BUILD-76)
+- **`shared/driftWords.js` is the one place drift is COUNTED and NAMED.** Home, the donor directory and the
+  see-all list read it, which is what keeps their counts and their words together. Two rules ride on it: the
+  headline dollars sum HIGH confidence only, because a number that includes guesses is not a number a director
+  repeats; and no surface says "no donors drifting" while anyone is drifting at any confidence. Medium rows are
+  grouped under "Early signs", labelled in the directory badge's own words, and their figures are never called
+  "at risk", because that money is not in the headline. (FIX-10)
+- **`shared/fiscalPeriod.js` is the one fiscal-year LABEL**, read by the server's `finPeriodBounds` and by
+  Reports' period chips. Every chip carries its year ("This FY · 2026–27"), because Reports quietly defaults to
+  LAST year when the current one is thin, and "Last FY" on its own put a total on screen for a year the reader
+  had neither chosen nor been told. (FIX-10)
+- **An empty period beside a non-empty file explains itself.** When the current fiscal year holds no gifts but
+  history exists, the surface says so in one sentence and offers the last twelve months beside it, both opening
+  their own rows. Finance did this first; Fundraising copies it rather than inventing a second answer. (B1, FIX-10)
 - **A task is overdue only when its due date is strictly before today on the org calendar (`lib/taskDue.js`).**
   Run a task's `donorId` and `assignedTo` through `orgOwns`. (BUILD-46, BUILD-13)
 - **Goal roll-ups are derived live and never stored, and children are not double-counted.** Every surface reads
