@@ -75,6 +75,20 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
 - **Make the bookkeeper export foot in cents before a byte is written, or answer 409.** It is a report key
   on the one file layer, not a new route. (BUILD-87)
 
+- **A vendor preset that names both a date and an amount outranks the generic shape guess.** A preset
+  claims a file only on two of that vendor's own signals, so it is stronger evidence than a heuristic over
+  header spellings. A real DonorPerfect gift export read as "one row per donor (totals)" and landed no money
+  at all. (TRANS-1)
+- **The old system's own id matches FIRST**, then email, then name. `external_donor_id` was written on the way
+  in and never read, so correcting an address in the old system and re-exporting created a second person. A
+  person matched by email who carries a source id is taught that id, fill-missing only. (TRANS-1)
+- **Every import path records its run.** The run id is minted by the client BEFORE the write and passed to
+  both `/donors/import-combined` and `POST /imports`, so gifts and new people carry `import_id` and a Move
+  Report can scope to a file. Only the workbook flow used to record a run at all. (TRANS-1)
+- **A Move Report's two sides measure the same thing: the whole move, not one run.** A re-export is the org's
+  whole file again, so a per-run held side made the second report read "8 fewer gifts than your file" about a
+  move that had lost nothing. Both sides also key identity the same way (source id, then email, then name). (TRANS-1)
+
 ## Gotchas
 - **A catch inside the mapper's memos turned a TDZ bug into "No rows ready — map a column".** Make
   `rethrowProgrammerError(e)` the first line of those catches, and use `errorMessage` in async handlers. (BUILD-84)
@@ -82,6 +96,9 @@ Read this when you touch file import (CSV, xlsx, workbooks), shape detection, th
   naive split. (BUILD-98)
 - **Clock-dependent goldens go red on a calendar day.** Pin a pure golden to its fixture's `anchorDate`.
   Point a suite that asks the server about "now" at `civilToday()`. (BUILD-84)
+- **Never round-trip a timestamp read off a row back into a comparison against that row.** Postgres keeps
+  microseconds and a JavaScript `Date` holds milliseconds, so `committed_at <= ?` made a run EXCLUDE ITSELF.
+  Order in SQL and cut the list by id. (TRANS-1)
 - **The grep wrapper returns nothing on `shared/importShape.js`.** Use `/usr/bin/grep -a` or node. (BUILD-79, BUILD-82)
 - **`shared/package.json` (type: module) is load-bearing.** `importShape` and `customFieldShape` form a
   deliberate ESM cycle, so use call-time bindings only. (BUILD-79, BUILD-82)
