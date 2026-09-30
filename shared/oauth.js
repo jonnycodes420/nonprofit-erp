@@ -82,6 +82,59 @@ export const PROVIDERS = {
     pkce: true,
     sandboxNote: "Sandbox first. The same five scopes apply to the live app.",
   },
+  // ── INT-3 · THE TWO EMAIL TOOLS ─────────────────────────────────────────
+  // `kind: "email"` is a third kind beside "bookkeeping" and "source". It
+  // reads and writes a mailing list; it never touches money, and it is never
+  // a giving source, so a card for it is built from its own table rather than
+  // from `giving_sources`.
+  mailchimp: {
+    key: "mailchimp", label: "Mailchimp", kind: "email", vendor: "mailchimp",
+    authorizeUrl: "https://login.mailchimp.com/oauth2/authorize",
+    tokenUrl: "https://login.mailchimp.com/oauth2/token",
+    // MAILCHIMP HAS NO SCOPES. Its OAuth grant is the whole account, which is
+    // not a choice Steward gets to make narrower, so the empty array is the
+    // honest answer and `authorizeUrl` omits the parameter entirely rather
+    // than sending `scope=`. The card says what the grant actually covers so
+    // an org is not told it approved less than it did.
+    scopes: [],
+    scopeSentence: "Mailchimp does not let an app ask for part of an account, so this grants Steward read and write access to your Mailchimp audiences. Steward only ever reads campaigns and writes the contacts you map.",
+    pkce: false,
+    // Mailchimp wants the client id and secret in the FORM BODY, not in an
+    // Authorization header. Sending Basic auth here returns invalid_client.
+    tokenStyle: "body",
+    // The access token never expires and there is no refresh token, so
+    // `needsRefresh` is never true for it and a break can only be a
+    // revocation in Mailchimp.
+    neverExpires: true,
+    // THE API HOST IS NOT FIXED. Every Mailchimp account lives in a data
+    // centre ("us14", "us2") and the API host is that prefix. It comes from
+    // the metadata endpoint AFTER the exchange, and it is stored beside the
+    // token. An integration that hardcodes a prefix works for exactly one
+    // customer.
+    metadataUrl: "https://login.mailchimp.com/oauth2/metadata",
+    sandboxNote: "A free Mailchimp account is enough to connect and test.",
+  },
+  constantcontact: {
+    key: "constantcontact", label: "Constant Contact", kind: "email", vendor: "constantcontact",
+    authorizeUrl: "https://authz.constantcontact.com/oauth2/default/v1/authorize",
+    // NOT the authz host. Constant Contact serves the token endpoint from a
+    // different domain, and pointing this at authz.constantcontact.com is a
+    // 404 that reads like a bad client id.
+    tokenUrl: "https://idfed.constantcontact.com/as/token.oauth2",
+    // The minimum for what INT-3 does: read and write contacts and lists,
+    // read campaign activity, and a refresh token so a daily pull survives.
+    // Nothing here can send a campaign.
+    scopes: ["contact_data", "campaign_data", "offline_access"],
+    // Constant Contact documents PKCE only for its public-client flow. Steward
+    // is a confidential client using the server flow with Basic auth, which is
+    // their documented pairing, so no challenge is sent rather than one that
+    // may be ignored or rejected.
+    pkce: false,
+    // Basic auth, which is the default shape below and what their refresh
+    // request requires.
+    tokenStyle: "basic",
+    sandboxNote: "Connect a Constant Contact developer account first. Its access token lasts a day and Steward refreshes it.",
+  },
   // PayPal is deliberately ABSENT as an OAuth provider. Its native onboarding
   // (Partner Referrals / Log in with PayPal for a merchant's transactions) is
   // behind an approved partner account, which is an application and a review.
@@ -131,6 +184,10 @@ export const ENV_VARS = {
             redirectUri: "INTUIT_REDIRECT_URI", apiBase: "INTUIT_API_BASE" },
   square: { clientId: "SQUARE_APP_ID", clientSecret: "SQUARE_APP_SECRET",
             redirectUri: "SQUARE_REDIRECT_URI", webhookKey: "SQUARE_WEBHOOK_SIGNATURE_KEY" },
+  mailchimp: { clientId: "MAILCHIMP_CLIENT_ID", clientSecret: "MAILCHIMP_CLIENT_SECRET",
+               redirectUri: "MAILCHIMP_REDIRECT_URI" },
+  constantcontact: { clientId: "CONSTANT_CONTACT_CLIENT_ID", clientSecret: "CONSTANT_CONTACT_CLIENT_SECRET",
+                     redirectUri: "CONSTANT_CONTACT_REDIRECT_URI" },
 };
 
 // ── THE STATE ──────────────────────────────────────────────────────────────
@@ -160,9 +217,12 @@ export function authorizeUrl(providerKey, { clientId, redirectUri, state, codeCh
     client_id: String(clientId || ""),
     response_type: "code",
     redirect_uri: String(redirectUri || ""),
-    scope: p.scopes.join(" "),
     state: String(state || ""),
   });
+  // A provider with no scopes (Mailchimp grants the whole account and offers
+  // nothing narrower) gets NO scope parameter. Sending `scope=` is not the
+  // same as omitting it, and some authorization servers reject the empty one.
+  if (p.scopes.length) q.set("scope", p.scopes.join(" "));
   if (p.pkce && codeChallenge) {
     q.set("code_challenge", String(codeChallenge));
     q.set("code_challenge_method", "S256");
@@ -187,6 +247,16 @@ export function tokenRequest(providerKey, { code, redirectUri, clientId, clientS
     ? { grant_type: "refresh_token", refresh_token: refreshToken }
     : { grant_type: "authorization_code", code: String(code || ""), redirect_uri: String(redirectUri || "") });
   if (p.pkce && codeVerifier && !refreshing) form.set("code_verifier", codeVerifier);
+  // Mailchimp wants the credentials in the body and refuses Basic auth, so the
+  // style is a registry fact rather than a special case at the call site. The
+  // redirect_uri rides along on Mailchimp's refresh-less exchange too.
+  if (p.tokenStyle === "body") {
+    form.set("client_id", String(clientId || ""));
+    form.set("client_secret", String(clientSecret || ""));
+    return { url: p.tokenUrl,
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: form.toString() };
+  }
   return { url: p.tokenUrl, basic: `${clientId}:${clientSecret}`,
     headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
     body: form.toString() };

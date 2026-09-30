@@ -20,11 +20,19 @@ const routers = {
   r0: express.Router(),
 };
 
+// INT-3 — set by mount() to the daily email-marketing pull below, so the job
+// tick can run the SAME sync the Check now button runs. TDZ rule: declared at
+// module scope, above every line that reads it.
+let sharedProcessEmailMarketing = null;
+
 function mount(ctx) {
 const {
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
+  // INT-3 — the audience resolver the campaign sender uses, and the one
+  // unsubscribe write. Both passed in rather than reimplemented.
+  resolveSegmentSpec, filterBySegment, recordUnsubscribe,
 } = ctx;
 let app = routers.r0;
 // FIX-1 E — the payout reconciliation and the money-in sentences (pure, ESM).
@@ -452,6 +460,7 @@ const bookkeepingMod = () => import("../shared/bookkeeping.js");
 // what is asked for. And the callback verifies the signed state against the
 // SIGNED-IN admin before it stores anything.
 const oauthMod = () => import("../shared/oauth.js");
+const emailMarketingMod = () => import("../shared/emailMarketing.js");
 
 // The state is signed with the server's own secret. The signature is what
 // makes a state we did not issue useless; the row in oauth_states is what
@@ -493,7 +502,13 @@ app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
       // nothing she cannot act on.
       sentence: missing.length
         ? O.providerUnavailableSentence(O.PROVIDERS[key].label)
-        : `Ready. Steward will ask ${O.PROVIDERS[key].label} for ${O.PROVIDERS[key].scopes.length} scopes and nothing else.`,
+        // INT-3 — A PROVIDER WITH NO SCOPES NEEDS ITS OWN SENTENCE. Mailchimp
+        // grants a whole account and offers nothing narrower, so "Steward will
+        // ask Mailchimp for 0 scopes and nothing else" told an organisation the
+        // opposite of the truth about what it was about to approve.
+        : O.PROVIDERS[key].scopeSentence
+          ? `Ready. ${O.PROVIDERS[key].scopeSentence}`
+          : `Ready. Steward will ask ${O.PROVIDERS[key].label} for ${O.PROVIDERS[key].scopes.length} ${O.PROVIDERS[key].scopes.length === 1 ? "permission" : "permissions"} and nothing else.`,
     };
   }
   // PayPal is not an OAuth provider here, and the card says why rather than
@@ -625,6 +640,48 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAcces
   const account = key === "intuit" ? String(req.body?.realmId || "") || null : (tokens.merchantId || null);
 
   const vendorKey = O.vendorKeyOf(key);
+  // ── INT-3 — THE EMAIL TOOL'S OWN ROW ────────────────────────────────────
+  // A third kind, and its own table, because a mailing list is not a giving
+  // source and must not become one more thing the money figures exclude.
+  //
+  // MAILCHIMP'S DATA CENTRE IS LEARNED HERE, ONCE. Every later call goes to
+  // `https://<prefix>.api.mailchimp.com`, and the prefix is a property of the
+  // ACCOUNT, not of Steward. Asking for it after the exchange is the only way
+  // to know it; hardcoding one works for the first customer and fails for the
+  // second.
+  if (O.PROVIDERS[key].kind === "email") {
+    let prefix = null, accountName = null;
+    if (O.PROVIDERS[key].metadataUrl) {
+      const meta = await mailchimpMetadata(O.PROVIDERS[key].metadataUrl, tokens.accessToken);
+      if (!meta) {
+        return res.status(502).json({ error: "metadata_failed",
+          sentence: `${O.PROVIDERS[key].label} approved the connection but would not say which data centre the account is in, so Steward cannot call it yet. Try connecting again.` });
+      }
+      prefix = meta.dc; accountName = meta.accountName;
+    }
+    // The webhook secret lives IN the URL because that is the only
+    // verification Mailchimp offers. It is per org, per connection, and it is
+    // never returned to the browser: the screen is told the webhook is set, not
+    // what it is.
+    const webhookSecret = crypto.randomBytes(24).toString("base64url");
+    await run(
+      `INSERT INTO email_marketing_connections
+         (id,org_id,provider,status,credentials_sealed,server_prefix,account_name,
+          webhook_secret,token_expires_at,created_by,created_by_name)
+       VALUES (?,?,?, 'active', ?,?,?,?,?,?,?)
+       ON CONFLICT (org_id, provider) WHERE status <> 'disconnected'
+       DO UPDATE SET status='active', credentials_sealed=EXCLUDED.credentials_sealed,
+                     server_prefix=EXCLUDED.server_prefix, account_name=EXCLUDED.account_name,
+                     token_expires_at=EXCLUDED.token_expires_at,
+                     last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
+      ["emc_" + uuid().slice(0, 10), req.user.orgId, vendorKey, sealed, prefix, accountName,
+       webhookSecret, expiresAt, who.id, who.name]);
+    await writeAuditLog(req.user.orgId, who.id, who.name, "oauth_connected", "connection", key, {}).catch(() => {});
+    const EM = await emailMarketingMod();
+    return res.json({ ok: true, provider: key, account: accountName, needsTenantChoice: false, tenants: null,
+      needsMapping: true,
+      sentence: `${O.PROVIDERS[key].label} is connected and Steward holds the token encrypted. Nothing is sent to it until you choose which ${EM.audienceNoun(vendorKey)} to keep in step.` });
+  }
   if (O.PROVIDERS[key].kind === "bookkeeping") {
     await run(
       `INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,credentials_sealed,token_expires_at,
@@ -673,6 +730,23 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAcces
 // `vendorKeyOf`, so the send path can ask for a token by the name it has.
 function oauthKeyFor(vendor) {
   return String(vendor) === "quickbooks" ? "intuit" : String(vendor);
+}
+
+// ── INT-3 — WHICH DATA CENTRE THIS MAILCHIMP ACCOUNT LIVES IN ──────────────
+// Returns null if Mailchimp could not be asked, which is a refusal rather than
+// a guess: a wrong prefix is not a setting somebody fixes later, it is every
+// subsequent call going to a host that knows nothing about this account.
+async function mailchimpMetadata(url, accessToken) {
+  try {
+    const r = await fetch(url, {
+      // Mailchimp's metadata endpoint wants this exact scheme word, not Bearer.
+      headers: { Authorization: "OAuth " + accessToken, Accept: "application/json" } });
+    if (!r.ok) { console.error(`[oauth] mailchimp metadata answered ${r.status}`); return null; }
+    const body = await r.json();
+    const dc = body && (body.dc || null);
+    if (!dc) return null;
+    return { dc: String(dc), accountName: body.accountname || body.login?.login_name || null };
+  } catch (e) { console.error("[oauth] mailchimp metadata failed:", e.message); return null; }
 }
 
 // Which Xero organisations this consent covers. Returns null if Xero could not
@@ -768,11 +842,17 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
   const sealed = await sealTokens(orgId, { accessToken: fresh.accessToken,
     refreshToken: fresh.refreshToken || bag.refreshToken, scope: fresh.scope || bag.scope || null });
   const expiresAt = fresh.expiresInSeconds ? new Date(Date.now() + fresh.expiresInSeconds * 1000).toISOString() : null;
-  const bookkeeping = O.PROVIDERS[providerKey].kind === "bookkeeping";
-  await run(bookkeeping
+  // INT-3 — THREE KINDS, THREE TABLES. A refresh that writes the rotated token
+  // to the wrong table changes no rows and fails silently: the next renewal
+  // then presents a refresh token the provider has already retired, and the
+  // connection locks itself out. The kind picks the table, once.
+  const kind = O.PROVIDERS[providerKey].kind;
+  const sql = kind === "bookkeeping"
     ? `UPDATE bookkeeping_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND vendor=? AND status <> 'disconnected'`
-    : `UPDATE giving_sources SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND provider=? AND status <> 'disconnected'`,
-    [sealed, expiresAt, orgId, O.vendorKeyOf(providerKey)]);
+    : kind === "email"
+    ? `UPDATE email_marketing_connections SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND provider=? AND status <> 'disconnected'`
+    : `UPDATE giving_sources SET credentials_sealed=?, token_expires_at=?, updated_at=NOW() WHERE org_id=? AND provider=? AND status <> 'disconnected'`;
+  await run(sql, [sealed, expiresAt, orgId, O.vendorKeyOf(providerKey)]);
   return { ok: true, accessToken: fresh.accessToken, refreshed: true };
 }
 
@@ -783,9 +863,14 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAcc
   const O = await oauthMod();
   const key = String(req.params.provider || "");
   if (!O.isProvider(key)) return res.status(404).json({ error: "unknown_provider" });
-  const bookkeeping = O.PROVIDERS[key].kind === "bookkeeping";
-  const table = bookkeeping ? "bookkeeping_connections" : "giving_sources";
-  const col = bookkeeping ? "vendor" : "provider";
+  // THREE KINDS, THREE TABLES, ONE PROMISE. Whichever it is, disconnecting
+  // drops the tokens and keeps every record already brought in: the campaigns
+  // on a donor's timeline and the opt-outs they produced do not vanish because
+  // somebody unplugged the tool that reported them.
+  const kind = O.PROVIDERS[key].kind;
+  const table = kind === "bookkeeping" ? "bookkeeping_connections"
+              : kind === "email" ? "email_marketing_connections" : "giving_sources";
+  const col = kind === "bookkeeping" ? "vendor" : "provider";
   const r = await run(
     `UPDATE ${table} SET status='disconnected', credentials_sealed=NULL, token_expires_at=NULL, updated_at=NOW()
       WHERE org_id=? AND ${col}=? AND status <> 'disconnected'`, [req.user.orgId, O.vendorKeyOf(key)]);
@@ -793,6 +878,686 @@ app.post("/oauth/:provider/disconnect", requireAuth, requireAdmin, checkWriteAcc
   await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name, "oauth_disconnected", "connection", key, {}).catch(() => {});
   res.json({ ok: true,
     sentence: `Disconnected. Steward will not read or send anything else through ${O.PROVIDERS[key].label}, and every record it already brought in is still here.` });
+}));
+
+// ═══ INT-3 · THE EMAIL TOOL SHE ALREADY PAYS FOR ═══════════════════════════
+//
+// STEWARD NEVER SENDS THE EMAIL. There is no send path in this block and there
+// must never be one: the outbound direction is a list of names, emails and
+// tags, and the inbound direction is who opened, who clicked and who stopped.
+//
+// Everything a person reads comes from shared/emailMarketing.js, so the
+// preview count on the screen, the sentence in the sync log and the number in
+// the campaign list are one computation rather than three that drift.
+const emailProviderRow = async (orgId, provider) => {
+  const [row] = await query(
+    `SELECT * FROM email_marketing_connections WHERE org_id=? AND provider=? AND status <> 'disconnected'`,
+    [orgId, provider]);
+  return row || null;
+};
+
+// The people in each mapped group, resolved through the SAME segment resolver
+// the campaign sender uses. `memberOf` is the set of audience ids a person is
+// in, which is what turns the org's mapping into that person's tags.
+async function audienceMembership(orgId, audienceIds) {
+  const A = await import("../shared/audiences.js");
+  const donors = await query(
+    `SELECT id, name, email, deceased, do_not_contact, do_not_email, email_unreachable, is_sample,
+            stage, capacity_tier, total_giving, person_types
+       FROM donors WHERE org_id=? AND deleted_at IS NULL`, [orgId]);
+  // BUILD-94's opt-out truth, read once: `do_not_email` on the record OR a row
+  // in `email_suppressions`. One definition, asked here, passed to the pure
+  // module. INT-3 adds no second flag.
+  const sup = await query(
+    `SELECT LOWER(email) AS email FROM email_suppressions WHERE org_id IS NULL OR org_id=?`, [orgId]);
+  const suppressed = new Set(sup.map(r => r.email).filter(Boolean));
+
+  const memberOf = new Map();
+  for (const audienceId of audienceIds) {
+    let segment;
+    if (A.isBuiltInId(audienceId)) {
+      segment = A.segmentFor(A.builtInById(audienceId));
+    } else {
+      const [saved] = await query(`SELECT segment FROM audiences WHERE id=? AND org_id=?`, [audienceId, orgId]);
+      if (!saved) continue;
+      segment = typeof saved.segment === "string" ? JSON.parse(saved.segment || "{}") : (saved.segment || {});
+    }
+    const resolved = await resolveSegmentSpec(segment, orgId);
+    for (const d of filterBySegment(donors, resolved)) {
+      if (!memberOf.has(d.id)) memberOf.set(d.id, []);
+      memberOf.get(d.id).push(audienceId);
+    }
+  }
+  return donors
+    .filter(d => memberOf.has(d.id))
+    .map(d => ({
+      id: d.id, name: d.name, email: d.email,
+      deceased: d.deceased === true,
+      doNotContact: d.do_not_contact === true,
+      optedOut: d.do_not_email === true || suppressed.has(String(d.email || "").toLowerCase()),
+      emailUnreachable: d.email_unreachable === true,
+      isSample: d.is_sample === true,
+      memberOf: memberOf.get(d.id),
+    }));
+}
+
+// ── THE TWO FETCHERS ───────────────────────────────────────────────────────
+// Everything provider-specific is here and nothing else is. The judgement is
+// in shared/emailMarketing.js; these only speak HTTP and shape what comes
+// back into the one shape that module expects.
+//
+// A token for the email tools comes from the same `accessTokenFor` the
+// bookkeeping path uses, so a Constant Contact token refreshes five minutes
+// before expiry and once more on a 401, and Mailchimp's never-expiring token
+// simply never triggers it.
+const mailchimpBase = row => `https://${row.server_prefix}.api.mailchimp.com/3.0`;
+const CC_BASE = "https://api.cc.email/v3";
+
+async function emailToolFetch(orgId, provider, row, path, { method = "GET", body = null } = {}) {
+  const first = await accessTokenFor(orgId, row, provider);
+  // `accessTokenFor` answers with a refusal shape rather than throwing, and
+  // that refusal is already the sentence a person should read.
+  if (!first.ok) { const e = new Error(first.body.sentence); e.status = first.status; throw e; }
+  const base = provider === "mailchimp" ? mailchimpBase(row) : CC_BASE;
+  const call = t => fetch(base + path, {
+    method,
+    headers: { Authorization: "Bearer " + t, Accept: "application/json",
+               ...(body ? { "Content-Type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  let r = await call(first.accessToken);
+  // A 401 gets ONE forced renewal and one retry. More than one is how a
+  // revoked connection turns into a loop against somebody else's rate limit.
+  if (r.status === 401) {
+    const again = await accessTokenFor(orgId, row, provider, { force: true });
+    if (again.ok) r = await call(again.accessToken);
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    // The STATUS goes to the console; the customer reads plain words.
+    console.error(`[email-marketing] ${provider} ${path} answered ${r.status}`);
+    const err = new Error(providerErrorSentence(provider, r.status, text));
+    err.status = r.status;
+    throw err;
+  }
+  return r.json().catch(() => ({}));
+}
+
+// The provider's refusal in words a person can act on. A raw status code on a
+// customer's screen tells her nothing she can do.
+function providerErrorSentence(provider, status, text) {
+  const label = provider === "mailchimp" ? "Mailchimp" : "Constant Contact";
+  if (status === 401 || status === 403)
+    return `${label} no longer accepts Steward's permission. Reconnect it and nothing else is needed.`;
+  if (status === 404) return `${label} could not find that list. It may have been deleted there.`;
+  if (status === 429) return `${label} asked Steward to slow down. It will try again on the next check.`;
+  if (status >= 500) return `${label} is having trouble at their end. Steward will try again on the next check.`;
+  const snippet = String(text || "").slice(0, 160).replace(/\s+/g, " ").trim();
+  return `${label} refused the request${snippet ? `: ${snippet}` : ""}.`;
+}
+
+/** The audiences or lists this account holds, for the mapping screen. */
+async function providerAudiences(orgId, provider, row) {
+  if (provider === "mailchimp") {
+    const body = await emailToolFetch(orgId, provider, row, "/lists?count=100&fields=lists.id,lists.name,lists.stats.member_count");
+    return (body.lists || []).map(l => ({ id: l.id, name: l.name, members: l.stats?.member_count ?? null }));
+  }
+  const body = await emailToolFetch(orgId, provider, row, "/contact_lists?limit=100");
+  return (body.lists || []).map(l => ({ id: l.list_id, name: l.name, members: l.membership_count ?? null }));
+}
+
+/** The addresses the tool already holds, so "new to Mailchimp" is a real count. */
+async function knownEmails(orgId, provider, row) {
+  const mapping = row.mapping
+    ? (typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping) : null;
+  const audienceId = mapping?.audienceId || row.audience_id;
+  if (!audienceId) return [];
+  if (provider === "mailchimp") {
+    const out = [];
+    for (let offset = 0; offset < 5000; offset += 1000) {
+      const body = await emailToolFetch(orgId, provider, row,
+        `/lists/${encodeURIComponent(audienceId)}/members?count=1000&offset=${offset}&fields=members.email_address,total_items`);
+      const members = body.members || [];
+      out.push(...members.map(m => m.email_address));
+      if (out.length >= (body.total_items || 0) || !members.length) break;
+    }
+    return out;
+  }
+  const out = [];
+  let cursor = `/contacts?lists=${encodeURIComponent(audienceId)}&limit=500&include=email_address`;
+  for (let page = 0; page < 10 && cursor; page++) {
+    const body = await emailToolFetch(orgId, provider, row, cursor);
+    out.push(...(body.contacts || []).map(c => c.email_address?.address).filter(Boolean));
+    const next = body._links?.next?.href;
+    cursor = next ? next.replace(/^\/v3/, "") : null;
+  }
+  return out;
+}
+
+// WHAT IS CONNECTED, AND WHAT IT IS SET TO. Read-only, and it never returns a
+// token, a webhook secret or a prefix of either.
+app.get("/email-marketing", requireAuth, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const O = await oauthMod();
+  const A = await import("../shared/audiences.js");
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT * FROM email_marketing_connections WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
+  const saved = await query(`SELECT id, name, description FROM audiences WHERE org_id=? ORDER BY name`, [orgId]);
+  const byProvider = Object.fromEntries(rows.map(r => [r.provider, r]));
+  const providers = EM.PROVIDER_KEYS.map(k => {
+    const p = EM.PROVIDERS[k];
+    const row = byProvider[k] || null;
+    const mapping = row && row.mapping
+      ? (typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping) : null;
+    const { values, names } = oauthEnv(p.oauthKey, O.ENV_VARS);
+    const missing = ["clientId", "clientSecret", "redirectUri"].filter(f => !values[f]).map(f => names[f]);
+    return {
+      key: k, label: p.label, audienceNoun: p.audienceNoun, tagNoun: p.tagNoun,
+      webhooks: p.webhooks, help: p.help, steps: p.steps,
+      scopeSentence: O.PROVIDERS[p.oauthKey]?.scopeSentence || null,
+      configured: missing.length === 0, missing,
+      connected: !!row,
+      accountName: row?.account_name || null,
+      audienceId: mapping?.audienceId || null,
+      audienceName: row?.audience_name || null,
+      mapping: mapping?.groups || null,
+      mapped: !!(mapping && mapping.audienceId),
+      // Booleans only. The secret itself never crosses to the browser.
+      webhookConfigured: !!row?.webhook_secret,
+      lastSyncedAt: row?.last_synced_at || null,
+      lastPushedCount: row?.last_pushed_count ?? null,
+      lastError: row?.last_error || null,
+      lastErrorAt: row?.last_error_at || null,
+      sentence: !missing.length ? null
+        : `Steward cannot open ${p.label}'s consent screen yet: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set.`,
+    };
+  });
+  res.json({
+    providers,
+    // The groups an org may map, built-ins plus its own saved audiences. One
+    // list, from the module that already defines them.
+    groups: [...A.BUILT_IN_AUDIENCES.map(a => ({ id: a.id, name: a.name, description: a.description })),
+             ...saved.map(a => ({ id: a.id, name: a.name, description: a.description || null }))],
+    fieldsPushed: EM.FIELDS_PUSHED, fieldsSentence: EM.FIELDS_PUSHED_SENTENCE,
+    restrictiveSentence: EM.RESTRICTIVE_SENTENCE,
+    definition: "The email tool your organisation sends from. Steward reads what it reports and writes the people you map. It never sends the email.",
+  });
+}));
+
+// THE PREVIEW. Nothing has been pushed at this point and nothing is pushed by
+// this route: it counts, and it says who is held back and why.
+app.post("/email-marketing/:provider/preview", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const provider = String(req.params.provider || "");
+  if (!EM.isProvider(provider)) return res.status(404).json({ error: "unknown_provider" });
+  const groups = (req.body && req.body.groups) || {};
+  const audienceIds = Object.keys(groups).filter(k => String(groups[k] || "").trim());
+  if (!audienceIds.length) {
+    return res.json({ total: 0, newToTool: 0, excluded: [],
+      sentence: "Choose at least one group to send.", definition: EM.PREVIEW_DEFINITION });
+  }
+  const people = await audienceMembership(req.user.orgId, audienceIds);
+  // Who the tool already holds. Without a live connection there is nothing to
+  // compare against, so "new" is every eligible person, which is the honest
+  // answer for an org that has not connected yet.
+  const row = await emailProviderRow(req.user.orgId, provider);
+  const known = row ? await knownEmails(req.user.orgId, provider, row).catch(() => []) : [];
+  const counts = EM.previewCounts(people, { mapping: groups, knownEmails: known });
+  res.json({
+    total: counts.total, newToTool: counts.newToTool, alreadyThere: counts.alreadyThere,
+    excluded: counts.excluded, excludedTotal: counts.excludedTotal,
+    sentence: EM.previewSentence(counts, provider),
+    definition: EM.PREVIEW_DEFINITION,
+    fieldsSentence: EM.FIELDS_PUSHED_SENTENCE,
+  });
+}));
+
+// SAVE THE MAPPING. This is the consent: until a mapping exists, no sync runs
+// and nothing has ever left Steward for this provider.
+app.post("/email-marketing/:provider/mapping", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const provider = String(req.params.provider || "");
+  if (!EM.isProvider(provider)) return res.status(404).json({ error: "unknown_provider" });
+  const row = await emailProviderRow(req.user.orgId, provider);
+  if (!row) return res.status(409).json({ error: "not_connected",
+    sentence: `Connect ${EM.providerLabel(provider)} first.` });
+  const v = EM.validateMapping({ ...(req.body || {}), provider });
+  if (!v.ok) return res.status(400).json({ error: v.errors[0], errors: v.errors });
+  await run(
+    `UPDATE email_marketing_connections
+        SET mapping=?::jsonb, audience_id=?, audience_name=?, updated_at=NOW()
+      WHERE id=? AND org_id=?`,
+    [JSON.stringify(v.value), v.value.audienceId, v.value.audienceName, row.id, req.user.orgId]);
+  await writeAuditLog(req.user.orgId, actor(req).id, actor(req).name,
+    "email_marketing_mapping_saved", "connection", provider,
+    { audienceId: v.value.audienceId, groups: Object.keys(v.value.groups).length }).catch(() => {});
+  res.json({ ok: true,
+    sentence: `Saved. Steward will keep that ${EM.audienceNoun(provider)} in step from now on, and send nothing else.` });
+}));
+
+// THE TOOL'S OWN AUDIENCES OR LISTS, for the mapping screen to choose from.
+app.get("/email-marketing/:provider/audiences", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const provider = String(req.params.provider || "");
+  if (!EM.isProvider(provider)) return res.status(404).json({ error: "unknown_provider" });
+  const row = await emailProviderRow(req.user.orgId, provider);
+  if (!row) return res.status(409).json({ error: "not_connected",
+    sentence: `Connect ${EM.providerLabel(provider)} first.` });
+  try {
+    const audiences = await providerAudiences(req.user.orgId, provider, row);
+    res.json({ audiences, noun: EM.audienceNoun(provider) });
+  } catch (e) {
+    await noteEmailToolError(req.user.orgId, row.id, e.message, e.status);
+    // The STATUS the provider (or the refusal) carried, so the panel can tell
+    // "Steward could not ask" apart from "there are none there".
+    res.status(e.status && NOT_AN_INCIDENT.includes(e.status) ? e.status : 502)
+       .json({ error: "provider_error", sentence: e.message, couldNotAsk: true });
+  }
+}));
+
+// ── ONE SYNC ───────────────────────────────────────────────────────────────
+// Out: the mapped people, as name, email and tags. In: the campaigns, the
+// activity, and the unsubscribes. Both directions in one run, because the
+// order matters: the opt-outs come IN FIRST so that the push that follows can
+// never re-add somebody who unsubscribed since the last run.
+app.post("/email-marketing/:provider/sync", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const provider = String(req.params.provider || "");
+  if (!EM.isProvider(provider)) return res.status(404).json({ error: "unknown_provider" });
+  const orgId = req.user.orgId;
+  const row = await emailProviderRow(orgId, provider);
+  if (!row) return res.status(409).json({ error: "not_connected",
+    sentence: `Connect ${EM.providerLabel(provider)} first.` });
+  const mapping = row.mapping
+    ? (typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping) : null;
+  if (!mapping || !mapping.audienceId) return res.status(409).json({ error: "not_mapped",
+    sentence: `Choose which ${EM.audienceNoun(provider)} to keep in step first. Steward has sent nothing.` });
+
+  const out = await runEmailSync(orgId, provider, row, mapping);
+  if (!out.ok) return res.status(502).json({ error: "sync_failed", sentence: out.sentence });
+  res.json({ ok: true, pushed: out.pushed, campaigns: out.campaigns, optOuts: out.optOuts, sentence: out.sentence });
+}));
+
+/**
+ * ONE SYNC, used by the button and by the daily tick alike, so the thing that
+ * runs unattended every night is the same thing somebody watched succeed.
+ *
+ * THE ORDER IS THE SAFETY. Opt-outs come in BEFORE the push. If the push ran
+ * first, somebody who unsubscribed in Mailchimp an hour ago would be read as
+ * still eligible by Steward, pushed back with the subscribed tag set, and only
+ * then read as unsubscribed. The window would be small and the mistake would be
+ * the exact one this build exists to prevent.
+ */
+async function runEmailSync(orgId, provider, row, mapping) {
+  const EM = await emailMarketingMod();
+  await run(`UPDATE email_marketing_connections SET last_tried_at=NOW() WHERE id=?`, [row.id]).catch(() => {});
+  try {
+    const optOuts = await pullOptOuts(orgId, provider, row, mapping.audienceId);
+    const campaigns = await pullCampaigns(orgId, provider, row);
+    const pushed = await pushAudience(orgId, provider, row, mapping);
+    await run(
+      `UPDATE email_marketing_connections
+          SET status='active', last_synced_at=NOW(), last_pushed_count=?,
+              last_error=NULL, last_error_at=NULL, updated_at=NOW()
+        WHERE id=?`, [pushed, row.id]);
+    return { ok: true, pushed, campaigns, optOuts,
+             sentence: EM.syncSentence({ provider, pushed, campaigns, optOuts }) };
+  } catch (e) {
+    await noteEmailToolError(orgId, row.id, e.message, e.status);
+    return { ok: false, sentence: e.message };
+  }
+}
+
+/**
+ * THE DAILY PULL. Every mapped connection, once a day, riding the existing
+ * tick rather than a second scheduler. A connection with no mapping is skipped
+ * because it has never been told what to send, and a failure on one org is
+ * recorded on that org's card and never stops the rest.
+ */
+sharedProcessEmailMarketing = async function processEmailMarketing() {
+  const rows = await query(
+    `SELECT * FROM email_marketing_connections
+      WHERE status <> 'disconnected' AND mapping IS NOT NULL`, []);
+  let ran = 0, failed = 0;
+  for (const row of rows) {
+    const mapping = typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping;
+    if (!mapping || !mapping.audienceId) continue;
+    const out = await runEmailSync(row.org_id, row.provider, row, mapping).catch(e => ({ ok: false, sentence: e.message }));
+    if (out.ok) ran++; else failed++;
+  }
+  return { ran, failed };
+};
+
+// A failure is recorded where INT-1's watching layer reads it, so the card goes
+// broken and the incident email is the one that already exists.
+//
+// BUT NOT EVERY REFUSAL IS A BREAKAGE. A connection with no stored credentials
+// (every demo row, and every org before it finishes connecting) cannot be
+// asked anything, and asking it is not the provider failing: it is Steward
+// declining to call out. Recording that as `status='error'` turned the
+// demonstration file's healthy Mailchimp card BROKEN the moment somebody opened
+// the mapping panel, and left it that way. A missing credential is a state, not
+// an incident.
+const NOT_AN_INCIDENT = [409, 503];
+async function noteEmailToolError(orgId, id, sentence, status) {
+  if (status && NOT_AN_INCIDENT.includes(status)) return;
+  await run(
+    `UPDATE email_marketing_connections SET status='error', last_error=?, last_error_at=NOW(), updated_at=NOW()
+      WHERE id=? AND org_id=?`, [String(sentence || "").slice(0, 400), id, orgId]).catch(() => {});
+}
+
+/**
+ * OUT. Name, email and tags, and nothing else: `FIELDS_PUSHED` is the pinned
+ * list and the payload below is built from it, so adding a field is a change to
+ * that list and a decision somebody makes on purpose.
+ *
+ * Nobody excluded by `pushDecision` is in this payload, which is what makes
+ * "an unsubscribed person is never pushed again" true by construction rather
+ * than by a filter somebody has to remember.
+ */
+async function pushAudience(orgId, provider, row, mapping) {
+  const EM = await emailMarketingMod();
+  const people = await audienceMembership(orgId, Object.keys(mapping.groups || {}));
+  const counts = EM.previewCounts(people, { mapping: mapping.groups });
+  const byId = new Map(people.map(p => [p.id, p]));
+  let pushed = 0;
+  for (const p of counts.people) {
+    const person = byId.get(p.id);
+    const [firstName, ...rest] = String(person.name || "").trim().split(/\s+/);
+    if (provider === "mailchimp") {
+      // Mailchimp keys a member by the MD5 of the lowercased address, and PUT
+      // is an upsert. `status_if_new: subscribed` is deliberate: it sets the
+      // status only for somebody Mailchimp has never seen, so an existing
+      // unsubscribed contact is left exactly as they are. Sending `status`
+      // instead would re-subscribe them, which is the one thing this build
+      // must never do.
+      const hash = crypto.createHash("md5").update(p.email).digest("hex");
+      await emailToolFetch(orgId, provider, row,
+        `/lists/${encodeURIComponent(mapping.audienceId)}/members/${hash}`,
+        { method: "PUT", body: {
+          email_address: p.email, status_if_new: "subscribed",
+          merge_fields: { FNAME: firstName || "", LNAME: rest.join(" ") },
+          tags: p.tags,
+        } });
+    } else {
+      // Constant Contact's upsert takes the list membership and the tags by
+      // name, and it too leaves an unsubscribed contact unsubscribed.
+      await emailToolFetch(orgId, provider, row, "/contacts/sign_up_form",
+        { method: "POST", body: {
+          email_address: p.email, first_name: firstName || "", last_name: rest.join(" "),
+          list_memberships: [mapping.audienceId],
+        } });
+    }
+    pushed++;
+  }
+  return pushed;
+}
+
+/**
+ * IN, FIRST. Whoever the tool says is unsubscribed or cleaned is written
+ * through BUILD-94's own `recordUnsubscribe`, with the source and the date on
+ * the record. Steward never writes the other direction: a contact the tool
+ * says is subscribed does NOT un-suppress anybody here, because the more
+ * restrictive answer wins and Steward never re-subscribes.
+ */
+async function pullOptOuts(orgId, provider, row, audienceId) {
+  const EM = await emailMarketingMod();
+  let statuses = [];
+  if (provider === "mailchimp") {
+    for (const status of ["unsubscribed", "cleaned"]) {
+      const body = await emailToolFetch(orgId, provider, row,
+        `/lists/${encodeURIComponent(audienceId)}/members?status=${status}&count=1000&fields=members.email_address,members.status,members.last_changed`);
+      statuses.push(...(body.members || []).map(m => ({ email: m.email_address, status: m.status, at: m.last_changed })));
+    }
+  } else {
+    const body = await emailToolFetch(orgId, provider, row,
+      `/contacts?status=unsubscribed&limit=500&include=email_address`);
+    statuses.push(...(body.contacts || []).map(c => ({
+      email: c.email_address?.address, status: "unsubscribed", at: c.email_address?.opt_out_date || null })));
+  }
+  let written = 0;
+  for (const s of statuses) {
+    const email = String(s.email || "").trim().toLowerCase();
+    if (!email) continue;
+    const decision = EM.optOutFromStatus(s.status);
+    if (!decision.optOut) continue;
+    // A BOUNCE IS NOT AN UNSUBSCRIBE. The same split the webhook makes, for
+    // the same reason: `cleaned` is a mailbox that stopped working and
+    // `unsubscribed` is a person who asked to stop, and recording either as
+    // the other is a false statement on a donor's record.
+    if (decision.kind === "unreachable") {
+      const [already] = await query(
+        `SELECT email_unreachable FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL LIMIT 1`,
+        [orgId, email]);
+      if (already && already.email_unreachable === true) continue;
+      await run(
+        `UPDATE donors SET email_unreachable=true, email_unreachable_at=NOW(), email_unreachable_reason=?
+          WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL`,
+        [`${EM.providerLabel(provider)} reported this address as ${s.status}`, orgId, email]).catch(() => {});
+    } else {
+      const already = await query(
+        `SELECT 1 FROM email_suppressions WHERE LOWER(email)=? AND (org_id=? OR org_id IS NULL) LIMIT 1`,
+        [email, orgId]);
+      if (already.length) continue;
+      // The ONE unsubscribe write, BUILD-94's. No second flag.
+      await recordUnsubscribe(email, orgId, "campaign");
+    }
+    const [d] = await query(`SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL LIMIT 1`,
+      [orgId, email]);
+    if (d) {
+      await run(
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by)
+         VALUES (?,?,?,?,?,?,?)`,
+        ["int_" + uuid().slice(0, 8), orgId, d.id, "email",
+         `${decision.kind === "unreachable" ? "Email stopped working" : "Unsubscribed"} in ${EM.providerLabel(provider)}.`,
+         String(s.at || new Date().toISOString()).slice(0, 10), `system:email-marketing/${provider}`]).catch(() => {});
+    }
+    written++;
+  }
+  return written;
+}
+
+/**
+ * IN. The campaigns the tool sent, their counts, and one activity row per
+ * person per campaign. Counts only: no body, no recipient list, nothing that
+ * could be mistaken for something Steward could send.
+ */
+async function pullCampaigns(orgId, provider, row) {
+  let campaigns = [];
+  if (provider === "mailchimp") {
+    const body = await emailToolFetch(orgId, provider, row,
+      "/campaigns?status=sent&count=50&sort_field=send_time&sort_dir=DESC" +
+      "&fields=campaigns.id,campaigns.settings.title,campaigns.settings.subject_line,campaigns.send_time,campaigns.emails_sent,campaigns.report_summary");
+    campaigns = (body.campaigns || []).map(c => ({
+      id: c.id, name: c.settings?.title || c.settings?.subject_line || "Untitled campaign",
+      subject: c.settings?.subject_line || null, sentAt: c.send_time || null,
+      sends: c.emails_sent || 0,
+      opens: c.report_summary?.unique_opens || 0,
+      clicks: c.report_summary?.subscriber_clicks || 0,
+    }));
+  } else {
+    const body = await emailToolFetch(orgId, provider, row,
+      "/emails?limit=50&include=campaign_activities");
+    campaigns = (body.campaigns || []).map(c => ({
+      id: c.campaign_id, name: c.name || "Untitled campaign", subject: c.name || null,
+      sentAt: c.last_sent_date || null, sends: 0, opens: 0, clicks: 0,
+    }));
+  }
+  let n = 0;
+  for (const c of campaigns) {
+    const id = "emcamp_" + String(c.id).replace(/[^a-zA-Z0-9]/g, "").slice(0, 20);
+    await run(
+      `INSERT INTO email_marketing_campaigns
+         (id,org_id,provider,provider_campaign_id,name,subject,sent_at,sends,opens,clicks)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (org_id, provider, provider_campaign_id)
+       DO UPDATE SET name=EXCLUDED.name, subject=EXCLUDED.subject, sent_at=EXCLUDED.sent_at,
+                     sends=EXCLUDED.sends, opens=EXCLUDED.opens, clicks=EXCLUDED.clicks, updated_at=NOW()`,
+      [id, orgId, provider, String(c.id), c.name, c.subject, c.sentAt, c.sends, c.opens, c.clicks]);
+    n++;
+    // The per-person activity, for the most recent campaigns only. Every
+    // campaign ever sent would be one call each on every daily run, against
+    // somebody else's rate limit, to re-learn something that cannot change.
+    if (n <= ACTIVITY_CAMPAIGN_LIMIT) await pullActivity(orgId, provider, row, id, c);
+  }
+  return n;
+}
+
+// How many campaigns deep the per-person activity is read on a run. The older
+// ones keep the counts they already have.
+const ACTIVITY_CAMPAIGN_LIMIT = 10;
+
+/**
+ * ONE ROW PER PERSON PER CAMPAIGN, and one timeline line to match.
+ *
+ * ONLY PEOPLE STEWARD ALREADY HAS. An address on the org's Mailchimp audience
+ * that is not a person in Steward is not created here: that would turn a
+ * newsletter list into a donor file behind somebody's back. It is skipped, and
+ * the campaign's counts still report the whole send.
+ */
+async function pullActivity(orgId, provider, row, campaignRowId, campaign) {
+  if (provider !== "mailchimp") return;   // Constant Contact's per-person activity lands with its own build
+  const EM = await emailMarketingMod();
+  let members = [];
+  try {
+    const body = await emailToolFetch(orgId, provider, row,
+      `/reports/${encodeURIComponent(campaign.id)}/email-activity?count=1000&fields=emails.email_address,emails.activity`);
+    members = body.emails || [];
+  } catch { return; }                     // one campaign's detail is never worth failing the whole sync
+  if (!members.length) return;
+
+  const emails = members.map(m => String(m.email_address || "").toLowerCase()).filter(Boolean);
+  if (!emails.length) return;
+  const donors = await query(
+    `SELECT id, LOWER(email) AS email FROM donors
+      WHERE org_id=? AND deleted_at IS NULL AND LOWER(email) = ANY(?)`, [orgId, emails]);
+  const byEmail = new Map(donors.map(d => [d.email, d.id]));
+
+  for (const m of members) {
+    const email = String(m.email_address || "").toLowerCase();
+    const donorId = byEmail.get(email);
+    if (!donorId) continue;               // not a person on file, and this build does not make one
+    const acts = Array.isArray(m.activity) ? m.activity : [];
+    const opened = acts.some(a => a.action === "open");
+    const clicked = acts.some(a => a.action === "click");
+    const unsubscribed = acts.some(a => a.action === "unsub");
+    if (!opened && !clicked && !unsubscribed) continue;
+    const clickedLabel = (acts.find(a => a.action === "click" && a.url) || {}).url || null;
+    const occurred = (acts.find(a => a.timestamp) || {}).timestamp || campaign.sentAt || null;
+    await run(
+      `INSERT INTO email_marketing_activity
+         (id,org_id,campaign_id,donor_id,email,opened,clicked,clicked_label,unsubscribed,occurred_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (campaign_id, donor_id) WHERE donor_id IS NOT NULL
+       DO UPDATE SET opened=EXCLUDED.opened, clicked=EXCLUDED.clicked,
+                     clicked_label=EXCLUDED.clicked_label, unsubscribed=EXCLUDED.unsubscribed,
+                     occurred_at=EXCLUDED.occurred_at`,
+      ["emact_" + uuid().slice(0, 10), orgId, campaignRowId, donorId, email,
+       opened, clicked, clickedLabel, unsubscribed, occurred]);
+
+    // ONE LINE ON THE TIMELINE, and only one however many times this runs.
+    // The note is the whole key: re-reading the same campaign writes the same
+    // sentence, so the check below finds it and does not add a second.
+    const note = EM.activitySentence({
+      campaignName: campaign.name, opened, clicked,
+      clickedLabel: clickedLabel ? "the link" : null, unsubscribed });
+    const date = String(occurred || "").slice(0, 10) || null;
+    const dup = await query(
+      `SELECT 1 FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND note=? LIMIT 1`,
+      [orgId, donorId, note]);
+    if (!dup.length) {
+      await run(
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
+        ["int_" + uuid().slice(0, 8), orgId, donorId, "email", note, date,
+         `system:email-marketing/${provider}`]).catch(() => {});
+    }
+  }
+}
+
+// THE CAMPAIGN LIST. Counts only, each opening its people.
+app.get("/email-marketing/campaigns", requireAuth, wrap(async (req, res) => {
+  const EM = await emailMarketingMod();
+  const orgId = req.user.orgId;
+  const campaigns = await query(
+    `SELECT * FROM email_marketing_campaigns WHERE org_id=? ORDER BY sent_at DESC NULLS LAST LIMIT 100`, [orgId]);
+  // ── THE GIFTS BESIDE A CAMPAIGN ARE THAT CAMPAIGN'S PEOPLE'S GIFTS ────────
+  // Counting EVERY gift the organisation received within thirty days put "131
+  // gifts, $149,715" beside a newsletter, which is the organisation's whole
+  // month standing next to an appeal and reading as its result. The footnote
+  // saying it is not attribution cannot outrun a number that big.
+  //
+  // So the window is scoped to the people who actually did something with THIS
+  // campaign. That is the honest version of "a gift after a click": these
+  // people opened or clicked, and then these gifts arrived. Still beside, still
+  // never credited, but now it is a number about the campaign at all.
+  const rows = [];
+  for (const c of campaigns) {
+    const gifts = await query(
+      `SELECT g.id, g.date::text AS date, (g.amount * 100)::bigint AS cents
+         FROM gifts g
+         JOIN email_marketing_activity a
+           ON a.donor_id = g.donor_id AND a.campaign_id = ? AND a.org_id = g.org_id
+        WHERE g.org_id=? AND g.amount > 0`, [c.id, orgId]);
+    rows.push(EM.campaignRow({
+      id: c.id, provider: c.provider, name: c.name, sentAt: c.sent_at,
+      sends: c.sends, opens: c.opens, clicks: c.clicks,
+    }, { gifts: gifts.map(g => ({ id: g.id, date: g.date, cents: Number(g.cents) || 0 })) }));
+  }
+  res.json({
+    campaigns: rows,
+    definitions: {
+      sends: "How many the email tool reports it delivered for this campaign.",
+      opens: "How many people the tool recorded opening it. Counted once per person.",
+      clicks: "How many people clicked a link in it. Counted once per person.",
+      giftsWithin: "Gifts from the people who opened or clicked THIS campaign, that arrived within 30 days of it going out. Shown beside it, not credited to it: Steward cannot know what made somebody give.",
+    },
+    giftWindowSentence: EM.GIFT_WINDOW_SENTENCE,
+  });
+}));
+
+// EVERY NUMBER OPENS. The people behind one campaign's sends, opens or clicks.
+app.get("/email-marketing/campaigns/:id/people", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const which = String(req.query.which || "opens");
+  const [c] = await query(`SELECT * FROM email_marketing_campaigns WHERE id=? AND org_id=?`, [req.params.id, orgId]);
+  if (!c) return res.status(404).json({ error: "Not found" });
+  const clause = which === "clicks" ? "a.clicked = true"
+               : which === "unsubscribes" ? "a.unsubscribed = true"
+               : "a.opened = true";
+  const rows = await query(
+    `SELECT a.donor_id, a.email, a.opened, a.clicked, a.clicked_label, a.unsubscribed, a.occurred_at,
+            d.name AS donor_name
+       FROM email_marketing_activity a
+       LEFT JOIN donors d ON d.id = a.donor_id
+      WHERE a.org_id=? AND a.campaign_id=? AND ${clause}
+      ORDER BY d.name NULLS LAST`, [orgId, c.id]);
+  // ── THE NUMBER THE TOOL COUNTED, AND THE PEOPLE STEWARD CAN NAME ─────────
+  // These are two different figures and the screen must not pretend they are
+  // one. Mailchimp says 188 people opened the spring appeal; Steward can name
+  // the ones whose address belongs to somebody on file, and that is usually
+  // fewer. Opening "188" onto three rows with no explanation is a figure that
+  // does not foot, which is the one thing a number on a Steward screen may
+  // never do.
+  //
+  // The gap is itself worth knowing: it is how many people are on her mailing
+  // list and not in her CRM.
+  const counted = which === "clicks" ? Number(c.clicks) || 0
+                : which === "unsubscribes" ? Number(c.unsubscribes) || 0
+                : Number(c.opens) || 0;
+  const named = rows.length;
+  const verb = which === "clicks" ? "clicked" : which === "unsubscribes" ? "unsubscribed" : "opened";
+  res.json({
+    campaign: { id: c.id, name: c.name, sentAt: c.sent_at },
+    which,
+    people: rows.map(r => ({ donorId: r.donor_id, name: r.donor_name || r.email, email: r.email,
+      opened: r.opened === true, clicked: r.clicked === true, clickedLabel: r.clicked_label || null,
+      unsubscribed: r.unsubscribed === true, at: r.occurred_at })),
+    total: named, counted,
+    sentence: counted === named
+      ? `${named.toLocaleString()} ${named === 1 ? "person" : "people"} ${verb} it, and Steward can name all of them.`
+      : `${counted.toLocaleString()} ${verb} it. Steward can name ${named.toLocaleString()} of them: the rest are addresses on the list that are not people on file here.`,
+  });
 }));
 
 // The sealer, with its no-plaintext rule intact: a missing key is a refusal,
@@ -1807,4 +2572,12 @@ app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
 }));
 }
 
-module.exports = { routers, mount };
+module.exports = {
+  routers, mount,
+  // The daily pull, published to routes/jobs.js. It rides the existing tick;
+  // INT-3 adds no second scheduler.
+  processEmailMarketing: (...args) => {
+    if (!sharedProcessEmailMarketing) throw new Error("processEmailMarketing called before routes/finance mount()");
+    return sharedProcessEmailMarketing(...args);
+  },
+};

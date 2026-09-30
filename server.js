@@ -9326,6 +9326,16 @@ require("./routes/finance").mount({
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
+  // INT-3 — the audience resolver the campaign sender already uses. Passed in
+  // rather than reimplemented, because a second definition of "all donors"
+  // would eventually disagree with the one that decides who gets a campaign,
+  // and the half that lost would push somebody who asked to stop.
+  resolveSegmentSpec, filterBySegment,
+  // The ONE unsubscribe write. BUILD-94 put it in routes/webhooks.js; INT-3
+  // calls that same function rather than writing `email_suppressions` a second
+  // time, so an unsubscribe from Mailchimp and an unsubscribe from a Resend
+  // complaint land identically.
+  recordUnsubscribe: require("./routes/webhooks").recordUnsubscribe,
 });
 require("./routes/volunteer").mount({
   SYS_AUTO, VH_READY, actor, checkWriteAccess, crypto, donateLimiter, donorFacingOrgName,

@@ -120,6 +120,7 @@ CORE=(
   intpos-sale-is-not-a-gift
   int2-send-once
   oauth-state
+  int3-optout
   script-guards
   build96-ai-gate
   incident-mail-gate

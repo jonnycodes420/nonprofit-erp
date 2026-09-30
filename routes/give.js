@@ -575,6 +575,85 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
     }
   }
 
+  // ── INT-3 · THE EMAIL TOOL, ON THE SAME SCREEN AND THE SAME CARD ─────────
+  // A connection is a connection: it is healthy, quiet, broken or not
+  // connected, it has a sync log and an owner, and it gets the same card and
+  // the same watching layer as PayPal does. What it does NOT get is a place in
+  // any money figure, which is why it carries `money: false` and its own
+  // `kind`. Its rhythm is the dates it last SENT something, because a
+  // newsletter list that has gone three months without a campaign is the same
+  // fact about an organisation that a silent PayPal is.
+  {
+    const EM = await import("../shared/emailMarketing.js");
+    const emRows = await query(
+      `SELECT * FROM email_marketing_connections WHERE org_id=? AND status <> 'disconnected'`, [orgId]);
+    const byProvider = Object.fromEntries(emRows.map(r => [r.provider, r]));
+    const campaignDates = await query(
+      `SELECT provider, sent_at::date::text AS d FROM email_marketing_campaigns
+        WHERE org_id=? AND sent_at IS NOT NULL`, [orgId]);
+    for (const key of EM.PROVIDER_KEYS) {
+      const p = EM.PROVIDERS[key];
+      const row = byProvider[key] || null;
+      const mapping = row && row.mapping
+        ? (typeof row.mapping === "string" ? JSON.parse(row.mapping || "null") : row.mapping) : null;
+      const mapped = !!(mapping && mapping.audienceId);
+      const dates = campaignDates.filter(c => c.provider === key).map(c => c.d);
+      const last = dates.length ? dates.slice().sort().at(-1) : null;
+      const connected = !!row;
+      // A connection that is on but not mapped is not "healthy": it is doing
+      // nothing, and it needs one more decision from a person. Saying healthy
+      // there is how a screen tells somebody everything is fine while nothing
+      // is happening.
+      // THE STATUS COMES FROM THE SHARED LAYER; THE SENTENCE DOES NOT.
+      //
+      // `assessConnection` decides healthy, quiet, broken or not connected, and
+      // that judgement is the whole point of having one watching layer. But its
+      // SENTENCES are about money, and it put "the last gift through it arrived
+      // 17 days ago, 3 gifts so far" under Mailchimp, which has never carried a
+      // gift in its life. That is the FIX-9 A.3 mistake again in a new place: a
+      // card that borrows another kind's words says something false in
+      // confident language. So the state is shared and the words are this
+      // card's own, counted from campaigns.
+      const state = connectionState(C.assessConnection({
+        connected: connected && mapped, lastError: row?.last_error || null,
+        lastGiftDate: last, giftDates: dates, today }));
+      const nCampaigns = dates.length;
+      const daysSince = last ? orgTime.daysBetween(last, today) : null;
+      const campaignSentence =
+        state.status === "quiet"
+          ? `Connected, but nothing has gone out through it for ${daysSince} days. That is either a quiet spell or a newsletter that has stopped.`
+        : nCampaigns
+          ? `${nCampaigns} campaign${nCampaigns === 1 ? "" : "s"} read back${daysSince === null ? "" : daysSince === 0 ? ", the last one today" : `, the last one ${daysSince} day${daysSince === 1 ? "" : "s"} ago`}.`
+          : "Connected. Nothing has been sent from it yet, so there is nothing to read back.";
+      cards.push({
+        id: "email:" + key, kind: "email_marketing", provider: key, label: p.label,
+        money: false,
+        subtitle: "Your own newsletter tool. Steward reads who opened, who clicked and who asked to stop. It never sends the email.",
+        connected, canDisconnect: connected,
+        action: connected ? null : "connect", actionLabel: connected ? null : "Connect",
+        oauthProvider: p.oauthKey,
+        lastSyncedAt: row?.last_synced_at || null,
+        mapped, audienceNoun: p.audienceNoun,
+        audienceName: row?.audience_name || null,
+        needsMapping: connected && !mapped,
+        ...state,
+        // NOT THE MONEY SENTENCE. The shared not-connected definition ends
+        // "money taken through it is not in these figures", which is true of
+        // every other card and nonsense here: no money is ever taken through a
+        // mailing list. An email tool gets its own sentence about what is
+        // actually being missed, which is what its people did with the last
+        // newsletter.
+        sentence: !connected
+          ? `Steward is not reading this one. Who opened, who clicked and who asked to stop is only in ${p.label}.`
+          : row.last_error ? String(row.last_error)
+          : !mapped ? `Connected, and sending nothing yet. Choose which ${p.audienceNoun} to keep in step.`
+          : campaignSentence,
+        // The rhythm sentence is money-shaped too, so it does not travel here.
+        rhythmSentence: null,
+      });
+    }
+  }
+
   cards.sort((a, b) => (C.STATUS_RANK[a.status] ?? 9) - (C.STATUS_RANK[b.status] ?? 9));
   const needsAttention = cards.filter(c => c.status === "broken" || c.status === "quiet");
   res.json({

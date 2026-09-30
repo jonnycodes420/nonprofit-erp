@@ -1013,6 +1013,145 @@ function MilestoneDraftsPanel({ highlightDraftId }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// ── INT-3 · THE CAMPAIGNS SOMEBODY ELSE SENT ────────────────────────────────
+//
+// Every number here opens its people, and the gifts column says what it is:
+// gifts that arrived within thirty days of the send, sitting BESIDE the
+// campaign. Not credited to it. A column headed "raised" beside an open rate is
+// read as attribution whatever the footnote says, so the words do the work.
+function EmailToolPanel({ onNavigate }) {
+  const [d, setD] = useState(null);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState(null);   // {campaign, which, people}
+  useEffect(() => {
+    apiFetch("/email-marketing/campaigns")
+      .then(setD).catch(e => setErr(errorMessage(e, "That did not load.")));
+  }, []);
+  const openRows = (c, which) => {
+    apiFetch(`/email-marketing/campaigns/${c.id}/people?which=${which}`)
+      .then(r => setOpen(r)).catch(e => setErr(errorMessage(e, "Those rows did not load.")));
+  };
+  const money = cents => "$" + (Number(cents || 0) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const pct = r => r === null || r === undefined ? "" : Math.round(r * 100) + "%";
+  // A DATE FORMATTER, NOT A MONEY ONE. `fmtFull` is currency, and it printed
+  // "$0" in the Sent column for every campaign: a date rendered as nothing,
+  // twice a lie, because $0 also reads as a campaign that raised nothing.
+  const sentDay = v => {
+    if (!v) return "not sent";
+    const d = new Date(String(v).length <= 10 ? String(v) + "T00:00:00Z" : v);
+    return isNaN(d) ? String(v).slice(0, 10)
+      : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+  };
+
+  if (err) return <div style={{ color: T.ink, padding: 24 }}>{err}</div>;
+  if (!d) return <Spin />;
+  const rows = d.campaigns || [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: T.ink }}>Your email tool</div>
+        <div style={{ fontSize: 13, color: T.inkSoft, marginTop: 6, maxWidth: 680, lineHeight: 1.5 }}>
+          The campaigns your organisation sent from Mailchimp or Constant Contact. Steward did not send
+          these and cannot resend one. It reads who opened, who clicked and who asked to stop, and puts
+          that on the person's own record.
+        </div>
+      </div>
+
+      {!rows.length && (
+        <div style={{ background: T.cream, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20 }}>
+          <div style={{ fontWeight: 600, color: T.ink }}>Nothing read back yet.</div>
+          <div style={{ fontSize: 13, color: T.inkSoft, marginTop: 6 }}>
+            Connect Mailchimp or Constant Contact on the Connections screen, choose which audience to keep
+            in step, and the campaigns you have already sent will appear here.
+          </div>
+          {onNavigate && (
+            <button onClick={() => onNavigate("settings", { tab: "connections" })}
+              style={{ marginTop: 14, background: T.green, color: "#fff", border: "none", borderRadius: 8,
+                       padding: "9px 16px", fontWeight: 600, cursor: "pointer" }}>
+              Open Connections
+            </button>
+          )}
+        </div>
+      )}
+
+      {!!rows.length && (
+        <div style={{ border: `1px solid ${T.line}`, borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: T.cream, textAlign: "left" }}>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Campaign</th>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Sent</th>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Delivered</th>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Opened</th>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Clicked</th>
+                <th style={{ padding: "10px 12px", color: T.ink }}>Gifts within 30 days</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(c => (
+                <tr key={c.id} style={{ borderTop: `1px solid ${T.line}` }}>
+                  <td style={{ padding: "10px 12px", color: T.ink, fontWeight: 600 }}>{c.name}</td>
+                  <td style={{ padding: "10px 12px", color: T.inkSoft }}>{sentDay(c.sentAt)}</td>
+                  <td style={{ padding: "10px 12px", color: T.ink }}>{c.sends.toLocaleString()}</td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button {...interactive(() => openRows(c, "opens"), { label: `Who opened ${c.name}` })}
+                      style={{ background: "none", border: "none", padding: 0, color: T.green,
+                               fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                      {c.opens.toLocaleString()}{pct(c.openRate) ? ` (${pct(c.openRate)})` : ""}
+                    </button>
+                  </td>
+                  <td style={{ padding: "10px 12px" }}>
+                    <button {...interactive(() => openRows(c, "clicks"), { label: `Who clicked ${c.name}` })}
+                      style={{ background: "none", border: "none", padding: 0, color: T.green,
+                               fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                      {c.clicks.toLocaleString()}{pct(c.clickRate) ? ` (${pct(c.clickRate)})` : ""}
+                    </button>
+                  </td>
+                  <td style={{ padding: "10px 12px", color: T.ink }}>
+                    {/* "none" rather than a dash: no em dashes reach a screen,
+                        and a word says what an empty cell means. */}
+                    {c.giftsWithin
+                      ? `${c.giftsWithin} · ${money(c.giftCentsWithin)}`
+                      : <span style={{ color: T.inkSoft }}>none</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ padding: "10px 12px", borderTop: `1px solid ${T.line}`, background: T.cream,
+                        fontSize: 12, color: T.inkSoft, lineHeight: 1.5 }}>
+            {d.giftWindowSentence}
+          </div>
+        </div>
+      )}
+
+      {open && (
+        <Modal onClose={() => setOpen(null)} title={`${open.campaign.name}: ${open.which}`}>
+          {/* The tool's count and the people Steward can name are two numbers,
+              and the sentence says so rather than letting 188 open onto three
+              rows as though that footed. */}
+          <div style={{ fontSize: 13, color: T.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            {open.sentence}
+          </div>
+          <div style={{ maxHeight: 360, overflowY: "auto" }}>
+            {open.people.map((p, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12,
+                                    padding: "7px 0", borderTop: i ? `1px solid ${T.line}` : "none" }}>
+                <span style={{ color: T.ink }}>{p.name}</span>
+                <span style={{ color: T.inkSoft, fontSize: 12 }}>
+                  {p.clicked ? (p.clickedLabel ? `clicked ${p.clickedLabel}` : "clicked") : p.opened ? "opened" : ""}
+                </span>
+              </div>
+            ))}
+            {!open.people.length && <div style={{ color: T.inkSoft }}>Nobody yet.</div>}
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export function Communications({ data, isReadOnly, initialNav, onInitialNavConsumed, highlightDraftId, onNavigate }) {
   const { auth } = useAuth();
   const isAdmin = auth?.user?.role === "admin";
@@ -1556,6 +1695,12 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
     { id: "audience",   label: "Audience",   icon: "◈" },
     { id: "analytics",  label: "Analytics",  icon: "⬡" },
     { id: "sequences",  label: "Sequences",  icon: "⟳" },
+    // INT-3 — the campaigns she sent from Mailchimp or Constant Contact. A
+    // separate entry from "Campaigns" on purpose: those are the ones Steward
+    // sent and she can open and edit, these are somebody else's sends that
+    // Steward only reports on, and running them together would suggest she
+    // could resend one from here.
+    { id: "emailtool",  label: "Your email tool", icon: "◌" },
     { id: "milestones", label: "Milestone Drafts", icon: "✦" },
   ];
 
@@ -2184,6 +2329,9 @@ export function Communications({ data, isReadOnly, initialNav, onInitialNavConsu
             <SequencesPanel data={data} />
           </div>
         )}
+
+        {/* ── INT-3 · WHAT THE EMAIL TOOL SENT ─────────────────────────────── */}
+        {nav === "emailtool" && <EmailToolPanel onNavigate={onNavigate} />}
 
         {/* ── MILESTONE DRAFTS ──────────────────────────────────────────────── */}
         {nav === "milestones" && <MilestoneDraftsPanel highlightDraftId={highlightDraftId}/>}

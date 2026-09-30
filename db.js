@@ -3456,6 +3456,96 @@ async function initSchema() {
                     ON giving_sources (org_id, provider) WHERE status <> 'disconnected'`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_giving_sources_org ON giving_sources (org_id, status)`);
 
+  // ── INT-3 — THE EMAIL TOOL THE ORGANISATION ALREADY PAYS FOR ──────────────
+  // A separate table from `giving_sources` because this one carries no money:
+  // it is a mailing list, and putting it in the giving table would make it one
+  // more thing every money figure has to remember to exclude. It joins INT-1's
+  // watching layer through `shared/connections.js` all the same, so there is
+  // one card shape and one definition of quiet, not a second system.
+  //
+  // `server_prefix` is Mailchimp's data centre, learned from the OAuth
+  // metadata endpoint after consent. `mapping` is the org's own choice of
+  // which audience and which groups carry which tags, and NOTHING is pushed
+  // until it is non-null: the first sync is opt-in by construction.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_marketing_connections (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      provider TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      credentials_sealed TEXT,
+      server_prefix TEXT,
+      account_name TEXT,
+      audience_id TEXT,
+      audience_name TEXT,
+      mapping JSONB,
+      webhook_secret TEXT,
+      token_expires_at TIMESTAMPTZ,
+      last_synced_at TIMESTAMPTZ,
+      last_tried_at TIMESTAMPTZ,
+      last_pushed_count INTEGER,
+      last_error TEXT,
+      last_error_at TIMESTAMPTZ,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT emc_sealed_only CHECK (
+        credentials_sealed IS NULL OR credentials_sealed LIKE 'v1.%'
+      ),
+      CONSTRAINT emc_status CHECK (status IN ('active','error','disconnected'))
+    )`);
+  // One live connection per provider per org, and a disconnected row keeps its
+  // history so "this used to come in through Mailchimp" stays true.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS emc_one_live
+                    ON email_marketing_connections (org_id, provider) WHERE status <> 'disconnected'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emc_org ON email_marketing_connections (org_id, status)`);
+
+  // The campaigns the org sent FROM THE TOOL. Steward did not send these and
+  // must never be able to: there is no body column, no recipient list and no
+  // send path anywhere near this table. Counts only, plus the id that opens
+  // them.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_marketing_campaigns (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      provider TEXT NOT NULL,
+      provider_campaign_id TEXT NOT NULL,
+      name TEXT,
+      subject TEXT,
+      sent_at TIMESTAMPTZ,
+      sends INTEGER DEFAULT 0,
+      opens INTEGER DEFAULT 0,
+      clicks INTEGER DEFAULT 0,
+      unsubscribes INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS emc_campaign_once
+                    ON email_marketing_campaigns (org_id, provider, provider_campaign_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emc_campaign_org ON email_marketing_campaigns (org_id, sent_at DESC)`);
+
+  // ONE ROW PER PERSON PER CAMPAIGN, not one per event. A donor who opened and
+  // clicked has read the appeal once; three rows would read as three things she
+  // did and would put the same campaign on her timeline three times.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_marketing_activity (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      campaign_id TEXT NOT NULL REFERENCES email_marketing_campaigns(id) ON DELETE CASCADE,
+      donor_id TEXT REFERENCES donors(id) ON DELETE CASCADE,
+      email TEXT,
+      opened BOOLEAN DEFAULT false,
+      clicked BOOLEAN DEFAULT false,
+      clicked_label TEXT,
+      unsubscribed BOOLEAN DEFAULT false,
+      occurred_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS emc_activity_once
+                    ON email_marketing_activity (campaign_id, donor_id) WHERE donor_id IS NOT NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_emc_activity_donor ON email_marketing_activity (org_id, donor_id)`);
+
   // ── BUILD-92 A2 — WHAT THE PROVIDER ACTUALLY SAID ─────────────────────────
   // `last_error` is the SENTENCE a human reads and it does not change here.
   // Beside it now sit the two facts that were thrown away: the HTTP status the

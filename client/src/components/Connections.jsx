@@ -276,6 +276,157 @@ function Bookkeeping({ isReadOnly, isAdmin }) {
   );
 }
 
+// ── INT-3 · SET ONCE ON THE CARD: WHICH LIST, AND WHO GOES TO IT ───────────
+//
+// NOTHING LEAVES STEWARD UNTIL THIS IS SAVED. The panel shows the preview
+// first, and the preview is a count with its reasons, not a promise: "412
+// people, 38 new to Mailchimp", and underneath, everybody held back and why.
+// An organisation is entitled to know what it is about to put into somebody
+// else's system before it happens, and what its bill is about to do.
+function EmailToolMapping({ card, onSaved, onError }) {
+  const provider = card.provider;
+  const [audiences, setAudiences] = useState(null);
+  // "Could not ask" and "there are none" are DIFFERENT, and the panel told a
+  // customer her Mailchimp account held no audiences when the truth was that
+  // Steward never managed to ask. Saying the first as the second sends somebody
+  // into another company's settings to fix something that is not broken there.
+  const [askFailed, setAskFailed] = useState("");
+  const [groups, setGroups] = useState({});          // audienceId -> tag name
+  const [audienceId, setAudienceId] = useState("");
+  const [meta, setMeta] = useState(null);            // /email-marketing
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => { apiFetch("/email-marketing").then(setMeta).catch(() => {}); }, []);
+  useEffect(() => {
+    apiFetch(`/email-marketing/${provider}/audiences`)
+      .then(r => { setAudiences(r.audiences || []); setAskFailed(""); })
+      .catch(e => {
+        setAudiences([]);
+        setAskFailed(e?.sentence || e?.body?.sentence || errorMessage(e, "Steward could not ask just now."));
+      });
+  }, [provider]);
+
+  const chosen = Object.entries(groups).filter(([, t]) => String(t || "").trim());
+  const runPreview = () => {
+    setBusy("preview");
+    apiFetch(`/email-marketing/${provider}/preview`, { method: "POST", body: { groups } })
+      .then(r => { setPreview(r); setBusy(""); })
+      .catch(e => { setBusy(""); onError(e?.sentence || e?.body?.sentence || errorMessage(e, "The preview did not run.")); });
+  };
+  const save = () => {
+    setBusy("save");
+    const a = (audiences || []).find(x => x.id === audienceId);
+    apiFetch(`/email-marketing/${provider}/mapping`, { method: "POST",
+      body: { audienceId, audienceName: a ? a.name : null, groups } })
+      .then(r => { setBusy(""); onSaved(r.sentence); })
+      .catch(e => { setBusy(""); onError(e?.sentence || e?.body?.sentence || errorMessage(e, "That did not save.")); });
+  };
+
+  const noun = card.audienceNoun || "audience";
+  return (
+    <div data-testid="email-mapping" style={{ marginTop: 12, padding: 14, background: T.bg2,
+      border: "1px solid " + T.bg3, borderRadius: 10 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>
+        Choose the {noun} to keep in step
+      </div>
+      {audiences === null ? (
+        <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>Asking {card.label}…</div>
+      ) : askFailed ? (
+        <div data-testid="email-ask-failed"
+             style={{ fontSize: 12.5, color: T.gold700, marginTop: 6, lineHeight: 1.5 }}>
+          {askFailed}
+        </div>
+      ) : !audiences.length ? (
+        <div style={{ fontSize: 12.5, color: T.ink3, marginTop: 6 }}>
+          {card.label} reports no {noun}s on this account yet. Make one there and come back.
+        </div>
+      ) : (
+        <select data-testid="email-audience" value={audienceId} onChange={e => setAudienceId(e.target.value)}
+          style={{ marginTop: 8, width: "100%", maxWidth: 380, padding: "8px 10px", fontFamily: "inherit",
+                   fontSize: 13, border: "1px solid " + T.bg3, borderRadius: 8, background: "#fff", color: T.ink }}>
+          <option value="">Choose one</option>
+          {audiences.map(a => (
+            <option key={a.id} value={a.id}>
+              {a.name}{a.members === null || a.members === undefined ? "" : ` (${a.members.toLocaleString()} there now)`}
+            </option>
+          ))}
+        </select>
+      )}
+
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginTop: 14 }}>
+        Which groups go, and the tag each one carries
+      </div>
+      <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
+        {meta?.fieldsSentence}
+      </div>
+      <div style={{ marginTop: 8 }}>
+        {(meta?.groups || []).map(g => (
+          <div key={g.id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+                                   padding: "6px 0", borderTop: "1px solid " + T.bg3 }}>
+            <label style={{ flex: "1 1 200px", minWidth: 0, fontSize: 12.5, color: T.ink }}>
+              <input type="checkbox" data-testid="email-group" data-group={g.id}
+                checked={!!groups[g.id]}
+                onChange={e => setGroups(prev => {
+                  const next = { ...prev };
+                  if (e.target.checked) next[g.id] = g.name; else delete next[g.id];
+                  return next;
+                })}
+                style={{ marginRight: 8 }} />
+              {g.name}
+            </label>
+            {!!groups[g.id] && (
+              <input data-testid="email-tag" data-group={g.id} value={groups[g.id]}
+                onChange={e => setGroups(prev => ({ ...prev, [g.id]: e.target.value }))}
+                placeholder="Tag in the email tool"
+                style={{ flex: "0 1 200px", padding: "6px 9px", fontFamily: "inherit", fontSize: 12.5,
+                         border: "1px solid " + T.bg3, borderRadius: 7, background: "#fff", color: T.ink }} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+        <button data-testid="email-preview" disabled={!chosen.length || busy === "preview"}
+          onClick={runPreview}
+          style={{ background: "#fff", color: T.ink, border: "1px solid " + T.bg3, borderRadius: 8,
+                   padding: "8px 14px", fontWeight: 600, fontSize: 12.5,
+                   cursor: chosen.length ? "pointer" : "not-allowed", opacity: chosen.length ? 1 : 0.5 }}>
+          {busy === "preview" ? "Counting…" : "Preview"}
+        </button>
+        <button data-testid="email-save" disabled={!audienceId || !chosen.length || busy === "save"}
+          onClick={save}
+          style={{ background: T.greenDk, color: "#fff", border: "none", borderRadius: 8,
+                   padding: "8px 14px", fontWeight: 700, fontSize: 12.5,
+                   cursor: audienceId && chosen.length ? "pointer" : "not-allowed",
+                   opacity: audienceId && chosen.length ? 1 : 0.5 }}>
+          {busy === "save" ? "Saving…" : "Save and keep in step"}
+        </button>
+      </div>
+
+      {preview && (
+        <div data-testid="email-preview-result" style={{ marginTop: 12, paddingTop: 10,
+             borderTop: "1px solid " + T.bg3 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{preview.sentence}</div>
+          <div style={{ fontSize: 11.5, color: T.ink3, lineHeight: 1.5, marginTop: 3 }}>{preview.definition}</div>
+          {!!(preview.excluded || []).length && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: T.ink }}>
+                Held back: {preview.excludedTotal}
+              </div>
+              {preview.excluded.map(e => (
+                <div key={e.key} style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 3 }}>
+                  <strong style={{ color: T.ink }}>{e.count} {e.label.toLowerCase()}.</strong> {e.sentence}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState("");
@@ -287,6 +438,10 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   // FIX-10 D — which cards have had their "Why?" opened. The action leads; the
   // reason is one click away and never in front of it.
   const [whyOpen, setWhyOpen] = useState({});
+  // INT-3 — which email card has its mapping panel open. Undefined falls back
+  // to the card's own `needsMapping`, so a connection that has not chosen a
+  // list yet opens showing the one thing it still needs.
+  const [mapOpen, setMapOpen] = useState({});
 
   const load = () => apiFetch("/connections").then(setD)
     .catch(e => { setD({ cards: [] }); setMsg(errorMessage(e, "Connections did not load.")); });
@@ -314,6 +469,18 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
       setBusy("");
       setMsg(e?.body?.sentence || errorMessage(e, "That connection could not be started."));
     }
+  };
+
+  // INT-3 — one sync, on demand. The same run the daily job does: opt-outs
+  // come in first, then the campaigns, then the push.
+  const syncEmail = async c => {
+    setBusy("sync:" + c.id); setMsg("");
+    try {
+      const r = await apiFetch(`/email-marketing/${encodeURIComponent(c.provider)}/sync`, { method: "POST" });
+      setMsg(r.sentence); load();
+    } catch (e) {
+      setMsg(e?.sentence || e?.body?.sentence || errorMessage(e, "That check did not finish."));
+    } finally { setBusy(""); }
   };
 
   const openFigure = async c => {
@@ -481,6 +648,28 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                   </div>)}
               </>}
             </div>)}
+          {/* INT-3 — the one decision an email connection still needs, and the
+              check that runs it. Opened by default when nothing is mapped,
+              because an unmapped connection is doing nothing and the card
+              should not make somebody hunt for the reason. */}
+          {c.connected && c.kind === "email_marketing" && !isReadOnly && isAdmin && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button data-testid="email-choose" style={btn(false)}
+                  onClick={() => setMapOpen(m => ({ ...m, [c.id]: !(m[c.id] ?? c.needsMapping) }))}>
+                  {c.mapped ? "Change what is sent" : `Choose the ${c.audienceNoun || "audience"}`}
+                </button>
+                {c.mapped && (
+                  <button data-testid="email-sync" style={btn(false)} disabled={busy === "sync:" + c.id}
+                    onClick={() => syncEmail(c)}>
+                    {busy === "sync:" + c.id ? "Checking…" : "Check now"}
+                  </button>)}
+              </div>
+              {(mapOpen[c.id] ?? c.needsMapping) && (
+                <EmailToolMapping card={c}
+                  onSaved={s => { setMsg(s); setMapOpen(m => ({ ...m, [c.id]: false })); load(); }}
+                  onError={setMsg} />)}
+            </div>)}
           {c.connected && c.kind === "source" && c.provider !== "stripe" && (
             <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>
               This provider does not publish its payouts to Steward, so the money in the bank cannot be matched to these
@@ -509,6 +698,22 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
               <div>
                 <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSentAt)}</div>
                 <div style={{ fontSize: 11.5, color: T.ink3 }}>last sent</div>
+              </div>
+            {/* INT-3 — A FOURTH SHAPE, BECAUSE AN EMAIL TOOL HAS NO MONEY.
+                Drawing the money-in figures here would print "$0 · 0 gifts"
+                under Mailchimp, which is not a quiet connection, it is a
+                category error. What this card counts is people kept in step
+                and when it last checked. */}
+            </> : c.kind === "email_marketing" ? <>
+              <div>
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>
+                  {c.audienceName || (c.connected ? "None chosen yet" : "—")}
+                </div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>{c.audienceNoun || "audience"} kept in step</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 13.5, color: T.ink, marginTop: 4 }}>{shortDate(c.lastSyncedAt)}</div>
+                <div style={{ fontSize: 11.5, color: T.ink3 }}>last checked</div>
               </div>
             </> : c.kind === "pos" ? <>
               <div>
