@@ -1704,6 +1704,12 @@ async function initSchema() {
   // The source each import came from, so a named import says where the file
   // was exported from and the Move Report knows which vendor to name.
   await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS migration_source TEXT`);
+  // The totals the org typed in from the system they are leaving. Their own
+  // claim about their own file: it gets its own column on the Move Report and
+  // is never folded into the headline, so a number typed from memory cannot
+  // make Steward say it matched something it did not.
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS old_system_gifts INTEGER`);
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS old_system_cents BIGINT`);
 
   // ── BUILD-88b B.3 — THANK-YOUS, DRAFTED ───────────────────────────────────
   // Steward never sends the thank-you. It writes one and puts it in a queue she
