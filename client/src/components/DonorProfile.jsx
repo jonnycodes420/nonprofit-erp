@@ -835,7 +835,7 @@ function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="H
   );
 }
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -1948,6 +1948,30 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,loading
                     From <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
                     {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
                   </div>
+                </div>
+              ):null)}
+
+              {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
+                  to be written into aiMap and rendered as though Steward had
+                  suggested it, carrying the HTTP status ("Stream failed: 503")
+                  into a panel headed "Suggested". It is its own row now, in the
+                  Agent room's voice, with the one control that helps. */}
+              {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
+                <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
+                  style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
+                    background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
+                    borderRadius:14,padding:"12px 16px",marginTop:12}}>
+                  <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
+                    {aiErr[`${donor.id}_${t}`]}
+                  </span>
+                  <button data-testid={`dp-suggested-retry-${t}`}
+                    onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
+                    disabled={loadingKey===`${donor.id}_${t}`}
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
+                      padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
+                      cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
+                    {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
+                  </button>
                 </div>
               ):null)}
             </section>

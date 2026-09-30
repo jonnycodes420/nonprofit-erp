@@ -487,15 +487,21 @@ app.get("/oauth/status", requireAuth, wrap(async (req, res) => {
       ready: missing.length === 0, missing,
       scopes: O.PROVIDERS[key].scopes,
       note: O.PROVIDERS[key].sandboxNote || null,
+      // FIX-10 D — `missing` still carries the variable NAMES, because the
+      // admin check and the ops report are what that list is for. The
+      // SENTENCE is what a customer reads on Connections, and it names
+      // nothing she cannot act on.
       sentence: missing.length
-        ? `Steward cannot open ${O.PROVIDERS[key].label}'s consent screen yet: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set.`
+        ? O.providerUnavailableSentence(O.PROVIDERS[key].label)
         : `Ready. Steward will ask ${O.PROVIDERS[key].label} for ${O.PROVIDERS[key].scopes.length} scopes and nothing else.`,
     };
   }
   // PayPal is not an OAuth provider here, and the card says why rather than
   // offering a button that opens a page nobody can complete.
   out.paypal = { label: "PayPal", kind: "source", ready: false, missing: [],
-    waiting: true, sentence: O.PAYPAL_WAITING,
+    // FIX-10 D — the action leads, and `why` is what the card's disclosure
+    // reveals. One sentence used to carry both and led with the reason.
+    waiting: true, sentence: O.PAYPAL_ACTION, why: O.PAYPAL_WHY,
     // INT-OAUTH item 5 — whether the webhook id is set, WITHOUT printing it.
     webhookConfigured: !!process.env.PAYPAL_WEBHOOK_ID };
   res.json({ providers: out,
@@ -515,7 +521,7 @@ app.post("/oauth/:provider/start", requireAuth, requireAdmin, checkWriteAccess, 
     return res.status(503).json({ error: "not_configured",
       missing: Object.entries(names).filter(([k]) => ["clientId", "clientSecret", "redirectUri"].includes(k))
         .filter(([k]) => !values[k]).map(([, n]) => n),
-      sentence: `Steward cannot open ${O.PROVIDERS[key].label}'s consent screen: it has no app credentials on this server yet.` });
+      sentence: O.providerUnavailableSentence(O.PROVIDERS[key].label) });
   }
   const nonce = crypto.randomBytes(16).toString("base64url");
   const raw = O.encodeState({ orgId: req.user.orgId, userId: req.user.userId, nonce });
@@ -595,7 +601,13 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdmin, checkWriteAcces
         ...(reqSpec.basic ? { Authorization: "Basic " + Buffer.from(reqSpec.basic).toString("base64") } : {}) },
       body: reqSpec.body });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body?.error_description || body?.error || `the provider answered ${r.status}`);
+    // FIX-10 D — the STATUS CODE goes to the console; the customer reads the
+    // provider's own words or a plain phrase. "Square refused to finish the
+    // connection: the provider answered 502" put an HTTP code on her screen.
+    if (!r.ok) {
+      console.error(`[oauth] ${key} token endpoint answered ${r.status}`);
+      throw new Error(body?.error_description || body?.error || "the provider did not accept the request");
+    }
     tokens = O.readTokens(body);
     if (!tokens) throw new Error("the provider sent no access token");
   } catch (e) {
@@ -740,7 +752,10 @@ async function accessTokenFor(orgId, row, providerKey, { force = false } = {}) {
         ...(spec.basic ? { Authorization: "Basic " + Buffer.from(spec.basic).toString("base64") } : {}) },
       body: spec.body });
     const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body?.error_description || body?.error || `the provider answered ${r.status}`);
+    if (!r.ok) {
+      console.error(`[oauth] ${providerKey} refresh endpoint answered ${r.status}`);
+      throw new Error(body?.error_description || body?.error || "the provider did not accept the request");
+    }
     fresh = O.readTokens(body);
     if (!fresh) throw new Error("the provider sent no access token");
   } catch (e) {
@@ -957,7 +972,10 @@ app.post("/bookkeeping/:id/send", requireAuth, requireAdmin, checkWriteAccess, w
         r = await post(tok.accessToken);
       }
       const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body?.error || `the accounting system answered ${r.status}`);
+      if (!r.ok) {
+        console.error(`[bookkeeping] ${c.vendor} answered ${r.status} for payout ${payoutId}`);
+        throw new Error(body?.error || "the accounting system did not accept it");
+      }
       await run(`UPDATE bookkeeping_deposits SET status='sent', vendor_deposit_id=?, sent_at=NOW(), last_error=NULL, updated_at=NOW()
                   WHERE org_id=? AND vendor=? AND payout_id=?`,
         [body?.id || null, orgId, c.vendor, payoutId]);

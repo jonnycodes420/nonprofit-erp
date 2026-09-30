@@ -284,6 +284,9 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
   const [log, setLog] = useState(null);
   const [sales, setSales] = useState(null);
   const [busy, setBusy] = useState("");
+  // FIX-10 D — which cards have had their "Why?" opened. The action leads; the
+  // reason is one click away and never in front of it.
+  const [whyOpen, setWhyOpen] = useState({});
 
   const load = () => apiFetch("/connections").then(setD)
     .catch(e => { setD({ cards: [] }); setMsg(errorMessage(e, "Connections did not load.")); });
@@ -395,7 +398,7 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
                 credentials on this deployment is disabled and says why
                 underneath, because a button that opens a page nobody can
                 complete is worse than no button. */}
-            {!c.connected && c.action && !isReadOnly && isAdmin && (
+            {!c.connected && c.action && !(c.parts || []).length && !isReadOnly && isAdmin && (
               c.oauthProvider ? (
                 <button style={{ ...btn(oauthReady(c) !== false), marginLeft: "auto",
                                  opacity: oauthReady(c) === false ? 0.5 : 1,
@@ -416,6 +419,31 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
           </div>
           <div style={{ fontSize: 12.5, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>{c.subtitle}</div>
           <div style={{ fontSize: 13, color: T.ink, lineHeight: 1.55, marginTop: 6 }}>{c.sentence}</div>
+
+          {/* FIX-10 D — THE TWO THINGS INSIDE THE STRIPE CARD. Stripe used to
+              be two cards, both labelled Stripe, both offering "Connect", and
+              nothing on the screen said which one somebody wanted. One card,
+              two plain labels, each with its own state and its own button. */}
+          {(c.parts || []).length > 1 && (
+            <div data-testid="connection-parts" style={{ marginTop: 10 }}>
+              {c.parts.map(part => (
+                <div key={part.key} data-testid="connection-part" data-part={part.key}
+                  style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap",
+                    padding: "8px 0", borderTop: "1px solid " + T.bg3 }}>
+                  <span aria-hidden="true" style={{ width: 7, height: 7, borderRadius: 99, marginTop: 5,
+                    background: part.connected ? T.greenDk : T.ink3, display: "inline-block", flexShrink: 0 }} />
+                  <strong style={{ fontSize: 13, color: T.ink }}>{part.label}</strong>
+                  <span style={{ fontSize: 12.5, color: T.ink3, flex: "1 1 220px", minWidth: 0, lineHeight: 1.5 }}>
+                    {part.sentence}
+                  </span>
+                  {!part.connected && part.action && !isReadOnly && isAdmin && (
+                    <button style={{ ...btn(false), marginLeft: "auto" }}
+                      data-testid="connection-part-connect" data-part-action={part.key}
+                      onClick={() => onNavigate && onNavigate("settings", "integrations")}>
+                      {part.actionLabel || "Connect"}
+                    </button>)}
+                </div>))}
+            </div>)}
           {/* Why a Connect button is greyed out, in the server's own words,
               and what this connection will be allowed to see if it opens. */}
           {!c.connected && c.oauthProvider && oauthReady(c) === false && (
@@ -429,12 +457,29 @@ export function ConnectionsView({ isReadOnly, isAdmin = true, onNavigate }) {
             </div>)}
           {/* PayPal has no consent screen to open yet, and the card says so
               instead of offering a button that goes nowhere. */}
+          {/* FIX-10 D — PAYPAL LEADS WITH THE ACTION. The card used to open with
+              somebody else's partner programme and put what she can do today in
+              the middle of the same sentence. The partner-programme context is
+              behind "Why?", and the deployment's own webhook state is not a
+              sentence for a customer at all: it is in the console. */}
           {!c.connected && !c.oauthProvider && c.provider === "paypal" && oauth?.paypal?.sentence && (
             <div data-testid="connection-paypal-waiting"
-                 style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 6 }}>
+                 style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.5, marginTop: 6 }}>
               {oauth.paypal.sentence}
-              {oauth.paypal.webhookConfigured === false &&
-                " Steward is also not set up to hear PayPal's webhooks on this deployment yet."}
+              {oauth.paypal.why && <>
+                {" "}
+                <button data-testid="connection-paypal-why" aria-expanded={!!whyOpen[c.id]}
+                  onClick={() => setWhyOpen(w => ({ ...w, [c.id]: !w[c.id] }))}
+                  style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700,
+                    textDecoration: "underline dotted", cursor: "pointer", fontFamily: "inherit", fontSize: 12.5 }}>
+                  Why?
+                </button>
+                {whyOpen[c.id] && (
+                  <div data-testid="connection-paypal-why-body"
+                       style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 5 }}>
+                    {oauth.paypal.why}
+                  </div>)}
+              </>}
             </div>)}
           {c.connected && c.kind === "source" && c.provider !== "stripe" && (
             <div style={{ fontSize: 12, color: T.ink3, lineHeight: 1.5, marginTop: 4 }}>

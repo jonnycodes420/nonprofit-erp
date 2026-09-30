@@ -1985,7 +1985,7 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
 app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
   if (!stripe) return res.status(503).json({ error: "Stripe not configured" });
   const { donorName, donorEmail, amount } = req.body;
-  if (!donorName || !donorEmail) return res.status(400).json({ error: "donorName and donorEmail required" });
+  if (!donorName || !donorEmail) return res.status(400).json({ error: "A donor name and email are both needed." });
 
   const orgRow = await query("SELECT stripe_account_id, stripe_connected, name FROM orgs WHERE id=$1", [req.user.orgId]);
   const org = orgRow[0];

@@ -1924,6 +1924,18 @@ export function GivingSourcesManager({isReadOnly,isAdmin,compact}){
     </>
   );
 
+  // FIX-10 D — ONBOARDING DOES NOT SHOW A GRID NOBODY CAN USE. When this
+  // server cannot store a provider key, every tile in the grid below is dead:
+  // the first thing a new customer met was eight logos, none of which do
+  // anything, under a sentence about our server. One line instead, and she
+  // moves on.
+  if(compact&&!credState.ready) return (
+    <div data-testid="gs-page">
+      <div data-testid="gs-later" style={{fontSize:13,color:T.ink3,lineHeight:1.6,maxWidth:600}}>
+        You can connect PayPal, Stripe and others later in Settings, Connections.
+      </div>
+    </div>
+  );
   if(compact) return <div data-testid="gs-page">{body}</div>;
   return (
     <div data-testid="gs-page" style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>

@@ -59,6 +59,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[editTarget,setEditTarget]=useState(null);
   const[followUpTarget,setFollowUpTarget]=useState(null);
   const[aiMap,setAiMap]=useState({});const[loadingKey,setLoadingKey]=useState(null);
+  // FIX-10 D — A FAILURE IS NOT A SUGGESTION. A failed stream used to be
+  // written into `aiMap`, so the Suggested panel rendered "Stream failed: 503"
+  // as if Steward had drafted it, with no way to try again. Failures live in
+  // their own map, keyed the same way, and the panel offers a retry.
+  const[aiErr,setAiErr]=useState({});
   const[callList,setCallList]=useState("");const[callLoading,setCallLoading]=useState(false);
   const[showAdd,setShowAdd]=useState(false);const[showImport,setShowImport]=useState(false);const[showGiftImport,setShowGiftImport]=useState(false);const[showCombinedImport,setShowCombinedImport]=useState(false);const[showMerge,setShowMerge]=useState(false);const[toolsOpen,setToolsOpen]=useState(false);const[showHours,setShowHours]=useState(false);const[showGrantImport,setShowGrantImport]=useState(false);
   const[upgradeModal,setUpgradeModal]=useState(null);
@@ -296,6 +301,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
     // the rule.
     let full="";
     try{
+      setAiErr(p=>{const n={...p};delete n[key];return n;});
       await askClaude(sys,prompts[type],chunk=>{full=chunk;});
       const record={
         donor:{id:donor.id,name:donor.name,email:donor.email,contact_name:donor.contactName||donor.contact_name,notes:donor.notes,
@@ -331,7 +337,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       }
       setAiMap(p=>({...p,[key]:out}));
     }
-    catch(e){setAiMap(p=>({...p,[key]:errorMessage(e,"No suggestion is available right now.")}));}
+    catch(e){
+      // The status code and the real cause are already in the console
+      // (api.js). What she reads is one sentence and a button.
+      console.warn("[suggest] "+key+" failed:",errorMessage(e,"no reason given"));
+      setAiErr(p=>({...p,[key]:"Suggestions aren't available right now."}));
+    }
     finally{setLoadingKey(null);}
   };
 
@@ -483,7 +494,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {selected ? (
       <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>setSelected(null)}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
-        aiMap={aiMap} loadingKey={loadingKey} getAI={getAI}
+        aiMap={aiMap} aiErr={aiErr} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
         tasks={data.tasks.filter(t=>t.donorId===selected.id)} onTaskToggle={toggleTask} onAddTask={()=>setFollowUpTarget(selected)}
         orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}

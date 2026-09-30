@@ -380,17 +380,37 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   const empty = { dates: [], gifts30: 0, cents30: 0, last: null };
 
   const cards = [];
-  // 1 · The org's own Stripe. Connected means Connect is finished, not that a
-  // key exists somewhere.
+  // 1 · STRIPE IS ONE CARD. FIX-10 D.
+  //
+  // Stripe appeared TWICE on this screen: "Your Stripe" (money taken through
+  // Steward's own giving pages) and "Stripe" (the read-only connection that
+  // reads the history Stripe already holds). Both are Stripe, both say
+  // "Connect", and a customer has no way to tell which one she is being asked
+  // for. They are two THINGS INSIDE ONE CARD now, each with a plain label that
+  // says what it does, and the card's `parts` array is the one place either is
+  // described. `stripeCard` is filled below, when the provider loop reaches
+  // Stripe, so the second part is built from the same code every other API
+  // source is.
+  let stripeCard = null;
   {
     const b = bucket.get("own_stripe") || empty;
     // Connected means Stripe Connect is finished OR money has demonstrably come
     // through this path. A card that says "not connected" above forty gifts it
     // took last month is a card nobody believes again.
     const connected = !!(org && org.stripe_connected && org.stripe_account_id) || b.gifts30 > 0;
-    cards.push({
-      id: "own_stripe", kind: "own_stripe", provider: "stripe", label: "Your Stripe",
-      subtitle: "Donations taken through your own giving pages.",
+    cards.push(stripeCard = {
+      id: "own_stripe", kind: "own_stripe", provider: "stripe", label: "Stripe",
+      subtitle: "Two things live here: the gifts your giving pages take, and the history Stripe already holds.",
+      // THE TWO PARTS, each named for what it does for her. The second one is
+      // appended by the provider loop below.
+      parts: [{
+        key: "pages", label: "Take gifts on your giving pages",
+        connected,
+        sentence: connected
+          ? "On. Stripe pays Steward the moment a gift is taken."
+          : "Not on yet. Turn this on and your giving pages can take a gift.",
+        action: connected ? null : "connect", actionLabel: connected ? null : "Set this up",
+      }],
       connected, canDisconnect: false,
       lastSyncedAt: null, liveSentence: "Stripe pays Steward the moment a gift is taken; there is nothing to check on a schedule.",
       ...connectionState(C.assessConnection({ connected, lastError: null, lastGiftDate: b.last, giftDates: b.dates, today })),
@@ -420,6 +440,18 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
   }
 
   const byProvider = new Map(sources.filter(s => s.status !== "disconnected").map(s => [s.provider, s]));
+  // FIX-10 D — what the SECOND half of the Stripe card says, built from the
+  // same row every other API source is built from.
+  const stripePart = card => ({
+    key: "history", label: "Read your Stripe history",
+    id: card.id, connected: card.connected,
+    sentence: card.connected
+      ? card.sentence
+      : "Not connected yet. Connect it and Steward reads the gifts Stripe already holds onto your donor records.",
+    action: card.action, actionLabel: card.actionLabel, oauthProvider: card.oauthProvider,
+    figureSource: card.figureSource, gifts30: card.gifts30, dollars30Cents: card.dollars30Cents,
+    status: card.status,
+  });
   for (const key of Object.keys(PROVIDERS)) {
     const s = byProvider.get(key);
     const b = (s && bucket.get(s.id)) || empty;
@@ -431,7 +463,7 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       // A register's rhythm is its SALES, not its gifts.
       lastGiftDate: isPos ? (pos?.last || b.last) : b.last,
       giftDates: isPos && pos ? [] : b.dates, today }));
-    cards.push({
+    const card = {
       id: s ? s.id : `unconnected:${key}`, kind: isPos ? "pos" : "source", provider: key,
       label: s ? s.display_name : providerLabel(key),
       mode: PROVIDERS[key].mode,
@@ -462,7 +494,19 @@ app.get("/connections", requireAuth, wrap(async (req, res) => {
       gifts30: b.gifts30, dollars30Cents: b.cents30, lastGiftDate: b.last,
       figureSource: s ? { key: "connection-gifts", params: { connection: s.id } } : null,
       posFigureSource: isPos && s ? { key: "connection-sales", params: { connection: s.id } } : null,
-    });
+    };
+    // FIX-10 D — Stripe is not its own card. It is the second half of the one
+    // Stripe card, so a customer never has to guess which Stripe to connect.
+    if (key === "stripe" && stripeCard) {
+      stripeCard.parts.push(stripePart(card));
+      // The card's own status is the worse of its two halves: a screen sorted
+      // by what is wrong must not read "healthy" over a broken half.
+      if (card.status === "broken" || (card.status === "quiet" && stripeCard.status === "healthy"))
+        Object.assign(stripeCard, { status: card.status, sentence: card.sentence,
+                                    statusDefinition: card.statusDefinition });
+      continue;
+    }
+    cards.push(card);
   }
   // 3 · Statement imports. Not a connection anybody can break: a file arrives
   // or it does not, and the card says when the last one did.
@@ -934,9 +978,11 @@ app.post("/giving-sources", requireAuth, requireAdmin, checkWriteAccess, wrap(as
       sealed = sealBag(credentials, { aad: orgId });   // bound to this tenant
     } catch (e) {
       if (e instanceof CredentialKeyMissing || e.code === "CREDENTIAL_KEY_MISSING") {
+        console.error(`[giving-source] ${CREDENTIAL_KEY_ENV} is not set, so no credential could be sealed`);
         return res.status(503).json({
           error: "credentials_unavailable",
-          message: `Steward cannot store a provider key safely until ${CREDENTIAL_KEY_ENV} is set on the server. Nothing was saved.`,
+          // FIX-10 D — the variable name is in the server log, not on her screen.
+          message: "Steward cannot store a provider key safely on this server yet, so nothing was saved. We'll let you know when it can.",
         });
       }
       throw e;

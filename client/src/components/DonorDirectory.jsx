@@ -44,6 +44,15 @@ const stageChip=s=>s&&s.id==="lapsed"?{background:T.gold100,color:T.gold700}:{ba
 // string literal), so the definition BUILD-100 wrote reached exactly one tile
 // — the one this build then took off the screen.
 const GIVING_STRENGTH_LABEL = "Giving strength";
+// FIX-10 F — THE SOURCE STRING WAS ALREADY RIGHT; THE CSS WAS SHOUTING IT.
+// The walk read "GIVING STRENGTH?" off this screen and a grep for it found
+// nothing, because `textTransform:"uppercase"` on the header cell is what
+// turned "Giving strength" into a shout (the same trap BUILD-82 hit: innerText
+// applies text-transform). Both header rows read in sentence case now, so the
+// column heading on the screen is the words in the code.
+// The trailing "?" is `ColDef`, the control that opens the number's definition,
+// and it stays: every number has a sentence.
+const HEAD = { fontSize: 10.5, fontWeight: 800, letterSpacing: ".01em" };
 const GIVING_STRENGTH_DEF = censusById("list.givingStrength").sentence;
 
 // The keyboard-reachable definition mark, used by every column header that
@@ -98,7 +107,7 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
     return isNaN(dt)?null:dt.toLocaleDateString("en-US",{month:"short",year:"numeric"});
   };
 
-  const cols=["Donor","Lifetime Giving","Last Gift","Days Lapsed",GIVING_STRENGTH_LABEL,""];
+  const cols=["Donor","Lifetime giving","Last gift","Days lapsed",GIVING_STRENGTH_LABEL,""];
   const colWidths="2fr 130px 130px 120px 80px 130px";
 
   return(
@@ -121,14 +130,14 @@ function ReEngageView({donors,org,onLogTouchpoint,onSelectDonor}){
       {(aiLoading||aiText)&&<AIPanel text={aiText} onClose={()=>setAiText("")}/>}
       <div style={{background:T.white,borderRadius:14,overflow:"hidden",border:"1px solid "+T.bg3}}>
         <div className="reEngage-header" style={{display:"grid",gridTemplateColumns:colWidths,gap:0,padding:"10px 18px",background:T.greenDk,borderBottom:"1px solid "+T.bg3}}>
-          <div className="re-col-name" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em"}}>Donor</div>
-          <div className="re-col-lifetime" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Lifetime Giving</div>
-          <div className="re-col-lastgift" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Last Gift</div>
-          <div className="re-col-days" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>Days Lapsed</div>
-          <div className="re-col-score" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}>
+          <div className="re-col-name" style={{...HEAD,color:T.white}}>Donor</div>
+          <div className="re-col-lifetime" style={{...HEAD,color:T.white,textAlign:"right"}}>Lifetime giving</div>
+          <div className="re-col-lastgift" style={{...HEAD,color:T.white,textAlign:"right"}}>Last gift</div>
+          <div className="re-col-days" style={{...HEAD,color:T.white,textAlign:"right"}}>Days lapsed</div>
+          <div className="re-col-score" style={{...HEAD,color:T.white,textAlign:"right"}}>
             {GIVING_STRENGTH_LABEL}<ColDef text={GIVING_STRENGTH_DEF} testid="re-def-giving-strength" dark/>
           </div>
-          <div className="re-col-actions" style={{fontSize:10,fontWeight:700,color:T.white,textTransform:"uppercase",letterSpacing:".06em",textAlign:"right"}}></div>
+          <div className="re-col-actions" style={{...HEAD,color:T.white,textAlign:"right"}}></div>
         </div>
         {lapsed.map((d,idx)=>{
           const days=(d.lastGift||d.lastTouchpoint)?daysDiff(d.lastGift||d.lastTouchpoint):null;
@@ -249,16 +258,19 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
       const res=await fetch(`${API}/donors/export/csv?${qs.toString()}`,{headers:{Authorization:`Bearer ${getToken()}`}});
       if(!res.ok){
         // BUILD-79 Part 7.4 — "Export failed: Export failed" was an error whose
-        // message was its own name. Carry the server's actual reason + status.
+        // message was its own name. Carry the server's actual reason.
+        // FIX-10 D — the STATUS CODE is not part of that reason. It goes to the
+        // console; what she reads is the server's own sentence, or a plain one.
         const body=await res.json().catch(()=>({}));
-        throw new Error(`the server answered ${res.status}${body.error?` — ${body.error}`:""}${body.message?`: ${body.message}`:""}`);
+        console.error(`[export] /donors/export/csv answered ${res.status}`);
+        throw new Error(body.message||body.error||"the file could not be built");
       }
       const blob=await res.blob();
       const url=URL.createObjectURL(blob);
       const a=document.createElement("a");
       a.href=url;a.download=`donors-${new Date().toISOString().split("T")[0]}.csv`;
       document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
-    }catch(e){flash("Export failed — "+(errorMessage(e, "unknown error")));}
+    }catch(e){flash("The export did not finish: "+(errorMessage(e, "the file could not be built"))+".");}
     setExporting(false);
   }
 
@@ -537,10 +549,10 @@ function DirectoryView({donors,loading,serverTotal,page,pageSize,onPage,clientFi
               <input type="checkbox" checked={allChecked} ref={el=>{if(el)el.indeterminate=someChecked;}} onChange={toggleAll}
                 style={{width:15,height:15,cursor:"pointer",accentColor:T.greenDk}}/>
             </div>
-            {["Donor","Stage","Owner","Lifetime","Last Gift",GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
+            {["Donor","Stage","Owner","Lifetime","Last gift",GIVING_STRENGTH_LABEL,...(isAdmin?[""]:[])]
               .map((h,i)=>(
                 <div key={i} className={h==="Stage"?"dir-col-stage":h==="Owner"?"dir-col-owner":h===""?"dir-col-assign":""}
-                  style={{fontSize:10,fontWeight:800,color:T.ink3,textTransform:"uppercase",letterSpacing:".06em",textAlign:i>=3?"right":"left"}}>
+                  style={{...HEAD,color:T.ink3,textAlign:i>=3?"right":"left"}}>
                   {h}
                   {h===GIVING_STRENGTH_LABEL&&<ColDef text={GIVING_STRENGTH_DEF} testid="dir-def-giving-strength"/>}
                 </div>
