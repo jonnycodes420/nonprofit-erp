@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo } from "react";
 import Papa from "papaparse";
 import { apiFetch } from "../api";
 import { MoveStart } from "./MoveIn";
+import { buildMoveFileFacts, newRunId } from "../../../shared/movePlan";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
@@ -481,7 +482,28 @@ function buildWidePayload(parsed, donorMapping, yearCols, rowLines) {
 // request long enough to hit a platform timeout). Each chunk is self-contained:
 // its gifts are re-indexed to the chunk's local donor positions. Cross-chunk
 // email dedup is handled server-side (chunk N sees chunk N-1's committed rows).
-async function submitImportChunked(donorsIn, gifts, onProgress, extras) {
+// TRANS-1 Part 3 — the FILE's own figures, built from the rows this import
+// submitted. Stored on the run and never recomputed later: by the time anyone
+// opens the Move Report the file is gone, and a figure rebuilt from the rows
+// it produced is not evidence about the file.
+function moveFileFactsFrom(donors, gifts) {
+  try {
+    const rows = (gifts || []).map(g => {
+      const d = donors[g.donorIndex] || {};
+      return {
+        donorKey: String(d.externalDonorId || d.email || d.name || "").toLowerCase(),
+        donorName: d.name || "",
+        amountCents: Math.round(Number(g.amount || 0) * 100),
+        year: Number(String(g.date || "").slice(0, 4)) || null,
+        recurring: d.importedSustainer === true,
+        householdKey: d.householdId || "",
+      };
+    });
+    return buildMoveFileFacts(rows);
+  } catch (e) { console.error("[move] could not build the file's own figures:", e); return null; }
+}
+
+async function submitImportChunked(donorsIn, gifts, onProgress, extras, runId) {
   let donors = donorsIn;
   const CHUNK = 500;
   // BUILD-99 Part 6 — the open asks ride the same chunked submit and are
@@ -540,6 +562,7 @@ async function submitImportChunked(donorsIn, gifts, onProgress, extras) {
         if (gg) gg.forEach(g => { const { donorIndex, ...rest } = g; chunkGifts.push({ ...rest, donorIndex: localIdx }); });
       });
       res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: slice, gifts: chunkGifts,
+        ...(runId ? { importId: runId } : {}),
         ...(chunkProposals.length ? { proposals: chunkProposals } : {}),
         ...(chunkMemberships.length ? { memberships: chunkMemberships } : {}),
         // BUILD-78 — the column ledger + saved mappings ride every chunk
@@ -558,6 +581,8 @@ async function submitImportChunked(donorsIn, gifts, onProgress, extras) {
     totals.donorsUpdated += res.donorsUpdated || 0;
     totals.financeSynced += res.financeSynced || 0;
     totals.donorsMatched += res.donorsMatched || 0;
+    totals.externalIdDupes = (totals.externalIdDupes || 0) + (res.externalIdDupes || 0);
+    totals.matchedByExternalId = (totals.matchedByExternalId || 0) + (res.matchedByExternalId || 0);
     totals.matchesExistingCount += res.matchesExistingCount || 0;
     totals.roundingAdjustment += res.roundingAdjustment || 0;
     totals.fundsCreated  += res.fundsCreated  || 0;   // BUILD-88a A.7
@@ -860,6 +885,32 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
       const migMap = mig && mig.key ? migrationMapping(headers, mig.key) : null;
       setMapping(autoDonor);
       setTxMap(migMap ? { ...autoTx, ...migMap.txMap } : autoTx);
+
+      // ── TRANS-1 Part 1 — A CLAIMED VENDOR EXPORT IS A GIFT FILE ──────────
+      // The walk found this one, and it cost the whole file's money. A real
+      // DonorPerfect gift export (donor_id, gift_id, gift_date, amount, …)
+      // was read by the generic shape detector as "one row per donor
+      // (totals)" -- its reason, in full, was "no per-gift date column",
+      // about a file whose fifth column is `gift_date`. The preset knew
+      // better and had already mapped date and amount, but the SHAPE decides
+      // which mapper is rendered, so the transaction mapping was built and
+      // never shown: every gift column sat on "Don't import this column" and
+      // the screen said "No giving data in this file". Eight donors, no
+      // money, no warning.
+      //
+      // A preset only claims a file when TWO of that vendor's own signal
+      // columns are present (the BUILD-98 rule), so it is stronger evidence
+      // than a heuristic over header spellings. Where it has named both a
+      // date and an amount, the file is a gift ledger and the shape follows
+      // the preset. The override select is untouched, so a person who
+      // disagrees still changes it in one click.
+      if (migMap && migMap.txMap && migMap.txMap.date && migMap.txMap.amount && det.shape !== "transaction") {
+        setShape("transaction");
+        setShapeDetail({
+          ...det, shape: "transaction", presetOverride: true,
+          reason: `${mig.label}'s own export columns — one row per gift`,
+        });
+      }
     }
     const cfg = autoDetectWideConfig(headers, rows);
     setYearCols(cfg.yearCols.map(col => ({ col, date: yearColToDate(col, "dec31"), enabled: true })));
@@ -1242,7 +1293,11 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     const donors = assignPayloadDonors(rawDonors); // stamp assignedTo from the owner mapping (Team)
     setProgress({ done:0, total:donors.length });
     try {
-      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras);
+      // TRANS-1 Part 3 — the run id is minted BEFORE the write, so this
+      // file's gifts and people carry it and its Move Report can scope
+      // itself to them. Every chunk sends the same id.
+      const runId = newRunId();
+      const totals = await submitImportChunked(donors, gifts, (done,total) => setProgress({ done, total }), importExtras, runId);
       // ── BUILD-77 Part 3a — the file-level equation, from PARSE ENTRY ──
       // "In your file" is the physical non-blank row count taken once when
       // the file was parsed, never the count of what survived the client's
@@ -1459,6 +1514,52 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         };
       }
       setResult({ ...totals, warned:warnedCount, skipped:skippedCount, shape:effectiveShape, columnReport: colReport });
+
+      // ── TRANS-1 Part 3 — RECORD THE RUN ────────────────────────────────
+      // The walk found that this path recorded nothing at all: only the
+      // workbook flow ever wrote an `imports` row, so a CSV -- which is what
+      // every vendor tile leads to -- produced no named import, no Move
+      // Report, and a Settings card that said "0 imports" the morning after
+      // a successful move. Recording is best-effort and never fails the
+      // import: the money is already safely written by here.
+      try {
+        const R = totals.reconciliation || {};
+        const rowsR = R.rows || {}, dollarsR = R.dollars || {};
+        await apiFetch("/imports", { method: "POST", body: JSON.stringify({
+          id: runId,
+          migrationSource: moveSource || undefined,
+          name: srcFile?.name || "Imported file",
+          sourceFilename: srcFile?.name || null,
+          shape: effectiveShape === "transaction" ? "transaction"
+               : effectiveShape === "wide" ? "wide" : "aggregate",
+          rowsIn: Number(rowsR.inFile) || 0,
+          giftsCreated: Number(totals.giftsInserted) || 0,
+          donorsCreated: Number(totals.created) || 0,
+          donorsMerged: Number(totals.donorsMatched) || 0,
+          rowsSetAside: Number(rowsR.skipped) || 0,
+          rowsErrored: Number(rowsR.errored) || 0,
+          dollarsIn: Number(dollarsR.inFile) || 0,
+          dollarsCreated: Number(dollarsR.created) || 0,
+          summary: {
+            rowsIn: Number(rowsR.inFile) || 0,
+            giftsCreated: Number(totals.giftsInserted) || 0,
+            donorsCreated: Number(totals.created) || 0,
+            rowsSetAside: Number(rowsR.skipped) || 0,
+            rowsErrored: Number(rowsR.errored) || 0,
+            dollarsIn: Number(dollarsR.inFile) || 0,
+            dollarsCreated: Number(dollarsR.created) || 0,
+            dollarsSetAside: Number(dollarsR.skipped) || 0,
+            dollarsErrored: Number(dollarsR.errored) || 0,
+            donorsMatched: Number(totals.donorsMatched) || 0,
+            externalIdDupes: Number(totals.externalIdDupes) || 0,
+            reconciliation: R,
+            // The FILE's own figures, from the rows that were submitted.
+            moveFile: moveFileFactsFrom(donors, gifts),
+          },
+        })});
+      } catch (e) {
+        console.error("[import] could not record the run:", e);
+      }
     } catch (e) {
       // A refusal from a route is a domain error and its message is real. A
       // TypeError in this function is not, and must not be shown as one.

@@ -6121,7 +6121,7 @@ async function moveState(orgId) {
        FROM orgs WHERE id=?`, [orgId]);
   if (!org) return null;
   const runs = await query(
-    `SELECT id, name, committed_at, migration_source, gifts_created, dollars_created
+    `SELECT id, name, committed_at, migration_source, gifts_created, donors_created, dollars_created
        FROM imports
       WHERE org_id=? AND reversed_at IS NULL AND migration_source IS NOT NULL
       ORDER BY committed_at ASC`, [orgId]);
@@ -6132,6 +6132,11 @@ async function moveState(orgId) {
     completedByName: org.migration_completed_by_name || null,
     undoUntil: org.migration_undo_until || null,
     imports: runs.length,
+    // TRANS-1 Part 5 — what the move has actually brought, so Home can say
+    // "this is your file" only once there is a file, and can tell her in one
+    // sentence when the file carried people but no giving history.
+    giftsImported: runs.reduce((a, r) => a + (Number(r.gifts_created) || 0), 0),
+    peopleImported: runs.reduce((a, r) => a + (Number(r.donors_created) || 0), 0),
     runs: runs.map(r => ({
       id: r.id, name: r.name, at: r.committed_at, source: r.migration_source,
       gifts: Number(r.gifts_created) || 0, dollars: Number(r.dollars_created) || 0,
@@ -6153,6 +6158,10 @@ app.get("/move", requireAuth, wrap(async (req, res) => {
       active: !!st.source && !st.completedAt,
       undoOpen,
       undoDays: M.MOVE_UNDO_DAYS,
+      homeLine: M.moveHomeLine({
+        active: !!st.source && !st.completedAt,
+        imports: st.imports, giftsImported: st.giftsImported, peopleImported: st.peopleImported,
+      }),
     },
   });
 }));
@@ -6226,31 +6235,69 @@ app.post("/move/undo", requireAuth, requireAdmin, checkWriteAccess, wrap(async (
 // What Steward HOLDS from one import, in the same shape buildMoveFileFacts
 // produced for the file. Scoped by `import_id`, which is why the two columns
 // are comparable at all: both sides are counting the same run's rows.
+// THE HELD SIDE IS THE WHOLE MOVE, NOT ONE RUN.
+//
+// This scoped itself to a single `import_id`, and the screen it produced was
+// the opposite of the thing this page exists to do. A re-export is the org's
+// WHOLE file again, so the file side of the second report was 13 gifts and
+// $4,222.02 while the held side counted only the 5 rows that run happened to
+// create: the headline read "8 fewer gifts than your file and $3,124.84 less
+// than your file", and "People: your file says 6, Steward holds 0", about a
+// move in which precisely nothing had been lost.
+//
+// So the two sides are measured the same way: the file is everything the
+// export contained, and what Steward holds is everything the move has landed
+// up to and including this run. For a first import the two definitions are
+// identical; for a re-import this is the only one that is true. "Since last
+// time" stays per-run, because that genuinely is about one run.
+async function moveRunIds(orgId, imp) {
+  if (!imp.migration_source) return [imp.id];
+  // NO TIMESTAMP ARITHMETIC. This read `committed_at <= ?` with the run's own
+  // committed_at, and a run EXCLUDED ITSELF: Postgres keeps microseconds
+  // (…56.77548) and a JavaScript Date only holds milliseconds, so the value
+  // that came out of the row was a few microseconds earlier than the row by
+  // the time it went back in. The second Move Report then compared a 13-gift
+  // file against the 8 gifts of the FIRST run alone. The order is taken from
+  // the database and cut at this run by ID, which cannot round.
+  const rows = await query(
+    `SELECT id FROM imports
+      WHERE org_id=? AND migration_source=? AND reversed_at IS NULL
+      ORDER BY committed_at ASC, id ASC`, [orgId, imp.migration_source]);
+  const ids = [];
+  for (const r of rows) { ids.push(r.id); if (r.id === imp.id) break; }
+  return ids.includes(imp.id) ? ids : [imp.id];
+}
+
 async function moveHeldFacts(orgId, importId) {
   const [g] = await query(
     `SELECT COUNT(*)::int gifts, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
-       FROM gifts WHERE org_id=? AND import_id=?`, [orgId, importId]);
+       FROM gifts WHERE org_id=? AND import_id = ANY(?)`, [orgId, importId]);
   const years = await query(
     // `gifts.date` is TEXT in 'YYYY-MM-DD', so the year is LEFT(date,4) -- the
     // same seam every other report here groups by. EXTRACT() does not apply to
     // a text column and answers 42883.
     `SELECT LEFT(date, 4)::int y, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
        FROM gifts
-      WHERE org_id=? AND import_id=? AND date IS NOT NULL AND date <> ''
+      WHERE org_id=? AND import_id = ANY(?) AND date IS NOT NULL AND date <> ''
       GROUP BY 1 ORDER BY 1 DESC`, [orgId, importId]);
   const [p] = await query(
     `SELECT COUNT(*)::int people,
             COUNT(DISTINCT external_household_id)::int households,
             COUNT(*) FILTER (WHERE imported_sustainer IS TRUE)::int recurring
-       FROM donors WHERE org_id=? AND created_import_id=? AND deleted_at IS NULL`, [orgId, importId]);
+       FROM donors WHERE org_id=? AND created_import_id = ANY(?) AND deleted_at IS NULL`, [orgId, importId]);
   // The people this run's gifts actually landed on -- which includes anyone
   // it MATCHED rather than created, so the top-25 column is not silently
   // short by every returning donor.
   const top = await query(
-    `SELECT COALESCE(NULLIF(d.email,''), d.external_donor_id, d.name) k, d.name,
+    // The identity precedence here MUST be the one buildMoveFileFacts used on
+    // the file side (source id, then e-mail, then name). It read e-mail first,
+    // and the moment donors started carrying their source id the two columns
+    // keyed differently: every figure still footed, but the top-donor rows no
+    // longer lined up and the headline stopped claiming a match it had.
+    `SELECT COALESCE(NULLIF(d.external_donor_id,''), NULLIF(d.email,''), d.name) k, d.name,
             COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents, COUNT(g.*)::int gifts
        FROM gifts g JOIN donors d ON d.id=g.donor_id
-      WHERE g.org_id=? AND g.import_id=? AND d.deleted_at IS NULL
+      WHERE g.org_id=? AND g.import_id = ANY(?) AND d.deleted_at IS NULL
       GROUP BY 1,2 ORDER BY cents DESC, d.name ASC LIMIT 25`, [orgId, importId]);
   return {
     people: Number(p?.people) || 0,
@@ -6273,7 +6320,7 @@ app.get("/imports/:id/move-report", requireAuth, wrap(async (req, res) => {
   // has no stored file facts, and the honest answer is to say so rather than
   // to reconstruct the file from the rows it produced and call that a match.
   const file = summary.moveFile || null;
-  const held = await moveHeldFacts(orgId, r.id);
+  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
   const typed = (r.old_system_gifts != null || r.old_system_cents != null)
     ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
   const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
@@ -6415,7 +6462,7 @@ app.get("/imports/:id/move-report/pdf", requireAuth, wrap(async (req, res) => {
   const file = summary.moveFile || null;
   if (!file) return res.status(409).json({ error: "no_move_report",
     message: "This import ran before Steward started keeping the file's own figures, so there is no Move Report to print." });
-  const held = await moveHeldFacts(orgId, r.id);
+  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
   const typed = (r.old_system_gifts != null || r.old_system_cents != null)
     ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
   const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";

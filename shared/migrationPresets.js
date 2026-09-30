@@ -47,7 +47,7 @@ export const MIGRATION_PRESETS = {
       fund: ["fund"], campaign: ["campaign"], paymentMethod: ["method", "payment method"], type: ["type"],
     },
     noTarget: {
-      "account number": "Bloomerang's constituent number; people are matched by email and name",
+      "account number": "Bloomerang's constituent number; kept on each record and matched on FIRST when you re-import, before email or name",
       "appeal": "Steward has one campaign field, and Campaign took it",
     },
     checklist: [
@@ -68,7 +68,7 @@ export const MIGRATION_PRESETS = {
       fund: ["fund"], campaign: ["campaign"], paymentMethod: ["payment type"],
     },
     noTarget: {
-      "lgl constituent id": "LGL's constituent id; people are matched by email and name",
+      "lgl constituent id": "LGL's constituent id; kept on each record and matched on FIRST when you re-import, before email or name",
       "appeal": "Steward has one campaign field, and Campaign took it",
     },
     checklist: [
@@ -91,7 +91,7 @@ export const MIGRATION_PRESETS = {
       paymentMethod: ["gift type"],
     },
     noTarget: {
-      "donor id": "DonorPerfect's donor id; people are matched by email and name",
+      "donor id": "DonorPerfect's donor id; kept on each record and matched on FIRST when you re-import, before email or name",
       "record type": "DonorPerfect marks pledges as record type P; filter the report to G (gifts) before exporting",
       "sub solicit code": "Steward has one campaign field, and Solicit Code took it",
     },
@@ -113,7 +113,7 @@ export const MIGRATION_PRESETS = {
       fund: ["fund"], campaign: ["campaign name", "campaign"], paymentMethod: ["tender type", "payment method"],
     },
     noTarget: {
-      "account id": "Neon's account id; people are matched by email and name",
+      "account id": "Neon's account id; kept on each record and matched on FIRST when you re-import, before email or name",
       "purpose": "Steward reads the Fund as the designation; Purpose has no second home",
     },
     checklist: [
@@ -133,7 +133,7 @@ export const MIGRATION_PRESETS = {
       date: ["transaction date", "date"], amount: ["amount"],
       fund: ["fund"], campaign: ["campaign"], paymentMethod: ["payment type"], type: ["transaction type"],
     },
-    noTarget: { "contact id": "Kindful's contact id; people are matched by email and name" },
+    noTarget: { "contact id": "Kindful's contact id; kept on each record and matched on FIRST when you re-import, before email or name" },
     checklist: [
       "In Kindful, export Transactions for all dates.",
       "Import that file here.",

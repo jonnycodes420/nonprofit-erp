@@ -453,6 +453,25 @@ export function buildSinceLastTime({ giftsCreated = 0, centsCreated = 0, peopleC
   };
 }
 
+// ── PART 5 · THE FIRST MORNING ─────────────────────────────────────────────
+//
+// The moment the first import commits, Home is her own donors. The line above
+// them says whose they are, and it is ONE line: HOME-CALM's rule is that a
+// calm screen removes rather than adds, so this earns its place only while a
+// move is running, and says nothing once it is over.
+//
+// A file with no gift history says so in one sentence rather than showing
+// empty drift panels and letting her conclude the import failed.
+
+export function moveHomeLine({ active = false, imports = 0, giftsImported = 0, peopleImported = 0 } = {}) {
+  if (!active || !n(imports)) return null;
+  if (n(giftsImported) > 0) return "This is your file. Nothing here was typed by us.";
+  const p = n(peopleImported);
+  return p
+    ? `This is your file — ${p.toLocaleString("en-US")} ${p === 1 ? "person" : "people"}, and no giving history in it yet. Nothing here was typed by us, and gifts can come in a second file whenever you have one.`
+    : "This is your file. Nothing here was typed by us.";
+}
+
 // ── PART 6 · THE MOVE ITSELF ───────────────────────────────────────────────
 //
 // The Settings card's sentence, and the state behind it. `now` is passed in

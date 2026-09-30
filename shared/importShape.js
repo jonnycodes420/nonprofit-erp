@@ -1239,7 +1239,15 @@ export function shapeLabel(shape) {
 // deliberately conservative: matches "Donor ID", "Constituent ID", "Account #",
 // bare "ID"/"PID"/"CID" — but NOT "email"/"paid"/"valid" etc.
 const isDonorIdHdr = h => {
-  const s = String(h || "").trim();
+  // TRANS-1 — NORMALISE BEFORE MATCHING, the BUILD-84 rule applied where it
+  // had not been. This ran `\s*` over the RAW header, so it recognised
+  // "Donor ID" and missed "donor_id" -- an underscore is not whitespace --
+  // and snake_case is how a CRM's CSV export actually spells its columns.
+  // The cost was silent and total: the donor's source id never reached the
+  // record, so nothing ever matched on it and a re-import of a file whose
+  // e-mail had been corrected created a SECOND person. The browser walk
+  // found it; a fixture that spelled the header "Donor ID" never could.
+  const s = normalizeHeader(h);
   if (/^(donor|constituent|account|contact|record|supporter|member|customer)\s*(id|no\.?|number|#)$/i.test(s)) return true;
   return /^(id|pid|cid|acct|account)$/i.test(s);
 };
