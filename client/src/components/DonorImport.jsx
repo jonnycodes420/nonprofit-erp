@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Papa from "papaparse";
 import { apiFetch } from "../api";
+import { MoveStart } from "./MoveIn";
 import { rethrowProgrammerError, errorMessage, isProgrammerError } from "../lib/domainError";
 import { useAuth } from "../main";
 import UpgradeModal from "./UpgradeModal";
@@ -658,6 +659,24 @@ function buildBothPayload(donorSheet, giftSheet, matchInfo, matchKey) {
 export function DonorImport({ onClose, onImported, withHistory = false, org = null, onOpenHome = null }) {
   // The org's civil today, for the future-date test (BUILD-72's rule).
   const orgToday = orgCivilToday(org?.timezone);
+  // An org already mid-move is not asked where its donors are every time it
+  // opens the importer: the answer is on the org.
+  useEffect(() => {
+    let live = true;
+    apiFetch("/move")
+      .then(r => { if (!live || !r || !r.move) return;
+        if (r.move.active) { setMoveSource(r.move.source); setMoveLabel(r.move.label || ""); setMoveAsked(true); } })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  // ── TRANS-1 Part 1 — WHERE ARE YOUR DONORS TODAY? ───────────────────────
+  // Asked BEFORE the file, not guessed after it. The preset the tile picks
+  // pre-fills the mapper; detection still runs underneath, so a file that
+  // disagrees with the tile is still read correctly. `moveAsked` goes true the
+  // moment she answers OR skips, so the question is asked once.
+  const [moveSource, setMoveSource] = useState(null);
+  const [moveLabel,  setMoveLabel]  = useState("");
+  const [moveAsked,  setMoveAsked]  = useState(false);
   const [csvText,    setCsvText]    = useState("");
   const [srcFile,    setSrcFile]    = useState(null);       // the uploaded File (name/size for the file tile)
   const [parsed,     setParsed]     = useState(null);       // { headers:[], rows:[] }
@@ -2254,8 +2273,19 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             onImported={onImported} />
         )}
 
+        {/* ── TRANS-1 Parts 1 and 2 — WHERE ARE YOUR DONORS TODAY? ──
+            Asked BEFORE the file rather than guessed after it, with the
+            vendor's own how-to page behind each tile. It stands in front of
+            the uploader exactly once: answering it or skipping it both set
+            `moveAsked`, and an org already mid-move is never asked again. */}
+        {!parsed && !xlsxSheets && !workbook && !moveAsked && !srcFile && (
+          <MoveStart
+            onPicked={(key, howTo) => { setMoveSource(key); setMoveLabel((howTo && howTo.label) || key); setMoveAsked(true); }}
+            onSkip={() => setMoveAsked(true)} />
+        )}
+
         {/* ── Step 1a: Upload / Paste ── */}
-        {!parsed && !xlsxSheets && !workbook && (<>
+        {!parsed && !xlsxSheets && !workbook && moveAsked && (<>
           <div style={{marginBottom:14}}>
             <div style={{fontSize:11,fontWeight:700,color:T.ink3,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Upload file</div>
             <Uploader accept={[".csv",".tsv",".xlsx",".xls"]} acceptLabel=".csv, .tsv, .xlsx, .xls" compact readAs="none"
@@ -2263,6 +2293,14 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export — we detect the shape and build donors + their giving history. .csv, .tsv, .xlsx, .xls.</div>
+            {moveSource && (
+              <div data-testid="move-source-line" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
+                Set up for your export from <strong style={{color:T.ink2}}>{moveLabel || moveSource}</strong>.{" "}
+                <button onClick={()=>setMoveAsked(false)}
+                  style={{background:"none",border:"none",color:T.greenDk,fontSize:11.5,
+                          textDecoration:"underline",cursor:"pointer",padding:0}}>Change</button>
+              </div>
+            )}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
             <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>
@@ -3309,6 +3347,7 @@ function GiftHistoryImport({ donors, onClose, onImported, org = null, onOpenHome
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
             <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Wide format (one row/donor, year columns) or transactional (one row/gift) — auto-detected.</div>
+
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
             <div style={{flex:1,height:1,background:T.bg3}}/><span style={{fontSize:12,color:T.ink3}}>or paste CSV text</span><div style={{flex:1,height:1,background:T.bg3}}/>

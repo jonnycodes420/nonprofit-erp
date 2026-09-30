@@ -21,6 +21,7 @@ import { importLeadSentence, decisionsFromSubmission } from "../../../shared/imp
 import { makeT, capitalize } from "../../../shared/vocabulary";
 import { ColumnTargetSelect } from "./ColumnTargetSelect";
 import { displayDate } from "../../../shared/displayDate";
+import { buildMoveFileFacts, newRunId } from "../../../shared/movePlan";
 
 const ROLE_LABEL = { donors: "Donors", gifts: "Gifts", pledges: "Pledges", recurring: "Recurring", chrome: "Not data", decoy: "Superseded copy", empty: "Empty", unknown: "Unknown" };
 const ROLE_COLOR = r => r === "donors" || r === "gifts" ? T.green600 : r === "pledges" || r === "recurring" ? T.gold600 : T.ink3;
@@ -241,11 +242,44 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     }, t);
   };
 
-  const recordRun = async (res, sem) => {
+  // The file side of the Move Report, from the SAME submission object the
+  // write was built from (buildWorkbookSubmission -- the BUILD-82 rule that
+  // the pre-write summary and the write come from one source).
+  const moveFileFacts = () => {
+    if (!submission) return null;
+    try {
+      const byIdx = new Map((submission.donors || []).map((d, i) => [i, d]));
+      const rows = (submission.gifts || []).map(g => {
+        const d = byIdx.get(g.donorIndex) || {};
+        const key = String(d.externalDonorId || d.email || d.name || "").toLowerCase();
+        const cents = Math.round(Number(g.amount || 0) * 100);
+        const year = Number(String(g.date || "").slice(0, 4)) || null;
+        return { donorKey: key, donorName: d.name || "", amountCents: cents, year,
+                 recurring: d.importedSustainer === true, householdKey: d.householdId || "" };
+      });
+      return buildMoveFileFacts(rows);
+    } catch (e) { console.error("[move] could not build the file's own figures:", e); return null; }
+  };
+
+  // Which system this file came out of, if the org is mid-move. Read once,
+  // and a failure is silent: a Move Report is worth having, and it is not
+  // worth blocking an import over.
+  const [moveSource, setMoveSource] = useState(null);
+  useEffect(() => {
+    let live = true;
+    apiFetch("/move")
+      .then(r => { if (live && r && r.move && r.move.active) setMoveSource(r.move.source); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+
+  const recordRun = async (res, sem, runId) => {
     const rec = res && res.reconciliation ? res.reconciliation : null;
     const rows = (rec && rec.rows) || {};
     const dollars = (rec && rec.dollars) || {};
     const body = {
+      id: runId || undefined,
+      migrationSource: moveSource || undefined,
       name: importName,
       sourceFilename: fileName || null,
       shape: giftAlone ? "gifts" : "workbook",
@@ -275,6 +309,14 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
         donorsMatched: Number(res && res.donorsMatched) || 0,
         semantics: (sem && sem.counts) || null,
         leadSentence: leadSentenceFor(res, sem),
+        // TRANS-1 Part 3 — the FILE's own figures, computed from the rows this
+        // submission was built from and stored on the run. The Move Report
+        // reads them from here and never recomputes them: the file is gone by
+        // then, and a number rebuilt from the rows it produced is not evidence
+        // about the file. Stored even when the org is not formally "moving",
+        // because the proof costs nothing and is wanted the day it is needed.
+        moveFile: moveFileFacts(),
+        externalIdDupes: Number(res && res.externalIdDupes) || 0,
       },
     };
     try {
@@ -290,20 +332,25 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
     if (!submission) return;
     setBuilding(true); setErr("");
     const tWrite0 = Date.now();
+    // TRANS-1 Part 3 — the run id is minted HERE, before a row is written, so
+    // the gifts and the people this file creates carry it and the Move Report
+    // can scope itself to this one file. The same id is handed to POST
+    // /imports below, which is the row the report reads its file side from.
+    const runId = newRunId();
     try {
       if (giftAlone) {
         // Part 2.5 — gifts alone, linked to the org's existing records
         const allItems = submission.giftAloneItems || [];
         setProgressText(`Linking ${fmtN(allItems.length)} gifts to your existing records…`);
         const giftRows = allItems.map(i => ({ donorExternalId: i.donorId, email: i.email || "", name: i.name || "", line: i.line, ...i.gift }));
-        const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: [], gifts: giftRows, linkToExisting: true }) });
+        const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({ donors: [], gifts: giftRows, linkToExisting: true, importId: runId }) });
         setResult({ ...res, giftAlone: true });
-        await recordRun(res, null);
+        await recordRun(res, null, runId);
       } else {
         setProgressText(`Writing ${fmtN(submission.donors.length)} donors + ${fmtN(submission.gifts.length)} gifts — one transaction, all or nothing…`);
         const donors = submission.donors.map(({ _line, _freqMonthlyClaim, _staleChargeClaim, staleFrequency, address1, ...d }) => d);
         const res = await apiFetch("/donors/import-combined", { method: "POST", body: JSON.stringify({
-          donors, gifts: submission.gifts, identityResolved: true,
+          donors, gifts: submission.gifts, identityResolved: true, importId: runId,
         })});
         setProgressText("Routing pledges, merges and the import record…");
         const sem = await apiFetch("/donors/import-semantics", { method: "POST", body: JSON.stringify({
@@ -318,7 +365,7 @@ export function WorkbookImport({ workbook, fileName, hasExistingDonors, onClose,
           fileStats: submission.fileStats,
         })}).catch(e => ({ error: e.message }));
         setResult({ ...res, semantics: sem });
-        await recordRun(res, sem);
+        await recordRun(res, sem, runId);
       }
       setTiming(t => ({ ...(t || {}), write: (Date.now() - tWrite0) / 1000 }));
       setStep("result");   // the Done button hands control back (onImported closes the modal + reloads)

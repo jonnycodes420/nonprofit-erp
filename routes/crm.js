@@ -6300,6 +6300,135 @@ app.get("/imports/:id/move-report", requireAuth, wrap(async (req, res) => {
   });
 }));
 
+
+// The board's copy of the proof. Rendered from the SAME payload the screen
+// renders, so the two cannot disagree about a figure -- the rule the board
+// packet already follows. Every number keeps its defining sentence as a
+// footnote, because a treasurer reading this has no hover.
+async function renderMoveReportPdf({ report, org, imp, vendor }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    const INK = "#0f1a12", GREY = "#5a554f", BRASS = "#c9a84c", CREAM = "#f0ede6";
+    const PW = doc.page.width, L = 50, R = PW - 50;
+    const money = c => {
+      const n = Math.trunc(Number(c) || 0);
+      return (n < 0 ? "-$" : "$") + (Math.abs(n) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    const num = n => (Math.trunc(Number(n) || 0)).toLocaleString("en-US");
+    const cell = (l, f, h, matches, isMoney) => {
+      const y = doc.y;
+      doc.font("Helvetica").fontSize(10).fillColor(INK).text(l, L, y, { width: 240 });
+      doc.font("Helvetica").fontSize(10).fillColor(GREY)
+         .text(isMoney ? money(f) : num(f), L + 240, y, { width: 110, align: "right" });
+      doc.font(matches ? "Helvetica" : "Helvetica-Bold").fontSize(10).fillColor(matches ? INK : "#8a6d1f")
+         .text(isMoney ? money(h) : num(h), L + 355, y, { width: 110, align: "right" });
+      doc.y = y + 16;
+    };
+
+    doc.rect(0, 0, PW, 84).fill(INK);
+    doc.font("Helvetica").fontSize(9).fillColor(BRASS).text(String(org?.name || ""), L, 24);
+    doc.font("Helvetica-Bold").fontSize(19).fillColor(CREAM).text("Move Report", L, 40, { width: PW - 100 });
+    doc.font("Helvetica").fontSize(9).fillColor("#cfc9bd")
+       .text(vendor ? `Moving from ${vendor}` : "Proof that nothing was lost", L, 64);
+    doc.y = 108;
+
+    // The headline is the proof, so it leads the page too.
+    doc.font("Helvetica-Bold").fontSize(14).fillColor(INK)
+       .text(report.headline, L, doc.y, { width: R - L });
+    doc.moveDown(0.4);
+    doc.font("Helvetica").fontSize(9).fillColor(GREY)
+       .text(`${imp?.name || "This import"}${imp?.committedAt ? ` · imported ${String(imp.committedAt).slice(0, 10)}` : ""}${imp?.by ? ` by ${imp.by}` : ""}`,
+             L, doc.y, { width: R - L });
+    doc.moveDown(1);
+
+    const head = (t) => {
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(GREY).text(String(t).toUpperCase(), L, doc.y);
+      doc.y += 4;
+      doc.font("Helvetica").fontSize(8).fillColor(GREY)
+         .text("YOUR FILE", L + 240, doc.y - 14, { width: 110, align: "right" })
+         .text("IN STEWARD", L + 355, doc.y - 14, { width: 110, align: "right" });
+      doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#d4cfc6").lineWidth(0.7).stroke();
+      doc.y += 6;
+    };
+
+    head("Your file, and what Steward holds");
+    for (const l of report.lines) cell(l.label, l.file, l.held, l.matches, l.money);
+    if (report.byYear.length) {
+      doc.moveDown(0.8); head("Dollars by year");
+      for (const l of report.byYear) cell(l.label, l.file, l.held, l.matches, l.money);
+    }
+    if (report.topDonors.length) {
+      doc.moveDown(0.8); head(`Top ${report.topDonors.length} donors by what this move brought`);
+      for (const d of report.topDonors) cell(d.name, d.file, d.held, d.matches, true);
+    }
+    if (report.typed && report.typed.length) {
+      doc.moveDown(0.8); head("Compared against your old system's own totals");
+      for (const t of report.typed) cell(t.label, t.typedValue, t.held, t.matches, t.money);
+    }
+    if (report.differences.length || report.mismatchedDonors.length) {
+      doc.moveDown(0.8);
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(GREY).text("WHAT DIFFERS, EXACTLY", L, doc.y);
+      doc.y += 6;
+      for (const d of report.differences) {
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(
+          `${d.label}: your file says ${d.money ? money(d.file) : num(d.file)}, Steward holds ${d.money ? money(d.held) : num(d.held)}.`,
+          L, doc.y, { width: R - L });
+        doc.y += 3;
+      }
+      for (const d of report.mismatchedDonors) {
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(
+          `${d.name}: your file says ${money(d.file)}, Steward holds ${money(d.held)}.`, L, doc.y, { width: R - L });
+        doc.y += 3;
+      }
+    }
+
+    // Every number's sentence, as footnotes: a treasurer reading paper has
+    // no hover, and a figure without its definition is not evidence.
+    doc.moveDown(1.2);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(GREY).text("WHAT EACH FIGURE MEANS", L, doc.y);
+    doc.y += 5;
+    for (const l of report.lines) {
+      doc.font("Helvetica").fontSize(7.5).fillColor(GREY)
+         .text(`${l.label} — ${l.sentence}`, L, doc.y, { width: R - L });
+      doc.y += 2;
+    }
+    doc.moveDown(0.6);
+    doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(GREY).text(
+      "The left column is your file's own figures, recorded when it was imported. The right column is read from Steward now. Nothing here was typed by us.",
+      L, doc.y, { width: R - L });
+
+    doc.end();
+  });
+}
+
+app.get("/imports/:id/move-report/pdf", requireAuth, wrap(async (req, res) => {
+  const M = await moveMod();
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "import not found" });
+  const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+  const file = summary.moveFile || null;
+  if (!file) return res.status(409).json({ error: "no_move_report",
+    message: "This import ran before Steward started keeping the file's own figures, so there is no Move Report to print." });
+  const held = await moveHeldFacts(orgId, r.id);
+  const typed = (r.old_system_gifts != null || r.old_system_cents != null)
+    ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
+  const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
+  const report = M.buildMoveReport({ file, held, typed, vendor });
+  const org = await orgRow(orgId);
+  const pdf = await renderMoveReportPdf({ report, org, vendor, imp: {
+    name: r.name, committedAt: r.committed_at, by: r.actor_user_name || null } });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="move-report-${r.id}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.end(pdf);
+}));
+
 // The org's own totals, from the system they are leaving. A person's figure
 // typed from memory is never folded into the headline -- it gets its own
 // column -- so this stores it and nothing else.

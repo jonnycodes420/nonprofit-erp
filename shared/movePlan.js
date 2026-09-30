@@ -413,6 +413,17 @@ function differenceSentence(file, held) {
   return `That is ${bits.join(" and ")}. Every row that differs is listed below.`;
 }
 
+// A run id, minted by the importer BEFORE the write so the rows it creates
+// can carry it. Shape-checked by both server routes; `crypto.randomUUID` where
+// it exists, and a plain fallback where it does not (an older Safari, or a
+// non-secure origin, where randomUUID is simply absent).
+export function newRunId() {
+  const raw = (typeof crypto !== "undefined" && crypto.randomUUID)
+    ? crypto.randomUUID().replace(/-/g, "")
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+  return "imp_" + raw.slice(0, 24);
+}
+
 // ── PART 4 · SINCE LAST TIME ───────────────────────────────────────────────
 //
 // A re-import's own small report. It reads the same stored facts, so it
