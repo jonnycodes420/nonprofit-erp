@@ -1246,11 +1246,13 @@ export function assessAggregateCollapse(rows = [], emailCol = "", nameCol = "") 
 }
 
 // A short, honest one-line description for the detection banner.
+// FIX-10 E — the prod walk read these four off the live import screen. They are
+// the import copy the em dash rule names, and every one of them carried one.
 export function shapeLabel(shape) {
-  if (shape === "transaction") return "individual gifts — we'll build donors + their giving history";
-  if (shape === "wide")        return "year-column giving — we'll build donors + a gift per year";
-  if (shape === "unknown")     return "we can't tell how this file is shaped — choose below before importing";
-  return "one row per donor — we'll import donors and their totals";
+  if (shape === "transaction") return "individual gifts. We'll build donors and their giving history";
+  if (shape === "wide")        return "year-column giving. We'll build donors and a gift per year";
+  if (shape === "unknown")     return "we can't tell how this file is shaped. Choose below before importing";
+  return "one row per donor. We'll import donors and their totals";
 }
 
 // ── "Import both" — a multi-sheet workbook that carries a Donors sheet AND a
