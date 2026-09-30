@@ -112,11 +112,16 @@ export default function LoginPage() {
         <Link to="/" style={{ textDecoration: "none", display: "flex", alignItems: "center" }}>
           <span style={{ fontFamily: "'DM Serif Display',Georgia,serif", fontWeight: 400, fontSize: 21, color: T.ink, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
-        {/* BUILD-87 F.2 — Steward is invitation-only (BUILD-39). "Start free"
-            pointed at a self-serve signup that no longer exists; the honest
-            door is the invitation request. */}
-        <Link to="/invitation" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
-          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Request an invitation</span>
+        {/* FIX-10 F — SIGNUP IS OPEN, AND THIS LINK STILL SAID IT WAS NOT.
+            BUILD-87 F.2 pointed it at the invitation request because self-serve
+            signup did not exist. BUILD-90 built it: /signup mints a close link,
+            hands over the same Checkout, the same thirty days from signing and
+            the same two-click cancel. Sending somebody who wants an account to
+            a form that waits for a reply was the last invitation-only door left
+            in the product. /invitation stays, for somebody who wants to talk
+            first, and its own page offers this door too. */}
+        <Link to="/signup" style={{ fontSize: 14, color: T.ink2, textDecoration: "none" }}>
+          No account? <span style={{ color: T.forest, fontWeight: 600 }}>Start 30 days free</span>
         </Link>
       </nav>
 

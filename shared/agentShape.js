@@ -835,7 +835,9 @@ export function volunteerSteps(person, news, { instruction = "", welcome = null 
 export const DRAFTING_WHERE = "Agent → Guardrails → Drafting";
 export const DRAFTING_CAN_NOW = "Without drafting, Steward still opens and builds reports, finds people, counts, explains a number, and prepares a gift you tell it about for you to confirm.";
 export const DRAFTING_ADDS = "Drafting adds plans that draft thank-yous, notes and follow-ups from your records, through Anthropic. Nothing is sent or recorded until you say so.";
-export const KEY_MISSING_SENTENCE = "Drafting is not set up on this server: ANTHROPIC_API_KEY is not set. Reports, finding people and gifts you tell it about still work.";
+// FIX-10 D — this sentence used to name the Railway variable. Nobody reading
+// the Agent room can set it, and the room's own job is to say what still works.
+export const KEY_MISSING_SENTENCE = "Drafting isn't available yet. We'll let you know when it is. Reports, finding people and gifts you tell it about still work.";
 export function namesInSentence(names = []) {
   const n = (names || []).filter(Boolean);
   if (n.length <= 1) return n[0] || "";

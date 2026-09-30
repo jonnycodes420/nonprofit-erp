@@ -107,7 +107,7 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
           <button data-testid="move-have-file" onClick={() => onPicked && onPicked(picked, howTo)}
             style={{ background: T.greenDk, color: "#fff", border: "none", borderRadius: 9,
                      padding: "11px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-            I have my file — continue
+            Continue
           </button>
           <button data-testid="move-change-source" onClick={() => setPicked(null)}
             style={{ background: T.bg2, color: T.ink2, border: "none", borderRadius: 9,
@@ -144,7 +144,7 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
         <button data-testid="move-skip" onClick={onSkip}
           style={{ marginTop: 14, background: "none", border: "none", color: T.ink3,
                    fontSize: 12.5, textDecoration: "underline", cursor: "pointer", padding: 0 }}>
-          Skip this — I already have my file ready
+          Skip this, I already have my file ready
         </button>
       )}
     </div>
@@ -163,7 +163,7 @@ export function MoveHowTo({ howTo, printable = true }) {
     if (!w) return;
     const esc = s => String(s == null ? "" : s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
     w.document.write(`<!doctype html><html><head><meta charset="utf-8">
-      <title>Getting your file out of ${esc(howTo.label)}</title>
+      <title>${esc(howTo.title || ("Getting your file out of " + howTo.label))}</title>
       <style>
         body{font:14px/1.6 -apple-system,Segoe UI,Helvetica,Arial,sans-serif;color:#0f1a12;max-width:640px;margin:40px auto;padding:0 20px}
         h1{font-size:20px;margin:0 0 4px} .sub{color:#5a554f;font-size:13px;margin-bottom:22px}
@@ -171,7 +171,7 @@ export function MoveHowTo({ howTo, printable = true }) {
         ol,ul{padding-left:22px;margin:0} li{margin-bottom:7px}
         .cols{font-size:13px;color:#2d2d2d} .note{border-left:3px solid #c9a84c;padding:8px 12px;background:#f6eccf;font-size:13px}
       </style></head><body>
-      <h1>Getting your file out of ${esc(howTo.label)}</h1>
+      <h1>${esc(howTo.title || ("Getting your file out of " + howTo.label))}</h1>
       <div class="sub">${howTo.files === 2 ? "This takes two files, exported one after the other." : "One file is all it takes."}</div>
       <h2>What to do</h2><ol>${howTo.steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>
       ${(howTo.columnGroups || []).length
@@ -188,8 +188,10 @@ export function MoveHowTo({ howTo, printable = true }) {
 
   return (
     <div data-testid="move-howto">
+      {/* FIX-10 E — the page's own title, from shared/movePlan.js, because
+          eKYROS's page is about getting her DONORS out and not "your file". */}
       <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 2 }}>
-        Getting your file out of {howTo.label}
+        {howTo.title || `Getting your file out of ${howTo.label}`}
       </div>
       <div style={{ fontSize: 12.5, color: T.ink3, marginBottom: 14 }}>
         {howTo.files === 2

@@ -806,7 +806,12 @@ app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
 // Start setup: a new secret, sealed as PENDING until a code proves the app has it.
 app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
   const { seal, credentialsConfigured } = await import("../shared/secretBox.js");
-  if (!credentialsConfigured()) return res.status(503).json({ error: "Two-step sign-in is not available on this server yet (STEWARD_CREDENTIAL_KEY is not set)." });
+  // FIX-10 D — a customer never reads a variable name. The reason is in the
+  // server log, where somebody can act on it.
+  if (!credentialsConfigured()) {
+    console.error("[mfa] setup refused: no credential key is configured on this server");
+    return res.status(503).json({ error: "Two-step sign-in isn't available yet. We'll let you know when it is." });
+  }
   const secret = TOTP.newSecret();
   await run(`UPDATE users SET mfa_pending_sealed=? WHERE id=?`, [seal(secret, { aad: "mfa:" + req.user.orgId + ":" + req.user.userId }), req.user.userId]);
   res.json({ secret, otpauthUrl: TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId }),
@@ -6967,7 +6972,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // Validate all provided donorIds belong to this org
   const donorIds = [...new Set(gifts.map(g => g.donorId).filter(Boolean))];
   if (!donorIds.length)
-    return res.status(400).json({ error: "All gifts must have a donorId" });
+    return res.status(400).json({ error: "Every gift needs the donor it belongs to" });
 
   const orgDonors = await query(
     "SELECT id FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL",
@@ -18364,8 +18369,11 @@ app.post("/note-reminders/:id/dismiss", requireAuth, wrap(async (req, res) => {
 // to a stub.
 app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   const { donorId, audioBase64, mimeType } = req.body;
-  if (!donorId || !audioBase64) return res.status(400).json({ error: "donorId and audioBase64 required" });
-  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "Voice transcription is not configured (missing OPENAI_API_KEY)." });
+  if (!donorId || !audioBase64) return res.status(400).json({ error: "A donor and a recording are both needed." });
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("[voice-memo] transcription refused: no transcription key is configured on this server");
+    return res.status(503).json({ error: "Voice notes aren't available yet. We'll let you know when they are." });
+  }
 
   const donorRows = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
   if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });

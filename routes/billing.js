@@ -428,14 +428,18 @@ app.post("/auth/invite", requireAuth, requireAdmin, wrap(async (req, res) => {
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [req.user.orgId]);
   if (orgForLimit.length) {
     const seatCheck = await checkPlanLimit(orgForLimit[0], "seats");
-    if (!seatCheck.isTrial && seatCheck.limit !== 999999999) {
+    // FIX-10 F — "unlimited" is one answer, in shared/seats.js. The literal
+    // 999999999 was spelled here as well as in PLAN_LIMITS, so the two could
+    // drift and a plan that sells unlimited users could start counting seats.
+    const { seatsAreUnlimited, SEAT_REFUSED_SENTENCE } = await import("../shared/seats.js");
+    if (!seatCheck.isTrial && !seatsAreUnlimited(seatCheck.limit)) {
       const pendingRow = await query(
         "SELECT COUNT(*) AS c FROM invites WHERE org_id=? AND accepted_at IS NULL AND expires_at > NOW()",
         [req.user.orgId]
       );
       const totalWithPending = seatCheck.current + Number(pendingRow[0]?.c || 0);
       if (totalWithPending >= seatCheck.limit) {
-        return res.status(403).json({ error: "seat_limit", message: "You've reached your seat limit.", current: totalWithPending, limit: seatCheck.limit, plan: orgForLimit[0].plan, isTrial: false });
+        return res.status(403).json({ error: "seat_limit", message: SEAT_REFUSED_SENTENCE, current: totalWithPending, limit: seatCheck.limit, plan: orgForLimit[0].plan, isTrial: false });
       }
     }
   }

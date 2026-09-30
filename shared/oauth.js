@@ -64,7 +64,10 @@ export const PROVIDERS = {
     // not in the token response. It is stored with the tokens because every
     // later call needs it.
     realmParam: "realmId",
-    sandboxNote: "Sandbox until Intuit's review is finished. INTUIT_API_BASE picks the environment.",
+    // FIX-10 D — the note a CUSTOMER reads. It used to name the Railway
+    // variable that picks the environment, which is a sentence about our
+    // deployment in the middle of her Connections screen.
+    sandboxNote: "Sandbox until Intuit's review is finished.",
   },
   square: {
     key: "square", label: "Square", kind: "source", vendor: "square",
@@ -92,8 +95,31 @@ export const isProvider = k => PROVIDER_KEYS.includes(k);
 // The key the REST of the product stores for this connection.
 export const vendorKeyOf = k => PROVIDERS[k]?.vendor || k;
 
-export const PAYPAL_WAITING =
-  "PayPal's one-click connection is waiting on their partner programme. Until it is approved you connect PayPal with your own client id and secret, which works the same way, and Steward already listens for PayPal's webhooks.";
+// FIX-10 D — THE ACTION LEADS; THE REASON IS BEHIND A DISCLOSURE. The one
+// sentence PayPal's card used to say opened with somebody else's partner
+// programme and buried what the reader can actually do today. Those are two
+// different sentences with two different jobs, so they are two exports: the
+// card says PAYPAL_ACTION, and PAYPAL_WHY is what a "Why?" reveals.
+export const PAYPAL_ACTION =
+  "Connect with your PayPal client ID and secret.";
+export const PAYPAL_WHY =
+  "PayPal's one-click connection is waiting on their partner programme. Connecting with your own client ID and secret works the same way, and Steward already listens for PayPal's webhooks.";
+// Kept as the two sentences joined, for anything that wants one string.
+export const PAYPAL_WAITING = `${PAYPAL_ACTION} ${PAYPAL_WHY}`;
+
+// FIX-10 D — WHAT A CUSTOMER READS WHEN A PROVIDER HAS NO APP CREDENTIALS ON
+// THIS DEPLOYMENT. It used to be the list of Railway variable names:
+//
+//   "Steward cannot open Square's consent screen yet: SQUARE_APP_ID,
+//    SQUARE_APP_SECRET, SQUARE_REDIRECT_URI are not set."
+//
+// Nothing in that sentence is hers to act on, and the three words in the
+// middle are our deployment's internals on her screen. The variable names are
+// still reported, in `missing`, for the admin check and the ops report; the
+// sentence a customer reads says only what is true for her. One function, so
+// a fifth provider cannot grow a fifth wording.
+export const providerUnavailableSentence = label =>
+  `${label} isn't available yet. We'll let you know when it is.`;
 
 // Every Railway variable this module expects a provider to have, named once so
 // the report and the admin check read the same list rather than two lists that
@@ -205,6 +231,7 @@ const unb64url = s => {
   return out;
 };
 
-export default { PROVIDERS, PROVIDER_KEYS, isProvider, vendorKeyOf, ENV_VARS, PAYPAL_WAITING,
+export default { PROVIDERS, PROVIDER_KEYS, isProvider, vendorKeyOf, ENV_VARS,
+                 PAYPAL_WAITING, PAYPAL_ACTION, PAYPAL_WHY, providerUnavailableSentence,
                  encodeState, decodeState, authorizeUrl, tokenRequest, readTokens,
                  needsRefresh, REFRESH_MARGIN_SECONDS };

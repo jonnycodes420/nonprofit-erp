@@ -7814,7 +7814,16 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   return out;
 }
 
-// 999999999 used for "unlimited" — Infinity serializes to null in JSON
+// FIX-10 F — UNLIMITED IS ONE NUMBER, AND shared/seats.js IS WHERE IT LIVES.
+// This file is CommonJS and shared/ is ESM, so the value is written once here
+// and CHECKED against the shared module at boot: a drift is a loud log rather
+// than a silent cap on a plan that sells unlimited users.
+const SEATS_UNLIMITED = 999999999;
+import("./shared/seats.js").then(m => {
+  if (m.SEATS_UNLIMITED !== SEATS_UNLIMITED)
+    console.error(`[plans] SEATS_UNLIMITED drift: server.js ${SEATS_UNLIMITED} vs shared/seats.js ${m.SEATS_UNLIMITED}`);
+}).catch(() => {});
+// SEATS_UNLIMITED used for "unlimited" — Infinity serializes to null in JSON
 // trial gets Team limits: limits only engage once trial converts to paid.
 // Core/Team bands (BUILD-24) are INFORMATIONAL for launch — the numbers shown
 // on the pricing page — but NOT hard-enforced (see SOFT_BAND_PLANS below).
@@ -7826,7 +7835,7 @@ const PLAN_LIMITS = {
   founding: { seats: 3,         records: 5000,      extraSeatPrice: null },
   seed:     { seats: 1,         records: 1000,      extraSeatPrice: null },
   growth:   { seats: 5,         records: 10000,     extraSeatPrice: 25   },
-  impact:   { seats: 999999999, records: 999999999, extraSeatPrice: null },
+  impact:   { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null },
   trial:    { seats: 10,        records: 25000,     extraSeatPrice: null },
   portal:   { seats: 3,         records: 25000,     extraSeatPrice: null }, // BUILD-46 network tier (soft)
 };
@@ -7838,9 +7847,9 @@ const PLAN_LIMITS = {
 // the notice.
 for (const p of require("./closeLink").TIER_CLOSE_PLANS) {
   const tier = PRICING.tierById(p.tierId);
-  PLAN_LIMITS[p.id] = { seats: 999999999, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
+  PLAN_LIMITS[p.id] = { seats: SEATS_UNLIMITED, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
 }
-PLAN_LIMITS.internal_test = { seats: 999999999, records: 999999999, extraSeatPrice: null };
+PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null };
 
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
