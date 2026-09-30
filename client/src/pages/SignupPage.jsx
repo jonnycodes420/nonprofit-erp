@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+// FIX-10 F — the users answer, from shared/seats.js.
+import { USERS_PHRASE } from "../../../shared/seats";
 import { Link } from "react-router-dom";
 import { apiFetch } from "../api";
 // The same catalogue the server prices against (pricing.js says why JSON).
@@ -193,7 +195,7 @@ export default function SignupPage() {
                   </span>
                 </div>
                 <div style={{ fontSize: 12.5, color: SAGE_GREY, marginTop: 6, lineHeight: 1.5 }}>
-                  Everything is included and there is no limit on users. Nothing is charged for thirty days.
+                  Everything is included and there is {USERS_PHRASE}. Nothing is charged for thirty days.
                 </div>
               </div>
             )}
