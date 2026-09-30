@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { T, activeMark, Pill, SectionLabel, PageTitle, SectionTabs, fmt, fmtFull, quietPhrase, Modal } from "./shared";
+import { MoveCard, MoveReport } from "./MoveIn";
 import { photoReport } from "../../../shared/photoMatch";
 import { YourWords } from "./YourWords";
 import { DonorImport } from "./Donors";
@@ -1277,6 +1278,7 @@ function ImportsHistory(){
   const [rows,setRows]=useState(null);
   const [err,setErr]=useState("");
   const [open,setOpen]=useState(null);
+  const [moveReportId,setMoveReportId]=useState(null);   // TRANS-1 Part 3
   useEffect(()=>{
     apiFetch("/imports").then(r=>setRows(Array.isArray(r.imports)?r.imports:[]))
       .catch(e=>{setRows([]);setErr(errorMessage(e,"Could not load your import history."));});
@@ -1291,6 +1293,7 @@ function ImportsHistory(){
   return (
     <div style={{background:T.bgCard,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
       <SectionLabel>Imports</SectionLabel>
+      {moveReportId&&<MoveReport importId={moveReportId} onClose={()=>setMoveReportId(null)}/>}
       <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.6,maxWidth:560}}>
         Every file you have loaded, newest first. Open one to see the receipt exactly as it read when it committed. This is a record, not a rollback — undoing an import is not part of this release.
       </div>
@@ -1320,6 +1323,20 @@ function ImportsHistory(){
                     {(r.notices||[]).map((n,i)=>(
                       <div key={i} data-testid="imports-notice" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>{n}</div>
                     ))}
+                    {/* TRANS-1 — a named import says where the file came from,
+                        and opens its Move Report where it has one. */}
+                    {r.migrationSource&&(
+                      <div data-testid="imports-source" style={{fontSize:11.5,color:T.ink3,marginTop:2}}>
+                        From {r.migrationSource}
+                      </div>
+                    )}
+                    {r.hasMoveReport&&(
+                      <button onClick={()=>setMoveReportId(r.id)} data-testid="imports-move-report"
+                        style={{background:"none",border:"none",padding:0,marginTop:3,font:"inherit",
+                                fontSize:11.5,color:T.greenDk,textDecoration:"underline",cursor:"pointer"}}>
+                        Move Report
+                      </button>
+                    )}
                   </td>
                   <td style={td}>{r.committedOn||""}</td>
                   <td style={td}>{r.by||"—"}</td>
@@ -2897,7 +2914,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── Your Data ─────────────────────────────────────────────────────── */}
 
-      {section==="imports"&&<><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
+      {section==="imports"&&<><MoveCard isReadOnly={isReadOnly}/><AddPhotos isReadOnly={isReadOnly}/><ImportsHistory/></>}
 
       {section==="data"&&<>
       <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"24px 28px"}}>

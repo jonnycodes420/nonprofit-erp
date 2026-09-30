@@ -139,6 +139,7 @@ CORE=(
   thread2a-no-send
   fix6-approval
   import-reconciliation
+  trans1-reimport
   webhook-manifest
   webhook-ordering
   stripe-disputes

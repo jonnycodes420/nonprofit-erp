@@ -440,6 +440,12 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // and the rows cannot disagree, and it disappears the moment they are gone.
   const [sampleStatus,setSampleStatus]=useState(null);
   useEffect(()=>{apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});},[]);
+  // TRANS-1 Part 5 — THE FIRST MORNING. The moment the first import commits,
+  // Home is her own donors, and one line above them says so. The sentence is
+  // built on the server (shared/movePlan.js) from what the move has actually
+  // brought, so Home cannot claim "this is your file" before there is one.
+  const [moveLine,setMoveLine]=useState(null);
+  useEffect(()=>{apiFetch("/move").then(r=>setMoveLine((r&&r.move&&r.move.homeLine)||null)).catch(()=>{});},[]);
 
   // ── BUILD-81 — THE THREAD, the first section of the work column ──────────
   const [threadsData,setThreadsData]=useState(null);
@@ -2005,6 +2011,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
             <div data-testid="home-sample-line"
               style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
               You're looking at sample data. Your own donors arrive when Jonathan loads your file.
+            </div>
+          )}
+          {/* TRANS-1 Part 5 — ONE line, and only while the move is running.
+              Never alongside the sample-data line: they answer the same
+              question and two answers is worse than either. */}
+          {surface==="home"&&!sampleStatus?.hasSampleData&&moveLine&&(
+            <div data-testid="home-move-line"
+              style={{fontSize:13.5,color:T.ink2,lineHeight:1.5,padding:"0 2px"}}>
+              {moveLine}
             </div>
           )}
           <div id="dash-thread" style={{...cardWrap,scrollMarginTop:64}}>

@@ -3256,6 +3256,20 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
 
   const orgId = req.user.orgId;
 
+  // ── TRANS-1 Part 3 — THE RUN ID EXISTS BEFORE THE WRITE ─────────────────
+  // `import_id` was a deposit-only column: the file importer never stamped
+  // it, because the `imports` row is recorded by the client AFTER the write,
+  // so the id did not exist yet. That is also why the Move Report could not
+  // scope "what Steward holds from THIS file" to anything.
+  //
+  // The client now mints the run id first and passes it here and to
+  // POST /imports, so one file's gifts and the people it created carry it.
+  // A chunked import passes the SAME id for every chunk, which is what makes
+  // the report whole rather than per-chunk. An absent or malformed id leaves
+  // the column NULL and behaves exactly as before.
+  const runId = /^imp_[A-Za-z0-9_-]{4,40}$/.test(String(req.body.importId || ""))
+    ? String(req.body.importId) : null;
+
   // Plan limit check (same as /donors/import)
   const orgForLimit = await query("SELECT * FROM orgs WHERE id=?", [orgId]);
   if (orgForLimit.length) {
@@ -3291,6 +3305,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // Hoisted above the transaction: the post-commit recalcs and the response
   // below read these, and they must survive the callback's scope.
   let externalIdDupes = 0, externalIdCollisionCount = 0;
+  // TRANS-1 Part 4 — how each person was matched, so a re-import's own small
+  // report can say it. Counted here rather than derived, because "matched by
+  // the old system's id" is the claim the move is sold on.
+  let matchedByExternalId = 0, matchedByEmail = 0;
+  const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
@@ -3410,6 +3429,27 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
     existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name) });
   }
+  // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
+  // An import used to match a person by email and nothing else, while
+  // `external_donor_id` was written on the way in and never read again. That
+  // is the whole re-import story: a director who fixes a typo'd address in
+  // DonorPerfect and exports again got a SECOND record, because the only key
+  // Steward matched on was the one she had just changed. Her own system's id
+  // is the stable key and it is now the first one tried — email, then name,
+  // stay exactly as they were behind it.
+  const existingByExtId = new Map();
+  const extIdRows = await queryTx(txc,
+    `SELECT id, external_donor_id, external_donor_ids FROM donors
+       WHERE org_id=? AND deleted_at IS NULL
+         AND (external_donor_id IS NOT NULL OR external_donor_ids IS NOT NULL)
+       ORDER BY created_at, id`, [orgId]);
+  for (const r of extIdRows) {
+    const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
+    for (const one of ids) {
+      const k = donorIdKey(one);
+      if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
+    }
+  }
   const existingMatch = (emailLower, name) => {
     const list = existingHouseholds.get(emailLower);
     if (!list || !list.length) return undefined;
@@ -3432,26 +3472,50 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // address book — so it is skipped; matching against donors ALREADY on file
   // still applies.
   const identityResolved = req.body.identityResolved === true;
+  const seenExtIds = new Map();   // within-file source id → the id we assigned it
+  // One place decides that a row is somebody we already hold, and in what
+  // order the keys are tried. TRANS-1 Part 4 put the source id in front.
+  const claimMatch = (idx, d, priorId, how) => {
+    duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
+    if (how === "externalId") matchedByExternalId++; else if (how === "email") matchedByEmail++;
+    // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
+    // only: a re-run never clobbers what is already on the record.
+    const cfv = donorCfById.get(idx);
+    if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
+    // A person matched by email who ALSO carries a source id teaches Steward
+    // that id, so the NEXT export matches on the stable key even if she
+    // corrects the address in the old system first. Fill-missing only, and
+    // deliberately NOT added to `existingByExtId`: within this one file the
+    // match order stays exactly what it was, so a second row carrying the
+    // same id but a different person cannot be pulled onto this record by an
+    // id we only just inferred.
+    const k = donorIdKey(d.externalDonorId);
+    if (how !== "externalId" && k && !existingByExtId.has(k)) {
+      matchedExtIdFills.push({ donorId: priorId, externalDonorId: String(d.externalDonorId) });
+    }
+  };
   donors.forEach((d, idx) => {
     if (!d.name || !String(d.name).trim()) { namelessRows++; return; }
     const emailLower = (d.email || "").toLowerCase().trim();
+    // 1. The old system's own id. It is the key that does not change when a
+    //    fundraiser fixes a name or an address, so it is tried first, and it
+    //    applies whether or not the client resolved identity: an id is an id.
+    const extKey = donorIdKey(d.externalDonorId);
+    if (extKey) {
+      const byId = existingByExtId.get(extKey) || (identityResolved ? undefined : seenExtIds.get(extKey));
+      if (byId) { claimMatch(idx, d, byId, "externalId"); return; }
+    }
     if (emailLower) {
-      // Already on file, or already claimed earlier in THIS file → route this
+      // 2. Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
       const priorId = (identityResolved ? existingMatch(emailLower, d.name) : existingByEmail.get(emailLower))
         || (identityResolved ? undefined : seenEmails.get(emailLower));
-      if (priorId) {
-        duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
-        // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
-        // only: a re-run never clobbers what is already on the record.
-        const cfv = donorCfById.get(idx);
-        if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
-        return;
-      }
+      if (priorId) { claimMatch(idx, d, priorId, "email"); return; }
     }
     const id = importId("d_");
     if (emailLower && !identityResolved) seenEmails.set(emailLower, id);
+    if (extKey) seenExtIds.set(extKey, id);
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id, _cfValidated: donorCfById.get(idx) || null });
     if (d._stageExplicit) explicitStageIds.push(id);
@@ -3517,9 +3581,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         // donors and quietly moved every giving total. Same rule as the
         // donor-only path: nothing stated ⇒ a donor, which is what every
         // pre-BUILD-94 file meant.
-        JSON.stringify(PT.normalizeTypes(d.personTypes === undefined ? ["donor"] : d.personTypes))
+        JSON.stringify(PT.normalizeTypes(d.personTypes === undefined ? ["donor"] : d.personTypes)),
+        // TRANS-1 Part 3 — the run that created this person, so the Move
+        // Report can count the people one file brought.
+        runId
       );
-      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+      return "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     });
     // SAVEPOINT, not a nested transaction: we are already inside the request's
     // one transaction, so a failed batch must be rolled back to a point rather
@@ -3533,7 +3600,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
           imported_sustainer,imported_sustainer_amount,imported_sustainer_last_gift,custom_fields,external_donor_id,kind,contact_name,
           middle_name,suffix,salutation,spouse_name,email2,mobile,address2,country,
           donor_type,board_member,external_household_id,external_donor_ids,first_gift_date,suggested_stage,
-          person_types)
+          person_types,created_import_id)
        VALUES ${tuples.join(",")}`,
       params
     ));
@@ -3560,6 +3627,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     await runTx(txc,
       `UPDATE donors SET custom_fields = ?::jsonb || COALESCE(custom_fields, '{}'::jsonb) WHERE id=? AND org_id=?`,
       [JSON.stringify(m.values), m.donorId, orgId]);
+  }
+
+  // TRANS-1 Part 4 — teach a matched record the source id it arrived with, so
+  // the NEXT export matches on the key that does not change. Fill-missing
+  // only: `external_donor_id IS NULL` is in the WHERE, so a record that
+  // already answers to an id is never repointed at another one.
+  for (const f of matchedExtIdFills) {
+    await runTx(txc,
+      `UPDATE donors SET external_donor_id = ? WHERE id=? AND org_id=? AND external_donor_id IS NULL`,
+      [f.externalDonorId, f.donorId, orgId]);
   }
 
   // ── Build gift+interaction records ──
@@ -3792,8 +3869,8 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
         (g.fund && fundIdByKey.get(fundKey(g.fund))) || null,
         g.notes, g.externalId || null, actor(req).id, actor(req).name,
         g.customFields && Object.keys(g.customFields).length ? JSON.stringify(g.customFields) : null,
-        g.paymentMethod || null);
-      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+        g.paymentMethod || null, runId);
+      giftTuples.push("(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
       affectedDonorIds.add(g.donorId);
     });
     let keptCount = 0, ftCount = 0;
@@ -3807,7 +3884,7 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
       // landed so interactions + ledger stamps are only written for those
       // (a skipped gift must not orphan an interaction or a ledger row).
       const kept = await queryTx(txc,
-        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method)
+        `INSERT INTO gifts (id,org_id,donor_id,amount,date,type,campaign,fund_id,notes,external_id,created_by,created_by_name,custom_fields,payment_method,import_id)
          VALUES ${giftTuples.join(",")}
          ON CONFLICT (org_id, external_id) WHERE external_id IS NOT NULL DO NOTHING
          RETURNING id`,
@@ -4087,6 +4164,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              // gifts actually landed. `duplicates` still counts donors NOT
              // created; `donorsMatched` says what became of them.
              donorsMatched: matchedIds.size, namelessRows,
+             // TRANS-1 Part 4 — HOW they were matched. A re-import's small
+             // report leads on "matched by your system's own id", because
+             // that is the claim the move is sold on, so it is counted at the
+             // point of matching rather than guessed afterwards.
+             matchedByExternalId, matchedByEmail,
+             externalIdsLearned: matchedExtIdFills.length,
              // The equations, for the summary screen. The user sees the
              // arithmetic, not a reassurance that it worked.
              reconciliation: ledger.report(),
@@ -5824,6 +5907,13 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const taken = (await query("SELECT name FROM imports WHERE org_id=?", [orgId])).map(r => r.name);
   const name = uniqueImportName(base, taken);
   const shape = IMPORT_SHAPES.has(String(b.shape || "")) ? String(b.shape) : "unknown";
+  // TRANS-1 — which system this file came out of. Stored on the run so a
+  // named import says where it came from, and the Move Report knows which
+  // vendor to name. Validated against the tile list: an unknown string is
+  // dropped rather than stored, because it would print as a vendor name.
+  const { moveTile: moveTileFor } = await import("../shared/movePlan.js");
+  const migrationSource = moveTileFor(String(b.migrationSource || "").trim())
+    ? String(b.migrationSource).trim() : null;
   const int = v => { const n = Math.trunc(Number(v)); return Number.isFinite(n) && n >= 0 ? n : 0; };
   const dol = v => money.toDollars(money.toCents(v) ?? 0);
   const started = b.startedAt && !isNaN(Date.parse(b.startedAt)) ? new Date(b.startedAt).toISOString() : null;
@@ -5834,16 +5924,25 @@ app.post("/imports", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const act = actor(req);
   const [me] = act.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [act.id, orgId]) : [];
   const actorName = (me && me.name) || act.name || null;
-  const id = importId("imp_");
+  // TRANS-1 Part 3 — the client mints the run id BEFORE the write so the
+  // gifts can carry it, then hands it back here. Validated to the same shape
+  // this route would have generated, and refused if the org already used it,
+  // so a replayed request cannot overwrite a recorded run.
+  let id = importId("imp_");
+  if (/^imp_[A-Za-z0-9_-]{4,40}$/.test(String(b.id || ""))) {
+    const taken = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [String(b.id), orgId]);
+    if (taken.length) return res.status(409).json({ error: "run_already_recorded", id: String(b.id) });
+    id = String(b.id);
+  }
   await run(
     `INSERT INTO imports (id, org_id, name, source_filename, shape, started_at, committed_at,
        rows_in, gifts_created, donors_created, donors_merged, rows_set_aside, rows_errored,
-       dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json)
-     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?,?,?,?,?,?,?,?)`,
+       dollars_in, dollars_created, actor_user_id, actor_user_name, summary_json, migration_source)
+     VALUES (?,?,?,?,?,?,NOW(),?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, orgId, name, sourceFilename, shape, started,
      int(b.rowsIn), int(b.giftsCreated), int(b.donorsCreated), int(b.donorsMerged),
      int(b.rowsSetAside), int(b.rowsErrored), dol(b.dollarsIn), dol(b.dollarsCreated),
-     act.id, actorName, JSON.stringify(summary)]);
+     act.id, actorName, JSON.stringify(summary), migrationSource]);
   const [row] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [id, orgId]);
   const findings = importFindings(row, summary);
   if (findings.length) console.error("[imports] run recorded WITH FINDINGS:", id, findings.join(" "));
@@ -5949,7 +6048,8 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
     `SELECT id, name, source_filename, shape,
             TO_CHAR(committed_at, 'YYYY-MM-DD') AS committed_on,
             committed_at, actor_user_name, rows_in, gifts_created, donors_created,
-            donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json
+            donors_merged, rows_set_aside, rows_errored, dollars_in, dollars_created, summary_json,
+            migration_source
        FROM imports WHERE org_id=? ORDER BY committed_at DESC, id DESC LIMIT 200`,
     [req.user.orgId]);
   res.json({
@@ -5964,6 +6064,12 @@ app.get("/imports", requireAuth, wrap(async (req, res) => {
         rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
         dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
         reconciled: findings.length === 0, findings, notices: importNotices(r),
+        // TRANS-1 — a named import says where the file came from, and whether
+        // it has a Move Report to open. `hasMoveReport` is the presence of the
+        // stored file facts, not a guess from the source name: a run recorded
+        // before this build has a source but nothing to compare.
+        migrationSource: r.migration_source || null,
+        hasMoveReport: !!(summary && summary.moveFile),
       };
     }),
   });
@@ -5984,9 +6090,408 @@ app.get("/imports/:id", requireAuth, wrap(async (req, res) => {
       rowsSetAside: Number(r.rows_set_aside) || 0, rowsErrored: Number(r.rows_errored) || 0,
       dollarsIn: Number(r.dollars_in) || 0, dollarsCreated: Number(r.dollars_created) || 0,
       reconciled: findings.length === 0, findings, notices: importNotices(r),
+      migrationSource: r.migration_source || null,
+      hasMoveReport: !!(summary && summary.moveFile),
       summary,
     },
   });
+}));
+
+
+// ══ TRANS-1 · THE MOVE ═════════════════════════════════════════════════════
+//
+// "Moving takes about a day. You keep your old system until you trust us, and
+// there is nothing new to learn." The objection demos close against is not the
+// product, it is the move, so these routes exist to make that sentence true
+// and provable.
+//
+// The pure layer is shared/movePlan.js. Nothing here computes a figure twice:
+// the FILE side of every comparison is read from the `imports` row that was
+// written at commit time (the BUILD-87 rule -- the file is gone, and a number
+// recomputed from the database is not evidence about the file), and the HELD
+// side is read from the database now, scoped to the move by `import_id`.
+const moveMod = () => import("../shared/movePlan.js");
+
+// The state, plus the count of runs, in one read. `imports` carrying
+// migration_source is what makes "3 imports" a fact rather than a guess.
+async function moveState(orgId) {
+  const [org] = await query(
+    `SELECT migration_source, migration_started_at, migration_completed_at,
+            migration_completed_by, migration_completed_by_name, migration_undo_until
+       FROM orgs WHERE id=?`, [orgId]);
+  if (!org) return null;
+  const runs = await query(
+    `SELECT id, name, committed_at, migration_source, gifts_created, donors_created, dollars_created
+       FROM imports
+      WHERE org_id=? AND reversed_at IS NULL AND migration_source IS NOT NULL
+      ORDER BY committed_at ASC`, [orgId]);
+  return {
+    source: org.migration_source || null,
+    startedAt: org.migration_started_at || null,
+    completedAt: org.migration_completed_at || null,
+    completedByName: org.migration_completed_by_name || null,
+    undoUntil: org.migration_undo_until || null,
+    imports: runs.length,
+    // TRANS-1 Part 5 — what the move has actually brought, so Home can say
+    // "this is your file" only once there is a file, and can tell her in one
+    // sentence when the file carried people but no giving history.
+    giftsImported: runs.reduce((a, r) => a + (Number(r.gifts_created) || 0), 0),
+    peopleImported: runs.reduce((a, r) => a + (Number(r.donors_created) || 0), 0),
+    runs: runs.map(r => ({
+      id: r.id, name: r.name, at: r.committed_at, source: r.migration_source,
+      gifts: Number(r.gifts_created) || 0, dollars: Number(r.dollars_created) || 0,
+    })),
+  };
+}
+
+// The Settings card, and what the import screen reads to know it is mid-move.
+app.get("/move", requireAuth, wrap(async (req, res) => {
+  const M = await moveMod();
+  const st = await moveState(req.user.orgId);
+  if (!st) return res.status(404).json({ error: "org not found" });
+  const undoOpen = M.moveUndoOpen(st.undoUntil, new Date());
+  res.json({
+    move: {
+      ...st,
+      label: st.source ? M.moveTileLabel(st.source) : null,
+      isPreset: st.source ? M.moveTileIsPreset(st.source) : false,
+      active: !!st.source && !st.completedAt,
+      undoOpen,
+      undoDays: M.MOVE_UNDO_DAYS,
+      homeLine: M.moveHomeLine({
+        active: !!st.source && !st.completedAt,
+        imports: st.imports, giftsImported: st.giftsImported, peopleImported: st.peopleImported,
+      }),
+    },
+  });
+}));
+
+// The tiles and their how-to pages, so the client's picker IS this list and
+// cannot drift from the presets behind it. Public to a signed-in user: it is
+// product copy, and onboarding reads it before an org has any data.
+app.get("/move/sources", requireAuth, wrap(async (req, res) => {
+  const M = await moveMod();
+  res.json({
+    tiles: M.MOVE_TILES.map(t => ({
+      key: t.key, label: M.moveTileLabel(t.key), sub: t.sub || null,
+      kind: t.kind, isPreset: M.moveTileIsPreset(t.key),
+    })),
+    howTo: Object.fromEntries(M.MOVE_TILE_KEYS.map(k => [k, M.moveHowTo(k)])),
+  });
+}));
+
+// Picking a tile. Idempotent, and it never moves `started_at` backwards or
+// forwards: the day she started is the day she started, and pressing a
+// different tile later corrects the source without rewriting that.
+app.post("/move/start", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const M = await moveMod();
+  const source = String(req.body?.source || "").trim();
+  if (!M.moveTile(source)) return res.status(400).json({ error: "unknown_source", message: "Pick one of the systems on the list." });
+  await run(
+    `UPDATE orgs SET migration_source=?,
+       migration_started_at = COALESCE(migration_started_at, NOW())
+     WHERE id=?`, [source, req.user.orgId]);
+  const st = await moveState(req.user.orgId);
+  res.json({ ok: true, move: { ...st, label: M.moveTileLabel(source), howTo: M.moveHowTo(source) } });
+}));
+
+// "We've moved." It ends the move: it stops prompting for re-imports, and it
+// is DATED. Nothing is deleted, and it can be undone for 30 days.
+app.post("/move/complete", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const M = await moveMod();
+  const st = await moveState(req.user.orgId);
+  if (!st || !st.source) return res.status(400).json({ error: "no_move", message: "There is no move to finish." });
+  if (st.completedAt) return res.status(409).json({ error: "already_complete", message: "This move is already finished." });
+  const a = actor(req);
+  const [me] = a.id ? await query("SELECT name FROM users WHERE id=? AND org_id=?", [a.id, req.user.orgId]) : [];
+  await run(
+    `UPDATE orgs SET migration_completed_at = NOW(),
+       migration_undo_until = NOW() + INTERVAL '${Number(M.MOVE_UNDO_DAYS)} days',
+       migration_completed_by = ?, migration_completed_by_name = ?
+     WHERE id=?`, [a.id || null, (me && me.name) || a.name || null, req.user.orgId]);
+  const after = await moveState(req.user.orgId);
+  res.json({ ok: true, move: { ...after, label: M.moveTileLabel(after.source), undoOpen: true, undoDays: M.MOVE_UNDO_DAYS } });
+}));
+
+// Undo, for 30 days. After that the button is simply history and this answers
+// 409 rather than quietly doing nothing.
+app.post("/move/undo", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const M = await moveMod();
+  const st = await moveState(req.user.orgId);
+  if (!st || !st.completedAt) return res.status(400).json({ error: "not_complete", message: "This move has not been finished." });
+  if (!M.moveUndoOpen(st.undoUntil, new Date()))
+    return res.status(409).json({ error: "undo_expired",
+      message: `The ${M.MOVE_UNDO_DAYS}-day window to undo this has passed. Nothing was deleted; your Move Reports are all still here.` });
+  await run(
+    `UPDATE orgs SET migration_completed_at = NULL, migration_undo_until = NULL,
+       migration_completed_by = NULL, migration_completed_by_name = NULL
+     WHERE id=?`, [req.user.orgId]);
+  const after = await moveState(req.user.orgId);
+  res.json({ ok: true, move: { ...after, label: after.source ? M.moveTileLabel(after.source) : null, undoOpen: false } });
+}));
+
+// ── THE MOVE REPORT ────────────────────────────────────────────────────────
+//
+// What Steward HOLDS from one import, in the same shape buildMoveFileFacts
+// produced for the file. Scoped by `import_id`, which is why the two columns
+// are comparable at all: both sides are counting the same run's rows.
+// THE HELD SIDE IS THE WHOLE MOVE, NOT ONE RUN.
+//
+// This scoped itself to a single `import_id`, and the screen it produced was
+// the opposite of the thing this page exists to do. A re-export is the org's
+// WHOLE file again, so the file side of the second report was 13 gifts and
+// $4,222.02 while the held side counted only the 5 rows that run happened to
+// create: the headline read "8 fewer gifts than your file and $3,124.84 less
+// than your file", and "People: your file says 6, Steward holds 0", about a
+// move in which precisely nothing had been lost.
+//
+// So the two sides are measured the same way: the file is everything the
+// export contained, and what Steward holds is everything the move has landed
+// up to and including this run. For a first import the two definitions are
+// identical; for a re-import this is the only one that is true. "Since last
+// time" stays per-run, because that genuinely is about one run.
+async function moveRunIds(orgId, imp) {
+  if (!imp.migration_source) return [imp.id];
+  // NO TIMESTAMP ARITHMETIC. This read `committed_at <= ?` with the run's own
+  // committed_at, and a run EXCLUDED ITSELF: Postgres keeps microseconds
+  // (…56.77548) and a JavaScript Date only holds milliseconds, so the value
+  // that came out of the row was a few microseconds earlier than the row by
+  // the time it went back in. The second Move Report then compared a 13-gift
+  // file against the 8 gifts of the FIRST run alone. The order is taken from
+  // the database and cut at this run by ID, which cannot round.
+  const rows = await query(
+    `SELECT id FROM imports
+      WHERE org_id=? AND migration_source=? AND reversed_at IS NULL
+      ORDER BY committed_at ASC, id ASC`, [orgId, imp.migration_source]);
+  const ids = [];
+  for (const r of rows) { ids.push(r.id); if (r.id === imp.id) break; }
+  return ids.includes(imp.id) ? ids : [imp.id];
+}
+
+async function moveHeldFacts(orgId, importId) {
+  const [g] = await query(
+    `SELECT COUNT(*)::int gifts, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
+       FROM gifts WHERE org_id=? AND import_id = ANY(?)`, [orgId, importId]);
+  const years = await query(
+    // `gifts.date` is TEXT in 'YYYY-MM-DD', so the year is LEFT(date,4) -- the
+    // same seam every other report here groups by. EXTRACT() does not apply to
+    // a text column and answers 42883.
+    `SELECT LEFT(date, 4)::int y, COALESCE(SUM(ROUND(amount*100)),0)::bigint cents
+       FROM gifts
+      WHERE org_id=? AND import_id = ANY(?) AND date IS NOT NULL AND date <> ''
+      GROUP BY 1 ORDER BY 1 DESC`, [orgId, importId]);
+  const [p] = await query(
+    `SELECT COUNT(*)::int people,
+            COUNT(DISTINCT external_household_id)::int households,
+            COUNT(*) FILTER (WHERE imported_sustainer IS TRUE)::int recurring
+       FROM donors WHERE org_id=? AND created_import_id = ANY(?) AND deleted_at IS NULL`, [orgId, importId]);
+  // The people this run's gifts actually landed on -- which includes anyone
+  // it MATCHED rather than created, so the top-25 column is not silently
+  // short by every returning donor.
+  const top = await query(
+    // The identity precedence here MUST be the one buildMoveFileFacts used on
+    // the file side (source id, then e-mail, then name). It read e-mail first,
+    // and the moment donors started carrying their source id the two columns
+    // keyed differently: every figure still footed, but the top-donor rows no
+    // longer lined up and the headline stopped claiming a match it had.
+    `SELECT COALESCE(NULLIF(d.external_donor_id,''), NULLIF(d.email,''), d.name) k, d.name,
+            COALESCE(SUM(ROUND(g.amount*100)),0)::bigint cents, COUNT(g.*)::int gifts
+       FROM gifts g JOIN donors d ON d.id=g.donor_id
+      WHERE g.org_id=? AND g.import_id = ANY(?) AND d.deleted_at IS NULL
+      GROUP BY 1,2 ORDER BY cents DESC, d.name ASC LIMIT 25`, [orgId, importId]);
+  return {
+    people: Number(p?.people) || 0,
+    households: Number(p?.households) || 0,
+    gifts: Number(g?.gifts) || 0,
+    cents: Number(g?.cents) || 0,
+    recurringPeople: Number(p?.recurring) || 0,
+    byYear: years.map(r => ({ year: Number(r.y), cents: Number(r.cents) })),
+    topDonors: top.map(r => ({ key: String(r.k || "").toLowerCase(), name: r.name, cents: Number(r.cents), gifts: r.gifts })),
+  };
+}
+
+app.get("/imports/:id/move-report", requireAuth, wrap(async (req, res) => {
+  const M = await moveMod();
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "import not found" });
+  const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+  // The file side, as stored at commit. An import recorded before this build
+  // has no stored file facts, and the honest answer is to say so rather than
+  // to reconstruct the file from the rows it produced and call that a match.
+  const file = summary.moveFile || null;
+  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
+  const typed = (r.old_system_gifts != null || r.old_system_cents != null)
+    ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
+  const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
+
+  if (!file) {
+    return res.json({
+      moveReport: null, held, vendor,
+      unavailable: "This import ran before Steward started keeping the file's own figures, so there is nothing to compare it against. The next import you run will have a full Move Report.",
+      import: { id: r.id, name: r.name, committedAt: r.committed_at, source: r.migration_source || null },
+    });
+  }
+  const report = M.buildMoveReport({ file, held, typed, vendor });
+  res.json({
+    moveReport: report, file, held, vendor,
+    since: M.buildSinceLastTime({
+      giftsCreated: Number(r.gifts_created) || 0,
+      centsCreated: Math.round((Number(r.dollars_created) || 0) * 100),
+      peopleCreated: Number(r.donors_created) || 0,
+      giftsAlreadyHeld: Number(summary.externalIdDupes) || 0,
+      peopleMatched: Number(summary.donorsMatched) || 0,
+    }),
+    import: { id: r.id, name: r.name, committedAt: r.committed_at, source: r.migration_source || null,
+              by: r.actor_user_name || null },
+  });
+}));
+
+
+// The board's copy of the proof. Rendered from the SAME payload the screen
+// renders, so the two cannot disagree about a figure -- the rule the board
+// packet already follows. Every number keeps its defining sentence as a
+// footnote, because a treasurer reading this has no hover.
+async function renderMoveReportPdf({ report, org, imp, vendor }) {
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 50, size: "LETTER", bufferPages: true });
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    doc.on("data", c => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+    const INK = "#0f1a12", GREY = "#5a554f", BRASS = "#c9a84c", CREAM = "#f0ede6";
+    const PW = doc.page.width, L = 50, R = PW - 50;
+    const money = c => {
+      const n = Math.trunc(Number(c) || 0);
+      return (n < 0 ? "-$" : "$") + (Math.abs(n) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+    const num = n => (Math.trunc(Number(n) || 0)).toLocaleString("en-US");
+    const cell = (l, f, h, matches, isMoney) => {
+      const y = doc.y;
+      doc.font("Helvetica").fontSize(10).fillColor(INK).text(l, L, y, { width: 240 });
+      doc.font("Helvetica").fontSize(10).fillColor(GREY)
+         .text(isMoney ? money(f) : num(f), L + 240, y, { width: 110, align: "right" });
+      doc.font(matches ? "Helvetica" : "Helvetica-Bold").fontSize(10).fillColor(matches ? INK : "#8a6d1f")
+         .text(isMoney ? money(h) : num(h), L + 355, y, { width: 110, align: "right" });
+      doc.y = y + 16;
+    };
+
+    doc.rect(0, 0, PW, 84).fill(INK);
+    doc.font("Helvetica").fontSize(9).fillColor(BRASS).text(String(org?.name || ""), L, 24);
+    doc.font("Helvetica-Bold").fontSize(19).fillColor(CREAM).text("Move Report", L, 40, { width: PW - 100 });
+    doc.font("Helvetica").fontSize(9).fillColor("#cfc9bd")
+       .text(vendor ? `Moving from ${vendor}` : "Proof that nothing was lost", L, 64);
+    doc.y = 108;
+
+    // The headline is the proof, so it leads the page too.
+    doc.font("Helvetica-Bold").fontSize(14).fillColor(INK)
+       .text(report.headline, L, doc.y, { width: R - L });
+    doc.moveDown(0.4);
+    doc.font("Helvetica").fontSize(9).fillColor(GREY)
+       .text(`${imp?.name || "This import"}${imp?.committedAt ? ` · imported ${String(imp.committedAt).slice(0, 10)}` : ""}${imp?.by ? ` by ${imp.by}` : ""}`,
+             L, doc.y, { width: R - L });
+    doc.moveDown(1);
+
+    const head = (t) => {
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(GREY).text(String(t).toUpperCase(), L, doc.y);
+      doc.y += 4;
+      doc.font("Helvetica").fontSize(8).fillColor(GREY)
+         .text("YOUR FILE", L + 240, doc.y - 14, { width: 110, align: "right" })
+         .text("IN STEWARD", L + 355, doc.y - 14, { width: 110, align: "right" });
+      doc.moveTo(L, doc.y).lineTo(R, doc.y).strokeColor("#d4cfc6").lineWidth(0.7).stroke();
+      doc.y += 6;
+    };
+
+    head("Your file, and what Steward holds");
+    for (const l of report.lines) cell(l.label, l.file, l.held, l.matches, l.money);
+    if (report.byYear.length) {
+      doc.moveDown(0.8); head("Dollars by year");
+      for (const l of report.byYear) cell(l.label, l.file, l.held, l.matches, l.money);
+    }
+    if (report.topDonors.length) {
+      doc.moveDown(0.8); head(`Top ${report.topDonors.length} donors by what this move brought`);
+      for (const d of report.topDonors) cell(d.name, d.file, d.held, d.matches, true);
+    }
+    if (report.typed && report.typed.length) {
+      doc.moveDown(0.8); head("Compared against your old system's own totals");
+      for (const t of report.typed) cell(t.label, t.typedValue, t.held, t.matches, t.money);
+    }
+    if (report.differences.length || report.mismatchedDonors.length) {
+      doc.moveDown(0.8);
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(GREY).text("WHAT DIFFERS, EXACTLY", L, doc.y);
+      doc.y += 6;
+      for (const d of report.differences) {
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(
+          `${d.label}: your file says ${d.money ? money(d.file) : num(d.file)}, Steward holds ${d.money ? money(d.held) : num(d.held)}.`,
+          L, doc.y, { width: R - L });
+        doc.y += 3;
+      }
+      for (const d of report.mismatchedDonors) {
+        doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(
+          `${d.name}: your file says ${money(d.file)}, Steward holds ${money(d.held)}.`, L, doc.y, { width: R - L });
+        doc.y += 3;
+      }
+    }
+
+    // Every number's sentence, as footnotes: a treasurer reading paper has
+    // no hover, and a figure without its definition is not evidence.
+    doc.moveDown(1.2);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor(GREY).text("WHAT EACH FIGURE MEANS", L, doc.y);
+    doc.y += 5;
+    for (const l of report.lines) {
+      doc.font("Helvetica").fontSize(7.5).fillColor(GREY)
+         .text(`${l.label} — ${l.sentence}`, L, doc.y, { width: R - L });
+      doc.y += 2;
+    }
+    doc.moveDown(0.6);
+    doc.font("Helvetica-Oblique").fontSize(7.5).fillColor(GREY).text(
+      "The left column is your file's own figures, recorded when it was imported. The right column is read from Steward now. Nothing here was typed by us.",
+      L, doc.y, { width: R - L });
+
+    doc.end();
+  });
+}
+
+app.get("/imports/:id/move-report/pdf", requireAuth, wrap(async (req, res) => {
+  const M = await moveMod();
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "import not found" });
+  const summary = typeof r.summary_json === "string" ? JSON.parse(r.summary_json) : (r.summary_json || {});
+  const file = summary.moveFile || null;
+  if (!file) return res.status(409).json({ error: "no_move_report",
+    message: "This import ran before Steward started keeping the file's own figures, so there is no Move Report to print." });
+  const held = await moveHeldFacts(orgId, await moveRunIds(orgId, r));
+  const typed = (r.old_system_gifts != null || r.old_system_cents != null)
+    ? { gifts: r.old_system_gifts, cents: r.old_system_cents } : null;
+  const vendor = r.migration_source ? M.moveTileLabel(r.migration_source) : "";
+  const report = M.buildMoveReport({ file, held, typed, vendor });
+  const org = await orgRow(orgId);
+  const pdf = await renderMoveReportPdf({ report, org, vendor, imp: {
+    name: r.name, committedAt: r.committed_at, by: r.actor_user_name || null } });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="move-report-${r.id}.pdf"`);
+  res.setHeader("Content-Length", pdf.length);
+  res.end(pdf);
+}));
+
+// The org's own totals, from the system they are leaving. A person's figure
+// typed from memory is never folded into the headline -- it gets its own
+// column -- so this stores it and nothing else.
+app.post("/imports/:id/old-system-totals", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [r] = await query("SELECT id FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!r) return res.status(404).json({ error: "import not found" });
+  const clear = req.body?.clear === true;
+  const gifts = clear ? null : (req.body?.gifts == null || req.body.gifts === "" ? null : Math.trunc(Number(req.body.gifts)));
+  const cents = clear ? null : (req.body?.cents == null || req.body.cents === "" ? null : Math.trunc(Number(req.body.cents)));
+  if (!clear && ((gifts != null && !(Number.isFinite(gifts) && gifts >= 0)) ||
+                 (cents != null && !(Number.isFinite(cents) && cents >= 0))))
+    return res.status(400).json({ error: "bad_totals", message: "Enter a whole number of gifts and a dollar total." });
+  await run(`UPDATE imports SET old_system_gifts=?, old_system_cents=? WHERE id=? AND org_id=?`,
+            [gifts, cents, req.params.id, orgId]);
+  res.json({ ok: true, typed: clear ? null : { gifts, cents } });
 }));
 
 // ── BUILD-88b B.1 — THE DEPOSIT SHEET ─────────────────────────────────────
