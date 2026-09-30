@@ -1685,6 +1685,26 @@ async function initSchema() {
   await pool.query(`ALTER TABLE interactions ADD COLUMN IF NOT EXISTS import_id TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS created_import_id TEXT`);
 
+  // ── TRANS-1 Part 0 — THE MOVE. The state of an organisation's migration
+  // from the system it is leaving. It lives on `orgs` deliberately: one row
+  // per org, and no new org-child table to join every suite's org-reset
+  // DELETE list (the BUILD-58/80 gotcha). Each Move Report is the `imports`
+  // row that produced it, so nothing here is a second copy of a total.
+  //   migration_source        the preset key they came from ("donorperfect")
+  //   migration_started_at    when they picked that tile, not when they signed
+  //   migration_completed_at  when they pressed "We've moved"
+  //   migration_undo_until    completed_at + 30 days; after that the button
+  //                           has no undo, and the move is simply history
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_source TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_started_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_completed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_completed_by TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_completed_by_name TEXT`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS migration_undo_until TIMESTAMPTZ`);
+  // The source each import came from, so a named import says where the file
+  // was exported from and the Move Report knows which vendor to name.
+  await pool.query(`ALTER TABLE imports ADD COLUMN IF NOT EXISTS migration_source TEXT`);
+
   // ── BUILD-88b B.3 — THANK-YOUS, DRAFTED ───────────────────────────────────
   // Steward never sends the thank-you. It writes one and puts it in a queue she
   // opens; Copy, Mark sent, Skip. One row per gift, so the queue cannot

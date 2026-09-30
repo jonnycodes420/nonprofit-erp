@@ -3291,6 +3291,11 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // Hoisted above the transaction: the post-commit recalcs and the response
   // below read these, and they must survive the callback's scope.
   let externalIdDupes = 0, externalIdCollisionCount = 0;
+  // TRANS-1 Part 4 — how each person was matched, so a re-import's own small
+  // report can say it. Counted here rather than derived, because "matched by
+  // the old system's id" is the claim the move is sold on.
+  let matchedByExternalId = 0, matchedByEmail = 0;
+  const matchedExtIdFills = [];   // matched donors whose source id we did not hold yet
   let giftsInserted = 0, financeSynced = 0, fundsCreated = 0;
   let duplicateCandidates = { withinFile: 0, samples: [] };
   let matchesExistingCount = 0;
@@ -3410,6 +3415,27 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     if (!existingHouseholds.has(r.e)) existingHouseholds.set(r.e, []);
     existingHouseholds.get(r.e).push({ id: r.id, mk: matchNameKey(r.name) });
   }
+  // ── TRANS-1 Part 4 — THE OLD SYSTEM'S OWN ID MATCHES FIRST ──────────────
+  // An import used to match a person by email and nothing else, while
+  // `external_donor_id` was written on the way in and never read again. That
+  // is the whole re-import story: a director who fixes a typo'd address in
+  // DonorPerfect and exports again got a SECOND record, because the only key
+  // Steward matched on was the one she had just changed. Her own system's id
+  // is the stable key and it is now the first one tried — email, then name,
+  // stay exactly as they were behind it.
+  const existingByExtId = new Map();
+  const extIdRows = await queryTx(txc,
+    `SELECT id, external_donor_id, external_donor_ids FROM donors
+       WHERE org_id=? AND deleted_at IS NULL
+         AND (external_donor_id IS NOT NULL OR external_donor_ids IS NOT NULL)
+       ORDER BY created_at, id`, [orgId]);
+  for (const r of extIdRows) {
+    const ids = [r.external_donor_id, ...(Array.isArray(r.external_donor_ids) ? r.external_donor_ids : [])];
+    for (const one of ids) {
+      const k = donorIdKey(one);
+      if (k && !existingByExtId.has(k)) existingByExtId.set(k, r.id);
+    }
+  }
   const existingMatch = (emailLower, name) => {
     const list = existingHouseholds.get(emailLower);
     if (!list || !list.length) return undefined;
@@ -3432,26 +3458,50 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
   // address book — so it is skipped; matching against donors ALREADY on file
   // still applies.
   const identityResolved = req.body.identityResolved === true;
+  const seenExtIds = new Map();   // within-file source id → the id we assigned it
+  // One place decides that a row is somebody we already hold, and in what
+  // order the keys are tried. TRANS-1 Part 4 put the source id in front.
+  const claimMatch = (idx, d, priorId, how) => {
+    duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
+    if (how === "externalId") matchedByExternalId++; else if (how === "email") matchedByEmail++;
+    // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
+    // only: a re-run never clobbers what is already on the record.
+    const cfv = donorCfById.get(idx);
+    if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
+    // A person matched by email who ALSO carries a source id teaches Steward
+    // that id, so the NEXT export matches on the stable key even if she
+    // corrects the address in the old system first. Fill-missing only, and
+    // deliberately NOT added to `existingByExtId`: within this one file the
+    // match order stays exactly what it was, so a second row carrying the
+    // same id but a different person cannot be pulled onto this record by an
+    // id we only just inferred.
+    const k = donorIdKey(d.externalDonorId);
+    if (how !== "externalId" && k && !existingByExtId.has(k)) {
+      matchedExtIdFills.push({ donorId: priorId, externalDonorId: String(d.externalDonorId) });
+    }
+  };
   donors.forEach((d, idx) => {
     if (!d.name || !String(d.name).trim()) { namelessRows++; return; }
     const emailLower = (d.email || "").toLowerCase().trim();
+    // 1. The old system's own id. It is the key that does not change when a
+    //    fundraiser fixes a name or an address, so it is tried first, and it
+    //    applies whether or not the client resolved identity: an id is an id.
+    const extKey = donorIdKey(d.externalDonorId);
+    if (extKey) {
+      const byId = existingByExtId.get(extKey) || (identityResolved ? undefined : seenExtIds.get(extKey));
+      if (byId) { claimMatch(idx, d, byId, "externalId"); return; }
+    }
     if (emailLower) {
-      // Already on file, or already claimed earlier in THIS file → route this
+      // 2. Already on file, or already claimed earlier in THIS file → route this
       // row's gifts to that donor. `duplicates` still counts donors not
       // created, so the existing summary sentence stays true.
       const priorId = (identityResolved ? existingMatch(emailLower, d.name) : existingByEmail.get(emailLower))
         || (identityResolved ? undefined : seenEmails.get(emailLower));
-      if (priorId) {
-        duplicates++; indexToId[idx] = priorId; matchedIds.add(priorId);
-        // BUILD-78 4.5 — a matched donor's custom values FILL MISSING keys
-        // only: a re-run never clobbers what is already on the record.
-        const cfv = donorCfById.get(idx);
-        if (cfv && Object.keys(cfv).length) matchedCfMerges.push({ donorId: priorId, values: cfv });
-        return;
-      }
+      if (priorId) { claimMatch(idx, d, priorId, "email"); return; }
     }
     const id = importId("d_");
     if (emailLower && !identityResolved) seenEmails.set(emailLower, id);
+    if (extKey) seenExtIds.set(extKey, id);
     indexToId[idx] = id;
     donorsToInsert.push({ ...d, _id: id, _cfValidated: donorCfById.get(idx) || null });
     if (d._stageExplicit) explicitStageIds.push(id);
@@ -3560,6 +3610,16 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
     await runTx(txc,
       `UPDATE donors SET custom_fields = ?::jsonb || COALESCE(custom_fields, '{}'::jsonb) WHERE id=? AND org_id=?`,
       [JSON.stringify(m.values), m.donorId, orgId]);
+  }
+
+  // TRANS-1 Part 4 — teach a matched record the source id it arrived with, so
+  // the NEXT export matches on the key that does not change. Fill-missing
+  // only: `external_donor_id IS NULL` is in the WHERE, so a record that
+  // already answers to an id is never repointed at another one.
+  for (const f of matchedExtIdFills) {
+    await runTx(txc,
+      `UPDATE donors SET external_donor_id = ? WHERE id=? AND org_id=? AND external_donor_id IS NULL`,
+      [f.externalDonorId, f.donorId, orgId]);
   }
 
   // ── Build gift+interaction records ──
@@ -4087,6 +4147,12 @@ app.post("/donors/import-combined", requireAuth, checkWriteAccess, wrapImport(as
              // gifts actually landed. `duplicates` still counts donors NOT
              // created; `donorsMatched` says what became of them.
              donorsMatched: matchedIds.size, namelessRows,
+             // TRANS-1 Part 4 — HOW they were matched. A re-import's small
+             // report leads on "matched by your system's own id", because
+             // that is the claim the move is sold on, so it is counted at the
+             // point of matching rather than guessed afterwards.
+             matchedByExternalId, matchedByEmail,
+             externalIdsLearned: matchedExtIdFills.length,
              // The equations, for the summary screen. The user sees the
              // arithmetic, not a reassurance that it worked.
              reconciliation: ledger.report(),
