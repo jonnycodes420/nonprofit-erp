@@ -57,6 +57,20 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => recordTick("processGivingSources", processGivingSources).catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
 }
 
+// ── INT-3 · THE DAILY PULL FROM THE EMAIL TOOL ─────────────────────────────
+// Campaign activity and unsubscribes, once a day. A newsletter's opens do not
+// change by the hour, and Mailchimp's rate limit is a shared resource that a
+// keener schedule would spend for nothing. Mailchimp also pushes unsubscribe
+// and cleaned events as they happen, so this pull is the reconciliation, not
+// the only path.
+const EMAIL_MARKETING_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+if (!backgroundTicksDisabled()) {
+  const runEmailMarketing = () => require("./finance").processEmailMarketing();
+  setTimeout(() => runEmailMarketing().catch(e => console.error("[email-marketing]", e.message)), 120000);
+  setInterval(() => recordTick("processEmailMarketing", runEmailMarketing)
+    .catch(e => console.error("[email-marketing]", e.message)), EMAIL_MARKETING_SYNC_INTERVAL_MS);
+}
+
 // Fires due scheduled campaigns (status='scheduled', scheduled_at passed)
 // through the exact same send path as the manual route. The claim UPDATE is
 // conditional on status so two overlapping ticks can't double-send. A

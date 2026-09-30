@@ -319,6 +319,13 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // INT-3 — a campaign the org's own email tool sent, per org, for the same
+  // reason the audience above is seeded: org A aimed at org B's campaign must be
+  // refused because it belongs to org B, not because the row was never there.
+  await q(`INSERT INTO email_marketing_campaigns
+             (id,org_id,provider,provider_campaign_id,name,sent_at,sends,opens,clicks)
+           VALUES ($1,$2,'mailchimp',$3,$4,NOW() - interval '10 days',100,40,10)`,
+    [`emcamp_${o}`, o, `mc_${o}`, `Campaign ${o}`]).catch(() => {});
   // BUILD-97 Part 3 — an instruction, a run and a write, per org. Seeded
   // directly rather than through the routes because creating one calls a model,
   // and a tenancy probe must not depend on an API key being present. The point
@@ -379,6 +386,10 @@ function bResolver(routePath, param) {
     recurring: `rs_${B}`, orgs: B, board: `bd_${B}`, "peer-fundraisers": `pf_${B}`,
     "donor-relationships": `dr_${B}`, users: `u_${B}_staff`,
     "p2p-teams": `pt_${B}`,        // BUILD-103 — a team takedown
+    // INT-3 — /email-marketing/campaigns/:id/people opens the people behind one
+    // campaign's opens or clicks, which is donor data. Org A asking for org B's
+    // campaign must get nothing, and this maps the probe onto a real org B row.
+    "email-marketing": `emcamp_${B}`,
     // INT-1 — a CONNECTION is a giving_sources row (the Connections screen is
     // a view over them, not a second table), so org A asking for org B's
     // connection, its gift rows or its sync log must answer 404 like any other.
@@ -498,6 +509,18 @@ const PARAM_EXEMPT = [
   // signed state names a different org and shows org A's sealed tokens will
   // not open for org B.
   [/^\/oauth\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — see oauth-state.test.js"],
+  // INT-3 — the param is a PROVIDER KEY from the fixed registry in
+  // shared/emailMarketing.js (mailchimp · constantcontact), never a row id, and
+  // an unknown one is a 404. There is no "org B's provider" to reach: every one
+  // of these routes takes its org from the token and reads or writes only that
+  // org's own `email_marketing_connections` row. What they COULD cross is the
+  // opt-out and the push, and that is proven directly in tests/int3-optout.test.js
+  // §7, where org A's webhook secret cannot write onto org B and each org keeps
+  // exactly its own suppression row.
+  //
+  // NOTE the campaign route is deliberately NOT exempt here: its `:id` is a real
+  // org-scoped row, so it resolves through bResolver onto org B's own campaign.
+  [/^\/email-marketing\/:provider\//, "param is a PROVIDER KEY from a fixed registry, not a row id — see int3-optout.test.js §7"],
 ];
 
 function sign(payload, opts) { return jwt.sign(payload, process.env.JWT_SECRET, opts); }

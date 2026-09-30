@@ -23,6 +23,11 @@ const routers = {
   r1: express.Router(),
 };
 
+// INT-3 — set by mount() to the one `recordUnsubscribe` below, so other route
+// files can call it without a second copy of the suppression write. TDZ rule:
+// declared at module scope, above every line that reads it.
+let sharedRecordUnsubscribe = null;
+
 function mount(ctx) {
 const {
   BILLING_PLAN_VALUES, DUNNING_SCHEDULE_DAYS, EV_READY, GC_READY, INBOUND_EMAIL_DOMAIN,
@@ -1442,6 +1447,92 @@ const paypalWebhookLimiter = rateLimit({
   skip: () => rateLimitDisabled(), handler: rateLimitHandler,
 });
 
+// ── INT-3 · MAILCHIMP'S UNSUBSCRIBE AND CLEANED EVENTS ─────────────────────
+//
+// THE SECRET IS IN THE URL BECAUSE THAT IS THE ONLY VERIFICATION MAILCHIMP
+// OFFERS. It signs nothing and sends no shared-secret header, so the standard
+// practice, and Mailchimp's own documented advice, is an unguessable path. The
+// secret is 24 random bytes, per org and per connection, minted when the
+// connection is made, never returned to the browser and never logged.
+//
+// WHAT THIS ROUTE MAY DO IS DELIBERATELY TINY. It can mark somebody opted out.
+// It cannot re-subscribe anybody, cannot write a gift and cannot read a donor
+// out to the caller: a request with a wrong secret gets the same flat 200 an
+// accepted one does, so the path cannot be probed for which org it belongs to.
+//
+// Mailchimp POSTs form-encoded, not JSON, which is why this one route parses
+// urlencoded where its neighbours take raw JSON.
+const mailchimpWebhookLimiter = rateLimit({
+  windowMs: 60_000, max: 300, standardHeaders: true, legacyHeaders: false,
+  skip: () => rateLimitDisabled(), handler: rateLimitHandler,
+});
+
+// Mailchimp checks a webhook URL with a GET before it will save it. It must
+// answer 200 and it writes nothing, which is the standing GET rule anyway.
+app.get("/mailchimp/webhook/:secret", mailchimpWebhookLimiter, (req, res) => res.status(200).send("ok"));
+
+app.post("/mailchimp/webhook/:secret", mailchimpWebhookLimiter,
+  express.urlencoded({ extended: false }), async (req, res) => {
+  // Answered the same way whatever happens, so the URL tells a prober nothing.
+  const done = () => res.status(200).json({ received: true });
+  try {
+    const secret = String(req.params.secret || "");
+    if (secret.length < 16) return done();
+    const rows = await query(
+      `SELECT id, org_id, provider FROM email_marketing_connections
+        WHERE webhook_secret=? AND provider='mailchimp' AND status <> 'disconnected' LIMIT 1`, [secret]);
+    if (!rows.length) return done();
+    const conn = rows[0];
+    const type = String(req.body?.type || "");
+    const email = String(req.body?.["data[email]"] || req.body?.data?.email || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) return done();
+
+    const EM = await import("../shared/emailMarketing.js");
+    // `unsubscribe` and `cleaned` are the only two types this route acts on.
+    // Mailchimp also pushes `subscribe` and `profile`, and acting on a
+    // `subscribe` would be Steward re-subscribing somebody on a third party's
+    // word, which the more-restrictive rule forbids.
+    const status = type === "cleaned" ? "cleaned" : type === "unsubscribe" ? "unsubscribed" : null;
+    const decision = status ? EM.optOutFromStatus(status) : { optOut: false };
+    if (!decision.optOut) return done();
+
+    // ── A BOUNCE IS NOT AN UNSUBSCRIBE, AND THE TWO WRITES ARE DIFFERENT ──
+    // BUILD-94 keeps these apart and so does this. Mailchimp's `cleaned` means
+    // the address stopped working; she did not ask for anything. Writing it as
+    // an `unsubscribed` suppression would put "she asked to stop" on a donor's
+    // record about somebody whose mailbox merely broke, and it would outrank
+    // the bounce in every later reading. So: `unsubscribe` writes the
+    // suppression, `cleaned` writes unreachable, and neither writes the other.
+    if (decision.kind === "unreachable") {
+      await run(
+        `UPDATE donors SET email_unreachable=true, email_unreachable_at=NOW(), email_unreachable_reason=?
+          WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL`,
+        ["Mailchimp reported this address as cleaned", conn.org_id, email]).catch(() => {});
+    } else {
+      const already = await query(
+        `SELECT 1 FROM email_suppressions WHERE LOWER(email)=? AND (org_id=? OR org_id IS NULL) LIMIT 1`,
+        [email, conn.org_id]);
+      if (!already.length) await recordUnsubscribe(email, conn.org_id, "campaign");
+    }
+    const [d] = await query(
+      `SELECT id FROM donors WHERE org_id=? AND LOWER(email)=? AND deleted_at IS NULL LIMIT 1`,
+      [conn.org_id, email]);
+    if (d) {
+      await run(
+        `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by) VALUES (?,?,?,?,?,?,?)`,
+        ["int_" + uuid().slice(0, 8), conn.org_id, d.id, "email",
+         decision.kind === "unreachable" ? "Email stopped working in Mailchimp." : "Unsubscribed in Mailchimp.",
+         new Date().toISOString().slice(0, 10), "system:email-marketing/mailchimp"]).catch(() => {});
+    }
+    // A webhook NUDGES; it never becomes the only record. The next daily pull
+    // reconciles anything this missed.
+    return done();
+  } catch (e) {
+    console.error("[mailchimp:webhook] failed:", e.message);
+    return done();
+  }
+});
+
 app.post("/paypal/webhook", paypalWebhookLimiter, express.raw({ type: "application/json" }), async (req, res) => {
   const PW = await import("../shared/paypalWebhook.js");
   const webhookId = process.env.PAYPAL_WEBHOOK_ID || null;
@@ -1775,6 +1866,8 @@ async function recordUnsubscribe(email, orgId, source) {
     );
   }
 }
+// Published to the other route files, after the declaration it points at.
+sharedRecordUnsubscribe = recordUnsubscribe;
 
 // ── BUILD-94 Part 4 — A GET NEVER CHANGES STATE ────────────────────────────
 // This page used to unsubscribe ON GET. That is the standing rule broken in
@@ -2452,4 +2545,16 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
 }));
 }
 
-module.exports = { routers, mount };
+// INT-3 — ONE UNSUBSCRIBE WRITE, SHARED. `recordUnsubscribe` is declared
+// inside mount() because it reads the bound `run`, so it is published here
+// through a late-bound wrapper rather than copied. Every caller, wherever the
+// unsubscribe came from, goes through the same function: a second writer of
+// `email_suppressions` is how two systems end up disagreeing about who asked
+// to stop, and the one that loses mails her anyway.
+module.exports = {
+  routers, mount,
+  recordUnsubscribe: (...args) => {
+    if (!sharedRecordUnsubscribe) throw new Error("recordUnsubscribe called before routes/webhooks mount()");
+    return sharedRecordUnsubscribe(...args);
+  },
+};

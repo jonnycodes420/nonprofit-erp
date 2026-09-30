@@ -1807,6 +1807,135 @@ async function main() {
              VALUES ($1,$2,$3,$4,'prospect','active','[]','["guest"]'::jsonb,'system:seed-demo','The demonstration file')`,
       [id, ORG, name, email]);
 
+  // ── INT-3 · THE EMAIL TOOL SHE ALREADY PAYS FOR ───────────────────────
+  // Harborlight sends its newsletter from Mailchimp and is not going to stop,
+  // which is the whole premise: Steward reads what happened and never sends.
+  // Constant Contact is left NOT CONNECTED so the screen shows both states.
+  //
+  // NO CREDENTIALS. `credentials_sealed` stays NULL, exactly as the giving
+  // sources above, so nothing here can reach a real Mailchimp account and the
+  // assertion at the end of this file (which refuses a demo holding any
+  // provider credentials) keeps covering it.
+  //
+  // None of it touches the eleven drifted donors: the people with campaign
+  // activity below are chosen from outside that story, and the one gift shown
+  // beside a campaign is a gift this file already wrote.
+  console.log("[seed] the email tool…");
+  // The SAME sentence builder the sync uses, so the demo's timeline lines and
+  // a real org's are written by one function rather than two that drift.
+  const { activitySentence: emActivitySentence } = await import("../shared/emailMarketing.js");
+  const EM_CONN = "emc_b72_mailchimp";
+  await q(`INSERT INTO email_marketing_connections
+             (id,org_id,provider,status,server_prefix,account_name,audience_id,audience_name,
+              mapping,last_synced_at,last_tried_at,last_pushed_count,created_by,created_by_name)
+           VALUES ($1,$2,'mailchimp','active','us14','Harborlight Youth Collective',
+                   'aud_harborlight','Harborlight Newsletter',
+                   $3::jsonb, NOW(), NOW(), 412, 'system:seed-demo','The demonstration file')`,
+    [EM_CONN, ORG, JSON.stringify({
+      audienceId: "aud_harborlight", audienceName: "Harborlight Newsletter",
+      groups: { "builtin:donors": "Steward donors", "builtin:volunteers": "Volunteers" },
+    })]);
+
+  // Three campaigns she actually sent, oldest first, with the counts Mailchimp
+  // would report. The open and click numbers are the ones the rows below foot
+  // to, so every figure on the Communications screen opens its people.
+  const EM_CAMPAIGNS = [
+    ["emcamp_b72_spring", "Spring Appeal",      "A harbour worth keeping",      96, 412, 188, 47],
+    ["emcamp_b72_summer", "Summer Programme",   "What your gift built in June", 61, 408, 151, 22],
+    ["emcamp_b72_autumn", "Autumn Newsletter",  "Eleven families, one autumn",  17, 415, 174, 31],
+  ];
+  for (const [id, name, subject, daysAgo, sends, opens, clicks] of EM_CAMPAIGNS) {
+    await q(`INSERT INTO email_marketing_campaigns
+               (id,org_id,provider,provider_campaign_id,name,subject,sent_at,sends,opens,clicks)
+             VALUES ($1,$2,'mailchimp',$3,$4,$5,NOW() - ($6 || ' days')::interval,$7,$8,$9)`,
+      [id, ORG, id.replace("emcamp_b72_", "mc_"), name, subject, String(daysAgo), sends, opens, clicks]);
+  }
+
+  // Who did what, on their own records. Four people, chosen from outside the
+  // drifted eleven, and one of them gave eleven days after clicking the spring
+  // appeal: that gift is shown BESIDE the campaign and never credited to it.
+  const EM_ACTIVITY = [
+    // [donorKey, campaignId, opened, clicked, label]
+    ["d_b72_pos1", "emcamp_b72_spring", true,  true,  "the give link"],
+    ["d_b72_pos2", "emcamp_b72_spring", true,  false, null],
+    ["d_b72_pos3", "emcamp_b72_autumn", true,  true,  "the programme page"],
+    ["d_b72_pos1", "emcamp_b72_autumn", true,  false, null],
+  ];
+  for (const [donorId, campaignId, opened, clicked, label] of EM_ACTIVITY) {
+    const [exists] = await q(`SELECT id FROM donors WHERE id=$1 AND org_id=$2`, [donorId, ORG]);
+    if (!exists) continue;
+    const camp = EM_CAMPAIGNS.find(c => c[0] === campaignId);
+    await q(`INSERT INTO email_marketing_activity
+               (id,org_id,campaign_id,donor_id,email,opened,clicked,clicked_label,occurred_at)
+             SELECT $1,$2,$3,$4,d.email,$5,$6,$7, NOW() - ($8 || ' days')::interval
+               FROM donors d WHERE d.id=$4`,
+      [`emact_b72_${campaignId.slice(-6)}_${donorId.slice(-4)}`, ORG, campaignId, donorId,
+       opened, clicked, label, String(camp[3])]);
+    // ONE LINE ON THE TIMELINE, in the same words the sync writes.
+    const note = emActivitySentence({ campaignName: camp[1], opened, clicked, clickedLabel: label });
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by)
+             VALUES ($1,$2,$3,'email',$4,(NOW() - ($5 || ' days')::interval)::date::text,'system:email-marketing/mailchimp')`,
+      [`int_b72_em_${campaignId.slice(-6)}_${donorId.slice(-4)}`, ORG, donorId, note, String(camp[3])]);
+  }
+
+  // ONE GIFT AFTER A CLICK, which is the line the Communications screen exists
+  // to show and the one it must never call attribution.
+  //
+  // The person is found BY QUERY, not by a hardcoded id: somebody who really
+  // gave inside the thirty days after the spring appeal, who can be emailed,
+  // and who is NOT one of the eleven whose drift is the demo's whole argument
+  // (their gift dates are the fixture and an extra story on top would muddy
+  // it). If nobody qualifies the block simply does not run, because a demo is
+  // allowed to be missing a flourish and is not allowed to invent a gift.
+  {
+    const springDays = EM_CAMPAIGNS[0][3];                       // 96 days ago
+    const drifted = DRIFTED.map(([n]) => n);
+    const [giver] = await q(
+      `SELECT d.id, d.email, d.name
+         FROM donors d JOIN gifts g ON g.donor_id = d.id
+        WHERE d.org_id = $1
+          AND g.date::date BETWEEN (CURRENT_DATE - $2::int + 1) AND (CURRENT_DATE - $2::int + 28)
+          AND d.email IS NOT NULL
+          AND COALESCE(d.do_not_email, false) = false
+          AND COALESCE(d.deceased, false) = false
+          AND COALESCE(d.is_sample, false) = false
+          AND d.name <> ALL($3::text[])
+        ORDER BY g.amount DESC
+        LIMIT 1`, [ORG, springDays, drifted]);
+    if (giver) {
+      await q(`INSERT INTO email_marketing_activity
+                 (id,org_id,campaign_id,donor_id,email,opened,clicked,clicked_label,occurred_at)
+               VALUES ($1,$2,'emcamp_b72_spring',$3,$4,true,true,'the give link',
+                       NOW() - ($5 || ' days')::interval)`,
+        ["emact_b72_spring_giver", ORG, giver.id, giver.email, String(springDays)]);
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by)
+               VALUES ($1,$2,$3,'email',$4,(NOW() - ($5 || ' days')::interval)::date::text,
+                       'system:email-marketing/mailchimp')`,
+        ["int_b72_em_spring_giver", ORG, giver.id,
+         emActivitySentence({ campaignName: "Spring Appeal", opened: true, clicked: true,
+                              clickedLabel: "the give link" }), String(springDays)]);
+    }
+  }
+
+  // TWO UNSUBSCRIBES, AND THEY READ AS OPTED OUT EVERYWHERE. Written through
+  // the same two places BUILD-94 writes: `email_suppressions` plus the
+  // record's own flag, so the next audience sync cannot push them and a
+  // campaign cannot mail them. Not a third flag.
+  const EM_UNSUBS = ["d_b72_pos2", "d_b72_pos3"];
+  for (const donorId of EM_UNSUBS) {
+    const [d] = await q(`SELECT id, email FROM donors WHERE id=$1 AND org_id=$2`, [donorId, ORG]);
+    if (!d || !d.email) continue;
+    await q(`INSERT INTO email_suppressions (id,org_id,email,reason,source)
+             VALUES ($1,$2,$3,'unsubscribed','campaign')`,
+      [`sup_b72_${donorId.slice(-4)}`, ORG, d.email.toLowerCase()]);
+    await q(`UPDATE donors SET do_not_email=true WHERE id=$1`, [donorId]);
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by)
+             VALUES ($1,$2,$3,'email','Unsubscribed in Mailchimp.',
+                     (NOW() - interval '9 days')::date::text,'system:email-marketing/mailchimp')`,
+      [`int_b72_unsub_${donorId.slice(-4)}`, ORG, donorId]);
+  }
+
+
   // The sales. Written straight, not through ingestPosSale: the seed is not a
   // second ingest path, it is a fixture of what ingest PRODUCES, and it writes
   // no gift at all — every line here is event or shop money, which is exactly
@@ -1892,7 +2021,12 @@ async function main() {
       `SELECT COUNT(*)::int n FROM (
          SELECT credentials_sealed FROM giving_sources WHERE org_id=$1
          UNION ALL
-         SELECT credentials_sealed FROM bookkeeping_connections WHERE org_id=$1) x
+         SELECT credentials_sealed FROM bookkeeping_connections WHERE org_id=$1
+         UNION ALL
+         -- INT-3: the email tool is a connection like any other, and a real
+         -- Mailchimp token on the demo org would be a real organisation's
+         -- mailing list behind a public login.
+         SELECT credentials_sealed FROM email_marketing_connections WHERE org_id=$1) x
         WHERE credentials_sealed IS NOT NULL`, [ORG]);
     if (Number(held.n) !== 0) {
       throw new Error(`REFUSED: the demo org holds ${held.n} set of provider credentials. `
