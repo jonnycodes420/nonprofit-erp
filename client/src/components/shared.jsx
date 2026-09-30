@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import * as Sentry from "@sentry/react";
 import { streamAI, apiFetch } from "../api";
 import { displayDate } from "../../../shared/displayDate";
+import { driftBadgeLabel } from "../../../shared/driftWords";
 
 // ── Design tokens (SINGLE SOURCE OF TRUTH — BUILD-12) ───────────────────────
 // This `T` object is the one place brand color is defined for the whole
@@ -1042,7 +1043,10 @@ export function DriftBadge({drift,style}) {
       textTransform:"uppercase",color:T.gold600,lineHeight:1.6,whiteSpace:"nowrap",...style,
     }}>
       <span aria-hidden style={{fontSize:8,lineHeight:1}}>◉</span>
-      Drifting{drift.confidence==="medium"?" · unsure":""}
+      {/* FIX-10 Part A — the words come from shared/driftWords.js, the one
+          place drift is named, so this badge and the see-all list's "Early
+          signs" group can never drift apart from each other. */}
+      {driftBadgeLabel(drift.confidence)}
     </span>
   );
 }

@@ -138,6 +138,9 @@ export default function WelcomePage() {
   const [jPreview, setJPreview] = useState(null);
   const [jSaving, setJSaving] = useState(false);
   const [jErr, setJErr] = useState("");
+  // FIX-10 Part C — said out loud when the pick opened a journey that already
+  // existed, so nobody wonders why the wizard did not seem to do anything.
+  const [jExisting, setJExisting] = useState("");
   useEffect(() => {
     let live = true;
     apiFetch("/journeys")
@@ -149,10 +152,15 @@ export default function WelcomePage() {
   // of a real row, and so "adjust it later" has something to adjust. Turning
   // it ON is the separate, deliberate act below.
   async function pickJourney(p) {
-    setJErr(""); setJPicked(p); setJPreview(null);
+    setJErr(""); setJPicked(p); setJPreview(null); setJExisting("");
     try {
+      // FIX-10 Part C — the server returns the journey this preset ALREADY made
+      // if there is one, rather than a second copy of it. Walking onboarding
+      // twice used to leave two identical journeys behind, because __id lives
+      // in memory and a reload loses it.
       const made = p.__id ? { id: p.__id } : await apiFetch("/journeys", { method: "POST", body: JSON.stringify({ presetKey: p.key }) });
       p.__id = made.id;
+      if (made.existing) setJExisting(made.sentence || "You already set this one up. Opening it.");
       setJPreview(await apiFetch(`/journeys/${made.id}/preview`));
     } catch (e) { setJErr(e?.message || "Could not set that one up."); }
   }
@@ -682,6 +690,9 @@ export default function WelcomePage() {
               </div>
             )}
 
+            {jExisting && !jErr && (
+              <div style={{ fontSize: 12.5, color: ink3, lineHeight: 1.55, marginBottom: 12 }}>{jExisting}</div>
+            )}
             {jErr && <div style={errBox}>{jErr}</div>}
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

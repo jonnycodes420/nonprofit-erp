@@ -19,6 +19,7 @@ import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { displayDateShort } from "../../../shared/displayDate";
+import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
 // The same civil "today" the log flow uses (LogConversation's todayLocal), so
 // a step proposed from a drift row and one proposed in the modal never differ.
@@ -416,6 +417,18 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   const [driftLineFor,setDriftLineFor]=useState(null); // donorId with the one-line input open
   const [driftLine,setDriftLine]=useState("");
   const [driftBusy,setDriftBusy]=useState(false);
+  // FIX-10 Part A — the way IN to the medium ones. "See all" used to send
+  // ?all=1, which only lifts the cap on the high-confidence list: on a file
+  // with five medium drifters and no high ones there was no UI path to them
+  // at all. includeMedium=1 is that path, and it is the ONLY fetch either
+  // entry point uses, so the expanded list and the quiet line agree.
+  const openEarlySigns=()=>{
+    apiFetch("/drift?all=1&includeMedium=1").then(r=>{
+      setDriftAllData(r);
+      // React has to paint the rows before the section can be scrolled to.
+      requestAnimationFrame(()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"}));
+    }).catch(()=>{});
+  };
   // FIX (2026-09-09) item 3 — the step this row is about to open is EDITABLE
   // FROM THE ROW, before it is saved. It used to be derived server-side and
   // never shown: a proposal nobody can see is a proposal nobody can correct.
@@ -1082,6 +1095,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       // Edge: a short-cadence drifter can exist before anyone crosses the
       // 180-day quiet line — never claim "no donors drifting" over them.
       ? {label:"At risk",value:fmtFull(driftData.atRiskAmount),valueColor:T.gold,sub:`${driftData.counts.driftingHigh} donor${driftData.counts.driftingHigh===1?"":"s"} past their own pattern${driftData.importCaveat?` — ${driftData.importCaveat}`:""}`,onClick:()=>document.getElementById("dash-drifting")?.scrollIntoView({behavior:"smooth",block:"start"})}
+      // FIX-10 Part A — a medium flag still means someone is drifting. This
+      // chip said "No donors drifting" on a file where five donors were
+      // drifting at medium confidence, which is the one sentence a customer
+      // took at face value. The dollars stay high-confidence only; the early
+      // signs are named as early signs and they open their own list.
+      : driftCounts(driftData).medium>0
+        ? {label:"At risk",value:earlySignsPhrase(driftCounts(driftData).medium),valueColor:T.gold,
+           sub:`${EARLY_SIGNS_MEANING} · nothing confirmed yet`,
+           onClick:()=>openEarlySigns()}
       : {label:"At risk",
          // BUILD-79 Part 6 — a pattern needs gifts. An org with donors but $0
          // of giving gets the truth, not "1,111 giving patterns checked".
@@ -1510,7 +1532,15 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
   // Each row: name · the reason in the donor's own pattern · the money.
   // "Done" opens ONE inline line (Part 4 — the log is a byproduct of clearing
   // the item, never a form); Skip is one keypress and is recorded as skipped.
-  const driftRows=driftAllData?driftAllData.list:(driftData?.list||[]);
+  const driftRows0=driftAllData?driftAllData.list:(driftData?.list||[]);
+  // FIX-10 Part A — high confidence still leads. The medium rows follow,
+  // under one "Early signs" heading, labelled with the SAME words the
+  // directory badge uses (shared/driftWords.js) so a donor reads the same on
+  // the list and on their own profile.
+  const driftHighRows=driftRows0.filter(r=>r.confidence!=="medium");
+  const driftMediumRows=driftRows0.filter(r=>r.confidence==="medium");
+  const driftRows=[...driftHighRows,...driftMediumRows];
+  const driftEarlyStart=driftMediumRows.length>0?driftHighRows.length:-1;
   const openDriftLine=donorId=>{
     setDriftLineFor(donorId);setDriftLine("");setDriftStepDirty(false);
     setDriftStep(null);
@@ -1563,6 +1593,19 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
       head:"Everyone drifting has been contacted.",
       body:`All ${driftData.counts.driftingHigh} drifting donor${driftData.counts.driftingHigh===1?"":"s"} had outreach logged in the last 30 days — they stay off this list while the conversation is fresh, and come back if no gift follows.`,
     };
+    // FIX-10 Part A — THE SENTENCE A CUSTOMER BELIEVED. This read "No donors
+    // drifting." on a file with five donors drifting at medium confidence.
+    // No surface says that while anyone is drifting at any confidence.
+    const med=driftCounts(driftData).medium;
+    if(med>0&&driftHighRows.length===0)return{
+      head:`${earlySignsPhrase(med)}, and no confirmed drift.`,
+      body:`${med===1?"One donor is":`${med.toLocaleString()} donors are`} a little past their own giving rhythm, `
+        +`not far enough past it to be sure: they are listed under ${EARLY_SIGNS_HEADING}, and they are not counted in the money at risk above. `
+        +`Checked ${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} donor${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} with giving history`
+        +(driftData.counts.lapsed>0?`, ${driftData.counts.lapsed.toLocaleString()} already lapsed`:"")
+        +(exParts.length?`, and ${exParts.join(", ")} excluded from drift`:"")
+        +".",
+    };
     return{
       head:"No donors drifting.",
       body:`Checked ${(driftData.giftedDonorCount??driftData.evaluated).toLocaleString()} donor${(driftData.giftedDonorCount??driftData.evaluated)===1?"":"s"} with giving history: `
@@ -1584,15 +1627,24 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {driftData.importCaveat && <span style={{color:T.gold700}}> · {driftData.importCaveat}</span>}
             </span>
           </span>
-          {driftData.total>driftData.list.length&&!driftAllData&&(
-            <button onClick={()=>apiFetch("/drift?all=1").then(r=>setDriftAllData(r)).catch(()=>{})} style={sLink}>
-              See all {driftData.total} →
+          {(driftData.total>driftData.list.length||driftCounts(driftData).medium>0)&&!driftAllData&&(
+            <button onClick={openEarlySigns} style={sLink}>
+              See all {driftCounts(driftData).total} →
             </button>
           )}
           {driftAllData&&(
             <button onClick={()=>setDriftAllData(null)} style={sLink}>Show top {driftData.cap}</button>
           )}
         </div>
+        {/* FIX-10 Part A — one quiet line, under the high-confidence card.
+            Home is allowed to lead with the confirmed drifters; it is not
+            allowed to leave the early ones with no door. */}
+        {driftCounts(driftData).medium>0&&!driftAllData&&(
+          <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
+            {earlySignsPhrase(driftCounts(driftData).medium)}, {EARLY_SIGNS_MEANING}.{" "}
+            <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
+          </div>
+        )}
         {driftRows.length===0&&driftEmptyState&&(
           <OneLineEmpty flush={onPanel} testId="drift-empty-state" line={driftEmptyState.head} detail={driftEmptyState.body}/>
         )}
@@ -1601,7 +1653,17 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           {driftRows.map((r,i)=>{
             const lineOpen=driftLineFor===r.donorId;
             return(
-              <li key={r.donorId} style={{borderBottom:i<driftRows.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.gold500}}>
+              <Fragment key={r.donorId}>
+              {/* FIX-10 Part A — the group heading, and the sentence that says
+                  what an early sign is. It appears once, above the first
+                  medium row, never when there are none. */}
+              {i===driftEarlyStart&&(
+                <li style={{borderTop:"1px solid "+T.bg3,padding:"11px 20px",background:T.bg2}}>
+                  <span style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3}}>{EARLY_SIGNS_HEADING}</span>
+                  <span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{EARLY_SIGNS_MEANING}</span>
+                </li>
+              )}
+              <li style={{borderBottom:i<driftRows.length-1?"1px solid "+T.bg3:"none",borderLeft:"3px solid "+T.gold500}}>
                 <div style={{display:"flex",alignItems:"stretch"}}>
                   <a className="attn-row-main" href={`/donors/${r.donorId}`}
                     style={{flex:1,minWidth:0,display:"flex",alignItems:"flex-start",gap:14,padding:"13px 20px",textDecoration:"none",color:"inherit"}}
@@ -1617,7 +1679,11 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                         $25,000 it gave once. */}
                     <div style={{textAlign:"right",whiteSpace:"nowrap",paddingTop:2}}>
                       <div style={{fontSize:13.5,fontWeight:800,fontFamily:"'DM Serif Display',serif",color:T.ink}}>{fmtFull(r.usualGift||0)}</div>
-                      <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>at risk</div>
+                      {/* FIX-10 Part A — the headline sums high confidence only,
+                          so a medium row may not label its dollars "at risk":
+                          that money is not in the number above it. It says
+                          what the figure actually is. */}
+                      <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3,marginTop:1}}>{r.confidence==="medium"?"usually gives":"at risk"}</div>
                     </div>
                   </a>
                   {!lineOpen&&(
@@ -1675,6 +1741,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
                   </div>
                 )}
               </li>
+              </Fragment>
             );
           })}
         </ul>
