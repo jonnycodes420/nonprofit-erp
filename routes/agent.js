@@ -1868,7 +1868,7 @@ app.get("/sequences/:id/enrollments", requireAuth, wrap(async (req, res) => {
 // sequences in Communications is unaffected; only the per-donor enroll is gated.
 app.post("/sequences/:id/enroll", requireAuth, requirePlan("team"), wrap(async (req, res) => {
   const { donorId } = req.body;
-  if (!donorId) return res.status(400).json({ error: "donorId required" });
+  if (!donorId) return res.status(400).json({ error: "A donor is needed." });
   const seq = await query("SELECT id FROM sequences WHERE id = ? AND org_id = ?", [req.params.id, req.user.orgId]);
   if (!seq.length) return res.status(404).json({ error: "Sequence not found" });
   const donorCheck = await query("SELECT id FROM donors WHERE id = ? AND org_id = ?", [donorId, req.user.orgId]);

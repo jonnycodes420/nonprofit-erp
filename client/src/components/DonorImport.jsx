@@ -78,10 +78,74 @@ const CSV_FIELD_LABELS = {
   deceased: "Deceased", doNotContact: "Do not contact", photo: "Photo",
   ...MEMBERSHIP_FIELD_LABELS,
 };
+// ── FIX-10 D · NO INTERNAL FIELD NAME REACHES A LABEL ───────────────────────
+// The gift-field dropdown showed `paymentMethod`, `softCreditName` and
+// `donorName` as its option labels, because the label was the ROLE KEY. Three
+// of them were spelled out plainly somewhere and the rest were not, which is
+// the shape of the bug: the fix is not three more entries, it is that no code
+// path may fall back to a key.
+//
+// `plainFieldLabel` is that floor. Every label table below falls through to it,
+// so a role added tomorrow reads "Pledge ID" and never `pledgeId`, and a
+// camelCase word can no longer reach a screen through this file.
+export function plainFieldLabel(key) {
+  const k = String(key || "").replace(/^_/, "");
+  if (!k) return "";
+  const words = k
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")     // donorName  → donor Name
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")  // ZIPCode    → ZIP Code
+    .replace(/[_-]+/g, " ")
+    .trim().split(/\s+/);
+  const KEEP = { id: "ID", ein: "EIN", zip: "ZIP", url: "URL", usd: "USD" };
+  return words.map((w, i) => {
+    const low = w.toLowerCase();
+    if (KEEP[low]) return KEEP[low];
+    return i === 0 ? low.charAt(0).toUpperCase() + low.slice(1) : low;
+  }).join(" ");
+}
+
+// FIX-10 E — the three shapes, named the same way in the banner, in the
+// override dropdown and in "You chose". Before this the dropdown said "One row
+// per gift (build history)" and the banner said "individual gifts", so the
+// sentence about her choice used none of the words she had picked.
+const SHAPE_CHOICE = {
+  aggregate:   "one row per donor (totals)",
+  transaction: "one row per gift",
+  wide:        "year columns",
+};
+
+// The gift-row (transaction) targets, with the label each one shows. This is
+// the ONE table for them: the picker list and the "what does this column
+// become?" dropdown both read it, so the two cannot drift.
+const TX_ROLE_LABELS = {
+  donorName: "Donor name", donorEmail: "Email", firstName: "First name", lastName: "Last name",
+  orgName: "Organisation name", donorType: "Donor type", donorId: "Donor ID",
+  amount: "Gift amount", date: "Gift date", type: "Gift type", campaign: "Campaign / fund",
+  fund: "Fund", paymentMethod: "Payment method", notes: "Notes",
+  externalId: "Gift / transaction ID", stage: "Payment status",
+  phone: "Phone", address: "Address", city: "City", state: "State", zip: "ZIP",
+  owner: "Assigned officer (portfolio owner)",
+  softCreditName: "Soft credit to", softCreditAmount: "Soft credit amount",
+  tributeName: "In honour or memory of", tributeType: "Tribute type",
+  tributeNotify: "Tribute: who to tell", matchEmployer: "Matching employer",
+  wealthRating: "Wealth screen rating", wealthCapacity: "Wealth screen capacity",
+  wealthDate: "Wealth screen date",
+  proposalPurpose: "Proposal: what the ask is for",
+  proposalAmount: "Proposal: ask amount (NOT a gift)",
+  proposalStage: "Proposal: stage",
+  proposalCloseDate: "Proposal: expected close date",
+  proposalProbability: "Proposal: probability",
+};
+export const txRoleLabel = role => TX_ROLE_LABELS[role] || plainFieldLabel(role);
+// Either family, for the receipt, which lists donor columns and gift columns
+// side by side and printed the raw key for both ("Payment Method → paymentMethod").
+export const anyFieldLabel = key =>
+  CSV_FIELD_LABELS[String(key || "").replace(/^_/, "")] || TX_ROLE_LABELS[key] || plainFieldLabel(key);
+
 const CSV_STANDARD_FIELDS = [
   { key: "_firstName", label: "First name" },
   { key: "_lastName", label: "Last name" },
-  ...CSV_FIELDS.map(f => ({ key: f.key, label: CSV_FIELD_LABELS[f.key] || f.key,
+  ...CSV_FIELDS.map(f => ({ key: f.key, label: CSV_FIELD_LABELS[f.key] || plainFieldLabel(f.key),
                             flag: f.key === "deceased" || f.key === "doNotContact" })),
   { key: "deceased", label: "Deceased" },
   { key: "doNotContact", label: "Do not contact" },
@@ -1096,6 +1160,44 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     () => (parsed?.headers && !npspIs ? detectMigrationPreset(parsed.headers) : null),
     [parsed, npspIs]);
   const mig = migDetected && migDetected.key ? migrationMapping(parsed.headers, migDetected.key) : null;
+
+  // ── FIX-10 E · THE TILE IS THE ACCEPT, FOR WHAT THE PRESET COVERS ────────
+  //
+  // Picking "DonorPerfect" on the move-in screen IS a decision about
+  // DonorPerfect's own columns. The preset already names every one it sets
+  // aside and why (`noTarget` in shared/migrationPresets.js), and the mapper
+  // was then asking her to decide each of them again from scratch: `donor_id`
+  // arrived as an un-homed column with a proposal card and a type dropdown, on
+  // a file where the preset's whole point is that it knows what donor_id is.
+  //
+  // So the preset's set-aside columns come in DECIDED, marked as having come
+  // from the tile, with one click to change. Every OTHER column is untouched:
+  // the "no field without an explicit accept" rule is unchanged, and the tile
+  // is the accept only for what the preset actually covers.
+  const presetKey = (moveSource && MIGRATION_PRESETS[moveSource]) ? moveSource
+                  : (migDetected && migDetected.key) || null;
+  const presetSetAside = useMemo(() => {
+    const pk = presetKey;
+    if (!pk || !parsed?.headers) return null;
+    const m = migrationMapping(parsed.headers, pk);
+    if (!m || !m.ignored.length) return null;
+    const byHeader = {};
+    for (const ig of m.ignored) byHeader[normalizeHeader(ig.header)] = ig.reason;
+    return { label: m.label, byHeader };
+  }, [presetKey, parsed]);
+
+  useEffect(() => {
+    if (!presetSetAside || !mapperPlan) return;
+    const pending = {};
+    for (const c of mapperPlan.columns) {
+      if (c.status !== "custom-proposed") continue;
+      const reason = presetSetAside.byHeader[normalizeHeader(c.header)];
+      if (!reason) continue;
+      if (cfDecisions[c.index]) continue;            // her own decision always wins
+      pending[c.index] = { action: "discard", viaPreset: presetSetAside.label, presetReason: reason };
+    }
+    if (Object.keys(pending).length) setCfDecisions(p => ({ ...pending, ...p }));
+  }, [presetSetAside, mapperPlan]);
   const [mcFileStatus, setMcFileStatus] = useState(null);
   const [mcApplyTagTypes, setMcApplyTagTypes] = useState(false);
   useEffect(() => {
@@ -1171,7 +1273,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     // contact_confidence on `name` and nothing objected.)
     if (duplicateDonorTargets.length) {
       const d = duplicateDonorTargets[0];
-      const label = (CSV_STANDARD_FIELDS.find(f => f.key === d.field) || {}).label || d.field;
+      const label = (CSV_STANDARD_FIELDS.find(f => f.key === d.field) || {}).label || plainFieldLabel(d.field);
       setErr(`Two columns are mapped to ${label.toLowerCase()} — “${d.headers.join("” and “")}”. Pick one, or send the other somewhere else.`);
       return;
     }
@@ -2268,7 +2370,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3,marginBottom:6}}>Every column accounted for</div>
               {sections.map(([label, c]) => c && <div key={label} style={{marginBottom:6}}>
                 <strong style={{color:T.ink}}>{label}:</strong>{" "}
-                <span style={{color:T.ink2}}>{c.mapped.map(m => `${m.header} → ${m.field}`).join(" · ") || "no columns mapped"}</span>
+                <span style={{color:T.ink2}}>{c.mapped.map(m => `${m.header} → ${anyFieldLabel(m.field)}`).join(" · ") || "no columns mapped"}</span>
                 {c.ignored.length > 0 && <div style={{color:T.ink3}}>Not imported (by design): {c.ignored.join(" · ")}</div>}
                 {c.unrecognized.length > 0 && <div style={{color:T.terracotta,fontWeight:600}}>Not imported — unrecognized: {c.unrecognized.join(" · ")}</div>}
               </div>)}
@@ -2290,13 +2392,17 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
   const donorCount = payload.donors.length;
   const giftCount  = payload.gifts.length;
   const donorHeaders = parsed ? parsed.headers.filter(h => !YEAR_HDR_PAT.test(String(h))) : [];
+  // FIX-10 D — the ROLES this picker offers, in the order it offers them. The
+  // LABEL is not written here: it comes from TX_ROLE_LABELS through
+  // txRoleLabel, so this list and the column-target dropdown say the same words
+  // and neither can fall back to a camelCase key.
   const TX_ROLES = [
-    ["donorName","Donor name"],["donorEmail","Email"],["amount","Gift amount"],["date","Gift date"],
-    ["type","Type"],["campaign","Campaign / fund"],["notes","Notes"],["externalId","Gift / transaction ID"],["phone","Phone"],["city","City"],["state","State"],
-    ["softCreditName","Soft credit to"],["softCreditAmount","Soft credit amount"],
-    ["tributeName","In honour or memory of"],["tributeType","Tribute type"],["tributeNotify","Tribute: who to tell"],
-    ["matchEmployer","Matching employer"],
-    ["wealthRating","Wealth screen rating"],["wealthCapacity","Wealth screen capacity"],["wealthDate","Wealth screen date"],
+    "donorName","donorEmail","amount","date",
+    "type","campaign","notes","externalId","phone","city","state",
+    "softCreditName","softCreditAmount",
+    "tributeName","tributeType","tributeNotify",
+    "matchEmployer",
+    "wealthRating","wealthCapacity","wealthDate",
     // BUILD-99 (major gifts) Part 6 — A PROPOSAL IS NOT A GIFT, so the mapper has
     // to be able to say which one a column is. Team only, because the whole
     // major-gifts layer is (the 2026-07-19 split); a Core org importing a file
@@ -2305,14 +2411,10 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
     // relabelled, not duplicated — BUILD-98 Part 6's line for it is the one this
     // replaces, so there is still exactly one.
     ...(isTeam ? [
-      ["owner","Assigned officer (portfolio owner)"],
-      ["proposalPurpose","Proposal: what the ask is for"],
-      ["proposalAmount","Proposal: ask amount (NOT a gift)"],
-      ["proposalStage","Proposal: stage"],
-      ["proposalCloseDate","Proposal: expected close date"],
-      ["proposalProbability","Proposal: probability"],
+      "owner","proposalPurpose","proposalAmount","proposalStage",
+      "proposalCloseDate","proposalProbability",
     ] : []),
-  ];
+  ].map(role => [role, txRoleLabel(role)]);
 
   return (
     <Modal onClose={onClose} width={700} zIndex={300} backdrop="rgba(15,26,18,0.72)" blur={false}
@@ -2323,7 +2425,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
           <div>
             <div style={{fontSize:18,fontWeight:800,color:T.ink}}>Import Donors</div>
-            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One file — donors and their giving history · shape auto-detected · stages auto-assigned</div>
+            <div style={{fontSize:13,color:T.ink3,marginTop:2}}>One file · donors and their giving history · shape auto-detected · stages auto-assigned</div>
             {/* LOST & FOUND — somebody who ran the free audit and then signed
                 up still has the file open on their desk, and the obvious
                 next thing is to import the same one. The FILE did not
@@ -2573,16 +2675,32 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
           {/* Detection banner + override — BUILD-79 Part 2: the decision shows
               its evidence, and with too little evidence it becomes a QUESTION. */}
           <div style={{background:effectiveShape==="unknown"?T.terra100:T.gold100,border:`1px solid ${effectiveShape==="unknown"?T.terra200:T.gold300}`,borderRadius:10,padding:"11px 14px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-            <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}}>
-              <span style={{fontWeight:700}}>{effectiveShape==="unknown"?"We can't tell:":"We detected:"}</span> {shapeLabel(effectiveShape)}.
-              {shapeDetail?.reason && <span style={{color:T.ink3}}> ({shapeDetail.reason})</span>}
+            {/* FIX-10 E — "WE DETECTED" AND "NOT ENOUGH EVIDENCE" ARE NEVER IN
+                ONE SENTENCE. Overriding an undetectable file kept the detector's
+                reason beside the new shape, so the banner read "We detected:
+                individual gifts (only 1 column recognised, not enough evidence
+                to pick a shape)": one sentence claiming a finding and admitting
+                it had none. There are three states, not two.
+                  · she chose it   → "You chose: …", and no detector reason at all
+                  · nothing found  → "We can't tell: …", with the reason
+                  · found          → "We detected: …", with the reason */}
+            <div style={{fontSize:12.5,color:T.ink,lineHeight:1.5}} data-testid="shape-banner"
+                 data-shape-source={shapeOverride?"chosen":effectiveShape==="unknown"?"unknown":"detected"}>
+              {shapeOverride ? (<>
+                <span style={{fontWeight:700}}>You chose:</span>{" "}
+                {SHAPE_CHOICE[effectiveShape]||shapeLabel(effectiveShape)}.
+              </>) : (<>
+                <span style={{fontWeight:700}}>{effectiveShape==="unknown"?"We can't tell:":"We detected:"}</span>{" "}
+                {shapeLabel(effectiveShape)}.
+                {shapeDetail?.reason && <span style={{color:T.ink3}}> ({shapeDetail.reason})</span>}
+              </>)}
             </div>
             <select value={effectiveShape} onChange={e=>setShapeOverride(e.target.value)}
               style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 8px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer"}}>
-              {effectiveShape==="unknown" && <option value="unknown">— choose the file's shape —</option>}
+              {effectiveShape==="unknown" && <option value="unknown">Choose the file's shape</option>}
               <option value="aggregate">One row per donor (totals)</option>
-              <option value="transaction">One row per gift (build history)</option>
-              <option value="wide">Year columns (build history)</option>
+              <option value="transaction">One row per gift</option>
+              <option value="wide">Year columns</option>
             </select>
           </div>
 
@@ -2778,7 +2896,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               )}
               {mapRefusal && (
                 <div style={{background:T.terra100,border:`1px solid ${T.terra200}`,borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:T.terra700,lineHeight:1.5}}>
-                  <strong>“{mapRefusal.header}” can't map to {mapRefusal.field.replace(/^_/,"")}:</strong> {mapRefusal.summary}
+                  <strong>“{mapRefusal.header}” can't map to {plainFieldLabel(mapRefusal.field)}:</strong> {mapRefusal.summary}
                 </div>
               )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
@@ -2983,6 +3101,22 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                     const label = d.label!==undefined?d.label:c.proposal.label;
                     const failed = (type===c.proposal.type?c.proposal.evidence.failed:null);
                     const decided = d.action==="accept"||d.action==="discard"||d.action==="core";
+                    // FIX-10 E — a column the VENDOR TILE already decided. One
+                    // line, the preset's own reason, and one click to take it
+                    // back. It does not get the proposal card, because nobody
+                    // needs to be asked twice about `donor_id`.
+                    if (d.viaPreset) return (
+                      <div key={c.index} data-cf-col={String(c.header).trim()} data-cf-decided="1"
+                        data-cf-via-preset={d.viaPreset}
+                        style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8,color:T.ink2}}>
+                        <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>
+                        {" → "}<strong>Set aside, from your {d.viaPreset} preset</strong>.{" "}
+                        <button onClick={()=>clearDecision(c.index)}
+                          style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+                          Change
+                        </button>
+                        {d.presetReason && <div style={{color:T.ink3,fontSize:11.5,marginTop:2,lineHeight:1.5}}>{d.presetReason}</div>}
+                      </div>);
                     return <div key={c.index} data-cf-col={String(c.header).trim()} data-cf-decided={decided?"1":"0"} style={{borderTop:`1px solid ${T.bg3}`,paddingTop:8,marginTop:8}}>
                       <div style={{marginBottom:4}}>
                         <strong style={{color:T.ink}}>{String(c.header).trim()}</strong>
@@ -2999,8 +3133,8 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
                         <ColumnTargetSelect
                           testId={`tx-map-${String(c.header).trim()}`}
                           header={c.header} entity={entity} compact
-                          standardFields={openRoles.map(r=>({key:r,label:r}))
-                            .concat(d.action==="core"&&d.role?[{key:d.role,label:d.role}]:[])
+                          standardFields={openRoles.map(r=>({key:r,label:txRoleLabel(r)}))
+                            .concat(d.action==="core"&&d.role?[{key:d.role,label:txRoleLabel(d.role)}]:[])
                             .filter((f,i,arr)=>arr.findIndex(x=>x.key===f.key)===i)}
                           cfDefs={cfDefs}
                           proposal={c.proposal}

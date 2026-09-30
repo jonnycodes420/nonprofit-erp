@@ -62,6 +62,11 @@ const GUARDED_WRITERS = [
   // donors and no gifts (the walk imports the file itself), but it creates an
   // org, a login and a fund, so it is a writer and is guarded like one.
   "trans1-walk-org",
+  // FIX-10 — the fixture org THIS build's prod walk is driven against. Unlike
+  // the TRANS-1 one it writes fourteen donors and twenty-three gifts, because
+  // the shape of the file is the point: an org whose whole giving history
+  // predates the current fiscal year. A writer twice over, guarded like one.
+  "fix10-walk-org",
   // BUILD-86 Part B — the demo org's own words.
   "seed-build86-vocabulary",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",

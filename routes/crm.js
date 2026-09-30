@@ -27,7 +27,7 @@ const reportHooks = {};
 
 function mount(ctx) {
 const {
-  ACK_READY, ACTIVITY_DEFINITIONS, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
+  ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
   Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
   MB_READY, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, PHOTO_FETCH_BUDGET, PT_READY, RB_READY,
@@ -806,7 +806,12 @@ app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
 // Start setup: a new secret, sealed as PENDING until a code proves the app has it.
 app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
   const { seal, credentialsConfigured } = await import("../shared/secretBox.js");
-  if (!credentialsConfigured()) return res.status(503).json({ error: "Two-step sign-in is not available on this server yet (STEWARD_CREDENTIAL_KEY is not set)." });
+  // FIX-10 D — a customer never reads a variable name. The reason is in the
+  // server log, where somebody can act on it.
+  if (!credentialsConfigured()) {
+    console.error("[mfa] setup refused: no credential key is configured on this server");
+    return res.status(503).json({ error: "Two-step sign-in isn't available yet. We'll let you know when it is." });
+  }
   const secret = TOTP.newSecret();
   await run(`UPDATE users SET mfa_pending_sealed=? WHERE id=?`, [seal(secret, { aad: "mfa:" + req.user.orgId + ":" + req.user.userId }), req.user.userId]);
   res.json({ secret, otpauthUrl: TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId }),
@@ -4913,6 +4918,9 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     });
   }
 
+  // FIX-10 Part C — how many of this gift's own tasks the delete voided, so the
+  // timeline note can say it. Declared above the block that assigns it.
+  let voidedTaskCount = 0;
   // BUILD-27 concurrency: serialize the whole delete → donor-recalc under the
   // SAME per-gift advisory lock PUT /gifts/:id takes, so a concurrent edit and
   // delete of the SAME gift can't tear the donor total apart from the ledger.
@@ -4936,6 +4944,25 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
     // gift that no longer exists anywhere. Manual/expense rows (gift_id NULL)
     // are untouched.
     await runTx(client, "DELETE FROM fin_transactions WHERE gift_id=? AND org_id=?", [req.params.id, req.user.orgId]);
+    // ── FIX-10 Part C · RECORDS STAY CLEAN ──────────────────────────────────
+    // A gift's arrival creates tasks ("Thank Ruth, $500 just came in", the
+    // stewardship alert). Deleting the gift used to leave them standing,
+    // pointing at money that no longer exists anywhere, and a director had no
+    // way to tell them from a task she had typed herself. They are VOIDED
+    // here: off every list, still a row, with the reason on it.
+    //
+    // The predicate is source_gift_id, never the donor and never the title.
+    // That is what makes "tasks a person wrote by hand are never touched" true
+    // by construction rather than by luck: a hand-written task has no
+    // source_gift_id, so this UPDATE cannot reach it.
+    //
+    // Inside the SAME transaction as the gift row's delete: a void that
+    // committed without the delete would cancel a thank-you for a gift that
+    // still exists.
+    const voided = await runTx(client,
+      "UPDATE tasks SET voided_at=NOW(), voided_reason='gift_deleted', updated_at=NOW() WHERE org_id=? AND source_gift_id=? AND voided_at IS NULL",
+      [req.user.orgId, req.params.id]);
+    voidedTaskCount = Number(voided?.changes ?? voided?.rowCount ?? 0) || 0;
     await runTx(client, "DELETE FROM gifts WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
   });
   // Full recalc: old delta left last_gift_date and last_gift_amount stale when deleting the most recent gift
@@ -4944,7 +4971,21 @@ app.delete("/gifts/:id", requireAuth, wrap(async (req, res) => {
   // (reopens only if remaining payments no longer cover the pledge amount).
   if (g.pledge_id) await recalcPledgePayment(g.pledge_id, req.user.orgId);
   }); // end withAdvisoryLock(gift:…) — delete + recalc serialized per gift
-  res.json({ ok: true });
+  // FIX-10 Part C — the timeline says what happened, in one line, on the
+  // donor's own record. A task that vanishes without a trace is how a director
+  // comes to believe she already thanked someone she never thanked. Written
+  // after the transaction commits, so the note can never describe a void that
+  // rolled back.
+  if (voidedTaskCount > 0 && g.donor_id) {
+    const _a = actor(req);
+    await run(
+      "INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_by,logged_by_name) VALUES (?,?,?,'note',?,?,?,?)",
+      ["i_" + uuid().slice(0, 8), req.user.orgId, g.donor_id,
+       `Gift removed, thank-you cancelled. ${voidedTaskCount === 1 ? "One task" : `${voidedTaskCount} tasks`} Steward had created for this gift ${voidedTaskCount === 1 ? "was" : "were"} voided.`,
+       orgToday(await orgTz(req.user.orgId)), _a.id, _a.name]
+    ).catch(e => console.error("[gift-delete] timeline note:", e.message));
+  }
+  res.json({ ok: true, voidedTasks: voidedTaskCount });
 }));
 
 // ── Pledges ──────────────────────────────────────────────────────────────
@@ -6931,7 +6972,7 @@ app.post("/gifts/import-history", requireAuth, checkWriteAccess, wrapImport(asyn
   // Validate all provided donorIds belong to this org
   const donorIds = [...new Set(gifts.map(g => g.donorId).filter(Boolean))];
   if (!donorIds.length)
-    return res.status(400).json({ error: "All gifts must have a donorId" });
+    return res.status(400).json({ error: "Every gift needs the donor it belongs to" });
 
   const orgDonors = await query(
     "SELECT id FROM donors WHERE org_id = ? AND id = ANY(?) AND deleted_at IS NULL",
@@ -8212,7 +8253,7 @@ app.get("/pipeline", requireAuth, wrap(async (req, res) => {
   // Next open task per donor (earliest due).
   const nextTasks = await query(
     `SELECT DISTINCT ON (donor_id) donor_id, title, due FROM tasks
-       WHERE org_id=? AND done=0 AND donor_id IS NOT NULL
+       WHERE org_id=? AND done=0 AND voided_at IS NULL AND donor_id IS NOT NULL
        ORDER BY donor_id, (NULLIF(due,'')) ASC NULLS LAST`, [orgId]);
   const taskByDonor = Object.fromEntries(nextTasks.map(t => [t.donor_id, { title: t.title, due: t.due }]));
 
@@ -9468,6 +9509,36 @@ app.post("/journeys", requireAuth, requireAdmin, checkWriteAccess, wrap(async (r
   const b = req.body || {};
   const preset = b.presetKey ? J.presetByKey(String(b.presetKey)) : null;
   if (b.presetKey && !preset) return res.status(400).json({ error: "unknown_preset", message: "There is no preset by that name." });
+
+  // ── FIX-10 Part C · RE-RUNNING ONBOARDING NEVER CLONES A JOURNEY ─────────
+  // Onboarding's preset picker POSTs here the first time a preset is tapped
+  // and caches the new id in memory. Walk the wizard a second time and that
+  // cache is gone, so the same tap made a SECOND row from the same preset:
+  // two journeys, same trigger, same steps, and whichever got armed would fire
+  // beside its twin. The preset key is the identity. If a live journey already
+  // came from this preset, that journey IS the answer, and "Use this one"
+  // opens it. The ORIGINAL, by created_at, so a deliberate duplicate (which
+  // carries the preset key too) never shadows the one onboarding made.
+  //
+  // Only the preset path is affected: a hand-built journey has no preset key,
+  // so POSTing two of those still makes two, which is what the button says.
+  if (preset) {
+    const [already] = await query(
+      `SELECT * FROM cultivation_templates WHERE org_id=? AND preset_key=? AND archived_at IS NULL
+        ORDER BY created_at ASC, id ASC LIMIT 1`, [req.user.orgId, preset.key]);
+    if (already) {
+      return res.json({
+        id: already.id, name: already.name, description: already.description,
+        trigger: already.trigger_key, priority: already.priority,
+        steps: already.steps, amountCents: already.trigger_amount_cents,
+        audience: already.audience || {}, presetKey: already.preset_key,
+        enabled: !!already.journey_enabled,
+        touches: J.touchesSentence(already.steps || []),
+        existing: true,
+        sentence: `You already have "${already.name}" from this one. Opening it instead of making a second.`,
+      });
+    }
+  }
 
   const input = {
     name: b.name || (preset && preset.name),
@@ -12654,7 +12725,7 @@ app.get("/tasks", requireAuth, wrap(async (req, res) => {
     `SELECT t.*, d.name AS donor_name
        FROM tasks t
        LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-      WHERE t.org_id = ? ${mine ? "AND t.assigned_to = ?" : ""}
+      WHERE t.org_id = ? AND t.voided_at IS NULL ${mine ? "AND t.assigned_to = ?" : ""}
       ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due ASC`,
     mine ? [req.user.orgId, req.user.userId] : [req.user.orgId]
   );
@@ -12666,7 +12737,7 @@ app.get("/donors/:id/tasks", requireAuth, wrap(async (req, res) => {
   if (!(await orgOwns("donors", req.params.id, req.user.orgId)))
     return res.status(404).json({ error: "Donor not found" });
   const tasks = await query(
-    `SELECT * FROM tasks WHERE org_id = ? AND donor_id = ?
+    `SELECT * FROM tasks WHERE org_id = ? AND donor_id = ? AND voided_at IS NULL
       ORDER BY done ASC, due ASC NULLS LAST, created_at DESC`,
     [req.user.orgId, req.params.id]
   );
@@ -12902,7 +12973,7 @@ app.get("/dashboard/home", requireAuth, wrap(async (req, res) => {
          COUNT(*) FILTER (WHERE due <> '' AND due IS NOT NULL AND due > ? AND left(due,10) <> ?) AS upcoming,
          COUNT(*) FILTER (WHERE due = '' OR due IS NULL) AS no_date,
          COUNT(*) AS total
-       FROM tasks WHERE org_id=? AND done=0 ${taskScope}`,
+       FROM tasks WHERE org_id=? AND done=0 AND voided_at IS NULL ${taskScope}`,
       scope === "mine" ? [today, today, today, today, orgId, userId] : [today, today, today, today, orgId]),
     mMine ? query(`SELECT COUNT(*) AS cnt, COALESCE(SUM(total_giving),0) AS val FROM donors WHERE ${mMine.where}`, mMine.params) : nullQ,
     mMine ? query("SELECT portfolio_color FROM users WHERE id=? AND org_id=?", [userId, orgId]) : nullQ,
@@ -13278,7 +13349,7 @@ app.get("/dashboard/today", requireAuth, wrap(async (req, res) => {
     SELECT t.id, t.title, t.due, t.priority AS task_priority, t.type AS task_type, t.donor_id, d.name AS donor_name, d.total_giving
     FROM tasks t
     JOIN donors d ON d.id = t.donor_id
-    WHERE t.org_id = ? AND done=0 AND t.due <= ? ${scopeClause}
+    WHERE t.org_id = ? AND done=0 AND t.voided_at IS NULL AND t.due <= ? ${scopeClause}
     ORDER BY t.due ASC
     LIMIT 5
   `, [orgId, todayStr, ...scopeParams]),
@@ -13838,7 +13909,7 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
             k.created_at, d.name AS donor_name, d.total_giving, d.gift_count
        FROM tasks k
        JOIN donors d ON d.id = k.donor_id AND d.org_id = k.org_id
-      WHERE k.org_id = ? AND k.done = 0 AND k.donor_id IS NOT NULL AND d.deleted_at IS NULL
+      WHERE k.org_id = ? AND k.done = 0 AND k.voided_at IS NULL AND k.donor_id IS NOT NULL AND d.deleted_at IS NULL
         AND k.due IS NOT NULL AND k.due <> ''
         ${donorId ? "AND k.donor_id = ?" : ""}
         ${effScope === "all" || !userId ? "" : "AND (k.assigned_to = ? OR (k.assigned_to IS NULL AND d.assigned_to = ?))"}
@@ -14582,7 +14653,7 @@ app.get("/dashboard/retention/breakdown", requireAuth, wrap(async (req, res) => 
 app.get("/dashboard", requireAuth, wrap(async (req, res) => {
   const { orgId } = req.user;
   const urgentTasks = await query(
-    "SELECT * FROM tasks WHERE org_id=? AND done=0 AND priority='high' ORDER BY due ASC LIMIT 5",
+    "SELECT * FROM tasks WHERE org_id=? AND done=0 AND voided_at IS NULL AND priority='high' ORDER BY due ASC LIMIT 5",
     [orgId]
   );
   const upcomingDeadlines = await query(
@@ -15011,6 +15082,7 @@ function fundraisingGoalsPortfolio(rows) {
 // campaign + giving-page rollups, and recent real gifts.
 app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   await PACE_READY;
+  await FISCAL_READY;   // FIX-10 Part B — the period label is the shared one, not a race
   const { orgId } = req.user;
   const yearMode = req.query.yearMode === "calendar" ? "calendar" : "fiscal";
   const _fpTz = await orgTz(orgId);   // ORG_TZ_SEAM_OK
@@ -15022,7 +15094,17 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
   // period above, so the hero shows a number that genuinely moves week to week.
   const wk = weekBounds(0, await orgTz(orgId));   // ORG_TZ_SEAM_OK
 
-  const [goalRows, curRows, priorRows, weekRows, recentGifts, campaigns, givingPages] = await Promise.all([
+  // FIX-10 Part B — A ZERO THAT EXPLAINS ITSELF. Fundraising opened on
+  // "$0 RAISED · FY 2026–27" to an org that had imported $19,750 the hour
+  // before, because the fiscal year had turned in July and every imported
+  // gift was dated before it. Finance already handles exactly this ("$19,750
+  // of imported giving across 23 gifts isn't in this ledger…") and this is
+  // that pattern, on Fundraising: the last twelve months, beside the empty
+  // year, each opening its own rows. Same JOIN and deleted_at predicate as
+  // the period query above, so both figures foot to Reports.
+  const l12Start = orgTime.addDays(orgToday(_fpTz), -364);
+  const l12End = orgToday(_fpTz);
+  const [goalRows, curRows, priorRows, weekRows, recentGifts, campaigns, givingPages, l12Rows, anyGiftRows] = await Promise.all([
     query(
       "SELECT * FROM fundraising_goals WHERE org_id = ? AND period_start <= ? AND period_end >= ? ORDER BY created_at DESC LIMIT 1",
       [orgId, today, today]
@@ -15048,6 +15130,8 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
          FROM giving_pages gp WHERE gp.org_id = ? ORDER BY gp.created_at DESC`,
       [orgId]
     ),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts, COUNT(DISTINCT g.donor_id) AS donors FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL AND g.date >= ? AND g.date <= ?", [orgId, l12Start, l12End]),
+    query("SELECT COALESCE(SUM(g.amount),0) AS total, COUNT(*) AS gifts FROM gifts g JOIN donors d ON d.id = g.donor_id WHERE g.org_id = ? AND d.deleted_at IS NULL", [orgId]),
   ]);
 
   // Active org goal with pace (reuses the goal-progress math shape).
@@ -15124,7 +15208,27 @@ app.get("/fundraising/overview", requireAuth, wrap(async (req, res) => {
       donorCount: parseInt(curRows[0]?.donors, 10) || 0,
       priorRaised: priorTotal,
       delta: periodTotal - priorTotal,
+      // FIX-10 Part B — the bounds this figure was summed over, so the tile can
+      // open EXACTLY the rows it claims instead of a whole-Reports link.
+      start: cur.start,
+      end: cur.end,
     },
+    // FIX-10 Part B — the last twelve months, and whether this org has any
+    // giving at all. `emptyYearWithHistory` is the single condition the client
+    // reads: the fiscal year has no gifts AND the file is not empty, which is
+    // the only case where "$0 raised" is true and useless at the same time.
+    last12: {
+      raised: parseFloat(l12Rows[0]?.total) || 0,
+      giftCount: parseInt(l12Rows[0]?.gifts, 10) || 0,
+      donorCount: parseInt(l12Rows[0]?.donors, 10) || 0,
+      start: l12Start,
+      end: l12End,
+    },
+    allTime: {
+      raised: parseFloat(anyGiftRows[0]?.total) || 0,
+      giftCount: parseInt(anyGiftRows[0]?.gifts, 10) || 0,
+    },
+    emptyYearWithHistory: periodTotal === 0 && (parseInt(anyGiftRows[0]?.gifts, 10) || 0) > 0,
     thisWeek: {
       raised: parseFloat(weekRows[0]?.total) || 0,
       giftCount: parseInt(weekRows[0]?.gifts, 10) || 0,
@@ -16110,7 +16214,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
     query("SELECT * FROM orgs WHERE id = ?", [orgId]).then(r => r[0]),
     query("SELECT id,name,total_giving,stage,created_at FROM donors WHERE org_id = ? AND deleted_at IS NULL", [orgId]),
     query("SELECT * FROM grants WHERE org_id = ?", [orgId]),
-    query("SELECT done,due FROM tasks WHERE org_id = ?", [orgId]),
+    query("SELECT done,due FROM tasks WHERE org_id = ? AND voided_at IS NULL", [orgId]),
     query("SELECT * FROM campaigns WHERE org_id = ?", [orgId]),
   ]);
   console.log("[board-report] step 3: core data OK — donors:", allDonors.length, "grants:", allGrants.length, "tasks:", allTasks.length, "campaigns:", allCampaigns.length);
@@ -18265,8 +18369,11 @@ app.post("/note-reminders/:id/dismiss", requireAuth, wrap(async (req, res) => {
 // to a stub.
 app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   const { donorId, audioBase64, mimeType } = req.body;
-  if (!donorId || !audioBase64) return res.status(400).json({ error: "donorId and audioBase64 required" });
-  if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "Voice transcription is not configured (missing OPENAI_API_KEY)." });
+  if (!donorId || !audioBase64) return res.status(400).json({ error: "A donor and a recording are both needed." });
+  if (!process.env.OPENAI_API_KEY) {
+    console.error("[voice-memo] transcription refused: no transcription key is configured on this server");
+    return res.status(503).json({ error: "Voice notes aren't available yet. We'll let you know when they are." });
+  }
 
   const donorRows = await query("SELECT id, name FROM donors WHERE id=? AND org_id=?", [donorId, req.user.orgId]);
   if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });

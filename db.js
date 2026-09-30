@@ -862,6 +862,16 @@ async function initSchema() {
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to TEXT`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assigned_to_name TEXT`);
   await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ`);
+  // FIX-10 Part C — WHICH GIFT MADE THIS TASK. Deleting a gift used to leave
+  // its own thank-you task standing: "Thank Ruth, $500 just came in" against a
+  // $500 gift that no longer existed anywhere, and no way to tell that task
+  // apart from one a person had typed. This column is that way. It is stamped
+  // ONLY where a gift's arrival creates the task, so a hand-written task has
+  // it NULL by construction and can never be voided by a delete.
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS source_gift_id TEXT`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS voided_reason TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_source_gift ON tasks (org_id, source_gift_id) WHERE source_gift_id IS NOT NULL`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tasks_org_donor ON tasks(org_id, donor_id)`);
   // BUILD-13 Part 2 org branding (tasteful white-label): base64 logo data-URI,
   // one accent color (normalized to an accessible range on save, see

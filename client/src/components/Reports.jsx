@@ -5,6 +5,7 @@ import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
 import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey } from "../lib/reportsRail";
 import { displayDate } from "../../../shared/displayDate";
+import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
@@ -58,11 +59,18 @@ const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct
 const fyOf = start => (now.getMonth() + 1 < start ? now.getFullYear() : now.getFullYear() + 1);
 const fyLastMonth = start => MON[(start + 10) % 12];
 const fyRangeLabel = (y, start) => `${MON[start - 1]} ${y - 1} – ${fyLastMonth(start)} ${start === 1 ? y - 1 : y}`;
-const presetsFor = fy => [
-  { id: "thisFY", label: "This FY", year: fy, yearMode: "fiscal" },
-  { id: "lastFY", label: "Last FY", year: fy - 1, yearMode: "fiscal" },
-  { id: "thisCY", label: "This CY", year: CUR_CY, yearMode: "calendar" },
-  { id: "lastCY", label: "Last CY", year: CUR_CY - 1, yearMode: "calendar" },
+// FIX-10 Part B — EVERY CHIP SAYS WHICH YEAR IT IS. Reports defaults itself to
+// LAST year when the current one is nearly empty, which is kind and was also
+// silent: the chip read "Last FY" with no year on it, so the total on screen
+// belonged to a year the reader had neither chosen nor been told. The labels
+// come from shared/fiscalPeriod.js, the same function the server's
+// finPeriodBounds uses for "FY 2026–27", so Reports and Fundraising cannot
+// name the same year two ways.
+const presetsFor = (fy, fiscalStartMonth = 7) => [
+  { id: "thisFY", label: periodChipLabel("thisFY", { fy, cy: CUR_CY, fiscalStartMonth }), year: fy, yearMode: "fiscal" },
+  { id: "lastFY", label: periodChipLabel("lastFY", { fy, cy: CUR_CY, fiscalStartMonth }), year: fy - 1, yearMode: "fiscal" },
+  { id: "thisCY", label: periodChipLabel("thisCY", { fy, cy: CUR_CY, fiscalStartMonth }), year: CUR_CY, yearMode: "calendar" },
+  { id: "lastCY", label: periodChipLabel("lastCY", { fy, cy: CUR_CY, fiscalStartMonth }), year: CUR_CY - 1, yearMode: "calendar" },
   { id: "custom", label: "Custom" },
 ];
 const pctStr = v => v === null || v === undefined ? "—" : `${v}%`;
@@ -236,7 +244,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const isTab = isTabReport(active);
   const fsm = fiscalStart || 7;
   const CUR_FY = fyOf(fsm);
-  const PRESETS = presetsFor(CUR_FY);
+  const PRESETS = presetsFor(CUR_FY, fsm);
   const effPreset = preset || autoDefault;
   const effYear = year || (yearMode === "fiscal" ? CUR_FY : CUR_CY);
   const isPeriodReport = PERIOD_REPORTS.includes(active) && !(active === "top-donors" && scope === "lifetime");

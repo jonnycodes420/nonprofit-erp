@@ -3,6 +3,12 @@
 Read this when you touch gifts, `recordGift`, funds and methods, attribution, campaigns, the finance ledger, soft credits, tributes, matching gifts, deposits, cheques, pledges, giving sources, fees or refunds.
 
 ## Rules
+- **Deleting a gift voids the tasks that gift created, and only those.** `tasks.source_gift_id` is stamped where
+  a gift's ARRIVAL creates a task (the workflow `create_task` and `notify_gift` actions); the delete voids by that
+  column, inside the same transaction as the gift row, and writes "Gift removed, thank-you cancelled." to the
+  donor's timeline. A task somebody typed has no source gift, so the rule "hand-written tasks are never touched"
+  holds by construction rather than by care. Every task READ carries `voided_at IS NULL`. Gift delete is a hard
+  delete with no undo; if one is ever added, restoring the gift restores its voided tasks. (FIX-10)
 - **Write every gift through `recordGift`, from every door.** Extras (soft credits, tributes, quid pro quo,
   instalment matching, membership renewal) live inside it and are checked before the insert
   (`checkGiftExtras`), so a second INSERT silently skips them all. (BUILD-88a, BUILD-98)

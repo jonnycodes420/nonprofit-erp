@@ -118,7 +118,18 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
       const err = await res.json().catch(() => ({}));
       handleAuthFailure(err.error);
     }
-    throw new Error(`Stream failed: ${res.status}`);
+    // FIX-10 D — THE STATUS CODE NEVER REACHES A CUSTOMER. This threw
+    // "Stream failed: 503", and every caller's catch quotes e.message, so the
+    // donor profile's Suggested panel printed an HTTP code at her. The code is
+    // in the console for a developer, and `aiUnavailable` lets a caller show
+    // its own sentence with a retry rather than parse this one.
+    // `warn`, not `error`: drafting being off on a deployment is an expected
+    // condition (the ANTHROPIC_API_KEY gate), and the browser walk's
+    // console-error gate must stay a guard against real bugs. The status is
+    // still here for a developer.
+    console.warn(`[ai] /ai/stream answered ${res.status}`);
+    throw Object.assign(new Error("Steward couldn't reach drafting just now."),
+      { status: res.status, aiUnavailable: true });
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();

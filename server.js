@@ -3183,6 +3183,13 @@ async function donorByNameOrCreate(orgId, name, { create = false, kind = null, w
 // and how. Steward prints; a person posts. Nothing here sends anything.
 let ACK = null;
 const ACK_READY = import("./shared/ackLetter.js").then(m => { ACK = m; return m; });
+// FIX-10 Part B — the one fiscal-year label, shared with Reports so the server
+// and the client cannot name the same year two ways. finPeriodBounds is sync
+// and called from everywhere, so it falls back to the identical literal until
+// the module lands: the fallback is byte-for-byte the same string, which is
+// what makes a race unable to move a label or a number.
+let FISCAL = null;
+const FISCAL_READY = import("./shared/fiscalPeriod.js").then(m => { FISCAL = m; return m; });
 
 
 // ── BUILD-100 (grants) Part 2 — DEADLINES THAT COME AND FIND YOU ───────────
@@ -4285,7 +4292,7 @@ function finPeriodBounds(yearMode, offset = 0, org = null) {
       start: `${fyStart}-07-01`,
       end: `${fyStart + 1}-06-30`,
       periodLabel: `Jul ${fyStart} – Jun ${fyStart + 1}`,
-      chartLabel: `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
+      chartLabel: FISCAL ? FISCAL.fyLabelFromStart(fyStart) : `FY ${fyStart}–${String(fyStart + 1).slice(2)}`,
       // month buckets in basis order: Jul..Dec of fyStart, then Jan..Jun of fyStart+1
       months: [...Array(6)].map((_, i) => ({ y: fyStart, m: 6 + i }))
         .concat([...Array(6)].map((_, i) => ({ y: fyStart + 1, m: i }))),
@@ -4553,7 +4560,7 @@ async function composeWeekInReview(orgId, win, officerId = null) {
   const pastDueTasks = await query(
     `SELECT t.title, t.due, t.assigned_to_name, d.name AS donor_name, d.id AS donor_id FROM tasks t
      LEFT JOIN donors d ON d.id = t.donor_id AND d.org_id = t.org_id
-     WHERE t.org_id = ? AND t.done = 0 AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) < ? ${tFilter}
+     WHERE t.org_id = ? AND t.done = 0 AND t.voided_at IS NULL AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) < ? ${tFilter}
      ORDER BY t.due ASC`, [orgId, today, ...(officerId ? [officerId] : [])]);
   // BUILD-88a A.5 — the activity report rides with the sections, from the ONE
   // counter the People dashboard reads.
@@ -4783,7 +4790,7 @@ async function composeDailyTaskReminder(orgId, userId, today) {
   const rows = await query(
     `SELECT t.*, d.name AS donor_name FROM tasks t
        LEFT JOIN donors d ON d.id=t.donor_id AND d.org_id=t.org_id
-      WHERE t.org_id=? AND t.assigned_to=? AND t.done=0
+      WHERE t.org_id=? AND t.assigned_to=? AND t.done=0 AND t.voided_at IS NULL
         AND t.due IS NOT NULL AND t.due <> '' AND LEFT(t.due,10) <= ?
       ORDER BY t.due ASC`,
     [orgId, userId, today]);
@@ -7046,9 +7053,11 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
           : "Follow up";
       const due = action.dueDays != null ? new Date(Date.now() + action.dueDays * 86400000).toISOString().slice(0, 10) : "";
       const taskId = "t_" + uuid().slice(0, 8);
+      // FIX-10 Part C — stamped with the gift whose arrival made this task, so
+      // deleting that gift can void it and leave every hand-typed task alone.
       await run(
-        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?)",
-        [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null, wfActor.id, wfActor.name]
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,source_gift_id) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?,?)",
+        [taskId, org.id, title, due, action.priority || "medium", donor?.id || null, owner?.id || null, owner?.name || null, wfActor.id, wfActor.name, ctx.giftId || null]
       );
       // BUILD-36 A2/A4: a workflow that assigns a task to someone emails them.
       // For a gift-fired workflow the event key is the gift, so this collapses
@@ -7086,9 +7095,10 @@ async function runWorkflowAction(action, { org, donor, ctx, config, recipeKey })
       const title = `Thank ${donor?.name || "a donor"} — ${amtStr || "a gift"} just came in`;
       const due = new Date(Date.now() + 1 * 86400000).toISOString().slice(0, 10);
       const taskId = "t_" + uuid().slice(0, 8);
+      // FIX-10 Part C — the "just came in" task, stamped with its gift.
       await run(
-        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?)",
-        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name]
+        "INSERT INTO tasks (id,org_id,title,due,priority,type,done,donor_id,assigned_to,assigned_to_name,updated_at,created_by,created_by_name,source_gift_id) VALUES (?,?,?,?,?,'donor',0,?,?,?,NOW(),?,?,?)",
+        [taskId, org.id, title, due, "high", donor?.id || null, taskOwner?.id || null, taskOwner?.name || null, wfActor.id, wfActor.name, ctx.giftId || null]
       );
       // Email each distinct recipient (internal, no donor footer).
       const emailBody = `<p>A gift just came in — a good moment to say thank you.</p>
@@ -7804,7 +7814,16 @@ async function processTrialReminders({ now = Date.now(), send = true } = {}) {
   return out;
 }
 
-// 999999999 used for "unlimited" — Infinity serializes to null in JSON
+// FIX-10 F — UNLIMITED IS ONE NUMBER, AND shared/seats.js IS WHERE IT LIVES.
+// This file is CommonJS and shared/ is ESM, so the value is written once here
+// and CHECKED against the shared module at boot: a drift is a loud log rather
+// than a silent cap on a plan that sells unlimited users.
+const SEATS_UNLIMITED = 999999999;
+import("./shared/seats.js").then(m => {
+  if (m.SEATS_UNLIMITED !== SEATS_UNLIMITED)
+    console.error(`[plans] SEATS_UNLIMITED drift: server.js ${SEATS_UNLIMITED} vs shared/seats.js ${m.SEATS_UNLIMITED}`);
+}).catch(() => {});
+// SEATS_UNLIMITED used for "unlimited" — Infinity serializes to null in JSON
 // trial gets Team limits: limits only engage once trial converts to paid.
 // Core/Team bands (BUILD-24) are INFORMATIONAL for launch — the numbers shown
 // on the pricing page — but NOT hard-enforced (see SOFT_BAND_PLANS below).
@@ -7816,7 +7835,7 @@ const PLAN_LIMITS = {
   founding: { seats: 3,         records: 5000,      extraSeatPrice: null },
   seed:     { seats: 1,         records: 1000,      extraSeatPrice: null },
   growth:   { seats: 5,         records: 10000,     extraSeatPrice: 25   },
-  impact:   { seats: 999999999, records: 999999999, extraSeatPrice: null },
+  impact:   { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null },
   trial:    { seats: 10,        records: 25000,     extraSeatPrice: null },
   portal:   { seats: 3,         records: 25000,     extraSeatPrice: null }, // BUILD-46 network tier (soft)
 };
@@ -7828,9 +7847,9 @@ const PLAN_LIMITS = {
 // the notice.
 for (const p of require("./closeLink").TIER_CLOSE_PLANS) {
   const tier = PRICING.tierById(p.tierId);
-  PLAN_LIMITS[p.id] = { seats: 999999999, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
+  PLAN_LIMITS[p.id] = { seats: SEATS_UNLIMITED, records: tier ? tier.maxDonors : 999999999, extraSeatPrice: null };
 }
-PLAN_LIMITS.internal_test = { seats: 999999999, records: 999999999, extraSeatPrice: null };
+PLAN_LIMITS.internal_test = { seats: SEATS_UNLIMITED, records: 999999999, extraSeatPrice: null };
 
 // Core/Team/founding bands are kept SOFT for launch — informational only, never
 // a hard 403. Legacy seed/growth/impact keep their existing hard enforcement so
@@ -9366,7 +9385,7 @@ require("./routes/give").mount({
   toDollars, uploadImageError, uuid, validateStoryBlocks, widgetMod, withAdvisoryLock, wrap,
 });
 require("./routes/crm").mount({
-  ACK_READY, ACTIVITY_DEFINITIONS, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
+  ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
   Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
   MB_READY, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, PHOTO_FETCH_BUDGET, PT_READY, RB_READY,

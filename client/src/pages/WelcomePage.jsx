@@ -4,6 +4,8 @@ import { apiFetch } from "../api";
 import { useAuth } from "../main";
 import { DonorImport } from "../components/Donors";
 import { GivingSourcesManager } from "../components/Settings";
+// FIX-10 F — how many users a plan includes, from the one place that answers it.
+import { USERS_SENTENCE, SEAT_REFUSED_SENTENCE } from "../../../shared/seats";
 import { T } from "../components/shared";
 import { errorMessage } from "../lib/domainError";
 
@@ -138,6 +140,9 @@ export default function WelcomePage() {
   const [jPreview, setJPreview] = useState(null);
   const [jSaving, setJSaving] = useState(false);
   const [jErr, setJErr] = useState("");
+  // FIX-10 Part C — said out loud when the pick opened a journey that already
+  // existed, so nobody wonders why the wizard did not seem to do anything.
+  const [jExisting, setJExisting] = useState("");
   useEffect(() => {
     let live = true;
     apiFetch("/journeys")
@@ -149,10 +154,15 @@ export default function WelcomePage() {
   // of a real row, and so "adjust it later" has something to adjust. Turning
   // it ON is the separate, deliberate act below.
   async function pickJourney(p) {
-    setJErr(""); setJPicked(p); setJPreview(null);
+    setJErr(""); setJPicked(p); setJPreview(null); setJExisting("");
     try {
+      // FIX-10 Part C — the server returns the journey this preset ALREADY made
+      // if there is one, rather than a second copy of it. Walking onboarding
+      // twice used to leave two identical journeys behind, because __id lives
+      // in memory and a reload loses it.
       const made = p.__id ? { id: p.__id } : await apiFetch("/journeys", { method: "POST", body: JSON.stringify({ presetKey: p.key }) });
       p.__id = made.id;
+      if (made.existing) setJExisting(made.sentence || "You already set this one up. Opening it.");
       setJPreview(await apiFetch(`/journeys/${made.id}/preview`));
     } catch (e) { setJErr(e?.message || "Could not set that one up."); }
   }
@@ -270,7 +280,8 @@ export default function WelcomePage() {
         await apiFetch("/auth/invite", { method: "POST", body: JSON.stringify({ email, role: "staff" }) });
         results.push({ email, ok: true });
       } catch (e) {
-        if (e.error === "seat_limit") { setSeatMsg(errorMessage(e, "You've reached your seat limit — Team includes up to 10 users.")); results.push({ email, ok: false, error: "seat limit" }); }
+        // FIX-10 F — never "Team includes up to 10 users". There is no such cap.
+        if (e.error === "seat_limit") { setSeatMsg(SEAT_REFUSED_SENTENCE); results.push({ email, ok: false, error: "seat limit" }); }
         else results.push({ email, ok: false, error: errorMessage(e, "couldn't send") });
       }
     }
@@ -489,7 +500,7 @@ export default function WelcomePage() {
               Invite your team
             </h1>
             <p style={{ fontSize: 14, color: ink3, margin: "0 0 20px", lineHeight: 1.6 }}>
-              Add the gift officers who'll each work their own portfolio. They get an invite by email — when they accept, they become a user in {orgName.trim() || "your organization"} with their own portfolio. Team includes up to 10 users. You can always do this later from Settings › Team.
+              Add the gift officers who'll each work their own portfolio. They get an invite by email, and when they accept they become a user in {orgName.trim() || "your organization"} with their own portfolio. {USERS_SENTENCE} You can always do this later from Settings › Team.
             </p>
 
             {invited ? (
@@ -579,7 +590,7 @@ export default function WelcomePage() {
             ) : (
               <div style={{ textAlign: "center" }}>
                 <button onClick={skipImport} disabled={loadingDonors} style={{ background: "none", border: "none", color: ink3, fontSize: 13, fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
-                  {loadingDonors ? "One moment…" : "I don't have a list ready yet — I'll do this later"}
+                  {loadingDonors ? "One moment…" : "I don't have a list ready yet, I'll do this later"}
                 </button>
               </div>
             )}
@@ -682,6 +693,9 @@ export default function WelcomePage() {
               </div>
             )}
 
+            {jExisting && !jErr && (
+              <div style={{ fontSize: 12.5, color: ink3, lineHeight: 1.55, marginBottom: 12 }}>{jExisting}</div>
+            )}
             {jErr && <div style={errBox}>{jErr}</div>}
 
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

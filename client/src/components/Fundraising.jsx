@@ -337,12 +337,60 @@ function CategoryBadge({ g, style }) {
 
 function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampaign, onGoto }) {
   if (!overview) return <EmptyState title="Nothing to show yet" message="Set a goal and start a campaign to see your fundraising momentum here." />;
-  const { period, givingPages, rollup, goals = [] } = overview;
+  const { period, givingPages, rollup, goals = [], last12, goal: orgGoal, emptyYearWithHistory } = overview;
   const gp = givingPages;
   const topGoals = goals.filter(g => g.isTopLevel);
+  // FIX-10 Part B — both figures open their OWN rows, in Reports, filtered to
+  // exactly the window each was summed over. A figure that lands on a page
+  // showing a different total is not a figure that opens.
+  const openRows = (from, to) => () => onNavigate && onNavigate("reports", { report: "giving-summary", from, to });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {/* FIX-10 Part B — "$0 RAISED · FY 2026–27" over a file that had just
+          imported $19,750 was true and useless. The empty year says so in one
+          sentence and puts the last twelve months beside it, the way Finance
+          already handles the same situation. Both figures open their rows. */}
+      {emptyYearWithHistory && last12 && (
+        <div style={{ background: T.gold100, border: "1px solid " + T.gold300, borderRadius: 12, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 320px", minWidth: 260 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 3 }}>
+              Nothing yet in {overview.periodLabel}.
+            </div>
+            <div style={{ fontSize: 12, color: T.ink2, lineHeight: 1.5 }}>
+              Your last 12 months:{" "}
+              <button onClick={openRows(last12.start, last12.end)}
+                style={{ background: "none", border: "none", padding: 0, font: "inherit", fontWeight: 700, color: T.greenDk, textDecoration: "underline", cursor: "pointer" }}>
+                {fmtFull(last12.raised)} across {last12.giftCount.toLocaleString()} gift{last12.giftCount === 1 ? "" : "s"}
+              </button>
+              . A gift dated inside {overview.periodLabel} lands in the figure below the moment it is logged.
+            </div>
+          </div>
+          <button onClick={openRows(period.start, period.end)}
+            style={{ background: T.white, color: T.ink, border: "1.5px solid " + T.ink, borderRadius: 8, padding: "9px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+            Open {overview.periodLabel} →
+          </button>
+        </div>
+      )}
+      {/* FIX-10 Part B — THE ORG GOAL, which the server has always computed and
+          this page has never shown. An org that set "Annual Fund 2026,
+          $50,000" in onboarding saw no trace of it on Fundraising. Raised,
+          goal and the pace sentence, all from the one pace function
+          (shared/pace.js via computeFundraisingPace). */}
+      {orgGoal && (
+        <div style={{ background: T.white, border: "1px solid " + T.bg2, borderLeft: "4px solid " + T.greenDk, borderRadius: 18, padding: "22px 26px" }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.14em", textTransform: "uppercase", color: T.ink3, marginBottom: 10 }}>
+            Your goal
+          </div>
+          <div style={{ fontFamily: "'DM Serif Display',serif", fontSize: 18, color: T.ink, marginBottom: 12 }}>{orgGoal.label}</div>
+          <Thermometer raised={orgGoal.currentAmount} goal={orgGoal.goalAmount} percent={orgGoal.percent}
+            rawPercent={orgGoal.rawPercent} over={orgGoal.over}
+            paceState={orgGoal.paceState} paceSentence={orgGoal.paceSentence} big />
+          {orgGoal.sourceNote && (
+            <div style={{ fontSize: 11.5, color: T.ink3, marginTop: 10, lineHeight: 1.5 }}>{orgGoal.sourceNote}</div>
+          )}
+        </div>
+      )}
       {/* Goal-reached celebration — fires once per goal reaching 100% */}
       {topGoals.filter(g => (g.rolledPercent ?? g.percent) >= 100).slice(0, 1).map(g => (
         <GoldMoment key={g.id} moment={`fundraising_goal_${g.id}`} title="You reached a goal."
@@ -366,7 +414,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           )}
         </div>
       ) : (
-        <StartHere line="Start a campaign with a goal to light up a live thermometer here — Annual funds, a Project push, a Capital campaign — each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
+        <StartHere line="Start a campaign with a goal to light up a live thermometer here. Annual funds, a Project push, a Capital campaign: each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
       )}
 
       {/* The typed goal portfolio — one card per goal, its own thermometer + pace */}
@@ -383,16 +431,18 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
 
       {/* Momentum stat row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
+        {/* FIX-10 Part B — opens the rows behind THIS figure, not the Reports
+            landing page: the destination total equals the tile's number. */}
         <StatTile label={`Raised · ${overview.periodLabel}`} value={fmtFull(period.raised)}
           accent={T.gold}
-          onClick={() => onNavigate && onNavigate("reports")}
-          ariaLabel="View giving summary report"
+          onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
+          ariaLabel={`View the gifts behind ${overview.periodLabel} raised`}
           sub={period.priorRaised > 0
             ? `${period.delta >= 0 ? "↑" : "↓"} ${fmtFull(Math.abs(period.delta))} vs last period`
             : `${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
         <StatTile label="Gifts this period" value={period.giftCount} accent={T.bg3}
-          onClick={() => onNavigate && onNavigate("reports")}
-          ariaLabel="View gifts in reports"
+          onClick={period.start && period.end ? openRows(period.start, period.end) : () => onNavigate && onNavigate("reports")}
+          ariaLabel="View the gifts in this period"
           sub={`${period.donorCount} donor${period.donorCount === 1 ? "" : "s"}`} />
         <StatTile label="Active campaigns" value={overview.campaigns.activeCount} accent={T.bg3}
           onClick={() => onGoto && onGoto("campaigns")}
