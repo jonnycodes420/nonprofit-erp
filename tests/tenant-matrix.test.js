@@ -326,6 +326,16 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO audiences (id,org_id,name,description,segment)
            VALUES ($1,$2,$3,'probe','{"mode":"donors"}'::jsonb)`,
     [`aud_${o}`, o, `Audience ${o}`]).catch(() => {});
+  // INT-5 — a webhook endpoint and one delivery against it, per org. Org A
+  // aimed at org B's endpoint must be refused because it is org B's, not
+  // because there was nothing there.
+  await q(`INSERT INTO webhook_endpoints (id,org_id,url,events,secret,created_by,created_by_name)
+           VALUES ($1,$2,$3,'["gift.created"]'::jsonb,$4,'system:test','test')
+           ON CONFLICT DO NOTHING`,
+    [`whe_${o}`, o, `https://example.invalid/${o}`, `whsec_${o}`]).catch(() => {});
+  await q(`INSERT INTO webhook_deliveries (id,org_id,endpoint_id,event,payload,attempt)
+           VALUES ($1,$2,$3,'gift.created','{}'::jsonb,0) ON CONFLICT DO NOTHING`,
+    [`whd_${o}`, o, `whe_${o}`]).catch(() => {});
   // INT-4 — a never-log entry belonging to THIS org's own user, so org A
   // aimed at org B's entry is refused because it is somebody else's, not
   // because the row was never there.
@@ -365,6 +375,14 @@ async function seedOrg(o, tag) {
 // forced decision IS the coverage gate.
 function bResolver(routePath, param) {
   const seg1 = routePath.split("/").filter(Boolean)[0] || "";
+  // INT-5 — two different kinds of row live under /webhooks, so the first path
+  // segment is not enough to say which id a probe needs: /webhooks/:id is an
+  // ENDPOINT and /webhooks/deliveries/:id is a DELIVERY. Resolved by the route
+  // rather than by the segment, or the delivery probe would aim an endpoint id
+  // at it and 404 for the wrong reason.
+  if (seg1 === "webhooks") {
+    return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
+  }
   const byParam = {
     donorId: `d_${B}`, subId: `rs_${B}`, attendeeId: `ea_${B}`, grantId: `gr_${B}`,
     userId: `u_${B}_staff`, recipientId: `cr_${B}`, kind: "estate",

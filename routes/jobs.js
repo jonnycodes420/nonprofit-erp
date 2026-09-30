@@ -12,6 +12,7 @@
 function mount(ctx) {
 const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
+  deliverWebhooks,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue,
@@ -55,6 +56,15 @@ const GIVING_SOURCE_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 if (!backgroundTicksDisabled()) {
   setTimeout(() => processGivingSources().catch(console.error), 90000);
   setInterval(() => recordTick("processGivingSources", processGivingSources).catch(console.error), GIVING_SOURCE_SYNC_INTERVAL_MS);
+}
+
+// ── INT-5 · WEBHOOK DELIVERY ───────────────────────────────────────────────
+// Every minute, because a "recurring gift failed" that arrives six hours late
+// is not the same product as one that arrives now. It rides the existing tick
+// machinery; INT-5 adds no second scheduler.
+if (!backgroundTicksDisabled()) {
+  setInterval(() => recordTick("deliverWebhooks", deliverWebhooks)
+    .catch(e => console.error("[webhooks]", e.message)), 60 * 1000);
 }
 
 // ── INT-3 · THE DAILY PULL FROM THE EMAIL TOOL ─────────────────────────────

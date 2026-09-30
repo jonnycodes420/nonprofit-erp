@@ -5053,6 +5053,74 @@ async function initSchema() {
       revoked_at TIMESTAMPTZ
     )`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys (org_id, created_at DESC)`);
+
+  // ── INT-5 — THE CALL LOG, THIRTY DAYS, NO DONOR DATA ─────────────────────
+  // What was asked for and what Steward answered, per key. The ids involved
+  // and nothing else: a log that recorded the CONTENTS of a request would be a
+  // second, unguarded copy of the CRM, kept somewhere nobody thinks to guard.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS api_call_log (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      key_id TEXT,
+      method TEXT NOT NULL,
+      path TEXT NOT NULL,
+      status INTEGER NOT NULL,
+      scope_required TEXT,
+      entity_id TEXT,
+      ms INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_call_log_key ON api_call_log (key_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_api_call_log_org ON api_call_log (org_id, created_at DESC)`);
+
+  // ── INT-5 — WEBHOOKS OUT ─────────────────────────────────────────────────
+  // One endpoint, the events it subscribed to, and its OWN signing secret, so
+  // one endpoint's secret leaking never lets anybody forge a delivery to
+  // another. `paused_at` is set when it keeps failing, and it is never a silent
+  // disable: a Thread step is opened for the admin at the same time.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS webhook_endpoints (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      url TEXT NOT NULL,
+      description TEXT,
+      events JSONB NOT NULL DEFAULT '[]'::jsonb,
+      secret TEXT NOT NULL,
+      paused_at TIMESTAMPTZ,
+      consecutive_failures INTEGER DEFAULT 0,
+      last_delivered_at TIMESTAMPTZ,
+      last_status INTEGER,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_org ON webhook_endpoints (org_id)`);
+
+  // Every ATTEMPT, not every delivery: "it failed four times and then worked"
+  // is the thing somebody debugging needs to see, and a table that keeps only
+  // the last outcome cannot show it.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      endpoint_id TEXT NOT NULL REFERENCES webhook_endpoints(id) ON DELETE CASCADE,
+      event TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 0,
+      status INTEGER,
+      outcome TEXT,
+      error TEXT,
+      next_attempt_at TIMESTAMPTZ,
+      delivered_at TIMESTAMPTZ,
+      gave_up_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_pending
+                    ON webhook_deliveries (next_attempt_at) WHERE delivered_at IS NULL AND gave_up_at IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_endpoint
+                    ON webhook_deliveries (endpoint_id, created_at DESC)`);
   // Wealth screening is a PAID ADD-ON later (DonorSearch / iWave). These are
   // the vendor's own figures, kept so an import from a CRM that has them does
   // not throw them away. They are NOT Steward's wealth_score and never feed it.
