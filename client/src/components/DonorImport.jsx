@@ -2678,7 +2678,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
             {/* FIX-10 E — "WE DETECTED" AND "NOT ENOUGH EVIDENCE" ARE NEVER IN
                 ONE SENTENCE. Overriding an undetectable file kept the detector's
                 reason beside the new shape, so the banner read "We detected:
-                individual gifts (only 1 column recognised — not enough evidence
+                individual gifts (only 1 column recognised, not enough evidence
                 to pick a shape)": one sentence claiming a finding and admitting
                 it had none. There are three states, not two.
                   · she chose it   → "You chose: …", and no detector reason at all
