@@ -129,6 +129,7 @@ CORE=(
   consistency-e2e
   build88a-one-gift
   gift-idempotency
+  fix10-gift-delete-tasks
   finance-gift-stamp
   money-cents
   pledge-math
