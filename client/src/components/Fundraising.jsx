@@ -414,7 +414,7 @@ function OverviewView({ overview, campaigns, onNavigate, primaryBtn, onNewCampai
           )}
         </div>
       ) : (
-        <StartHere line="Start a campaign with a goal to light up a live thermometer here — Annual funds, a Project push, a Capital campaign — each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
+        <StartHere line="Start a campaign with a goal to light up a live thermometer here. Annual funds, a Project push, a Capital campaign: each tracks every gift automatically, and they roll up into one number." actionLabel="+ Start a campaign" onAction={onNewCampaign} />
       )}
 
       {/* The typed goal portfolio — one card per goal, its own thermometer + pace */}

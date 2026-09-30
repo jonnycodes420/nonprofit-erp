@@ -1639,7 +1639,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
         {/* FIX-10 Part A — one quiet line, under the high-confidence card.
             Home is allowed to lead with the confirmed drifters; it is not
             allowed to leave the early ones with no door. */}
-        {driftCounts(driftData).medium>0&&!driftAllData&&(
+        {driftCounts(driftData).medium>0&&!driftAllData&&driftHighRows.length>0&&(
           <div className="dash-cpad" style={{...cPad,paddingTop:10,paddingBottom:10,borderTop:"1px solid "+T.bg3,fontSize:12,color:T.ink3}}>
             {earlySignsPhrase(driftCounts(driftData).medium)}, {EARLY_SIGNS_MEANING}.{" "}
             <button onClick={openEarlySigns} style={{...sLink,padding:0}}>Open</button>
@@ -1660,6 +1660,7 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
               {i===driftEarlyStart&&(
                 <li style={{borderTop:"1px solid "+T.bg3,padding:"11px 20px",background:T.bg2}}>
                   <span style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.07em",color:T.ink3}}>{EARLY_SIGNS_HEADING}</span>
+                  {" "}
                   <span style={{fontSize:11.5,color:T.ink3,marginLeft:8}}>{EARLY_SIGNS_MEANING}</span>
                 </li>
               )}
