@@ -2495,7 +2495,7 @@ export function DonorImport({ onClose, onImported, withHistory = false, org = nu
               label="Drop your spreadsheet here, or browse"
               fileMeta={null}
               onFile={({file})=>{setSrcFile(file);handleFile({target:{files:[file]}});}}/>
-            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export — we detect the shape and build donors + their giving history. .csv, .tsv, .xlsx, .xls.</div>
+            <div style={{fontSize:11,color:T.ink3,marginTop:5}}>Drop a donor list OR a raw gift export. We detect the shape and build donors and their giving history. .csv, .tsv, .xlsx, .xls.</div>
             {moveSource && (
               <div data-testid="move-source-line" style={{fontSize:11.5,color:T.ink3,marginTop:6}}>
                 Set up for your export from <strong style={{color:T.ink2}}>{moveLabel || moveSource}</strong>.{" "}
