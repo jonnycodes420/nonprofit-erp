@@ -58,6 +58,10 @@ const GUARDED_WRITERS = [
   // a real customer's account off a mistyped BASE is precisely the accident
   // this guard exists to prevent.
   "ckrh-provision",
+  // TRANS-1 — the fixture org the prod walk is driven against. It writes no
+  // donors and no gifts (the walk imports the file itself), but it creates an
+  // org, a login and a fund, so it is a writer and is guarded like one.
+  "trans1-walk-org",
   // BUILD-86 Part B — the demo org's own words.
   "seed-build86-vocabulary",
   "seed-build50-demo", "seed-build54-demo", "seed-creo-goals",

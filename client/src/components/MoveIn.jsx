@@ -68,9 +68,20 @@ export function MoveStart({ onPicked, onSkip, initialSource = null }) {
     let live = true;
     apiFetch("/move/sources")
       .then(r => { if (live) setSources(r); })
-      .catch(e => { if (live) setErr(errorMessage(e)); });
+      .catch(e => {
+        if (!live) return;
+        // THE QUESTION IS A NICETY; THE UPLOADER IS THE PRODUCT. If this list
+        // cannot be fetched -- a transient 500, or the minute during a deploy
+        // when the client is ahead of the API -- the old behaviour was an
+        // error card where the tiles go, and because the uploader only renders
+        // once the question has been answered, an org could not import a file
+        // at all. A failure here now skips straight to the uploader.
+        console.error("[move] could not load the source list:", e);
+        if (onSkip) onSkip();
+        else setErr(errorMessage(e));
+      });
     return () => { live = false; };
-  }, []);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = async (key) => {
     setSaving(true); setErr("");
