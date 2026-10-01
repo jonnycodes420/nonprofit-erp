@@ -87,6 +87,16 @@ const EXTRAS = [
   //     10.35:1. One step darker than #5a554f because the strip is 15px and
   //     sits furthest from the reader's focus.
   "#ece8df", "#f3e9cc", "#5c4710", "#3e3a35",
+  // LANDING-2 — the marketing site (client/src/marketing/site.css ONLY), whose
+  // palette is copied value for value from the approved reference,
+  // docs/landing/steward-site.html. Every one is a shade of the four colours:
+  //   #18241b ink-2, one step off ink · #faf8f3 paper, the cream family's
+  //   lightest · #ddd7cb the hairline · #0a4a2e emerald hover · #dcebe2 the
+  //   emerald tint behind icons · #5fb38c light emerald, accents on ink only ·
+  //   #b5522e the reference's "late" text inside the drawn product screens.
+  //   #000000 appears only as the opaque stop of the reel and marquee
+  //   mask-image gradients: it is an alpha mask and is never painted.
+  "#18241b", "#faf8f3", "#ddd7cb", "#0a4a2e", "#dcebe2", "#5fb38c", "#b5522e", "#000000",
 ];
 for (const v of EXTRAS) ALLOWED.add(v.toLowerCase());
 

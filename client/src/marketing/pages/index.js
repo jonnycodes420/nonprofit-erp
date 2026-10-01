@@ -1,0 +1,17 @@
+// Page key (routes.js `page`) → component.
+import Home from "./home";
+import { Platform, Crm, Volunteer, Agent, Connections, Onboarding, Features, Feature } from "./product";
+import { Why, Move, MoveSpreadsheet, MoveCrm, For, Audience, Security, About, Leadership, Partners, Contact, Demo } from "./why";
+import { Resources, Guides, Guide, Templates, Articles, StateOfRetention, Glossary, Faq, Help, WhatsNew, Tools, ToolLostAndFound, ToolRetention, ToolLapsed, ToolThermometer, LegalPrivacy, LegalTerms, LegalAccessibility } from "./resources";
+
+export const PAGES = {
+  home: Home,
+  platform: Platform, crm: Crm, volunteer: Volunteer, agent: Agent, connections: Connections, onboarding: Onboarding,
+  features: Features, feature: Feature,
+  why: Why, leadership: Leadership, move: Move, moveSpreadsheet: MoveSpreadsheet, moveCrm: MoveCrm,
+  for: For, audience: Audience, security: Security, about: About, partners: Partners, contact: Contact, demo: Demo,
+  resources: Resources, guides: Guides, guide: Guide, templates: Templates, articles: Articles, stateOfRetention: StateOfRetention,
+  glossary: Glossary, faq: Faq, help: Help, whatsNew: WhatsNew,
+  tools: Tools, toolLostAndFound: ToolLostAndFound, toolRetention: ToolRetention, toolLapsed: ToolLapsed, toolThermometer: ToolThermometer,
+  legalPrivacy: LegalPrivacy, legalTerms: LegalTerms, legalAccessibility: LegalAccessibility,
+};

@@ -115,7 +115,7 @@ const OUT_OF_SCOPE = {
   "components/Events.jsx": "hidden from the nav since the 2026-07-12 pivot",
   "components/Volunteers.jsx": "hidden from the nav since the 2026-07-12 pivot",
   "components/Board.jsx": "hidden from the nav since the 2026-07-12 pivot",
-  "pages/Landing.jsx": "public marketing page; its own guards (scripts/landing-prod-verify.js)",
+  "marketing/": "the public marketing site (LANDING-2); its own guards (tests/landing2-marketing.test.js, scripts/landing-prod-verify.js)",
   "pages/Pricing.jsx": "public marketing page; prices are pinned by tests/one-date.test.js",
   "pages/Donate.jsx": "public white-label donation page on publicTheme.js",
   // BUILD-102 (Steward Give) — the donation form and its embedded twin. OUT OF

@@ -1,0 +1,327 @@
+// LANDING-2 · the building blocks every marketing page is made of. Each one
+// is the reference's helper of the same name (docs/landing/steward-site.html:
+// hero, block, ui, steps, incl, faqS, cards, related, finalCta, statBand,
+// quoteBand, teamReel), producing the same markup and classes, so site.css
+// styles it exactly as the reference does.
+import React, { useEffect } from "react";
+import { Link } from "react-router-dom";
+import { ICON } from "./data/icons";
+import { PHOTOS, photoSrc } from "./data/photos";
+import { FEAT } from "./data/features";
+import { SRC, STATS, QUOTES, srcShort } from "./data/research";
+import { TEAM } from "./data/team";
+
+// ── Rich strings ───────────────────────────────────────────────────────────
+// Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
+// This turns exactly those three tags into elements; anything else stays text.
+export function rich(s) {
+  if (s == null || typeof s !== "string") return s;
+  const root = [];
+  const stack = [{ tag: null, kids: root }];
+  const re = /<(\/?)(b|em|br)\s*\/?>/g;
+  let last = 0, m, k = 0;
+  const top = () => stack[stack.length - 1].kids;
+  while ((m = re.exec(s))) {
+    if (m.index > last) top().push(s.slice(last, m.index));
+    last = re.lastIndex;
+    if (m[2] === "br") top().push(<br key={k++} />);
+    else if (!m[1]) stack.push({ tag: m[2], kids: [] });
+    else if (stack.length > 1) {
+      const done = stack.pop();
+      const El = done.tag;
+      top().push(<El key={k++}>{done.kids}</El>);
+    }
+  }
+  if (last < s.length) top().push(s.slice(last));
+  return root.length === 1 ? root[0] : root;
+}
+
+// ── Links ──────────────────────────────────────────────────────────────────
+// An internal path is a router <Link>; a source link opens in a new tab the
+// way the reference's do; mailto stays a plain anchor.
+export function A({ href, children, ...rest }) {
+  if (href && href.startsWith("/")) return <Link to={href} {...rest}>{children}</Link>;
+  const ext = /^https?:/.test(href || "");
+  return <a href={href} {...(ext ? { target: "_blank", rel: "noopener" } : {})} {...rest}>{children}</a>;
+}
+
+export function Pill({ href, kind = "ink", style, children }) {
+  return <A className={"pill pill-" + kind} href={href} style={style}><i></i>{children}</A>;
+}
+
+export const Arrow = () => (
+  <i><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg></i>
+);
+
+export const Tick = () => (
+  <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="#0D5C3A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
+
+const Plus = () => (
+  <span className="x" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1v12M1 7h12" stroke="currentColor" strokeWidth="1.8" /></svg></span>
+);
+
+// The reference's ic(): a 24-unit stroke icon from the ICON set.
+export function Icon({ k, size = 22, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.6"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+      dangerouslySetInnerHTML={{ __html: ICON[k] || ICON.check }} />
+  );
+}
+
+// ── Photographs ────────────────────────────────────────────────────────────
+// The reference's ph(): a photo slot. The stand-in caption is gone; the slot
+// holds the real photograph, cropped to fill it.
+export function Photo({ k, cls = "", eager, style }) {
+  const p = PHOTOS[k];
+  if (!p) throw new Error("marketing: no photo named " + k);
+  return (
+    <div className={"photo has-img " + cls} style={style}>
+      <img src={photoSrc(k)} alt={p.alt} width={p.w} height={p.h}
+        loading={eager ? "eager" : "lazy"} decoding="async" {...(eager ? { fetchpriority: "high" } : {})} />
+    </div>
+  );
+}
+
+// A real person's portrait. Used only for TEAM.
+export function Portrait({ src, name, cls = "tall" }) {
+  return (
+    <div className={"photo has-img portrait " + cls}>
+      <img src={src} alt={"Portrait of " + name} loading="lazy" decoding="async" />
+    </div>
+  );
+}
+
+// ── Page furniture ─────────────────────────────────────────────────────────
+export function Crumbs({ list }) {
+  return (
+    <nav className="crumbs wrap" aria-label="Breadcrumb">
+      <A href="/">Home</A>
+      {list.map((c, i) => (
+        <React.Fragment key={i}> <span>/</span> {c[1] ? <A href={c[1]}>{c[0]}</A> : <b>{c[0]}</b>}</React.Fragment>
+      ))}
+    </nav>
+  );
+}
+
+export function Hero({ eyebrow, crumbs, h, lede, photo, cta2, noCta, proof, float }) {
+  return (
+    <>
+      <Crumbs list={crumbs || [[eyebrow]]} />
+      <section className="hero phero">
+        <div className={"wrap hero-g" + (photo ? "" : " solo")}>
+          <div>
+            <div className="eyebrow">{eyebrow}</div>
+            <h1 className="mix h-xl">{rich(h)}</h1>
+            <p className="lede">{rich(lede)}</p>
+            {!noCta && (
+              <div className="ctas">
+                <Pill href="/demo">Book a demo</Pill>
+                {cta2 ? <Pill kind="soft" href={cta2[1]}>{cta2[0]}</Pill> : <Pill kind="soft" href="/pricing">See pricing</Pill>}
+              </div>
+            )}
+            {proof && <div className="proof">{proof.map(p => <span key={p}>{p}</span>)}</div>}
+          </div>
+          {photo && <div className="collage one"><Photo k={photo} cls="p1" eager />{float}</div>}
+        </div>
+      </section>
+    </>
+  );
+}
+
+// The reference's ui(): a product screen drawn in HTML with example data.
+export function Ui({ t, k, rows, tots }) {
+  return (
+    <div className="ui" role="img" aria-label={t + " screen"}>
+      <div className="uh"><i><Icon k={k} size={18} color="#fff" /></i>{t}</div>
+      {(rows || []).map((r, i) => (
+        <div className="row" key={"r" + i}>
+          <div className="av">{r[0]}</div>
+          <div><div className="nm">{rich(r[1])}</div><div className="mt">{rich(r[2])}</div></div>
+          {r[4] ? <span className={"chip" + (r[4] === "q" ? " q" : "")}>{r[3]}</span> : <div className="act">{r[3]}</div>}
+        </div>
+      ))}
+      {(tots || []).map((r, i) => (
+        <div className="tot" key={"t" + i}>
+          <span>{r[0]}</span><em>{r[1]}</em><span className={r[3] ? "ok" : undefined}>{r[2]}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+export const uiOf = a => <Ui t={a[0]} k={a[1]} rows={a[2]} tots={a[3]} />;
+
+export function Block({ flip, tint = "cream", h, p, sh, sp, ui, photo }) {
+  return (
+    <div className={"alt" + (flip ? " flip" : "")}>
+      <div>
+        <div className="tint" style={{ background: "var(--" + tint + ")" }}><h3>{rich(h)}</h3><p>{rich(p)}</p></div>
+        {sh && <div className="sub"><h4>{rich(sh)}</h4><p>{rich(sp)}</p></div>}
+      </div>
+      <div className="stage">
+        <div className="bg" style={{ background: "var(--" + tint + ")" }}></div>
+        {ui || <Photo k={photo} cls="wide" />}
+      </div>
+    </div>
+  );
+}
+
+export function Steps({ eb, h, list }) {
+  return (
+    <section className="steps-s"><div className="wrap">
+      <div className="eyebrow">{eb}</div>
+      <h2 className="mix h-l" style={{ marginTop: 22 }}>{rich(h)}</h2>
+      <div className="steps">
+        {list.map((s, i) => (
+          <div className="step" key={i}><span className="sn">{(i + 1 < 10 ? "0" : "") + (i + 1)}</span><h4>{s[0]}</h4><p>{s[1]}</p></div>
+        ))}
+      </div>
+    </div></section>
+  );
+}
+
+export function Incl({ h, list, eb }) {
+  return (
+    <section className="pricing"><div className="wrap">
+      <div className="eyebrow">{eb || "What's included"}</div>
+      <h2 className="mix h-m" style={{ marginTop: 22 }}>{rich(h)}</h2>
+      <div className="incl">{list.map(x => <span key={x}><Tick />{x}</span>)}</div>
+    </div></section>
+  );
+}
+
+export function FaqList({ items }) {
+  return items.map((q, i) => (
+    <details key={i}><summary><span className="n">[ {i + 1} ]</span>{q[0]}<Plus /></summary><p>{q[1]}</p></details>
+  ));
+}
+
+export function FaqS({ items, h, as: H = "h2" }) {
+  return (
+    <section><div className="wrap faq">
+      <div><div className="eyebrow">FAQ</div><H className="mix h-l" style={{ marginTop: 22 }}>{rich(h || "Good <b>questions.</b>")}</H></div>
+      <div><FaqList items={items} /></div>
+    </div></section>
+  );
+}
+
+// The reference's cards(): [href, title, text, icon?] link cards.
+export function Cards({ list, eb, h }) {
+  return (
+    <section style={{ paddingTop: h ? 112 : 0 }}><div className="wrap">
+      {h && <><div className="eyebrow">{eb}</div><h2 className="mix h-m" style={{ marginTop: 22 }}>{rich(h)}</h2></>}
+      <div className="cards">
+        {list.map(c => (
+          <A className="card" href={c[0]} key={c[0] + c[1]}>
+            {c[3] && <span className="ci"><Icon k={c[3]} size={26} /></span>}
+            <h4>{c[1]}</h4><p>{c[2]}</p><span className="go">Learn more →</span>
+          </A>
+        ))}
+      </div>
+    </div></section>
+  );
+}
+
+export const featureCard = s => ["/features/" + s, FEAT[s].name, FEAT[s].short, FEAT[s].icon];
+
+export function Related({ slugs }) {
+  return <Cards list={slugs.map(featureCard)} eb="Related" h="Works well <b>with these.</b>" />;
+}
+
+export function FinalCta() {
+  return (
+    <section style={{ paddingTop: 0 }}><div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
+      <div className="eyebrow">Ready to get started?</div>
+      <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b style={{ color: "var(--emerald-lt)" }}>Keep them.</b></h2>
+      <p>Book a 20-minute demo with your own file, or start free for 30 days.</p>
+      <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+    </div></div></section>
+  );
+}
+
+// The reference's statBand(n, dark): the first n research numbers, each with
+// its own source link, then every source in full.
+export function StatBand({ n, dark }) {
+  const list = STATS.slice(0, n || STATS.length);
+  const used = [...new Set(list.map(s => s[2]))];
+  const body = (
+    <div className="wrap" style={dark ? { paddingBlock: 96 } : undefined}>
+      <div className="eyebrow" style={dark ? { color: "var(--white)" } : undefined}>What the research says</div>
+      <h2 className="mix h-l" style={{ marginTop: 22, ...(dark ? { color: "var(--white)" } : {}) }}>Donors don't leave in anger. <b>They drift.</b></h2>
+      <div className="stats">
+        {list.map(s => (
+          <div className="stat" key={s[0]} data-stat={s[0]}><b>{s[0]}</b><p>{s[1]}</p><A href={SRC[s[2]][1]}>{srcShort(s[2])}</A></div>
+        ))}
+      </div>
+      <p className="srcnote">Sources: {used.map((k, i) => <React.Fragment key={k}>{i ? " · " : ""}<A href={SRC[k][1]}>{SRC[k][0]}</A></React.Fragment>)}</p>
+    </div>
+  );
+  return <section style={dark ? { paddingTop: 0 } : undefined}>{dark ? <div className="ink">{body}</div> : <div className="wrap">{body}</div>}</section>;
+}
+
+export function QuoteBand() {
+  return (
+    <section style={{ paddingTop: 0 }}><div className="wrap qband">
+      {QUOTES.map(q => (
+        <figure key={q[1]} data-quote="research">
+          <blockquote data-quote="research">{q[0]}</blockquote>
+          <figcaption><b>{q[1]}</b><span>{q[2]}</span><A href={SRC[q[3]][1]}>{SRC[q[3]][0]}</A></figcaption>
+        </figure>
+      ))}
+    </div></section>
+  );
+}
+
+// The people reel: no buttons, it just moves. Three copies of the four make
+// the loop seamless; it pauses on hover, and for prefers-reduced-motion the
+// animation stops and the two duplicate copies are hidden (site.css).
+export function TeamReel() {
+  return (
+    <section className="reel-s">
+      <div className="wrap"><div className="eyebrow">The people behind Steward</div><h2 className="mix h-l" style={{ marginTop: 22 }}>People who <b>pick up the phone.</b></h2></div>
+      <div className="reel" aria-label="Steward founder and advisors"><div className="track">
+        {[0, 1, 2].map(c => (
+          <div style={{ display: "contents" }} key={c} {...(c ? { "data-dup": "", "aria-hidden": "true" } : {})}>
+            {TEAM.map(t => <div className="tm" key={t[0]}><Portrait src={t[2]} name={t[0]} /><b>{t[0]}</b><span>{t[1]}</span></div>)}
+          </div>
+        ))}
+      </div></div>
+    </section>
+  );
+}
+
+export function Prose({ children }) {
+  return <section style={{ paddingTop: 40 }}><div className="wrap prose">{children}</div></section>;
+}
+
+// ── Head tags ──────────────────────────────────────────────────────────────
+// Title, description, canonical and the Open Graph / Twitter tags, per route.
+export const SITE_ORIGIN = "https://www.stewardapp.dev";
+function setMeta(attr, key, value) {
+  let el = document.head.querySelector(`meta[${attr}="${key}"]`);
+  if (!el) { el = document.createElement("meta"); el.setAttribute(attr, key); document.head.appendChild(el); }
+  el.setAttribute("content", value);
+}
+export function useHead({ title, description, path }) {
+  useEffect(() => {
+    const url = SITE_ORIGIN + (path === "/" ? "/" : path);
+    document.title = title;
+    setMeta("name", "description", description);
+    setMeta("property", "og:title", title);
+    setMeta("property", "og:description", description);
+    setMeta("property", "og:url", url);
+    setMeta("property", "og:type", "website");
+    setMeta("property", "og:site_name", "Steward");
+    setMeta("property", "og:image", SITE_ORIGIN + "/og-image.png");
+    setMeta("name", "twitter:card", "summary_large_image");
+    setMeta("name", "twitter:title", title);
+    setMeta("name", "twitter:description", description);
+    let link = document.head.querySelector('link[rel="canonical"]');
+    if (!link) { link = document.createElement("link"); link.setAttribute("rel", "canonical"); document.head.appendChild(link); }
+    link.setAttribute("href", url);
+  }, [title, description, path]);
+  // Leaving the marketing site takes the canonical with it, so an app page
+  // never claims a marketing URL.
+  useEffect(() => () => { document.head.querySelector('link[rel="canonical"]')?.remove(); }, []);
+}

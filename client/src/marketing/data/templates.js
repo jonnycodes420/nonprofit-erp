@@ -1,0 +1,7 @@
+// The reference's TEMPL list: free templates, copied with one click.
+export const TEMPL = [
+  ["Thank-you letter", "Dear [First name],\n\nThank you for your gift of [amount] on [date]. Because of you, [one specific thing the gift makes possible].\n\n[One sentence about a real person or moment from this month.]\n\nWe will write in a few weeks to tell you how it went.\n\nWith gratitude,\n[Name]\n[Title]"],
+  ["Lapsed donor email", "Subject: We miss you, [First name]\n\nHi [First name],\n\nYou gave to [Organization] in [year], and I wanted to tell you what happened next. [Two sentences of impact.]\n\nWe would love to have you with us again this year. If now is not the right time, I understand, and thank you for what you already made possible.\n\n[Name]"],
+  ["Board report outline", "1. Total raised this year and last year, by month\n2. Donors retained, new and lost\n3. Top five gifts and who thanked them\n4. Drifting donors worth a call, with owners\n5. Grants due in the next 90 days\n6. One story\n7. The ask of the board this quarter"],
+  ["Gift acceptance policy starter", "1. Purpose of this policy\n2. Gifts we accept: cash, checks, cards, securities, in-kind\n3. Gifts that need board review: real estate, restricted gifts over [amount]\n4. Gifts we decline\n5. Acknowledgment and receipting\n6. Donor privacy\n7. Review schedule\n\nHave your attorney review before adopting."],
+];
