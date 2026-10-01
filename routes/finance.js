@@ -1199,7 +1199,7 @@ const shortDay = d => new Date(String(d).slice(0, 10) + "T12:00:00Z").toLocaleDa
 // THE BRIEF. Four lines from her own record, each from a row that exists, and
 // a line is left out rather than filled when there is nothing true to say.
 async function meetingBrief(orgId, donorId, beforeIso) {
-  const before = beforeIso || new Date().toISOString();
+  const before = new Date(beforeIso || Date.now()).toISOString();
   const [d] = await query(`SELECT id, name, total_giving, first_gift_date, last_gift_amount, last_gift_date FROM donors WHERE id=? AND org_id=?`, [donorId, orgId]);
   if (!d) return null;
   const [cal] = await query(
@@ -1233,7 +1233,7 @@ async function meetingBrief(orgId, donorId, beforeIso) {
   const [g] = await query(
     `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND COALESCE(acknowledgement_sent,false)=false
         AND amount > 0 AND date >= (CURRENT_DATE - 365)::text ORDER BY date DESC LIMIT 1`, [orgId, donorId]);
-  const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `Her ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
+  const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `The ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
 
   const years = d.first_gift_date ? Math.max(1, new Date().getUTCFullYear() - Number(String(d.first_gift_date).slice(0, 4)) + 1) : null;
   const giving = Number(d.total_giving) > 0 ? {
@@ -1283,7 +1283,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const meetingRows = (await figureSources.figure(orgId, { key: "meetings", params: { from: yearFrom, to: yearTo, donor: donorId } }, {}, { pageSize: 500 })).rows || [];
   const rhythm = months.map(m => ({ ...m,
     count: meetingRows.filter(r => r.date >= m.from && r.date <= m.to && r.date <= today).length,
-    upcoming: upcoming.some(e => String(e.startsAt).slice(0, 7) === m.month) }));
+    upcoming: upcoming.some(e => new Date(e.startsAt).toISOString().slice(0, 7) === m.month) }));
 
   // THIS YEAR, from the same sources the drawer opens.
   const jan1 = today.slice(0, 4) + "-01-01";
@@ -1341,7 +1341,7 @@ app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
   const out = [];
   for (const r of rows) {
     const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
-    out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at.toISOString ? r.starts_at.toISOString() : r.starts_at) : null }));
+    out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
   }
   const [conn] = await query(`SELECT provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' AND calendar_granted = true LIMIT 1`, [req.user.userId, orgId]);
   res.json({ today, meetings: out, provider: conn?.provider || null,
@@ -1376,7 +1376,7 @@ app.post("/calendar/events/:id/suggest", requireAuth, wrap(async (req, res) => {
   const c = await ownMeeting(req, res); if (!c) return;
   const N = await meetingNoteMod();
   const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=?`, [req.user.orgId]);
-  const brief = c.person_ids?.length === 1 ? await meetingBrief(req.user.orgId, c.person_ids[0], c.starts_at.toISOString ? c.starts_at.toISOString() : c.starts_at) : null;
+  const brief = c.person_ids?.length === 1 ? await meetingBrief(req.user.orgId, c.person_ids[0], c.starts_at) : null;
   res.json({ suggestions: N.suggestFromNote(String(req.body?.note || "").slice(0, 4000), { funds, openAsk: brief?.openAsk || null }),
     sentence: "Read from your note. Nothing is recorded until you press save." });
 }));
@@ -1502,7 +1502,7 @@ app.get("/calendar/first-sync", requireAuth, wrap(async (req, res) => {
         AND c.starts_at > NOW() AND c.starts_at <= NOW() + INTERVAL '2 days' ORDER BY c.starts_at LIMIT 1`, [orgId, me]);
   if (soon) {
     const [p] = await query(`SELECT id, name FROM donors WHERE org_id=? AND id=?`, [orgId, soon.person_ids[0]]);
-    if (p) look.push({ kind: "meeting", donorId: p.id, name: p.name, startsAt: soon.starts_at, action: "Open her brief" });
+    if (p) look.push({ kind: "meeting", donorId: p.id, name: p.name, startsAt: soon.starts_at, action: "Open the brief" });
   }
   const [waiting] = await query(
     `SELECT i.donor_id, d.name, MAX(i.date) AS last_in, COUNT(*)::int AS n FROM interactions i JOIN donors d ON d.id=i.donor_id AND d.org_id=i.org_id
@@ -1520,6 +1520,36 @@ app.get("/calendar/first-sync", requireAuth, wrap(async (req, res) => {
     people: { value: people.value || 0, source: { key: "mailbox-people", params: { staff: me, since } } },
     worthALook: look, since, today,
   });
+}));
+
+// MOVES MANAGEMENT · MEETINGS PER STAFF MEMBER PER MONTH. Every cell is the
+// ONE `meetings` source with that person and that month, so a cell opens
+// exactly the rows it counts and the row total is the same source over the
+// whole year.
+app.get("/meetings/by-staff", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { today } = await meetingTz(orgId);
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const dt = new Date(today.slice(0, 8) + "01T12:00:00Z"); dt.setUTCMonth(dt.getUTCMonth() - i);
+    const from = dt.toISOString().slice(0, 10);
+    const end = new Date(dt); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0);
+    months.push({ month: from.slice(0, 7), from, to: end.toISOString().slice(0, 10) });
+  }
+  const users = await query(`SELECT id, name, email FROM users WHERE org_id=? ORDER BY name`, [orgId]);
+  const staff = [];
+  for (const u of users) {
+    const cells = await Promise.all(months.map(async m => {
+      const params = { from: m.from, to: m.to, staff: u.id };
+      const f = await figureSources.figureValue(orgId, { key: "meetings", params }, {});
+      return { month: m.month, value: f.value || 0, source: { key: "meetings", params } };
+    }));
+    const totalParams = { from: months[0].from, to: months[11].to, staff: u.id };
+    const total = await figureSources.figureValue(orgId, { key: "meetings", params: totalParams }, {});
+    staff.push({ id: u.id, name: u.name || u.email, cells, total: { value: total.value || 0, source: { key: "meetings", params: totalParams } } });
+  }
+  res.json({ months, staff: staff.sort((a, b) => b.total.value - a.total.value),
+    sentence: "Meetings with someone on file, by the staff member who held them, month by month: meetings on that person's connected calendar, and meetings they logged by hand. A calendar meeting that was logged afterwards counts once." });
 }));
 
 // ═══ INT-3 · THE EMAIL TOOL SHE ALREADY PAYS FOR ═══════════════════════════

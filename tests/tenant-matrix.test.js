@@ -86,6 +86,9 @@ async function reset() {
       // reads like a product bug.
       "email_marketing_activity", "email_marketing_campaigns", "email_marketing_connections",
       "mailbox_exclusions", "mailbox_never_log", "mailbox_connections",
+      // INT-BUILD-1 — the meetings, and INT-5's webhooks, which this suite
+      // inserts below and never deleted, so a second run died on the org FK.
+      "calendar_events", "webhook_deliveries", "webhook_endpoints",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
       // `DELETE FROM orgs` fails its foreign key and the whole suite aborts
@@ -350,6 +353,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO webhook_deliveries (id,org_id,endpoint_id,event,payload,attempt)
            VALUES ($1,$2,$3,'gift.created','{}'::jsonb,0) ON CONFLICT DO NOTHING`,
     [`whd_${o}`, o, `whe_${o}`]).catch(() => {});
+  // INT-BUILD-1 — a meeting on this org's own staff calendar, so org A aimed
+  // at org B's meeting is refused because it is org B's.
+  await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,person_ids,created_by,created_by_name)
+           VALUES ($1,$2,$3,'google',$1,'Probe meeting',NOW() - INTERVAL '2 hours',NOW() - INTERVAL '1 hour',ARRAY[$4],'system:test','test')
+           ON CONFLICT DO NOTHING`,
+    [`cal_${o}`, o, `u_${o}_staff`, `d_${o}`]).catch(e => console.error("calendar seed:", e.message));
   // INT-4 — a never-log entry belonging to THIS org's own user, so org A
   // aimed at org B's entry is refused because it is somebody else's, not
   // because the row was never there.
@@ -394,6 +403,7 @@ function bResolver(routePath, param) {
   // ENDPOINT and /webhooks/deliveries/:id is a DELIVERY. Resolved by the route
   // rather than by the segment, or the delivery probe would aim an endpoint id
   // at it and 404 for the wrong reason.
+  if (seg1 === "calendar" && param === "id") return `cal_${B}`;
   if (seg1 === "webhooks") {
     return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
   }

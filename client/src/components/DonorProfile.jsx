@@ -15,6 +15,7 @@ import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
 import { InboxNudge } from "./InboxConnect";
+import { MeetingCard, RelationshipTimeline, RelationshipRail, AfterMeetingForm } from "./MeetingPanels";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
@@ -804,8 +805,11 @@ function RoleLine({donor,isReadOnly}){
 const PROFILE_FIGURES = [
   { key: "lifetime", label: "Lifetime",     kind: "money", def: censusById("profile.lifetime").sentence },
   { key: "lastGift", label: "Last gift",    kind: "money", def: censusById("profile.lastGift").sentence },
-  { key: "contact",  label: "Last contact", kind: "count", suffix: " days", def: censusById("profile.contact").sentence },
-  { key: "openAsk",  label: "Open ask",     kind: "money", def: censusById("profile.openAsk").sentence },
+  // INT-BUILD-1 — the header reads Lifetime, Last gift, Last met, Last email
+  // (docs/int-build-1/Profile.html). The open ask moved into the meeting
+  // brief, and Last contact is the two of these together.
+  { key: "lastMet",   label: "Last met",   kind: "count", suffix: " days", def: censusById("profile.lastMet").sentence },
+  { key: "lastEmail", label: "Last email", kind: "count", suffix: " days", def: censusById("profile.lastEmail").sentence },
 ];
 
 // The four things Steward can draft on a record, in the order the rail
@@ -854,6 +858,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
+  // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
+  const [rel,setRel]=useState(null);
+  const [logMeeting,setLogMeeting]=useState(null);
+  const loadRel=()=>apiFetch(`/donors/${donor.id}/relationship`).then(setRel).catch(()=>setRel(null));
+  useEffect(()=>{ setRel(null); loadRel(); },[donor.id]);
   const [sequences,setSequences]=useState([]);
   useEffect(()=>{apiFetch("/sequences").then(rows=>setSequences(Array.isArray(rows)?rows.filter(s=>s.status==="active"):[])).catch(()=>{});},[]);
   // ── BUILD-81 — the donor's THREAD, shown at the top of the record. One
@@ -1844,7 +1853,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                         terracotta: overdue is late, not dangerous). The
                         inline Figure inherits its colour, so it is set here. */}
                     <div style={{fontSize:20,fontWeight:800,fontFamily:"'DM Serif Display',serif",lineHeight:1.1,
-                                 color:key==="contact"&&urg.level!=="ok"?urg.urgencyColor:T.ink}}>
+                                 color:T.ink}}>
                       {f.value===null||f.value===undefined
                         ?<span data-figure={"profile."+key} data-figure-key={"profile."+key} data-blank=""
                           /* FIX-8 Part B.4 — an absence is a SENTENCE, so it is
@@ -1854,7 +1863,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                              uses for numbers and headings. */
                           style={{fontSize:12.5,fontWeight:400,color:T.ink3,lineHeight:1.45,
                             fontFamily:"'DM Sans',system-ui,sans-serif"}}>{f.blankShort||f.blank}</span>
-                        :<Figure value={f.value} kind={kind} suffix={suffix||""} label={label} definition={def}
+                        :<Figure value={f.value} kind={kind} suffix={suffix&&Number(f.value)===1?suffix.replace(/s$/,""):(suffix||"")} label={label} definition={def}
                           source={f.source} blank={f.blank} blankShort={f.blankShort}
                           figureKey={"profile."+key} variant="inline"/>}
                     </div>
@@ -1881,6 +1890,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
           {/* Overview tab */}
           {dpTab==="overview"&&<div style={{padding:"22px 20px 24px 24px",display:"flex",flexDirection:"column",gap:18}}>
+            {/* INT-BUILD-1 Part 3 — the next meeting with its brief, then one
+                timeline of every email thread, meeting and gift. */}
+            {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={loadRel}/>}
+            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} onChanged={()=>{loadRel();onInteractionAdded&&onInteractionAdded();}}/>}
+            {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
+              <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();onInteractionAdded&&onInteractionAdded();}}/>
+            </Modal>}
             {/* ── WHAT DO I DO NEXT (PROFILE-1) ──────────────────────────
                 BUILD-81 put the donor's thread above giving history and
                 BUILD-88a A.2 folded every other open item into it, ranked by
@@ -3007,6 +3023,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             rail's greys are cream at reduced opacity (T.sage400/600), which
             is the design system's own answer for secondary text on ink. */}
         <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
+          {/* INT-BUILD-1 Part 3 — next step, rhythm, coming up, this year, book a visit. */}
+          {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel}/>}
 
           {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
               email lived in the header's name row, competing with the name

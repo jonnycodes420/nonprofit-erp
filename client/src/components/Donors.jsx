@@ -1,3 +1,4 @@
+import { NoRecentMeetingPanel } from "./MovesPanels";
 import { useState, useEffect, useMemo, Component } from "react";
 import { GrantImport } from "./GrantImport";
 import Papa from "papaparse";
@@ -82,6 +83,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[dirStage,setDirStage]=useState(initialStageFilter||"");
   const[dirAssignee,setDirAssignee]=useState("");
   const[dirDesignation,setDirDesignation]=useState("");   // BUILD-14 planned-giving/estate segment
+  const[noMeetingOpen,setNoMeetingOpen]=useState(false);   // INT-BUILD-1 Part 6
   const[officers,setOfficers]=useState([]);               // BUILD-14 officer portfolios + color
   const[portfolioMeta,setPortfolioMeta]=useState({tier:PLAN_UNKNOWN,single_user:true}); // unknown until it loads, never "core" (FIX-3 finding 9)
   const[pendingInvites,setPendingInvites]=useState([]); // [{id:"invite:<id>",name,email,pending}] — bulk assign-owner to a not-yet-accepted officer (B2)
@@ -456,6 +458,12 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   return(
     <div style={{display:"flex",flexDirection:"column",gap:8}}>
       <PageTitle main="Your" accent="donors."/>
+      {/* INT-BUILD-1 Part 6 — moves management: who has not been met. */}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <button type="button" data-testid="filter-no-meeting" aria-pressed={noMeetingOpen} onClick={()=>setNoMeetingOpen(o=>!o)}
+          style={{background:noMeetingOpen?T.ink:T.white,color:noMeetingOpen?T.inkInverse:T.ink,border:"1px solid "+(noMeetingOpen?T.ink:T.bg3),borderRadius:99,padding:"6px 14px",fontSize:13,fontWeight:600,cursor:"pointer"}}>No meeting in 90 days</button>
+      </div>
+      {noMeetingOpen&&<NoRecentMeetingPanel officers={officers} onSelectDonor={id=>selectDonor({id})} onClose={()=>setNoMeetingOpen(false)}/>}
       {assignTarget&&<AssignModal donor={assignTarget} orgTeam={orgTeam} onSave={handleAssign} onClose={()=>setAssignTarget(null)}/>}
       {showImport&&<DonorImport org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowImport(false)} onImported={()=>{reloadDonors();setShowImport(false);}}/>}
       {showGiftImport&&<GiftHistoryImport donors={data.donors} org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowGiftImport(false)} onImported={()=>{reloadDonors();setShowGiftImport(false);}}/>}

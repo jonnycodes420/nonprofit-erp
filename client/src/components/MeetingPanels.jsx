@@ -1,0 +1,533 @@
+// client/src/components/MeetingPanels.jsx — INT-BUILD-1 Parts 3 to 5.
+//
+// THE CALENDAR AND THE INBOX, ON THE PEOPLE THEY CONCERN.
+// docs/int-build-1/Profile.html, Prep.html and After.html are the approved
+// drawings; values below are copied from them.
+//
+//   MeetingCard          the next meeting with this person, inside 7 days,
+//                        with the four-line brief from their own record
+//   RelationshipTimeline every email thread, meeting and gift, one list,
+//                        filter chips with counts, every item opens
+//   RelationshipRail     next step, the 12-month rhythm, coming up, this
+//                        year, and Book a visit (on HER calendar; inviting
+//                        the person is a box, off by default)
+//   AfterMeetingForm     "How did coffee with Margaret go?" Nothing is
+//                        recorded until she presses save, and then only
+//                        through the ordinary gift, pledge and thread routes
+//   MorningBrief         today's meetings, each with its brief (Home, 390)
+//
+// No pronoun is ever guessed from a name: the copy says the person's first
+// name, or "they".
+import { useState, useEffect, useRef } from "react";
+import { apiFetch } from "../api";
+import { T, firstNameOf, fmtFull } from "./shared";
+import { Figure } from "./Figure";
+import { errorMessage } from "../lib/domainError";
+
+const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
+const CHIP_EDGE = T.bg3;           // the artboards draw a hairline one shade off bg3; bg3 is the token
+const LABEL = { fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+const SERIF = "'DM Serif Display',Georgia,serif";
+const btnPrimary = { padding: "12px 18px", minHeight: 44, border: 0, borderRadius: 10, background: T.greenDk, color: T.white,
+  font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" };
+const btnOutline = { padding: "12px 18px", minHeight: 44, border: "1.5px solid " + T.ink, borderRadius: 10, background: T.white, color: T.ink,
+  font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" };
+const input = { font: "16px 'DM Sans',sans-serif", color: T.ink, border: "1px solid " + T.bg2, borderRadius: 12, padding: 12,
+  minHeight: 44, boxSizing: "border-box", width: "100%", background: T.white };
+const PROVIDER_CAL = { google: "Google Calendar", microsoft: "Outlook calendar" };
+const MEAL_WORDS = ["coffee", "lunch", "breakfast", "dinner", "tea", "drinks", "call", "visit", "tour"];
+
+const dayKey = d => { const x = new Date(d); return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+export function whenLabel(iso) {
+  const d = new Date(iso);
+  const days = Math.round((dayKey(d) - dayKey(Date.now())) / 864e5);
+  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  const day = days === 0 ? "Today" : days === 1 ? "Tomorrow" : days === -1 ? "Yesterday"
+    : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  return `${day} · ${time}`;
+}
+export function relDay(dateLike) {
+  if (!dateLike) return "";
+  const s = String(dateLike);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(s + "T12:00:00") : new Date(s);
+  const days = Math.round((dayKey(d) - dayKey(Date.now())) / 864e5);
+  if (days === 0) return "Today";
+  if (days === -1) return "Yesterday";
+  if (days === 1) return "Tomorrow";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) });
+}
+const durationOf = (a, b) => {
+  const m = Math.round((new Date(b) - new Date(a)) / 60000);
+  if (!(m > 0)) return "";
+  const h = Math.floor(m / 60), r = m % 60;
+  return h ? `${h} hr${r ? ` ${r} min` : ""}` : `${r} min`;
+};
+// "How did coffee with Margaret go?" — the meeting's own word when its title
+// starts with one, otherwise "your meeting".
+export function meetingNoun(title) {
+  const w = String(title || "").trim().split(/\s+/)[0]?.toLowerCase() || "";
+  if (["call", "visit", "tour"].includes(w)) return "the " + w;
+  return MEAL_WORDS.includes(w) ? w : "your meeting";
+}
+const ownerFirst = m => firstNameOf(m?.ownerName || "") || "You";
+
+// ── THE BRIEF, as four labelled lines ───────────────────────────────────────
+function BriefLines({ brief, first, columns = 2, onInk = false }) {
+  if (!brief) return null;
+  const items = [
+    brief.lastTime && [`Last time, ${relDay(brief.lastTime.date)}`, brief.lastTime.text],
+    brief.openAsk && ["The open ask", brief.openAsk.text],
+    brief.lastEmail && [`${first} wrote ${relDay(brief.lastEmail.date).toLowerCase() === "yesterday" ? "yesterday" : relDay(brief.lastEmail.date)}`, `"${brief.lastEmail.quote}"`],
+    brief.unthanked && ["Don't forget", brief.unthanked.text],
+  ].filter(Boolean);
+  if (!items.length) return <div style={{ fontSize: 15, color: onInk ? T.sage400 : T.ink3 }}>Nothing on the record to brief from yet.</div>;
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`, gap: "18px 28px", alignContent: "start" }}>
+      {items.map(([k, v]) => (
+        <div key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={{ fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase", color: onInk ? T.sage400 : T.ink3 }}>{k}</span>
+          <span style={{ fontSize: 15, lineHeight: 1.5 }}>{v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── MOVE IT ─────────────────────────────────────────────────────────────────
+function TimeForm({ initialStart, initialMinutes = 60, onSubmit, submitLabel, busy, extra }) {
+  const s = new Date(initialStart || Date.now() + 864e5);
+  const pad = n => String(n).padStart(2, "0");
+  const [date, setDate] = useState(`${s.getFullYear()}-${pad(s.getMonth() + 1)}-${pad(s.getDate())}`);
+  const [time, setTime] = useState(`${pad(s.getHours())}:${pad(s.getMinutes())}`);
+  const [mins, setMins] = useState(initialMinutes);
+  const go = e => {
+    e.preventDefault();
+    const start = new Date(`${date}T${time}`);
+    onSubmit({ startsAt: start.toISOString(), endsAt: new Date(start.getTime() + Number(mins) * 60000).toISOString() });
+  };
+  return (
+    <form onSubmit={go} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end" }}>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Day
+        <input type="date" value={date} onChange={e => setDate(e.target.value)} required style={{ ...input, width: 160, padding: 8 }}/></label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Time
+        <input type="time" value={time} onChange={e => setTime(e.target.value)} required style={{ ...input, width: 120, padding: 8 }}/></label>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "inherit" }}>Minutes
+        <input type="number" min={15} step={15} value={mins} onChange={e => setMins(e.target.value)} style={{ ...input, width: 90, padding: 8 }}/></label>
+      {extra}
+      <button type="submit" disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>{busy ? "Saving…" : submitLabel}</button>
+    </form>
+  );
+}
+
+export function MeetingCard({ meeting, donor, onReload }) {
+  const [moving, setMoving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (!meeting) return null;
+  const first = firstNameOf(donor?.name) || "them";
+  const move = async body => {
+    setBusy(true); setMsg("");
+    try { const r = await apiFetch(`/calendar/events/${meeting.id}/move`, { method: "POST", body: JSON.stringify(body) }); setMsg(r.sentence); setMoving(false); onReload && onReload(); }
+    catch (e) { setMsg(e?.sentence || errorMessage(e, "That did not move.")); }
+    setBusy(false);
+  };
+  return (
+    <section aria-label="The next meeting" data-testid="dp-meeting-card"
+      style={{ background: T.white, borderRadius: 20, padding: "30px 34px", display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 32 }}
+      className="dp-meeting-card">
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{whenLabel(meeting.startsAt)}</div>
+        <div style={{ fontFamily: SERIF, fontSize: 30, lineHeight: 1.15 }}>{meeting.title}</div>
+        <div style={{ fontSize: 14, color: T.ink3 }}>From {meeting.ownerName ? `${ownerFirst(meeting)}'s` : "a"} {PROVIDER_CAL[meeting.provider] || "calendar"} · {[ownerFirst(meeting), ...(meeting.people || []).map(firstNameOf)].join(" and ")}</div>
+        {meeting.location && <div style={{ fontSize: 14, color: T.ink3 }}>{meeting.location}</div>}
+        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => setOpen(o => !o)} style={btnPrimary} aria-expanded={open}>{open ? "Close the brief" : "Open the brief"}</button>
+          <button type="button" onClick={() => setMoving(m => !m)} style={btnOutline}>{moving ? "Keep it" : "Move it"}</button>
+        </div>
+        {moving && <div style={{ marginTop: 8 }}><TimeForm initialStart={meeting.startsAt}
+          initialMinutes={Math.max(15, Math.round((new Date(meeting.endsAt) - new Date(meeting.startsAt)) / 60000))}
+          onSubmit={move} submitLabel="Move it" busy={busy}/></div>}
+        {msg && <div style={{ fontSize: 13, color: T.ink }}>{msg}</div>}
+      </div>
+      <div style={{ gridColumn: "span 2", borderLeft: "1px solid " + T.bg2, paddingLeft: 32 }}>
+        <BriefLines brief={meeting.brief} first={first}/>
+        {open && (
+          <div data-testid="dp-brief-full" style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid " + T.bg2, fontSize: 15, lineHeight: 1.6 }}>
+            {meeting.brief?.giving && <div><span style={{ color: T.ink3 }}>Gave</span> {meeting.brief.giving.text}</div>}
+            {meeting.location && <div><span style={{ color: T.ink3 }}>Where</span> {meeting.location}</div>}
+            <div><span style={{ color: T.ink3 }}>When</span> {whenLabel(meeting.startsAt)}, {durationOf(meeting.startsAt, meeting.endsAt)}</div>
+            <button type="button" onClick={() => window.print()} style={{ ...btnOutline, marginTop: 10, padding: "8px 14px", minHeight: 36, fontSize: 14 }}>Print the brief</button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// ── EVERYTHING WITH THEM ────────────────────────────────────────────────────
+const ICON = {
+  email: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>,
+  meeting: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>,
+};
+const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2 };
+
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged }) {
+  const [filter, setFilter] = useState("all");
+  const [openId, setOpenId] = useState(null);
+  const [limit, setLimit] = useState(12);
+  if (!rel) return null;
+  const first = firstNameOf(donor?.name) || "them";
+  const byId = Object.fromEntries((interactions || []).map(i => [i.id, i]));
+  const calendarMeetingIds = new Set((rel.past || []).map(e => e.id));
+  const loggedFromCalendar = new Set((rel.past || []).map(e => e.interactionId).filter(Boolean));
+  const items = [];
+  for (const t of rel.emailThreads || []) items.push({ kind: "email", id: "t:" + t.key, date: t.lastDate, t });
+  for (const m of rel.past || []) items.push({ kind: "meeting", id: "c:" + m.id, date: String(new Date(m.startsAt).toISOString()).slice(0, 10), m });
+  for (const i of interactions || []) {
+    if (i.type !== "meeting" || calendarMeetingIds.has(i.id)) continue;
+    let meta = {}; try { meta = typeof i.metadata === "string" ? JSON.parse(i.metadata || "{}") : (i.metadata || {}); } catch {}
+    if (meta.calendar_event_id) continue;    // shown as its calendar meeting
+    items.push({ kind: "meeting", id: "i:" + i.id, date: String(i.date).slice(0, 10), logged: i });
+  }
+  for (const g of gifts || []) items.push({ kind: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0),
+    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length };
+  const shown = items.filter(i => filter === "all" || i.kind === filter);
+  const chip = (key, label) => (
+    <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key}
+      style={{ padding: "8px 14px", borderRadius: 999, border: filter === key ? 0 : "1px solid " + CHIP_EDGE,
+        background: filter === key ? T.ink : "transparent", color: filter === key ? T.inkInverse : T.ink,
+        font: "500 14px 'DM Sans',sans-serif", cursor: "pointer" }}>{label}</button>
+  );
+  return (
+    <section aria-label="Conversations and meetings" data-testid="dp-timeline" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {chip("all", "All")}{chip("email", `Emails ${counts.email}`)}{chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
+        </div>
+      </div>
+      {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>Nothing here yet.</div>}
+      {shown.slice(0, limit).map(it => {
+        const isOpen = openId === it.id;
+        let title, body, meta, extra = null;
+        if (it.kind === "email") {
+          const t = it.t;
+          title = t.subject;
+          body = t.lastQuote ? `${t.lastDirection === "inbound" ? first : "You"}: "${t.lastQuote}"` : null;
+          meta = `${t.count} message${t.count === 1 ? "" : "s"}${t.attachments ? ` · ${t.attachments} attachment${t.attachments === 1 ? "" : "s"}` : ""}`;
+          if (isOpen) extra = (t.ids || []).map(id => byId[id]).filter(Boolean).map(x => {
+            let mm = {}; try { mm = typeof x.metadata === "string" ? JSON.parse(x.metadata || "{}") : (x.metadata || {}); } catch {}
+            return <div key={x.id} style={{ borderTop: "1px solid " + T.bg2, paddingTop: 10, marginTop: 10, fontSize: 14, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 12, color: T.ink3 }}>{relDay(x.date)} · {mm.direction === "inbound" ? `From ${first}` : mm.direction === "outbound" ? `To ${first}` : "Email"}</div>
+              <div style={{ whiteSpace: "pre-wrap" }}>{String(x.note || "").split("\n").slice(1).join("\n").trim() || String(x.note || "")}</div>
+              {mm.provider && mm.message_id && <button type="button" onClick={e => { e.stopPropagation();
+                if (!window.confirm("Remove this email from the record? Steward will not log it again.")) return;
+                apiFetch("/mailbox/forget", { method: "POST", body: JSON.stringify({ interactionId: x.id }) }).then(() => onChanged && onChanged()).catch(() => {}); }}
+                style={{ background: "none", border: "none", padding: 0, marginTop: 6, color: T.ink3, fontSize: 13, cursor: "pointer", textDecoration: "underline", font: "inherit" }}>Remove from the record</button>}
+            </div>;
+          });
+        } else if (it.kind === "meeting" && it.m) {
+          const m = it.m;
+          title = `${m.title}${durationOf(m.startsAt, m.endsAt) ? ` · ${durationOf(m.startsAt, m.endsAt)}` : ""}`;
+          body = m.note ? `${ownerFirst(m)}'s note: "${m.note}"` : "No note yet.";
+          meta = m.nextStep ? `Next step set: ${m.nextStep}` : null;
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8, lineHeight: 1.6 }}>
+            {m.location && <div>{m.location}</div>}
+            <div>{whenLabel(m.startsAt)} · from {ownerFirst(m)}'s {PROVIDER_CAL[m.provider] || "calendar"}</div>
+            {!m.loggedAt && onLog && <button type="button" onClick={e => { e.stopPropagation(); onLog(m); }} style={{ ...btnOutline, marginTop: 10, padding: "8px 14px", minHeight: 36, fontSize: 14 }}>Log how it went</button>}
+          </div>;
+        } else if (it.kind === "meeting") {
+          const i = it.logged;
+          title = String(i.note || "Meeting").split("\n")[0];
+          body = String(i.note || "").split("\n").slice(1).join(" ").trim() || null;
+          meta = i.logged_by_name ? `Logged by ${i.logged_by_name}` : null;
+        } else {
+          const g = it.g;
+          title = `${fmtFull(Number(g.amount))}${g.fund_name ? ` to ${g.fund_name}` : ""}${g.payment_method ? ` · ${g.payment_method}` : ""}`;
+          body = g.acknowledgement_sent ? `Thanked${g.acknowledged_via ? ` by ${g.acknowledged_via}` : ""}${g.acknowledged_by_name ? `, ${g.acknowledged_by_name}` : ""}.` : "Not thanked yet.";
+          if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
+        }
+        return (
+          <div key={it.id} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+            onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
+            style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
+              display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" ? "$" : ICON[it.kind]}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
+              {body && <div style={{ fontSize: 15, lineHeight: 1.5, color: T.ink3 }}>{body}</div>}
+              {meta && <div style={{ fontSize: 13, color: it.kind === "meeting" && meta.startsWith("Next") ? T.greenDk : T.ink3, fontWeight: it.kind === "meeting" && meta.startsWith("Next") ? 600 : 400 }}>{meta}</div>}
+              {extra}
+            </div>
+            <div style={{ fontSize: 14, color: T.ink3, textAlign: "right", whiteSpace: "nowrap" }}>{relDay(it.date)}</div>
+          </div>
+        );
+      })}
+      {shown.length > limit && <button type="button" onClick={() => setLimit(l => l + 20)} style={{ ...btnOutline, alignSelf: "flex-start" }}>Show {Math.min(20, shown.length - limit)} more</button>}
+    </section>
+  );
+}
+
+// ── THE RAIL ────────────────────────────────────────────────────────────────
+export function RelationshipRail({ rel, donor, onReload }) {
+  const [booking, setBooking] = useState(false);
+  const [invite, setInvite] = useState(false);
+  const [title, setTitle] = useState("");
+  const [place, setPlace] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (!rel) return null;
+  const first = firstNameOf(donor?.name) || "them";
+  const y = rel.thisYear || {};
+  const n = y.meetings?.value || 0;
+  const monthsElapsed = Math.max(1, new Date().getMonth() + 1);
+  const next = (rel.upcoming || [])[0];
+  const book = async body => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await apiFetch(`/donors/${donor.id}/book-visit`, { method: "POST",
+        body: JSON.stringify({ ...body, title: title.trim() || `Visit with ${donor.name}`, location: place.trim() || undefined, inviteDonor: invite }) });
+      setMsg(r.sentence); setBooking(false); onReload && onReload();
+    } catch (e) { setMsg(e?.sentence || errorMessage(e, "Nothing was added to your calendar.")); }
+    setBusy(false);
+  };
+  const H = ({ children, gold }) => <div style={{ fontSize: 12, letterSpacing: "0.12em", textTransform: "uppercase", color: gold ? T.gold : T.sage400 }}>{children}</div>;
+  const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
+  return (
+    <div data-testid="dp-rail-relationship" style={{ display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <H gold>Next step</H>
+        <div style={{ fontFamily: SERIF, fontSize: 26, lineHeight: 1.2 }}>{rel.nextStep?.label || "Nothing planned yet."}</div>
+        {rel.nextStep?.due && <div style={{ fontSize: 14, color: T.sage400 }}>Due {relDay(rel.nextStep.due)}</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <H>Meeting rhythm · last 12 months</H>
+        <div role="img" aria-label={rel.rhythmSentence} title={rel.rhythmSentence}
+          style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 5 }}>
+          {(rel.rhythm || []).map(m => (
+            <div key={m.month} data-month={m.month} data-count={m.count}
+              title={`${new Date(m.from + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}: ${m.count} meeting${m.count === 1 ? "" : "s"}${m.upcoming ? ", one still to come" : ""}`}
+              style={{ height: 30, borderRadius: 4, boxSizing: "border-box",
+                background: m.count > 0 ? T.gold : m.upcoming ? "transparent" : "rgba(240,237,230,0.12)",
+                border: m.count === 0 && m.upcoming ? "1.5px dashed " + T.gold : "none" }}/>
+          ))}
+        </div>
+        <div style={{ fontSize: 14, color: T.sage400, lineHeight: 1.5 }}>
+          {n ? `${n} meeting${n === 1 ? "" : "s"} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} month${Math.round(monthsElapsed / n) === 1 ? "" : "s"}` : ""}.` : "No meetings yet this year."}
+          {next ? ` The next one is ${relDay(next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.startsAt)}.` : ""}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <H>Coming up</H>
+        {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.startsAt)}</span>}/>)}
+        {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing on a connected calendar.</div>}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <H>This year</H>
+        <Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
+        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/>
+        <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this year" definition="Every gift from this person this year, to the cent." source={y.given?.source} variant="inline"/>}/>
+      </div>
+      {!booking && <button type="button" data-testid="dp-book-visit" onClick={() => setBooking(true)}
+        style={{ padding: "14px 18px", minHeight: 48, border: "1.5px solid " + T.inkInverse, borderRadius: 10, background: "transparent", color: T.inkInverse, font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" }}>Book a visit on your calendar</button>}
+      {booking && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, color: T.inkInverse }}>
+          <H>Book a visit</H>
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder={`Visit with ${donor.name}`} aria-label="Title" style={{ ...input, padding: 8 }}/>
+          <input value={place} onChange={e => setPlace(e.target.value)} placeholder="Where (optional)" aria-label="Where" style={{ ...input, padding: 8 }}/>
+          <TimeForm initialStart={Date.now() + 7 * 864e5} onSubmit={book} submitLabel="Add to my calendar" busy={busy}
+            extra={<label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, width: "100%" }}>
+              <input type="checkbox" checked={invite} onChange={e => setInvite(e.target.checked)}/>
+              Also invite {first}. Their invitation comes from your calendar.
+            </label>}/>
+          <button type="button" onClick={() => setBooking(false)} style={{ background: "none", border: "none", color: T.sage400, cursor: "pointer", fontSize: 14, alignSelf: "flex-start" }}>Cancel</button>
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 14, color: T.inkInverse, lineHeight: 1.5 }}>{msg}</div>}
+    </div>
+  );
+}
+
+// ── HOW DID IT GO ───────────────────────────────────────────────────────────
+const plus = (iso, days) => { const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+const FREQ_FOR = { 2: "semiannual", 4: "quarterly", 12: "monthly" };
+
+export function AfterMeetingForm({ meeting, onDone }) {
+  const person = (meeting.people || [])[0] || null;
+  const first = firstNameOf(person?.name) || "them";
+  const [note, setNote] = useState("");
+  const [chips, setChips] = useState([]);
+  const [removed, setRemoved] = useState({});
+  const [confirmed, setConfirmed] = useState({});
+  const [next, setNext] = useState("");
+  const [nextTouched, setNextTouched] = useState(false);
+  const [due, setDue] = useState(plus(Date.now(), 7));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const timer = useRef(null);
+  useEffect(() => {
+    clearTimeout(timer.current);
+    if (!note.trim()) { setChips([]); return; }
+    timer.current = setTimeout(() => {
+      apiFetch(`/calendar/events/${meeting.id}/suggest`, { method: "POST", body: JSON.stringify({ note }) })
+        .then(r => {
+          setChips(r.suggestions || []);
+          const n = (r.suggestions || []).find(c => c.kind === "next");
+          if (n && !nextTouched) setNext(n.text);
+        }).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer.current);
+  }, [note]);
+  const live = chips.filter((c, i) => !removed[i] && c.kind !== "next");
+  const isOn = c => confirmed[chips.indexOf(c)];
+  const pledge = live.find(c => c.kind === "pledge" && isOn(c));
+  const gift = live.find(c => c.kind === "gift" && isOn(c));
+  const fund = live.find(c => c.kind === "fund" && isOn(c));
+  const save = async e => {
+    e.preventDefault();
+    setBusy(true); setMsg("");
+    try {
+      await apiFetch(`/calendar/events/${meeting.id}/log`, { method: "POST", body: JSON.stringify({ note, nextStep: next.trim() || null }) });
+      const done = ["the note"];
+      const meetingDay = new Date(meeting.startsAt).toISOString().slice(0, 10);
+      if (person && pledge) {
+        const count = pledge.payments > 1 ? pledge.payments : null;
+        await apiFetch(`/donors/${person.id}/pledges`, { method: "POST", body: JSON.stringify({
+          amount: pledge.amount, dueDate: meetingDay, notes: `From the meeting on ${meetingDay}${fund ? `, for ${fund.label}` : ""}.`,
+          ...(count ? { installmentCount: count, frequency: FREQ_FOR[count] || "annual" } : {}) }) });
+        done.push("the pledge");
+      }
+      if (person && gift) {
+        await apiFetch(`/donors/${person.id}/gifts`, { method: "POST", body: JSON.stringify({ amount: gift.amount, date: meetingDay, fundId: fund?.fundId || undefined }) });
+        done.push("the gift");
+      }
+      if (person && next.trim()) {
+        try { await apiFetch(`/donors/${person.id}/threads`, { method: "POST", body: JSON.stringify({ label: next.trim(), due }) }); done.push("the next step"); }
+        catch (err) { if (err?.status !== 409 && err?.error !== "thread_open") throw err;
+          setMsg(`${first} already has an open next step, so this one is on the meeting only.`); }
+      }
+      onDone && onDone(`Saved ${done.join(", ").replace(/, ([^,]*)$/, " and $1")}.`);
+    } catch (err) { setMsg(err?.sentence || err?.error || errorMessage(err, "That did not save.")); }
+    setBusy(false);
+  };
+  const saveLabel = pledge ? "Save and record the pledge" : gift ? "Save and record the gift" : "Save";
+  const end = new Date(meeting.endsAt);
+  const hhmm = d => new Date(d).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/ [AP]M$/, "");
+  return (
+    <div data-testid="after-meeting" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>
+          {Date.now() - end.getTime() < 3 * 3600e3 ? "Just now" : relDay(meeting.startsAt)} · {hhmm(meeting.startsAt)} to {hhmm(meeting.endsAt)}
+        </div>
+        <h2 style={{ margin: 0, fontFamily: SERIF, fontWeight: 400, fontSize: 32, lineHeight: 1.12 }}>How did {meetingNoun(meeting.title)} with {first} go?</h2>
+      </div>
+      <form onSubmit={save} style={{ background: T.white, borderRadius: 20, padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+        <label htmlFor={`note-${meeting.id}`} style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>What happened</label>
+        <textarea id={`note-${meeting.id}`} rows={5} value={note} onChange={e => setNote(e.target.value)}
+          style={{ font: "16px/1.5 'DM Sans',sans-serif", color: T.ink, border: "1px solid " + T.bg2, borderRadius: 12, padding: 12, resize: "none" }}/>
+        {live.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Steward heard</span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {live.map(c => { const i = chips.indexOf(c); const on = !!confirmed[i]; return (
+                <span key={i} data-chip={c.kind} data-confirmed={on ? "1" : "0"} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 999,
+                  background: on ? T.bg2 : T.white, border: on ? "1px solid " + T.bg2 : "1px dashed " + CHIP_EDGE, fontSize: 14 }}>
+                  <button type="button" onClick={() => setConfirmed(x => ({ ...x, [i]: !on }))} aria-pressed={on}
+                    style={{ background: "none", border: "none", padding: 0, font: "inherit", color: T.ink, cursor: "pointer" }}>{on ? "✓ " : "Confirm "}{c.label}</button>
+                  <button type="button" onClick={() => setRemoved(x => ({ ...x, [i]: true }))} aria-label={`Remove ${c.label}`}
+                    style={{ background: "none", border: "none", padding: 0, color: T.ink3, cursor: "pointer", fontSize: 15 }}>×</button>
+                </span>); })}
+            </div>
+            <span style={{ fontSize: 12, color: T.ink3 }}>Read from your note. Only what you confirm is recorded, and only when you save.</span>
+          </div>
+        )}
+        <label htmlFor={`next-${meeting.id}`} style={{ fontSize: 13, letterSpacing: "0.08em", color: T.ink3, textTransform: "uppercase" }}>Next step</label>
+        <input id={`next-${meeting.id}`} value={next} onChange={e => { setNext(e.target.value); setNextTouched(true); }} style={input}/>
+        {next.trim() && <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink3 }}>Due
+          <input type="date" value={due} onChange={e => setDue(e.target.value)} style={{ ...input, width: 170, padding: 8 }}/></label>}
+        <button type="submit" disabled={busy || (!note.trim() && !next.trim())}
+          style={{ padding: 15, minHeight: 52, border: 0, borderRadius: 12, background: T.greenDk, color: T.white, font: "600 16px 'DM Sans',sans-serif",
+            cursor: "pointer", opacity: busy || (!note.trim() && !next.trim()) ? 0.6 : 1 }}>{busy ? "Saving…" : saveLabel}</button>
+        {msg && <div style={{ fontSize: 14, color: T.ink }}>{msg}</div>}
+      </form>
+      <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5, padding: "0 4px" }}>
+        The meeting is already on {first}'s profile from your calendar. Saving adds your note{pledge ? ", the pledge" : gift ? ", the gift" : ""}{next.trim() ? " and the next step" : ""}.
+      </div>
+    </div>
+  );
+}
+
+// ── HOME: TODAY'S MEETINGS, AND THE ONES WAITING FOR A NOTE ────────────────
+export function MorningBrief({ userName, onOpenPerson }) {
+  const [today, setToday] = useState(null);
+  const [toLog, setToLog] = useState(null);
+  const [done, setDone] = useState("");
+  const [logging, setLogging] = useState(null);
+  const load = () => {
+    apiFetch("/calendar/today").then(setToday).catch(() => setToday({ meetings: [] }));
+    apiFetch("/calendar/to-log").then(r => setToLog(r.meetings || [])).catch(() => setToLog([]));
+  };
+  useEffect(() => { load(); }, []);
+  if (!today || !toLog) return null;
+  const upcoming = today.meetings.filter(m => new Date(m.endsAt).getTime() > Date.now());
+  const lead = upcoming.find(m => m.brief) || null;
+  const rest = today.meetings.filter(m => m !== lead && new Date(m.endsAt).getTime() > Date.now());
+  if (!lead && !rest.length && !toLog.length && !done) return null;
+  const inLabel = iso => {
+    const mins = Math.round((new Date(iso) - Date.now()) / 60000);
+    if (mins <= 0) return "Now";
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return `In ${h ? `${h} hr ` : ""}${m ? `${m} min` : ""}`.trim();
+  };
+  const b = lead?.brief;
+  const first = firstNameOf(lead?.people?.[0]?.name) || "them";
+  return (
+    <div data-testid="morning-brief" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      {done && <div role="status" style={{ background: T.white, borderRadius: 14, padding: "12px 16px", fontSize: 14 }}>{done}</div>}
+      {toLog.slice(0, 1).map(m => logging === m.id
+        ? <AfterMeetingForm key={m.id} meeting={m} onDone={s => { setDone(s); setLogging(null); load(); }}/>
+        : <div key={m.id} data-testid="after-prompt" style={{ background: T.white, borderRadius: 20, padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 12, letterSpacing: "0.12em", color: DARK_BRASS, fontWeight: 600, textTransform: "uppercase" }}>{relDay(m.startsAt)} · {m.title}</div>
+              <div style={{ fontFamily: SERIF, fontSize: 24, lineHeight: 1.15, marginTop: 4 }}>How did {meetingNoun(m.title)} with {firstNameOf(m.people?.[0]?.name) || "them"} go?</div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={() => setLogging(m.id)} style={btnPrimary}>Write it down</button>
+              <button type="button" onClick={() => apiFetch(`/calendar/events/${m.id}/dismiss`, { method: "POST", body: "{}" }).then(load)} style={{ ...btnOutline, border: "1px solid " + T.bg2 }}>Not now</button>
+            </div>
+          </div>)}
+      {lead && (
+        <section data-testid="today-meeting" style={{ background: T.ink, color: T.inkInverse, borderRadius: 20, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ fontSize: 12, letterSpacing: "0.12em", color: T.gold, textTransform: "uppercase" }}>{inLabel(lead.startsAt)}{lead.location ? ` · ${lead.location}` : ""}</div>
+          <div style={{ fontFamily: SERIF, fontSize: 28, lineHeight: 1.15 }}>{lead.title}{lead.people?.[0] && !lead.title.includes(lead.people[0].name) ? ` with ${lead.people[0].name}` : ""}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 15, lineHeight: 1.45 }}>
+            {b?.giving && <div><span style={{ opacity: 0.6 }}>Gave</span> {b.giving.text}</div>}
+            {b?.openAsk && <div><span style={{ opacity: 0.6 }}>Ask open</span> {b.openAsk.text}</div>}
+            {b?.lastTime && <div><span style={{ opacity: 0.6 }}>Bring up</span> {b.lastTime.text}</div>}
+            {b?.unthanked && <div><span style={{ opacity: 0.6 }}>Owe {first}</span> a thank-you for the {relDay(b.unthanked.date)} gift</div>}
+          </div>
+          {lead.people?.[0] && onOpenPerson && <button type="button" onClick={() => onOpenPerson(lead.people[0].id)}
+            style={{ marginTop: 4, padding: 14, minHeight: 48, border: 0, borderRadius: 12, background: T.inkInverse, color: T.ink, font: "600 15px 'DM Sans',sans-serif", cursor: "pointer" }}>Open {first}'s full profile</button>}
+        </section>
+      )}
+      {rest.length > 0 && (
+        <section style={{ background: T.white, borderRadius: 20, padding: "20px 22px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={LABEL}>{lead ? "Also today" : "Today"}</div>
+          {rest.map((m, i) => <div key={m.id}>
+            {i > 0 && <div style={{ height: 1, background: T.bg2, marginBottom: 12 }}/>}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}>
+              <span><b style={{ fontWeight: 600 }}>{new Date(m.startsAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }).replace(/ [AP]M$/, "")}</b> {m.title}</span>
+              {m.people?.length === 1 && onOpenPerson
+                ? <button type="button" onClick={() => onOpenPerson(m.people[0].id)} style={{ background: "none", border: "none", color: T.ink3, cursor: "pointer", font: "inherit" }}>Brief</button>
+                : <span style={{ color: T.ink3 }}>{m.people?.length || 0} {m.people?.length === 1 ? "person" : "people"}</span>}
+            </div>
+          </div>)}
+        </section>
+      )}
+      {(lead || rest.length > 0) && <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5, padding: "0 4px" }}>{today.sentence}</div>}
+    </div>
+  );
+}

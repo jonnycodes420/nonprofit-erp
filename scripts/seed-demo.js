@@ -183,7 +183,10 @@ const emailFor = name => name.toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(
 // below): a past_due subscription EXCLUDES a donor from drift by design, so
 // she cannot be one of the eleven and be the failed-card fixture at once.
 const DRIFTED = [
-  ["Margaret Chen", 2000, "seasonal"],          // THE canonical example
+  // INT-BUILD-1 — Margaret Chen is now the inbox-and-calendar story (coffee
+  // tomorrow, a $15,000 August gift), which cannot also be silent for 14
+  // months. The canonical drift example keeps her numbers under a new name.
+  ["Eleanor Whitcombe", 2000, "seasonal"],      // THE canonical example
   ["Marguerite Ashgrove", 2500, "seasonal"],
   ["Halvard Bellwether", 2000, "semiannual"],
   ["Casper Dunmoor", 1800, "semiannual"],
@@ -334,6 +337,9 @@ async function main() {
   await q(`INSERT INTO accounts (id,org_id,code,name,type) VALUES ('acct_b72demo',$1,'4010','Contributions','revenue')`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_gen',$1,'General Operating',false)`, [ORG]);
   await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_sch',$1,'Scholarship Fund',true)`, [ORG]);
+  // INT-BUILD-1 — the two funds Margaret Chen's story names.
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_yaa',$1,'Youth Arts Access',true)`, [ORG]);
+  await q(`INSERT INTO fin_funds (id,org_id,name,restricted) VALUES ('fund_b72demo_gala',$1,'Gala Reserve',false)`, [ORG]);
   // FIN-1 — a THIRD fund, and it is restricted and actually holds money. The
   // demo had two funds and a restricted balance of zero, so the one screen
   // that exists to answer "how much of this is not ours to spend" answered
@@ -404,6 +410,20 @@ async function main() {
     for (const date of driftedGiftDates(pattern, i))
       addGift(id, amt, date, { campaign: "Annual Fund " + date.slice(0, 4) });
   });
+
+  // ── INT-BUILD-1 Part 7 · MARGARET CHEN, AS THE MOCKUP TELLS HER ─────────
+  // $187,500 over eleven years, $40,000 of it this year, $15,000 of that on
+  // the gift ~58 days back (Aug 4 on the day the mockup was drawn), which has
+  // not been thanked by hand. Every date is relative to the seed day, so
+  // "tomorrow" stays tomorrow. Her meetings, emails and ask are written after
+  // the inbox, below.
+  const margaretId = addDonor("Margaret Chen", "margaret.chen@example.demo",
+                              { status: "major", stage: "steward", officer: "u_b72demo", pin: true });
+  const MARGARET_AUG = orgTime.addDays(TODAY, -58);
+  const margaretAugGift = addGift(margaretId, 15000, MARGARET_AUG, { method: ["ach", "ACH"], fundId: "fund_b72demo_gala", notes: "Gala Reserve" });
+  addGift(margaretId, 15000, orgTime.addDays(TODAY, -230), { method: ["ach", "ACH"] });
+  addGift(margaretId, 10000, orgTime.addDays(TODAY, -150), { method: ["ach", "ACH"] });
+  for (let y = 1; y <= 10; y++) addGift(margaretId, 14750, orgTime.addDays(TODAY, -(365 * y + 58)), { method: ["check", "Check"] });
 
   // ── FIX-5 · THE NAMED PEOPLE ARE CLAIMED BEFORE THE TAIL IS DRAWN ───────
   // Every person below this point who is written by hand has a job — the
@@ -1863,9 +1883,9 @@ async function main() {
   const { conversationNote: mbNote } = await import("../shared/mailboxLog.js");
   await q(`INSERT INTO mailbox_connections
              (id,org_id,user_id,provider,address,status,last_synced_at,last_tried_at,last_logged_count,
-              created_by,created_by_name)
+              calendar_granted,calendar_synced_at,created_by,created_by_name)
            VALUES ('mbx_b72_dana',$1,'u_b72demo','google','dana@harborlight.demo','active',
-                   NOW(), NOW(), 5, 'system:seed-demo','The demonstration file')`, [ORG]);
+                   NOW(), NOW(), 5, true, NOW(), 'system:seed-demo','The demonstration file')`, [ORG]);
 
   const MB_CONVOS = [
     ["d_b72_pos1", 12, "outbound", "The autumn tour",            "Thought you might like to see the new workshop before the open evening."],
@@ -1904,6 +1924,115 @@ async function main() {
                        NOW() - interval '12 days','outcome',$4)`,
         [`th_b72_mbx`, ORG, closer.donor_id, closer.id]).catch(() => {});
     }
+  }
+
+  // ── INT-BUILD-1 Part 7 · MARGARET'S MEETINGS, EMAILS AND ASK ───────────
+  // From Dana's calendar and inbox, with no tokens (mbx_b72_dana above holds
+  // none). Coffee tomorrow at ten, the lunch twenty days back with its note
+  // and next step, the scholarship thread, the open ask for Youth Arts Access.
+  console.log("[seed] Margaret Chen's meetings and emails…");
+  {
+    const at = (offsetDays, hhmm) => orgTime.localToInstant(`${orgTime.addDays(TODAY, offsetDays)}T${hhmm}`, TZ).toISOString();
+    const cal = (id, offset, start, mins, title, location, extra = {}) => {
+      const s0 = at(offset, start);
+      return q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,
+                                             note,next_step,logged_at,logged_by,interaction_id,created_by,created_by_name)
+                VALUES ($1,$2,'u_b72demo','google',$1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'system:calendar/google/u_b72demo','Calendar sync')`,
+        [id, ORG, title, s0, new Date(Date.parse(s0) + mins * 60000).toISOString(), location, [margaretId],
+         extra.note || null, extra.next || null, extra.note ? s0 : null, extra.note ? "u_b72demo" : null, extra.interactionId || null]);
+    };
+    await cal("cal_b72_mc_coffee", 1, "10:00", 60, "Coffee at Magee's on Main", "Magee's on Main");
+    await cal("cal_b72_mc_openhouse", 17, "17:30", 90, "Studio open house", "Harborlight studio");
+    // Earlier meetings this past year, for the rhythm strip.
+    const PAST = [[-52, "Tea at the studio", "Harborlight studio"], [-112, "Coffee at Magee's", "Magee's on Main"],
+                  [-172, "Gala walkthrough", "The Boathouse"], [-233, "Lunch at Windy Corner", "Windy Corner"],
+                  [-300, "Coffee at Magee's", "Magee's on Main"]];
+    for (const [i, [off, title, place]] of PAST.entries()) await cal(`cal_b72_mc_past${i + 1}`, off, "12:30", 60, title, place);
+    // Today and yesterday, so Home always has a brief and a "how did it go":
+    // a call this afternoon, and a coffee yesterday with nothing written yet.
+    for (const [id, donorId, off, hhmm, title] of [
+      ["cal_b72_today_call", "d_b72_pos1", 0, "14:00", "Call"],
+      ["cal_b72_yday_coffee", "d_b72_pos3", -1, "16:00", "Coffee"]]) {
+      const [p] = await q(`SELECT id, name FROM donors WHERE id=$1 AND org_id=$2`, [donorId, ORG]);
+      if (!p) continue;
+      const s0 = at(off, hhmm);
+      await q(`INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,created_by,created_by_name)
+               VALUES ($1,$2,'u_b72demo','google',$1,$3,$4,$5,$6,$7,'system:calendar/google/u_b72demo','Calendar sync')`,
+        [id, ORG, `${title} with ${p.name}`, s0, new Date(Date.parse(s0) + 45 * 60000).toISOString(),
+         title === "Coffee" ? "Magee's on Main" : null, [p.id]]);
+    }
+    // The lunch, logged afterwards: a meeting interaction, and the event points at it.
+    const lunchDate = orgTime.addDays(TODAY, -20);
+    const lunchNote = "Loved the gala photos. Lily starts studio classes in January. Not ready to talk about the $25K until after the fall.";
+    await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_at,created_by,logged_by_name,metadata)
+             VALUES ('int_b72_mc_lunch',$1,$2,'meeting',$3,$4,NOW() - interval '20 days','u_b72demo','Dana Reyes',$5::jsonb)`,
+      [ORG, margaretId, `Lunch at Windy Corner\n\n${lunchNote}`, lunchDate,
+       JSON.stringify({ calendar_event_id: "cal_b72_mc_lunch", provider: "google", location: "Windy Corner", minutes: 70, next_step: "Send the scholarship report" })]);
+    await cal("cal_b72_mc_lunch", -20, "12:30", 70, "Lunch at Windy Corner", "Windy Corner",
+              { note: lunchNote, next: "Send the scholarship report", interactionId: "int_b72_mc_lunch" });
+
+    // The open ask, raised in June-ish (~110 days back).
+    await q(`INSERT INTO opportunities (id,org_id,donor_id,name,target_amount,status,officer_id,officer_name,created_at,proposal_stage,fund_id,notes)
+             VALUES ('opp_b72_mc_yaa',$1,$2,'Youth Arts Access',25000,'open','u_b72demo','Dana Reyes',NOW() - interval '110 days','asked','fund_b72demo_yaa',
+                     'She said "after the fall."')`, [ORG, margaretId]);
+
+    // The scholarship thread (four messages, the last yesterday, one attachment)
+    // and the rest of the year's mail with her, so the year's count is real.
+    const { conversationNote: mn } = await import("../shared/mailboxLog.js");
+    const mail = async (key, daysAgo, direction, subject, body, attachments = 0) => {
+      const note = mn({ direction, subject, attachmentCount: attachments }, { staffName: "Dana Reyes" });
+      await q(`INSERT INTO interactions (id,org_id,donor_id,type,note,date,created_at,created_by,logged_by_name,metadata)
+               VALUES ($1,$2,$3,'email',$4,(NOW() - ($5 || ' days')::interval)::date::text, NOW() - ($5 || ' days')::interval,
+                       'system:mailbox/google/u_b72demo','Dana Reyes',$6::jsonb)`,
+        [`int_b72_mc_${key}`, ORG, margaretId, `${note}\n\n${body}`, String(daysAgo),
+         JSON.stringify({ message_id: `demo_mc_${key}`, provider: "google", direction, subject, attachments, logged_by: "u_b72demo" })]);
+    };
+    await mail("sch1", 8, "outbound", "Studio scholarship report", "Here is this term's scholarship report. Twelve students, and the pottery wheel finally works.", 1);
+    await mail("sch2", 6, "inbound", "Re: Studio scholarship report", "Thank you, Dana. Reading it tonight.");
+    await mail("sch3", 3, "outbound", "Re: Studio scholarship report", "Lily is welcome to come and see the wheel any afternoon.");
+    await mail("sch4", 1, "inbound", "Re: Studio scholarship report", "The scholarship report made my week. Lily keeps asking about the pottery wheel. See you Thursday.");
+    const YEAR_MAIL = [
+      [30, "inbound", "Lunch next week?", "Windy Corner suits me. Shall we say half past twelve?"],
+      [31, "outbound", "Lunch next week?", "Would you like to have lunch before the fall term starts?"],
+      [57, "inbound", "Re: Thank you for August", "It was a pleasure. The gala photos are lovely."],
+      [58, "outbound", "Thank you for August", "Your gift arrived today. Thank you, from all of us."],
+      [80, "inbound", "Re: Gala seating", "Table four is perfect. Thank you for arranging it."],
+      [82, "outbound", "Gala seating", "Would you like to sit with the scholarship families this year?"],
+      [100, "inbound", "Re: Youth Arts Access", "Let me think about it until the fall."],
+      [110, "outbound", "Youth Arts Access", "I wanted to share the plan for Youth Arts Access, and ask whether you would consider $25,000."],
+      [140, "inbound", "Re: Spring showcase", "Lily loved it. She talked about nothing else all week."],
+      [142, "outbound", "Spring showcase", "We would love to see you and Lily at the spring showcase."],
+      [150, "inbound", "Your May gift", "I have asked the bank to send it this week."],
+      [175, "inbound", "Re: Coffee in April?", "Yes, Magee's at ten."],
+      [176, "outbound", "Coffee in April?", "Could I buy you a coffee in April?"],
+      [205, "inbound", "Re: Winter newsletter", "What a year the students have had."],
+      [229, "inbound", "Re: Thank you", "You are very welcome."],
+      [230, "outbound", "Thank you", "Thank you for your gift. It funds the winter term."],
+      [240, "inbound", "Re: Gala walkthrough", "I would be glad to help with the walkthrough."],
+      [260, "inbound", "New year", "Happy new year to everyone at the studio."],
+      [261, "outbound", "Re: New year", "And to you, Margaret."],
+      [265, "inbound", "Re: Holiday card", "The card from the students is on my mantelpiece."],
+    ];
+    let n = 0;
+    for (const [daysAgo, dir, subj, body] of YEAR_MAIL) {
+      if (orgTime.addDays(TODAY, -daysAgo) < TODAY.slice(0, 4) + "-01-01") continue;
+      await mail(`y${++n}`, daysAgo, dir, subj, body);
+    }
+
+    // Her next step, open: the one thread, due tomorrow.
+    // One open thread per person: an earlier section may already have opened
+    // hers, so that one is rewritten rather than a second refused.
+    const MC_STEP = "Coffee tomorrow. Bring Lily's class schedule.";
+    const moved = await q(`UPDATE threads SET next_step_type='follow_up', next_step_label=$3, due_date=$4, owner_id='u_b72demo', owner_name='Dana Reyes'
+                            WHERE org_id=$1 AND donor_id=$2 AND closed_at IS NULL RETURNING id`, [ORG, margaretId, MC_STEP, orgTime.addDays(TODAY, 1)]);
+    if (!moved.length)
+      await q(`INSERT INTO threads (id,org_id,donor_id,next_step_type,next_step_label,due_date,opened_on,owner_id,owner_name,created_by,created_by_name)
+               VALUES ('th_b72_mc',$1,$2,'follow_up',$3,$4,$5,'u_b72demo','Dana Reyes','system:seed-demo','The demonstration file')`,
+        [ORG, margaretId, MC_STEP, orgTime.addDays(TODAY, 1), orgTime.addDays(TODAY, -3)]);
+    // The August gift has had its receipt, and no thank-you by hand.
+    await q(`UPDATE gifts SET acknowledgement_sent=false, acknowledgement_sent_at=NULL, acknowledged_via=NULL WHERE id=$1 AND org_id=$2`,
+      [margaretAugGift, ORG]);
+    console.log(`[assert] Margaret Chen: coffee ${orgTime.addDays(TODAY, 1)} 10:00, ${n + 4} emails this year, the August gift unthanked`);
   }
 
   console.log("[seed] the email tool…");
@@ -2381,8 +2510,8 @@ async function writeAll(client, donors, gifts) {
       const notes = g.notes || (g.online ? "Online gift via the giving page" : null);
       // A scholarship gift goes to the scholarship fund where there is one;
       // the paddle raise says so in its own note.
-      const fundId = (scholarship && /scholarship/i.test(String(notes || "") + String(g.campaign || "")))
-        ? scholarship : unrestricted;
+      const fundId = g.fundId || ((scholarship && /scholarship/i.test(String(notes || "") + String(g.campaign || "")))
+        ? scholarship : unrestricted);
       // Two in three cheques carry a number, which is roughly what a real
       // deposit slip looks like.
       const cheque = isCheque && (k % 3 !== 2) ? String(chequeNo++) : null;
