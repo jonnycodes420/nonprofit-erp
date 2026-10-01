@@ -85,7 +85,7 @@ start_server() {
   DONOR_ACCOUNTS_ENABLED=1 NETWORK_SIGNUP_ENABLED=1 \
   MIGC_CONTACT_EMAIL=migc-contact@example.org MIGC_EMAIL_FROM=noreply@stewardapp.dev \
   DISABLE_BACKGROUND_TICKS=1 CORS_ORIGIN="http://localhost:$preview" \
-  STEWARD_CREDENTIAL_KEY=local-scratch-credential-key-0123456789 \
+  STEWARD_CREDENTIAL_KEY="${STEWARD_CREDENTIAL_KEY:-local-scratch-credential-key-0123456789}" \
   FOUNDER_EMAIL=jonathan@stewardapp.dev \
   STRIPE_BILLING_SECRET_KEY=sk_test_dummy \
   STRIPE_BILLING_API_BASE="http://localhost:$billing" \
