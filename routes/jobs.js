@@ -12,7 +12,7 @@
 function mount(ctx) {
 const {
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
-  deliverWebhooks,
+  deliverWebhooks, syncMailbox, syncCalendar,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,
   processMembershipRenewals, processNetworkGate, processPhotoQueue,
@@ -335,10 +335,19 @@ if (!backgroundTicksDisabled()) {
   setInterval(() => processTrialReminders().catch(console.error), 6 * 60 * 60 * 1000);
 }
 
+// INT-BUILD-1 — THE TICK READ THE WRONG TABLE. Since INT-4 every connection
+// lives in `mailbox_connections`, but this still read `gmail_connections`, so
+// a mailbox connected after INT-4 synced only when somebody pressed the
+// button, and Outlook never synced at all. It reads the live table now, mail
+// and calendar, for both providers. A row with no sealed token (a demo's
+// example) has nothing to read and is skipped.
 async function syncAllGmail() {
-  const connections = await query("SELECT * FROM gmail_connections WHERE status='active'");
+  const connections = await query(
+    `SELECT user_id, org_id, provider FROM mailbox_connections
+      WHERE status='active' AND paused IS NOT TRUE AND credentials_sealed IS NOT NULL`);
   for (const conn of connections) {
-    await syncGmail(conn.user_id, conn.org_id).catch(e => console.error("[gmail-sync]", e.message));
+    await syncMailbox(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[mailbox-sync]", e.message));
+    await syncCalendar(conn.user_id, conn.org_id, conn.provider).catch(e => console.error("[calendar-sync]", e.message));
   }
 }
 if (!rateLimitDisabled() && !backgroundTicksDisabled()) {

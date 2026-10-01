@@ -108,6 +108,26 @@ export const NUMBER_CENSUS = [
     testid: "dp-tile-def-Open ask",
   },
 
+  // INT-BUILD-1 — the two figures a calendar and an inbox make possible.
+  {
+    id: "profile.lastMet",
+    surface: "Donor profile",
+    label: "Last met",
+    computation: "figureSources donor-last-met — whole days between the org's civil today and the most recent meeting: a calendar meeting with them that has started, or a meeting interaction (a logged calendar meeting counts once, as its interaction)",
+    sentence: "How long since anyone here last met them, from a connected calendar or a meeting logged by hand. Click it for every meeting, most recent first.",
+    where: HOVER,
+    testid: "dp-tile-def-Last met",
+  },
+  {
+    id: "profile.lastEmail",
+    surface: "Donor profile",
+    label: "Last email",
+    computation: "figureSources donor-last-email — whole days between the org's civil today and the most recent email interaction with them",
+    sentence: "How long since the last email with them, either direction, from a connected inbox, the BCC address or logged by hand. Click it for every email, most recent first.",
+    where: HOVER,
+    testid: "dp-tile-def-Last email",
+  },
+
   // BUILD-98 Part 1 — soft credit. Shown only on a record somebody else's gift
   // credits, and always as TWO figures: their own money first, then the same
   // with soft credit added, so the second can never be read as the first.

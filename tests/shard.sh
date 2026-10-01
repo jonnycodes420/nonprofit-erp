@@ -45,6 +45,9 @@ sink=$((api + 1)); stripe=$((api + 2)); billing=$((api + 3)); preview=$((api + 4
 # API from the one RESEND_BASE_URL points at (that is the mail sink). Inside
 # this shard's own block, so three shards do not fight over one port.
 recv=$((api + 7))
+# INT-BUILD-1 — the stand-in for Google Calendar, which intb1-calendar-store
+# answers on. Inside this shard's block like every other mock.
+cal=$((api + 8))
 mkdir -p "$OUT"
 LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs}/shard-$N"
 mkdir -p "$LOGDIR"
@@ -91,6 +94,7 @@ start_server() {
   INBOUND_EMAIL_ENABLED=1 INBOUND_EMAIL_DOMAIN=log.stewardapp.dev \
   INBOUND_EMAIL_SECRET=local-inbound-secret \
   RESEND_RECEIVING_BASE_URL="http://localhost:$recv" \
+  GOOGLE_CALENDAR_API_BASE="http://localhost:$cal" \
   node server.js >"$SERVER_LOG" 2>&1 &
   echo $!
 }
@@ -151,6 +155,7 @@ export BILLING_MOCK_PORT="$billing"
 # lives inside the shard's own block of ten (+5/+6), like every other mock.
 export BOOKKEEPING_MOCK_PORT="$((api + 5))"
 export XERO_MOCK_PORT="$((api + 6))"
+export CALENDAR_MOCK_PORT="$cal"
 
 # ── THE DEMO SEED ──────────────────────────────────────────────────────────
 # FIVE suites read the demo org, not one: demo-shape, fix3-c-demo-people,
