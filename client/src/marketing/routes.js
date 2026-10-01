@@ -18,7 +18,8 @@ import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
 
-const plain = s => s.replace(/<[^>]+>/g, "");
+// Titles drop the headline markup. The copy uses only <b>, <em> and <br>.
+const plain = s => s.replace(/<\/?(?:b|em|br)\s*\/?>/g, "");
 const T = h => "Steward · " + plain(h);
 
 export const HOME_TITLE = "Steward · Keep the donors you already have";
