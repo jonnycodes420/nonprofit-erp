@@ -48,6 +48,17 @@ stores a lead through the existing Lost & Found lead route (`ref` book-a-demo);
 storing its two optional fields needs app code and is in `BLOCKED-landing-2.md`.
 Guards: `tests/landing2-marketing.test.js` (source) and the rebuilt
 `scripts/landing-prod-verify.js`, which crawls every route at 1440 and 390.
+## FIX-11 Part 6 follow-up — the icons are 20px again (2026-10-01)
+
+Jonathan looked at the 24px rail and reverted it the same night: too big. Back
+to 20px and stroke 1.75, exactly as NAV-1 shipped them, and the phone back to
+18 and 19.
+
+The measurement below is kept because it is the answer to "why do they look
+slightly soft", and the next person should not have to redo it. The size is the
+thing that matters more, so a small amount of antialiasing is now a deliberate
+accepted cost rather than an unknown.
+
 ## FIX-11 Part 6 — the icons were grainy, and it was the stroke (2026-09-30)
 
 Jonathan saw the new sidebar icons as slightly grainy. Measured on a retina

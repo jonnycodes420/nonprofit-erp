@@ -129,8 +129,8 @@ const readRail = page => page.$$eval(".app-sidebar [data-nav-group]", gs => gs.m
   })));
   ok("every nav item draws exactly one icon",
      rail.every(g => g.items.every(i => i.icons === 1)), rail.map(g => g.items.map(i => [i.id, i.icons])));
-  ok("every icon is 24px with the same stroke width",
-     icons.length > 0 && icons.every(i => i.w === "24" && i.h === "24" && i.stroke === icons[0].stroke),
+  ok("every icon is 20px with the same stroke width",
+     icons.length > 0 && icons.every(i => i.w === "20" && i.h === "20" && i.stroke === icons[0].stroke),
      icons.map(i => [i.id, i.w, i.stroke]));
   const shapes = new Map();
   icons.forEach(i => shapes.set(i.d, [...(shapes.get(i.d) || []), i.id]));

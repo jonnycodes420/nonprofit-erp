@@ -985,7 +985,7 @@ function AppShell() {
             const active=tab===t.id;
             return(
               <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
-                <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={NAV_ICON_SIZE}/></span>
+                <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
                 <span style={{flex:1}}>{t.label}</span>
                 {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
                 {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
@@ -1012,7 +1012,7 @@ function AppShell() {
     <div className="mobile-bottom-bar">
       {bottomTabs.map(t=>(
         <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
-          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={NAV_ICON_SIZE}/></span>
+          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={19}/></span>
           {t.label}
         </button>
       ))}
