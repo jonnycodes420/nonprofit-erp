@@ -135,6 +135,27 @@ const ROUTE_OVERRIDES = [
   [/^\/donors\/import/,                      { entity: "import", action: "imported", bulk: true }],
   [/^\/gifts\/import/,                       { entity: "import", action: "imported", bulk: true }],
   [/import/,                                 { bulk: true }],
+  // ── FIX-11 Part 6 tail — THE AGENT IS THE ACTOR, AND A HUMAN APPROVED IT ──
+  //
+  // Part 1 left this open and said so in the census: the middleware supported
+  // `req.audit.actor(...)` and no route set it, so an action a MODEL drafted
+  // and a person merely approved was logged as that person's own work. The row
+  // was correct about who authorised it and silent about the fact a model
+  // wrote it, which is precisely the thing oversight exists to record.
+  //
+  // Declared HERE, by route pattern, for the same reason everything else in
+  // this file is: one list, visible, rather than a line added to each of
+  // twenty-nine agent routes and forgotten on the thirtieth. The middleware
+  // turns `agentApproved` into "Agent, approved by Dana Reyes".
+  //
+  // These are the routes where the agent's OWN draft becomes a real write. An
+  // instruction being created, paused or discarded is the person's own act and
+  // is logged as theirs; `/agent/writes/:id/undo` is a person undoing the
+  // agent, which is also theirs.
+  [/^\/agent\/waiting\/[^/]+\/[^/]+\/approve$/, { agentApproved: true, action: "approved" }],
+  [/^\/agent\/drafts\/[^/]+\/send$/,            { agentApproved: true, action: "sent" }],
+  [/^\/thank-yous\/[^/]+\/send$/,                { agentApproved: true, action: "sent" }],
+  [/^\/org\/import-health\/confirm-gift$/,        { agentApproved: true, action: "confirmed" }],
   [/^\/stripe\/webhook$/,                    { entity: "payment", action: "received", system: "Stripe sync" }],
   [/^\/billing\/webhook$/,                   { entity: "subscription", action: "received", system: "Stripe billing" }],
   [/^\/paypal\/webhook$/,                    { entity: "payment", action: "received", system: "PayPal sync" }],
@@ -199,6 +220,7 @@ function describeRoute(method, pattern) {
     system: null,
     actorFromBody: null,
     actionRefused: null,
+    agentApproved: false,
     readOnly: m === "POST" && isReadOnlyPost(p),
   };
 

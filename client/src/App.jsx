@@ -31,7 +31,7 @@ import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_
 // beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
 // "More" fold they described.
 import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
-import { NavIcon } from "./components/NavIcon";
+import { NavIcon, NAV_ICON_SIZE } from "./components/NavIcon";
 import { CustomizeNav } from "./components/CustomizeNav";
 // The tier rule, as a module-level function rather than a value computed
 // halfway down the component: `navigateTo` is declared above it and needs it,
@@ -609,7 +609,9 @@ function AppShell() {
       onClick={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
       {/* NAV-1 §3 — the literal icon, one size and one stroke width
           everywhere, in the colour the button already decided. */}
-      <span style={{width:20,display:"flex",alignItems:"center",justifyContent:"center",color:active?T.ink:T.sage600,flexShrink:0}}><NavIcon id={t.id}/></span>
+      {/* FIX-11 Part 6 — the box is NAV_ICON_SIZE, not a literal, so the span
+          and the glyph cannot disagree about how wide an icon is. */}
+      <span style={{width:NAV_ICON_SIZE,display:"flex",alignItems:"center",justifyContent:"center",color:active?T.ink:T.sage600,flexShrink:0}}><NavIcon id={t.id}/></span>
       {!sidebarCollapsed&&t.label}
       {!sidebarCollapsed&&locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
       {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
@@ -983,7 +985,7 @@ function AppShell() {
             const active=tab===t.id;
             return(
               <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
-                <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
+                <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={NAV_ICON_SIZE}/></span>
                 <span style={{flex:1}}>{t.label}</span>
                 {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
                 {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
@@ -1010,7 +1012,7 @@ function AppShell() {
     <div className="mobile-bottom-bar">
       {bottomTabs.map(t=>(
         <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
-          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={19}/></span>
+          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={NAV_ICON_SIZE}/></span>
           {t.label}
         </button>
       ))}

@@ -124,6 +124,15 @@ function resolveActor(req, desc) {
   if (req.auditActor && req.auditActor.name) {
     return { kind: req.auditActor.kind || "system", id: req.auditActor.id || null, name: req.auditActor.name };
   }
+  // FIX-11 Part 6 tail — AN ACTION THE AGENT DRAFTED AND A PERSON APPROVED.
+  // Both halves belong in the row: the model did the work and a named human
+  // took responsibility for it. `req.auditApproverName` is the person's NAME,
+  // looked up once by the middleware (an email reads as the software talking
+  // to itself), falling back to the address when there is no name on file.
+  if (desc && desc.agentApproved && req.user && req.user.userId) {
+    const by = req.auditApproverName || req.user.email || req.user.userId;
+    return { kind: "agent", id: "agent:approved_by:" + req.user.userId, name: `Agent, approved by ${by}` };
+  }
   if (req.user && req.user.userId) {
     return { kind: "user", id: req.user.userId, name: req.user.email || req.user.userId };
   }
@@ -371,6 +380,14 @@ function auditTrail(opts = {}) {
         let orgId = orgOf(req, responseBody);
         if (!orgId && d.actorFromBody && req.body && req.body[d.actorFromBody]) {
           orgId = await orgFromLoginEmail(req.body[d.actorFromBody]);
+        }
+        // The approver's NAME, read once and only where the row will carry it.
+        if (d.agentApproved && req.user && req.user.userId) {
+          try {
+            const [u] = await query("SELECT name FROM users WHERE id=? AND org_id=?",
+              [req.user.userId, orgId]);
+            if (u && u.name) req.auditApproverName = u.name;
+          } catch { /* the address is a fine fallback */ }
         }
         const who = resolveActor(req, d);
         const entityId = extra.entityId !== undefined ? extra.entityId : resolveEntityId(req, d, responseBody);
