@@ -5502,6 +5502,68 @@ async function initSchema() {
     CREATE TRIGGER trg_audit_append_only
       BEFORE UPDATE OR DELETE ON fin_audit_log
       FOR EACH ROW EXECUTE FUNCTION steward_audit_append_only()`);
+  // ── FIX-11 Part 2 — A TABLE IS A ROW, NOT A STRING ON A GUEST ────────────
+  // A table used to exist only as `event_attendees.table_label`: a table came
+  // into being the moment somebody was sitting at it and vanished when they
+  // left. So on a real gala the seating card said "Drag a name onto a table to
+  // seat them" with no tables on it and no way to make one, and a guest had
+  // nowhere to go. A table is a thing the organisation decides on before the
+  // guests arrive, and it has a number of seats, which is the fact the whole
+  // screen turns on.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS event_tables (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+      label TEXT NOT NULL,
+      seats INTEGER NOT NULL DEFAULT 8 CHECK (seats > 0 AND seats <= 60),
+      -- A sponsor table is held for a sponsor's party, which is why
+      -- "Seat everyone" places them first and never fills their seats with
+      -- somebody else.
+      sponsor_name TEXT,
+      sort INTEGER,
+      created_by TEXT, created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (event_id, label)
+    )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_tables_event ON event_tables (org_id, event_id, sort)`);
+
+  // THE SEAT POINTS AT THE TABLE ROW. `table_label` stays, written from the
+  // table's label on every move, because the print chart, the name tags, the
+  // kiosk and the guest export all read it and none of them should have to
+  // change. A rename updates both in one statement.
+  await pool.query(`ALTER TABLE event_attendees ADD COLUMN IF NOT EXISTS table_id TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_event_attendees_table ON event_attendees (org_id, event_id, table_id)`);
+
+  // THE EXISTING CHARTS KEEP THEIR TABLES. Every distinct table_label already
+  // in the database becomes a real table, sized to hold the people already at
+  // it (never smaller than eight, which is the common round table), so no
+  // seating plan anybody has made is lost by this build. One-shot, by flag, and
+  // a failure leaves the flag unset so the next boot retries.
+  try {
+    const done = await pool.query("SELECT 1 FROM schema_flags WHERE flag='f11_event_tables_backfill'");
+    if (!done.rows.length) {
+      const r = await pool.query(`
+        INSERT INTO event_tables (id, org_id, event_id, label, seats, sort, created_by, created_by_name)
+        SELECT 'etb_' || substr(md5(a.event_id || ':' || a.table_label), 1, 12),
+               a.org_id, a.event_id, a.table_label,
+               GREATEST(COUNT(*)::int, 8), NULL, 'system:f11-backfill', 'Steward (seating backfill)'
+          FROM event_attendees a
+         WHERE a.table_label IS NOT NULL AND a.table_label <> ''
+         GROUP BY a.org_id, a.event_id, a.table_label
+        ON CONFLICT (event_id, label) DO NOTHING
+        RETURNING id`);
+      await pool.query(`
+        UPDATE event_attendees a SET table_id = t.id
+          FROM event_tables t
+         WHERE t.event_id = a.event_id AND t.label = a.table_label AND a.table_id IS NULL`);
+      await pool.query("INSERT INTO schema_flags (flag) VALUES ('f11_event_tables_backfill') ON CONFLICT (flag) DO NOTHING");
+      if (r.rows.length) console.log(`[seating] ${r.rows.length} existing table(s) became real rows`);
+    }
+  } catch (e) {
+    console.error("[seating] CRITICAL: the table backfill failed — existing seating charts have no table rows yet:", e.message);
+  }
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.

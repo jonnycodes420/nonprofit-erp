@@ -841,10 +841,34 @@ async function main() {
   // empty, which is not a seating chart anybody would print). A handful are
   // left WITHOUT a seat on purpose: the people missing from the chart are the
   // ones the chart exists to show.
-  await q(`UPDATE event_attendees SET table_label=NULL
-            WHERE org_id=$1 AND event_id=$2 AND id IN (
-              SELECT id FROM event_attendees WHERE org_id=$1 AND event_id=$2 ORDER BY id DESC LIMIT 4)`,
-          [ORG, gala.id]);
+  //
+  // FIX-11 Part 2 — THE TWELVE TABLES ARE ROWS NOW, ten seats each, which is a
+  // hundred and twenty places. Before Part 2 a table existed only because
+  // somebody was sitting at it, so this demo had twelve tables and a real
+  // customer's new gala had none and no way to make one.
+  for (let n = 1; n <= 12; n++) {
+    await q(`INSERT INTO event_tables (id,org_id,event_id,label,seats,sort,created_by,created_by_name)
+             VALUES ($1,$2,$3,$4,10,$5,'u_b72demo','Dana Reyes')
+             ON CONFLICT (event_id,label) DO UPDATE SET seats=EXCLUDED.seats, sort=EXCLUDED.sort`,
+            [`etb_b72_${pad(n)}`, ORG, gala.id, `Table ${n}`, n]);
+  }
+  await q(`UPDATE event_attendees a SET table_id = t.id
+             FROM event_tables t
+            WHERE t.event_id = a.event_id AND t.label = a.table_label
+              AND a.org_id=$1 AND a.event_id=$2`, [ORG, gala.id]);
+  // ONE PARTY OF FOUR with nowhere to sit, rather than four unrelated people.
+  // A party is the case the seating screen has to get right: four people on
+  // one ticket sit together or not at all, and "Seat everyone" must refuse
+  // rather than split them. Four unrelated singles would have hidden that.
+  const strays = await q(`SELECT id FROM event_attendees WHERE org_id=$1 AND event_id=$2 ORDER BY id DESC LIMIT 4`,
+                         [ORG, gala.id]);
+  if (strays.length === 4) {
+    const host = strays[0].id;
+    await q(`UPDATE event_attendees SET table_label=NULL, table_id=NULL WHERE id = ANY($1)`,
+            [strays.map(r => r.id)]);
+    await q(`UPDATE event_attendees SET guest_of=$1 WHERE id = ANY($2)`,
+            [host, strays.slice(1).map(r => r.id)]);
+  }
   // Dietary notes on a few, because that is the column a caterer rings about.
   const DIETS = ["Vegetarian", "Gluten free", "No shellfish", "Vegan", "Nut allergy"];
   const dietRows = await q(`SELECT id FROM event_attendees WHERE org_id=$1 AND event_id=$2 ORDER BY id LIMIT 14`, [ORG, gala.id]);

@@ -143,7 +143,14 @@ function fmtCents(c) {
 // Guests grouped by table, with the unseated kept as their own group rather
 // than hidden: the people without a seat are the ones the chart exists to
 // show. Tables sort naturally, so Table 2 comes before Table 10.
-export function seatingChart(guests = [], { perTable = 10 } = {}) {
+//
+// FIX-11 Part 2 — THE TABLES ARE NOW PASSED IN. A table used to exist only
+// because somebody was sitting at it, which is why a real gala's chart had no
+// tables on it and no way to add one. An empty table is still a table, and a
+// table has a NUMBER OF SEATS, which is the fact the whole screen turns on.
+// Called without tables it behaves exactly as it did, so every existing caller
+// (the print chart, the name tags) is unchanged.
+export function seatingChart(guests = [], { perTable = 10, tables: tableRows = null } = {}) {
   const byTable = new Map();
   const unseated = [];
   for (const g of guests) {
@@ -158,18 +165,176 @@ export function seatingChart(guests = [], { perTable = 10 } = {}) {
     if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
     return String(a).localeCompare(String(b));
   };
-  const tables = [...byTable.keys()].sort(natural).map(label => {
-    const seats = byTable.get(label).sort((x, y) => String(x.name).localeCompare(String(y.name)));
-    return { label, seats, count: seats.length, over: perTable ? Math.max(0, seats.length - perTable) : 0 };
+
+  // Every label that exists: the tables the organisation declared, plus any
+  // label a guest carries that has no row (legacy data, or a row removed while
+  // somebody was still on it). An orphan table is SHOWN rather than dropped,
+  // because dropping it would hide a seated guest.
+  const declared = Array.isArray(tableRows) ? tableRows : [];
+  const declaredByLabel = new Map(declared.map(t => [tableLabel(t.label), t]));
+  const labels = [...new Set([...declaredByLabel.keys(), ...byTable.keys()])].filter(Boolean);
+
+  const sortOf = label => {
+    const row = declaredByLabel.get(label);
+    return row && row.sort != null ? Number(row.sort) : null;
+  };
+  labels.sort((a, b) => {
+    const sa = sortOf(a), sb = sortOf(b);
+    if (sa != null && sb != null && sa !== sb) return sa - sb;
+    return natural(a, b);
   });
+
+  const tables = labels.map(label => {
+    const row = declaredByLabel.get(label) || null;
+    const seats = row && row.seats != null ? Number(row.seats) : perTable;
+    const list = (byTable.get(label) || []).slice()
+      .sort((x, y) => String(x.name).localeCompare(String(y.name)));
+    const count = list.length;
+    return {
+      label, seats, seats_: seats,
+      id: row ? row.id : null,
+      sponsorName: row ? (row.sponsor_name || null) : null,
+      declared: !!row,
+      seats_list: list, count,
+      open: Math.max(0, seats - count),
+      full: count >= seats,
+      over: Math.max(0, count - seats),
+      // "Table 3 · 6 of 8" — the sentence the card shows, built here so the
+      // card, the print-out and anything later say the same words.
+      sentence: `${label} · ${count} of ${seats}`,
+    };
+  });
+  // `seats` was the guest ARRAY on this shape before Part 2 and three callers
+  // read it that way (the print chart, the name tags, the card). It stays the
+  // array; the number of seats is `capacity`.
+  for (const t of tables) { t.capacity = t.seats; t.seats = t.seats_list; delete t.seats_; delete t.seats_list; }
+
+  const seated = tables.reduce((s, t) => s + t.count, 0);
+  const capacity = tables.reduce((s, t) => s + t.capacity, 0);
   return {
-    tables, unseated, perTable,
-    seated: tables.reduce((s, t) => s + t.count, 0),
-    sentence: tables.length
-      ? `${tables.reduce((s, t) => s + t.count, 0)} seated across ${tables.length} ${tables.length === 1 ? "table" : "tables"}`
-        + (unseated.length ? `, ${unseated.length} still without a seat.` : ".")
-      : "Nobody has been given a seat yet.",
+    tables, unseated, perTable, seated, capacity,
+    openSeats: Math.max(0, capacity - seated),
+    sentence: !tables.length
+      ? (unseated.length
+          ? `${unseated.length} ${unseated.length === 1 ? "guest" : "guests"} and no tables yet.`
+          : "Nobody has been given a seat yet.")
+      : `${seated} seated across ${tables.length} ${tables.length === 1 ? "table" : "tables"}`
+        + (unseated.length ? `, ${unseated.length} still without a seat.` : "."),
     over: tables.filter(t => t.over > 0).map(t => ({ label: t.label, over: t.over })),
+  };
+}
+
+// ── A PARTY ───────────────────────────────────────────────────────────────
+// Two people on one ticket are a party, and a party sits together: `guest_of`
+// names the registration a guest was brought by, so the registrant and their
+// guests share one key. A party only fits where there is room for ALL of them,
+// which is the rule that stops a couple being split across the room by a
+// well-meaning auto-seater.
+export function partyKey(g) {
+  return String((g && (g.guest_of || g.id)) || "");
+}
+
+export function parties(guests = []) {
+  const byKey = new Map();
+  for (const g of guests) {
+    if (g.status === "cancelled") continue;
+    const k = partyKey(g);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(g);
+  }
+  return [...byKey.entries()].map(([key, members]) => ({
+    key, members, size: members.length,
+    // The party's name is the registrant's, because that is who the office
+    // knows it as.
+    name: (members.find(m => !m.guest_of) || members[0]).name,
+    sponsor: members.some(m => m.sponsor_pledge_id || /sponsor/i.test(String(m.level_kind || ""))),
+    sponsorName: (members.find(m => m.recognition) || {}).recognition || null,
+  }));
+}
+
+// ── CAN THIS PARTY SIT HERE? ──────────────────────────────────────────────
+// One answer, used by the route that refuses and by the planner that places,
+// so the screen and the server can never disagree about whether a seat exists.
+// Returns a reason rather than a boolean, because "Table 3 has 2 seats open and
+// this party is 4" is the thing the person needs to read.
+export function seatFit({ table, party, movingFrom = null }) {
+  const size = Array.isArray(party) ? party.length : Number(party) || 1;
+  if (!table) return { ok: false, reason: "That table does not exist." };
+  // Somebody already at this table is not taking a NEW seat.
+  const already = movingFrom === table.label ? size : 0;
+  const open = table.open + already;
+  if (size > open) {
+    return {
+      ok: false,
+      reason: open === 0
+        ? `${table.label} is full.`
+        : `${table.label} has ${open} ${open === 1 ? "seat" : "seats"} open and this party is ${size}.`,
+      open,
+    };
+  }
+  return { ok: true, open };
+}
+
+// ── SEAT EVERYONE ─────────────────────────────────────────────────────────
+// Sponsors first, at their own tables. Then the remaining parties largest
+// first, because a party of six placed last has nowhere to go while six
+// singles placed last have six choices. Never splits a party. Returns a PLAN
+// rather than performing it, so the screen can show what it is about to do and
+// the person can say no.
+export function seatEveryonePlan(guests = [], tableRows = []) {
+  const chart = seatingChart(guests, { tables: tableRows });
+  // Work on a copy of the open counts; nothing here mutates the input.
+  const room = new Map(chart.tables.map(t => [t.label, { label: t.label, id: t.id, open: t.open, sponsorName: t.sponsorName }]));
+  const unseatedIds = new Set(chart.unseated.map(g => g.id));
+  const toSeat = parties(chart.unseated.filter(g => unseatedIds.has(g.id)));
+
+  const moves = [];
+  const refused = [];
+  const place = (party, table) => {
+    for (const m of party.members) moves.push({ attendeeId: m.id, name: m.name, table: table.label, tableId: table.id });
+    table.open -= party.size;
+  };
+
+  const sponsorParties = toSeat.filter(p => p.sponsor);
+  const rest = toSeat.filter(p => !p.sponsor).sort((a, b) => b.size - a.size || String(a.name).localeCompare(String(b.name)));
+
+  // A sponsor goes to the table held in their name when there is one, and is
+  // otherwise placed like anybody else. A sponsor table nobody claims is left
+  // empty rather than filled, which is the whole point of holding it.
+  const heldLabels = new Set([...room.values()].filter(t => t.sponsorName).map(t => t.label));
+  for (const p of sponsorParties) {
+    const held = p.sponsorName
+      ? [...room.values()].find(t => t.sponsorName && String(t.sponsorName).toLowerCase() === String(p.sponsorName).toLowerCase())
+      : null;
+    const target = held && held.open >= p.size ? held : null;
+    if (target) { place(p, target); continue; }
+    rest.unshift(p);   // largest-first ordering still applies below
+  }
+
+  for (const p of rest) {
+    const choices = [...room.values()]
+      .filter(t => t.open >= p.size && (!heldLabels.has(t.label) || !t.sponsorName))
+      // The TIGHTEST table that still fits, so a party of two does not take
+      // two seats out of the only table a party of eight could have used.
+      .sort((a, b) => a.open - b.open || String(a.label).localeCompare(String(b.label)));
+    if (!choices.length) {
+      refused.push({ name: p.name, size: p.size,
+        reason: p.size > Math.max(0, ...[...room.values()].map(t => t.open))
+          ? `No table has ${p.size} seats open together, and a party is never split.`
+          : "There are no seats left." });
+      continue;
+    }
+    place(p, choices[0]);
+  }
+
+  const seatedNow = moves.length;
+  return {
+    moves, refused,
+    sentence: !toSeat.length
+      ? "Everybody already has a seat."
+      : refused.length
+        ? `${seatedNow} ${seatedNow === 1 ? "guest" : "guests"} would be seated, and ${refused.reduce((s, r) => s + r.size, 0)} would have nowhere to go.`
+        : `${seatedNow} ${seatedNow === 1 ? "guest" : "guests"} would be seated.`,
   };
 }
 

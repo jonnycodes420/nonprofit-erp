@@ -19956,26 +19956,257 @@ app.post("/events/:id/register", requireAuth, checkWriteAccess, wrap(async (req,
 }));
 
 // The guest list: who, what level, which table, whether they came.
-app.get("/events/:id/guests", requireAuth, wrap(async (req, res) => {
-  const [event] = await query("SELECT id, name, date FROM events WHERE id=? AND org_id=?", [req.params.id, req.user.orgId]);
-  if (!event) return res.status(404).json({ error: "Event not found" });
+//
+// FIX-11 Part 2 — and THE TABLES, which are rows now rather than whatever
+// strings happened to be on the guests. An event with twelve empty tables has
+// twelve tables, and that is what made the old card unusable: it could only
+// show a table once somebody was already sitting at it.
+const eventGuestCols = `a.id, a.donor_id, a.name, a.email, a.status, a.quantity, a.table_label,
+            a.table_id, a.recognition, a.dietary, a.guest_of, a.checked_in_at,
+            a.registration_gift_id, a.sponsor_pledge_id, l.name AS level_name, l.kind AS level_kind`;
+
+async function eventGuestsPayload(eventId, orgId) {
   const guests = await query(
-    `SELECT a.id, a.donor_id, a.name, a.email, a.status, a.quantity, a.table_label, a.recognition,
-            a.registration_gift_id, a.sponsor_pledge_id, l.name AS level_name, l.kind AS level_kind
+    `SELECT ${eventGuestCols}
        FROM event_attendees a LEFT JOIN event_levels l ON l.id = a.level_id
-      WHERE a.event_id=? AND a.org_id=? ORDER BY a.table_label NULLS LAST, a.name`, [event.id, req.user.orgId]);
-  const tables = {};
-  for (const g of guests) if (g.table_label) (tables[g.table_label] ||= []).push(g.name);
+      WHERE a.event_id=? AND a.org_id=? ORDER BY a.table_label NULLS LAST, a.name`, [eventId, orgId]);
+  const tables = await query(
+    `SELECT id, label, seats, sponsor_name, sort FROM event_tables
+      WHERE event_id=? AND org_id=? ORDER BY sort NULLS LAST, label`, [eventId, orgId]);
+  return { guests, tables };
+}
+
+app.get("/events/:id/guests", requireAuth, wrap(async (req, res) => {
+  // public_slug is here so the "no guests yet" empty state can offer the
+  // registration page as the other way guests arrive.
+  const [event] = await query("SELECT id, name, date, public_slug FROM events WHERE id=? AND org_id=?",
+    [req.params.id, req.user.orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const { guests, tables } = await eventGuestsPayload(event.id, req.user.orgId);
   res.json({ event, guests, tables,
+    // The label→names map the first version of this route returned, kept for
+    // anything still reading it. The chart is built from `tables` now.
+    tablesByLabel: guests.reduce((m, g) => { if (g.table_label) (m[g.table_label] ||= []).push(g.name); return m; }, {}),
     recognition: guests.filter(g => g.recognition && g.status !== "cancelled").map(g => g.recognition) });
 }));
 
-app.put("/events/:id/attendees/:attendeeId/table", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+// ── THE TABLES ────────────────────────────────────────────────────────────
+// Add them in a batch ("how many and seats each", which is how a gala is laid
+// out) or one at a time with a name ("Sponsor table, Smith Co."). Labels are
+// unique per event, so adding "10 tables of 8" twice does not make twenty
+// tables called the same ten things.
+function nextTableNumber(existing) {
+  let max = 0;
+  for (const t of existing) {
+    const m = String(t.label || "").match(/(\d+)\s*$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+
+app.post("/events/:id/tables", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const seats = Math.max(1, Math.min(60, parseInt(req.body?.seats, 10) || 8));
+  const howMany = Math.max(1, Math.min(60, parseInt(req.body?.count, 10) || 1));
+  const label = String(req.body?.label || "").trim().slice(0, 80);
+  const sponsorName = String(req.body?.sponsorName || "").trim().slice(0, 120) || null;
+  if (label && howMany > 1) {
+    return res.status(400).json({ error: "Name one table, or ask for a number of them, not both." });
+  }
+  const existing = await query("SELECT label, sort FROM event_tables WHERE event_id=? AND org_id=?", [event.id, orgId]);
+  let n = nextTableNumber(existing);
+  let sort = existing.reduce((m, t) => Math.max(m, Number(t.sort) || 0), 0);
+  const who = actor(req);
+  const made = [];
+  for (let i = 0; i < howMany; i++) {
+    const thisLabel = label || `Table ${n++}`;
+    const id = "etb_" + uuid().slice(0, 10);
+    const r = await query(
+      `INSERT INTO event_tables (id, org_id, event_id, label, seats, sponsor_name, sort, created_by, created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT (event_id, label) DO NOTHING RETURNING id, label, seats`,
+      [id, orgId, event.id, thisLabel, seats, sponsorName, ++sort, who.id, who.name]);
+    if (r.length) made.push(r[0]);
+    else if (label) return res.status(409).json({ error: `This event already has a table called ${thisLabel}.` });
+  }
+  req.audit && req.audit.summary && req.audit.summary(
+    `${made.length} ${made.length === 1 ? "table" : "tables"} of ${seats} seats`, { count: made.length });
+  const { guests, tables } = await eventGuestsPayload(event.id, orgId);
+  res.status(201).json({ ok: true, created: made.length, tables, guests });
+}));
+
+app.put("/events/:id/tables/:tableId", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM event_tables WHERE id=? AND event_id=? AND org_id=?",
+    [req.params.tableId, req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Table not found" });
+  const label = req.body?.label !== undefined ? String(req.body.label || "").trim().slice(0, 80) : t.label;
+  if (!label) return res.status(400).json({ error: "A table needs a name." });
+  const seats = req.body?.seats !== undefined
+    ? Math.max(1, Math.min(60, parseInt(req.body.seats, 10) || t.seats)) : t.seats;
+  const sponsorName = req.body?.sponsorName !== undefined
+    ? (String(req.body.sponsorName || "").trim().slice(0, 120) || null) : t.sponsor_name;
+
+  // SHRINKING A TABLE BELOW THE PEOPLE AT IT is refused rather than silently
+  // leaving it over-full: the seats number is what every other refusal in this
+  // screen is measured against, and one that lies makes all of them lie.
+  const [{ n: sitting }] = await query(
+    "SELECT COUNT(*)::int AS n FROM event_attendees WHERE table_id=? AND event_id=? AND org_id=? AND status <> 'cancelled'",
+    [t.id, req.params.id, orgId]);
+  if (seats < sitting) {
+    return res.status(400).json({
+      error: `${sitting} ${sitting === 1 ? "guest is" : "guests are"} at ${t.label}. Move somebody first, or give it at least ${sitting} seats.` });
+  }
+  if (label !== t.label) {
+    const [clash] = await query("SELECT id FROM event_tables WHERE event_id=? AND org_id=? AND label=? AND id <> ?",
+      [req.params.id, orgId, label, t.id]);
+    if (clash) return res.status(409).json({ error: `This event already has a table called ${label}.` });
+  }
+  await run("UPDATE event_tables SET label=?, seats=?, sponsor_name=?, updated_at=NOW() WHERE id=? AND org_id=?",
+    [label, seats, sponsorName, t.id, orgId]);
+  // The label the guests carry moves WITH the table. Every reader that was
+  // written before tables were rows (the print chart, the name tags, the
+  // kiosk, the guest export) reads `table_label`, and none of them has to
+  // learn about table ids for a rename to work.
+  if (label !== t.label) {
+    await run("UPDATE event_attendees SET table_label=? WHERE table_id=? AND event_id=? AND org_id=?",
+      [label, t.id, req.params.id, orgId]);
+  }
+  const { guests, tables } = await eventGuestsPayload(req.params.id, orgId);
+  res.json({ ok: true, tables, guests });
+}));
+
+app.delete("/events/:id/tables/:tableId", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [t] = await query("SELECT * FROM event_tables WHERE id=? AND event_id=? AND org_id=?",
+    [req.params.tableId, req.params.id, orgId]);
+  if (!t) return res.status(404).json({ error: "Table not found" });
+  // The guests do not go with it. They go back to Not seated, and the response
+  // says who moved so the screen can offer to put them back.
+  const moved = await query(
+    `UPDATE event_attendees SET table_id=NULL, table_label=NULL
+      WHERE table_id=? AND event_id=? AND org_id=? RETURNING id, name`, [t.id, req.params.id, orgId]);
+  await run("DELETE FROM event_tables WHERE id=? AND org_id=?", [t.id, orgId]);
+  const { guests, tables } = await eventGuestsPayload(req.params.id, orgId);
+  res.json({
+    ok: true, tables, guests,
+    undo: moved.map(m => ({ attendeeId: m.id, label: t.label, seats: t.seats, sponsorName: t.sponsor_name })),
+    sentence: moved.length
+      ? `${t.label} is gone. ${moved.length} ${moved.length === 1 ? "guest" : "guests"} went back to Not seated.`
+      : `${t.label} is gone.`,
+  });
+}));
+
+// ── SEATING ───────────────────────────────────────────────────────────────
+// ONE route moves people, whether it is one guest tapped on a phone, a party
+// on one ticket, several ticked at once, or the whole plan "Seat everyone"
+// drew. Capacity and the never-split-a-party rule are checked HERE, from the
+// same `seatFit` the screen uses, so what the screen offers and what the
+// server allows cannot drift apart.
+//
+// Moving somebody to "" is unseating them, which always has room.
+async function applySeating(req, res, { moves, orgId, eventId }) {
   await EV_READY;
-  const { changes } = await run("UPDATE event_attendees SET table_label=? WHERE id=? AND event_id=? AND org_id=?",
-    [EV.tableLabel(req.body?.table), req.params.attendeeId, req.params.id, req.user.orgId]);
-  if (!changes) return res.status(404).json({ error: "Not found" });
-  res.json({ ok: true, table: EV.tableLabel(req.body?.table) });
+  const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [eventId, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const { guests, tables } = await eventGuestsPayload(event.id, orgId);
+  const byId = new Map(guests.map(g => [g.id, g]));
+  const tableRows = tables;
+  const byLabel = new Map(tableRows.map(t => [t.label, t]));
+
+  // Validate the WHOLE batch against a running copy of the chart before
+  // writing anything, so a batch never half-applies.
+  const chart = EV.seatingChart(guests, { tables: tableRows });
+  const openBy = new Map(chart.tables.map(t => [t.label, t.open]));
+  const planned = [];
+  for (const m of moves) {
+    const g = byId.get(String(m.attendeeId));
+    if (!g) return res.status(404).json({ error: "That guest is not on this list." });
+    const want = EV.tableLabel(m.table);
+    if (!want) { planned.push({ g, label: null, tableId: null }); continue; }
+    const row = byLabel.get(want);
+    if (!row) return res.status(404).json({ error: `This event has no table called ${want}. Add it first.` });
+    const from = EV.tableLabel(g.table_label);
+    if (from === want) { planned.push({ g, label: want, tableId: row.id }); continue; }
+    const open = openBy.get(want) ?? 0;
+    if (open < 1) {
+      return res.status(409).json({ error: `${want} is full.`, table: want });
+    }
+    openBy.set(want, open - 1);
+    if (from) openBy.set(from, (openBy.get(from) ?? 0) + 1);
+    planned.push({ g, label: want, tableId: row.id });
+  }
+
+  for (const p of planned) {
+    await run("UPDATE event_attendees SET table_id=?, table_label=? WHERE id=? AND event_id=? AND org_id=?",
+      [p.tableId, p.label, p.g.id, event.id, orgId]);
+  }
+  const after = await eventGuestsPayload(event.id, orgId);
+  const seatedCount = planned.filter(p => p.label).length;
+  return res.json({
+    ok: true, tables: after.tables, guests: after.guests,
+    moved: planned.length,
+    // What it was before, so the screen can offer a real undo rather than a
+    // guess at one.
+    undo: planned.map(p => ({ attendeeId: p.g.id, table: p.g.table_label || "" })),
+    sentence: planned.length === 0 ? "Nothing to move."
+      : seatedCount === 0
+        ? `${planned.length} ${planned.length === 1 ? "guest" : "guests"} went back to Not seated.`
+        : `${seatedCount} ${seatedCount === 1 ? "guest" : "guests"} seated.`,
+  });
+}
+
+// One guest, by drag or by tap. Unchanged in shape so the old caller still works.
+app.put("/events/:id/attendees/:attendeeId/table", requireAuth, checkWriteAccess, wrap(async (req, res) =>
+  applySeating(req, res, {
+    moves: [{ attendeeId: req.params.attendeeId, table: req.body?.table }],
+    orgId: req.user.orgId, eventId: req.params.id })));
+
+// Several at once: "Seat at…" on a phone, a party on one ticket, or an undo.
+app.post("/events/:id/seat", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const raw = Array.isArray(req.body?.moves) ? req.body.moves : null;
+  if (raw) {
+    if (raw.length > 500) return res.status(400).json({ error: "Too many at once." });
+    return applySeating(req, res, { moves: raw, orgId: req.user.orgId, eventId: req.params.id });
+  }
+  // The common shape: these people, that table. A party is expanded here so
+  // the caller does not have to know who is on whose ticket.
+  const ids = (Array.isArray(req.body?.attendeeIds) ? req.body.attendeeIds : []).map(String);
+  if (!ids.length) return res.status(400).json({ error: "Choose at least one guest." });
+  const table = req.body?.table;
+  const { guests } = await eventGuestsPayload(req.params.id, req.user.orgId);
+  const chosen = new Set(ids);
+  if (req.body?.withParty !== false) {
+    for (const g of guests) {
+      if (chosen.has(EV.partyKey(g)) || (g.guest_of && chosen.has(g.guest_of))) chosen.add(g.id);
+      if (chosen.has(g.id) && g.guest_of) chosen.add(g.guest_of);
+    }
+  }
+  return applySeating(req, res, {
+    moves: [...chosen].map(id => ({ attendeeId: id, table })),
+    orgId: req.user.orgId, eventId: req.params.id });
+}));
+
+// SEAT EVERYONE. A preview by default, because a chart somebody has been
+// working on for an hour is not a thing to rearrange without asking. `apply`
+// performs the plan it just showed.
+app.post("/events/:id/seat-everyone", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  await EV_READY;
+  const orgId = req.user.orgId;
+  const [event] = await query("SELECT id FROM events WHERE id=? AND org_id=?", [req.params.id, orgId]);
+  if (!event) return res.status(404).json({ error: "Event not found" });
+  const { guests, tables } = await eventGuestsPayload(event.id, orgId);
+  const plan = EV.seatEveryonePlan(guests, tables);
+  if (!req.body?.apply) {
+    req.audit && req.audit.skip && req.audit.skip("a preview changes nothing");
+    return res.json({ preview: true, ...plan });
+  }
+  if (!plan.moves.length) return res.json({ ok: true, ...plan, moved: 0, undo: [] });
+  return applySeating(req, res, {
+    moves: plan.moves.map(m => ({ attendeeId: m.attendeeId, table: m.table })),
+    orgId, eventId: event.id });
 }));
 
 // After the event: who came and who did not. Each person's timeline gets ONE
@@ -20851,9 +21082,26 @@ app.patch("/events/:id/attendees/:attendeeId", requireAuth, checkWriteAccess, as
     const newStatus = status !== undefined ? status : att.status;
     const newGift = giftAmount !== undefined ? (parseFloat(giftAmount) || 0) : (parseFloat(att.gift_amount) || 0);
     const newNotes = notes !== undefined ? notes : att.notes;
+    // FIX-11 Part 2 — WHO BROUGHT THEM. `guest_of` existed but only a public
+    // registration could set it, so a party the office typed in by hand was
+    // four unrelated people and the seating screen would happily split them
+    // across the room. Validated against this event, and never itself: a guest
+    // who is their own host is a party with no end.
+    let newGuestOf = att.guest_of;
+    if (req.body.guestOf !== undefined) {
+      const want = req.body.guestOf ? String(req.body.guestOf) : null;
+      if (want === req.params.attendeeId) return res.status(400).json({ error: "Somebody cannot be their own host." });
+      if (want) {
+        const [host] = await query("SELECT id, guest_of FROM event_attendees WHERE id=$1 AND event_id=$2 AND org_id=$3",
+          [want, att.event_id, orgId]);
+        if (!host) return res.status(404).json({ error: "That host is not on this guest list." });
+        if (host.guest_of) return res.status(400).json({ error: "That person is themselves somebody's guest. Name the person who registered." });
+      }
+      newGuestOf = want;
+    }
     await run(
-      "UPDATE event_attendees SET status=$1, gift_amount=$2, notes=$3 WHERE id=$4 AND org_id=$5",
-      [newStatus, newGift, newNotes, req.params.attendeeId, orgId]
+      "UPDATE event_attendees SET status=$1, gift_amount=$2, notes=$3, guest_of=$4 WHERE id=$5 AND org_id=$6",
+      [newStatus, newGift, newNotes, newGuestOf, req.params.attendeeId, orgId]
     );
     // If attended + gift > 0 + has a donor, log the gift
     if (newStatus === 'attended' && newGift > 0 && att.donor_id) {
