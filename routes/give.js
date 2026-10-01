@@ -6097,7 +6097,7 @@ app.post("/network/signup", requireFlag(NETWORK_SIGNUP_ENABLED), networkSignupLi
 
   // Same staff JWT the normal login mints — the org admin proceeds to Stripe
   // Connect onboarding from Settings; the listing stays gated regardless.
-  const token = signToken({ userId, orgId, email: em, role: "admin" });
+  const { token } = await require("../twoFactor").issueSession({ id: userId, org_id: orgId, email: em, role: "admin" }, req, signToken);
   res.status(201).json({
     token,
     user: { id: userId, email: em, role: "admin", orgId },

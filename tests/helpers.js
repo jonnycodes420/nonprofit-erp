@@ -18,13 +18,33 @@ function summary() {
   process.exit(fail ? 1 : 0);
 }
 
+// SEC-1 — a super-admin ALWAYS uses two-factor, with no switch and no test
+// bypass. A fixture super-admin signing in for the first time is sent to
+// setup, so the helper does what a person does: setup, one good authenticator
+// code, and it keeps the ten recovery codes this process was shown, to answer
+// the code step on that account's later sign-ins. Nothing about the server is
+// relaxed for tests.
+const RECOVERY = new Map();   // email -> [recovery codes not yet used]
 async function login(email, password = "loadtest1234") {
-  const r = await fetch(BASE + "/auth/login", {
+  const post = (body, tok) => fetch(BASE + (tok ? "/me/mfa/" + body.__path : "/auth/login"), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  const j = await r.json();
+    headers: { "Content-Type": "application/json", ...(tok ? { Authorization: "Bearer " + tok } : {}) },
+    body: JSON.stringify(tok ? body.payload : body),
+  }).then(r => r.json());
+  const key = String(email).toLowerCase();
+  let j = await post({ email, password });
+  if (j.mfaSetupRequired && j.token) {
+    const TOTP = require("../totp");
+    const st = await post({ __path: "setup", payload: {} }, j.token);
+    const code = TOTP.hotp(st.secret, Math.floor(Date.now() / 30000));
+    const en = await post({ __path: "enable", payload: { code } }, j.token);
+    if (!en.token) throw new Error("two-factor setup failed for " + email + ": " + JSON.stringify(en));
+    RECOVERY.set(key, [...(en.recoveryCodes || [])]);
+    return en.token;
+  }
+  if (j.error === "mfa_required" && (RECOVERY.get(key) || []).length) {
+    j = await post({ email, password, code: RECOVERY.get(key).shift() });
+  }
   if (!j.token) throw new Error("login failed for " + email + ": " + JSON.stringify(j));
   return j.token;
 }

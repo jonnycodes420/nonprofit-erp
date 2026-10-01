@@ -89,6 +89,9 @@ async function reset() {
       // INT-BUILD-1 — the meetings, and INT-5's webhooks, which this suite
       // inserts below and never deleted, so a second run died on the org FK.
       "calendar_events", "webhook_deliveries", "webhook_endpoints",
+      // SEC-1 — the sessions and two-factor rows (they cascade from orgs, but
+      // the list is explicit, as this file's own rule asks).
+      "user_sessions", "mfa_recovery_codes",
       // BUILD-96 Part 5 — ack_letter_templates was MISSING, and its absence
       // only bites on the second run: the first leaves a row behind, and then
       // `DELETE FROM orgs` fails its foreign key and the whole suite aborts
@@ -359,6 +362,11 @@ async function seedOrg(o, tag) {
            VALUES ($1,$2,$3,'google',$1,'Probe meeting',NOW() - INTERVAL '2 hours',NOW() - INTERVAL '1 hour',ARRAY[$4],'system:test','test')
            ON CONFLICT DO NOTHING`,
     [`cal_${o}`, o, `u_${o}_staff`, `d_${o}`]).catch(e => console.error("calendar seed:", e.message));
+  // SEC-1 — a signed-in session belonging to this org's own staff member, so
+  // org A signing out org B's session is refused because it is somebody
+  // else's, not because the row was never there.
+  await q(`INSERT INTO user_sessions (id,user_id,org_id,user_agent,ip_prefix) VALUES ($1,$2,$3,'probe','10.0.0.x')
+           ON CONFLICT DO NOTHING`, [`ses_${o}`, `u_${o}_staff`, o]).catch(e => console.error("session seed:", e.message));
   // INT-4 — a never-log entry belonging to THIS org's own user, so org A
   // aimed at org B's entry is refused because it is somebody else's, not
   // because the row was never there.
@@ -404,6 +412,7 @@ function bResolver(routePath, param) {
   // rather than by the segment, or the delivery probe would aim an endpoint id
   // at it and 404 for the wrong reason.
   if (seg1 === "calendar" && param === "id") return `cal_${B}`;
+  if (seg1 === "me" && routePath.includes("/sessions/") && param === "id") return `ses_${B}`;
   if (seg1 === "webhooks") {
     return routePath.includes("/deliveries/:id") ? `whd_${B}` : `whe_${B}`;
   }

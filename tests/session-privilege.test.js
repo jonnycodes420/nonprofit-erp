@@ -58,13 +58,11 @@ async function cleanup(orgId) {
     // Grant super-admin in the DB, then LOG IN so the flag lands in the JWT
     // (login is the only path that reads is_super_admin into the token).
     await q("UPDATE users SET is_super_admin=true WHERE id=$1", [s.userId]);
-    const loginRes = await fetch(BASE + "/auth/login", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: s.email, password: "probe1234" }),
-    });
-    const lj = await loginRes.json();
-    ok("super-admin JWT issued at login", !!lj.token && lj.user.isSuperAdmin === true, lj.user?.isSuperAdmin);
-    const saToken = lj.token;
+    // SEC-1 — a super-admin always uses two-factor, so the sign-in goes
+    // through setup (helpers.login does it the way a person does).
+    const saToken = await login(s.email, "probe1234");
+    const claims = JSON.parse(Buffer.from(saToken.split(".")[1], "base64url").toString());
+    ok("super-admin JWT issued at login", claims.isSuperAdmin === true, claims.isSuperAdmin);
 
     const before = await api("GET", "/admin/orgs", saToken);
     ok("super-admin token can hit an /admin route", before.status === 200, before.status);

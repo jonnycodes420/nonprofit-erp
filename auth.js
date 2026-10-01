@@ -58,13 +58,20 @@ async function requireAuth(req, res, next) {
     }
     // Overlay the LIVE role/org so requireAuth-derived context reflects the DB
     // within the TTL, not the (possibly stale) JWT claims.
+    // SEC-1 — a token with a session id is only as alive as its session row.
+    // Signing a session out (Settings, an owner, a password change) ends it on
+    // its very next request. A token minted before SEC-1 has no sid and is
+    // ended by sessions_valid_after, as before.
+    if (payload.sid && !(await require("./twoFactor").sessionAlive(payload.sid, payload.userId))) {
+      return res.status(401).json({ error: "session_revoked", message: "This session was signed out. Please sign in again." });
+    }
     req.user = { ...payload, role: info.role, orgId: info.org_id };
     // BUILD-98 (switch) Part 8 — a setup-only session (an admin whose org
     // requires two-step sign-in and who has not set it up) opens the setup
     // routes and nothing else.
     if (payload.mfaSetup) {
       const p = String(req.originalUrl || "").split("?")[0];
-      if (!["/me/mfa", "/me/mfa/setup", "/me/mfa/enable"].includes(p)) {
+      if (!["/me/mfa", "/me/mfa/setup", "/me/mfa/enable", "/auth/logout"].includes(p)) {
         return res.status(403).json({ error: "mfa_setup_required", message: "Set up two-step sign-in to continue." });
       }
     }
