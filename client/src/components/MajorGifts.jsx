@@ -100,7 +100,7 @@ function ProposalForm({ open, onClose, onSaved, meta, donorId, existing, donorNa
   const inp = { width: "100%", padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 13, background: T.white, color: T.ink };
 
   return (
-    <Modal onClose={onClose} title={existing ? "Edit this proposal" : `New proposal${donorName ? " — " + donorName : ""}`} width={560}
+    <Modal onClose={onClose} title={existing ? "Edit this proposal" : `New proposal${donorName ? ": " + donorName : ""}`} width={560}
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 11, color: T.terra700 }}>{err}</span>
@@ -188,7 +188,7 @@ function MoveModal({ open, onClose, onSaved, meta, proposal }) {
   const inp = { width: "100%", padding: "9px 11px", border: "1px solid " + T.bg3, borderRadius: 9, fontSize: 13, background: T.white, color: T.ink };
 
   return (
-    <Modal onClose={onClose} title={`Move — ${proposal.purpose || "proposal"}`} width={500}
+    <Modal onClose={onClose} title={`Move: ${proposal.purpose || "proposal"}`} width={500}
       footer={
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 11, color: T.terra700 }}>{err}</span>
@@ -212,7 +212,7 @@ function MoveModal({ open, onClose, onSaved, meta, proposal }) {
         {committing && (
           <div><label style={lbl}>How did it come in?</label>
             <select style={inp} value={kind} onChange={e => setKind(e.target.value)}>
-              <option value="pledge">As a pledge — they promised it</option>
+              <option value="pledge">As a pledge (they promised it)</option>
               <option value="gift">As a gift already on file</option>
             </select>
             <div style={{ fontSize: 11, color: T.ink3, marginTop: 4 }}>
@@ -660,7 +660,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
           <div style={{ fontSize: 13, color: T.ink2, marginBottom: 8 }}>{d.sentence}</div>
           <PlanSteps plan={d} onSkip={skip} isReadOnly={isReadOnly || !canWrite} />
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 8 }}>
-            Applied {niceDate(d.appliedOn)}{d.appliedByName ? ` by ${d.appliedByName}` : ""}. Nothing in a plan sends anything — each step is yours to do.
+            Applied {niceDate(d.appliedOn)}{d.appliedByName ? ` by ${d.appliedByName}` : ""}. Nothing in a plan sends anything. Each step is yours to do.
           </div>
         </>
       ) : (
@@ -681,7 +681,7 @@ export function PlanPanel({ donorId, isReadOnly, canWrite }) {
       )}
       {tpls.length === 0 && canWrite && (
         <div style={{ fontSize: 11, color: T.ink3, marginTop: 10 }}>
-          No plans written yet — Fundraising → Plans is where the organisation keeps them.
+          No plans written yet. Fundraising → Plans is where the organisation keeps them.
         </div>
       )}
     </div>
@@ -865,7 +865,7 @@ export function BriefPanel({ donorId, donorName, isReadOnly, canWrite }) {
           )}
           {showDropped && (
             <ul data-testid="brief-dropped" style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 11, color: T.ink3, lineHeight: 1.6 }}>
-              {brief.dropped.map((d, i) => <li key={i}>“{d.text}” — {d.why}</li>)}
+              {brief.dropped.map((d, i) => <li key={i}>“{d.text}”: {d.why}</li>)}
             </ul>
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 10, lineHeight: 1.55 }}>{brief.footer}</div>

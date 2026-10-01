@@ -77,7 +77,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
     // nothing and asks — the date is workable, the step is the user's.
     setNsLabel("");
     setNsDue(addCivilDays(todayLocal(), NOTE_ONLY_PLUS_DAYS));
-    setNsSource({ from: "none", why: "A note on its own gets no automatic step — say what happens next, or skip it." });
+    setNsSource({ from: "none", why: "A note on its own gets no automatic step. Say what happens next, or skip it." });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [touch, thread, line, ignoreNote]);
 
@@ -193,7 +193,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           {nsSource && !nsDirty && (
             <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
               <span className="ns-source">
-                {nsSource.why}{nsSource.matched ? <span style={{ fontStyle: "italic" }}>{" — \u201c" + nsSource.matched + "\u201d"}</span> : null}
+                {nsSource.why}{nsSource.matched ? <span style={{ fontStyle: "italic" }}>{": \u201c" + nsSource.matched + "\u201d"}</span> : null}
               </span>
               {nsSource.from === "note" && (
                 <button type="button" onClick={() => setIgnoreNote(true)}
@@ -211,7 +211,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
           )}
           <div style={{ fontSize: 11, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
             {!tzKnown
-              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone first — Steward will not fire a reminder at a guessed hour.
+              ? <>This comes back to find you when it is due, in the morning email. To have it email you at a specific time, set your organization&rsquo;s time zone first. Steward will not fire a reminder at a guessed hour.
                   {onNavigate && <>{" "}
                     {/* FIX (2026-09-10) — refusing an action and then leaving
                         the user to hunt for the fix is half a fix. This lands
@@ -222,7 +222,7 @@ export function LogConversationModal({ donor, thread = null, onSaved, onClose, o
                     </button>
                   </>}</>
               : sanitizeStepTime(nsTime)
-                ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened — instead of the morning list. It fires on a weekend too.</>
+                ? <>One email at {formatStepTime(nsTime)} that day, with this donor and a button to log what happened, instead of the morning list. It fires on a weekend too.</>
                 : <>This comes back to find you in the morning email when it is due. Add a time and it emails you at that moment instead. Skipping is recorded as skipped.</>}
           </div>
         </div>

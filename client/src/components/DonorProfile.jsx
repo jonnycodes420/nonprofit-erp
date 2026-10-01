@@ -273,7 +273,7 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
             <TpField label="Event">
               {orgEvents.length>0?(
                 <select value={eventName} onChange={e=>setEventName(e.target.value)} style={{...inp,cursor:"pointer"}}>
-                  <option value="">— select event or type below —</option>
+                  <option value="">Select an event, or type one below</option>
                   {orgEvents.map(ev=><option key={ev.id} value={ev.name}>{ev.name}</option>)}
                 </select>
               ):<input value={eventName} onChange={e=>setEventName(e.target.value)} placeholder="Event name" style={inp}/>}
@@ -417,7 +417,7 @@ function GiftLinkModal({donor,orgName,onClose}){
     try{
       const seg={mode:"manual",donorIds:[donor.id]};
       const created=await apiFetch("/campaigns",{method:"POST",body:JSON.stringify({
-        name:`Gift request — ${donor.name}`,subject:emailSubject,body:emailBody,segment:seg,status:"draft"
+        name:`Gift request: ${donor.name}`,subject:emailSubject,body:emailBody,segment:seg,status:"draft"
       })});
       await apiFetch(`/campaigns/${created.id}/send`,{method:"POST"});
       setSent(true);
@@ -1149,7 +1149,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     if(planTier==="team"){
       // Logs a move (from original stage → toStage) with the signal as its
       // description. Core → this route 403s, so the PATCH below carries it.
-      try{ await apiFetch(`/pipeline/${donor.id}/move`,{method:"POST",body:JSON.stringify({toStage:sug.toStage,description:`Accepted suggestion — ${sug.reason}`})}); }catch(_){}
+      try{ await apiFetch(`/pipeline/${donor.id}/move`,{method:"POST",body:JSON.stringify({toStage:sug.toStage,description:`Accepted suggestion: ${sug.reason}`})}); }catch(_){}
     }
     onStageChange&&onStageChange(donor.id,sug.toStage); // parent UI + Core-safe stage PATCH
     refreshPipeline();
@@ -1334,7 +1334,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     try{
       await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({
         type:"stewardship",
-        note:`${stwForm.type.replace(/_/g," ")}${stwForm.detail?" — "+stwForm.detail:""}${stwForm.note?"\n"+stwForm.note:""}`,
+        note:`${stwForm.type.replace(/_/g," ")}${stwForm.detail?": "+stwForm.detail:""}${stwForm.note?"\n"+stwForm.note:""}`,
         date:stwForm.date,
         metadata:{stewardship_type:stwForm.type,detail:stwForm.detail},
       })});
@@ -1726,8 +1726,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               {/* BUILD-58 Part 2 — safety flags, visible where staff decide to reach out */}
               {donor.deceased&&<span title="No mail of any kind is sent to this donor" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.terra100,color:T.terra700,border:`1px solid ${T.terra200}`}}>Deceased</span>}
               {!donor.deceased&&donor.doNotContact&&<span title="Excluded from campaigns, sequences, and workflow emails" style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not contact</span>}
-              {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks — excluded from the drift list, re-engage, suggested outreach, and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
-              {donor.importedSustainer&&<span title={`Sustainer history from import — no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
+              {!donor.deceased&&!donor.doNotContact&&donor.doNotSolicit&&<span title="No asks. Excluded from the drift list, re-engage, suggested outreach and ask automations. Stewardship thank-yous continue." style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.gold100,color:T.gold700,border:`1px solid ${T.gold300}`}}>Do not solicit</span>}
+              {donor.importedSustainer&&<span title={`Sustainer history from import, with no payment authorization here yet${donor.importedSustainerAmount?` (was $${donor.importedSustainerAmount}/mo)`:""}. Send a reconnect link from Fundraising → Recurring.`} style={{fontSize:10,fontWeight:800,padding:"3px 9px",borderRadius:99,background:T.green100,color:T.greenDk,border:`1px solid ${T.green200}`}}>Sustainer · not reconnected</span>}
             </div>
             {/* FIX-8 Part B.2 — the roles are ONE QUIET LINE, and the two
                 add-actions live in a "+" beside it. Three chips put two verbs
@@ -2078,13 +2078,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {!giftLoading&&donor.total-giftsFull.reduce((s,g)=>s+g.amount,0)>0.5&&(
               <div className="dp-unitemized-note" style={{fontSize:11.5,color:T.ink3,lineHeight:1.5,margin:"-8px 2px 0"}}>
                 Lifetime includes <strong style={{color:T.ink2}}>{fmtFull(donor.total-giftsFull.reduce((s,g)=>s+g.amount,0))}</strong> recorded
-                as an imported total — giving that predates Steward and was never itemized as individual gifts.
+                as an imported total: giving that predates Steward and was never itemized as individual gifts.
               </div>
             )}
 
             {householdTotal!=null&&(
               <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total — <span style={{color:T.greenDk,fontWeight:700}}>see who's linked →</span>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
               </div>
             )}
 
@@ -2095,8 +2095,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
                 style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
                 <div>
-                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio} — ask {donor.name.split(" ")[0]} to submit a match request.</div>
-                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed — verify current terms before outreach.</div>
+                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio}. Ask {donor.name.split(" ")[0]} to submit a match request.</div>
+                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed. Verify current terms before outreach.</div>
                 </div>
               </div>
             )}
@@ -2228,7 +2228,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                       </div>
                     ))}
                   </div>
-                  <div style={{fontSize:11,color:T.ink3}}>Combined view only — each gift's hard credit stays with the donor who gave it.</div>
+                  <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
                 </>
               )}
               <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
@@ -2284,7 +2284,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
                       {moves.slice(0,6).map(m=>(
                         <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
-                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"—"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
+                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"no officer"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
                           {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
                         </div>
                       ))}
@@ -2300,7 +2300,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
                   <div style={{display:"flex",flexDirection:"column",gap:12}}>
                     <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
-                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor — only the relationship view combines.</div>
+                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
                     <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
                     <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
                       {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
@@ -2330,7 +2330,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 {onAddTask&&<button onClick={onAddTask} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Add a follow-up task"} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 9px",color:isReadOnly?T.ink3:T.greenMid,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",letterSpacing:0,textTransform:"none",opacity:isReadOnly?0.5:1}}>+ Add task</button>}
               </div>
               {tasks.length===0
-                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet — add a follow-up so nothing slips.</div>
+                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet. Add a follow-up so nothing slips.</div>
                 :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                   {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
                     // Due-date badge: overdue ONLY when strictly before today
@@ -2420,7 +2420,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
             {!receiptsEnabled&&isAdmin&&(
               <div style={{background:T.gold100,border:"1px solid "+T.gold300,borderRadius:10,padding:"10px 14px",fontSize:12,color:T.gold700}}>
-                Tax receipts aren't set up yet — add your organization's legal info in Settings to send IRS-compliant receipts for gifts of $250+.
+                Tax receipts aren't set up yet. Add your organization's legal info in Settings to send IRS-compliant receipts for gifts of $250+.
               </div>
             )}
 
@@ -2483,10 +2483,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>
               <input value={addGiftForm.notes} onChange={e=>setAddGiftForm(p=>({...p,notes:e.target.value}))} placeholder="Notes" style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}/>
               {campaigns.length>0&&<><select value={addGiftForm.campaign_id||""} onChange={e=>setAddGiftForm(p=>({...p,campaign_id:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:2}}>
-                <option value="">Campaign — not attributed</option>
+                <option value="">Campaign: not attributed</option>
                 {campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-              <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward — updates that campaign's thermometer live.</div></>}
+              <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.4}}>Which goal this counts toward. It updates that campaign's thermometer live.</div></>}
               {pledges.filter(p=>p.status==="open").length>0&&(
                 <select value={addGiftForm.pledgeId} onChange={e=>setAddGiftForm(p=>({...p,pledgeId:e.target.value}))} style={{width:"100%",background:T.bg,border:"1px solid "+T.terracotta+"50",borderRadius:8,padding:"8px 10px",color:T.ink,fontSize:13,outline:"none",boxSizing:"border-box",marginBottom:8}}>
                   <option value="">Not fulfilling a pledge</option>
@@ -2589,13 +2589,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             <td style={{padding:"9px 12px",color:T.ink3,whiteSpace:"nowrap"}}>{displayDate(g.date)}</td>
                             <td style={{padding:"9px 12px",fontWeight:700,color:T.greenDk,whiteSpace:"nowrap"}}>{fmtFull(g.amount)}</td>
                             <td style={{padding:"9px 12px",color:T.ink3,textTransform:"capitalize"}}>{g.type||"cash"}</td>
-                            <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"—"}</td>
-                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:13}}>—</span>}</td>
+                            <td style={{padding:"9px 12px",color:T.ink3}}>{g.payment_method||"Not recorded"}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center"}}>{g.acknowledgement_sent?<span style={{color:T.greenDk,fontSize:13}}>✓</span>:<span style={{color:T.ink3,fontSize:12}}>Not yet</span>}</td>
                             <td style={{padding:"9px 12px",whiteSpace:"nowrap"}}>
                               {(()=>{
                                 const r=receiptForGift(g.id);
                                 if(r) return <button onClick={()=>downloadReceiptPdf(r.id,`receipt-${r.receipt_number}.pdf`)} style={{background:"none",border:"none",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",padding:"2px 4px"}}>Receipt ✓ #{r.receipt_number}</button>;
-                                if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:13}}>—</span>;
+                                if(!receiptsEnabled) return <span style={{color:T.ink3,fontSize:12}}>Off</span>;
                                 const busy=receiptBusyId===g.id;
                                 return <button onClick={()=>sendReceipt(g.id)} disabled={busy||isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":""} style={{background:"none",border:"1px solid "+T.bg3,borderRadius:6,color:isReadOnly?T.ink3:T.greenDk,fontSize:11,fontWeight:600,cursor:isReadOnly?"not-allowed":"pointer",padding:"3px 8px",opacity:busy?0.6:1}}>{busy?"Sending…":"Send receipt"}</button>;
                               })()}
@@ -2638,7 +2638,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 {campaigns.length>0&&(
                   <select value={pledgeForm.campaignId} onChange={e=>setPledgeForm(p=>({...p,campaignId:e.target.value}))}
                     style={{width:"100%",boxSizing:"border-box",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 10px",color:T.ink,fontSize:12,outline:"none",marginBottom:8,cursor:"pointer"}}>
-                    <option value="">No campaign — general pledge</option>
+                    <option value="">No campaign (general pledge)</option>
                     {campaigns.map(c=><option key={c.id} value={c.id}>Counts toward: {c.name}</option>)}
                   </select>
                 )}
@@ -2863,7 +2863,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <div style={{fontSize:14,fontWeight:800,color:T.ink}}>Donor Materials</div>
             </div>
             <Uploader accept={[]} readAs="none" busy={matUploading}
-              label={matUploading?"Uploading…":"Drop a file here, or browse — proposals, letters, research (any file type)"}
+              label={matUploading?"Uploading…":"Drop a file here, or browse: proposals, letters, research (any file type)"}
               onFile={({file})=>uploadMaterial(file)}/>
             {matLoading?<div style={{textAlign:"center",color:T.ink3,fontSize:12,padding:16}}><Spin/></div>:materials.length===0?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",textAlign:"center",padding:16}}>No materials uploaded yet</div>:(
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -3360,7 +3360,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="+ Call script" small/>
             </div>
           </RailSection>
-          </>,{title:"Major-gift tools",blurb:"Outreach drafting and the suggested next move — the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:180})}
+          </>,{title:"Major-gift tools",blurb:"Outreach drafting and the suggested next move, from the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:180})}
 
           {/* How to reach them: what an officer copies out of this screen. */}
           {/* Folded by default: the things she opens when she needs them, and
@@ -3431,13 +3431,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     <div style={{display:"flex",gap:6,flex:1}}>
                       {f.type==="checkbox"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} style={inputStyle}>
-                          <option value="">—</option>
+                          <option value="">Not set</option>
                           <option value="yes">Yes</option>
                           <option value="no">No</option>
                         </select>
                       ):f.type==="select"?(
                         <select value={cfEditVal} onChange={e=>setCfEditVal(e.target.value)} style={inputStyle}>
-                          <option value="">—</option>
+                          <option value="">Not set</option>
                           {(f.options||[]).map(o=><option key={o} value={o}>{o}</option>)}
                         </select>
                       ):f.type==="multi_select"?(
@@ -3472,7 +3472,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   ):(
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1,justifyContent:"flex-end"}}>
                       <span style={{fontSize:12,color:(f.value!==null&&f.value!==undefined&&f.value!=="")?RAIL.text:RAIL.dim,fontStyle:(f.value!==null&&f.value!==undefined&&f.value!=="")?"normal":"italic",textAlign:"right",overflowWrap:"anywhere"}}>
-                        {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"—")}
+                        {cfSaved===f.key?"Saved ✓":(renderCustomValue(f,f.value)||"Not set")}
                       </span>
                       <button onClick={()=>{setCfEditing(f.key);setCfEditVal(editStr(f));setCfError("");}}
                         style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:6,padding:"3px 8px",fontSize:10,color:RAIL.text,cursor:"pointer"}}>Edit</button>
@@ -3566,6 +3566,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     </div>
   );
 }
-const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"—";
+const cap=s=>s?String(s).charAt(0).toUpperCase()+String(s).slice(1):"Not set";
 
 export { DonorProfile, EditDonorModal, FollowUpTaskModal, LogTouchpointModal };

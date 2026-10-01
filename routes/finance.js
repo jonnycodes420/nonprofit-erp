@@ -3207,7 +3207,8 @@ app.get("/finance/audit-log", requireAuth, wrap(async (req, res) => {
   if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
   sql += " ORDER BY created_at DESC LIMIT ?";
   params.push(parseInt(limit));
-  const rows = await query(sql, params);
+  // FIX-12 Part 4: names are looked up as the log is read, never stored.
+  const rows = await require("../middleware/auditTrail").resolveAuditNames(await query(sql, params), req.user.orgId);
   res.json(rows.map(r => ({
     ...r,
     changes: typeof r.changes === "string" ? JSON.parse(r.changes || "{}") : (r.changes || {}),

@@ -31,9 +31,9 @@ const pool = new Pool({
 // drop the trigger either way. What matters is that the APPLICATION cannot
 // touch history, and that is what this enforces.
 //
-// The one path that may: closing an organisation's account
-// (routes/billing.js), which sets `steward.audit_purge` transaction-locally so
-// the exception reverts itself.
+// FIX-12: no application path deletes an audit row within seven years. The
+// `steward.audit_purge` flag reaches only rows older than that, and closing an
+// organisation's account (routes/billing.js) leaves its audit rows in place.
 async function getDb() {
   await initSchema();
   // The demo seed must never take the API down: schema is required to serve,
@@ -4147,24 +4147,8 @@ async function initSchema() {
   // 2.4 seconds apart on 2026-09-09, the timestamp was the ONLY evidence that
   // survived, and who did it is not recoverable. This is that gap closed.
   // Append-only; never written by a migration, only by the route.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_admin_audit (
-      id TEXT PRIMARY KEY,
-      org_id TEXT NOT NULL,
-      action TEXT NOT NULL,
-      target_user_id TEXT NOT NULL,
-      target_email TEXT,
-      target_role TEXT,
-      actor_user_id TEXT,
-      actor_email TEXT,
-      detail JSONB,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      CONSTRAINT user_admin_audit_action CHECK (action IN ('removed','reactivated','refused'))
-    )`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_admin_audit_org
-                    ON user_admin_audit (org_id, created_at DESC)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_admin_audit_target
-                    ON user_admin_audit (target_user_id, created_at DESC)`);
+  // FIX-12 Part 5: user_admin_audit was merged into fin_audit_log (see the
+  // FIX-12 block below the append-only trigger) and is no longer created.
 
   await pool.query(`ALTER TABLE close_links ADD COLUMN IF NOT EXISTS target_org_id TEXT`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_close_links_target_org
@@ -5579,12 +5563,12 @@ async function initSchema() {
   // fires on the cascaded delete, so the application cannot reach this by
   // deleting an org either (routes/billing.js is the one path that may, and it
   // says so out loud).
+  // FIX-12 Part 5 — SEVEN YEARS, WHATEVER HAPPENS TO THE ORG. The cascade
+  // above meant deleting an organisation deleted its history with it, inside
+  // the seven years the log promises. There is no foreign key at all now:
+  // org_id stays on every row as plain text, an org can be deleted, and its
+  // audit rows outlive it.
   await pool.query(`ALTER TABLE fin_audit_log DROP CONSTRAINT IF EXISTS fin_audit_log_org_id_fkey`);
-  await pool.query(`ALTER TABLE fin_audit_log
-                      ADD CONSTRAINT fin_audit_log_org_id_fkey
-                      FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE`).catch(e => {
-    console.error("[audit] could not set the org cascade on fin_audit_log:", e.message);
-  });
 
   await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS actor_kind TEXT`);
   await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS entity_label TEXT`);
@@ -5619,9 +5603,13 @@ async function initSchema() {
   await pool.query(`
     CREATE OR REPLACE FUNCTION steward_audit_append_only() RETURNS TRIGGER AS $fn$
     BEGIN
-      IF current_setting('steward.app_connection', true) IS DISTINCT FROM 'on'
-         OR current_setting('steward.audit_purge', true) = 'on' THEN
+      IF current_setting('steward.app_connection', true) IS DISTINCT FROM 'on' THEN
         RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+      END IF;
+      -- FIX-12 Part 5: the purge flag reaches only rows past seven years.
+      IF current_setting('steward.audit_purge', true) = 'on' AND TG_OP = 'DELETE'
+         AND OLD.created_at < NOW() - INTERVAL '7 years' THEN
+        RETURN OLD;
       END IF;
       RAISE EXCEPTION 'fin_audit_log is append-only: % from the application is refused', TG_OP
         USING ERRCODE = 'check_violation';
@@ -5632,6 +5620,34 @@ async function initSchema() {
     CREATE TRIGGER trg_audit_append_only
       BEFORE UPDATE OR DELETE ON fin_audit_log
       FOR EACH ROW EXECUTE FUNCTION steward_audit_append_only()`);
+  // FIX-12 Part 5 — ONE AUDIT LOG. user_admin_audit (BUILD-93: who removed
+  // whom) was a second trail the audit screen never read. Its rows move into
+  // fin_audit_log with their ORIGINAL times and ids (prefixed, so a re-run is a
+  // no-op), carrying ids rather than addresses (FIX-12 Part 4), and the old
+  // table goes. The route now improves the middleware's row instead.
+  {
+    const [{ t }] = (await pool.query(`SELECT to_regclass('user_admin_audit') AS t`)).rows;
+    if (t) {
+      await pool.query(`
+        INSERT INTO fin_audit_log (id, org_id, user_id, user_name, actor_kind, action, entity_type, entity_id,
+                                   entity_label, changes, created_at)
+        SELECT 'al_uaa_' || id, org_id, actor_user_id,
+               CASE WHEN actor_user_id IS NULL THEN 'System' ELSE NULL END,
+               CASE WHEN actor_user_id IS NULL THEN 'system' ELSE 'user' END,
+               CASE action WHEN 'removed' THEN 'removed from the team'
+                           WHEN 'reactivated' THEN 'reactivated'
+                           ELSE 'removal refused' END,
+               'user', target_user_id, NULL,
+               jsonb_build_object('migrated_from', 'user_admin_audit', 'target_role', target_role, 'detail', detail),
+               created_at
+          FROM user_admin_audit
+        ON CONFLICT (id) DO NOTHING`);
+      const [{ a }] = (await pool.query(`SELECT COUNT(*)::int AS a FROM user_admin_audit`)).rows;
+      const [{ b }] = (await pool.query(`SELECT COUNT(*)::int AS b FROM fin_audit_log WHERE id LIKE 'al_uaa_%'`)).rows;
+      if (b >= a) { await pool.query(`DROP TABLE user_admin_audit`); console.log(`[audit] merged ${a} user_admin_audit row(s) into fin_audit_log`); }
+      else console.error(`[audit] user_admin_audit merge incomplete (${b}/${a}); the old table is kept`);
+    }
+  }
   // ── FIX-11 Part 2 — A TABLE IS A ROW, NOT A STRING ON A GUEST ────────────
   // A table used to exist only as `event_attendees.table_label`: a table came
   // into being the moment somebody was sitting at it and vanished when they

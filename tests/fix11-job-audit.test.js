@@ -147,9 +147,11 @@ async function wipe(orgId) {
   const r = await api("POST", `/agent/waiting/thank_you/${draftId}/approve`, tok, {});
   await new Promise(x => setTimeout(x, 900));
   const rows = await q(
-    `SELECT user_name, actor_kind, action, request_path FROM fin_audit_log
+    `SELECT id, user_id, user_name, actor_kind, action, request_path FROM fin_audit_log
       WHERE org_id=$1 ORDER BY created_at DESC`, [ORG]);
-  const agentRow = rows.find(x => /\/approve$/.test(String(x.request_path || "")));
+  const rawAgentRow = rows.find(x => /\/approve$/.test(String(x.request_path || "")));
+  // FIX-12 Part 4: the row stores the approver's id; the log view names them.
+  const agentRow = rawAgentRow && { ...rawAgentRow, user_name: ((await api("GET", `/audit/log/${rawAgentRow.id}`, tok)).body || {}).user_name };
   if (agentRow) {
     ok("§5 the row says the Agent did it, and who approved it",
       /^Agent, approved by Dana Reyes$/.test(String(agentRow.user_name)), { row: agentRow });
@@ -166,10 +168,10 @@ async function wipe(orgId) {
   await api("POST", "/donors", tok, { name: "Ordinary Person", email: "ord@f11job.local" });
   await new Promise(x => setTimeout(x, 700));
   const after = await q(
-    `SELECT user_name, actor_kind, request_path FROM fin_audit_log
+    `SELECT user_id, user_name, actor_kind, request_path FROM fin_audit_log
       WHERE org_id=$1 AND request_path='/donors' ORDER BY created_at DESC LIMIT 1`, [ORG]);
   ok("§6 an ordinary action by the same person is logged as theirs",
-    after.length === 1 && after[0].user_name === "dana@f11job.local" && after[0].actor_kind === "user",
+    after.length === 1 && after[0].user_id === `u_${ORG}` && after[0].user_name === null && after[0].actor_kind === "user",
     { row: after[0] });
 
   await wipe(ORG);
