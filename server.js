@@ -2539,7 +2539,10 @@ async function statusCheckOnce() {
     const t = await lastTick("processGivingSources");
     if (!t) put("connections", "unknown", "No sync has run since the last restart.");
     else if (t.ok === false) put("connections", "degraded", "The latest sync stopped with an error.");
-    else if (Date.now() - new Date(t.at).getTime() > 3 * 3600e3) put("connections", "degraded", "The sync is overdue.");
+    // The giving-source sync runs every SIX hours (routes/jobs.js), so it is
+    // overdue only past two of its own intervals. Three hours read every
+    // healthy deploy as degraded on the public page (found on prod, TRUST-2).
+    else if (Date.now() - new Date(t.at).getTime() > 13 * 3600e3) put("connections", "degraded", "The sync is overdue.");
     else put("connections", "up");
   }
   {
