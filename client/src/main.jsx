@@ -34,7 +34,6 @@ const GivingDashboard    = React.lazy(() => import("./pages/GivingDashboard"));
 const JoinNetwork        = React.lazy(() => import("./pages/JoinNetwork"));
 const GivingOrgShell     = React.lazy(() => import("./pages/GivingDashboard").then(m => ({ default: m.GivingOrgShell })));
 function GivingOrgWrap() { return <GivingOrgShell><Portal /></GivingOrgShell>; }
-const Pricing            = React.lazy(() => import("./pages/Pricing"));
 // LOST & FOUND — the free donor audit, and Steward's best salesperson. Its
 // own route because it is a page an org reaches from anywhere, including
 // from somebody else's newsletter with a ?ref= on the end.
@@ -210,7 +209,11 @@ function Root() {
               App reads the :donorId on mount and opens that profile. */}
           <Route path="/donors/:donorId" element={<RequireOnboarded><App /></RequireOnboarded>} />
           <Route path="/invite/:token" element={<InvitePage />} />
-          <Route path="/pricing"   element={<Pricing />} />
+          {/* LANDING-3 part 1 — /pricing is a marketing route now and lives in
+              MARKETING_ROUTES above, in the marketing shell with the prices on
+              the first screen. The page keeps the signed-in checkout the app's
+              own Pricing.jsx had, because UpgradeModal, goToPricing() and
+              Settings still send paying organisations here to change plan. */}
           <Route path="/lost-and-found" element={<LostAndFound />} />
           <Route path="/invitation" element={<InvitationPage />} />
           {/* BUILD-45 — donor portal (magic-link auth; org-themed; /verify

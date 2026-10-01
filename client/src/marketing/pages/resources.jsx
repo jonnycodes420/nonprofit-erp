@@ -1,10 +1,11 @@
 // LANDING-2 · the Resources menu: guides, templates, articles, the glossary,
 // the FAQ, help, what's new, the three calculators and the legal drafts.
 import React, { useState } from "react";
-import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A } from "../lib";
+import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A, Cover, rich } from "../lib";
 import { GUIDES, GUIDE_SLUGS } from "../data/guides";
 import { TEMPL } from "../data/templates";
 import { ARTS, CHG } from "../data/articles";
+import { ART2, ART2_SLUGS } from "../data/articles2";
 import { GLOSS } from "../data/glossary";
 import { FAQ_PAGE } from "../data/faqs";
 import { SRC, QUOTES } from "../data/research";
@@ -79,17 +80,73 @@ export function Templates() {
   </>;
 }
 
+// LANDING-3 · article cards wear a generated cover, never a photograph: an
+// ink, emerald or tint block with a serif title and a leaf. They cost nothing
+// to load and stay legible at any size.
+export function ArtCards({ keys }) {
+  return (
+    <div className="res">
+      {keys.map((k, i) => {
+        if (k === "state-of-retention") return (
+          <A className="rc" href="/articles/state-of-retention" key={k}>
+            <Cover t="The state of" b="donor retention" i={i} />
+            <span className="k">Research</span>
+            <h4>The state of donor retention, in plain words</h4>
+            <p>What the latest sector data says about who gives again.</p>
+            <span className="go">Read →</span>
+          </A>
+        );
+        const a = ART2[k];
+        return (
+          <A className="rc" href={"/articles/" + k} key={k}>
+            <Cover t={a.t} b={a.b} i={i} />
+            <span className="k">{a.k} · {a.min} min</span>
+            <h4>{plainH(a.h)}</h4><p>{a.d}</p>
+            <span className="go">Read →</span>
+          </A>
+        );
+      })}
+    </div>
+  );
+}
+
+const plainH = h => h.replace(/<\/?b>/g, "");
+
 export function Articles() {
   return <>
     <Hero eyebrow="Articles" crumbs={[["Resources", "/resources"], ["Articles"]]} h="Ideas worth <b>a coffee break.</b>" lede="Short reads on retention, stewardship and running a calm development office." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap"><div className="res">
-      {ARTS.map(a => <A className="rc" href={a[2]} key={a[0]}><Photo k={a[3]} /><span className="k">Article</span><h4>{a[0]}</h4><p>{a[1]}</p><span className="go">Read →</span></A>)}
-    </div></div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap"><ArtCards keys={ART2_SLUGS} /></div></section>
     <FinalCta />
   </>;
 }
 
-const Quote = ({ q }) => <blockquote data-quote="research">{q[0]}<cite>{q[1]}, {q[2]}</cite></blockquote>;
+// The one template for the six new articles.
+export function Article({ slug }) {
+  const a = ART2[slug];
+  const i = ART2_SLUGS.indexOf(slug);
+  return <>
+    <Crumbs list={[["Resources", "/resources"], ["Articles", "/articles"], [plainH(a.h)]]} />
+    <section className="hero phero" style={{ paddingBottom: 40 }}><div className="wrap hero-g">
+      <div>
+        <div className="eyebrow">{a.k} · {a.min} minute read</div>
+        <h1 className="mix h-l">{rich(a.h)}</h1>
+        <p className="lede">{a.d}</p>
+      </div>
+      <Cover t={a.t} b={a.b} i={i} />
+    </div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap prose narrow">
+      <p>{a.lede}</p>
+      {a.s.map(([h, ps]) => <React.Fragment key={h}><h2>{h}</h2>{ps.map(x => <p key={x}>{x}</p>)}</React.Fragment>)}
+      {a.src && <p className="srcnote">Source: {a.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC[k][1]}>{SRC[k][0]}</A></React.Fragment>)}</p>}
+      <div className="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><Pill href="/demo">Book a demo</Pill></div>
+    </div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap">
+      <div className="eyebrow">Keep reading</div>
+      <ArtCards keys={ART2_SLUGS.filter(x => x !== slug).slice(0, 3)} />
+    </div></section>
+    <FinalCta />
+  </>;
+}
 
 export function StateOfRetention() {
   return <>
@@ -162,7 +219,7 @@ export function WhatsNew() {
 export function Tools() {
   return <>
     <Hero eyebrow="Free tools" crumbs={[["Resources", "/resources"], ["Free tools"]]} h="Free tools, <b>no signup.</b>" lede="Run them on your own numbers. Nothing you type leaves your browser." noCta />
-    <Cards list={[["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"], ["/tools/retention", "Donor retention calculator", "Your retention rate, and what a few points are worth.", "reports"], ["/tools/lapsed-cost", "Lapsed donor cost calculator", "What last year's lapsed donors used to give.", "finance"], ["/tools/thermometer", "Fundraising thermometer", "A campaign goal bar for your website.", "events"]]} />
+    <Cards list={[["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"], ["/tools/retention", "Keep Rate calculator", "Your retention rate, and what a few points are worth.", "reports"], ["/tools/lapsed-cost", "Lapse Ledger", "What last year's lapsed donors used to give.", "finance"], ["/tools/thermometer", "Goal Gauge", "A campaign goal bar for your website.", "events"]]} />
     <FinalCta />
   </>;
 }
@@ -171,7 +228,7 @@ export function ToolLostAndFound() {
   return <>
     <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
       lede="Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored."
-      photo="kitchen-card" cta2={["Run the free audit", "/lost-and-found"]} />
+      photo="kitchen-card" />
     <Steps eb="How it works" h="A minute, <b>start to finish.</b>" list={[["Export your gifts", "Any spreadsheet with donor, date and amount."], ["Drop it in", "The audit reads it in your browser. Nothing is uploaded."], ["See who is slipping", "Lapsing donors ranked by what they used to give."]]} />
     <StatBand n={4} />
     <FinalCta />
@@ -201,7 +258,7 @@ export function ToolRetention() {
   const [v, on] = useFields({ a: "1000", b: "420", c: "250" });
   const m = retentionMath(num(v.a), num(v.b), num(v.c));
   return <>
-    <Hero eyebrow="Donor retention calculator" crumbs={[["Free tools", "/tools"], ["Retention calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
+    <Hero eyebrow="Keep Rate calculator" crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Donors last year<input type="number" min="1" value={v.a} onChange={on("a")} /></label>
@@ -222,7 +279,7 @@ export function ToolLapsed() {
   const [v, on] = useFields({ a: "580", b: "180", c: "15" });
   const m = lapsedMath(num(v.a), num(v.b), num(v.c));
   return <>
-    <Hero eyebrow="Lapsed donor cost calculator" crumbs={[["Free tools", "/tools"], ["Lapsed donor cost"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta />
+    <Hero eyebrow="Lapse Ledger" crumbs={[["Free tools", "/tools"], ["Lapse Ledger"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Donors who did not give again<input type="number" min="0" value={v.a} onChange={on("a")} /></label>
@@ -242,7 +299,7 @@ export function ToolThermometer() {
   const [v, on] = useFields({ n: "Spring appeal", g: "50000", r: "31250" });
   const m = thermometerMath(num(v.g), num(v.r));
   return <>
-    <Hero eyebrow="Fundraising thermometer" crumbs={[["Free tools", "/tools"], ["Thermometer"]]} h="A goal bar <b>people want to fill.</b>" lede="Set your goal and amount raised and see the bar. The embeddable version comes with the live site." noCta />
+    <Hero eyebrow="Goal Gauge" crumbs={[["Free tools", "/tools"], ["Goal Gauge"]]} h="A goal bar <b>people want to fill.</b>" lede="Set your goal and amount raised and see the bar. The embeddable version comes with the live site." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Campaign name<input value={v.n} onChange={on("n")} /></label>

@@ -7,8 +7,6 @@
 // pages/index.js. Titles follow the reference: "Steward · " + the page's H1.
 //
 // COLLISIONS. Existing app routes win, and these are deliberately NOT here:
-//   /pricing        the live pricing page (Pricing.jsx): logged-in Stripe
-//                   checkout, the in-app upgrade modal and Settings link to it
 //   /developers     named in the brief but it does not exist; Open API links
 //                   point at /connections#api instead
 //   /lost-and-found the free audit itself; /tools/lost-and-found links in
@@ -17,6 +15,7 @@
 import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
+import { ART2 } from "./data/articles2.js";
 
 // Titles drop the headline markup. The copy uses only <b>, <em> and <br>.
 const plain = s => s.replace(/<\/?(?:b|em|br)\s*\/?>/g, "");
@@ -38,6 +37,11 @@ export const ROUTES = [
   { path: "/features", page: "features", title: T("Everything included, nothing to unlock."), description: "Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." },
   ...FEATURE_SLUGS.map(s => ({ path: "/features/" + s, page: "feature", slug: s, title: T(FEAT[s].h), description: FEAT[s].lede })),
 
+  // LANDING-3 part 1: /pricing moved here from the app router. The page
+  // still carries the signed-in Stripe checkout, so the upgrade path from
+  // UpgradeModal, goToPricing() and Settings is unchanged.
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Every feature on every plan, priced by active donors. Seed $199, Sapling $299, Orchard $499 a month, and a conversation above ten thousand donors. Thirty days free, then month to month." },
+
   { path: "/why", page: "why", title: T("The money is in the donors you keep."), description: "Fewer people give each year, and most first-time donors never give twice. Steward exists to close that gap for organizations that cannot hire a data team to do it." },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
   { path: "/move", page: "move", title: T("Move in about a day."), description: "Tell us where your donors live today, drop in the export, and check the Move Report. Every total matches to the cent against what came out, and you can undo the whole move for 30 days." },
@@ -57,6 +61,8 @@ export const ROUTES = [
   { path: "/templates", page: "templates", title: T("Templates you can use today."), description: "Copy, adapt and send. Every template is free." },
   { path: "/articles", page: "articles", title: T("Ideas worth a coffee break."), description: "Short reads on retention, stewardship and running a calm development office." },
   { path: "/articles/state-of-retention", page: "stateOfRetention", title: T("The state of donor retention, in plain words."), description: "What the latest sector data says about who gives again, and what a small shop can do about it." },
+  // LANDING-3 · the six new articles, each on its own route.
+  ...Object.keys(ART2).filter(s => ART2[s]).map(s => ({ path: "/articles/" + s, page: "article", slug: s, title: T(ART2[s].h), description: ART2[s].d })),
   { path: "/glossary", page: "glossary", title: T("Fundraising terms, in plain words."), description: "The words you will hear in board meetings and on software demos, explained without jargon." },
   { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
   { path: "/help", page: "help", title: T("Help from a real person."), description: "A searchable help centre with an article for every screen is being written now. Until it is live, every question goes to a person who knows Steward inside out." },
@@ -64,9 +70,9 @@ export const ROUTES = [
 
   { path: "/tools", page: "tools", title: T("Free tools, no signup."), description: "Run them on your own numbers. Nothing you type leaves your browser." },
   { path: "/tools/lost-and-found", page: "toolLostAndFound", title: T("See who you're about to lose."), description: "Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored." },
-  { path: "/tools/retention", page: "toolRetention", title: T("What is your retention worth?"), description: "Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." },
-  { path: "/tools/lapsed-cost", page: "toolLapsed", title: T("What did last year's lapsed donors used to give?"), description: "A quick way to put a dollar figure on the people who quietly stopped." },
-  { path: "/tools/thermometer", page: "toolThermometer", title: T("A goal bar people want to fill."), description: "Set your goal and amount raised and see the bar." },
+  { path: "/tools/retention", page: "toolRetention", title: "Steward \u00b7 Keep Rate calculator", description: "Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." },
+  { path: "/tools/lapsed-cost", page: "toolLapsed", title: "Steward \u00b7 Lapse Ledger", description: "A quick way to put a dollar figure on the people who quietly stopped." },
+  { path: "/tools/thermometer", page: "toolThermometer", title: "Steward \u00b7 Goal Gauge", description: "Set your goal and amount raised and see the bar." },
 
   { path: "/legal/privacy", page: "legalPrivacy", title: "Steward · Privacy policy", description: "How Steward handles the information organizations put into it and the information about the people who sign in. Draft for attorney review." },
   { path: "/legal/terms", page: "legalTerms", title: "Steward · Terms of service", description: "The terms for using Steward, the donor management service. Draft for attorney review." },
@@ -75,4 +81,4 @@ export const ROUTES = [
 
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
-export const APP_LINK_TARGETS = ["/pricing", "/login", "/signup", "/lost-and-found"];
+export const APP_LINK_TARGETS = ["/login", "/signup", "/lost-and-found"];

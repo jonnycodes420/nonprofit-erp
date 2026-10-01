@@ -330,18 +330,6 @@
 .mk .qband figcaption span{display:block;color:var(--grey);font-size:15.5px}
 .mk .qband figcaption a{display:block;margin-top:8px;font-size:13px;color:var(--grey)}
 
-/* people reel: no buttons, it just moves */
-.mk .reel-s{overflow:hidden}
-.mk .reel{margin-top:56px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent)}
-.mk .track{display:flex;gap:28px;width:max-content;animation:mk-reel 48s linear infinite}
-.mk .reel:hover .track{animation-play-state:paused}
-@keyframes mk-reel{from{transform:translateX(0)}to{transform:translateX(calc(-100% / 3))}}
-.mk .tm{width:340px;flex:none}
-.mk .tm .photo{border-radius:6px}
-.mk .tm b{display:block;font:400 30px/1.15 var(--serif);margin-top:20px}
-.mk .tm span{display:block;color:var(--grey);font-size:16px;margin-top:6px}
-@media (prefers-reduced-motion:reduce){.mk .track{animation:none;flex-wrap:wrap;width:auto;padding-inline:24px}}
-@media (max-width:600px){.mk .tm{width:260px}}
 
 /* connections, tables, prose */
 .mk .conn{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;margin-top:44px}
@@ -465,8 +453,145 @@
 .mk .form .pill[disabled]{opacity:.7;cursor:progress}
 .mk .tmpl .pill{border:0}
 .mk .burger{color:var(--ink)}
-/* Reduced motion: the marquee and the reel stop (above) and show one copy. */
+/* Reduced motion: the research marquee stops (above) and shows one copy. */
 @media (prefers-reduced-motion:reduce){.mk [data-dup]{display:none!important}}
 /* The reference's template cards have a 380px minimum, wider than a 390
    phone's content box; one column there instead of a sideways scroll. */
 @media (max-width:480px){.mk .tmpls{grid-template-columns:minmax(0,1fr)}}
+
+/* ══ LANDING-3 ═══════════════════════════════════════════════════════════
+   The reference's new rules, each one prefixed .mk the way the rest of this
+   file is. In reference order: the leadership frames, the promo-card leaf
+   fix, article covers, the Start page, the pricing page, photo rows, the
+   About bands and the Agent crew.
+
+   THE LEAF (section 8). `.promo .art .leaf` and `.gb-art .leaf` are painted
+   after the title in DOM order and used to cover it. The two rules below put
+   the text on its own layer above the leaf and bring the title back to 26px;
+   the leaf itself is re-sized as a share of the card further down, so it
+   cannot grow past the art on a wide menu.
+   ─────────────────────────────────────────────────────────────────────── */
+.mk .lead-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:28px}.mk .ld .photo{border-radius:6px}.mk .ld b{display:block;font:400 28px/1.15 var(--serif);margin-top:18px}.mk .ld span{display:block;color:var(--grey);font-size:16px;margin-top:6px}
+.mk .promo .art .t,.mk .promo .art small,.mk .gb-art .t,.mk .gb-art small{position:relative;z-index:1}
+.mk .promo .art .t{font-size:26px}.mk .promo .art .t b{font-size:26px}
+/* people with more life */
+.mk .pp{width:300px;flex:none}
+.mk .lead-g .pp{width:auto}
+.mk .pp-frame{position:relative;background:var(--tint);border-radius:28px;padding:14px;transform:rotate(var(--tilt));transition:transform .3s ease}
+.mk .pp:hover .pp-frame{transform:rotate(0) translateY(-6px)}
+.mk .pp-frame .photo{border-radius:18px;filter:saturate(1.08) brightness(1.04)}
+.mk .pp-tag{position:absolute;left:28px;bottom:28px;background:var(--ink);color:var(--white);font:600 13px var(--sans);padding:7px 12px;border-radius:999px}
+.mk .pp b{display:block;font:400 30px/1.15 var(--serif);margin-top:22px}
+.mk .pp span:not(.pp-tag){display:block;color:var(--grey);font-size:16px;margin-top:6px}
+.mk .lead-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:40px 32px}
+.mk .lead-band{display:flex;justify-content:space-between;align-items:center;gap:32px;flex-wrap:wrap;background:var(--brass-tint);border-radius:28px;padding:52px 56px}
+.mk .lead-band p{font-size:19px;margin-top:14px;max-width:640px}
+.mk .backed{background:var(--ink);color:var(--white);border-radius:28px;padding:56px;display:grid;gap:14px}
+.mk .backed .eyebrow{color:var(--brass)}.mk .backed .mix b{color:var(--emerald-lt)}.mk .backed p{font-size:19px;color:rgba(255,255,255,.85);max-width:620px}
+/* article covers */
+.mk .cover{position:relative;overflow:hidden;background:var(--bg);border-radius:6px;aspect-ratio:16/10;padding:28px;display:flex;align-items:flex-start}
+.mk .cover .t{position:relative;z-index:1;font:400 clamp(26px,2.6vw,36px)/1.05 var(--serif);color:var(--cream)}
+.mk .cover[style*="tint"] .t,.mk .cover[style*="cream-2"] .t{color:var(--ink)}
+.mk .cover .t b{font-style:italic;font-weight:400;color:var(--em)}
+.mk .cover .leaf{position:absolute;right:-50px;bottom:-60px;width:170px;height:170px;border-radius:50% 0 50% 0;background:var(--em);opacity:.9;transform:rotate(-12deg)}
+.mk .hero-g .cover{aspect-ratio:16/11}
+/* start free */
+.mk .start{background:var(--paper);padding-block:64px 96px}
+.mk .start-g{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:start}
+@media (max-width:1000px){.mk .start-g{grid-template-columns:minmax(0,1fr)}}
+.mk .start-l .lede{margin-top:22px}
+.mk .start-why{list-style:none;padding:0;margin:30px 0 0;display:grid;gap:12px;font-size:18px}
+.mk .start-why li{display:flex;gap:10px;align-items:center}
+.mk .start-help{margin-top:26px;color:var(--grey)}.mk .start-help a{color:var(--emerald);font-weight:700}
+.mk .start-card{background:var(--white);border:1px solid var(--line);border-radius:28px;padding:40px;box-shadow:0 30px 60px -40px rgba(15,26,18,.4);margin-top:0}
+.mk .start-card .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:600px){.mk .start-card .two{grid-template-columns:1fr}.mk .start-card{padding:26px}}
+.mk .start-card .hint{font-size:14px;color:var(--grey);margin-top:-8px}
+.mk .start-card .lbl{display:block;font-weight:600;font-size:16px;margin-bottom:8px}
+.mk .plan{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;background:var(--emerald-tint);border-radius:16px;padding:16px 20px}
+.mk .plan span{font-size:14px;color:var(--grey)}.mk .plan b{font:400 28px var(--serif)}.mk .plan em{font-style:normal;font-weight:700;color:var(--emerald)}
+.mk .agree{display:flex!important;grid-template-columns:none;gap:12px!important;align-items:flex-start;font-weight:400!important;font-size:15px!important;color:var(--grey)}
+.mk .agree input{margin-top:4px;width:18px;height:18px}
+.mk .agree a{color:var(--emerald);font-weight:600}
+
+.mk .price-page .pricing{padding-block:40px 80px;text-align:center}
+.mk .price-page .pricing .lede{margin-inline:auto}
+.mk .price-page .pricing .wrap>div:first-child{flex-direction:column;align-items:center!important}
+.mk .price-page .pricing h2{font-size:clamp(34px,4vw,54px)}
+.mk .price-page .tiers{margin-top:36px;text-align:left}
+.mk .price-page .incl{text-align:left}
+.mk .photo-row{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:20px;align-items:end}
+.mk .photo-row .photo{border-radius:20px;min-height:280px}
+.mk .photo-row .photo.tall{min-height:380px;aspect-ratio:auto}
+@media (max-width:800px){.mk .photo-row{grid-template-columns:1fr}.mk .photo-row .photo{min-height:220px}}
+.mk .mission{background:var(--ink);color:var(--white);border-radius:28px;padding:64px 60px;display:grid;gap:18px}
+.mk .mission .eyebrow{color:var(--brass)}
+.mk .mission p{font:400 clamp(30px,3.4vw,48px)/1.2 var(--serif);max-width:1000px}
+.mk .about-g{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:start}
+@media (max-width:900px){.mk .about-g{grid-template-columns:minmax(0,1fr)}}
+.mk .beliefs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:22px;margin-top:52px}
+.mk .belief{background:var(--white);border:1px solid var(--line);border-radius:6px;padding:34px 32px}
+.mk .belief .bn{font:400 40px/1 var(--serif);color:var(--brass-text)}
+.mk .belief h4{font:700 23px/1.25 var(--sans);margin:18px 0 10px}
+.mk .belief p{color:var(--grey);font-size:17px}
+.mk .who-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:28px;margin-top:48px}
+.mk .who-g>div{border-top:2px solid var(--emerald);padding-top:20px}
+.mk .who-g b{font:400 26px/1.2 var(--serif)}
+.mk .who-g p{color:var(--grey);font-size:17px;margin-top:8px}
+.mk .about-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px}
+.mk .about-facts>div{background:var(--brass-tint);border-radius:20px;padding:28px}
+.mk .about-facts span{display:block;font-size:14px;color:var(--brass-text);font-weight:600}
+.mk .about-facts b{display:block;font:400 28px/1.2 var(--serif);margin-top:8px}
+.mk .crew{display:grid;grid-template-columns:330px minmax(0,1fr);gap:28px;margin-top:48px;align-items:start}
+@media (max-width:1000px){.mk .crew{grid-template-columns:minmax(0,1fr)}.mk .crew-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}}
+.mk .crew-tabs{display:flex;flex-direction:column;gap:10px}
+.mk .crew-tab{display:flex;gap:14px;align-items:center;text-align:left;background:var(--white);border:1.5px solid var(--line);border-radius:18px;padding:14px 16px;cursor:pointer;font:inherit;color:var(--ink);transition:transform .2s,border-color .2s}
+.mk .crew-tab:hover{transform:translateX(4px)}
+.mk .crew-tab b{display:block;font:600 18px var(--sans)}.mk .crew-tab em{display:block;font-style:normal;font-size:14px;color:var(--grey)}
+.mk .crew-tab[aria-selected="true"]{border-color:var(--ink);box-shadow:0 14px 30px -20px rgba(15,26,18,.5)}
+.mk .crew-ic{flex:none;width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.mk .crew-ic.big{width:64px;height:64px;border-radius:18px}
+.mk .c-emerald .crew-ic{background:var(--emerald);color:var(--white)}
+.mk .c-brass .crew-ic{background:var(--brass);color:var(--ink)}
+.mk .c-ink .crew-ic{background:var(--ink);color:var(--brass)}
+.mk .crew-pane{background:var(--white);border:1px solid var(--line);border-radius:28px;padding:36px}
+.mk .crew-pane[hidden]{display:none}
+.mk .crew-head{display:flex;gap:18px;align-items:center}
+.mk .crew-head h3{font:400 38px/1.1 var(--serif)}.mk .crew-head p{color:var(--grey);font-size:17px;margin-top:4px}
+.mk .crew-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:28px}
+@media (max-width:800px){.mk .crew-flow{grid-template-columns:minmax(0,1fr)}}
+.mk .cf{border-radius:18px;padding:22px;position:relative}
+.mk .cf span{display:block;font:700 13px var(--sans);margin-bottom:10px}
+.mk .cf.say{background:var(--brass-tint)}.mk .cf.say p{font:400 22px/1.3 var(--serif)}
+.mk .cf.plan{background:var(--paper);border:1px solid var(--line)}
+.mk .cf.plan ol{margin:0;padding-left:20px;display:grid;gap:8px;font-size:15.5px}
+.mk .cf.ok{background:var(--ink);color:var(--white)}.mk .cf.ok span{color:var(--brass)}.mk .cf.ok p{font-size:17px}
+.mk .crew-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;font-size:13px}
+.mk .crew-btns b{background:var(--emerald-lt);color:var(--ink);padding:7px 12px;border-radius:999px}
+.mk .crew-btns i{font-style:normal;border:1px solid rgba(255,255,255,.3);padding:6px 11px;border-radius:999px}
+.mk .crew-power{display:flex;gap:10px 26px;flex-wrap:wrap;margin-top:24px;font-size:16px}
+.mk .crew-power span{display:flex;gap:8px;align-items:center}
+.mk .crew-never{margin-top:28px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:16px}
+.mk .crew-never b{margin-right:6px}
+.mk .crew>*,.mk .crew-tab span{min-width:0}
+@media (max-width:600px){.mk .crew-tabs{grid-template-columns:minmax(0,1fr)!important}.mk .crew-pane{padding:22px}.mk .crew-head h3{font-size:30px}}
+.mk .crew-never span{background:var(--white);border:1px dashed var(--grey);border-radius:999px;padding:8px 14px;text-decoration:line-through;text-decoration-color:var(--brass);text-decoration-thickness:2px}
+
+/* The leaf as a percentage of the card, not a fixed 160/200px, so it keeps
+   its place at every menu width and never reaches the title. */
+.mk .promo .art .leaf{width:46%;height:auto;aspect-ratio:1;right:-9%;bottom:-16%;z-index:0}
+.mk .gb-art .leaf{width:46%;height:auto;aspect-ratio:1;right:-8%;bottom:-14%;z-index:0}
+
+/* LANDING-3 part 1 · /pricing on the first screen. The heading, lede and
+   toggle are kept tight so the whole tier row clears 900px at 1440, and the
+   three states a tier button can be in (visitor, signed in, already on this
+   plan) each have a resting height so the row does not jump. */
+.mk .price-page .pricing{padding-block:34px 72px}
+.mk .price-page h1{font-size:clamp(34px,4vw,54px);margin-bottom:14px}
+.mk .price-page .lede{margin-inline:auto;margin-bottom:26px;max-width:720px}
+.mk .price-page .tiers{margin-top:28px}
+.mk .tier .amt.talk-amt{font-size:34px;line-height:1.1}
+.mk .tier .cur{margin-top:22px;min-height:52px;display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--grey)}
+.mk .tier button.pill{margin-top:22px;justify-content:center;min-height:52px;width:100%;border:0;cursor:pointer;font:inherit;font-weight:600}
+.mk .tier button.pill[disabled]{opacity:.7;cursor:progress}
+.mk .tier .err{margin-top:12px;background:var(--brass-tint);color:var(--ink);border-radius:10px;padding:10px 14px;font-size:14px}

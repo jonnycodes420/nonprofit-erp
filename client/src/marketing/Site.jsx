@@ -106,9 +106,9 @@ function MegaResources() {
         <h5>Free tools</h5>
         <div className="feat2">
           <Mi href="/tools/lost-and-found" icon="search" b="Lost & Found donor audit" span="See who you're about to lose. Runs in your browser." style={tool} />
-          <Mi href="/tools/retention" icon="calc" b="Donor retention calculator" span="Your retention rate, and what a few points are worth." style={tool} />
-          <Mi href="/tools/lapsed-cost" icon="trend" b="Lapsed donor cost calculator" span="What last year's lapsed donors used to give." style={tool} />
-          <Mi href="/tools/thermometer" icon="therm" b="Fundraising thermometer" span="A campaign goal bar for your website." style={tool} />
+          <Mi href="/tools/retention" icon="calc" b="Keep Rate calculator" span="Your retention rate, and what a few points are worth." style={tool} />
+          <Mi href="/tools/lapsed-cost" icon="trend" b="Lapse Ledger" span="What last year's lapsed donors used to give." style={tool} />
+          <Mi href="/tools/thermometer" icon="therm" b="Goal Gauge" span="A campaign goal bar for your website." style={tool} />
         </div>
       </div>
       <div className="promo">
@@ -120,12 +120,16 @@ function MegaResources() {
   );
 }
 
-const MEGAS = [["plat", "Platform", MegaPlatform], ["why", "Why Steward", MegaWhy], ["res", "Resources", MegaResources]];
+// LANDING-3 · our own words, not the ones every other donor CRM uses.
+// Product, Why switch, Pricing,
+// Leadership, Learn. Only the top-level words changed: every menu holds
+// exactly what it held before.
+const MEGAS = [["plat", "Product", MegaPlatform], ["why", "Why switch", MegaWhy], ["res", "Learn", MegaResources]];
 
 const DRAWER = [
-  ["Platform", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/onboarding", "Onboarding and support"], ["/features", "All features"]]],
-  ["Why Steward", [["/why", "The case for retention"], ["/move", "Moving to Steward"], ["/for", "Who it's for"], ["/security", "Security and trust"], ["/about", "About"], ["/leadership", "Leadership"], ["/partners", "Partners"]]],
-  ["Resources", [["/guides", "Guides"], ["/templates", "Templates"], ["/articles", "Articles"], ["/glossary", "Glossary"], ["/tools", "Free tools"], ["/faq", "FAQ"], ["/help", "Help centre"]]],
+  ["Product", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/onboarding", "Onboarding and support"], ["/features", "All features"]]],
+  ["Why switch", [["/why", "The case for retention"], ["/move", "Moving to Steward"], ["/for", "Who it's for"], ["/security", "Security and trust"], ["/about", "About"], ["/leadership", "Leadership"], ["/partners", "Partners"]]],
+  ["Learn", [["/guides", "Guides"], ["/templates", "Templates"], ["/articles", "Articles"], ["/glossary", "Glossary"], ["/tools", "Free tools"], ["/faq", "FAQ"], ["/help", "Help centre"]]],
 ];
 
 function Header() {
@@ -159,7 +163,8 @@ function Header() {
             <li key={id}><button type="button" aria-expanded={open === id ? "true" : "false"} aria-controls={"m-" + id} onClick={() => setOpen(open === id ? null : id)}>{label} <Chevron /></button></li>
           ))}
           <li><A href="/pricing">Pricing</A></li>
-          <li><button type="button" aria-expanded={open === "res" ? "true" : "false"} aria-controls="m-res" onClick={() => setOpen(open === "res" ? null : "res")}>Resources <Chevron /></button></li>
+          <li><A href="/leadership">Leadership</A></li>
+          <li><button type="button" aria-expanded={open === "res" ? "true" : "false"} aria-controls="m-res" onClick={() => setOpen(open === "res" ? null : "res")}>Learn <Chevron /></button></li>
         </ul>
         <div className="right">
           <A className="login" href="/login">Log in</A>
@@ -177,6 +182,7 @@ function Header() {
           <details key={label}><summary>{label}</summary>{items.map(([h, b]) => <A className="mi" href={h} key={h}><span></span><div><b>{b}</b></div></A>)}</details>
         ))}
         <details><summary><A href="/pricing" style={{ textDecoration: "none" }}>Pricing</A></summary></details>
+        <details><summary><A href="/leadership" style={{ textDecoration: "none" }}>Leadership</A></summary></details>
         <p style={{ marginTop: 26 }}><A href="/login" style={{ fontWeight: 600 }}>Log in</A></p>
       </div>
     </header>
@@ -184,8 +190,8 @@ function Header() {
 }
 
 const FOOTER = [
-  ["Platform", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
-  ["Resources", [["/why", "The case for retention"], ["/articles", "Articles"], ["/guides", "Guides"], ["/templates", "Templates"], ["/tools", "Free tools"], ["/partners", "Partners"], ["/faq", "FAQ"]]],
+  ["Product", [["/platform", "Platform overview"], ["/crm", "Steward CRM"], ["/volunteer", "Steward Volunteer"], ["/agent", "Steward Agent"], ["/connections", "Connections"], ["/features", "All features"], ["/pricing", "Pricing"]]],
+  ["Learn", [["/why", "The case for retention"], ["/articles", "Articles"], ["/guides", "Guides"], ["/templates", "Templates"], ["/tools", "Free tools"], ["/partners", "Partners"], ["/faq", "FAQ"]]],
   ["Customer resources", [["/login", "Log in"], ["/help", "Help centre"], [OPEN_API_HREF, "API documentation"], ["/whats-new", "What's new"], ["/move", "Moving to Steward"]]],
   ["Company", [["/about", "About us"], ["/leadership", "Leadership"], ["/security", "Security and trust"], ["/for", "Who it's for"], ["/partners", "Partner with us"], ["/contact", "Contact"]]],
   ["Featured guides", [["/guides/first-year-retention", "The first-year retention plan"], ["/guides/major-donor-visits", "Major donor visits for small shops"], ["/articles/state-of-retention", "The state of donor retention"]]],

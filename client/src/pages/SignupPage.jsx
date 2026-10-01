@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 // FIX-10 F — the users answer, from shared/seats.js.
 import { USERS_PHRASE } from "../../../shared/seats";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api";
 // The same catalogue the server prices against (pricing.js says why JSON).
 import PRICING from "../../../pricing.json";
@@ -38,9 +38,14 @@ const TERMS_STRIP = PRICING.termsStrip;
 //     acceptance so a page left open across a deploy cannot record a consent
 //     to words that are no longer the words.
 
-const CREAM = "#f0ede6", INK = "#0f1a12", SAGE = "rgba(240,237,230,0.7)";
-const GOLD = "#c9a84c", PANEL = "#1a2e1f", PANEL_BORDER = "#2d4a35", EMERALD = "#0d5c3a";
-const WHITE = "#ffffff", MIST_EDGE = "#dfe8e2", SAGE_GREY = "#6b7c72", TERRA = "#b8593f";
+// LANDING-3 part 3 · the brand, and ONLY the brand. Every field, the Stripe
+// step, the agreement acceptance record and all of the logic below are exactly
+// what they were: this build changed the paint, the layout and the words on
+// the labels, and nothing that decides anything.
+const CREAM = "#f0ede6", INK = "#0f1a12", PAPER = "#faf8f3";
+const GOLD = "#c9a84c", EMERALD = "#0d5c3a", BRASS_TINT = "#f3e9cc";
+const WHITE = "#ffffff", LINE = "#ddd7cb", SAGE_GREY = "#6b7c72", TERRA = "#b8593f";
+const SERIF = "'DM Serif Display',Georgia,serif";
 
 const CAL = "https://calendly.com/xjca2006/new-meeting";
 const usd = n => "$" + Number(n).toLocaleString("en-US");
@@ -51,14 +56,25 @@ function bandFor(n) {
   return TIERS.find(t => c <= t.maxDonors) || null;
 }
 
-const labelStyle = { fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: SAGE_GREY, display: "block", marginBottom: 6 };
-const inputStyle = { width: "100%", padding: "11px 13px", fontSize: 14.5, borderRadius: 9, border: `1.5px solid ${MIST_EDGE}`, background: WHITE, color: INK, fontFamily: "inherit" };
+const labelStyle = { fontSize: 14.5, fontWeight: 600, color: INK, display: "block", marginBottom: 7 };
+const inputStyle = { width: "100%", padding: "12px 14px", fontSize: 15.5, borderRadius: 12, border: `1.5px solid ${LINE}`, background: WHITE, color: INK, fontFamily: "inherit" };
+const TICKS = ["Thirty days free, then month to month", "Unlimited users and every feature", "No platform fee on any gift", "Your move done with you"];
+const Tick = () => (
+  <svg width="20" height="20" viewBox="0 0 16 16" aria-hidden="true" style={{ flex: "none", marginTop: 2 }}><path d="M3 8.5l3 3 7-7" fill="none" stroke={EMERALD} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
 
 export default function SignupPage() {
   const [orgName, setOrgName] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
-  const [donors, setDonors] = useState("");
+  // LANDING-3 part 1 — /pricing sends ?plan=<tier id>, so the page opens on
+  // the band the visitor picked. It seeds the donor estimate and nothing else:
+  // bandFor() still decides, and she can type over it.
+  const [params] = useSearchParams();
+  const [donors, setDonors] = useState(() => {
+    const t = TIERS.find(x => x.id === params.get("plan"));
+    return t ? String(t.maxDonors) : "";
+  });
   const [interval, setIntervalChoice] = useState("monthly");
   const [accepted, setAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -110,28 +126,38 @@ export default function SignupPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: INK, padding: "60px 24px 72px", fontFamily: "'DM Sans',system-ui,sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display&display=swap" rel="stylesheet"/>
+    <div style={{ minHeight: "100vh", background: PAPER, padding: "0 24px 96px", fontFamily: "'DM Sans',system-ui,sans-serif", color: INK }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Serif+Display:ital@0;1&display=swap" rel="stylesheet"/>
 
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px", height: 56, background: INK, borderBottom: `1px solid ${PANEL}`, zIndex: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1180, margin: "0 auto", height: 86 }}>
         <Link to="/" style={{ textDecoration: "none" }}>
-          <span style={{ fontSize: 20, color: CREAM, fontFamily: "'DM Serif Display',Georgia,serif", letterSpacing: "-0.02em" }}>Steward</span>
+          <span style={{ fontSize: 24, color: INK, fontFamily: SERIF, letterSpacing: "-0.02em" }}>Steward</span>
         </Link>
-        <Link to="/login" style={{ fontSize: 13, color: SAGE, textDecoration: "none" }}>Already have an account? Sign in</Link>
+        <Link to="/login" style={{ fontSize: 15, color: SAGE_GREY, textDecoration: "none" }}>Already have an account? Sign in</Link>
       </div>
 
-      <div style={{ maxWidth: 620, margin: "56px auto 0" }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <h1 data-testid="signup-headline" style={{ fontSize: 34, fontWeight: 400, color: CREAM, fontFamily: "'DM Serif Display',Georgia,serif", lineHeight: 1.15, margin: "0 0 12px" }}>
-            Start with one conversation.
+      <div className="su-g" style={{ maxWidth: 1180, margin: "22px auto 0", display: "grid", gridTemplateColumns: "minmax(0,.9fr) minmax(0,1.1fr)", gap: 64, alignItems: "start" }}>
+        {/* ── the pitch ──────────────────────────────────────────────── */}
+        <div>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10, font: "600 15px/1.2 inherit", color: EMERALD }}>
+            <span aria-hidden="true" style={{ width: 22, height: 2, background: GOLD }}></span>Start free
+          </span>
+          <h1 data-testid="signup-headline" style={{ fontSize: "clamp(38px,4vw,54px)", fontWeight: 400, color: INK, fontFamily: SERIF, lineHeight: 1.08, margin: "20px 0 0" }}>
+            Start with <em style={{ fontStyle: "italic" }}>one conversation.</em>
           </h1>
-          <p style={{ fontSize: 15, color: SAGE, lineHeight: 1.6, margin: 0 }}>
-            Your card goes in now and <strong style={{ color: GOLD }}>nothing is charged for thirty days</strong>.
+          <p style={{ fontSize: 19, color: SAGE_GREY, lineHeight: 1.6, margin: "22px 0 0", maxWidth: 520 }}>
+            Your card goes in now and <strong style={{ color: INK }}>nothing is charged for thirty days</strong>.
             We email you a week before the first charge, and cancelling takes two clicks.
+          </p>
+          <ul style={{ listStyle: "none", padding: 0, margin: "30px 0 0", display: "grid", gap: 12, fontSize: 18 }}>
+            {TICKS.map(t => <li key={t} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><Tick />{t}</li>)}
+          </ul>
+          <p style={{ marginTop: 26, color: SAGE_GREY, fontSize: 16 }}>
+            Rather talk first? <a href={CAL} target="_blank" rel="noreferrer" data-testid="signup-book" style={{ color: EMERALD, fontWeight: 700 }}>Book a 20-minute demo</a>
           </p>
         </div>
 
-        <form onSubmit={submit} style={{ background: CREAM, borderRadius: 18, padding: "28px 26px" }}>
+        <form onSubmit={submit} style={{ background: WHITE, border: `1px solid ${LINE}`, borderRadius: 28, padding: 40, boxShadow: "0 30px 60px -40px rgba(15,26,18,.4)" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
             <div>
@@ -158,14 +184,14 @@ export default function SignupPage() {
               <input id="su-donors" data-testid="signup-donors" type="number" min="0" step="1" style={inputStyle}
                 value={donors} onChange={e => setDonors(e.target.value)} placeholder="850" />
               <p data-testid="signup-active-donor-sentence" style={{ fontSize: 12.5, color: SAGE_GREY, lineHeight: 1.55, margin: "7px 0 0" }}>
-                {ACTIVE_DONOR_SENTENCE} An estimate is fine — Steward counts for itself after your import and tells you
+                {ACTIVE_DONOR_SENTENCE} An estimate is fine. Steward counts for itself after your import and tells you
                 before anything about your price changes.
               </p>
             </div>
 
             <div>
               <span style={labelStyle}>Billing</span>
-              <div role="group" aria-label="Billing period" style={{ display: "inline-flex", background: WHITE, border: `1px solid ${MIST_EDGE}`, borderRadius: 99, padding: 4 }}>
+              <div role="group" aria-label="Billing period" style={{ display: "inline-flex", background: WHITE, border: `1px solid ${LINE}`, borderRadius: 99, padding: 4 }}>
                 {[["monthly", "Monthly"], ["yearly", "Yearly"]].map(([id, label]) => (
                   <button key={id} type="button" onClick={() => setIntervalChoice(id)} aria-pressed={interval === id}
                     data-testid={"signup-interval-" + id}
@@ -179,8 +205,14 @@ export default function SignupPage() {
             </div>
 
             {/* WHAT IT WILL COST, before the card and not after it. */}
+            {!band && !overTop && (
+              <div data-testid="signup-quote-resting" style={{ background: "#dcebe2", borderRadius: 16, padding: "16px 20px", display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, color: SAGE_GREY }}>Your plan</span>
+                <span style={{ fontSize: 16, color: INK }}>Enter your donor count above and it appears here.</span>
+              </div>
+            )}
             {band && (
-              <div data-testid="signup-quote" style={{ background: WHITE, border: `1px solid ${MIST_EDGE}`, borderRadius: 12, padding: "14px 16px" }}>
+              <div data-testid="signup-quote" style={{ background: "#dcebe2", borderRadius: 16, padding: "16px 20px" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
                   {/* FIX-4 6 — THE NAME, WITH THE DONOR COUNT UNDER IT. The
                       quote named the band and not the plan, so the one screen
@@ -201,18 +233,18 @@ export default function SignupPage() {
             )}
 
             {overTop && (
-              <div data-testid="signup-talk" style={{ background: WHITE, border: `1px solid ${MIST_EDGE}`, borderRadius: 12, padding: "14px 16px" }}>
+              <div data-testid="signup-talk" style={{ background: BRASS_TINT, borderRadius: 16, padding: "16px 20px" }}>
                 <div style={{ fontSize: 19, fontWeight: 700, color: INK, marginBottom: 2, fontFamily: "'DM Serif Display',Georgia,serif" }}>{TALK_TO_US.name}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, marginBottom: 6 }}>{TALK_TO_US.band}</div>
                 <div style={{ fontSize: 13, color: SAGE_GREY, lineHeight: 1.55 }}>
-                  That is a conversation rather than a checkout — at your size the import and the setup matter more than the price.{" "}
+                  That is a conversation rather than a checkout: at your size the import and the setup matter more than the price.{" "}
                   <a href={CAL} target="_blank" rel="noreferrer" style={{ color: EMERALD, fontWeight: 700 }}>Book a call</a> and we will size it with you.
                 </div>
               </div>
             )}
 
             {/* ── THE AGREEMENT ──────────────────────────────────────────── */}
-            <div style={{ borderTop: `1px solid ${MIST_EDGE}`, paddingTop: 16 }}>
+            <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 16 }}>
               <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
                 <input type="checkbox" data-testid="signup-accept" checked={accepted}
                   onChange={e => setAccepted(e.target.checked)} style={{ marginTop: 3, width: 17, height: 17, accentColor: EMERALD }} />
@@ -231,10 +263,10 @@ export default function SignupPage() {
 
               {showTerms && (
                 <div data-testid="signup-terms-body"
-                  style={{ marginTop: 12, maxHeight: 280, overflowY: "auto", background: WHITE, border: `1px solid ${MIST_EDGE}`,
+                  style={{ marginTop: 12, maxHeight: 280, overflowY: "auto", background: WHITE, border: `1px solid ${LINE}`,
                            borderRadius: 10, padding: "14px 16px", fontSize: 12.5, color: INK, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
                   {agreement?.markdown || (agreement?.error
-                    ? "The agreement could not be loaded. Do not accept it until you can read it — reload the page, or write to us."
+                    ? "The agreement could not be loaded. Do not accept it until you can read it: reload the page, or write to us."
                     : "Loading…")}
                 </div>
               )}
@@ -244,31 +276,28 @@ export default function SignupPage() {
               <div data-testid="signup-error" role="alert" style={{ fontSize: 13, color: TERRA, lineHeight: 1.5 }}>{err}</div>
             )}
 
-            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-              <button type="submit" data-testid="signup-submit" disabled={!ready}
-                style={{ background: ready ? EMERALD : MIST_EDGE, border: "none", borderRadius: 10, padding: "14px 28px",
-                         color: ready ? WHITE : SAGE_GREY, fontSize: 15, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed" }}>
-                {busy ? "Opening checkout…" : "Continue to card →"}
-              </button>
-              <a href={CAL} target="_blank" rel="noreferrer" data-testid="signup-book"
-                style={{ background: "transparent", border: `1px solid ${MIST_EDGE}`, borderRadius: 10, padding: "14px 28px", color: INK, fontSize: 15, fontWeight: 700, textDecoration: "none" }}>
-                Book a call
-              </a>
-            </div>
+            {/* The ONE action on this card, and the only emerald on it. */}
+            <button type="submit" data-testid="signup-submit" disabled={!ready}
+              style={{ background: ready ? EMERALD : LINE, border: "none", borderRadius: 999, padding: "16px 28px",
+                       color: ready ? WHITE : SAGE_GREY, fontSize: 16, fontWeight: 600, fontFamily: "inherit",
+                       cursor: ready ? "pointer" : "not-allowed", justifySelf: "stretch" }}>
+              {busy ? "Opening checkout\u2026" : "Continue to card details"}
+            </button>
+            <p style={{ textAlign: "center", fontSize: 14, color: SAGE_GREY, margin: 0 }}>Nothing is charged for 30 days.</p>
           </div>
         </form>
 
-        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px 14px", fontSize: 12.5, color: SAGE, marginTop: 20 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "8px 14px", fontSize: 13.5, color: SAGE_GREY, marginTop: 20 }}>
           {TERMS_STRIP.map((item, i) => (
             <span key={item} style={{ display: "inline-flex", alignItems: "center", gap: 14 }}>
-              {i > 0 && <span aria-hidden="true" style={{ color: PANEL_BORDER }}>·</span>}
+              {i > 0 && <span aria-hidden="true" style={{ color: LINE }}>·</span>}
               {item}
             </span>
           ))}
         </div>
       </div>
 
-      <style>{`@media (max-width: 620px){ .su-two{ grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`@media (max-width:1000px){ .su-g{ grid-template-columns: minmax(0,1fr) !important; gap: 40px !important; } }\n@media (max-width:620px){ .su-two{ grid-template-columns: 1fr !important; } form{ padding: 26px !important; } }`}</style>
     </div>
   );
 }

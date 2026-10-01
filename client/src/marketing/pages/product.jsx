@@ -1,6 +1,6 @@
 // LANDING-2 · the Platform menu: the platform overview, the three products,
 // Connections, Onboarding, and the features index plus its one template.
-import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, Icon, featureCard } from "../lib";
+import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, featureCard , AgentCrew } from "../lib";
 import { FEAT, FEATURE_SLUGS, OPEN_API_HREF } from "../data/features";
 import { CONNECTIONS } from "../data/connections";
 
@@ -8,7 +8,7 @@ export function Platform() {
   return <>
     <Hero eyebrow="The Steward Platform" crumbs={[["Platform"]]} h="One calm place for <b>the whole office.</b>"
       lede="Donors, gifts, events, volunteers, email and month end, on one record that watches itself. Steward tells you who needs you each morning, and every number opens to the people behind it."
-      photo="team-pointing" cta2={["See every feature", "/features"]} proof={["Every feature on every plan", "Unlimited users", "Month to month"]} />
+      photo="team-pointing" proof={["Every feature on every plan", "Unlimited users", "Month to month"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">How it fits together</div>
       <h2 className="mix h-l" style={{ marginTop: 22 }}>Keep. Raise. <b>Run.</b></h2>
@@ -68,7 +68,6 @@ export function Volunteer() {
   </>;
 }
 
-const AGENTS = [["Writer", "Thank-yous, appeals and updates in your voice, from the donor's own history."], ["Researcher", "Briefs before a visit: giving, notes, emails and what changed since you last met."], ["Analyst", "Plain answers about your file, with every number linked to its rows."], ["Recurring", "Finds failed cards and paused plans and drafts the note to fix them."], ["Onboarding", "Builds a first-year journey for each new donor and names who owns each step."], ["Data", "Finds duplicates, fixes addresses and tidies records, all shown before it changes anything."]];
 
 export function Agent() {
   return <>
@@ -80,11 +79,7 @@ export function Agent() {
         ui={<Ui t="Agent · plan" k="spark" rows={[["1", "Find gifts over $500", "Since Monday · 23 donors", "Done", "c"], ["2", "Draft thank-you letters", "In your voice, signed by Dana", "Review"], ["3", "Add a call task for 4 board prospects", "Assigned to Dana", "Review"]]} />} />
       <Block flip tint="emerald-tint" h="Every action recorded, every action reversible." p="Whatever the Agent does is in the audit log with who approved it. Changed your mind? Undo it from the same screen." photo="team-pointing-wide" />
     </div></section>
-    <section className="pricing"><div className="wrap">
-      <div className="eyebrow">Six assistants</div>
-      <h2 className="mix h-l" style={{ marginTop: 22 }}>One engine, <b>six jobs.</b></h2>
-      <div className="cards">{AGENTS.map(a => <div className="card" key={a[0]}><span className="ci"><Icon k="spark" size={26} /></span><h4>{a[0]}</h4><p>{a[1]}</p></div>)}</div>
-    </div></section>
+    <AgentCrew />
     <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. The Agent never touches payments, and gift changes go through the normal screens with the audit log."], ["Is the Agent included?", "Yes, on every plan."]]} />
     <FinalCta />
   </>;
@@ -102,7 +97,7 @@ export function Connections() {
     <section className="pricing"><div className="wrap">
       <div className="eyebrow">Every connection, honestly labeled</div>
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What works today, <b>and what is next.</b></h2>
-      <p className="lede" style={{ marginTop: 18 }}>Live means you can switch it on yourself. Set up with you means it works and we connect it on your onboarding call. Coming means it is being built.</p>
+      <p className="lede" style={{ marginTop: 18 }}>Live means you can connect it yourself from Settings today, and we will do it with you on your onboarding call if you would rather. Coming means it is being built.</p>
       <div className="conn">
         {CONNECTIONS.map(c => {
           const k = c[2] === "Live" ? "" : c[2] === "Coming" ? " soon" : " q";
@@ -119,7 +114,7 @@ export function Onboarding() {
   return <>
     <Hero eyebrow="Onboarding and support" crumbs={[["Platform", "/platform"], ["Onboarding and support"]]} h="Your move, <b>done with you.</b>"
       lede="Every new organization gets a real person for the move, the setup and the first month. You will know their name and their email address."
-      photo="trainer-laptop" cta2={["How the move works", "/move"]} />
+      photo="trainer-laptop" />
     <Steps eb="Your first 30 days" h="Four steps <b>to settled.</b>" list={[["Kickoff call", "Twenty minutes. We look at where your donors live today and what you need first."], ["The move", "You export, we map it with you, and the Move Report checks every total to the cent."], ["Connect your tools", "Stripe, Mailchimp, your inbox and the rest, connected together on a call."], ["First month check-in", "We review drift, journeys and your first month-end file together."]]} />
     <Incl eb="Included" h="What every organization <b>gets.</b>" list={["A named person for the move", "Mapping of your old fields", "Connections set up on a call", "Thirty days free while you settle in", "Staff training on a call", "Email answers from a person", "Your data exported any time", "Undo the move for 30 days"]} />
     <FinalCta />

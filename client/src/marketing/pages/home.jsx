@@ -1,8 +1,9 @@
 // LANDING-2 · the lean homepage, section for section as the reference's #home:
 // hero, research strip, Why tabs, AI band, products, searchable features,
-// people reel, guide band, FAQ, commitment, ready.
+// Leadership band, guide band, FAQ, commitment, ready.
+// LANDING-3 removed the people reel and gave its place to the Leadership band.
 import { useState } from "react";
-import { A, Pill, Photo, Icon, Ui, TeamReel, FaqList } from "../lib";
+import { A, Pill, Photo, Icon, Ui, LeadBand, FaqList } from "../lib";
 import { STATS, srcShort, SRC } from "../data/research";
 import { FEAT, FEATURE_CATS, FEATURE_EXTRAS } from "../data/features";
 import { HOME_FAQ } from "../data/faqs";
@@ -51,7 +52,7 @@ function WhyTabs() {
         <div className="panes">
           {TABS.map((t, i) => (
             <div className="pane" key={t.label} role="tabpanel" hidden={tab !== i}>
-              <div><h3 className="mix h-m">{t.h}</h3><p>{t.p}</p><Pill href={t.href}>Take a tour</Pill></div>
+              <div><h3 className="mix h-m">{t.h}</h3><p>{t.p}</p><Pill href={t.href}>Learn more</Pill></div>
               <div className="stage"><div className="bg" style={{ background: "var(--" + t.bg + ")" }}></div>{t.ui}</div>
             </div>
           ))}
@@ -104,7 +105,7 @@ export default function Home() {
             <p className="lede">Steward shows you who is drifting while a phone call still fixes it, then runs the rest of your development office: gifts, events, volunteers, email and month end, in one calm place.</p>
             <div className="ctas">
               <Pill href="/demo">Book a demo</Pill>
-              <Pill kind="soft" href="/platform">Tour Steward</Pill>
+              <Pill kind="soft" href="/signup">Start free</Pill>
             </div>
             <div className="proof"><span>Move in about a day</span><span>Month to month</span><span>No platform fee</span></div>
           </div>
@@ -151,7 +152,7 @@ export default function Home() {
       </section>
 
       <FeatureFinder />
-      <TeamReel />
+      <LeadBand />
 
       <section style={{ paddingTop: 0 }}>
         <div className="wrap">
@@ -181,7 +182,7 @@ export default function Home() {
       <section className="ready">
         <div className="wrap ready-g">
           <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a demo</Pill></div>
-          <div><div className="eyebrow">Want to see it first?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Walk through <b>the platform.</b></h2><Pill kind="soft" href="/platform" style={{ marginTop: 26 }}>Take a tour</Pill></div>
+          <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
         </div>
       </section>
     </div>
