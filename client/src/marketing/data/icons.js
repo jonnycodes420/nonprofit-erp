@@ -1,7 +1,12 @@
 // The reference's ICON set: 24-unit stroke paths, drawn by <Icon> in lib.jsx.
 export const ICON = {
   drift: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
-  major: '<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1 1.3-1.8 3-1.8s3 .8 3 2c0 2.6-6 1.5-6 4.3 0 1.2 1.3 2 3 2s3-.8 3-1.8"/>',
+  // The dollar sign is the one glyph in this set, and it was drawn with
+  // hand-guessed cubic control points: the bowls curled the wrong way, the
+  // spine crossed itself and the middle closed into a blob at 22px. It is two
+  // half-round bowls and a bar now, the same construction every other icon
+  // here uses, sized to sit inside the r=9 circle.
+  major: '<circle cx="12" cy="12" r="9"/><path d="M12 6.6v10.8"/><path d="M15.6 8.4h-5.4a1.8 1.8 0 1 0 0 3.6h3.6a1.8 1.8 0 1 1 0 3.6H8.4"/>',
   forms: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   p2p: '<circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M2.5 19c.7-3 2.9-4.5 5.5-4.5s4.8 1.5 5.5 4.5M14 15c2.6-.4 5.3.8 6.5 4"/>',
   reports: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
