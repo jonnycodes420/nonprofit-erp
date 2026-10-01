@@ -7,6 +7,8 @@ import { TEMPL } from "../data/templates";
 import { ARTS } from "../data/articles";
 import { API } from "../../api";
 import { PRODUCT_WORDS } from "../../../../shared/changelog.js";
+import { HELP_ARTICLES } from "../../../../shared/helpArticles.js";
+import { searchArticles } from "../../../../shared/helpSearch.js";
 // TRUST-2: What's new is the files in docs/changelog/, one per build, never
 // generated from commit messages. A super-admin can hide an entry.
 import { CHANGELOG } from "../../lib/changelog";
@@ -196,15 +198,38 @@ export function Faq() {
   </>;
 }
 
+// HELP-1: the help centre. One article per screen, plus the tasks people come
+// for, searchable over titles and bodies. Written from what each screen does
+// today (shared/helpArticles.js); the app's "?" panel reads the same articles.
+const TASK_FIRST = a => ((a.screens || []).length ? 1 : 0);
 export function Help() {
+  const [q, setQ] = useState("");
+  const list = q.trim() ? searchArticles(HELP_ARTICLES, q, 20) : [...HELP_ARTICLES].sort((x, y) => TASK_FIRST(x) - TASK_FIRST(y) || x.title.localeCompare(y.title));
   return <>
-    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="Help from <b>a real person.</b>" lede="A searchable help centre with an article for every screen is being written now. Until it is live, every question goes to a person who knows Steward inside out." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
-      {[["Email support", "jonathan@stewardapp.dev. A human reads every message.", "mailto:jonathan@stewardapp.dev"], ["Book a help call", "Twenty minutes on screen together.", "/demo"], ["Common questions", "Answers to what most teams ask first.", "/faq"], ["What's new", "Every change we ship.", "/whats-new"]].map(c => (
-        <A className="card" href={c[2]} key={c[0]}><h4>{c[0]}</h4><p>{c[1]}</p><span className="go">Open →</span></A>
-      ))}
-    </div></div></section>
+    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre"]]} h="How do I <b>do this in Steward?</b>" lede="An article for every screen and for the jobs people come for. If it is not here, a person answers." noCta />
+    <section style={{ paddingTop: 0 }}><div className="wrap">
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search the help centre" aria-label="Search the help centre"
+        style={{ width: "100%", maxWidth: 560, padding: "12px 14px", fontSize: 16, borderRadius: 10, border: "1px solid #D4CFC6", marginBottom: 20, fontFamily: "inherit" }} />
+      <div className="cards">
+        {list.map(a => <A className="card" href={"/help/" + a.slug} key={a.slug}><h4>{a.title}</h4><p>{a.summary}</p><span className="go">Read</span></A>)}
+        {!list.length && <p>Nothing in the help centre matches. Write to jonathan@stewardapp.dev and a person will answer.</p>}
+      </div>
+    </div></section>
     <FinalCta />
+  </>;
+}
+export function HelpArticle({ slug }) {
+  const a = HELP_ARTICLES.find(x => x.slug === slug);
+  const [voted, setVoted] = useState(null);
+  if (!a) return null;
+  const vote = v => { setVoted(v); fetch(API + "/help/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slug: a.slug, helpful: v }) }).catch(() => {}); };
+  return <>
+    <Hero eyebrow="Help centre" crumbs={[["Customers"], ["Help centre", "/help"], [a.title]]} h={a.title} lede={a.summary} noCta />
+    <section style={{ paddingTop: 0 }}><div className="wrap prose" style={{ maxWidth: 760 }}>
+      {(a.sections || []).map((s, i) => <div key={i}>{s.h && <h3>{s.h}</h3>}{(s.p || []).map((p, k) => <p key={k}>{p}</p>)}{s.steps && <ol>{s.steps.map((st, k) => <li key={k}>{st}</li>)}</ol>}</div>)}
+      <p style={{ marginTop: 28 }}>{voted === null ? <>Did this help? <button type="button" className="btn" onClick={() => vote(true)}>Yes</button> <button type="button" className="btn" onClick={() => vote(false)}>No</button></> : "Thank you."}</p>
+      <p><a href="/help">All help articles</a></p>
+    </div></section>
   </>;
 }
 

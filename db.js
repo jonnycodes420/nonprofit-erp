@@ -5217,6 +5217,21 @@ async function initSchema() {
   // TRUST-2 — the day a person was erased at their request (personData.js).
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS erased_at TIMESTAMPTZ`);
   // TRUST-2 Part 2 — a What's new entry a super-admin has hidden.
+  // HELP-1 — "Did this help?" (no personal data), the questions people ask
+  // (question text only, 12 months), and support tickets.
+  await pool.query(`CREATE TABLE IF NOT EXISTS help_feedback (id BIGSERIAL PRIMARY KEY, slug TEXT NOT NULL, helpful BOOLEAN NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS question_log (
+      id BIGSERIAL PRIMARY KEY, surface TEXT NOT NULL, question TEXT NOT NULL, topic TEXT, created_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT question_log_surface CHECK (surface IN ('help','agent','analyst')))`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_question_log_created ON question_log (created_at)`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS support_tickets (
+      id TEXT PRIMARY KEY, org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE, user_id TEXT NOT NULL, user_email TEXT NOT NULL, user_name TEXT,
+      subject TEXT NOT NULL, screen TEXT, browser TEXT, status TEXT NOT NULL DEFAULT 'open',
+      created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(), created_by TEXT NOT NULL, created_by_name TEXT,
+      CONSTRAINT support_tickets_status CHECK (status IN ('open','waiting','closed')))`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS support_ticket_messages (
+      id TEXT PRIMARY KEY, ticket_id TEXT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+      from_kind TEXT NOT NULL, body TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW(), created_by TEXT NOT NULL, created_by_name TEXT)`);
   await pool.query(`CREATE TABLE IF NOT EXISTS changelog_hidden (entry_id TEXT PRIMARY KEY, hidden_by TEXT NOT NULL, hidden_at TIMESTAMPTZ DEFAULT NOW())`);
   // TRUST-2 Part 1 — the status page. One row per service per minute; the page
   // reads ONLY these rows, so a percentage is never typed in by hand.

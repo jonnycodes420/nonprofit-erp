@@ -3,6 +3,7 @@ import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
 import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
 import { CHANGELOG, LAST_SEEN_KEY } from "../lib/changelog";
+import { HelpPanel } from "./HelpPanel";
 import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
@@ -29,7 +30,7 @@ const QUICK_NAV = [
 
 const fmtMoney = n => "$" + Math.round(Number(n)||0).toLocaleString();
 
-export function TopBar({ auth, logout, onNavigate }) {
+export function TopBar({ auth, logout, onNavigate, screen }) {
   const [q,setQ] = useState("");
   const [results,setResults] = useState(null);   // {donors:[], grants:[]} | null
   const [open,setOpen] = useState(false);
@@ -47,7 +48,6 @@ export function TopBar({ auth, logout, onNavigate }) {
   const meRef = useRef(null);
   const inputRef = useRef(null);
   const rootRef = useRef(null);
-  const helpRef = useRef(null);
   const seqRef = useRef(0);
 
   // ⌘K / Ctrl+K from anywhere in the authenticated app (desktop — the bar
@@ -74,7 +74,6 @@ export function TopBar({ auth, logout, onNavigate }) {
   useEffect(()=>{
     const onDown = e => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-      if (helpRef.current && !helpRef.current.contains(e.target)) setHelpOpen(false);
       if (meRef.current && !meRef.current.contains(e.target)) setMeOpen(false);
     };
     document.addEventListener("mousedown",onDown);
@@ -215,18 +214,10 @@ export function TopBar({ auth, logout, onNavigate }) {
 
     <div style={{flex:1}}/>
 
-    {/* Help menu */}
-    <div ref={helpRef} style={{position:"relative"}}>
-      <button data-testid="topbar-help" onClick={()=>setHelpOpen(v=>!v)} title="Help"
-        style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid "+T.green650,color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
-      {helpOpen && <div style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:210,zIndex:130}}>
-        <a href="mailto:jonathan@stewardapp.dev?subject=Steward%20question" onClick={()=>setHelpOpen(false)}
-          style={{display:"block",padding:"8px 14px",fontSize:13,color:T.inkInverse,textDecoration:"none",fontWeight:600}}>
-          Email the founder
-          <div style={{fontSize:11,color:"rgba(240,237,230,0.7)",fontWeight:400}}>jonathan@stewardapp.dev</div>
-        </a>
-      </div>}
-    </div>
+    {/* HELP-1 — the "?" opens the article for this screen, beside the page. */}
+    <button data-testid="topbar-help" onClick={()=>setHelpOpen(true)} title="Help for this screen" aria-label="Help for this screen"
+      style={{width:28,height:28,borderRadius:"50%",background:helpOpen?T.bgElevated:"transparent",border:"1px solid "+T.green650,color:"rgba(240,237,230,0.7)",fontSize:13,fontWeight:700,cursor:"pointer",lineHeight:1}}>?</button>
+    {helpOpen && <HelpPanel screen={screen} onClose={()=>setHelpOpen(false)}/>}
 
     {/* User chip + sign out (moved from sidebar bottom).
         INT-BUILD-1 Part 0 — THE CHIP OPENS A MENU NOW. INT-4 said the inbox

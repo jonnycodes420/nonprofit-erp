@@ -16,6 +16,7 @@ import { FEAT, FEATURE_SLUGS } from "./data/features.js";
 import { AUD, AUDIENCE_SLUGS } from "./data/audiences.js";
 import { GUIDES, GUIDE_SLUGS } from "./data/guides.js";
 import { ART2 } from "./data/articles2.js";
+import { HELP_ARTICLES } from "../../../shared/helpArticles.js";
 
 // Titles drop the headline markup. The copy uses only <b>, <em> and <br>.
 const plain = s => s.replace(/<\/?(?:b|em|br)\s*\/?>/g, "");
@@ -70,7 +71,8 @@ export const ROUTES = [
   ...Object.keys(ART2).filter(s => ART2[s]).map(s => ({ path: "/articles/" + s, page: "article", slug: s, title: T(ART2[s].h), description: ART2[s].d })),
   { path: "/glossary", page: "glossary", title: T("Fundraising terms, in plain words."), description: "The words you will hear in board meetings and on software demos, explained without jargon." },
   { path: "/faq", page: "faq", title: T("Questions? We've got answers."), description: "How long a move takes, what counts as an active donor, whether Steward takes a cut of donations, and who to call for help." },
-  { path: "/help", page: "help", title: T("Help from a real person."), description: "A searchable help centre with an article for every screen is being written now. Until it is live, every question goes to a person who knows Steward inside out." },
+  { path: "/help", page: "help", title: T("How do I do this in Steward?"), description: "An article for every screen in Steward and for the jobs people come for, searchable. If it is not here, a person answers." },
+  ...HELP_ARTICLES.map(a => ({ path: "/help/" + a.slug, page: "helpArticle", slug: a.slug, title: T(a.title), description: a.summary })),
   { path: "/whats-new", page: "whatsNew", title: T("What we shipped lately."), description: "Steward ships improvements every week. Here is the recent list, newest first." },
 
   { path: "/tools", page: "tools", title: T("Free tools, no signup."), description: "Run them on your own numbers. Nothing you type leaves your browser." },

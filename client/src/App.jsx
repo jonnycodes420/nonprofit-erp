@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch, adaptData, API, getToken, billingErrorMessage, leavingForLogin } from "./api";
+import { HelpPanel } from "./components/HelpPanel";
 import { useAuth } from "./main";
 import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, PhotoContext, FirstRunWelcome } from "./components/shared";
 // SHELVED — voice capture works but unproven adoption assumption, revisit later.
@@ -206,6 +207,7 @@ function AppShell() {
   const [sampleStatus,setSampleStatus]=useState(null);
   // TRUST-2 — an open incident on /status shows as one thin line under the bar.
   const [incident,setIncident]=useState(null);
+  const [mobileHelp,setMobileHelp]=useState(false);   // HELP-1
   useEffect(()=>{ apiFetch("/status/summary").then(d=>{ const o=(d.incidents||[]).find(i=>!i.resolved_at); setIncident(o||null); }).catch(()=>{}); },[]);
   const loadSampleStatus=()=>apiFetch("/org/sample-data-status")
     .then(setSampleStatus).catch(()=>setSampleStatus(null));
@@ -665,7 +667,7 @@ function AppShell() {
         + sign-out. Desktop only (GlobalStyles hides it ≤768px; mobile keeps
         the .app-header inside app-main below). zIndex sits above the z-200
         full-screen takeovers so the bar stays visible over them. */}
-    <TopBar auth={auth} logout={logout} onNavigate={navigateTo}/>
+    <TopBar auth={auth} logout={logout} onNavigate={navigateTo} screen={tab==="settings"&&settingsIntent?.section?`settings:${settingsIntent.section}`:tab}/>
 
     {/* Sidebar — desktop only (hidden ≤768px; mobile keeps bottom bar + More
         drawer). Starts BENEATH the 52px bar (top:52); pure nav now — wordmark
@@ -1009,6 +1011,11 @@ function AppShell() {
           })}
         </div>)}
         <div style={{borderTop:"1px solid "+T.bg3,margin:"4px 0"}}/>
+        {/* HELP-1 — help for this screen, on the phone (the bar's "?" is desktop). */}
+        <button data-testid="mobile-help" onClick={()=>{setMobileHelp(true);setMoreOpen(false);}} className="mobile-more-row">
+          <span className="mob-icon" style={{fontSize:16,width:28,textAlign:"center"}}>?</span>
+          <span style={{flex:1}}>Help</span>
+        </button>
         {/* INT-BUILD-1 Part 0 — the profile menu's inbox item, on the phone. */}
         <button data-testid="mobile-connect-inbox" onClick={()=>{navigateTo("settings",{section:"connections",focus:"inbox"});setMoreOpen(false);}} className="mobile-more-row">
           <span className="mob-icon" style={{fontSize:16,width:28,textAlign:"center"}}>@</span>
@@ -1021,6 +1028,7 @@ function AppShell() {
       </div>
     </div>}
 
+    {mobileHelp&&<HelpPanel screen={tab} onClose={()=>setMobileHelp(false)}/>}
     {/* Install prompt — mobile browsers only */}
     {showInstallPrompt&&deferredPrompt&&<div style={{position:"fixed",bottom:"calc(60px + env(safe-area-inset-bottom,0px))",left:0,right:0,zIndex:145,background:T.ink,borderTop:"1px solid "+T.bgElevated,padding:"10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 -4px 20px rgba(0,0,0,0.3)"}}>
       <span style={{flex:1,fontSize:13,color:T.inkInverse,fontWeight:500}}>Add Steward to your home screen</span>

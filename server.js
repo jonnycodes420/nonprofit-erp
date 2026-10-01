@@ -9961,6 +9961,8 @@ require("./routes/agent").mount({
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
+  // HELP-1 — Ask Steward, the question log and support tickets.
+  requireSuperAdmin, resend,
 });
 require("./routes/give").mount({
   ASSET_ID_RE, CARD_CHECK_BUDGET, DONOR_ACCOUNTS_ENABLED, DONOR_MAIL_ADDR, GIVE_MONTHLY_DEFAULT,

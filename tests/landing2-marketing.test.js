@@ -133,6 +133,7 @@ const ALL = Object.values(SRC_TEXT).join("\n");
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
+        if (v === "/help/feedback") continue;                        // HELP-1: "Did this help?" posts a slug and a yes or no
         if (v === "/billing/create-checkout") continue;              // LANDING-3: the API route /pricing posts a signed-in upgrade to
         if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
         linkish.push([f, v]);
@@ -227,11 +228,32 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     // TRUST-2 — the trust pages READ four public endpoints and send nothing:
     // the status summary, which What's new entries are hidden, and the DPA
     // (JSON and PDF). Named here one by one; any other request is still red.
-    const READS = ["/status/summary", "/changelog/hidden", "/legal/dpa`", "/legal/dpa.pdf"];
+    const READS = ["/status/summary", "/changelog/hidden", "/legal/dpa`", "/legal/dpa.pdf",
+      // HELP-1 — "Did this help?" sends a slug and a yes or no, nothing else.
+      "/help/feedback"];
     const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
     const others = fetches.filter(f => !READS.some(r => f.includes(r)));
     ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 1, others);
     ok("the thank-you state is the reference's sentence", why.includes("Thank you. Jonathan will email you within one business day to pick a time."));
+  }
+
+  console.log("\n— HELP-1 · every screen has a help article —");
+  {
+    // The routed screens, read from App.jsx's own `tab==="x"` branches, plus
+    // every rail item. A screen added without an article turns this red.
+    const app = fs.readFileSync(path.join(ROOT, "client", "src", "App.jsx"), "utf8");
+    const routed = [...new Set([...app.matchAll(/tab==="([a-z_-]+)"&&/g)].map(m => m[1]))];
+    const { ALL_NAV_IDS } = await import("../client/src/lib/navGroups.js");
+    const { HELP_ARTICLES } = await import("../shared/helpArticles.js");
+    const covered = new Set(HELP_ARTICLES.flatMap(a => a.screens || []));
+    const missing = [...new Set([...routed, ...ALL_NAV_IDS])].filter(id => !covered.has(id));
+    ok("every app screen maps to a help article", missing.length === 0, missing);
+    ok("every help article has a title, a summary and something to read",
+      HELP_ARTICLES.every(a => a.slug && a.title && a.summary && (a.sections || []).length), HELP_ARTICLES.filter(a => !(a.sections || []).length).map(a => a.slug));
+    const dash = HELP_ARTICLES.filter(a => /[\u2013\u2014]/.test(JSON.stringify(a))).map(a => a.slug);
+    ok("no help article has an em or en dash", dash.length === 0, dash);
+    for (const t of ["import-donors", "connect-stripe", "connect-inbox-calendar", "thank-a-gift", "year-end-receipts", "two-factor", "export-or-erase-a-donor"])
+      ok(`the help centre has "${t}"`, HELP_ARTICLES.some(a => a.slug === t), t);
   }
 
   console.log("\n— 11 · LANDING-3 —");
