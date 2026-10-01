@@ -1099,7 +1099,7 @@ function EmailToolPanel({ onNavigate }) {
             in step, and the campaigns you have already sent will appear here.
           </div>
           {onNavigate && (
-            <button onClick={() => onNavigate("settings", { tab: "connections" })}
+            <button onClick={() => onNavigate("settings", { section: "connections" })}
               style={{ marginTop: 14, background: T.green, color: "#fff", border: "none", borderRadius: 8,
                        padding: "9px 16px", fontWeight: 600, cursor: "pointer" }}>
               Open Connections

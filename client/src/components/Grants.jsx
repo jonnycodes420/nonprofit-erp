@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { apiFetch } from "../api";
+import { errorMessage } from "../lib/domainError";
 import { useAuth } from "../main";
 import { DeadlinesView, GrantDeadlinesPanel } from "./GrantDeadlines";
 import { GrantDocuments } from "./GrantDocuments";
@@ -490,8 +491,13 @@ export function Grants({data,setData,isReadOnly=false,initialGrantId,initialSect
     setData(prev=>({...prev,grants:prev.grants.map(g=>g.id===updated.id?updated:g)}));
     setSelected(updated);
   };
+  // FIX-12 (HELP-1 list): delete removed a grant at once. The row is really
+  // deleted (not a soft delete), so it asks first and says so.
   const onDelete=async(id)=>{
-    await apiFetch(`/grants/${id}`,{method:"DELETE"});
+    const g=(data.grants||[]).find(x=>x.id===id);
+    if(!window.confirm(`Delete the ${g&&g.funder?g.funder+" ":""}grant? It is removed for good, with its deadlines and notes. This can't be undone.`))return;
+    try{ await apiFetch(`/grants/${id}`,{method:"DELETE"}); }
+    catch(e){ alert(errorMessage(e,"That grant could not be deleted.")); return; }
     setData(prev=>({...prev,grants:prev.grants.filter(g=>g.id!==id)}));
     setSelected(null);
   };

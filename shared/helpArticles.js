@@ -81,7 +81,7 @@ export const HELP_ARTICLES = [
       ]},
       { h: `Act on several people at once`, steps: [
         `Click "Select" and tick the rows you want.`,
-        `Choose "Plan a follow-up". On the Team plan you also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete".`,
+        `Choose "Plan a follow-up". On the Team plan you also get "+ Add to pipeline" and "Move to stage ▾", and admins can use "Assign owner ▾" and "Delete". "Delete" takes a donor off your lists and totals; Steward keeps the record, so support can bring it back. To remove a person for good, use Erase on their profile.`,
       ]},
       { h: `Good to know`, p: [
         `"Export CSV" exports what the search and the stage, owner and designation menus match. The advanced filters only narrow the page you are looking at, and a badge says so. To bring people in from a file, see Import donors.`,
@@ -261,7 +261,7 @@ export const HELP_ARTICLES = [
         `Lists the open deadlines for the next twelve months. When one is near, a follow-up opens for the grant's officer. Admins can change how early that happens under "How early Steward reminds you" and "Save lead times".`,
       ]},
       { h: `Good to know`, p: [
-        `The board and the list use different stage names. Awarded and LOI can only be set by dragging a card on the board. "Delete" on a grant is for admins and removes it at once, with no confirm.`,
+        `The board and the list use different stage names. Awarded and LOI can only be set by dragging a card on the board. "Delete" on a grant is for admins. It asks you to confirm, then removes the grant for good.`,
         `There is no separate grant report tracker: you set a Report due deadline, and "✦ Report Outline" can draft an outline. To bring grants in from a file, use Donors, "↑ Import & tools ▾", "Import grants".`,
       ]},
     ],
@@ -307,7 +307,7 @@ export const HELP_ARTICLES = [
         `Finance is on the Team plan and is not shown on Core. It starts hidden for volunteer coordinators, who can show it again by customizing their sidebar.`,
       ]},
       { h: `What you see`, p: [
-        `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
+        `The screen is titled "Your money." with a "Year basis" switch for Fiscal Year or Calendar Year. Overview shows money in by month, what needs you, cash on hand, revenue, expenses and surplus, and your fund balances. Funds holds Funds and Budgets. Deposits and payouts holds Payouts and the Deposit sheet, whose "Open the deposit sheet" button opens the slip right there. Grants money holds Restricted. Exports holds Month close, Year-end statements and the Audit log.`,
       ]},
       { h: `Log a transaction`, steps: [
         `Open Transactions and click "+ Add transaction".`,
@@ -322,7 +322,7 @@ export const HELP_ARTICLES = [
         `Click "Save".`,
       ]},
       { h: `Good to know`, p: [
-        `Budgets are edited by clicking a cell. In Month close, the download stays greyed out until the month's deposits balance. Year-end statements is a pointer: the run itself is in Settings, under Tax Receipts. To record a bank deposit, use Fundraising, Money in, Deposits, "Add a deposit".`,
+        `Budgets are edited by clicking a cell. In Month close, the download stays greyed out until the month's deposits balance. Year-end statements is a pointer: the run itself is in Settings, under Tax Receipts. To record a bank deposit, use "Open the deposit sheet" here, or Fundraising, Money in, Deposits, "Add a deposit". Both open the same sheet.`,
       ]},
     ],
   },
@@ -704,10 +704,10 @@ export const HELP_ARTICLES = [
         `On the "Payments" card, click "Set up Stripe →".`,
         `Stripe's own pages open. Fill in your organisation's details and bank account and finish every step.`,
         `Stripe sends you back to Steward's Home screen.`,
-        `Go back to Settings, Integrations. The "Payments" card shows "Stripe Connected" with your account number and the date.`,
+        `Go back to Settings, Integrations. Once Stripe says your account can take donations, the "Payments" card shows "Stripe Connected" with your account number and the date.`,
       ]},
-      { h: `Finish in one sitting`, p: [
-        `The card shows "Stripe Connected" as soon as you start, even if you leave Stripe's pages before the end, and the setup button is then gone. So set aside the time to finish Stripe's steps once you begin.`,
+      { h: `If you stop part way`, p: [
+        `Until Stripe has everything it needs, the card says "Stripe setup isn't finished" and offers "Finish setting up Stripe →", which picks up where you left off on the same account. The "Set this up" button on the Connections Stripe card opens Settings, Integrations, where this card is.`,
       ]},
       { h: `Check it is working`, steps: [
         `Open Settings, then Connections.`,

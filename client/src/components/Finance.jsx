@@ -1,5 +1,6 @@
 import { useState, useEffect, Fragment } from "react";
 import { RestrictedView } from "./RestrictedView";
+import { DepositSheetModal } from "./DepositSheet";
 import { T, activeMark, fmt, fmtFull, Card, EmptyState, SectionLabel, PageTitle, SectionTabs, interactive, Modal } from "./shared";
 import { apiFetch, API, getToken } from "../api";
 import { OPEN_GRANT_STATUSES, findOpenGrantMatch, findDonorMatch } from "../lib/financeMatch";
@@ -1896,6 +1897,7 @@ function FinFundCards() {
 // itself lives in Donors (it writes gifts, and a gift is written in one
 // place); this is the door, beside the payouts it reconciles against.
 function DepositSheetCard({ onNavigate, isReadOnly }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
   return (
     <Card>
       <SectionLabel>The deposit sheet</SectionLabel>
@@ -1905,16 +1907,19 @@ function DepositSheetCard({ onNavigate, isReadOnly }) {
         slip that does not add up is refused rather than half-entered.
       </div>
       <div style={{ fontSize:12.5, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>
-        It lives with the donors because it writes gifts, and a gift is written in one place.
+        It writes gifts, through the same one path as every other gift.
         Anything banked and not yet on a slip shows up as <strong>Deposits not yet matched</strong> on Overview.
       </div>
+      {/* FIX-12 (HELP-1 list): this opened the donor import. It opens the
+          deposit sheet itself now, the same one Fundraising opens. */}
       {!isReadOnly && (
-        <button onClick={() => onNavigate && onNavigate("donors", { openImport: true })}
+        <button onClick={() => setSheetOpen(true)}
           data-testid="fin-open-deposit-sheet"
           style={{ ...btn(), marginTop:14 }}>
           Open the deposit sheet →
         </button>
       )}
+      {sheetOpen && <DepositSheetModal onClose={() => setSheetOpen(false)} />}
     </Card>
   );
 }

@@ -2038,8 +2038,13 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
   const frontendUrl = publicAppUrl();
   console.log("[stripe/connect] frontendUrl resolved to:", frontendUrl);
 
+  // FIX-12 (HELP-1 list): an org that STARTED onboarding already has an
+  // account. "Finish setting up" continues that one; a second press must not
+  // make a second Express account.
+  const [existing] = await query("SELECT stripe_account_id FROM orgs WHERE id=$1", [req.user.orgId]);
   let account;
-  try {
+  if (existing && existing.stripe_account_id) account = { id: existing.stripe_account_id };
+  else try {
     account = await stripe.accounts.create({
       type: "express",
       country: "US",
@@ -2065,7 +2070,7 @@ app.post("/stripe/connect", requireAuth, requireAdmin, wrap(async (req, res) => 
     console.log("[stripe/connect] accountLink created:", accountLink.url);
 
     await run(
-      `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=NOW() WHERE id=$2`,
+      `UPDATE orgs SET stripe_account_id=$1, stripe_connected=TRUE, stripe_connected_at=COALESCE(stripe_connected_at, NOW()) WHERE id=$2`,
       [account.id, req.user.orgId]
     );
 
@@ -2109,12 +2114,25 @@ app.post("/stripe/donation-page", requireAuth, wrap(async (req, res) => {
   res.json({ url: link.url });
 }));
 
+// FIX-12 (HELP-1 list): "Stripe Connected" showed the moment onboarding
+// STARTED, because stripe_connected is set when the onboarding link is made
+// (BUILD-58 W-1 found the same flag lying to the network gate). Connected is
+// now Stripe's own answer, charges_enabled. If Stripe cannot be asked, the
+// answer says so rather than guessing.
 app.get("/stripe/status", requireAuth, wrap(async (req, res) => {
   const orgRow = await query("SELECT stripe_account_id, stripe_connected, stripe_connected_at FROM orgs WHERE id=$1", [req.user.orgId]);
   const org = orgRow[0];
+  const accountId = org?.stripe_account_id || null;
+  let chargesEnabled = null;
+  if (accountId && stripe) {
+    try { chargesEnabled = (await stripe.accounts.retrieve(accountId)).charges_enabled === true; }
+    catch (e) { console.warn("[stripe/status] could not ask Stripe:", e.message); }
+  }
   res.json({
-    connected: !!org?.stripe_connected,
-    accountId: org?.stripe_account_id || null,
+    connected: !!org?.stripe_connected && chargesEnabled === true,
+    onboardingStarted: !!accountId,
+    checked: chargesEnabled !== null,
+    accountId,
     connectedAt: org?.stripe_connected_at || null,
   });
 }));

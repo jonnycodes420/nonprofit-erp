@@ -2860,6 +2860,19 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </div>
             <div style={{fontSize:12,color:T.ink3}}>Connected {stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():""}</div>
           </div>
+        ):stripe?.onboardingStarted?(
+          <div data-testid="stripe-unfinished" style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>{stripe.checked?"Stripe setup isn't finished":"Steward couldn't check with Stripe just now"}</div>
+              <div style={{fontSize:13,color:T.ink2}}>{stripe.checked
+                ?"Your Stripe account exists, but Stripe can't take donations on it until onboarding is complete. Finish it on Stripe's site; it picks up where you left off."
+                :"Your Stripe account was set up on "+(stripe.connectedAt?new Date(stripe.connectedAt).toLocaleDateString():"an earlier day")+". Reload this page to check again whether it can take donations."}</div>
+            </div>
+            {isAdmin&&stripe.checked&&<button onClick={connectStripe} disabled={stripeLoading}
+              style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
+              {stripeLoading?"Opening…":"Finish setting up Stripe →"}
+            </button>}
+          </div>
         ):(
           <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:200}}>
