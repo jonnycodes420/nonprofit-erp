@@ -139,14 +139,16 @@ function AppShell() {
   // Customize dialog read. A failure to load is silent and means the default
   // rail — nobody's navigation is blocked by a preference that would not fetch.
   const [navSaved,setNavSaved]=useState(null);
-  const [navLoaded,setNavLoaded]=useState(false);
   const [navCustomizeOpen,setNavCustomizeOpen]=useState(false);
   const [navError,setNavError]=useState("");
   useEffect(()=>{
     if(!getToken())return;
+    // null means "never customized", which is also what a failure means: the
+    // default rail, never a blank one. The rail is not held back until this
+    // lands — a nav that is not there yet is worse than one that settles.
     apiFetch("/me/nav-layout")
-      .then(r=>{setNavSaved(Array.isArray(r?.layout)?r.layout:null);setNavLoaded(true);})
-      .catch(()=>setNavLoaded(true));
+      .then(r=>setNavSaved(Array.isArray(r?.layout)?r.layout:null))
+      .catch(()=>{});
   },[]);
 
   const [billing,setBilling]=useState(null);
