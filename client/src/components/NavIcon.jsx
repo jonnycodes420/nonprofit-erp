@@ -37,36 +37,31 @@ const ICONS = {
   portal: PanelsTopLeft,
 };
 
-// 24px and stroke 2 everywhere. `aria-hidden` because the button beside it
+// 20px and stroke 1.75 everywhere. `aria-hidden` because the button beside it
 // already carries the name: a screen reader that reads both says "Donors
 // Donors".
 //
-// FIX-11 Part 6 — IT WAS 20px AND STROKE 1.75, AND THAT IS WHY THEY LOOKED
-// GRAINY. Measured on a retina screenshot rather than guessed at: nothing
-// scales them, nothing dims them, no ancestor carries a transform, a filter or
-// a fractional width, and all thirteen sit exactly on the device-pixel grid.
-// The softness is the STROKE, and the arithmetic is the whole story.
+// FIX-11 Part 6 made these 24px at stroke 2 and Jonathan reverted it the same
+// night: 24px is too big on this rail, and that is the end of it. The
+// measurement it came from is worth keeping, because the next person to look
+// at "the icons seem soft" should not have to redo it.
 //
-// An SVG stroke is centred on its path, so at device-pixel ratio 2 it is crisp
-// only when it covers an EVEN number of device pixels. The coverage of one
-// vertical stroke, read straight across:
+// Nothing scales them, nothing dims them, no ancestor carries a transform, a
+// filter or a fractional width, and all thirteen sit exactly on the
+// device-pixel grid. The softness is the STROKE: an SVG stroke is centred on
+// its path, so at device-pixel ratio 2 it is crisp only when it covers an EVEN
+// number of device pixels.
 //
 //   20px / 1.75  = 2.917 device px   116 255 255 116   two half-lit pixels
-//   20px / 1.8   = 3.000 device px   127 255 255 127   two half-lit pixels
 //   20px / 1.5   = 2.500 device px    63 255 255  63   two half-lit pixels
 //   20px / 1.2   = 2.000 device px       255 255       clean
 //   24px / 2     = 4.000 device px   255 255 255 255   clean
 //
-// So "a whole number of device pixels" is NOT the rule — 1.8 gives exactly 3.0
-// and is still soft, because 3 centred on a boundary is 1.5 either side. It
-// has to be EVEN.
-//
-// At 20px the only clean strokes are 1.2 (31% less ink, dimmer on a dark rail)
-// and 2.4 (38% more, noticeably bolder). Neither keeps the weight. 24px with
-// stroke 2 is clean AND keeps the proportion: 2/24 is 0.083 where 1.75/20 was
-// 0.088. The icon is 20% bigger, which is the visible part of this change.
-export const NAV_ICON_SIZE = 24;
-export const NAV_ICON_STROKE = 2;
+// So at 20px the only clean strokes are 1.2 (31% less ink, dimmer on a dark
+// rail) and 2.4 (38% more, noticeably bolder). The size is what Jonathan wants
+// kept, so a tiny amount of antialiasing is the accepted cost, deliberately.
+export const NAV_ICON_SIZE = 20;
+export const NAV_ICON_STROKE = 1.75;
 
 export function NavIcon({ id, size = NAV_ICON_SIZE, style }) {
   const Glyph = ICONS[id];
