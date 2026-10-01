@@ -193,6 +193,62 @@ Decided 2026-07-16 (BUILD-04 Strike 4): use a free external ping service rather 
 - server.js
 - db.js
 
+## The sidebar (NAV-1, 2026-09-30)
+
+**The rail is GROUPS, and nothing is behind a fold.** Thirteen items in one flat list plus a
+"More" disclosure became five short labelled groups and a pinned pair:
+
+- (no label) **Home · Tasks**
+- RELATIONSHIPS **Donors · Journeys · Communications** (· Donor Portal, for a portal-tier org)
+- RAISE **Fundraising · Events · Grants**
+- VOLUNTEERS **Volunteers** — its own product, so its own group
+- MONEY **Finance · Reports**
+- separated, at the bottom: **Agent · Settings**, then Customize, then Collapse
+
+`client/src/lib/navGroups.js` is the ONE place the shape lives — JSX-free and network-free, the
+same convention as `tabRegistry.js` and `homeLayout.js`. The desktop rail, the collapsed rail and
+the phone's More drawer all read it, so a group added there reaches all three. Before NAV-1 those
+were three separately-maintained lists (`PRIMARY_NAV`, `MORE_NAV`, `MORE_TABS`), which is how the
+phone twice came to teach a different product from the desktop (FIX-9 Part E, BUILD-87 F.3.5).
+`tabRegistry.js` keeps what a tab IS (label, icon name, who may see it); `navGroups.js` says where
+it sits. `PRIMARY_NAV` / `MORE_NAV` / `NAV_MORE_KEY` are retired with the fold they described.
+
+**Literal icons, one per item, no two alike** (`client/src/components/NavIcon.jsx`, lucide-react,
+ISC). 20px, stroke 1.75, `currentColor`, everywhere — the rail, the collapsed rail, the phone's
+drawer and the phone's bottom bar. The BUILD-20 geometric set (`◈ ♦ ◫ ◑ …`) is still right for a
+chip, a table cell or an empty state and was wrong here: a diamond for Home taught nothing, and
+two PAIRS shared a glyph (Events/Volunteers both `◎`, Reports/Dashboards both `▤`), so the one
+place an icon has a job could not do it. The active item keeps the shared treatment: cream's
+shade, ink, 700, a 3px emerald rule on the leading edge.
+
+**Collapsed (GTM-1b 5)**: icons only, the name as `title` + `aria-label`, and a group label
+becomes a thin divider — 64px of rail truncates "RELATIONSHIPS" to nonsense, so it draws nothing
+rather than something unreadable. Customize is hidden while collapsed.
+
+**Customize, per PERSON** (`client/src/components/CustomizeNav.jsx` + `users.nav_layout` +
+`GET/PUT/DELETE /me/nav-layout`). Same shape, same three verbs and the same reset-to-NULL rule as
+the Home layout (BUILD-34), and per user rather than per org for the same reason: two people share
+an organisation and not a job. An item can be hidden or moved WITHIN its group — never out of it,
+because the groups are what made the rail readable. Three ways to move a row (up/down buttons,
+drag at desktop, both on a phone). **Home and Settings cannot be hidden** — one is where every
+link lands, the other is where you undo a mistake — and `normalizeNavLayout` on the server refuses
+it too, which is the half a stale client cannot get past. The merge rules are in `navLayout()`:
+an unknown id is dropped, an item the saved list does not name appears at the end of its group and
+visible (so a nav item added next month reaches people who customized last month), and a ROLE
+default applies only to somebody who has never saved a layout. **A volunteer coordinator starts
+with Finance hidden** (`ROLE_DEFAULT_HIDDEN`) — that role sees no giving anywhere else in the
+product (VOL-1), so a ledger on their rail was a door to nothing. Nothing else is hidden by
+default for anybody. The dialog lists only what this org's PLAN has; a save is written against the
+full layout, so a preference about a plan-hidden item is kept rather than dropped
+(`reorderWithin`).
+
+**A volunteer coordinator could not sign in at all** until NAV-1. Four of the shell's seven
+opening reads are refused for that role by the VOL-1 allowlist, correctly and by design, and one
+rejection threw in `loadData`, so the whole app rendered "Failed to connect" with the
+coordinator's own refusal sentence under it. `coordinator_scope` is the same KIND of answer as
+`portal_tier` — the server saying "not for you", not the server failing — and it now gets the same
+empty-fallback treatment.
+
 ## Active tabs (App.jsx TABS array — current, post-pivot)
 dashboard ("Home") → donors → **pipeline** → **fundraising** → grants → communications → **tasks** → **workflows** → reports → finance → settings
 *(`portal` is defined in `TABS` but HIDDEN from the CRM's navigation — see the Donor Portal note below.)*

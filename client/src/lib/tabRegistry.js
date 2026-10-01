@@ -13,9 +13,14 @@ const TABS=[
   // BUILD-86 — Home is hers at 7:40 in the morning; Dashboard is the board
   // meeting. The `dashboard` id KEEPS its route and its "Home" label so every
   // deep link, navigateTo("dashboard") call and the morning email's links
-  // work unchanged; the board is a new id beside it. Renaming the old one
-  // would have been ~40 call sites for no user-visible gain.
-  {id:"board",label:"Dashboards",icon:"▤"},
+  // work unchanged.
+  //
+  // NAV-1 §2 — THE `board` TAB IS GONE AND THE DASHBOARDS ARE NOT. They fold
+  // into Reports, as the first group of its one rail, because "Reports" and
+  // "Dashboards" are the same question asked twice and the two shared the ▤
+  // glyph to prove it. Nothing is deleted: Dashboards.jsx draws all four as
+  // before, and navigateTo("board") lands on them (App.jsx), so every older
+  // link, card and email still opens the dashboard it named.
   {id:"donors",label:"Donors",icon:"♦"},
   {id:"fundraising",label:"Fundraising",icon:"↗"},
   // FIX-4 2 — JOURNEYS IS ITS OWN ROOM, under Fundraising. It lived in
@@ -59,7 +64,6 @@ const BOTTOM_TABS=[
   {id:"agent",label:"Agent",icon:"✦"},
 ];
 const MORE_TABS=[
-  {id:"board",label:"Dashboards",icon:"▤"},
   {id:"grants",label:"Grants",icon:"◉"},
   {id:"journeys",label:"Journeys",icon:"⇢"},
   {id:"communications",label:"Communications",icon:"◑"},
@@ -75,25 +79,13 @@ const MORE_TABS=[
   // {id:"board",label:"Board",icon:"◆",earlyAccess:true},
 ];
 
-// ── BUILD-87 F.3.5 — SIX THINGS, THEN THE REST ─────────────────────────────
-// The sidebar had eleven items in three labeled groups (BUILD-20 Part 3), and
-// every one of them was equally loud. Five stay on the rail — Home, Dashboards,
-// Donors, Fundraising, Reports — with Settings pinned at the bottom where it
-// already was; the other six fold into ONE collapsible "More", shut by default
-// and remembered per browser. Nothing is hidden and nothing is deleted: the
-// group opens on click, and opens ITSELF whenever the surface you are on lives
-// inside it, so you can never be standing somewhere the nav does not show.
-//
-// MOBILE IS UNCHANGED. The bottom bar + "More" drawer is already this shape,
-// and four slots is a different constraint from a 220px rail.
-// FIX-1 §12 (Jonathan, 27 Sep) — the rail is the seven questions; Dashboards
-// and the rest live under More.
-// EVENTS-1 — Events joins the rail, next to Journeys, because both are things
-// an organisation lives inside for weeks at a time and neither belongs behind
-// a More menu during those weeks.
-const PRIMARY_NAV=["dashboard","donors","fundraising","journeys","events","volunteers","agent","reports","finance"];
-const MORE_NAV=["board","grants","communications","tasks","portal"];
-const NAV_MORE_KEY="steward_nav_more";
+// ── NAV-1 — THE SIDEBAR'S SHAPE MOVED OUT OF THIS FILE ────────────────────
+// PRIMARY_NAV, MORE_NAV and NAV_MORE_KEY described a flat rail with a "More"
+// fold (BUILD-87 F.3.5, FIX-1 §12, EVENTS-1). The rail is GROUPS now and
+// nothing is behind a disclosure, so the shape lives in one place that the
+// desktop rail, the collapsed rail and the phone's More drawer all read:
+// client/src/lib/navGroups.js. This file keeps what a tab IS — its label, its
+// icon name, who may see it. navGroups.js says where it sits.
 // FIX-1 §B — the Pipeline left the sidebar and folded into Fundraising →
 // Major gifts (App.jsx's navigateTo sends every "pipeline" there). The gate
 // did not move: the Pipeline part inside Major gifts reads this same Set, so
@@ -133,4 +125,4 @@ const PORTAL_TIER_TABS=new Set(["donors","portal","settings"]);
 // keep working. `tabAllowed` below is where the two rules meet.
 const CRM_HIDDEN_TABS=new Set(["portal"]);
 
-export { TABS, BOTTOM_TABS, MORE_TABS, PRIMARY_NAV, MORE_NAV, NAV_MORE_KEY, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };
+export { TABS, BOTTOM_TABS, MORE_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS };

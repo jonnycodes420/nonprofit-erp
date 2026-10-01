@@ -155,6 +155,17 @@ number that cannot open does not ship.
   last, fetches the rows behind EVERY figure on all four dashboards (every page) and checks each foots in cents; a
   percentage through its numerator and denominator, a blank through its sentence. Proven by moving a figure one
   cent, one count and one point.
+- **The dashboards live INSIDE Reports (NAV-1, 2026-09-30).** "Dashboards" and "Reports" were two
+  nav items sharing one glyph and one question. The four dashboards are now the FIRST group of the
+  Reports rail (`RAIL_GROUPS[0]`, id `dashboards`, ids prefixed `dash:`), filled from the server's
+  own `GET /dashboards` list exactly as the saved group is filled from `/saved-reports`, so the
+  rail cannot drift from what exists. `Dashboards.jsx` draws no rail of its own when it is given a
+  `dashKey` — two left rails side by side is the scanning problem NAV-1 set out to fix — and is
+  unchanged otherwise. **Nothing is deleted and every way in still lands**: `navigateTo("board")`
+  is kept as a synonym that opens Reports on the board dashboard, `/dashboards` redirects to
+  `/dashboard?report=dash:board` (main.jsx, the one mechanism the weekly email's link already
+  used), and `tests/smoke-walk.test.js` opens the dashboards from inside Reports on every run, so
+  folding them in did not quietly stop walking them.
 - **The dashboards.** Each answers its question in a sentence at the top, whose numbers are figures too (Board:
   "We are $X ahead of this time last year.", its $X the two tiles' difference in cents). Board has the fiscal
   year month by month, this year in emerald against last year in brass, each point opening its gifts; retention

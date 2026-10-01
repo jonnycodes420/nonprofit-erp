@@ -3066,8 +3066,8 @@ app.get("/recurring/movement", requireAuth, wrap(async (req, res) => {
       WHERE org_id = ? AND status IN ('active','past_due','recovering')
         AND card_exp_year IS NOT NULL AND card_exp_month IS NOT NULL
         AND make_date(card_exp_year, card_exp_month, 1)
-            BETWEEN date_trunc('month', CURRENT_DATE)::date
-                AND (date_trunc('month', CURRENT_DATE) + interval '1 month')::date`, [orgId]);
+            BETWEEN date_trunc('month', (now() AT TIME ZONE 'UTC')::date)::date
+                AND (date_trunc('month', (now() AT TIME ZONE 'UTC')::date) + interval '1 month')::date`, [orgId]);
 
   res.json({
     mrr: round2(parseFloat(mrrRows[0]?.mrr) || 0),
@@ -3781,6 +3781,17 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
   // Stripe knows. Neither may stand in for the other.
   const facts = await sustainerFileFacts(orgId);
 
+  // NAV-1 (found by the battery, not by this build) — THE SCREEN AND THE EMAIL
+  // NOW READ THE SAME CLOCK. The sweep that sends the "your card expires soon"
+  // notice picks its candidates in UTC (`notifyExpiringCards`, server.js:
+  // today.getUTCFullYear()/getUTCMonth()); these two counts used Postgres's
+  // CURRENT_DATE, which is the DATABASE SESSION's timezone. Wherever that is
+  // not UTC — the scratch Postgres is America/New_York — the two disagree for
+  // the last hours of every month: Steward emails donors about cards the staff
+  // screen counts as zero. Prod's Postgres is UTC so nothing has gone wrong
+  // there, which is exactly why only a non-UTC database could find it.
+  // Whether the right basis is UTC or the ORG's own timezone (orgTime.js) is a
+  // real question and a separate build's; agreeing with the email is not.
   // (2026-09-11) MONEY THAT HAS NOT FAILED YET IS STILL AT RISK, and it is the
   // half a staff member can still do something cheap about. `atRisk` counts
   // cards that already broke; `expiring` counts cards that are going to, this
@@ -3792,8 +3803,8 @@ app.get("/recurring/health", requireAuth, wrap(async (req, res) => {
       WHERE org_id = ? AND status IN ('active','past_due','recovering')
         AND card_exp_year IS NOT NULL AND card_exp_month IS NOT NULL
         AND make_date(card_exp_year, card_exp_month, 1)
-            BETWEEN date_trunc('month', CURRENT_DATE)::date
-                AND (date_trunc('month', CURRENT_DATE) + interval '1 month')::date`, [orgId]);
+            BETWEEN date_trunc('month', (now() AT TIME ZONE 'UTC')::date)::date
+                AND (date_trunc('month', (now() AT TIME ZONE 'UTC')::date) + interval '1 month')::date`, [orgId]);
 
   res.json({
     activeCount: s.active_count || 0,

@@ -8,8 +8,9 @@ each rule was learned lives in `docs/HISTORY.md`.
 
 A retention and stewardship CRM for small nonprofits. It notices patterns in donor data and
 drafts or suggests the next move, and a human always reviews and sends. It started as an
-11-tab ERP. The rail is Home, Donors, Fundraising, Volunteers, Agent, Reports and Finance
-(FIX-1); Events and Board are hidden from the nav, not deleted.
+11-tab ERP. The rail is five labelled groups with Agent and Settings pinned below them, and
+each person can hide or reorder within a group (NAV-1); the shape is `client/src/lib/navGroups.js`.
+Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, never deleted.
 
 - Frontend: React 18 + Vite, deployed on Vercel. Backend: Node + Express (`server.js`,
   `db.js`, `routes/`, `shared/`), deployed on Railway. Database: PostgreSQL.

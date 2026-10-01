@@ -3,10 +3,11 @@ import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
 import { ReportTable, ReportRunView, BuilderView } from "./ReportBuilder";
 import { errorMessage } from "../lib/domainError";
-import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey } from "../lib/reportsRail";
+import { resolveReportId, railGroups, reportLabel, isTabReport, BUILD_ID, PDF_TWIN, filterRail, groupOfReport, collapseKey, isDashboard, dashKeyOf } from "../lib/reportsRail";
 import { displayDate } from "../../../shared/displayDate";
 import { periodChipLabel } from "../../../shared/fiscalPeriod";
 import { Figure, FigureContext } from "./Figure";
+import { Dashboards } from "./Dashboards";
 
 // ── Reports (BUILD-02 → FIX-2 B) ────────────────────────────────────────────
 // Fixed, parameterized, table-first, CSV-downloadable reports — each one an
@@ -209,10 +210,15 @@ function ReportsRail({ groups, active, activeLabel, onPick }) {
 // "This week" lands on Giving Summary with a custom from/to matching the
 // chip's exact Monday-based week, so the destination shows the SAME number
 // the chip claimed. Consumed on mount only (App remounts via navNonce).
-export function Reports({ onNavigate, initialReport, initialParams, initialSavedReport }) {
+export function Reports({ appData, onNavigate, initialReport, initialParams, initialSavedReport }) {
   const [start] = useState(() => resolveReportId(initialSavedReport || initialReport));
   const [active, setActive] = useState(start.id);
   const [list, setList] = useState(null);   // /saved-reports: { standard, saved }
+  // NAV-1 §2 — the server's own list of dashboards, so the rail's first group
+  // cannot drift from what exists. A failure is silent and the group simply
+  // does not appear: Reports is not broken by a dashboard list that would not
+  // load.
+  const [dashboards, setDashboards] = useState([]);
   const [yearMode, setYearModeState] = useState(() => initialParams?.yearMode || localStorage.getItem("steward_reports_yearmode") || "fiscal");
   const [preset, setPreset] = useState(() => (initialParams?.from && initialParams?.to) ? "custom" : (initialParams?.preset || null)); // null → default per yearMode
   const [customFrom, setCustomFrom] = useState(initialParams?.from || "");
@@ -242,6 +248,10 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const setYearMode = v => { localStorage.setItem("steward_reports_yearmode", v); setYearModeState(v); setYear(null); };
 
   const isTab = isTabReport(active);
+  // NAV-1 §2 — a dashboard is neither a tab report, a standard one nor a saved
+  // one; it is the Dashboards screen. Declared beside isTab so every branch
+  // below reads one word instead of a prefix test.
+  const onDashboard = isDashboard(active);
   const fsm = fiscalStart || 7;
   const CUR_FY = fyOf(fsm);
   const PRESETS = presetsFor(CUR_FY, fsm);
@@ -263,6 +273,7 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   const loadList = () => apiFetch("/saved-reports").then(setList).catch(() => setList({ standard: [], saved: [] }));
   useEffect(() => {
     loadList();
+    apiFetch("/dashboards").then(r => setDashboards(r.dashboards || [])).catch(() => {});
     apiFetch("/finance/funds").then(setFunds).catch(() => {});
     apiFetch("/campaigns").then(setCampaigns).catch(() => {});
     const fiscal = yearMode === "fiscal";
@@ -609,8 +620,8 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
   }
 
   const standard = list?.standard || [], saved = list?.saved || [];
-  const groups = railGroups(REPORT_DEFS, standard, saved);
-  const label = reportLabel(active, REPORT_DEFS, standard, saved);
+  const groups = railGroups(REPORT_DEFS, standard, saved, dashboards);
+  const label = reportLabel(active, REPORT_DEFS, standard, saved, dashboards);
   const stdMeta = [...standard, ...saved].find(r => r.id === active) || null;
 
   return <FigureContext.Provider value={{ openPerson }}><div className="fade-in">
@@ -631,7 +642,12 @@ export function Reports({ onNavigate, initialReport, initialParams, initialSaved
         {active === BUILD_ID && <BuilderView onOpen={openPerson} onCancel={() => pick("")}
           onSaved={id => { loadList().then(() => setActive(id)); }} />}
 
-        {!isTab && active !== BUILD_ID && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
+        {/* NAV-1 §2 — a dashboard, drawn by the component that always drew it.
+            It has no rail of its own in here: this rail IS its rail, which is
+            the whole point of the fold (FIX-2 B — Reports has ONE way in). */}
+        {onDashboard && <Dashboards data={appData} onNavigate={onNavigate} dashKey={dashKeyOf(active)} />}
+
+        {!isTab && !onDashboard && active !== BUILD_ID && <ReportRunView id={active} meta={stdMeta} onOpen={openPerson} />}
 
         {isTab && <Card style={{ padding: "18px 22px" }}>
           <div style={{ fontSize: 17, fontWeight: 800, color: T.ink, marginBottom: 12 }}>{label}</div>

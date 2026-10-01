@@ -7,7 +7,6 @@ import { T, activeMark, GlobalStyles, LockGlyph, ErrorBoundary, goToPricing, Pho
 // button, and modal render below, and the matching import above:
 // `VoiceMemoModal` from "./components/shared").
 import { Dashboard } from "./components/Dashboard";
-import { Dashboards } from "./components/Dashboards";
 import { Donors } from "./components/Donors";
 import { Grants } from "./components/Grants";
 import { Communications } from "./components/Communications";
@@ -27,7 +26,13 @@ import PlanPicker from "./components/PlanPicker";
 import { TopBar } from "./components/TopBar";
 import { errorMessage } from "./lib/domainError";
 import { PLAN_UNKNOWN } from "./lib/entitlement";
-import { TABS, BOTTOM_TABS, MORE_TABS, PRIMARY_NAV, MORE_NAV, NAV_MORE_KEY, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS } from "./lib/tabRegistry";
+import { TABS, BOTTOM_TABS, TEAM_GATED, CORE_HIDDEN_TABS, PORTAL_TIER_TABS, CRM_HIDDEN_TABS } from "./lib/tabRegistry";
+// NAV-1 — the rail is GROUPS now, and the groups live in one JSX-free module
+// beside the registry. PRIMARY_NAV / MORE_NAV / NAV_MORE_KEY are gone with the
+// "More" fold they described.
+import { navLayout, flattenNav, moveNavItem, reorderWithin, setNavVisible } from "./lib/navGroups";
+import { NavIcon } from "./components/NavIcon";
+import { CustomizeNav } from "./components/CustomizeNav";
 // The tier rule, as a module-level function rather than a value computed
 // halfway down the component: `navigateTo` is declared above it and needs it,
 // and a `const` read from a closure that could run first is a TDZ crash
@@ -128,11 +133,21 @@ function AppShell() {
   const [stripeToast,setStripeToast]=useState(false);
   const [subscribedToast,setSubscribedToast]=useState(false);
   const [moreOpen,setMoreOpen]=useState(false);
-  // BUILD-87 F.3.5 — the "More" group remembers whether it is open, per
-  // browser. It also opens ITSELF whenever the current tab lives inside it:
-  // the nav must always be able to show you where you are standing.
-  const [navMoreOpen,setNavMoreOpen]=useState(()=>{try{return localStorage.getItem(NAV_MORE_KEY)==="1";}catch{return false;}});
-  useEffect(()=>{if(MORE_NAV.includes(tab))setNavMoreOpen(true);},[tab]);
+  // NAV-1 §4 — the person's own rail. `navSaved` is what the server holds
+  // ([{id,visible}] or null for "never customized"); `navGroups` is that
+  // merged with the canonical groups, which is what both the sidebar and the
+  // Customize dialog read. A failure to load is silent and means the default
+  // rail — nobody's navigation is blocked by a preference that would not fetch.
+  const [navSaved,setNavSaved]=useState(null);
+  const [navLoaded,setNavLoaded]=useState(false);
+  const [navCustomizeOpen,setNavCustomizeOpen]=useState(false);
+  const [navError,setNavError]=useState("");
+  useEffect(()=>{
+    if(!getToken())return;
+    apiFetch("/me/nav-layout")
+      .then(r=>{setNavSaved(Array.isArray(r?.layout)?r.layout:null);setNavLoaded(true);})
+      .catch(()=>setNavLoaded(true));
+  },[]);
 
   const [billing,setBilling]=useState(null);
   const [bannerDismissed,setBannerDismissed]=useState(false);
@@ -247,6 +262,11 @@ function AppShell() {
     // FIX-1 §A — Workflows moved into Agent, and so did Settings → Steward's
     // activity (the thirty-day undo list). Every old way in lands there.
     if(t==="workflows"){t="agent";opts={...(opts||{}),agentView:"workflows"};}
+    // NAV-1 §2 — THE DASHBOARDS FOLDED INTO REPORTS, so every way in still
+    // lands on the dashboard it named: navigateTo("board") from an older card,
+    // a bookmark on /dashboards, a link in an email. The `board` id is kept as
+    // a synonym rather than chased through the product.
+    if(t==="board"){t="reports";opts={...(opts||{}),report:"dash:"+((opts&&opts.dashKey)||"board")};}
     if(t==="settings"&&opts?.section==="agent"){t="agent";opts={...opts,section:null,agentView:"guardrails"};}
     // BUILD-58 W-2 — a portal-tier org has no CRM surfaces; any deep link to
     // one lands on the portal hub instead of a locked/broken view.
@@ -368,9 +388,21 @@ function AppShell() {
       if(orgR.status==="rejected")throw orgR.reason;
       const org=orgR.value;
       const portalTier=org?.plan==="portal";
+      // NAV-1 (a defect the §4 walk found) — A VOLUNTEER COORDINATOR COULD NOT
+      // SIGN IN AT ALL. Four of these seven reads are refused for that role by
+      // the VOL-1 allowlist, correctly and by design — and one rejection threw
+      // here, so the whole shell rendered "Failed to connect" with the
+      // coordinator's own refusal sentence under it. The role has a rail, a hub
+      // and a roster, and no way to reach any of them.
+      //
+      // `coordinator_scope` is the same KIND of answer as `portal_tier`: the
+      // server saying "not for you", not the server failing. It gets the same
+      // treatment — an empty fallback — and the surfaces that need those reads
+      // are already off this role's rail.
       const val=(r,fallback)=>{
         if(r.status==="fulfilled")return r.value;
         if(portalTier||r.reason?.error==="portal_tier")return fallback;
+        if(r.reason?.error==="coordinator_scope")return fallback;
         throw r.reason;
       };
       const adapted=adaptData({
@@ -458,10 +490,59 @@ function AppShell() {
   const tabAllowed=id=>isPortalTier?PORTAL_TIER_TABS.has(id)
     :(isCoreTier&&CORE_HIDDEN_TABS.has(id))?false
     :!CRM_HIDDEN_TABS.has(id);
+  // ── NAV-1 — THE RAIL, GROUPED ─────────────────────────────────────────────
+  // One list of groups drives three surfaces: the sidebar at 1440, the
+  // collapsed rail, and the phone's More drawer. They used to be three
+  // separate lists in the registry (PRIMARY_NAV, MORE_NAV, MORE_TABS), which
+  // is how the phone came to teach a different product from the desktop twice
+  // (FIX-9 Part E, BUILD-87 F.3.5). Now a group added here reaches all three.
+  //
+  // A portal-tier org's ENTIRE product is the portal tab, so it keeps its own
+  // three-item rail and is never offered a Customize dialog about groups it
+  // does not have.
+  const navRole=auth?.user?.role||null;
+  // The canonical layout, every item in it, before the org's plan has a say.
+  // Every SAVE is written against this one, so a preference about an item this
+  // plan happens to hide is kept rather than quietly dropped.
+  const navFull=navLayout(navSaved,{role:navRole});
+  const navGroups=(isPortalTier
+    ?[{id:"start",label:null,bottom:false,items:[{id:"dashboard",visible:true},{id:"donors",visible:true},{id:"portal",visible:true}]},
+      {id:"bottom",label:null,bottom:true,items:[{id:"settings",visible:true}]}]
+    :navFull)
+    // Visibility is the PERSON's choice; tabAllowed is the org's plan and tier.
+    // Both have to say yes, and the plan has the last word.
+    .map(g=>({...g,items:g.items.filter(i=>tabAllowed(i.id))}));
+  const navVisible=navGroups.map(g=>({...g,items:g.items.filter(i=>i.visible)}));
+  const navLabelOf=id=>(TABS.find(t=>t.id===id)||{}).label||id;
+  const saveNav=next=>{
+    const flat=flattenNav(next);
+    setNavSaved(flat);
+    setNavError("");
+    apiFetch("/me/nav-layout",{method:"PUT",body:JSON.stringify({layout:flat})})
+      .catch(()=>setNavError("That didn't save. Your sidebar will go back to how it was when you reload."));
+  };
+  // The Customize dialog edits the MERGED layout and lists exactly what this
+  // org HAS: offering to show "Donor Portal" to a CRM org whose plan hides it
+  // is offering a tab that is not there. A hidden-by-plan item keeps whatever
+  // the saved layout says about it, untouched, so it comes back as it was if
+  // the plan changes.
+  const navEdit=navGroups;
+  const resetNav=()=>{
+    setNavSaved(null);
+    setNavError("");
+    apiFetch("/me/nav-layout",{method:"DELETE"})
+      .catch(()=>setNavError("That didn't reset. Your sidebar will go back to how it was when you reload."));
+  };
   const bottomTabs=isPortalTier
-    ?[BOTTOM_TABS.find(t=>t.id==="donors"),MORE_TABS.find(t=>t.id==="portal"),BOTTOM_TABS.find(t=>t.id==="settings")].filter(Boolean)
+    ?[BOTTOM_TABS.find(t=>t.id==="donors"),TABS.find(t=>t.id==="portal"),BOTTOM_TABS.find(t=>t.id==="settings")].filter(Boolean)
     :BOTTOM_TABS;
-  const moreTabs=MORE_TABS.filter(t=>tabAllowed(t.id));
+  // The phone's More drawer is every VISIBLE nav item that is not already one
+  // of the four bottom slots, in the rail's own groups and the rail's own order.
+  const bottomIds=new Set(bottomTabs.map(t=>t.id));
+  const moreGroups=navVisible
+    .map(g=>({...g,items:g.items.filter(i=>!bottomIds.has(i.id))}))
+    .filter(g=>g.items.length>0);
+  const moreTabs=moreGroups.flatMap(g=>g.items);
   const showTrialBanner=!bannerDismissed&&subStatus==="trialing"&&billing?.trialDaysLeft<=14;
   const showWarningBanner=accessState==="warning";
   const showReadOnlyBanner=isReadOnly;
@@ -511,6 +592,31 @@ function AppShell() {
     ...activeMark(active,"left")
   });
 
+  // NAV-1 — ONE nav button, used by the grouped rail and by the pinned pair at
+  // the bottom. Settings used to be a second hand-written copy of this button
+  // with its own hard-coded glyph, which is how it kept a 14px ⚙ while every
+  // other item moved to a 20px icon in GTM-1b.
+  const navById=Object.fromEntries(TABS.map(t=>[t.id,t]));
+  const navItem=(t)=>{
+    const active=tab===t.id;
+    const locked=TEAM_GATED.has(t.id)&&isCoreTier;
+    // GTM-1b 5 — collapsed, the item is its icon and its title attribute.
+    // `aria-label` carries the name so a screen reader still hears "Donors".
+    return <button key={t.id} className="side-nav-btn" data-nav-id={t.id} aria-current={active?"page":undefined}
+      aria-label={sidebarCollapsed?t.label:undefined} title={sidebarCollapsed?t.label:undefined}
+      onClick={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
+      {/* NAV-1 §3 — the literal icon, one size and one stroke width
+          everywhere, in the colour the button already decided. */}
+      <span style={{width:20,display:"flex",alignItems:"center",justifyContent:"center",color:active?T.ink:T.sage600,flexShrink:0}}><NavIcon id={t.id}/></span>
+      {!sidebarCollapsed&&t.label}
+      {!sidebarCollapsed&&locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
+      {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
+      {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
+        ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
+        : <span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>)}
+    </button>;
+  };
+
   // Home paints its content on T.bgDeep via Dashboard's "dash-bleed"
   // negative margins — with a centered max-width column that bleed stops at
   // the column edge, leaving lighter T.bg gutters (the background seam
@@ -528,7 +634,7 @@ function AppShell() {
       mission={welcome.mission} motif={welcome.motif} words={welcome.words||[]}
       line={welcome.line} nextStep={welcome.nextStep} logo={welcome.logo} funds={welcome.funds||[]}
       onDone={dismissWelcome}/>}
-    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:tab==="board"?T.bgDeep:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
+    <div className="app-root" style={{...BASE,background:tab==="dashboard"?T.ground:T.bg,color:T.ink,display:"flex",flexDirection:"column","--org-accent":orgAccent,"--org-accent-fg":orgAccentFg,
       /* FIX-6 item 6 — the sidebar's CURRENT width, published so a full-screen
          takeover can start where the content starts instead of at x=0. The
          donor profile is a fixed z-200 layer and the sidebar is z-120, so a
@@ -554,71 +660,42 @@ function AppShell() {
       style={{position:"fixed",left:0,top:52,bottom:0,width:sidebarCollapsed?SIDEBAR_W_COLLAPSED:SIDEBAR_W,background:T.ink,borderRight:"1px solid "+T.bgElevated,display:"flex",flexDirection:"column",zIndex:120,boxSizing:"border-box",transition:"width 0.16s ease"}}>
       <div id="app-sidebar-nav" style={{flex:1,overflowY:"auto",padding:"12px 10px 14px 0",display:"flex",flexDirection:"column",gap:2}}>
         {(()=>{
-          const byId=Object.fromEntries(TABS.map(t=>[t.id,t]));
-          const navItem=(t)=>{
-            const active=tab===t.id;
-            const locked=TEAM_GATED.has(t.id)&&isCoreTier;
-            // GTM-1b 5 — collapsed, the item is its icon and its title
-            // attribute. `aria-label` carries the name so a screen reader
-            // still hears "Donors" and not a glyph.
-            return <button key={t.id} className="side-nav-btn" aria-current={active?"page":undefined}
-              aria-label={sidebarCollapsed?t.label:undefined} title={sidebarCollapsed?t.label:undefined}
-              onClick={()=>navigateTo(t.id)} style={{...sideBtn(active),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
-              <span style={{fontSize:14,width:18,textAlign:"center",color:active?T.ink:T.sage600,flexShrink:0}}>{t.icon}</span>
-              {!sidebarCollapsed&&t.label}
-              {!sidebarCollapsed&&locked&&<span title="Team plan" style={{marginLeft:"auto",display:"flex",alignItems:"center",color:"rgba(240,237,230,0.55)"}}><LockGlyph size={11} color="rgba(240,237,230,0.55)"/></span>}
-              {!sidebarCollapsed&&t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"1px 6px",lineHeight:"14px"}}>Early Access</span>}
-              {t.id==="tasks"&&tasksDue>0&&(sidebarCollapsed
-                ? <span aria-label={`${tasksDue} due`} style={{position:"absolute",top:4,right:10,width:7,height:7,borderRadius:"50%",background:T.terracotta}}/>
-                : <span style={{...DUE_BADGE,marginLeft:locked?6:"auto"}}>{tasksDue}</span>)}
-            </button>;
-          };
-          // A portal-tier org's ENTIRE product is the portal tab — it is never
-          // folded away behind a disclosure. Everything else follows the split.
-          const primaryIds=(isPortalTier?["dashboard","donors","portal"]:PRIMARY_NAV).filter(tabAllowed);
-          const moreIds=MORE_NAV.filter(tabAllowed).filter(id=>!primaryIds.includes(id));
-          const moreTasksDue=moreIds.includes("tasks")?tasksDue:0;
-          return <>
-            {/* BUILD-86 — Dashboards sits directly under Home: it is the one
-                click the brief promises when somebody asks for a number. */}
-            {primaryIds.map(id=>byId[id]).filter(Boolean).map(navItem)}
-            {/* GTM-1b 5 — IN THE COLLAPSED RAIL THERE IS NO "MORE" GROUP.
-                The disclosure is a word with a chevron, and 64px of rail
-                truncated it to "MO…" — the first thing the browser walk
-                caught. A rail that is only icons cannot carry a heading, so
-                collapsing OPENS the group and shows its items as icons like
-                every other item. Nothing is hidden behind a label nobody can
-                read; `navMoreOpen` itself is untouched, so expanding again
-                returns the sidebar to exactly the state it was left in. */}
-            {moreIds.length>0&&(sidebarCollapsed
-              ? <div style={{marginTop:12,borderTop:"1px solid "+T.bgElevated,paddingTop:10}}>
-                  {moreIds.map(id=>byId[id]).filter(Boolean).map(navItem)}
-                </div>
-              : <div style={{marginTop:12}}>
-                <button onClick={()=>setNavMoreOpen(o=>{try{localStorage.setItem(NAV_MORE_KEY,o?"0":"1");}catch{/* private mode */}return !o;})}
-                  aria-expanded={navMoreOpen} aria-controls="side-nav-more"
-                  className="side-nav-btn" style={{...sideBtn(false),color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"6px 12px 6px 16px"}}>
-                  <span aria-hidden style={{fontSize:9,width:18,textAlign:"center",flexShrink:0,display:"inline-block",transform:navMoreOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▸</span>
-                  More
-                  {/* A count that vanishes when its tab folds away is worse
-                      than no count — it moves to the group that holds it. */}
-                  {!navMoreOpen&&moreTasksDue>0&&<span style={{...DUE_BADGE,marginLeft:"auto"}}>{moreTasksDue}</span>}
-                </button>
-                {navMoreOpen&&<div id="side-nav-more">{moreIds.map(id=>byId[id]).filter(Boolean).map(navItem)}</div>}
-              </div>
-            )}
-          </>;
+          // NAV-1 §1 — GROUPS, NOT A FOLD. Five short lists with a small
+          // uppercase label over each; nothing is behind a disclosure any more,
+          // so Tasks and Communications — both used daily — are on the rail
+          // where they always should have been. §5: collapsed to 64px a group
+          // label would truncate to "RELATION…", so each label becomes a thin
+          // divider and the items stay visible as icons.
+          return navVisible.filter(g=>!g.bottom).map(g=>{
+            const items=g.items.map(i=>navById[i.id]).filter(Boolean);
+            if(items.length===0)return null;
+            return <div key={g.id} data-nav-group={g.id}>
+              {g.label&&(sidebarCollapsed
+                ? <div aria-hidden="true" style={{height:1,background:T.bgElevated,margin:"9px 10px 9px 0"}}/>
+                : <div style={{color:T.sage600,fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",padding:"12px 12px 4px 16px"}}>{g.label}</div>)}
+              {items.map(navItem)}
+            </div>;
+          });
         })()}
       </div>
       {/* Pure nav below here — the user chip/sign-out moved to the top bar (BUILD-08) */}
       <div style={{borderTop:"1px solid "+T.bgElevated,padding:"10px 10px 12px 0",flexShrink:0}}>
-        <button className="side-nav-btn" aria-current={tab==="settings"?"page":undefined}
-          aria-label={sidebarCollapsed?"Settings":undefined} title={sidebarCollapsed?"Settings":undefined}
-          onClick={()=>navigateTo("settings")}
-          style={{...sideBtn(tab==="settings"),...(sidebarCollapsed?{justifyContent:"center",padding:"8px 0",borderRadius:0}:null)}}>
-          <span style={{fontSize:14,width:18,textAlign:"center",color:tab==="settings"?T.ink:T.sage600,flexShrink:0}}>⚙</span>
-          {!sidebarCollapsed&&"Settings"}
-        </button>
+        {/* NAV-1 §1 — AGENT AND SETTINGS, SEPARATED. Neither is a room where
+            the work happens: one is the thing that drafts, the other is where
+            you change how the product behaves. They sit under the rail's own
+            rule rather than at the end of MONEY. */}
+        <div data-nav-group="bottom">
+          {navVisible.filter(g=>g.bottom).flatMap(g=>g.items).map(i=>navById[i.id]).filter(Boolean).map(navItem)}
+        </div>
+        {/* NAV-1 §4 — the way in to the person's own rail. A small link, not a
+            nav item: it opens a dialog, it does not go anywhere. A portal-tier
+            org has a three-item product and no groups to arrange, so it is not
+            offered one. */}
+        {!isPortalTier&&!sidebarCollapsed&&<button data-testid="nav-customize" onClick={()=>setNavCustomizeOpen(true)}
+          style={{...sideBtn(false),fontSize:11.5,color:T.sage600,padding:"6px 12px 6px 16px"}}>
+          <span style={{width:20,flexShrink:0}}/>
+          Customize
+        </button>}
         {/* GTM-1b 5 — THE PANEL BUTTON. Last in the rail, below Settings,
             where every tool with a collapsible panel puts it. It says what it
             does and what the shortcut is, so the shortcut is discoverable
@@ -638,6 +715,14 @@ function AppShell() {
         </button>
       </div>
     </div>
+
+    {navCustomizeOpen&&<CustomizeNav groups={navEdit} labelOf={navLabelOf} error={navError}
+      onMove={(groupId,id,delta)=>{
+        const shown=moveNavItem(navEdit,groupId,id,delta).find(g=>g.id===groupId);
+        saveNav(reorderWithin(navFull,groupId,shown.items.map(i=>i.id)));
+      }}
+      onToggle={(id,visible)=>saveNav(setNavVisible(navFull,id,visible))}
+      onReset={resetNav} onClose={()=>setNavCustomizeOpen(false)}/>}
 
     {/* Main column — right of the sidebar (marginLeft) and below the fixed bar
         (marginTop) on desktop; both offsets reset to 0 ≤768px in GlobalStyles. */}
@@ -801,7 +886,7 @@ function AppShell() {
         legacy tabs) go fluid full-width with 32px side padding so 1920px+
         displays get working room instead of dead gutters. Mobile is
         untouched — GlobalStyles' 768px rules override this with !important. */}
-    <div className="app-content" style={{flex:1,padding:(tab==="dashboard"||tab==="board")?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:(tab==="dashboard"||tab==="board")?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
+    <div className="app-content" style={{flex:1,padding:tab==="dashboard"?"20px 24px 28px 24px":"20px 32px 28px 32px",maxWidth:tab==="dashboard"?1200:"none",width:"100%",margin:"0 auto",boxSizing:"border-box"}}>
       {/* Per-surface crash insurance (BUILD-21 Part 2): a render error in one tab
           shows a graceful fallback in the content area — the sidebar/top bar stay
           usable and switching tabs (resetKey=tab) recovers — instead of a black
@@ -820,11 +905,10 @@ function AppShell() {
           (0.6 — the first became "Gifts not yet thanked" with a definition and
           a start date, on People; the second measured the IMPORT DATE, not the
           donor, and is removed). */}
-      {tab==="board"&&<Dashboards data={data} onNavigate={navigateTo}/>}
       {tab==="donors"&&<Donors key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} onNavigate={navigateTo} initialView={donorsIntent?.view} initialLogDonorId={donorsIntent?.logDonorId} initialStageFilter={donorsIntent?.stageFilter} initialSelectDonorId={donorsIntent?.selectDonorId} initialOpenImport={donorsIntent?.openImport} initialOpenConversation={donorsIntent?.openConversation} onIntentConsumed={()=>setDonorsIntent(null)}/>}
       {tab==="grants"&&<Grants key={navNonce} data={data} setData={setData} isReadOnly={isReadOnly} initialGrantId={grantsIntent?.grantId} initialSection={grantsIntent?.section} onIntentConsumed={()=>setGrantsIntent(null)}/>}
       {tab==="communications"&&<Communications key={navNonce} data={data} isReadOnly={isReadOnly} initialNav={commsInitialNav} highlightDraftId={commsHighlightDraftId} onInitialNavConsumed={()=>{setCommsInitialNav(null);setCommsHighlightDraftId(null);}} onNavigate={navigateTo}/>}
-      {tab==="reports"&&<Reports key={navNonce} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
+      {tab==="reports"&&<Reports key={navNonce} appData={data} onNavigate={navigateTo} initialReport={reportsIntent?.report} initialParams={reportsIntent} initialSavedReport={reportsIntent?.savedReport}/>}
       {tab==="fundraising"&&<Fundraising key={navNonce} data={data} isReadOnly={isReadOnly} onNavigate={navigateTo} initialSection={fundraisingIntent?.section} initialScope={pipelineIntent?.scope} isCoreTier={isCoreTier}/>}
       {/* FIX-4 2 — the builder, in its own room. The SAME component Settings
           renders, with the page header every other screen has around it; the
@@ -882,17 +966,29 @@ function AppShell() {
     {moreOpen&&<div className="mobile-more-overlay" onClick={()=>setMoreOpen(false)}>
       <div className="mobile-more-drawer slide-up" onClick={e=>e.stopPropagation()}>
         <div className="mobile-more-handle"/>
-        {moreTabs.map(t=>{
-          const active=tab===t.id;
-          return(
-            <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
-              <span className="mob-icon">{t.icon}</span>
-              <span style={{flex:1}}>{t.label}</span>
-              {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
-              {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
-            </button>
-          );
-        })}
+        {/* NAV-1 §1/§6 — THE PHONE MENU IS THE RAIL'S GROUPS, IN THE RAIL'S
+            ORDER, and it reads from the same merged layout: an item somebody
+            hid on their laptop is hidden on their phone too. It used to be a
+            third hand-kept list (MORE_TABS), which is how the phone twice came
+            to teach a different product from the desktop. */}
+        {moreGroups.map(g=><div key={g.id} data-nav-group={g.id}
+          /* The pinned pair has no heading on the rail either; on the phone it
+             gets the rail's own separator so Settings does not read as the
+             last thing under MONEY. */
+          style={g.bottom?{borderTop:"1px solid "+T.bg3,marginTop:6,paddingTop:4}:undefined}>
+          {g.label&&<div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.11em",textTransform:"uppercase",color:T.ink3,padding:"10px 16px 4px"}}>{g.label}</div>}
+          {g.items.map(i=>navById[i.id]).filter(Boolean).map(t=>{
+            const active=tab===t.id;
+            return(
+              <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-more-row${active?" active":""}`}>
+                <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={18}/></span>
+                <span style={{flex:1}}>{t.label}</span>
+                {t.earlyAccess&&<span style={{fontSize:9,fontWeight:700,letterSpacing:"0.04em",background:T.bgElevated,color:"rgba(240,237,230,0.7)",border:"1px solid "+T.green650,borderRadius:99,padding:"2px 7px"}}>Early Access</span>}
+                {t.id==="tasks"&&tasksDue>0&&<span style={{background:T.terracotta,color:T.white,fontSize:10,fontWeight:800,borderRadius:99,padding:"1px 6px"}}>{tasksDue}</span>}
+              </button>
+            );
+          })}
+        </div>)}
         <div style={{borderTop:"1px solid "+T.bg3,margin:"4px 0"}}/>
         <button className="mobile-more-signout" onClick={()=>{logout();setMoreOpen(false);}}>
           <span className="mob-icon" style={{fontSize:18,width:28,textAlign:"center"}}>↩</span>
@@ -911,8 +1007,8 @@ function AppShell() {
     {/* Bottom nav bar — mobile only, always in DOM */}
     <div className="mobile-bottom-bar">
       {bottomTabs.map(t=>(
-        <button key={t.id} onClick={()=>{setTab(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
-          <span className="mob-icon">{t.icon}</span>
+        <button key={t.id} data-nav-id={t.id} onClick={()=>{navigateTo(t.id);setMoreOpen(false);}} className={`mobile-bottom-tab${tab===t.id?" active":""}`}>
+          <span className="mob-icon" style={{display:"inline-flex",alignItems:"center",justifyContent:"center"}}><NavIcon id={t.id} size={19}/></span>
           {t.label}
         </button>
       ))}
