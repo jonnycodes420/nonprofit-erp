@@ -115,6 +115,7 @@ CORE=(
   tenant-isolation
   tenant-matrix
   fix11-audit-trail
+  fix11-job-audit
   org-blindness
   session-privilege
   auth-revocation

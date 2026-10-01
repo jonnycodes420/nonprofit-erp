@@ -3976,14 +3976,58 @@ async function computeRecoveryRate(orgId) {
 
 // A tick that throws is a console line on a server nobody is reading. This
 // wraps one, records it, and never changes what the tick does.
+// FIX-11 Part 6 tail — EVERY JOB EITHER LEAVES A TRAIL OR IS NAMED AS ONE
+// THAT DOES NOT.
+//
+// Part 1 gave every ROUTE a trail it cannot forget, and its census named the
+// hole that left: a periodic sweep does not pass through Express. The sweeps
+// that did log called `writeAuditLog` by hand, which is the same arrangement
+// that left four hundred routes unlogged for a year.
+//
+// `recordTick` is the one seam every job passes through, so the rule lives
+// here. A job is declared in jobAudit.js as one that WRITES (donor data,
+// money, mail) or one that only READS. A job in neither list throws rather
+// than running: forgetting must not be a silent option, and a job nobody has
+// classified is a job nobody has thought about.
+//
+// A writing job returns `{ detail, orgs, summary }` and gets ONE audit row per
+// organisation it changed, because an audit row is scoped to an org. Returning
+// a plain string still works and means "I changed nothing worth recording" —
+// which is the honest answer for most runs of most sweeps.
 async function recordTick(name, fn) {
+  const JA = require("./jobAudit");
+  const kind = JA.jobKind(name);
+  if (!kind) {
+    const msg = `Background job "${name}" is not classified in jobAudit.js. `
+      + `Add it to JOB_WRITES (and return its orgs) or to JOB_READS_ONLY with the reason.`;
+    console.error("[tick] REFUSED:", msg);
+    throw new Error(msg);
+  }
   const id = "tick_" + uuid().slice(0, 10);
   await run(`INSERT INTO tick_log (id,name) VALUES (?,?)`, [id, name]).catch(() => {});
   try {
-    const detail = await fn();
+    const raw = await fn();
+    const r = JA.normalizeJobResult(raw);
     await run(`UPDATE tick_log SET finished_at=NOW(), ok=TRUE, detail=? WHERE id=?`,
-      [typeof detail === "string" ? detail.slice(0, 300) : null, id]).catch(() => {});
-    return detail;
+      [r.detail ? r.detail.slice(0, 300) : null, id]).catch(() => {});
+    // ONE ROW PER ORG THE JOB CHANGED. Written through the same insert the
+    // request middleware uses, so a job's row and a person's row are the same
+    // kind of row and the screen shows them together.
+    if (kind === "writes" && r.orgs.length) {
+      const M = require("./middleware/auditTrail");
+      const who = JA.jobActor(name);
+      for (const orgId of r.orgs.slice(0, 2000)) {
+        await M.insertAuditRow({
+          orgId, actorId: who.id, actorName: who.name, actorKind: "system",
+          action: "ran", entityType: "background job", entityId: name,
+          entityLabel: JA.JOB_WRITES[name] || name,
+          changes: r.counts || {}, before: null, after: null,
+          summary: r.summary || r.detail || null, recordCount: null,
+          method: null, path: `job:${name}`, status: null, ip: null,
+        }).catch(e => console.error(`[tick] ${name}: audit row for ${orgId}:`, e.message));
+      }
+    }
+    return raw;
   } catch (e) {
     await run(`UPDATE tick_log SET finished_at=NOW(), ok=FALSE, error=? WHERE id=?`,
       [String(e && e.message || e).slice(0, 400), id]).catch(() => {});

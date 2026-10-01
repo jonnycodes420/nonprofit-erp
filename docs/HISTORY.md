@@ -24,6 +24,65 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-11 Part 6 — the icons were grainy, and it was the stroke (2026-09-30)
+
+Jonathan saw the new sidebar icons as slightly grainy. Measured on a retina
+screenshot rather than guessed at: **nothing scales them, nothing dims them**,
+no ancestor carries a transform, a filter, an opacity or a fractional width,
+and all thirteen sat exactly on the device-pixel grid at 20x20.
+
+The softness was the STROKE, and the arithmetic is the whole story. An SVG
+stroke is centred on its path, so at device-pixel ratio 2 it is crisp only when
+it covers an EVEN number of device pixels. The coverage of one vertical stroke,
+read straight across:
+
+```
+20px / 1.75  = 2.917 device px   116 255 255 116   two half-lit pixels
+20px / 1.8   = 3.000 device px   127 255 255 127   two half-lit pixels
+20px / 1.5   = 2.500 device px    63 255 255  63   two half-lit pixels
+20px / 1.2   = 2.000 device px       255 255       clean
+24px / 2     = 4.000 device px   255 255 255 255   clean
+```
+
+So "a whole number of device pixels" is not the rule, which is where the first
+guess went: 1.8 gives exactly 3.0 and is still soft, because 3 centred on a
+boundary is 1.5 either side.
+
+At 20px the only clean strokes are 1.2 (31% less ink, dimmer on a dark rail)
+and 2.4 (38% more, noticeably bolder). Neither keeps the weight. **24px with
+stroke 2** is clean and keeps the proportion: 2/24 is 0.083 where 1.75/20 was
+0.088. The icon is 20% bigger, which is the visible part of this change and
+the part to reject if it is wrong. The phone's two sizes (18 and 19, neither
+even in device pixels) became the same one size.
+
+NAV-1's walk passes at the new size with fresh screenshots in `docs/nav1`.
+
+### The tail: the two holes Part 1's census named
+
+**The Agent is the actor, and a person approved it.** Part 1's middleware
+supported `req.audit.actor(...)` and no route set it, so an action a model
+drafted and a person merely approved was logged as that person's own work. The
+row was right about who authorised it and silent about the fact a model wrote
+it, which is the one thing oversight of a model exists to record. Declared by
+route pattern in `auditTrail.js` — one visible list, not a line added to each
+of twenty-nine agent routes and forgotten on the thirtieth — and the row now
+reads "Agent, approved by Dana Reyes", by name, because an email address reads
+as the software talking to itself. An instruction a person wrote, and a person
+undoing the agent, stay theirs.
+
+**Background jobs have the guarantee routes have.** A periodic sweep does not
+pass through Express, and the sweeps that logged called `writeAuditLog` by hand
+— the same arrangement that left four hundred and thirty-four routes unlogged
+for a year. `recordTick` is the one seam every job passes through, so the rule
+lives there: a job is declared in `jobAudit.js` as one that WRITES (donor data,
+money, mail) or one that only READS, and **a job in neither list throws rather
+than running**. Forgetting is not a silent option. A writing job returns its
+orgs and gets one audit row in each, through the same insert the request
+middleware uses, so a job's row and a person's row are the same kind of row.
+Eighteen jobs declared writing, eight read-only, each with a sentence saying
+what it writes or why it does not — checked, so the read-only list cannot
+become a place to park a job nobody wants to think about.
+
 ## FIX-11 Part 5 — the Resend inbound actually lands on the donor (2026-09-30)
 
 On 30 September Muse wired Resend inbound on log.stewardapp.dev: receiving on,
