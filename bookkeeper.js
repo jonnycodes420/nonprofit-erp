@@ -60,4 +60,62 @@ function bookkeeperRefusalMessage(refusals) {
        + `Nobody should reconcile against a file that disagrees with itself.`;
 }
 
-module.exports = { bookkeeperRefusals, bookkeeperRefusalMessage };
+
+
+// ── THE COLUMNS EACH TOOL WANTS, FOR THE GIFT-DETAIL FILE ─────────────────
+// FIN-1 wrote these and FIX-11 Part 3 moved them here from routes/finance.js,
+// unchanged, for one reason: the Monthly close screen offered QuickBooks and
+// Xero as choices and only routes/finance.js could see them, so the DOWNLOAD
+// (which lives in routes/crm.js) could not honour the choice. The three
+// buttons were `<span>`s and had never been clickable. Declared ONCE, read by
+// both routers and by the screen.
+//
+// A RESHAPE, not a second export. The same rows through the same route, with
+// only the headings and their order changed, which is why the totals cannot
+// diverge: nothing here adds anything up. A flavour Steward does not know is
+// refused by name rather than falling back to one that looks similar.
+//
+// The mappings are each vendor's documented import header. Marked
+// documented-not-walked, the same honesty the import presets carry: neither
+// has been run through a real import by us, and the day one is, this comment
+// changes.
+const BOOKKEEPER_FLAVOURS = {
+  steward: { label: "Steward", confidence: "walked",
+    note: "Steward's own columns, one row per gift." },
+  quickbooks: { label: "QuickBooks", confidence: "documented-not-walked",
+    note: "QuickBooks Online's Sales Receipt import columns. Each gift is one sales receipt.",
+    columns: [
+      ["SalesReceiptNo", r => r.receiptNumber || r.giftId],
+      ["Customer", r => r.donorName],
+      ["SalesReceiptDate", r => r.date],
+      ["Item(Product/Service)", r => r.fund || "Donations"],
+      ["ItemAmount", r => r.amount],
+      ["ItemDescription", r => [r.paymentMethod, r.reference].filter(Boolean).join(" ")],
+      ["PaymentMethod", r => r.paymentMethod],
+      ["Memo", r => r.giftId],
+    ] },
+  xero: { label: "Xero", confidence: "documented-not-walked",
+    note: "Xero's Sales Invoice import columns. Each gift is one paid invoice line.",
+    columns: [
+      ["*ContactName", r => r.donorName],
+      ["*InvoiceNumber", r => r.receiptNumber || r.giftId],
+      ["*InvoiceDate", r => r.date],
+      ["*DueDate", r => r.date],
+      ["*Quantity", () => 1],
+      ["*UnitAmount", r => r.amount],
+      ["Description", r => [r.fund, r.paymentMethod, r.reference].filter(Boolean).join(" · ")],
+      ["TrackingName1", r => (r.fund ? "Fund" : "")],
+      ["TrackingOption1", r => r.fund || ""],
+      ["Reference", r => r.giftId],
+    ] },
+};
+
+function giftFlavour(name) {
+  const key = String(name || "steward").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(BOOKKEEPER_FLAVOURS, key)
+    ? { key, ...BOOKKEEPER_FLAVOURS[key] } : null;
+}
+
+module.exports = {
+  bookkeeperRefusals, bookkeeperRefusalMessage, BOOKKEEPER_FLAVOURS, giftFlavour,
+};

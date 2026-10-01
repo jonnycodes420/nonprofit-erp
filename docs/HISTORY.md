@@ -24,6 +24,67 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-11 Part 3 — a bookkeeper export a bookkeeper can use (2026-09-30)
+
+Jonathan exported `bookkeeper-2026-08.csv` from the demo org on 30 September.
+The arithmetic was right — 243 gifts, $240,853.00, the fund totals footed — and
+a bookkeeper still could not use it.
+
+**The three format buttons were `<span>`s.** Steward / QuickBooks / Xero looked
+like buttons, had a tooltip each, and had never been clickable: the column sets
+lived in `routes/finance.js` and the download lives in `routes/crm.js`, so the
+choice had nowhere to go. The sets moved to `bookkeeper.js`, declared once, and
+the download honours `flavour`. A format Steward does not know is refused by
+name rather than quietly falling back to one that looks similar.
+
+**The totals rows were inside the CSV body.** A blank row, a TOTAL row, another
+blank, a "TOTALS BY FUND" heading, a line per fund and a second TOTAL — under
+the gift columns. It reads beautifully in a spreadsheet and it is the reason a
+QuickBooks import of the August file would have booked six phantom
+transactions, one of them for $240,853: an importer reads rows, not layout.
+They are on the payload the screen shows instead.
+
+**Two files now, from the same query.** The gift detail is one row per gift, for
+the record, and it gained the four columns a reconciliation cannot be done
+without: processing fee, net, which deposit the gift arrived in, and whether it
+was cash. The deposits file is one row per deposit LINE, which is the shape a
+bank statement has and the shape both vendors' bank-deposit imports take:
+date, deposit account, a line per fund, ONE negative fee line, and a net that
+equals what hit the bank. Non-cash gifts (stock, in kind) are their own file,
+never a section inside a file somebody imports as bank transactions.
+
+**A cheque number was never a column.** 0 of 51 cheques in the August file
+carried one, and the reason was not a missing export column: the deposit sheet
+wrote the number into the gift's NOTES, and the export reads `reference`, which
+is an external or Stripe id. `gifts.check_number` exists, and a one-shot
+backfill recovers every number already written into a note.
+
+**The seed was worse than the brief recorded.** Not one gift with no fund:
+every gift in the demo had `fund_id` NULL — all 3,942 of them — because the
+seed writes gifts in bulk and bypasses `recordGift`, which is the one place
+that assigns the unrestricted fund. So "TOTALS BY FUND" had exactly one line,
+called "(no fund)", and it footed, which is how it went unnoticed. No gift
+anywhere carried a processor fee either. Every seeded gift now has a fund, a
+method, a deposit, a fee if it was a card, and two cheques in three have a
+number — not all of them, because a seed where every cheque has a number hides
+the screen's own "a cheque with no number" flag.
+
+**What is missing is said before the file is written.** Four counts — no
+payment method, no fund, a cheque with no number, not matched to a deposit —
+each one opening its rows, each with the fix. The August file had four gifts
+worth $57,500 with no method and nothing said so: correct, and quietly
+incomplete, which is the worse of the two ways a file can be wrong.
+
+**The defect the footing check caught.** The QuickBooks deposits file's fee
+lines went out as `'-3.68`. `reportCsvCell` prefixes any TEXT cell beginning
+with `-` with an apostrophe, correctly, because `-2+3` is a formula — but its
+own comment always said numbers pass through, and it only recognised a number
+when the value was typed as one. QuickBooks reads `'-3.68` as text. The guard
+was narrowed (`CSV_PLAIN_NUMBER`), not worked around; emitting a JS number
+instead would have written `-8.3` into a money column. Found by adding the
+file's own Amount column up and getting NaN, which is the cheapest possible
+check and is now §1 and §2 of the suite.
+
 ## FIX-11 Part 1 — everything leaves a trail (2026-09-30)
 
 On 30 September Jonathan recorded a $100,000 gift by hand on the Creo demo

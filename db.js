@@ -5565,6 +5565,46 @@ async function initSchema() {
     console.error("[seating] CRITICAL: the table backfill failed — existing seating charts have no table rows yet:", e.message);
   }
 
+  // ── FIX-11 Part 3 — WHAT A BOOKKEEPER NEEDS AND THE FILE DID NOT CARRY ───
+  //
+  // THE CHEQUE NUMBER. Jonathan's August export had 0 of 51 cheques carrying
+  // one, and the reason was not a missing export column: the number was never
+  // a column at all. The deposit sheet wrote it into the gift's NOTES
+  // ("Check 1041 · spring appeal"), and the export reads `reference`, which is
+  // the external or Stripe id. A cheque number is how a bookkeeper ties a row
+  // to a bank statement, so it is a field.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS check_number TEXT`);
+
+  // WHICH DEPOSIT THIS GIFT ARRIVED IN. `deposited_on` is the day the money
+  // reached the bank (the deposit sheet's date, or a payout's arrival date);
+  // `deposit_ref` names the deposit (a payout id, or `sheet:<date>` for a
+  // cheque-and-cash run). Together they are the grouping the deposits file is
+  // built from, and without them nothing tied a gift to the line on the
+  // statement it is part of.
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS deposited_on TEXT`);
+  await pool.query(`ALTER TABLE gifts ADD COLUMN IF NOT EXISTS deposit_ref TEXT`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_gifts_deposit ON gifts (org_id, deposited_on, deposit_ref)`);
+
+  // THE CHEQUE NUMBERS ALREADY RECORDED, recovered from the notes the deposit
+  // sheet wrote them into. One-shot, by flag. The pattern is the one
+  // routes/crm.js writes and nothing else uses, so a note that merely mentions
+  // a cheque is not mined for a number.
+  try {
+    const done = await pool.query("SELECT 1 FROM schema_flags WHERE flag='f11_check_number_backfill'");
+    if (!done.rows.length) {
+      const r = await pool.query(`
+        UPDATE gifts
+           SET check_number = substring(notes from '(?:^|· )Check ([A-Za-z0-9-]{1,24})')
+         WHERE check_number IS NULL
+           AND notes ~ '(?:^|· )Check [A-Za-z0-9-]{1,24}'
+        RETURNING id`);
+      await pool.query("INSERT INTO schema_flags (flag) VALUES ('f11_check_number_backfill') ON CONFLICT (flag) DO NOTHING");
+      if (r.rows.length) console.log(`[books] recovered ${r.rows.length} cheque number(s) from gift notes`);
+    }
+  } catch (e) {
+    console.error("[books] CRITICAL: the cheque-number backfill failed — existing cheques export without a number:", e.message);
+  }
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

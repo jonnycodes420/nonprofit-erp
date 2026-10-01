@@ -520,30 +520,56 @@ const lastMonth = () => {
 function MonthlyClose() {
   const [ym, setYm] = useState(lastMonth);
   const [d, setD] = useState(null);
+  const [dep, setDep] = useState(null);
   const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
+  // FIX-11 Part 3 item 0 — THE FORMAT IS A CHOICE NOW.
+  //
+  // Steward / QuickBooks / Xero were three `<span>`s. They looked like
+  // buttons, they had a tooltip each, and they had never been clickable:
+  // only routes/finance.js could see the column sets, and the download lives
+  // in routes/crm.js, so the choice had nowhere to go. The column sets moved
+  // to bookkeeper.js, the download honours `flavour`, and this is the state
+  // that carries it.
+  const [flavour, setFlavour] = useState("steward");
+  const [openIssue, setOpenIssue] = useState(null);
   const { from, to } = monthBounds(ym);
   useEffect(() => {
-    let alive = true; setD(null); setErr("");
+    let alive = true; setD(null); setDep(null); setErr("");
     apiFetch(`/reports/bookkeeper?from=${from}&to=${to}`)
       .then(r => { if (alive) setD(r); })
       .catch(e => { if (alive) setErr(errorMessage(e, "Steward could not build that month.")); });
+    apiFetch(`/reports/deposits?from=${from}&to=${to}`)
+      .then(r => { if (alive) setDep(r); })
+      .catch(() => { /* the deposits view is additional; the gift file stands alone */ });
     return () => { alive = false; };
   }, [from, to]);
   const monthName = new Date(from + "T12:00:00").toLocaleDateString("en-US", { month:"long", year:"numeric" });
-  const download = async () => {
-    setBusy(true); setErr("");
+
+  // ONE download function for every file this screen offers, so the format,
+  // the filename and the refusal are handled once.
+  const download = async (key, label) => {
+    setBusy(key); setErr("");
     try {
-      const r = await fetch(`${API}/reports/bookkeeper?from=${from}&to=${to}&format=csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const q = `${API}/reports/${key}?from=${from}&to=${to}&format=csv${flavour !== "steward" ? `&flavour=${flavour}` : ""}`;
+      const r = await fetch(q, { headers: { Authorization: `Bearer ${getToken()}` } });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.message || e.error || "Download failed"); }
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
-      a.href = url; a.download = `bookkeeper-${ym}.csv`;
+      a.href = url;
+      a.download = `${label}-${ym}${flavour !== "steward" ? `-${flavour}` : ""}.csv`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) { setErr(errorMessage(e, "The file did not download.")); }
-    setBusy(false);
+    setBusy("");
   };
+
+  const flavourLabel = { steward: "Steward", quickbooks: "QuickBooks", xero: "Xero" }[flavour] || "Steward";
+  const blocked = !d || !d.balanced || d.giftCount === 0;
+  // `btn` takes (background, foreground); the deposits file is the primary
+  // action (emerald, the one action colour) and the other two are quiet.
+  const quiet = { ...btn(T.white, T.ink), border:"1px solid " + T.bg3 };
+
   return (
     <div data-testid="monthly-close">
       {/* FIN-1 — THE CHECKLIST, above the file. Five things, each one open or
@@ -557,7 +583,7 @@ function MonthlyClose() {
         <input type="month" value={ym} onChange={e => e.target.value && setYm(e.target.value)} aria-label="Month to close" style={{ ...inp, width:170 }}/>
       </div>
       <div style={{ fontSize:12, color:T.ink3, marginBottom:12, lineHeight:1.6 }}>
-        One row per gift received in {monthName}, for the person who reconciles the bank. Steward checks that the rows, the fund totals and its own sum agree to the cent before it will write the file.
+        Two files for {monthName}: one row per deposit, for reconciling the bank, and one row per gift, for the record. Steward checks that the rows, the fund totals and its own sum agree to the cent before it will write either.
       </div>
       {err && <div role="alert" style={{ fontSize:13, color:T.terra700, marginBottom:10 }}>{err}</div>}
       {!d && !err && <div style={{ fontSize:12, color:T.ink3 }}>Adding up {monthName}…</div>}
@@ -566,9 +592,57 @@ function MonthlyClose() {
           {d.giftCount === 0
             ? `No gifts were received in ${monthName}, so there is nothing to send the bookkeeper.`
             : d.balanced
-              ? `${d.giftCount} gift${d.giftCount === 1 ? "" : "s"} totalling ${fmtFull(d.totalCents / 100)}. It foots: the rows, the fund totals and the database agree to the cent.`
+              ? `${d.giftCount} gift${d.giftCount === 1 ? "" : "s"} totalling ${fmtFull(d.totalCents / 100)}`
+                + (d.feeCents ? `, less ${fmtFull(d.feeCents / 100)} in processing fees, ${fmtFull(d.netCents / 100)} to the bank` : "")
+                + `. It foots: the rows, the fund totals and the database agree to the cent.`
               : d.exportRefused}
         </div>
+
+        {/* FIX-11 Part 3 item 3 — WHAT IS MISSING, BEFORE THE FILE IS WRITTEN,
+            with each count opening its rows. The August file had four gifts
+            worth $57,500 with no payment method and nothing said so. */}
+        {d.issues && d.issues.length > 0 && (
+          <div data-testid="close-issues" style={{ background:T.gold100, border:"1px solid "+T.gold500, borderRadius:10, padding:"10px 14px", marginBottom:12 }}>
+            <div style={{ fontSize:12.5, color:T.ink, lineHeight:1.6 }}>
+              {d.issues.map((i, k) => (
+                <span key={i.key}>
+                  {k > 0 && ", "}
+                  <button onClick={() => setOpenIssue(openIssue === i.key ? null : i.key)}
+                    data-testid={"close-issue-" + i.key}
+                    style={{ background:"none", border:"none", padding:0, font:"inherit", color:T.greenDk,
+                             fontWeight:700, textDecoration:"underline dotted", cursor:"pointer" }}>
+                    {i.count} {i.count === 1 ? "gift" : "gifts"}
+                  </button>
+                  {` ${i.label}`}{i.cents ? ` (${i.amount})` : ""}
+                </span>
+              ))}
+              . Fix them or export anyway.
+            </div>
+            {openIssue && (() => {
+              const i = d.issues.find(x => x.key === openIssue);
+              const rows = d.rows.filter(r => i.giftIds.includes(r.giftId));
+              return (
+                <div data-testid="close-issue-rows" style={{ marginTop:10, maxHeight:220, overflowY:"auto", background:T.white, border:"1px solid "+T.bg3, borderRadius:8 }}>
+                  <div style={{ fontSize:11.5, color:T.ink3, padding:"8px 10px" }}>{i.fix}</div>
+                  <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+                    <tbody>
+                      {rows.map(r => (
+                        <tr key={r.giftId} style={{ borderTop:"1px solid "+T.bg3 }}>
+                          <td style={{ padding:"6px 10px" }}>{r.date}</td>
+                          <td style={{ padding:"6px 10px" }}>{r.donorName}</td>
+                          <td style={{ padding:"6px 10px", fontWeight:700, textAlign:"right" }}>{fmtFull(r.cents / 100)}</td>
+                          <td style={{ padding:"6px 10px", color:T.ink3 }}>{r.paymentMethod || "no method"}</td>
+                          <td style={{ padding:"6px 10px", color:T.ink3 }}>{r.fund || "no fund"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {d.byFund.length > 0 && (
           <div style={{ marginBottom:14 }}>
             {d.byFund.map((f, i) => (
@@ -579,12 +653,41 @@ function MonthlyClose() {
             ))}
           </div>
         )}
-        <button onClick={download} disabled={busy || !d.balanced || d.giftCount === 0}
-          style={{ ...btn(), ...((busy || !d.balanced || d.giftCount === 0) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
-          {busy ? "Preparing…" : `Download ${monthName} for the bookkeeper`}
-        </button>
-        {/* FIN-1 — the same rows, in the column order their tool wants. */}
-        <BookkeeperFlavours/>
+
+        {/* THE FORMAT, as a real selector. */}
+        <BookkeeperFlavours value={flavour} onChange={setFlavour}/>
+
+        {/* TWO FILES, each one named for the format that is selected. */}
+        <div style={{ display:"flex", gap:10, flexWrap:"wrap", marginTop:14 }}>
+          <button data-testid="close-download-deposits" onClick={() => download("deposits", "deposits")}
+            disabled={!!busy || blocked || !dep || !dep.balanced}
+            title={dep && !dep.balanced ? dep.exportRefused : undefined}
+            style={{ ...btn(), ...((!!busy || blocked || !dep || !dep.balanced) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
+            {busy === "deposits" ? "Preparing…" : `Download ${monthName} deposits for ${flavourLabel}`}
+          </button>
+          <button data-testid="close-download-detail" onClick={() => download("bookkeeper", "gift-detail")}
+            disabled={!!busy || blocked}
+            style={{ ...quiet, ...((!!busy || blocked) ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
+            {busy === "bookkeeper" ? "Preparing…" : `Download ${monthName} gift detail`}
+          </button>
+          {dep && dep.nonCash && dep.nonCash.length > 0 && (
+            <button data-testid="close-download-noncash" onClick={() => download("non-cash", "non-cash-gifts")}
+              disabled={!!busy}
+              style={{ ...quiet, ...(busy ? { opacity:0.5, cursor:"not-allowed" } : {}) }}>
+              {busy === "non-cash" ? "Preparing…" : `Download ${dep.nonCash.length} non-cash gift${dep.nonCash.length === 1 ? "" : "s"}`}
+            </button>
+          )}
+        </div>
+
+        {/* WHAT THE DEPOSITS FILE SAYS, so nobody downloads it to find out. */}
+        {dep && (
+          <div data-testid="close-deposits" style={{ fontSize:12.5, color:T.ink3, lineHeight:1.65, marginTop:12, maxWidth:640 }}>
+            {dep.sentence}
+            {dep.groups && dep.groups.some(g => !g.account) && (
+              <> Your deposit account is not mapped yet, so that column comes out blank: set it in Settings, Connections.</>
+            )}
+          </div>
+        )}
       </>}
     </Card></div>
   );
@@ -624,7 +727,12 @@ function MonthCloseChecklist({ month }) {
 }
 
 // FIN-1 — the same rows, in the column order the bookkeeper's tool wants.
-function BookkeeperFlavours() {
+// FIN-1 wrote these as labels. FIX-11 Part 3 makes them a SELECTOR, which is
+// what they always looked like: three `<span>`s with tooltips, side by side,
+// that nothing happened when you pressed. The selected one is marked and the
+// download button below names it, so there is no way to be unsure which file
+// you are about to get.
+function BookkeeperFlavours({ value, onChange }) {
   const [d, setD] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -635,15 +743,22 @@ function BookkeeperFlavours() {
   return (
     <div data-testid="bookkeeper-flavours" style={{ marginTop:16, paddingTop:14, borderTop:"1px solid "+T.bg2 }}>
       <div style={{ fontSize:12.5, color:T.ink2, lineHeight:1.6, maxWidth:640 }}>{d.sentence}</div>
-      <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
-        {d.flavours.map(f => (
-          <span key={f.key} title={f.note}
-            style={{ fontSize:12, fontWeight:700, borderRadius:8, padding:"6px 12px",
-                     background:T.white, border:"1px solid "+T.bg3, color:T.ink }}>
-            {f.label}
-            {f.confidence !== "walked" && <span style={{ color:T.ink3, fontWeight:500 }}> · check the first file</span>}
-          </span>
-        ))}
+      <div role="radiogroup" aria-label="Bookkeeping format" style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:10 }}>
+        {d.flavours.map(f => {
+          const on = value === f.key;
+          return (
+            <button key={f.key} type="button" role="radio" aria-checked={on} title={f.note}
+              data-testid={"flavour-" + f.key}
+              onClick={() => onChange && onChange(f.key)}
+              style={{ fontSize:12, fontWeight:700, borderRadius:8, padding:"6px 12px", cursor:"pointer",
+                       background: on ? T.greenDk : T.white,
+                       border:"1px solid " + (on ? T.greenDk : T.bg3),
+                       color: on ? T.white : T.ink, fontFamily:"inherit" }}>
+              {f.label}
+              {f.confidence !== "walked" && <span style={{ color: on ? "rgba(255,255,255,0.75)" : T.ink3, fontWeight:500 }}> · check the first file</span>}
+            </button>
+          );
+        })}
       </div>
       <div style={{ fontSize:12, color:T.ink3, lineHeight:1.55, marginTop:8, maxWidth:640 }}>{d.caveat}</div>
     </div>

@@ -139,6 +139,7 @@ CORE=(
   money-cents
   pledge-math
   reconciliation
+  fix11-deposits
   fix2-a-footing
   gtm1a-internal-price
   gtm1b-band-notice

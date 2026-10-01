@@ -2269,6 +2269,27 @@ async function main() {
   const [top200] = await q(`SELECT COALESCE(SUM(t),0)::float d FROM (
                               SELECT SUM(g.amount) t FROM gifts g WHERE g.org_id=$1
                                GROUP BY g.donor_id ORDER BY t DESC LIMIT 200) x`, [ORG]);
+  // FIX-11 Part 3 — EVERY GIFT HAS A FUND, A DEPOSIT AND, IF IT WAS A CARD,
+  // A FEE. The bulk writer assigns all three, but three other inserts do not
+  // go through it (two pledge payments and the peer-to-peer gifts), so this is
+  // the sweep that catches them. It runs LAST, after every gift exists — an
+  // earlier version sat before the peer-to-peer block and left twelve gifts
+  // with no fund, which is exactly the "(no fund)" line in the bookkeeper's
+  // file that this part is about.
+  //
+  // Stock and in-kind are excluded on purpose: they are revenue and they never
+  // reached a bank account, so a deposit reference on one would be a lie.
+  await q(`UPDATE gifts
+              SET fund_id = COALESCE(fund_id, (SELECT id FROM fin_funds WHERE org_id=$1 AND NOT restricted ORDER BY name LIMIT 1)),
+                  deposited_on = COALESCE(deposited_on, CASE WHEN payment_method = 'Card' THEN (date::date + 2)::text ELSE date END),
+                  deposit_ref  = COALESCE(deposit_ref, CASE WHEN payment_method = 'Card'
+                                   THEN 'po_demo_' || replace((date::date + 2)::text, '-', '')
+                                   ELSE 'sheet:' || date END),
+                  processor_fee_amount = CASE WHEN payment_method = 'Card' AND COALESCE(processor_fee_amount,0) = 0
+                                   THEN ROUND(amount * 0.022 + 0.30, 2) ELSE COALESCE(processor_fee_amount,0) END
+            WHERE org_id = $1
+              AND LOWER(COALESCE(type,'')) NOT IN ('stock','in kind','in-kind','in_kind','securities')`, [ORG]);
+
   console.log(`\n─── Harborlight Youth Collective (${ORG}) ───`);
   console.log(`  donors ${sum.donors} · gifts ${sum.gifts} · lifetime $${Math.round(sum.dollars).toLocaleString()}`);
   console.log(`  top 200 donors carry ${((top200.d / sum.dollars) * 100).toFixed(1)}% of lifetime revenue (FEP shape)`);
@@ -2303,9 +2324,46 @@ async function writeAll(client, donors, gifts) {
   // a payment id — the seed's are all pi_demo_…, never a real charge — and
   // the webhook's actor); an offline gift is the director's cheque, ACH,
   // stock or DAF entry.
+  // FIX-11 Part 3 — FOUR THINGS EVERY GIFT NOW CARRIES, because the August
+  // export was correct and unusable without them:
+  //
+  //   · A FUND. Every gift in this seed had `fund_id` NULL — all 3,942 of
+  //     them — because the seed writes gifts in bulk and bypasses recordGift,
+  //     which is the one place that assigns the unrestricted fund. So the
+  //     bookkeeper's "TOTALS BY FUND" had exactly one line, called "(no
+  //     fund)", and it footed, which is how it went unnoticed.
+  //   · A PROCESSING FEE on card money. Twenty-six card gifts in August and
+  //     no fee line anywhere, so the file's total could never equal what
+  //     reached the bank. Stripe's published rate, 2.2% + 30c.
+  //   · A CHEQUE NUMBER on the cheques. Not all of them: a real file has gaps,
+  //     and a seed where every cheque has a number would hide the screen's
+  //     "a cheque with no number" flag.
+  //   · THE DEPOSIT it arrived in. A cheque or cash gift arrives on a deposit
+  //     sheet, dated the day it was banked; card money arrives in a payout two
+  //     days later. Without these the deposits file has nothing to group by.
   const COLS = ["id", "org_id", "donor_id", "amount", "date", "type", "campaign", "campaign_id", "payment_method",
                 "stripe_payment_id", "recurring_subscription_id", "notes", "quid_pro_quo_value", "quid_pro_quo_desc",
+                "fund_id", "processor_fee_amount", "check_number", "deposited_on", "deposit_ref",
                 "created_by", "created_by_name"];
+  // The funds this org keeps, read once. Restricted money follows its campaign
+  // where the seed named one; everything else is unrestricted, which is what
+  // recordGift would have decided.
+  const fundRows = await client.query(
+    `SELECT id, name, restricted FROM fin_funds WHERE org_id = $1 ORDER BY restricted, name`, [ORG]);
+  const unrestricted = (fundRows.rows.find(f => !f.restricted) || fundRows.rows[0] || {}).id || null;
+  const fundByWord = w => {
+    const hit = fundRows.rows.find(f => w && String(f.name).toLowerCase().includes(w));
+    return hit ? hit.id : null;
+  };
+  const scholarship = fundByWord("scholar");
+  const addDays = (d, n) => {
+    const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n);
+    return t.toISOString().slice(0, 10);
+  };
+  // Stripe's published card rate. One place, so the fee and the net cannot
+  // drift apart.
+  const CARD_FEE = (amount) => Math.round((Number(amount) * 0.022 + 0.30) * 100) / 100;
+  let chequeNo = 1041;
   for (let i = 0; i < gifts.length; i += B) {
     const batch = gifts.slice(i, i + B);
     const vals = [], params = [];
@@ -2313,14 +2371,36 @@ async function writeAll(client, donors, gifts) {
       const o = k * COLS.length;
       vals.push(`(${COLS.map((_, c) => `$${o + c + 1}`).join(",")})`);
       const method = g.online ? ["cash", "Card"] : (g.method || ["check", "Check"]);
+      const isCard = method[1] === "Card";
+      const isCheque = method[1] === "Check";
+      const notes = g.notes || (g.online ? "Online gift via the giving page" : null);
+      // A scholarship gift goes to the scholarship fund where there is one;
+      // the paddle raise says so in its own note.
+      const fundId = (scholarship && /scholarship/i.test(String(notes || "") + String(g.campaign || "")))
+        ? scholarship : unrestricted;
+      // Two in three cheques carry a number, which is roughly what a real
+      // deposit slip looks like.
+      const cheque = isCheque && (k % 3 !== 2) ? String(chequeNo++) : null;
+      // Card money settles into a payout two days later, one payout per day.
+      // Cheques and cash are banked the day they were recorded.
+      const depositedOn = isCard ? addDays(g.date, 2) : g.date;
+      const depositRef = isCard ? `po_demo_${depositedOn.replace(/-/g, "")}` : `sheet:${g.date}`;
       params.push(g.id, ORG, g.donorId, g.amount, g.date, method[0], g.campaign || null, g.campaignId || null, method[1],
                   g.online ? `pi_demo_${g.id}` : null, g.sub || null,
-                  g.notes || (g.online ? "Online gift via the giving page" : null),
+                  cheque ? [notes, `Check ${cheque}`].filter(Boolean).join(" · ") : notes,
                   g.qpq || null, g.qpqDesc || null,
+                  fundId, isCard ? CARD_FEE(g.amount) : 0, cheque, depositedOn, depositRef,
                   g.online ? "system:stripe-webhook" : "u_b72demo", g.online ? "Stripe (online)" : "Dana Reyes");
     });
     await client.query(`INSERT INTO gifts (${COLS.join(",")}) VALUES ${vals.join(",")}`, params);
   }
+  // Stock and in-kind gifts are revenue and never reached a bank, so they
+  // carry NO deposit at all. The deposits file lists them separately and the
+  // assertion checks they are not inside one.
+  await client.query(
+    `UPDATE gifts SET deposited_on = NULL, deposit_ref = NULL, processor_fee_amount = 0
+      WHERE org_id = $1 AND LOWER(COALESCE(type,'')) IN ('stock','in kind','in-kind','in_kind','securities')`,
+    [ORG]);
 }
 
 // ── FIX-3 C, finding 8 — REMOVE EVERY REAL PERSON FROM THE DEMO ORG ────────

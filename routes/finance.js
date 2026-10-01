@@ -2047,36 +2047,7 @@ app.post("/bookkeeping/:id/disconnect", requireAuth, requireAdmin, checkWriteAcc
 // receipt / bank transaction. Marked as documented-not-walked, the same
 // honesty the import presets carry: neither has been run through a real
 // QuickBooks import, and the day one is, this comment changes.
-const BOOKKEEPER_FLAVOURS = {
-  steward: { label: "Steward", confidence: "walked",
-    note: "Steward's own columns, one row per gift." },
-  quickbooks: { label: "QuickBooks", confidence: "documented-not-walked",
-    note: "QuickBooks Online's Sales Receipt import columns. Each gift is one sales receipt.",
-    columns: [
-      ["SalesReceiptNo", r => r.receiptNumber || r.giftId],
-      ["Customer", r => r.donorName],
-      ["SalesReceiptDate", r => r.date],
-      ["Item(Product/Service)", r => r.fund || "Donations"],
-      ["ItemAmount", r => r.amount],
-      ["ItemDescription", r => [r.paymentMethod, r.reference].filter(Boolean).join(" ")],
-      ["PaymentMethod", r => r.paymentMethod],
-      ["Memo", r => r.giftId],
-    ] },
-  xero: { label: "Xero", confidence: "documented-not-walked",
-    note: "Xero's Sales Invoice import columns. Each gift is one paid invoice line.",
-    columns: [
-      ["*ContactName", r => r.donorName],
-      ["*InvoiceNumber", r => r.receiptNumber || r.giftId],
-      ["*InvoiceDate", r => r.date],
-      ["*DueDate", r => r.date],
-      ["*Quantity", () => 1],
-      ["*UnitAmount", r => r.amount],
-      ["Description", r => [r.fund, r.paymentMethod, r.reference].filter(Boolean).join(" · ")],
-      ["TrackingName1", r => (r.fund ? "Fund" : "")],
-      ["TrackingOption1", r => r.fund || ""],
-      ["Reference", r => r.giftId],
-    ] },
-};
+const BOOKKEEPER_FLAVOURS = require("../bookkeeper").BOOKKEEPER_FLAVOURS;
 
 app.get("/finance/bookkeeper-flavours", requireAuth, wrap(async (req, res) => {
   res.json({
