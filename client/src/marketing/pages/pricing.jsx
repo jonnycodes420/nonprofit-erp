@@ -43,7 +43,7 @@ function Tier({ t, yearly, authed, orgPlan, busy, onChoose, err }) {
   const price = yearly ? t.yearlyUsd : t.monthlyUsd;
   return (
     <div className={"tier" + (t.featured ? " pop" : "")} data-tier={t.id}>
-      <span className="tag">{t.featured ? PRICING.featuredBadge : "Plan"}</span>
+      <span className="tag">{t.featured ? PRICING.featuredBadge : "\u00a0"}</span>
       <h3>{t.name}</h3>
       <span className="sz">{t.band}</span>
       <div className="amt" data-price={t.id}>{money(price)}<small> {yearly ? "a year" : "a month"}</small></div>
@@ -101,7 +101,7 @@ export function Pricing() {
               busy={busy === t.id} onChoose={choose} err={err && err.id === t.id ? err.msg : null} />
           ))}
           <div className="tier talk" data-tier={TALK.id}>
-            <span className="tag">Plan</span>
+            <span className="tag">&nbsp;</span>
             <h3>{TALK.name}</h3>
             <span className="sz">{TALK.band}</span>
             <div className="amt talk-amt">{TALK.copy}</div>

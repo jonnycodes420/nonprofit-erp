@@ -228,7 +228,7 @@ export function ToolLostAndFound() {
   return <>
     <Hero eyebrow="Lost & Found · free tool" crumbs={[["Free tools", "/tools"], ["Lost & Found"]]} h="See who you're <b>about to lose.</b>"
       lede="Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored."
-      photo="kitchen-card" cta2={["Run the free audit", "/lost-and-found"]} />
+      photo="kitchen-card" />
     <Steps eb="How it works" h="A minute, <b>start to finish.</b>" list={[["Export your gifts", "Any spreadsheet with donor, date and amount."], ["Drop it in", "The audit reads it in your browser. Nothing is uploaded."], ["See who is slipping", "Lapsing donors ranked by what they used to give."]]} />
     <StatBand n={4} />
     <FinalCta />

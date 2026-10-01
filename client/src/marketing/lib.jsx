@@ -106,10 +106,13 @@ export function Crumbs({ list }) {
   );
 }
 
-// LANDING-3 · the second pill is Start free unless the page names its own.
-// No hero offers a tour, and none of them says "See pricing" any more: the
-// prices are one click away in the header on every page.
-export function Hero({ eyebrow, crumbs, h, lede, photo, cta2, noCta, proof, float }) {
+// LANDING-3 · EVERY hero shows Book a demo and Start free, and the reference's
+// updated hero() is what settled it: it stopped reading cta2 at all and
+// hardcodes the pair whenever noCta is not set. A page no longer gets to
+// choose its second button, so the twelve noCta pages (articles, guides, the
+// calculators, the legal drafts) still show none, and every other hero shows
+// the same two. No hero offers a tour or says "See pricing".
+export function Hero({ eyebrow, crumbs, h, lede, photo, noCta, proof, float }) {
   return (
     <>
       <Crumbs list={crumbs || [[eyebrow]]} />
@@ -122,7 +125,7 @@ export function Hero({ eyebrow, crumbs, h, lede, photo, cta2, noCta, proof, floa
             {!noCta && (
               <div className="ctas">
                 <Pill href="/demo">Book a demo</Pill>
-                {cta2 ? <Pill kind="soft" href={cta2[1]}>{cta2[0]}</Pill> : <Pill kind="soft" href="/signup">Start free</Pill>}
+                <Pill kind="soft" href="/signup">Start free</Pill>
               </div>
             )}
             {proof && <div className="proof">{proof.map(p => <span key={p}>{p}</span>)}</div>}

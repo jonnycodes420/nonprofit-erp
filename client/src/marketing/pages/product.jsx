@@ -8,7 +8,7 @@ export function Platform() {
   return <>
     <Hero eyebrow="The Steward Platform" crumbs={[["Platform"]]} h="One calm place for <b>the whole office.</b>"
       lede="Donors, gifts, events, volunteers, email and month end, on one record that watches itself. Steward tells you who needs you each morning, and every number opens to the people behind it."
-      photo="team-pointing" cta2={["See every feature", "/features"]} proof={["Every feature on every plan", "Unlimited users", "Month to month"]} />
+      photo="team-pointing" proof={["Every feature on every plan", "Unlimited users", "Month to month"]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <div className="eyebrow">How it fits together</div>
       <h2 className="mix h-l" style={{ marginTop: 22 }}>Keep. Raise. <b>Run.</b></h2>
@@ -114,7 +114,7 @@ export function Onboarding() {
   return <>
     <Hero eyebrow="Onboarding and support" crumbs={[["Platform", "/platform"], ["Onboarding and support"]]} h="Your move, <b>done with you.</b>"
       lede="Every new organization gets a real person for the move, the setup and the first month. You will know their name and their email address."
-      photo="trainer-laptop" cta2={["How the move works", "/move"]} />
+      photo="trainer-laptop" />
     <Steps eb="Your first 30 days" h="Four steps <b>to settled.</b>" list={[["Kickoff call", "Twenty minutes. We look at where your donors live today and what you need first."], ["The move", "You export, we map it with you, and the Move Report checks every total to the cent."], ["Connect your tools", "Stripe, Mailchimp, your inbox and the rest, connected together on a call."], ["First month check-in", "We review drift, journeys and your first month-end file together."]]} />
     <Incl eb="Included" h="What every organization <b>gets.</b>" list={["A named person for the move", "Mapping of your old fields", "Connections set up on a call", "Thirty days free while you settle in", "Staff training on a call", "Email answers from a person", "Your data exported any time", "Undo the move for 30 days"]} />
     <FinalCta />

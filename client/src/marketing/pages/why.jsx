@@ -16,7 +16,7 @@ export function Why() {
   return <>
     <Hero eyebrow="Why Steward" crumbs={[["Why Steward"]]} h="The money is in <b>the donors you keep.</b>"
       lede="Fewer people give each year, and most first-time donors never give twice. Steward exists to close that gap for organizations that cannot hire a data team to do it."
-      photo="open-house-hug" cta2={["Run the free audit", "/tools/lost-and-found"]} />
+      photo="open-house-hug" />
     <StatBand />
     <QuoteBand />
     <section style={{ paddingTop: 0 }}><div className="wrap">
@@ -31,7 +31,7 @@ export function Move() {
   return <>
     <Hero eyebrow="Moving to Steward" crumbs={[["Why Steward"], ["Moving to Steward"]]} h="Move in <b>about a day.</b>"
       lede="Tell us where your donors live today, drop in the export, and check the Move Report. Every total matches to the cent against what came out, and you can undo the whole move for 30 days."
-      photo="desk-notes" cta2={["See onboarding", "/onboarding"]} proof={["Matched to the cent", "Undo for 30 days", "Run both side by side"]} />
+      photo="desk-notes" proof={["Matched to the cent", "Undo for 30 days", "Run both side by side"]} />
     <Steps eb="How the move works" h="Three steps, <b>one afternoon.</b>" list={[["Tell us where you are", "Choose your current system or a spreadsheet. Steward knows the export format for common donor systems and maps the fields for you."], ["Drop in the export", "Donors, households, gifts, recurring plans and notes come across together. Possible duplicates are set aside for you to review."], ["Check the Move Report", "Every count and every dollar from your file, side by side with what landed in Steward. If anything is off you see it before you rely on it."]]} />
     <section style={{ paddingTop: 0 }}><div className="wrap">
       <Block tint="emerald-tint" h="The Move Report." p="Counts and totals from your file beside what Steward holds. Matched lines in green. Anything that needs a decision is listed with the rows behind it."
@@ -87,8 +87,7 @@ const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS
 export function Security() {
   return <>
     <Hero eyebrow="Security and trust" crumbs={[["Why Steward"], ["Security and trust"]]} h="Built like it's holding <b>someone else's money.</b>"
-      lede="Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so."
-      cta2={["See the audit log", "/features/audit"]} />
+      lede="Because it is. This page lists what Steward does today to protect your donors' information, and what is coming next. Nothing here is aspirational unless it says so." />
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
       {SECURE.map(c => <div className="card" key={c[0]}><span className="ci"><Icon k="audit" size={26} /></span><h4>{c[0]}</h4><p>{c[1]}</p></div>)}
     </div></div></section>
@@ -208,7 +207,7 @@ export function Partners() {
   return <>
     <Hero eyebrow="Partners and consultants" crumbs={[["Company"], ["Partners"]]} h="Bring Steward to <b>the nonprofits you advise.</b>"
       lede="Fundraising consultants, coaches and agencies refer and set up Steward for their clients. Partners earn a share of revenue and get a direct line to the founder."
-      photo="handshake" cta2={["Talk to us", "/contact"]} />
+      photo="handshake" />
     <Steps eb="How partnership works" h="Simple and <b>fair.</b>" list={[["Introduce", "Send us a nonprofit that would be better off with Steward."], ["Close together", "We demo with you on the call, or you run it yourself."], ["Earn", "A share of revenue on every organization you bring, paid monthly."]]} />
     <FinalCta />
   </>;

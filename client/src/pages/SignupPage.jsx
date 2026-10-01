@@ -205,6 +205,12 @@ export default function SignupPage() {
             </div>
 
             {/* WHAT IT WILL COST, before the card and not after it. */}
+            {!band && !overTop && (
+              <div data-testid="signup-quote-resting" style={{ background: "#dcebe2", borderRadius: 16, padding: "16px 20px", display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 14, color: SAGE_GREY }}>Your plan</span>
+                <span style={{ fontSize: 16, color: INK }}>Enter your donor count above and it appears here.</span>
+              </div>
+            )}
             {band && (
               <div data-testid="signup-quote" style={{ background: "#dcebe2", borderRadius: 16, padding: "16px 20px" }}>
                 <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
