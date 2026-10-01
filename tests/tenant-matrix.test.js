@@ -207,6 +207,14 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO imports (id,org_id,name,shape,rows_in) VALUES ($1,$2,$3,'volunteers',1)`,
     [`vimp_${o}`, o, `${mark} Volunteer import`]);
   await q(`INSERT INTO api_keys (id,org_id,name,prefix,key_hash) VALUES ($1,$2,'Zapier','stw_xxxxxx',$3)`, [`ak_${o}`, o, `hash_${o}`]);
+  // FIX-11 Part 1 — one audit row per org, with a known id, so GET
+  // /audit/log/:id is probed against a REAL row of the other org's history
+  // rather than against a missing one (which would 404 for the wrong reason
+  // and prove nothing). An audit row names who did what to whose record, so
+  // it is exactly the kind of row org A must not be able to read.
+  await q(`INSERT INTO fin_audit_log (id,org_id,user_id,user_name,action,entity_type,entity_id,entity_label,changes)
+           VALUES ($1,$2,$3,$4,'updated','gift',$5,'Hidden Donor','{}'::jsonb)`,
+    [`al_${o}`, o, `u_${o}_staff`, `staff-${o}@mx.local`, `g_${o}`]).catch(() => {});
   // INT-2 — an accounting connection per org, so the four /bookkeeping routes
   // have a real row to fail against rather than 404ing for a missing fixture.
   await q(`INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,mapping,created_by,created_by_name)
@@ -443,6 +451,9 @@ function bResolver(routePath, param) {
     "volunteer-shifts": `vs_${B}`,   // BUILD-98 Part 5 — a volunteer's shift is org B's business
     "api-keys": `ak_${B}`,           // BUILD-98 Part 6 — org A cannot revoke org B's key
     "membership-levels": `mbl_${B}`, // BUILD-101 — org A cannot edit or remove org B's levels
+    // FIX-11 Part 1 — one row of org B's history. It names a person, a record
+    // and both sides of a change, so it is donor data by any reading.
+    audit: `al_${B}`,
     "memberships": `mb_${B}`,        // BUILD-101 — org A cannot cancel org B's member
     people: `d_${B}`,                // FIX-1 D — a person IS a donors row; org A cannot read or re-role org B's
   };

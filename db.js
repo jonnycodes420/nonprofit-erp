@@ -9,8 +9,31 @@ const pool = new Pool({
   // Default keeps prod behavior (Supabase requires SSL). DB_SSL=disable turns it
   // off for a plain, non-SSL Postgres — the stock image CI uses (BUILD-38 Part 2).
   ssl: process.env.DB_SSL === "disable" ? false : { rejectUnauthorized: false },
+  // FIX-11 Part 1 — see the note below `getDb`. Set as a STARTUP option rather
+  // than from a `connect` listener: a listener issues its SET while pg is still
+  // finishing the handshake on that client, which pg rightly warns about and
+  // which would leave the odd connection unmarked. A startup option is applied
+  // by the server before the connection is handed over, every time.
+  options: "-c steward.app_connection=on",
 });
 
+// ── FIX-11 Part 1 — THIS CONNECTION BELONGS TO THE APPLICATION ────────────
+// Every connection the application takes out of the pool says so, once, when
+// it is opened. The audit log's trigger (initSchema, below) refuses UPDATE and
+// DELETE on a connection that has said so — which is what makes "no screen and
+// no route edits or deletes an audit row" a fact about the database rather than
+// a claim about which routes happen to exist today.
+//
+// THE POLARITY IS DELIBERATE. The alternative — refuse everything, and let the
+// one legitimate purge announce itself — also stops the test harness and every
+// maintenance script from clearing a scratch database, which is twenty
+// teardowns' worth of churn for no extra safety: a direct psql session can
+// drop the trigger either way. What matters is that the APPLICATION cannot
+// touch history, and that is what this enforces.
+//
+// The one path that may: closing an organisation's account
+// (routes/billing.js), which sets `steward.audit_purge` transaction-locally so
+// the exception reverts itself.
 async function getDb() {
   await initSchema();
   // The demo seed must never take the API down: schema is required to serve,
@@ -5407,6 +5430,78 @@ async function initSchema() {
   // lets a member turn that off from their own page without cancelling the
   // membership they have already paid for.
   await pool.query(`ALTER TABLE memberships ADD COLUMN IF NOT EXISTS auto_renew_subscription_id TEXT`);
+
+  // ── FIX-11 Part 1 — THE TRAIL EVERYTHING LEAVES ──────────────────────────
+  // `fin_audit_log` was a finance-settings table that thirty-three hand-placed
+  // calls wrote to. It is now the audit log for the whole application, written
+  // in ONE place (middleware/auditTrail.js). The columns below are what a row
+  // needs to be read by somebody who was not there: who acted and in what
+  // capacity, which record, and both sides of every field that moved.
+  //
+  // The table is not renamed. Renaming it would orphan the rows already in it
+  // on every live org, and the history we have is the history we have.
+  // AN ORG'S HISTORY GOES WITH THE ORG. The foreign key was a bare
+  // REFERENCES, which was harmless while only a handful of finance-settings
+  // routes wrote rows and became a wall the moment every route did: deleting
+  // an organisation now had to delete its audit rows first, and four test
+  // teardowns and the account-closing path all had to know that. Cascade says
+  // it once, where the relationship is declared. The append-only trigger still
+  // fires on the cascaded delete, so the application cannot reach this by
+  // deleting an org either (routes/billing.js is the one path that may, and it
+  // says so out loud).
+  await pool.query(`ALTER TABLE fin_audit_log DROP CONSTRAINT IF EXISTS fin_audit_log_org_id_fkey`);
+  await pool.query(`ALTER TABLE fin_audit_log
+                      ADD CONSTRAINT fin_audit_log_org_id_fkey
+                      FOREIGN KEY (org_id) REFERENCES orgs(id) ON DELETE CASCADE`).catch(e => {
+    console.error("[audit] could not set the org cascade on fin_audit_log:", e.message);
+  });
+
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS actor_kind TEXT`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS entity_label TEXT`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS before_fields JSONB`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS after_fields JSONB`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS summary TEXT`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS record_count INTEGER`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS request_method TEXT`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS request_path TEXT`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS status_code INTEGER`);
+  await pool.query(`ALTER TABLE fin_audit_log ADD COLUMN IF NOT EXISTS ip TEXT`);
+  // Newest first, inside one org, is how the screen reads it; the other two
+  // are the filters it offers. Every one of these is (org_id, …) first because
+  // an audit row is never read across organisations.
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_org_time ON fin_audit_log (org_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_org_actor ON fin_audit_log (org_id, user_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_org_entity ON fin_audit_log (org_id, entity_type, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_audit_org_record ON fin_audit_log (org_id, entity_id)`);
+
+  // APPEND-ONLY, ENFORCED BY THE DATABASE, not by a convention about which
+  // routes exist. A trail that can be edited is not a trail, and the person
+  // most motivated to edit it is the person it incriminates. No screen and no
+  // route can change or remove a row: the trigger refuses UPDATE and DELETE
+  // outright.
+  //
+  // THE ONE EXCEPTION, and it is not a loophole: closing an organisation's
+  // account erases that organisation's data, audit rows included, and that
+  // erasure is a deliberate act of the account-closing path rather than
+  // something a request can reach. It announces itself by setting a
+  // transaction-local flag, so the refusal is the default and the exception is
+  // visible in the one function that uses it.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION steward_audit_append_only() RETURNS TRIGGER AS $fn$
+    BEGIN
+      IF current_setting('steward.app_connection', true) IS DISTINCT FROM 'on'
+         OR current_setting('steward.audit_purge', true) = 'on' THEN
+        RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+      END IF;
+      RAISE EXCEPTION 'fin_audit_log is append-only: % from the application is refused', TG_OP
+        USING ERRCODE = 'check_violation';
+    END;
+    $fn$ LANGUAGE plpgsql`);
+  await pool.query(`DROP TRIGGER IF EXISTS trg_audit_append_only ON fin_audit_log`);
+  await pool.query(`
+    CREATE TRIGGER trg_audit_append_only
+      BEFORE UPDATE OR DELETE ON fin_audit_log
+      FOR EACH ROW EXECUTE FUNCTION steward_audit_append_only()`);
 
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.

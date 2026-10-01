@@ -51,6 +51,31 @@ const stripGiftAmountPrefix = note => String(note || "")
   .replace(/^(?:Gift received|Online donation):\s*\$[\d,.]+(?:\s*\([^)]*\))?(?:\s+via[^—-]*)?\s*(?:[—-]\s*)?/i, "")
   .trim();
 
+// FIX-11 Part 1 — WHAT A GIFT READS AS ON THE TIMELINE, in one place.
+//
+// "$100,000.00 · General Operating · ACH · not yet thanked". The money, where
+// it is designated, how it arrived and whether it has been acknowledged: the
+// four things somebody scrolling a record wants from a gift line, each from
+// the gift row itself rather than from text somebody typed into a note.
+//
+// Both timeline modes call this, because when the Activity Log and the
+// Stewardship Timeline each formatted the same gift their own way, the same
+// gift read as two different events.
+const giftFundName = g => (g && g.fund_name) || "";
+const giftTimelineLine = (g, fundName) => {
+  if (!g) return "";
+  const parts = [fmtFull(g.amount)];
+  if (fundName) parts.push(fundName);
+  // "Needs you" is the sentinel a gift carries when nobody said how the money
+  // arrived (server.js GIFT_METHOD_UNKNOWN). It is a prompt, not a payment
+  // method, and reading "$100,000 · General Operating · Needs you" mid-sentence
+  // says the money came in by something called Needs you.
+  if (g.payment_method && !/^(unknown|needs you)$/i.test(g.payment_method)) parts.push(g.payment_method);
+  // A gift that HAS been thanked says nothing: the absence is the news.
+  if (!g.acknowledgement_sent) parts.push("not yet thanked");
+  return parts.join(" · ");
+};
+
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){
   const due7=new Date();due7.setDate(due7.getDate()+7);
@@ -106,13 +131,25 @@ function FollowUpTaskModal({donor,onSave,onClose}){
 }
 
 // ── Log Touchpoint Modal ───────────────────────────────────────────────────
-function LogTouchpointModal({donor,onSave,onClose}){
+// FIX-11 Part 1 — "+ LOG → GIFT" MAKES A REAL GIFT, ONCE.
+//
+// What it used to do, and what Jonathan hit on 30 September with a $100,000
+// gift on the Creo record: this modal posted the typed fields as a key:value
+// blob to /donors/:id/interactions, AND posted a gift whose `notes` was that
+// same blob. recordGift writes one LINKED timeline entry of its own (server.js
+// Rule 2), so the record ended up with two entries, identical text, same day
+// — and the Amount, Designation and Payment Method the person typed were prose
+// in a note rather than a fund and a method on the gift, so the money reached
+// no total, no receipt, no bookkeeper export and no audit row.
+//
+// So the gift type collects no money here at all. It hands off to the gift form
+// on the Giving tab, which is the same form "Record a gift" opens: one gift
+// path, a real fund, a real payment method, an acknowledgement flag, and the
+// one timeline entry recordGift already writes.
+function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
   const[type,setType]=useState("call");
   const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
   const[loading,setLoading]=useState(false);
-  // BUILD-45 §1.1 F-3 — one idempotency key per modal open: a double-tapped
-  // Save replays the SAME key and the server records exactly one gift.
-  const giftIdemRef=useRef(crypto.randomUUID());
   const[kt1,setKt1]=useState("");const[kt2,setKt2]=useState("");const[kt3,setKt3]=useState("");
   const[history,setHistory]=useState("");const[spouse,setSpouse]=useState("");const[nextStep,setNextStep]=useState("");
   const[answered,setAnswered]=useState("yes");const[duration,setDuration]=useState("");const[objections,setObjections]=useState("");
@@ -120,30 +157,20 @@ function LogTouchpointModal({donor,onSave,onClose}){
   const[sentiment,setSentiment]=useState("Positive");const[asksMade,setAsksMade]=useState("");
   const[subject,setSubject]=useState("");const[summary,setSummary]=useState("");const[responded,setResponded]=useState("no");
   const[eventName,setEventName]=useState("");const[attended,setAttended]=useState("yes");const[observations,setObservations]=useState("");
-  const[amount,setAmount]=useState("");const[designation,setDesignation]=useState("");
-  const[payMethod,setPayMethod]=useState("");const[ackSent,setAckSent]=useState("no");
   const[otherNotes,setOtherNotes]=useState("");
-  const[finFunds,setFinFunds]=useState([]);const[finFundId,setFinFundId]=useState("");const[finAcctId,setFinAcctId]=useState("");
   const[orgEvents,setOrgEvents]=useState([]);
-  // BUILD-32 — real campaign attribution: a Campaign selector (writes campaign_id)
-  // + a "Did you mean <Campaign>?" suggestion when the typed Designation matches
-  // an existing campaign name. `finCampaigns` = the org's goal'd campaigns.
-  const[finCampaigns,setFinCampaigns]=useState([]);const[campaignId,setCampaignId]=useState("");
+  // The Event type offers the org's events by name. The fund, account and
+  // campaign reads that used to be here went with the gift fields: the gift
+  // form asks for those, and asking twice in two places is how one of them
+  // ends up being the one nobody fills in.
   useEffect(()=>{
-    Promise.all([apiFetch("/finance/funds"),apiFetch("/finance/accounts"),apiFetch("/events"),apiFetch("/fundraising/campaigns").catch(()=>[])]).then(([fds,accts,evts,camps])=>{
-      setFinFunds(fds);
-      const def=fds.find(f=>!f.restricted)||fds[0];if(def)setFinFundId(def.id);
-      const ca=accts.find(a=>a.type==="revenue"&&(a.code==="4010"||a.name.toLowerCase().includes("contribution")))||accts.find(a=>a.type==="revenue");
-      if(ca)setFinAcctId(ca.id);
-      setOrgEvents(Array.isArray(evts)?evts.slice(0,20):[]);
-      setFinCampaigns(Array.isArray(camps)?camps:[]);
-    }).catch(()=>{});
+    apiFetch("/events").then(evts=>setOrgEvents(Array.isArray(evts)?evts.slice(0,20):[])).catch(()=>{});
   },[]);
-  // Only suggest when the user typed a designation, hasn't already picked a
-  // campaign, and it fuzzy-matches an existing one.
-  const campaignSuggestion=(!campaignId&&designation.trim())?bestCampaignMatch(designation,finCampaigns):null;
 
-  const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift/Pledge"],["other","Other"]];
+  const TYPES=[["call","Call"],["meeting","Meeting"],["email","Email"],["event","Event"],["gift","Gift"],["other","Other"]];
+  // The gift form is the only place a gift is typed, so this type collects
+  // nothing and saves nothing: it opens that form, on this date.
+  const handOffToGiftForm=()=>{ if(onRecordGift)onRecordGift({date}); onClose&&onClose(); };
 
   const buildNote=()=>{
     const L=[];
@@ -165,8 +192,10 @@ function LogTouchpointModal({donor,onSave,onClose}){
       add("Event",eventName);L.push(`Donor Attended: ${attended}`);
       add("Observations",observations);add("Donor History",history);add("Next Step",nextStep);
     }else if(type==="gift"){
-      add("Amount",amount);add("Designation",designation);
-      add("Payment Method",payMethod);L.push(`Acknowledgement Sent: ${ackSent}`);add("Next Step",nextStep);
+      // Nothing to build. A gift is recorded on the gift form, which is what
+      // makes it count in totals, receipts and the bookkeeper export instead
+      // of being prose on a note.
+      return "";
     }else{
       add("Notes",otherNotes);add("Donor History",history);add("Spouse / Partner",spouse);add("Next Step",nextStep);
     }
@@ -174,25 +203,23 @@ function LogTouchpointModal({donor,onSave,onClose}){
   };
 
   const save=async()=>{
-    const note=buildNote();if(!note.trim())return;setLoading(true);
+    if(type==="gift")return handOffToGiftForm();
+    const note=buildNote();if(!note.trim())return;
+    // A double-tapped Save must not make two entries: `loading` is set before
+    // the await and the button is disabled on it, so the second tap has
+    // nothing left to do.
+    if(loading)return;
+    setLoading(true);
     try{
-      const saveType=type==="gift"?"gift":type==="meeting"?"meeting":type;
+      const saveType=type==="meeting"?"meeting":type;
       await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date})});
-      const giftAmt=type==="gift"?(parseFloat(String(amount).replace(/[$,]/g,""))||0):0;
-      if(type==="gift"&&giftAmt>0){
-        // The gift route auto-stamps the Finance ledger exactly once (source=gift,
-        // carrying the chosen fund). The old separate /finance/transactions call
-        // was removed — it double-stamped the ledger (BUILD-21 Part 3).
-        await apiFetch(`/donors/${donor.id}/gifts`,{method:"POST",body:JSON.stringify({amount:giftAmt,date,notes:note,fundId:finFundId||undefined,campaignId:campaignId||undefined,idempotencyKey:giftIdemRef.current})});
-      }
-      onSave({type:saveType,note,date,amount:giftAmt});
+      onSave({type:saveType,note,date,amount:0});
     }catch(e){console.error(e);}
     setLoading(false);
   };
 
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
   const ta={...inp,resize:"vertical",lineHeight:1.55};
-  const fieldHint={fontSize:11,color:T.ink3,marginTop:4,lineHeight:1.4};
   const canSave=buildNote().trim().length>0;
 
   return(
@@ -255,31 +282,18 @@ function LogTouchpointModal({donor,onSave,onClose}){
             <TpField label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} rows={3} style={ta}/></TpField>
             <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
           </>}
-          {type==="gift"&&<>
-            <TpField label="Amount"><input type="text" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="e.g. 5,000" style={inp}/></TpField>
-            <TpField label="Designation">
-              <input value={designation} onChange={e=>setDesignation(e.target.value)} placeholder="e.g. General Operating, Arts Education…" style={inp}/>
-              <div style={fieldHint}>What the donor said it's for (free text). To count it toward a goal, pick a Campaign below.</div>
-              {campaignSuggestion&&<button type="button" onClick={()=>setCampaignId(campaignSuggestion.id)} style={{marginTop:6,background:T.gold100,border:"1px solid "+T.gold500,borderRadius:7,padding:"5px 10px",color:T.ink,fontSize:12,fontWeight:600,cursor:"pointer",textAlign:"left"}}>Did you mean the campaign “{campaignSuggestion.name}”? <span style={{color:T.greenDk,fontWeight:700}}>Attribute →</span></button>}
-            </TpField>
-            {finCampaigns.length>0&&<TpField label="Campaign">
-              <select value={campaignId} onChange={e=>setCampaignId(e.target.value)} style={{...inp,cursor:"pointer"}}>
-                <option value="">— not attributed —</option>
-                {finCampaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-              <div style={fieldHint}>Which goal this counts toward — updates that campaign's thermometer live.</div>
-            </TpField>}
-            <TpField label="Payment Method"><input value={payMethod} onChange={e=>setPayMethod(e.target.value)} placeholder="Check, ACH, Credit Card, Stock…" style={inp}/></TpField>
-            <TpField label="Acknowledgement Sent?"><TpYesNo val={ackSent} set={setAckSent}/></TpField>
-            {finFunds.length>0&&<TpField label="Finance Fund">
-              <select value={finFundId} onChange={e=>setFinFundId(e.target.value)} style={{...inp,cursor:"pointer"}}>
-                <option value="">— no fund —</option>
-                {finFunds.map(f=><option key={f.id} value={f.id}>{f.name}{f.restricted?" (Restricted)":""}</option>)}
-              </select>
-              <div style={fieldHint}>Which ledger fund it posts to in Finance.</div>
-            </TpField>}
-            <TpField label="Next Steps"><textarea value={nextStep} onChange={e=>setNextStep(e.target.value)} placeholder="Specific actions planned…" rows={3} style={ta}/></TpField>
-          </>}
+          {type==="gift"&&<div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:6}}>A gift is recorded on the gift form</div>
+            <div style={{fontSize:12,color:T.ink3,lineHeight:1.6,marginBottom:12}}>
+              That form asks for the fund, the payment method and whether it has been thanked, so the
+              gift counts in giving totals, earns a receipt, reaches the bookkeeper export and appears
+              in the audit log. Typing the amount here would leave a note and no gift.
+            </div>
+            <button onClick={handOffToGiftForm}
+              style={{background:T.greenDk,border:"none",borderRadius:9,padding:"10px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              Open the gift form
+            </button>
+          </div>}
           {type==="other"&&<>
             <TpField label="Notes"><textarea value={otherNotes} onChange={e=>setOtherNotes(e.target.value)} rows={5} style={ta}/></TpField>
             <TpField label="Donor History & Background"><textarea value={history} onChange={e=>setHistory(e.target.value)} placeholder="Past relationship, context…" rows={3} style={ta}/></TpField>
@@ -288,8 +302,8 @@ function LogTouchpointModal({donor,onSave,onClose}){
           </>}
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>
-          <button onClick={onClose} style={{background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+          {type!=="gift"&&<button onClick={save} disabled={loading||!canSave} style={{flex:1,background:canSave?T.greenDk:T.bg2,border:"none",borderRadius:10,padding:"12px",color:T.white,fontSize:14,fontWeight:700,cursor:canSave?"pointer":"not-allowed"}}>{loading?"Saving…":"Save Touchpoint"}</button>}
+          <button onClick={onClose} style={{flex:type==="gift"?1:undefined,background:T.bg,border:"none",borderRadius:10,padding:"12px 16px",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
         </div>
       </div>
     </Modal>
@@ -835,7 +849,7 @@ function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="H
   );
 }
 
-function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,org=null}){
+function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
@@ -983,14 +997,17 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [seqToast,setSeqToast]=useState("");
 
   // Tabs
-  const [dpTab,setDpTab]=useState("overview");
+  // FIX-11 Part 1 — "+ Log → Gift" lands HERE, on the gift form, with the date
+  // the person chose. Opening on the Gifts tab with the panel already open is
+  // what makes the hand-off one step rather than two.
+  const [dpTab,setDpTab]=useState(initialAddGift?"gifts":"overview");
   const [dpMoreOpen,setDpMoreOpen]=useState(false); // BUILD-41: mobile overflow menu (Impact Summary / Edit)
 
   // Full gift data for Gifts & Pledges tab
   const [giftsFull,setGiftsFull]=useState([]);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
-  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
   const [giftErr,setGiftErr]=useState("");
   const [giftMoreOpen,setGiftMoreOpen]=useState(false);
   // BUILD-45 §1.1 F-3 — idempotency key minted lazily per submit attempt and
@@ -998,7 +1015,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // replays the same key and the server records exactly one gift.
   const addGiftIdemRef=useRef(null);
   const addPledgeIdemRef=useRef(null);   // BUILD-72 Part 2 — pledge double-tap guard
-  const [addGiftOpen,setAddGiftOpen]=useState(false);
+  const [addGiftOpen,setAddGiftOpen]=useState(!!initialAddGift);
   const [giftSaving,setGiftSaving]=useState(false);
 
   // Planned gifts
@@ -1216,12 +1233,27 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
     setYearEndBusy(false);
   };
 
+  // FIX-11 Part 1 — "+ LOG → GIFT" WHEN THIS PROFILE IS ALREADY OPEN.
+  //
+  // The initial state below opens the gift form when the profile MOUNTS on the
+  // hand-off. But the commonest route to "+ Log" is the profile's own button,
+  // and the donor is then already selected: React keys this component by donor
+  // id, so nothing remounts, the initialiser never runs again, and the button
+  // did nothing at all. Found by the browser walk; no test of the modal in
+  // isolation could have seen it.
+  useEffect(()=>{
+    if(!initialAddGift)return;
+    setDpTab("gifts");
+    setAddGiftOpen(true);
+    if(initialAddGift.date)setAddGiftForm(f=>({...f,date:initialAddGift.date}));
+  },[initialAddGift]);
+
   const loadGiftsFull=()=>{
     apiFetch(`/donors/${donor.id}`).then(raw=>{
       const g=(raw.gifts||[]).map(g=>({
         id:g.id,amount:parseFloat(g.amount)||0,date:g.date||g.created_at?.split("T")[0],
         type:g.type||"cash",campaign:g.campaign||"",notes:g.notes||"",
-        fund_id:g.fund_id||"",payment_method:g.payment_method||"",
+        fund_id:g.fund_id||"",fund_name:g.fund_name||"",payment_method:g.payment_method||"",
         acknowledgement_sent:!!g.acknowledgement_sent,
       }));
       setGiftsFull(g);
@@ -2811,6 +2843,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               ))}
             </div>
 
+            {/* FIX-11 Part 1 — ONE sentence for a gift on the timeline, in one
+                place, so the Activity Log and the Stewardship Timeline cannot
+                disagree about the same gift. What Jonathan saw instead was the
+                raw form ("Amount: 100,000 Designation: General Operating
+                Payment Method: ACH Acknowledgement Sent: no"), twice. */}
             {actMode==="log"&&<>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -2857,7 +2894,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                             is the software talking to itself. */}
                         {i.logged_by_name&&<span style={{fontSize:10,color:T.ink3,fontStyle:"italic"}}>by {firstNameOf(i.logged_by_name)}</span>}
                       </div>
-                      {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{fmtFull(linkedGift.amount)}{linkedGift.payment_method?` · ${linkedGift.payment_method}`:""}</div>}
+                      {linkedGift&&<div style={{fontSize:12,color:T.ink,marginTop:3,fontWeight:700}}>{giftTimelineLine(linkedGift,giftFundName(linkedGift))}</div>}
                       {(()=>{const txt=linkedGift?stripGiftAmountPrefix(i.note):i.note;
                         return txt?<div style={{fontSize:12,color:T.ink,marginTop:3,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{txt}</div>:null;})()}
                     </div>
@@ -2896,7 +2933,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 if(giftIdsOnTimeline.has(g.id))continue;
                 const m=milestoneFor(g);
                 milestones.push({date:g.date,icon:m?"✦":"•",label:m||"Gift",
-                  desc:`${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${m==="First gift"?" · the relationship began":""}`,
+                  desc:`${giftTimelineLine(g,giftFundName(g))}${m==="First gift"?" · the relationship began":""}`,
                   color:T.gold500,big:!!m});
               }
               if(firstGiftDate){
@@ -2920,7 +2957,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                     icon:m?"✦":"•",
                     label:m||(i.type||"note").replace(/_/g," "),
                     desc:g?(()=>{const t=stripGiftAmountPrefix(i.note);
-                      return `${fmtFull(g.amount)}${g.payment_method?` · ${g.payment_method}`:""}${t?` · ${t}`:""}`;})():(i.note||""),
+                      return `${giftTimelineLine(g,giftFundName(g))}${t?` · ${t}`:""}`;})():(i.note||""),
                     color:{call:T.green500,meeting:T.greenMid,email:T.greenDk,gift:T.gold600,event:T.gold500,stewardship:T.green,stage_change:T.green500,planned_gift:T.gold700}[i.type]||T.ink3,
                     big:!!m,
                     loggedBy:i.logged_by_name,

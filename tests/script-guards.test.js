@@ -201,6 +201,11 @@ const LOOPBACK_HARDCODED = [
   // NAV-1 — the grouped-sidebar walk. Loopback :5631/:4193 by default,
   // hardcoded; APP/API are the per-worktree port block, never a remote host.
   "nav1-walk",
+  // FIX-11 Part 1 — the audit-log and "+ Log → Gift" walk. Loopback
+  // :5801/:4273 by default, hardcoded; APP/API are the per-worktree port
+  // block, never a remote host. It registers its own throwaway org and
+  // writes only through the API, like every walk above it.
+  "fix11-audit-walk",
   "build45-portal-capture", "onramp-capture", "build78-capture", "build79-repro", "build79-capture", "build80-capture", "build81-capture", "build82-repro", "build82-capture", "build83-repro", "build83-capture", "build84-capture"];
 
 // Read-only against whatever BASE points at (may default to prod): their only
