@@ -1,6 +1,6 @@
 // LANDING-2 · the Platform menu: the platform overview, the three products,
 // Connections, Onboarding, and the features index plus its one template.
-import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, Icon, featureCard } from "../lib";
+import { Hero, Block, Ui, uiOf, Cards, FaqS, Incl, Steps, FinalCta, Related, featureCard , AgentCrew } from "../lib";
 import { FEAT, FEATURE_SLUGS, OPEN_API_HREF } from "../data/features";
 import { CONNECTIONS } from "../data/connections";
 
@@ -68,7 +68,6 @@ export function Volunteer() {
   </>;
 }
 
-const AGENTS = [["Writer", "Thank-yous, appeals and updates in your voice, from the donor's own history."], ["Researcher", "Briefs before a visit: giving, notes, emails and what changed since you last met."], ["Analyst", "Plain answers about your file, with every number linked to its rows."], ["Recurring", "Finds failed cards and paused plans and drafts the note to fix them."], ["Onboarding", "Builds a first-year journey for each new donor and names who owns each step."], ["Data", "Finds duplicates, fixes addresses and tidies records, all shown before it changes anything."]];
 
 export function Agent() {
   return <>
@@ -80,11 +79,7 @@ export function Agent() {
         ui={<Ui t="Agent · plan" k="spark" rows={[["1", "Find gifts over $500", "Since Monday · 23 donors", "Done", "c"], ["2", "Draft thank-you letters", "In your voice, signed by Dana", "Review"], ["3", "Add a call task for 4 board prospects", "Assigned to Dana", "Review"]]} />} />
       <Block flip tint="emerald-tint" h="Every action recorded, every action reversible." p="Whatever the Agent does is in the audit log with who approved it. Changed your mind? Undo it from the same screen." photo="team-pointing-wide" />
     </div></section>
-    <section className="pricing"><div className="wrap">
-      <div className="eyebrow">Six assistants</div>
-      <h2 className="mix h-l" style={{ marginTop: 22 }}>One engine, <b>six jobs.</b></h2>
-      <div className="cards">{AGENTS.map(a => <div className="card" key={a[0]}><span className="ci"><Icon k="spark" size={26} /></span><h4>{a[0]}</h4><p>{a[1]}</p></div>)}</div>
-    </div></section>
+    <AgentCrew />
     <FaqS items={[["Will the Agent email our donors?", "Never on its own. It drafts. Your staff review and send."], ["Can it move money or change a gift?", "No. The Agent never touches payments, and gift changes go through the normal screens with the audit log."], ["Is the Agent included?", "Yes, on every plan."]]} />
     <FinalCta />
   </>;

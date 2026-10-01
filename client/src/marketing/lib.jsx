@@ -3,13 +3,14 @@
 // hero, block, ui, steps, incl, faqS, cards, related, finalCta, statBand,
 // quoteBand, teamReel), producing the same markup and classes, so site.css
 // styles it exactly as the reference does.
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ICON } from "./data/icons";
 import { PHOTOS, photoSrc, rowFor } from "./data/photos";
 import { FEAT } from "./data/features";
 import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { TEAM } from "./data/team";
+import { CREW, CREW_NEVER } from "./data/crew";
 
 // ── Rich strings ───────────────────────────────────────────────────────────
 // Copy in the data modules keeps the reference's inline <b>, <em> and <br>.
@@ -361,6 +362,57 @@ export function PhotoRow({ row }) {
     </section>
   );
 }
+
+// ── The Agent crew ────────────────────────────────────────────────────────
+// Six tabs, one panel. Tabs are real buttons in a real tablist, so a keyboard
+// reaches every one and a tap works at 390 (site.css puts the tabs in two
+// columns under 1000px and one under 600px).
+export function AgentCrew() {
+  const [sel, setSel] = useState(0);
+  return (
+    <section className="pricing" id="crew"><div className="wrap">
+      <div className="eyebrow">Meet the crew</div>
+      <h2 className="mix h-l" style={{ marginTop: 22 }}>Six assistants. <b>One rule: you decide.</b></h2>
+      <p className="lede" style={{ marginTop: 20 }}>Each one reads your whole file, shows you exactly what it plans to do and waits. Pick one to see it work. Examples use demo data.</p>
+      <div className="crew">
+        <div className="crew-tabs" role="tablist" aria-label="Steward Agent assistants">
+          {CREW.map((a, i) => (
+            <button key={a.n} type="button" role="tab" id={"crew-tab-" + i} aria-selected={sel === i ? "true" : "false"}
+              aria-controls={"crew-pane-" + i} className={"crew-tab c-" + a.c} onClick={() => setSel(i)}>
+              <span className="crew-ic"><CrewIcon d={a.i} size={22} /></span>
+              <span><b>{a.n}</b><em>{a.tag}</em></span>
+            </button>
+          ))}
+        </div>
+        <div className="crew-panes">
+          {CREW.map((a, i) => (
+            <div className={"crew-pane c-" + a.c} key={a.n} id={"crew-pane-" + i} role="tabpanel"
+              aria-labelledby={"crew-tab-" + i} hidden={sel !== i}>
+              <div className="crew-head">
+                <span className="crew-ic big"><CrewIcon d={a.i} size={30} /></span>
+                <div><h3>The {a.n}</h3><p>{a.tag}</p></div>
+              </div>
+              <div className="crew-flow">
+                <div className="cf say"><span>You say</span><p>&ldquo;{a.say}&rdquo;</p></div>
+                <div className="cf plan"><span>It shows you the plan</span><ol>{a.does.map(d => <li key={d}>{d}</li>)}</ol></div>
+                <div className="cf ok"><span>You approve</span><p>{a.out}</p>
+                  <div className="crew-btns"><b>Approve</b><i>Change</i><i>Undo any time</i></div>
+                </div>
+              </div>
+              <div className="crew-power">{a.power.map(x => <span key={x}><Tick />{x}</span>)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="crew-never"><b>None of them ever</b>{CREW_NEVER.map(x => <span key={x}>{x}</span>)}</div>
+    </div></section>
+  );
+}
+
+const CrewIcon = ({ d, size }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.65"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" dangerouslySetInnerHTML={{ __html: d }} />
+);
 
 export function Prose({ children }) {
   return <section style={{ paddingTop: 40 }}><div className="wrap prose">{children}</div></section>;

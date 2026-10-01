@@ -1,10 +1,11 @@
 // LANDING-2 · the Resources menu: guides, templates, articles, the glossary,
 // the FAQ, help, what's new, the three calculators and the legal drafts.
 import React, { useState } from "react";
-import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A } from "../lib";
+import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A, Cover, rich } from "../lib";
 import { GUIDES, GUIDE_SLUGS } from "../data/guides";
 import { TEMPL } from "../data/templates";
 import { ARTS, CHG } from "../data/articles";
+import { ART2, ART2_SLUGS } from "../data/articles2";
 import { GLOSS } from "../data/glossary";
 import { FAQ_PAGE } from "../data/faqs";
 import { SRC, QUOTES } from "../data/research";
@@ -79,17 +80,73 @@ export function Templates() {
   </>;
 }
 
+// LANDING-3 · article cards wear a generated cover, never a photograph: an
+// ink, emerald or tint block with a serif title and a leaf. They cost nothing
+// to load and stay legible at any size.
+export function ArtCards({ keys }) {
+  return (
+    <div className="res">
+      {keys.map((k, i) => {
+        if (k === "state-of-retention") return (
+          <A className="rc" href="/articles/state-of-retention" key={k}>
+            <Cover t="The state of" b="donor retention" i={i} />
+            <span className="k">Research</span>
+            <h4>The state of donor retention, in plain words</h4>
+            <p>What the latest sector data says about who gives again.</p>
+            <span className="go">Read →</span>
+          </A>
+        );
+        const a = ART2[k];
+        return (
+          <A className="rc" href={"/articles/" + k} key={k}>
+            <Cover t={a.t} b={a.b} i={i} />
+            <span className="k">{a.k} · {a.min} min</span>
+            <h4>{plainH(a.h)}</h4><p>{a.d}</p>
+            <span className="go">Read →</span>
+          </A>
+        );
+      })}
+    </div>
+  );
+}
+
+const plainH = h => h.replace(/<\/?b>/g, "");
+
 export function Articles() {
   return <>
     <Hero eyebrow="Articles" crumbs={[["Resources", "/resources"], ["Articles"]]} h="Ideas worth <b>a coffee break.</b>" lede="Short reads on retention, stewardship and running a calm development office." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap"><div className="res">
-      {ARTS.map(a => <A className="rc" href={a[2]} key={a[0]}><Photo k={a[3]} /><span className="k">Article</span><h4>{a[0]}</h4><p>{a[1]}</p><span className="go">Read →</span></A>)}
-    </div></div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap"><ArtCards keys={ART2_SLUGS} /></div></section>
     <FinalCta />
   </>;
 }
 
-const Quote = ({ q }) => <blockquote data-quote="research">{q[0]}<cite>{q[1]}, {q[2]}</cite></blockquote>;
+// The one template for the six new articles.
+export function Article({ slug }) {
+  const a = ART2[slug];
+  const i = ART2_SLUGS.indexOf(slug);
+  return <>
+    <Crumbs list={[["Resources", "/resources"], ["Articles", "/articles"], [plainH(a.h)]]} />
+    <section className="hero phero" style={{ paddingBottom: 40 }}><div className="wrap hero-g">
+      <div>
+        <div className="eyebrow">{a.k} · {a.min} minute read</div>
+        <h1 className="mix h-l">{rich(a.h)}</h1>
+        <p className="lede">{a.d}</p>
+      </div>
+      <Cover t={a.t} b={a.b} i={i} />
+    </div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap prose narrow">
+      <p>{a.lede}</p>
+      {a.s.map(([h, ps]) => <React.Fragment key={h}><h2>{h}</h2>{ps.map(x => <p key={x}>{x}</p>)}</React.Fragment>)}
+      {a.src && <p className="srcnote">Source: {a.src.map((k, n) => <React.Fragment key={k}>{n ? " · " : ""}<A href={SRC[k][1]}>{SRC[k][0]}</A></React.Fragment>)}</p>}
+      <div className="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><Pill href="/demo">Book a demo</Pill></div>
+    </div></section>
+    <section style={{ paddingTop: 0 }}><div className="wrap">
+      <div className="eyebrow">Keep reading</div>
+      <ArtCards keys={ART2_SLUGS.filter(x => x !== slug).slice(0, 3)} />
+    </div></section>
+    <FinalCta />
+  </>;
+}
 
 export function StateOfRetention() {
   return <>

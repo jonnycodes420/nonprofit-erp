@@ -120,7 +120,8 @@ function MegaResources() {
   );
 }
 
-// LANDING-3 · our own words, not Bloomerang's. Product, Why switch, Pricing,
+// LANDING-3 · our own words, not the ones every other donor CRM uses.
+// Product, Why switch, Pricing,
 // Leadership, Learn. Only the top-level words changed: every menu holds
 // exactly what it held before.
 const MEGAS = [["plat", "Product", MegaPlatform], ["why", "Why switch", MegaWhy], ["res", "Learn", MegaResources]];

@@ -47,6 +47,12 @@
   <url><loc>https://www.stewardapp.dev/templates</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/articles</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/articles/state-of-retention</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/second-gift</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/lybunt-sybunt</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/read-retention</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/thank-you-call</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/monthly-donors</loc><priority>0.6</priority></url>
+  <url><loc>https://www.stewardapp.dev/articles/january-week</loc><priority>0.6</priority></url>
   <url><loc>https://www.stewardapp.dev/glossary</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/faq</loc><priority>0.8</priority></url>
   <url><loc>https://www.stewardapp.dev/help</loc><priority>0.8</priority></url>
