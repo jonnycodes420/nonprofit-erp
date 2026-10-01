@@ -11,11 +11,12 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { apiFetch } from "./api";
-// Landing stays an eager import — it's the public entry page and must not
-// wait on a second network hop. Everything else is route-split (React.lazy)
-// so visiting "/" no longer downloads the entire authenticated app bundle
-// (the shell + Donors/Grants/Comms/etc. was ~1.5MB minified before this).
-import Landing from "./pages/Landing";
+// The marketing site (LANDING-2) stays an eager import: "/" is the public
+// entry page and must not wait on a second network hop. Everything else is
+// route-split (React.lazy) so visiting "/" does not download the
+// authenticated app bundle (the shell + Donors/Grants/Comms/etc.).
+import MarketingPage from "./marketing/Site";
+import { ROUTES as MARKETING_ROUTES } from "./marketing/routes";
 const LoginPage          = React.lazy(() => import("./pages/LoginPage"));
 const WelcomePage        = React.lazy(() => import("./pages/WelcomePage"));
 const InvitePage         = React.lazy(() => import("./pages/InvitePage"));
@@ -170,7 +171,14 @@ function Root() {
         <Sentry.ErrorBoundary fallback={<RootErrorFallback />}>
         <React.Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/"          element={<PublicOnly><Landing /></PublicOnly>} />
+          {/* LANDING-2 — the marketing site, one route per row of
+              marketing/routes.js. "/" keeps PublicOnly (a signed-in person
+              lands in the app); the rest are public to everyone. Existing app
+              routes are not in that table and are untouched below. */}
+          {MARKETING_ROUTES.map(r => (
+            <Route key={r.path} path={r.path}
+              element={r.path === "/" ? <PublicOnly><MarketingPage route={r} /></PublicOnly> : <MarketingPage route={r} />} />
+          ))}
           <Route path="/login"     element={<PublicOnly><LoginPage /></PublicOnly>} />
           {/* GTM-1a 2 — SIGNUP REOPENS, AS THE PATH IT ALWAYS SHOULD HAVE BEEN.
               BUILD-87 F.2 made this a redirect and deleted the page, because

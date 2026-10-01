@@ -170,6 +170,7 @@ CORE=(
   import-columns
   palette
   no-emoji
+  landing2-marketing
   clickability
   test-clock-seam
   hotfix1-profile
