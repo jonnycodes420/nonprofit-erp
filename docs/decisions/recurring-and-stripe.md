@@ -146,3 +146,14 @@ Nonprofits lose 20–30% of recurring giving to involuntary churn (expired/decli
 **Production setup required**: the Stripe Connect webhook endpoint must be subscribed to `invoice.payment_failed`, `invoice.payment_succeeded`, `customer.subscription.updated`, `customer.subscription.deleted` for connected accounts — these are new event types this feature depends on; `payment_intent.succeeded`/`checkout.session.completed` already flow, confirming Connect delivery itself is live, but the four above still need to be added to the endpoint's subscribed events in the Stripe dashboard.
 
 Tone/scope guardrails (deliberate): auto-send is correct here (unlike milestone/stewardship drafts, which stay human-reviewed) because failed-payment dunning is transactional and time-sensitive — standard practice, not a stewardship judgment call. No gamification language anywhere in the templates (no "tier"/"level"/"badge"/"leaderboard"); this is a stewardship touch, not a collections notice. No donor-facing dashboard, login, or donor-visible history — donor-side surface is limited to the dunning/thank-you emails and the one-time card-update Checkout session (see "Strategic pivot").
+
+- **The expiring-card screen and the expiring-card email read the same clock (NAV-1, 2026-09-30).**
+  `notifyExpiringCards` (server.js) picks its candidates in UTC; the two `expiringCount` /
+  `mrrExpiring` queries in `routes/give.js` used Postgres `CURRENT_DATE`, which is the DATABASE
+  SESSION's timezone. Wherever that is not UTC the two disagree for the last hours of every month:
+  Steward emails donors about cards the staff screen counts as zero. Production's Postgres is UTC
+  so nothing had gone wrong there, which is exactly why only a non-UTC database could find it — the
+  scratch Postgres is America/New_York, and `tests/recurring-recovery.test.js` went red at 20:30
+  local on 30 September. Both queries now read `(now() AT TIME ZONE 'UTC')::date`. Whether the
+  right basis is UTC or the ORG's own timezone (`orgTime.js`) is a real question and a later
+  build's; agreeing with the email is not.

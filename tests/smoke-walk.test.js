@@ -131,6 +131,15 @@ const EXPECTED_5XX = /\/ai\/stream/;
   });
   page.on("requestfailed", r => {
     if (IGNORABLE_URL.test(r.url())) return;
+    // ERR_ABORTED IS THE WALK'S OWN DOING, NOT A BROKEN SCREEN. Clicking the
+    // next tab, and then `page.goto` into a donor profile, cancels whatever
+    // the screen before it still had in flight — on a slow runner that is
+    // Finance's `/finance/overview`, a multi-month aggregate over the demo
+    // org. The abort is then recorded against the NEXT leg, which is how a
+    // perfectly good donor profile came to be reported as on fire. A request
+    // the test cancelled says nothing about the screen; a request that fails
+    // on its own merits still does, and still lands here.
+    if (/ERR_ABORTED/.test((r.failure() || {}).errorText || "")) return;
     trouble.push(`request failed: ${r.url().replace(APP, "").replace(BASE, "").slice(0, 90)} (${(r.failure() || {}).errorText || "?"})`);
   });
   page.on("response", r => {
@@ -175,8 +184,10 @@ const EXPECTED_5XX = /\/ai\/stream/;
   const seen = [];
   for (const id of want) {
     trouble = [];
-    // The tab may be in the rail or behind the More group; open More once it
-    // is needed and leave it open.
+    // NAV-1 — the rail is groups now and nothing is behind a fold, so every
+    // label is on screen. The More fallback below is kept as a belt: it costs
+    // one $$eval when a label is genuinely missing, and it is the difference
+    // between "unreachable" and "unreachable unless you expand something".
     // A nav button's text is its ICON, a newline, then its label
     // ("◈\nHome"). Rather than fight the matcher's whitespace handling, the
     // buttons are read once and matched on ANY of their lines. Not the last
@@ -208,6 +219,20 @@ const EXPECTED_5XX = /\/ai\/stream/;
        current.split("\n").some(l => l.trim().toLowerCase() === label.toLowerCase()), { asked: label, got: current });
     seen.push(current.trim().toLowerCase());
     await look(`tab ${id}`);
+    // NAV-1 §2 — Dashboards is no longer a tab of its own; it is the first
+    // group of the Reports rail. It still gets opened on every walk, from the
+    // one place it now lives, so folding it in did not quietly stop walking it.
+    if (id === "reports") {
+      const dash = page.locator("[data-testid=\"reports-rail\"] [data-report-id^=\"dash:\"]").first();
+      if (await dash.count()) {
+        trouble = [];
+        await dash.click();
+        await page.waitForTimeout(1200);
+        await look("reports · dashboards");
+      } else {
+        ok("reports · dashboards — the rail offers a dashboard", false, "no dash: item in the Reports rail");
+      }
+    }
   }
   ok("the walk visited a DIFFERENT screen each time (not the dashboard N times)",
      new Set(seen).size === seen.length, seen);

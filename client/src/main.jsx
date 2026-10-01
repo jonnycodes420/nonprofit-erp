@@ -189,6 +189,12 @@ function Root() {
           <Route path="/signup"    element={<PublicOnly><SignupPage /></PublicOnly>} />
           <Route path="/welcome"   element={<RequireAuth><WelcomePage /></RequireAuth>} />
           <Route path="/today"     element={<Navigate to="/dashboard" replace />} />
+          {/* NAV-1 §2 — the dashboards folded into Reports, so an old
+              /dashboards bookmark lands on the board dashboard inside it.
+              `?report=` is the one mechanism App.jsx already uses for a link
+              into Reports (the weekly email's link), so this is a redirect and
+              not a second way in. */}
+          <Route path="/dashboards" element={<Navigate to="/dashboard?report=dash:board" replace />} />
           <Route path="/dashboard" element={<RequireOnboarded><App /></RequireOnboarded>} />
           {/* D-1 (BUILD-45): a real, linkable donor URL so the Home "Needs your
               attention" rows can be genuine <a href="/donors/:id"> anchors that

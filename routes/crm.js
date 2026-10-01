@@ -933,6 +933,51 @@ app.delete("/me/home-layout", requireAuth, wrap(async (req, res) => {
   res.json({ layout: null });
 }));
 
+// ── NAV-1 §4 — the per-user sidebar layout ─────────────────────────────────
+// The same shape and the same three verbs as the Home layout above, for the
+// same reason: a preference about a screen belongs to the person, follows them
+// to another browser, and resets to NULL rather than to a frozen copy of
+// today's default. The canonical groups live in client/src/lib/navGroups.js;
+// the server stores what the person chose and validates nothing about the
+// groups themselves, so a nav item added there needs no migration here.
+const NAV_ALWAYS_VISIBLE = new Set(["dashboard", "settings"]);
+function normalizeNavLayout(layout) {
+  if (!Array.isArray(layout) || layout.length > 48) return null;
+  const seen = new Set();
+  const out = [];
+  for (const row of layout) {
+    if (!row || typeof row.id !== "string" || !row.id || row.id.length > 40) return null;
+    if (typeof row.visible !== "boolean") return null;
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    // Home and Settings are never hidden: hiding either would leave somebody
+    // with no way back. The client refuses it too; this is the half a stale
+    // client cannot get past.
+    out.push({ id: row.id, visible: NAV_ALWAYS_VISIBLE.has(row.id) ? true : row.visible });
+  }
+  return out;
+}
+
+app.get("/me/nav-layout", requireAuth, wrap(async (req, res) => {
+  const rows = await query("SELECT nav_layout FROM users WHERE id = ?", [req.user.userId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  let layout = null;
+  try { layout = rows[0].nav_layout ? JSON.parse(rows[0].nav_layout) : null; } catch { layout = null; }
+  res.json({ layout: normalizeNavLayout(layout) });
+}));
+
+app.put("/me/nav-layout", requireAuth, wrap(async (req, res) => {
+  const layout = normalizeNavLayout(req.body?.layout);
+  if (!layout) return res.status(400).json({ error: "layout must be an array of {id, visible}" });
+  await run("UPDATE users SET nav_layout = ? WHERE id = ?", [JSON.stringify(layout), req.user.userId]);
+  res.json({ layout });
+}));
+
+app.delete("/me/nav-layout", requireAuth, wrap(async (req, res) => {
+  await run("UPDATE users SET nav_layout = NULL WHERE id = ?", [req.user.userId]);
+  res.json({ layout: null });
+}));
+
 // ── Onboarding ─────────────────────────────────────────────────────────────
 app.post("/onboarding/complete", requireAuth, wrap(async (req, res) => {
   await seedOrgData(req.user.orgId);

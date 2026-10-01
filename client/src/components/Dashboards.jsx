@@ -280,14 +280,22 @@ export function RecurringBody({ get }) {
   );
 }
 
-export function Dashboards({ data, onNavigate }) {
+// NAV-1 §2 — DASHBOARDS LIVES INSIDE REPORTS NOW, as the first group of its
+// one rail. When `dashKey` is given, the caller's rail is choosing which
+// dashboard this is and this component draws no rail of its own: two left
+// rails side by side would be exactly the scanning problem NAV-1 set out to
+// fix. Called with no `dashKey` it is the screen it always was, rail and all,
+// so nothing about it is deleted.
+export function Dashboards({ data, onNavigate, dashKey }) {
   const [rail, setRail] = useState([]);
-  const [key, setKey] = useState("board");
+  const [ownKey, setOwnKey] = useState("board");
   const [board, setBoard] = useState(null);
   const [loading, setLoading] = useState(true);
   const t = makeT(data?.org?.vocabulary);
+  const ownRail = !dashKey;
+  const key = dashKey || ownKey;
 
-  useEffect(() => { apiFetch("/dashboards").then(r => setRail(r.dashboards || [])).catch(() => {}); }, []);
+  useEffect(() => { if (ownRail) apiFetch("/dashboards").then(r => setRail(r.dashboards || [])).catch(() => {}); }, [ownRail]);
   useEffect(() => {
     setLoading(true);
     apiFetch(`/dashboards/${key}`).then(r => { setBoard(r); setLoading(false); }).catch(() => setLoading(false));
@@ -319,11 +327,11 @@ export function Dashboards({ data, onNavigate }) {
         {/* The rail is the SERVER's list, so it cannot drift from what exists.
             Its active item is cream's shade with a 3px emerald rule, never a
             solid green block (FIX-2 C's rule). */}
-        <nav className="dash-rail" aria-label="Dashboards">
+        {ownRail && <nav className="dash-rail" aria-label="Dashboards">
           {rail.map(d => {
             const on = key === d.key;
             return (
-              <button key={d.key} data-dash-key={d.key} aria-current={on ? "page" : undefined} onClick={() => setKey(d.key)}
+              <button key={d.key} data-dash-key={d.key} aria-current={on ? "page" : undefined} onClick={() => setOwnKey(d.key)}
                 style={{ textAlign: "left", padding: "10px 12px 10px 15px", borderRadius: 8, cursor: "pointer", border: "none",
                          background: "transparent", color: T.ink, fontWeight: 400, ...activeMark(on, "left") }}>
                 <div style={{ fontSize: 13.5, fontWeight: on ? 700 : 600 }}>{d.label}</div>
@@ -331,7 +339,7 @@ export function Dashboards({ data, onNavigate }) {
               </button>
             );
           })}
-        </nav>
+        </nav>}
 
         <div className="dash-main" data-dashboard={!loading && board ? board.key : undefined}>
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>

@@ -2332,6 +2332,14 @@ async function initSchema() {
   // follows the user across devices because it lives here, not localStorage.
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS home_layout TEXT`);
 
+  // ── NAV-1 §4: per-user sidebar layout ─────────────────────────────────────
+  // [{ id, visible }] as text; NULL = the canonical groups (navGroups.js), so
+  // a group added next month reaches everybody instead of freezing today's
+  // rail into a row. Per USER for the same reason home_layout is: two people
+  // share an organisation and not a job, and a volunteer coordinator's rail is
+  // not the finance manager's.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS nav_layout TEXT`);
+
   // ── BUILD-36 A4: per-user email notification toggles ──────────────────────
   // An officer must hear about their donors and tasks without logging in, but
   // must also be able to turn any of the three notification streams off. Three

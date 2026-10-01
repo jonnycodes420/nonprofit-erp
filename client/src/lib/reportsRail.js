@@ -41,7 +41,19 @@ export const ALIASES = {
 // top; the money that came in and the grants each get a group of their own
 // instead of hanging under the year. The names are the brief's, word for word.
 // The saved group is filled from the server, so it holds no fixed item.
+// NAV-1 §2 — DASHBOARDS IS THE FIRST THING IN REPORTS. It was its own nav
+// item sharing the ▤ glyph with this one, and "Dashboards" and "Reports" are
+// the same question asked twice. Its four screens are the first group of this
+// rail, filled from the server's own /dashboards list exactly as the saved
+// group is filled from /saved-reports — so the rail cannot drift from what
+// exists. A dashboard id is prefixed `dash:`; Reports.jsx draws the Dashboards
+// component for one instead of running a report.
+export const DASH_PREFIX = "dash:";
+export const isDashboard = id => String(id || "").startsWith(DASH_PREFIX);
+export const dashKeyOf = id => isDashboard(id) ? String(id).slice(DASH_PREFIX.length) : null;
+
 export const RAIL_GROUPS = [
+  { id: "dashboards", question: "Dashboards", items: [] },
   { id: "saved", question: "Your saved reports", items: [] },
   { id: "stopped", question: "Who stopped giving",
     items: ["lybunt", "sybunt", "std:lapsed-24", "retention", "std:monthly-givers"] },
@@ -71,6 +83,7 @@ export function resolveReportId(raw) {
   if (!id) return { id: DEFAULT_REPORT };
   if (id === BUILD_ID) return { id: BUILD_ID };
   if (ALIASES[id]) return { ...ALIASES[id] };
+  if (isDashboard(id)) return { id };
   if (PLACED.has(id)) return { id };
   if (id.startsWith("std:")) return { id: DEFAULT_REPORT };   // a standard report that no longer exists
   return { id, saved: true };
@@ -84,19 +97,22 @@ export const PDF_TWIN = { lybunt: "std:lybunt", sybunt: "std:sybunt", retention:
 
 // The rail's rows, with names: tab reports from `tabDefs` ({key,label,team}),
 // standard reports by the server's name, saved reports from the org's list.
-export function railGroups(tabDefs = [], standard = [], saved = []) {
+export function railGroups(tabDefs = [], standard = [], saved = [], dashboards = []) {
   const tab = id => tabDefs.find(r => r.key === id);
   const name = id => (tab(id) || {}).label || (standard.find(s => s.id === id) || {}).name || null;
   return RAIL_GROUPS.map(g => ({
     ...g,
-    items: g.id === "saved"
+    items: g.id === "dashboards"
+      ? dashboards.map(d => ({ id: DASH_PREFIX + d.key, label: d.label, sub: null }))
+      : g.id === "saved"
       ? saved.map(s => ({ id: s.id, label: s.name, sub: s.schedule === "weekly" ? "weekly" : (s.mine && !s.shared ? "just you" : null) }))
       : g.items.map(id => ({ id, label: name(id), team: !!(tab(id) || {}).team })).filter(i => i.label),
-  }));
+  })).filter(g => g.id !== "dashboards" || g.items.length > 0);
 }
 
 // The label of any report id, for a heading.
-export function reportLabel(id, tabDefs = [], standard = [], saved = []) {
+export function reportLabel(id, tabDefs = [], standard = [], saved = [], dashboards = []) {
+  if (isDashboard(id)) return (dashboards.find(d => DASH_PREFIX + d.key === id) || {}).label || null;
   return (tabDefs.find(r => r.key === id) || {}).label
     || (standard.find(s => s.id === id) || {}).name
     || (saved.find(s => s.id === id) || {}).name || null;
@@ -108,6 +124,7 @@ export function reportLabel(id, tabDefs = [], standard = [], saved = []) {
 export function groupOfReport(raw) {
   const r = resolveReportId(raw);
   if (r.id === BUILD_ID) return null;
+  if (isDashboard(r.id)) return "dashboards";
   if (r.saved) return "saved";
   const g = RAIL_GROUPS.find(x => x.items.includes(r.id));
   return g ? g.id : null;
