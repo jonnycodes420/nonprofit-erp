@@ -22142,7 +22142,8 @@ async function pruneCampaignAssets(orgId) {
 // not switched on yet" rather than 404 at the surface a human is reading.
 app.get("/settings/inbound-email", requireAuth, wrap(async (req, res) => {
   const IE = await inboundMod();
-  const orgRows = await query("SELECT org_slug FROM orgs WHERE id = ?", [req.user.orgId]);
+  const orgRows = await query(
+    "SELECT org_slug, inbound_email_enabled, is_demo_org FROM orgs WHERE id = ?", [req.user.orgId]);
   const slug = orgRows[0]?.org_slug || "";
   const address = INBOUND_EMAIL_DOMAIN ? IE.loggingAddress(slug, INBOUND_EMAIL_DOMAIN) : "";
   const held = await query(
@@ -22151,9 +22152,25 @@ app.get("/settings/inbound-email", requireAuth, wrap(async (req, res) => {
     [req.user.orgId]);
   const drops = await query(
     "SELECT COUNT(*)::int AS n FROM inbound_email_drops WHERE org_id = ?", [req.user.orgId]);
+  // FIX-11 Part 5 — TWO gates, reported separately, because "off" for a
+  // deployment reason and "off because this organisation is the demo" are
+  // different sentences to put on a screen.
+  const orgOn = orgRows[0]?.inbound_email_enabled !== false;
   res.json({
-    enabled: INBOUND_EMAIL_ENABLED,
+    enabled: INBOUND_EMAIL_ENABLED && orgOn,
+    deploymentEnabled: INBOUND_EMAIL_ENABLED,
+    orgEnabled: orgOn,
     address,
+    // ONE address for the organisation, and Steward knows which staff member
+    // sent a message because the sender has to be one of its users. Said out
+    // loud so nobody BCCs it expecting a private inbox.
+    sentence: !INBOUND_EMAIL_ENABLED
+      ? "BCC logging is not switched on for this Steward yet."
+      : !orgOn
+        ? "BCC logging is off for this organisation."
+        : `BCC ${address} on an email to a donor and Steward files it on their record. `
+          + "It is one address for the whole organisation, and Steward knows it came from you because you sent it. "
+          + "A message that names nobody on file is held for you to place, or stored nowhere at all.",
     unmatched: held.map(h => ({
       id: h.id, kind: h.kind, from: h.from_email, to: h.to_emails, subject: h.subject,
       body: h.body, date: h.message_date,

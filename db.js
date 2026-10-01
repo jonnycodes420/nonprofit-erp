@@ -5605,6 +5605,16 @@ async function initSchema() {
     console.error("[books] CRITICAL: the cheque-number backfill failed — existing cheques export without a number:", e.message);
   }
 
+  // ── FIX-11 Part 5 — BCC LOGGING IS PER ORGANISATION ──────────────────────
+  // `INBOUND_EMAIL_ENABLED` is one environment flag for the whole deployment,
+  // which cannot express "on for every real customer and off for the demo".
+  // The demo org is shown to strangers and its people are fictional; mail
+  // arriving at its logging address has nowhere honest to go.
+  //
+  // DEFAULT TRUE, because the env flag is still the outer gate: this column
+  // only takes an org OUT. A new org inherits whatever the deployment does.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS inbound_email_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

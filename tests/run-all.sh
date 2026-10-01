@@ -30,7 +30,15 @@
 #        STRIPE_BILLING_API_BASE=http://localhost:5604 \
 #        STRIPE_PRICE_FOUNDING=price_test_founding \
 #        STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
+#        INBOUND_EMAIL_ENABLED=1 INBOUND_EMAIL_DOMAIN=log.stewardapp.dev \
+#        INBOUND_EMAIL_SECRET=local-inbound-secret \
+#        RESEND_RECEIVING_BASE_URL=http://localhost:5612 \
 #        node server.js
+#      (FIX-11 Part 5: the three INBOUND_EMAIL_* values turn the BCC webhook on;
+#      without them fix11-inbound-resend SKIPS, and a suite that skips is
+#      coverage that is not there. RESEND_RECEIVING_BASE_URL is a SECOND Resend
+#      seam, separate from RESEND_BASE_URL: sending goes to the mail sink and
+#      the receiving API is a different API, which that suite stands up itself.)
 #      (CORS_ORIGIN=http://localhost:4173 is REQUIRED for every browser leg.
 #      The SPA on :4173 calls the API on :5601 cross-origin, and :4173 is not
 #      in DEFAULT_CORS_ORIGINS — so without this the browser suites do not
@@ -124,6 +132,7 @@ CORE=(
   oauth-state
   int3-optout
   int4-mailbox
+  fix11-inbound-resend
   int5-api-keys
   script-guards
   build96-ai-gate

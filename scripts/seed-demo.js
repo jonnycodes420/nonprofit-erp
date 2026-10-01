@@ -819,6 +819,11 @@ async function main() {
            "Our annual gala: dinner, a student showcase, and a paddle raise for the scholarship fund.",
            galaRevenue, 41500, 100000, gala.campaignId]);
   await q(`UPDATE events SET public_slug='harbor-lights-gala' WHERE id=$1 AND org_id=$2`, [gala.id, ORG]);
+  // FIX-11 Part 5 — THE DEMO RECEIVES NO MAIL. Its people are fictional and
+  // strangers look at its screens, so a real email BCC'd to its logging
+  // address has nowhere honest to go. The env flag is the deployment's gate;
+  // this is the org's, and the demo is the one org that is always out.
+  await q(`UPDATE orgs SET inbound_email_enabled = FALSE WHERE id = $1`, [ORG]);
   // Every gala gift is STAMPED with the event, so "raised" is a sum over an id
   // and the rows behind the number open. Without it the figure fell back to
   // matching a campaign NAME, and the drill-through returned nothing.

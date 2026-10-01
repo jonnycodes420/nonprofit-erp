@@ -24,6 +24,76 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-11 Part 5 — the Resend inbound actually lands on the donor (2026-09-30)
+
+On 30 September Muse wired Resend inbound on log.stewardapp.dev: receiving on,
+MX and DKIM at Vercel, Railway variables set, the webhook pointed at
+`/inbound-email` with the shared secret. **It would have received nothing**,
+for two reasons, and both were silent.
+
+**Resend nests the whole message under `data`.** The payload is
+`{ type: "email.received", created_at, data: { email_id, from, to, cc, bcc,
+message_id, subject, attachments } }`, and the route reads `to` and `from` at
+the top level. So `orgSlugFromPayload` found no recipient, every message was
+dropped as "no_org", and the drop counter would have been the only trace. The
+suite proves it from the other end: asked for the org, the unadapted payload
+answers `null`.
+
+**And Resend's inbound webhook carries no body at all.** Not the text, not the
+html, not the headers: metadata and an `email_id`. The body is a second call,
+`GET https://api.resend.com/emails/receiving/{id}` with the API key. So even a
+flattened payload would have filed a subject with an empty note. A message
+whose body cannot be fetched now stores nothing, because a half-record on a
+donor's timeline cannot be told from a donor who wrote nothing.
+
+**A no-match stored the subject and the body, and should not have.** The brief
+said "same storage rules as INT-4: only messages involving someone already on
+file are stored". It turned out INT-4 disagreed with itself. The Gmail and
+Outlook half (`shared/mailboxLog.js`) drops a no-match and its decision carries
+no subject, no body and no address, which `tests/int4-mailbox.test.js` §1 pins
+byte-wise. The BCC half HELD, with all three, on the Unmatched list. Two paths
+handling the same kind of data, and the looser one was the one receiving mail
+from the open internet.
+
+The strict one is right: a message that names nobody on file is correspondence
+with somebody Steward has no relationship with — a vendor, a friend, a
+journalist, a doctor. Keeping its subject and body so staff MIGHT file it later
+means a donor CRM holding the contents of mail about people who never consented
+to be in it. The count is kept, because "eleven messages arrived that Steward
+stored nothing from" is true and useful. `multiple` and `self_test` still hold:
+everybody involved in those IS on file.
+
+**A signature where there is one.** The shared secret rides in the webhook URL,
+which works and puts the secret in every proxy log between Resend and here.
+Resend signs with Svix and `RESEND_WEBHOOK_SECRET` is already set for the
+delivery webhook, so `/inbound-email` now keeps its raw bytes (one scoped
+`express.raw` above the JSON parser, the same pattern the other webhooks use)
+and verifies a signature when one is present. A request that CLAIMS to be
+signed and is not is refused outright rather than falling through to the
+secret, which would otherwise let anybody who learned the URL bypass the
+signature by sending a bad one.
+
+**The address is on a screen now.** Settings, Account — which is where the user
+chip in the top bar already leads, so it is the profile menu's destination —
+with a copy button and the honest sentence: it is ONE address for the
+organisation, Steward knows it came from you because you sent it, and a message
+naming nobody is stored nowhere at all.
+
+**BCC logging is per organisation** (`orgs.inbound_email_enabled`, default
+true), and the demo org is opted out by the one script that writes it. Its
+people are fictional and strangers look at its screens.
+
+`RESEND_RECEIVING_BASE_URL` is a second Resend seam, separate from
+`RESEND_BASE_URL`: sending goes to the local mail sink and the receiving API is
+a different API, which the suite stands up itself. Both are in `tests/shard.sh`
+so the suite RUNS in CI rather than skipping, because a suite that skips is
+coverage that is not there.
+
+NEEDS-JONATHAN.md §0-INBOX named the wrong route (`/resend/inbound`, which does
+not exist) and the wrong authentication, and called the adapter done. Corrected,
+along with the Google note: the consent screen is In production, not Testing,
+and publishing it is not the same as passing verification.
+
 ## FIX-11 Part 4 — a gift file with no donors is not a dead end (2026-09-30)
 
 On 30 September Jonathan imported a 40-gift file into an org where those donors
