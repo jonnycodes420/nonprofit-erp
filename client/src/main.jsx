@@ -95,6 +95,9 @@ function AuthProvider({ children }) {
     setAuth(data);
   };
   const logout = () => {
+    // SEC-1 — end this session on the server too, so the token is dead and the
+    // session leaves the list. Best effort: signing out never waits on it.
+    if (localStorage.getItem("npe_token")) apiFetch("/auth/logout", { method: "POST", body: "{}" }).catch(() => {});
     localStorage.removeItem("npe_token");
     localStorage.removeItem("npe_user");
     localStorage.removeItem("npe_org");

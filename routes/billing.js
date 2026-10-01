@@ -53,6 +53,8 @@ let app = routers.r0;
 async function invalidateUserSessions(userId) {
   await run("UPDATE users SET sessions_valid_after = NOW() WHERE id = ?", [userId]);
   sessionCache.evict(userId);
+  // SEC-1 — and the rows, so the session list says what is true.
+  await require("../twoFactor").revokeSessions("user_id=?", [userId], "system:sessions-invalidated").catch(() => {});
 }
 
 // ── Notification retry (ops/test hook — BUILD-45 / F-2) ────────────────────
@@ -112,23 +114,75 @@ app.post("/auth/login", loginIpLimiter, loginAccountLimiter, wrap(async (req, re
   const org = orgs[0];
   const isSuperAdmin = !!user.is_super_admin;
 
-  // ── BUILD-98 (switch) Part 8 — TWO-STEP SIGN-IN ──────────────────────────
-  // Someone with two-step on must send the code with the password. The two
-  // refusals are distinct because the screen asks two different things.
+  // ── SEC-1 · TWO-FACTOR SIGN-IN ──────────────────────────────────────────
+  // Password first (above), then the code. A correct password alone never
+  // returns a session for someone with two-factor on: it returns
+  // `mfa_required` and no token. The code can be the authenticator's, an
+  // emailed one, or a recovery code. Five wrong codes lock code entry for
+  // fifteen minutes. A browser she chose to trust skips the code for 30 days.
+  const TF = require("../twoFactor");
+  const say = (verb, extra = {}) => {
+    req.audit.org(user.org_id);
+    req.audit.actor({ kind: "user", id: user.id, name: user.name || user.email });
+    req.audit.entity("user", user.id, user.email);
+    req.audit.action(verb);
+    if (Object.keys(extra).length) req.auditLegacyChanges = { ...(req.auditLegacyChanges || {}), ...extra };
+  };
+  let trustToken = null;
   if (user.mfa_enabled_at) {
-    if (!req.body.code) return res.status(401).json({ error: "mfa_required", message: "Enter the six-digit code from your authenticator app." });
-    const ctr = await mfaVerifyForUser(user, req.body.code);
-    if (ctr === null) return res.status(401).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
-  } else if (user.role === "admin" && org && org.require_admin_mfa) {
-    // An admin in an org that requires two-step, who has not set it up,
-    // gets a session that opens ONLY the setup routes (auth.js enforces it).
+    const trusted = await TF.isTrusted(user, req.body.trustToken);
+    if (!trusted) {
+      const until = TF.lockedUntil(user);
+      if (until) return res.status(429).json({ error: "mfa_locked", lockedUntil: until.toISOString(),
+        message: `Too many wrong codes. Code entry opens again at ${until.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}.` });
+      const code = String(req.body.code || "").trim();
+      if (!code) {
+        if (user.mfa_method === "email") await TF.sendEmailCode(user, resend, "sign in");
+        return res.status(401).json({ error: "mfa_required", method: user.mfa_method || "totp",
+          message: user.mfa_method === "email"
+            ? `We emailed a six-digit code to ${user.email}. It works for ${TF.EMAIL_CODE_MINUTES} minutes.`
+            : "Enter the six-digit code from your authenticator app." });
+      }
+      let how = null;
+      if (TF.looksLikeRecovery(code) && await TF.useRecoveryCode(user, code)) how = "recovery";
+      else if (user.mfa_method === "email" ? await TF.useEmailCode(user, code) : (await mfaVerifyForUser(user, code)) !== null) how = "code";
+      if (!how) {
+        const f = await TF.recordFailure(user, resend);
+        if (f.locked) { say("two-factor locked after wrong codes"); return res.status(429).json({ error: "mfa_locked",
+          message: `That was the ${TF.LOCK_AFTER}th wrong code. Code entry is paused for ${TF.LOCK_MINUTES} minutes, and we emailed you.` }); }
+        return res.status(401).json({ error: "mfa_invalid", message: user.mfa_method === "email"
+          ? "That code did not match, or it has expired." : "That code did not match. Codes change every 30 seconds." });
+      }
+      await TF.clearFailures(user);
+      if (how === "recovery") {
+        const left = await TF.recoveryLeft(user.id);
+        say("signed in with a recovery code", { recoveryCodesLeft: left });
+        await TF.mailUser(user, resend, "A recovery code was used on your Steward account",
+          `Someone signed in to your Steward account with one of your recovery codes. ${left} ${left === 1 ? "code is" : "codes are"} left. If it was not you, change your password and make new codes in Settings, Security.`);
+      }
+      if (req.body.trustBrowser === true) trustToken = await TF.trustBrowser(user, req);
+    }
+  } else if (!TF.isDemoOrg(org) && (user.mfa_must_setup || isSuperAdmin || (org && org.require_mfa)
+             || (user.role === "admin" && org && org.require_admin_mfa))) {
+    // Two-factor is required here and this person has not set it up (or an
+    // owner reset it). The session opens ONLY the setup routes (auth.js), so
+    // no donor data is reachable until it is done.
     const setupToken = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin, mfaSetup: true });
     return res.json({ mfaSetupRequired: true, token: setupToken,
-      message: "Your organisation requires two-step sign-in for administrators. Set it up to continue." });
+      message: isSuperAdmin ? "Super-admin accounts always use two-factor. Set it up to continue."
+        : user.mfa_must_setup ? "Your two-factor was reset by an owner. Set it up again to continue."
+        : "Your organisation requires two-factor sign-in. Set it up to continue." });
   }
 
-  const token = signToken({ userId: user.id, orgId: user.org_id, email: user.email, role: user.role, isSuperAdmin });
-  res.json({ token, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+  const { token } = await TF.issueSession(user, req, signToken);
+  res.json({ token, trustToken, user: { id: user.id, email: user.email, name: user.name, role: user.role, isSuperAdmin, mfaEnabled: !!user.mfa_enabled_at }, org: { ...org, onboarding_complete: org.onboarding_complete ?? 1 } });
+}));
+
+// SEC-1 — signing out ends THIS session on the server, not only in the browser.
+app.post("/auth/logout", requireAuth, wrap(async (req, res) => {
+  if (req.user.sid) await require("../twoFactor").revokeSessions("id=? AND user_id=?", [req.user.sid, req.user.userId], req.user.userId);
+  req.audit.action("signed out");
+  res.json({ ok: true });
 }));
 
 app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
@@ -167,7 +221,7 @@ app.post("/auth/register", registerLimiter, wrap(async (req, res) => {
   // BUILD-36 A1: new org → instant_gift_thanks ON by default.
   await provisionNewOrgWorkflows(orgId).catch(e => console.error("[org] provision workflows:", e.message));
 
-  const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
+  const { token } = await require("../twoFactor").issueSession({ id: userId, org_id: orgId, email: normalizedEmail, role: "admin" }, req, signToken);
   res.status(201).json({
     token,
     user: { id: userId, email: normalizedEmail, name: name || email, role: "admin" },
@@ -391,7 +445,7 @@ app.post("/auth/register-org", registerLimiter, wrap(async (req, res) => {
   // ON, ED & assigned officer). Existing orgs are never re-created, so untouched.
   await provisionNewOrgWorkflows(orgId).catch(e => console.error("[org] provision workflows:", e.message));
 
-  const token = signToken({ userId, orgId, email: normalizedEmail, role: "admin" });
+  const { token } = await require("../twoFactor").issueSession({ id: userId, org_id: orgId, email: normalizedEmail, role: "admin" }, req, signToken);
   res.status(201).json({
     token,
     user: { id: userId, email: normalizedEmail, name: userName, role: "admin" },
@@ -547,7 +601,7 @@ app.post("/auth/invite/accept", wrap(async (req, res) => {
 
   const orgs = await query("SELECT * FROM orgs WHERE id = ?", [invite.org_id]);
   const org = orgs[0];
-  const jwtToken = signToken({ userId, orgId: invite.org_id, email: invite.email, role: invite.role });
+  const { token: jwtToken } = await require("../twoFactor").issueSession({ id: userId, org_id: invite.org_id, email: invite.email, role: invite.role }, req, signToken);
   res.status(201).json({
     token: jwtToken,
     user: { id: userId, email: invite.email, name, role: invite.role },

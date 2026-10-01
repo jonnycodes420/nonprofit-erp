@@ -808,13 +808,44 @@ Data: ${d.name} | Total giving: $${total.toLocaleString()} | ${gc} gifts avg $${
   }
 }
 app = routers.r1;
+// ═══ SEC-1 · TWO-FACTOR AND SESSIONS ═══════════════════════════════════════
+// Every route below is the signed-in person's own, except the three marked
+// OWNER, which take an admin and a teammate in the same organisation. Every
+// one is audited by the trail above every router; the verbs are named here.
+const TF = require("../twoFactor");
+const bcrypt = require("bcryptjs");
+const meRow = async userId => (await query(`SELECT * FROM users WHERE id=?`, [userId]))[0] || null;
+const orgOf = async orgId => (await query(`SELECT id, is_demo_org, require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [orgId]))[0] || null;
+const mustKeepMfa = (u, o) => !!(u.is_super_admin || (o && o.require_mfa) || (u.role === "admin" && o && o.require_admin_mfa));
+// One check for "is this a current code of yours", whatever the method.
+async function currentCodeOk(u, code) {
+  const c = String(code || "").trim();
+  if (!c) return false;
+  if (TF.looksLikeRecovery(c)) return TF.useRecoveryCode(u, c);
+  if (u.mfa_method === "email") return TF.useEmailCode(u, c);
+  return (await mfaVerifyForUser(u, c)) !== null;
+}
+
 app.get("/me/mfa", requireAuth, wrap(async (req, res) => {
-  const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
-  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
-  res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, orgRequiresForAdmins: !!(o && o.require_admin_mfa) });
+  const u = await meRow(req.user.userId);
+  const o = await orgOf(req.user.orgId);
+  res.json({ enabled: !!(u && u.mfa_enabled_at), enabledAt: u ? u.mfa_enabled_at : null, method: u?.mfa_method || (u?.mfa_enabled_at ? "totp" : null),
+    recoveryCodesLeft: u?.mfa_enabled_at ? await TF.recoveryLeft(u.id) : 0,
+    orgRequires: !!(o && o.require_mfa), orgRequiresForAdmins: !!(o && o.require_admin_mfa),
+    mustKeep: !!(u && mustKeepMfa(u, o)), demo: TF.isDemoOrg(o), demoSentence: TF.isDemoOrg(o) ? TF.DEMO_SENTENCE : null });
 }));
-// Start setup: a new secret, sealed as PENDING until a code proves the app has it.
+
+// Start setup. Authenticator: a new secret, sealed as PENDING, with its QR
+// code. Email: a code to the sign-in address. Never on a shared demo login.
 app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
+  const o = await orgOf(req.user.orgId);
+  if (TF.isDemoOrg(o)) return res.status(409).json({ error: "demo_org", message: TF.DEMO_SENTENCE });
+  const u = await meRow(req.user.userId);
+  if (req.body?.method === "email") {
+    const r = await TF.sendEmailCode(u, resend, "turn on two-factor");
+    if (!r.sent) return res.status(429).json({ error: "too_soon", message: "A code was sent a moment ago. Check your inbox, or try again in a minute." });
+    return res.json({ method: "email", sentence: `We emailed a six-digit code to ${u.email}. Type it here to finish.` });
+  }
   const { seal, credentialsConfigured } = await import("../shared/secretBox.js");
   // FIX-10 D — a customer never reads a variable name. The reason is in the
   // server log, where somebody can act on it.
@@ -824,52 +855,178 @@ app.post("/me/mfa/setup", requireAuth, wrap(async (req, res) => {
   }
   const secret = TOTP.newSecret();
   await run(`UPDATE users SET mfa_pending_sealed=? WHERE id=?`, [seal(secret, { aad: "mfa:" + req.user.orgId + ":" + req.user.userId }), req.user.userId]);
-  res.json({ secret, otpauthUrl: TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId }),
-    sentence: "Add this to your authenticator app, then type the code it shows to finish." });
+  const otpauthUrl = TOTP.otpauthUrl(secret, { account: req.user.email || req.user.userId });
+  let qr = null;
+  try { qr = await require("qrcode").toDataURL(otpauthUrl, { margin: 1, width: 220, errorCorrectionLevel: "M" }); } catch { qr = null; }
+  res.json({ method: "totp", secret, otpauthUrl, qr,
+    sentence: "Scan this with your authenticator app, or type the key, then enter the six-digit code it shows." });
 }));
-// Finish setup with one good code. Returns a FULL session: a setup-only
-// session becomes a real one here, and nowhere else.
+
+// Finish setup with one good code. Returns the recovery codes ONCE and a full
+// session: a setup-only session becomes a real one here, and nowhere else.
 app.post("/me/mfa/enable", requireAuth, wrap(async (req, res) => {
-  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
-  if (!u || !u.mfa_pending_sealed) return res.status(400).json({ error: "Start setup first." });
-  const { open } = await import("../shared/secretBox.js");
-  const secret = open(u.mfa_pending_sealed, { aad: "mfa:" + u.org_id + ":" + u.id });
-  const ctr = TOTP.verify(secret, req.body && req.body.code);
-  if (ctr === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
-  await run(`UPDATE users SET mfa_secret_sealed=mfa_pending_sealed, mfa_pending_sealed=NULL, mfa_enabled_at=NOW(), mfa_last_counter=? WHERE id=?`, [ctr, u.id]);
+  const u = await meRow(req.user.userId);
+  const o = await orgOf(req.user.orgId);
+  if (TF.isDemoOrg(o)) return res.status(409).json({ error: "demo_org", message: TF.DEMO_SENTENCE });
+  if (!u) return res.status(400).json({ error: "Start setup first." });
+  if (req.body?.method === "email") {
+    if (!(await TF.useEmailCode(u, req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match, or it has expired." });
+    await run(`UPDATE users SET mfa_method='email', mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NOW(), mfa_must_setup=false WHERE id=?`, [u.id]);
+  } else {
+    if (!u.mfa_pending_sealed) return res.status(400).json({ error: "Start setup first." });
+    const { open } = await import("../shared/secretBox.js");
+    const secret = open(u.mfa_pending_sealed, { aad: "mfa:" + u.org_id + ":" + u.id });
+    const ctr = TOTP.verify(secret, req.body && req.body.code);
+    if (ctr === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match. Codes change every 30 seconds." });
+    await run(`UPDATE users SET mfa_method='totp', mfa_secret_sealed=mfa_pending_sealed, mfa_pending_sealed=NULL, mfa_enabled_at=NOW(), mfa_last_counter=?, mfa_must_setup=false WHERE id=?`, [ctr, u.id]);
+  }
+  const recoveryCodes = await TF.makeRecoveryCodes(u);
+  req.audit.action("two-factor turned on"); req.audit.entity("user", u.id, u.email);
   const isSuperAdmin = !!u.is_super_admin;
-  const token = signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin });
+  const { token } = await TF.issueSession(u, req, signToken);
   const [org] = await query(`SELECT * FROM orgs WHERE id=?`, [u.org_id]);
-  res.json({ enabled: true, token,
+  res.json({ enabled: true, token, recoveryCodes,
+    recoverySentence: "Keep these somewhere safe. Each works once, instead of a code, if you lose your phone. They will not be shown again.",
     user: { id: u.id, email: u.email, name: u.name, role: u.role, isSuperAdmin, mfaEnabled: true },
     org: org ? { ...org, onboarding_complete: org.onboarding_complete ?? 1 } : null });
 }));
-// Turning it off takes a current code — and an admin cannot turn it off while
-// the org requires it.
-app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
-  const [u] = await query(`SELECT * FROM users WHERE id=?`, [req.user.userId]);
-  if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
-  const [o] = await query(`SELECT require_admin_mfa FROM orgs WHERE id=?`, [u.org_id]);
-  if (u.role === "admin" && o && o.require_admin_mfa) return res.status(409).json({ error: "Your organisation requires two-step sign-in for administrators." });
-  if ((await mfaVerifyForUser(u, req.body && req.body.code)) === null) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
-  await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL WHERE id=?`, [u.id]);
-  res.json({ enabled: false });
-}));
-// The org rule. Only an admin who already has two-step on may switch it on —
-// nobody can lock themselves out of their own organisation by clicking a box.
-app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
-  const want = req.body && req.body.requireAdminMfa;
-  if (typeof want !== "boolean") return res.status(400).json({ error: "requireAdminMfa must be true or false" });
-  if (want) {
-    const [u] = await query(`SELECT mfa_enabled_at FROM users WHERE id=?`, [req.user.userId]);
-    if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-step sign-in for yourself first." });
-  }
-  await run(`UPDATE orgs SET require_admin_mfa=? WHERE id=?`, [want, req.user.orgId]);
-  console.log(`[mfa] ${req.user.orgId} require_admin_mfa=${want} by ${req.user.email || req.user.userId}`);
-  res.json({ requireAdminMfa: want });
+
+// A code by email, for someone whose method is email and who needs one now
+// (to turn it off, or to make new recovery codes).
+app.post("/me/mfa/email-code", requireAuth, wrap(async (req, res) => {
+  const u = await meRow(req.user.userId);
+  if (!u || u.mfa_method !== "email") return res.status(400).json({ error: "Your two-factor uses an authenticator app." });
+  const r = await TF.sendEmailCode(u, resend, "confirm a change to two-factor");
+  req.audit.skip("a code sent to oneself");
+  res.json({ sent: r.sent, sentence: r.sent ? `We emailed a code to ${u.email}.` : "A code was sent a moment ago. Check your inbox." });
 }));
 
-// ── Me ─────────────────────────────────────────────────────────────────────
+// Turning it off takes a current code, and is refused where it is required.
+app.post("/me/mfa/disable", requireAuth, wrap(async (req, res) => {
+  const u = await meRow(req.user.userId);
+  if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Two-step sign-in is not on." });
+  const o = await orgOf(u.org_id);
+  if (mustKeepMfa(u, o)) return res.status(409).json({ error: u.is_super_admin ? "Super-admin accounts always use two-factor." : "Your organisation requires two-factor sign-in." });
+  if (!(await currentCodeOk(u, req.body && req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
+  await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL, mfa_method=NULL WHERE id=?`, [u.id]);
+  await run(`DELETE FROM mfa_recovery_codes WHERE user_id=?`, [u.id]);
+  await run(`DELETE FROM mfa_trusted_browsers WHERE user_id=?`, [u.id]);
+  req.audit.action("two-factor turned off"); req.audit.entity("user", u.id, u.email);
+  res.json({ enabled: false });
+}));
+
+// New recovery codes: the old set stops working the moment these exist.
+app.post("/me/mfa/recovery-codes", requireAuth, wrap(async (req, res) => {
+  const u = await meRow(req.user.userId);
+  if (!u || !u.mfa_enabled_at) return res.status(400).json({ error: "Turn on two-factor first." });
+  if (!(await currentCodeOk(u, req.body && req.body.code))) return res.status(400).json({ error: "mfa_invalid", message: "That code did not match." });
+  const recoveryCodes = await TF.makeRecoveryCodes(u);
+  req.audit.action("recovery codes replaced"); req.audit.entity("user", u.id, u.email);
+  res.json({ recoveryCodes, recoverySentence: "Your old recovery codes no longer work. Keep these somewhere safe; they will not be shown again." });
+}));
+
+// The org rule, OWNER. Only an admin who already has two-factor on may switch
+// either one on, so nobody locks themselves out by clicking a box.
+app.put("/org/security", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const want = req.body || {};
+  const sets = [], args = [];
+  for (const [k, col] of [["requireMfa", "require_mfa"], ["requireAdminMfa", "require_admin_mfa"]]) {
+    if (want[k] === undefined) continue;
+    if (typeof want[k] !== "boolean") return res.status(400).json({ error: `${k} must be true or false` });
+    sets.push(`${col}=?`); args.push(want[k]);
+  }
+  if (!sets.length) return res.status(400).json({ error: "requireMfa or requireAdminMfa is required" });
+  if (want.requireMfa === true || want.requireAdminMfa === true) {
+    const u = await meRow(req.user.userId);
+    if (!u || !u.mfa_enabled_at) return res.status(409).json({ error: "Turn on two-factor for yourself first." });
+  }
+  const o = await orgOf(req.user.orgId);
+  if (TF.isDemoOrg(o)) return res.status(409).json({ error: "demo_org", message: TF.DEMO_SENTENCE });
+  await run(`UPDATE orgs SET ${sets.join(", ")} WHERE id=?`, [...args, req.user.orgId]);
+  const [after] = await query(`SELECT require_mfa, require_admin_mfa FROM orgs WHERE id=?`, [req.user.orgId]);
+  res.json({ requireMfa: !!after.require_mfa, requireAdminMfa: !!after.require_admin_mfa });
+}));
+
+// RESET A TEAMMATE'S TWO-FACTOR, OWNER. They set it up again at their next
+// sign-in; every session they have ends now; they are told who and when.
+app.post("/org/users/:id/mfa/reset", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (TF.isDemoOrg(await orgOf(req.user.orgId))) return res.status(409).json({ error: "demo_org", message: "The shared demo login is used by many people at once, so it cannot sign others out or change its password. In your own account this works as described." });
+  const [t] = await query(`SELECT * FROM users WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "That person is not on your team." });
+  const [me] = await query(`SELECT name, email FROM users WHERE id=?`, [req.user.userId]);
+  await run(`UPDATE users SET mfa_secret_sealed=NULL, mfa_pending_sealed=NULL, mfa_enabled_at=NULL, mfa_last_counter=NULL, mfa_method=NULL,
+                              mfa_must_setup=true, mfa_failed_count=0, mfa_locked_until=NULL, sessions_valid_after=NOW() WHERE id=?`, [t.id]);
+  await run(`DELETE FROM mfa_recovery_codes WHERE user_id=?`, [t.id]);
+  await run(`DELETE FROM mfa_trusted_browsers WHERE user_id=?`, [t.id]);
+  await TF.revokeSessions("user_id=?", [t.id], req.user.userId);
+  require("../sessionCache").sessionCache.evict(t.id);
+  const when = new Date().toUTCString();
+  await TF.mailUser(t, resend, "Your Steward two-factor was reset",
+    `${me?.name || me?.email || "An owner"} reset two-factor on your Steward account on ${when}. You will be asked to set it up again the next time you sign in. If you did not expect this, reply to your team's owner.`);
+  req.audit.action("two-factor reset by an owner"); req.audit.entity("user", t.id, t.email);
+  res.json({ ok: true, sentence: `Reset. ${t.name || t.email} sets two-factor up again at their next sign-in, and was emailed to say you did this.` });
+}));
+
+// SIGN A TEAMMATE OUT EVERYWHERE, OWNER.
+app.post("/org/users/:id/sign-out-everywhere", requireAuth, requireAdmin, wrap(async (req, res) => {
+  if (TF.isDemoOrg(await orgOf(req.user.orgId))) return res.status(409).json({ error: "demo_org", message: "The shared demo login is used by many people at once, so it cannot sign others out or change its password. In your own account this works as described." });
+  const [t] = await query(`SELECT id, name, email FROM users WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!t) return res.status(404).json({ error: "That person is not on your team." });
+  await run(`UPDATE users SET sessions_valid_after=NOW() WHERE id=?`, [t.id]);
+  require("../sessionCache").sessionCache.evict(t.id);
+  const n = await TF.revokeSessions("user_id=?", [t.id], req.user.userId);
+  req.audit.action("signed a teammate out everywhere"); req.audit.entity("user", t.id, t.email);
+  res.json({ ok: true, ended: n, sentence: `${t.name || t.email} is signed out of every browser.` });
+}));
+
+// YOUR SESSIONS.
+app.get("/me/sessions", requireAuth, wrap(async (req, res) => {
+  const rows = await query(
+    `SELECT id, user_agent, ip_prefix, created_at, last_active_at FROM user_sessions
+      WHERE user_id=? AND revoked_at IS NULL AND last_active_at > NOW() - INTERVAL '8 days'
+      ORDER BY last_active_at DESC LIMIT 50`, [req.user.userId]);
+  res.json({ sessions: rows.map(r => ({ id: r.id, ...TF.describeAgent(r.user_agent), ipPrefix: r.ip_prefix,
+      createdAt: r.created_at, lastActiveAt: r.last_active_at, thisBrowser: r.id === req.user.sid })),
+    sentence: "Every browser signed in to your account in the last week. Sign one out and it is asked for a password on its next click." });
+}));
+app.post("/me/sessions/:id/sign-out", requireAuth, wrap(async (req, res) => {
+  const n = await TF.revokeSessions("id=? AND user_id=?", [req.params.id, req.user.userId], req.user.userId);
+  if (!n) return res.status(404).json({ error: "That session is not yours, or it has already ended." });
+  req.audit.action("signed a session out"); req.audit.entity("session", req.params.id);
+  res.json({ ok: true });
+}));
+// Everywhere else. The cut-off moves too, which also ends any token from
+// before sessions were rows; this browser gets a fresh token for its session.
+app.post("/me/sessions/sign-out-others", requireAuth, wrap(async (req, res) => {
+  if (TF.isDemoOrg(await orgOf(req.user.orgId))) return res.status(409).json({ error: "demo_org", message: "The shared demo login is used by many people at once, so it cannot sign others out or change its password. In your own account this works as described." });
+  const u = await meRow(req.user.userId);
+  const n = await TF.revokeSessions("user_id=? AND id <> ?", [u.id, req.user.sid || ""], u.id);
+  await run(`UPDATE users SET sessions_valid_after=NOW() - INTERVAL '2 seconds' WHERE id=?`, [u.id]);
+  require("../sessionCache").sessionCache.evict(u.id);
+  let token = null;
+  if (req.user.sid) { token = signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid }); }
+  else token = (await TF.issueSession(u, req, signToken)).token;
+  req.audit.action("signed out everywhere else"); req.audit.entity("user", u.id, u.email);
+  res.json({ ok: true, ended: n, token });
+}));
+
+// CHANGE YOUR PASSWORD, signed in. Every other session ends; this one stays.
+app.post("/me/password", requireAuth, wrap(async (req, res) => {
+  if (TF.isDemoOrg(await orgOf(req.user.orgId))) return res.status(409).json({ error: "demo_org", message: "The shared demo login is used by many people at once, so it cannot sign others out or change its password. In your own account this works as described." });
+  const u = await meRow(req.user.userId);
+  const cur = String(req.body?.current || ""), next = String(req.body?.next || "");
+  if (!u || !bcrypt.compareSync(cur, u.password_hash)) return res.status(400).json({ error: "wrong_password", message: "Your current password did not match." });
+  if (next.length < 8) return res.status(400).json({ error: "Your new password needs at least 8 characters." });
+  await run(`UPDATE users SET password_hash=? WHERE id=?`, [bcrypt.hashSync(next, 12), u.id]);
+  const n = await TF.revokeSessions("user_id=? AND id <> ?", [u.id, req.user.sid || ""], u.id);
+  await run(`UPDATE users SET sessions_valid_after=NOW() - INTERVAL '2 seconds' WHERE id=?`, [u.id]);
+  require("../sessionCache").sessionCache.evict(u.id);
+  const token = req.user.sid ? signToken({ userId: u.id, orgId: u.org_id, email: u.email, role: u.role, isSuperAdmin: !!u.is_super_admin, sid: req.user.sid })
+    : (await TF.issueSession(u, req, signToken)).token;
+  req.audit.action("password changed"); req.audit.entity("user", u.id, u.email);
+  res.json({ ok: true, ended: n, token, sentence: n ? `Password changed. ${n} other ${n === 1 ? "session was" : "sessions were"} signed out.` : "Password changed." });
+}));
+
 app.get("/me", requireAuth, wrap(async (req, res) => {
   const users = await query("SELECT id, email, name, role, notify_portfolio_gifts, notify_task_assignments, notify_daily_tasks, notify_thread_nudge, notify_step_reminder FROM users WHERE id = ?", [req.user.userId]);
   const orgs  = await query("SELECT * FROM orgs WHERE id = ?", [req.user.orgId]);
@@ -2284,7 +2441,8 @@ app.get("/org/team", requireAuth, wrap(async (req, res) => {
   // Active members only — a removed (soft-detached) user leaves the team list
   // but their authored rows keep their created_by identity (BUILD-75 C.1/C.3).
   const members = await query(
-    "SELECT id, email, name, role, created_at FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
+    // SEC-1 — whether each person has two-factor on, for the owner's Security list.
+    "SELECT id, email, name, role, created_at, (mfa_enabled_at IS NOT NULL) AS mfa_enabled, mfa_must_setup FROM users WHERE org_id = ? AND deactivated_at IS NULL ORDER BY created_at ASC",
     [req.user.orgId]
   );
   res.json(members);
@@ -2361,6 +2519,7 @@ app.delete("/users/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
   // revocation clock requireAuth checks; worst-case lag is the session-cache
   // TTL, same as a password reset).
   await run("UPDATE users SET deactivated_at=NOW(), sessions_valid_after=NOW() WHERE id=? AND org_id=?", [target.id, orgId]);
+  await require("../twoFactor").revokeSessions("user_id=?", [target.id], req.user.userId).catch(() => {});   // SEC-1
   await auditUserAdmin(orgId, "removed", target, req.user, null).catch(e =>
     console.error("[user-removal] audit write failed (removal stands):", e.message));
   // Release operational attachments — assignment is portfolio/board membership

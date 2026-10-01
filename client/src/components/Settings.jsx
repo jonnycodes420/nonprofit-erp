@@ -1991,6 +1991,8 @@ const SETTINGS_TABS=[
   {id:"audit",label:"Audit log",adminOnly:true},
   {id:"data",label:"Your Data"},
   {id:"account",label:"Account"},
+  // SEC-1 — two-factor, the team rule, sessions and the password, in one place.
+  {id:"security",label:"Security"},
 ];
 
 // ── FIX-11 Part 5 — THE BCC ADDRESS ───────────────────────────────────────
@@ -3196,8 +3198,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       </>}
 
       {/* ── Account ───────────────────────────────────────────────────────── */}
+      {/* ── SEC-1 · Security ─────────────────────────────────────────────── */}
+      {section==="security"&&<SecurityPanel isAdmin={isAdmin}/>}
+
       {section==="account"&&<>
-      <SecurityPanel isAdmin={isAdmin}/>
       {/* FIX-11 Part 5 — YOUR BCC ADDRESS, where you would look for it.
           INT-4 built the whole inbound path and nothing on any screen said the
           address existed, so nobody could use it. The user chip in the top bar

@@ -82,7 +82,7 @@ export function Audience({ slug }) {
   </>;
 }
 
-const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS."], ["Connections sealed", "Keys and tokens for your other tools are encrypted per organization and never shown back in the browser."], ["An audit log for everything", "Every change, export, download and sign-in, with the before and after. Append only."], ["Your data is yours", "Export everything in a standard format whenever you like. Leave and we delete it on request."], ["Scoped access", "Volunteer coordinators and staff see what their role needs."], ["Established infrastructure", "Steward runs on Postgres managed by Supabase, with the app on Railway and Vercel."]];
+const SECURE = [["Encrypted in transit", "Every connection to Steward uses HTTPS."], ["Connections sealed", "Keys and tokens for your other tools are encrypted per organization and never shown back in the browser."], ["An audit log for everything", "Every change, export, download and sign-in, with the before and after. Append only."], ["Your data is yours", "Export everything in a standard format whenever you like. Leave and we delete it on request."], ["Scoped access", "Volunteer coordinators and staff see what their role needs."], ["Two-factor sign-in", "A code from an authenticator app or by email, with recovery codes. An owner can require it for the whole team."], ["Sessions you control", "See every browser signed in to your account and sign any of them out. Changing your password signs out the rest."], ["Established infrastructure", "Steward runs on Postgres managed by Supabase, with the app on Railway and Vercel."]];
 
 export function Security() {
   return <>
@@ -91,7 +91,7 @@ export function Security() {
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="cards">
       {SECURE.map(c => <div className="card" key={c[0]}><span className="ci"><Icon k="audit" size={26} /></span><h4>{c[0]}</h4><p>{c[1]}</p></div>)}
     </div></div></section>
-    <Incl eb="On the roadmap" h="Coming <b>next.</b>" list={["Two-factor sign-in", "Require two-factor for your whole team", "Session list with sign out everywhere", "Public status page", "Data processing agreement", "Independent security review"]} />
+    <Incl eb="On the roadmap" h="Coming <b>next.</b>" list={["Public status page", "Data processing agreement", "Independent security review"]} />
     <FaqS items={[["Where is our data stored?", "In a Postgres database managed by Supabase. Backups are handled by the provider."], ["Do you sell or share donor data?", "No. Never."], ["Can we get our data out?", "Yes, any time, in a standard format."]]} />
     <FinalCta />
   </>;

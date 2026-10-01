@@ -233,7 +233,8 @@ export function TopBar({ auth, logout, onNavigate }) {
       </button>
       {meOpen && <div role="menu" style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:230,zIndex:130}}>
         {[["Account settings","Your name, password and sign-in",()=>onNavigate("settings",{section:"account"})],
-          ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})]]
+          ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})],
+          ["Two-factor and sessions","A code at sign-in, and every browser you're signed in on",()=>onNavigate("settings",{section:"security"})]]
           .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":undefined}
             onClick={()=>{setMeOpen(false);go();}}
             style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"8px 14px",cursor:"pointer",fontFamily:"inherit"}}>

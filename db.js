@@ -5212,6 +5212,35 @@ async function initSchema() {
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_last_counter BIGINT`);
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
+  // SEC-1 — two-factor for everyone, and the sessions it guards.
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_mfa BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_method TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_failed_count INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_locked_until TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_must_setup BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      code_hash TEXT NOT NULL, used_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mfa_recovery_user ON mfa_recovery_codes (user_id)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mfa_email_codes (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, code_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL, used_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mfa_email_user ON mfa_email_codes (user_id, created_at)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mfa_trusted_browsers (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, token_hash TEXT NOT NULL, user_agent TEXT,
+      expires_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ DEFAULT NOW())`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_mfa_trusted_user ON mfa_trusted_browsers (user_id)`);
+  // ONE ROW PER SIGNED-IN SESSION. Every token carries its id; auth.js checks
+  // it on every request, so signing one out ends it on the next request.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL, org_id TEXT NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      user_agent TEXT, ip_prefix TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), last_active_at TIMESTAMPTZ DEFAULT NOW(),
+      revoked_at TIMESTAMPTZ, revoked_by TEXT)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions (user_id, revoked_at)`);
 
   // ── BUILD-101 — MEMBERSHIPS ────────────────────────────────────────────
   // A level: a price, the org's stated fair-market value of its benefits

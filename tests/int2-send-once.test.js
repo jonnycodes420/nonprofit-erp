@@ -82,6 +82,11 @@ const MAPPING = {
   depositAccounts: { stripe: "bank_operating" },
 };
 
+// SEC-1 — THE FLAKE. reset() deletes and re-creates the admin, and a new
+// users row's sessions_valid_after defaults to NOW(), so the token from the
+// first sign-in is revoked by the suite's own reset whenever the run has
+// crossed two seconds. On a quiet machine it had not; on a loaded CI shard it
+// had, and §7 read session_revoked. Every reset now signs in again.
 async function reset() {
   for (const t of ["bookkeeping_deposits", "bookkeeping_connections", "fin_funds", "accounts", "users"])
     await q(`DELETE FROM ${t} WHERE org_id=$1`, [ORG]).catch(() => {});
@@ -108,7 +113,7 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
   ok("the accounting-system mock is listening (without it this suite proves nothing)", !!mock, MOCK_PORT);
   process.env.INTUIT_API_BASE = `http://localhost:${MOCK_PORT}`;
   await reset();
-  const tok = await login(ADMIN);
+  let tok = await login(ADMIN);
 
   // The server reads INTUIT_API_BASE from ITS OWN environment, so a suite that
   // only set it here would be sending nowhere. The boot recipe sets it; this
@@ -119,7 +124,7 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
   ok("the server can reach the accounting system (INTUIT_API_BASE is set on the server)",
      reachable, probe.body);
   if (!reachable) { await closeDb(); if (mock) mock.close(); summary(); return; }
-  await reset();
+  await reset(); tok = await login(ADMIN);
 
   // ── §1 · A DEPOSIT THAT DOES NOT FOOT IS REFUSED ────────────────────────
   const wrong = await send(tok, [{ payout: { ...PAYOUT, netCents: 96000 }, gifts: GIFTS }]);
@@ -153,7 +158,7 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
 
   // ── §4 · TEN AT ONCE ────────────────────────────────────────────────────
   // A scheduled run and a person pressing Send at the same moment.
-  await reset();
+  await reset(); tok = await login(ADMIN);
   const burst = await Promise.all(Array.from({ length: 10 }, () => send(tok, [{ payout: PAYOUT, gifts: GIFTS }])));
   const sentCount = burst.filter(r => r.body?.sent === 1).length;
   ok("§4 ten simultaneous sends of one payout create ONE deposit",
@@ -162,7 +167,7 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
      sentCount === 1, burst.map(r => r.body?.sent));
 
   // ── §5 · A SEND THAT FAILED IS NOT RETRIED INTO A SECOND DEPOSIT ────────
-  await reset();
+  await reset(); tok = await login(ADMIN);
   process.env.INT2_MOCK_FAIL = "1";
   const failed = await send(tok, [{ payout: PAYOUT, gifts: GIFTS }]);
   process.env.INT2_MOCK_FAIL = "";
@@ -176,7 +181,7 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
      retry.body?.alreadySent === 1 && created.length === 0, { retry: retry.body, deposits: created.length });
 
   // ── §6 · EVENT AND SHOP TAKINGS ARE NOT DONATIONS ──────────────────────
-  await reset();
+  await reset(); tok = await login(ADMIN);
   const withRevenue = await send(tok, [{
     payout: { id: "po_int2_2", arrivedOn: "2026-09-21", netCents: 7500, sourceKey: "stripe" },
     gifts: [], revenue: [{ category: "raffle", amountCents: 7500, eventName: "Harbor Gala" }] }]);
@@ -187,19 +192,19 @@ const ledger = () => q(`SELECT payout_id, status, COUNT(*)::int AS n FROM bookke
      !revLines.some(l => l.accountId === "acct_donations"), revLines);
 
   // ── §7 · DONOR NAMES ARE OFF UNTIL SOMEBODY TURNS THEM ON ──────────────
-  await reset();
+  await reset(); tok = await login(ADMIN);
   await send(tok, [{ payout: PAYOUT, gifts: GIFTS }]);
   const off = JSON.stringify(created[0]?.body?.lines || []);
   ok("§7 by default no donor's name leaves for the accounting system",
      !off.includes("Perpetua") && !off.includes("Threlfall"), off.slice(0, 200));
-  await reset();
+  await reset(); tok = await login(ADMIN);
   const turnedOn = await api("PUT", `/bookkeeping/${CONN}/mapping`, tok, { mapping: MAPPING, donorNames: true });
   ok("§7 the organisation can turn them on", turnedOn.status === 200 && turnedOn.body?.donorNames === true, turnedOn.body);
   await send(tok, [{ payout: PAYOUT, gifts: GIFTS }]);
   ok("§7 …and then they do", JSON.stringify(created[0]?.body?.lines || []).includes("Perpetua"),
      created[0]?.body?.lines);
 
-  await reset();
+  await reset(); tok = await login(ADMIN);
   await q(`DELETE FROM orgs WHERE id=$1`, [ORG]).catch(() => {});
   if (mock) mock.close();
   await closeDb();

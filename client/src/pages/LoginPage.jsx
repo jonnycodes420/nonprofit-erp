@@ -46,6 +46,11 @@ export default function LoginPage() {
   const [code, setCode]         = useState("");
   const [setup, setSetup]       = useState(null);   // {token, secret, otpauthUrl}
   const [setupCode, setSetupCode] = useState("");
+  // SEC-1 — "trust this browser for 30 days" (off by default), and the
+  // recovery codes shown once at the end of a forced setup.
+  const [trust, setTrust]       = useState(false);
+  const [recovery, setRecovery] = useState(null);   // {codes, sentence, data}
+  const trustKey = () => "npe_trust_" + String(email || "").trim().toLowerCase();
 
   const submit = async (e) => {
     e.preventDefault();
@@ -57,7 +62,9 @@ export default function LoginPage() {
       const res = await fetch(`${API}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(needCode ? { email, password, code } : { email, password }),
+        body: JSON.stringify({ email, password,
+          ...(needCode ? { code, trustBrowser: trust } : {}),
+          trustToken: (() => { try { return localStorage.getItem(trustKey()) || undefined; } catch { return undefined; } })() }),
       });
       // Prefer the server's SENTENCE over its code. A deactivated account now
       // answers {error:"account_deactivated", message:"This account has been
@@ -68,6 +75,7 @@ export default function LoginPage() {
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         if (d.error === "mfa_required") { setNeedCode(true); setNotice(d.message); setLoading(false); return; }
+        if (d.error === "mfa_locked") { setNeedCode(true); setError(d.message); setLoading(false); return; }
         throw new Error(d.message || d.error || "Login failed");
       }
       const data = await res.json();
@@ -75,9 +83,10 @@ export default function LoginPage() {
         const s0 = await fetch(`${API}/me/mfa/setup`, { method: "POST", headers: { Authorization: "Bearer " + data.token } });
         const sd = await s0.json().catch(() => ({}));
         if (!s0.ok) throw new Error(sd.error || "Two-step setup is not available right now.");
-        setSetup({ token: data.token, secret: sd.secret, otpauthUrl: sd.otpauthUrl });
+        setSetup({ token: data.token, method: "totp", secret: sd.secret, otpauthUrl: sd.otpauthUrl, qr: sd.qr });
         setNotice(data.message); setLoading(false); return;
       }
+      if (data.trustToken) { try { localStorage.setItem(trustKey(), data.trustToken); } catch { /* private window */ } }
       localStorage.setItem("npe_token", data.token);
       localStorage.setItem("npe_user", JSON.stringify(data.user));
       localStorage.setItem("npe_org",  JSON.stringify(data.org));
@@ -94,15 +103,32 @@ export default function LoginPage() {
     try {
       const r = await fetch(`${API}/me/mfa/enable`, { method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + setup.token },
-        body: JSON.stringify({ code: setupCode }) });
+        body: JSON.stringify({ code: setupCode, method: setup.method }) });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.message || d.error || "That code did not match.");
+      // The recovery codes are shown ONCE, here, before anything else.
+      if (d.recoveryCodes?.length && !recovery) { setRecovery({ codes: d.recoveryCodes, sentence: d.recoverySentence, data: d }); setLoading(false); return; }
       localStorage.setItem("npe_token", d.token);
       localStorage.setItem("npe_user", JSON.stringify(d.user));
       localStorage.setItem("npe_org",  JSON.stringify(d.org));
       window.location.href = d.user.isSuperAdmin ? "/admin" : "/dashboard";
     } catch (err) { setError(err.message); }
     setLoading(false);
+  };
+
+  const useEmailInstead = async () => {
+    setError("");
+    const r = await fetch(`${API}/me/mfa/setup`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + setup.token }, body: JSON.stringify({ method: "email" }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { setError(d.message || d.error || "Could not send a code."); return; }
+    setSetup(x => ({ ...x, method: "email", secret: null, qr: null, otpauthUrl: null })); setNotice(d.sentence);
+  };
+  const continueAfterCodes = () => {
+    const d = recovery.data;
+    localStorage.setItem("npe_token", d.token);
+    localStorage.setItem("npe_user", JSON.stringify(d.user));
+    localStorage.setItem("npe_org",  JSON.stringify(d.org));
+    window.location.href = d.user.isSuperAdmin ? "/admin" : "/dashboard";
   };
 
   return (
@@ -173,20 +199,37 @@ export default function LoginPage() {
                 {notice}
               </div>
             )}
-            {setup && (
-              <form data-testid="mfa-setup" onSubmit={finishSetup} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
-                <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>
-                  Add Steward to your authenticator app with this key, then type the six-digit code it shows.
+            {recovery && (
+              <div data-testid="mfa-recovery" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.ink }}>Your recovery codes</div>
+                <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>{recovery.sentence}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontFamily: "ui-monospace,Menlo,monospace", fontSize: 15, color: T.ink }}>
+                  {recovery.codes.map(c => <span key={c}>{c}</span>)}
                 </div>
-                <code style={{ fontSize: 13, wordBreak: "break-all", color: T.ink }}>{setup.secret}</code>
-                <a href={setup.otpauthUrl} style={{ fontSize: 12, color: T.forest }}>Open in an authenticator app on this device</a>
+                <button type="button" onClick={() => navigator.clipboard?.writeText(recovery.codes.join("\n"))} style={{ ...inputStyle, cursor: "pointer" }}>Copy them</button>
+                <button type="button" onClick={continueAfterCodes} style={{ ...inputStyle, cursor: "pointer", fontWeight: 700 }}>I have saved them. Continue</button>
+              </div>
+            )}
+            {setup && !recovery && (
+              <form data-testid="mfa-setup" onSubmit={finishSetup} style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                {setup.method === "email" ? (
+                  <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>Type the six-digit code we emailed you.</div>
+                ) : <>
+                  <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.5 }}>
+                    Scan this with your authenticator app, or type the key, then enter the six-digit code it shows.
+                  </div>
+                  {setup.qr && <img src={setup.qr} alt="QR code for your authenticator app" width={180} height={180} style={{ alignSelf: "center" }}/>}
+                  <code style={{ fontSize: 13, wordBreak: "break-all", color: T.ink }}>{setup.secret}</code>
+                  <a href={setup.otpauthUrl} style={{ fontSize: 12, color: T.forest }}>Open in an authenticator app on this device</a>
+                  <button type="button" onClick={useEmailInstead} style={{ background: "none", border: "none", padding: 0, fontSize: 12, color: T.forest, cursor: "pointer", textAlign: "left" }}>No authenticator app? Use a code by email instead</button>
+                </>}
                 <input value={setupCode} onChange={e => setSetupCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code"
                   placeholder="123456" aria-label="Six-digit code" required style={inputStyle} />
                 {error && <div role="alert" style={{ fontSize: 13, color: T.red }}>{error}</div>}
-                <button type="submit" disabled={loading} style={{ ...inputStyle, cursor: "pointer", fontWeight: 700 }}>Turn on two-step sign-in</button>
+                <button type="submit" disabled={loading} style={{ ...inputStyle, cursor: "pointer", fontWeight: 700 }}>Turn on two-factor</button>
               </form>
             )}
-            {!setup && <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {!setup && !recovery && <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <Field label="Email address">
                 <input
                   type="email"
@@ -216,8 +259,13 @@ export default function LoginPage() {
 
               {needCode && (
                 <Field label="Six-digit code">
-                  <input value={code} onChange={e => setCode(e.target.value)} inputMode="numeric" autoComplete="one-time-code"
+                  <input value={code} onChange={e => setCode(e.target.value)} inputMode="text" autoComplete="one-time-code"
                     placeholder="123456" required autoFocus style={inputStyle} />
+                  <div style={{ fontSize: 12, color: T.ink3, marginTop: 6 }}>Lost your phone? Type one of your recovery codes instead.</div>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: T.ink2, marginTop: 10 }}>
+                    <input type="checkbox" checked={trust} onChange={e => setTrust(e.target.checked)} data-testid="trust-browser"/>
+                    Trust this browser for 30 days
+                  </label>
                 </Field>
               )}
 
