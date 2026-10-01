@@ -7,8 +7,6 @@
 // pages/index.js. Titles follow the reference: "Steward · " + the page's H1.
 //
 // COLLISIONS. Existing app routes win, and these are deliberately NOT here:
-//   /pricing        the live pricing page (Pricing.jsx): logged-in Stripe
-//                   checkout, the in-app upgrade modal and Settings link to it
 //   /developers     named in the brief but it does not exist; Open API links
 //                   point at /connections#api instead
 //   /lost-and-found the free audit itself; /tools/lost-and-found links in
@@ -38,6 +36,11 @@ export const ROUTES = [
 
   { path: "/features", page: "features", title: T("Everything included, nothing to unlock."), description: "Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." },
   ...FEATURE_SLUGS.map(s => ({ path: "/features/" + s, page: "feature", slug: s, title: T(FEAT[s].h), description: FEAT[s].lede })),
+
+  // LANDING-3 part 1 — /pricing moved here from the app router. The page
+  // still carries the signed-in Stripe checkout, so the upgrade path from
+  // UpgradeModal, goToPricing() and Settings is unchanged.
+  { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Every feature on every plan, priced by active donors. Seed $199, Sapling $299, Orchard $499 a month, and a conversation above ten thousand donors. Thirty days free, then month to month." },
 
   { path: "/why", page: "why", title: T("The money is in the donors you keep."), description: "Fewer people give each year, and most first-time donors never give twice. Steward exists to close that gap for organizations that cannot hire a data team to do it." },
   { path: "/leadership", page: "leadership", title: T("The people behind Steward."), description: "A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving." },
@@ -78,4 +81,4 @@ export const ROUTES = [
 
 // App routes the marketing pages link to. They are real pages, just not
 // marketing ones; the link guard accepts them alongside ROUTES.
-export const APP_LINK_TARGETS = ["/pricing", "/login", "/signup", "/lost-and-found"];
+export const APP_LINK_TARGETS = ["/login", "/signup", "/lost-and-found"];
