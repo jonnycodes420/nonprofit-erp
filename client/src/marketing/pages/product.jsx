@@ -102,7 +102,7 @@ export function Connections() {
     <section className="pricing"><div className="wrap">
       <div className="eyebrow">Every connection, honestly labeled</div>
       <h2 className="mix h-m" style={{ marginTop: 22 }}>What works today, <b>and what is next.</b></h2>
-      <p className="lede" style={{ marginTop: 18 }}>Live means you can switch it on yourself. Set up with you means it works and we connect it on your onboarding call. Coming means it is being built.</p>
+      <p className="lede" style={{ marginTop: 18 }}>Live means you can connect it yourself from Settings today, and we will do it with you on your onboarding call if you would rather. Coming means it is being built.</p>
       <div className="conn">
         {CONNECTIONS.map(c => {
           const k = c[2] === "Live" ? "" : c[2] === "Coming" ? " soon" : " q";

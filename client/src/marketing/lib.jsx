@@ -4,9 +4,9 @@
 // quoteBand, teamReel), producing the same markup and classes, so site.css
 // styles it exactly as the reference does.
 import React, { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ICON } from "./data/icons";
-import { PHOTOS, photoSrc } from "./data/photos";
+import { PHOTOS, photoSrc, rowFor } from "./data/photos";
 import { FEAT } from "./data/features";
 import { SRC, STATS, QUOTES, srcShort } from "./data/research";
 import { TEAM } from "./data/team";
@@ -105,6 +105,9 @@ export function Crumbs({ list }) {
   );
 }
 
+// LANDING-3 · the second pill is Start free unless the page names its own.
+// No hero offers a tour, and none of them says "See pricing" any more: the
+// prices are one click away in the header on every page.
 export function Hero({ eyebrow, crumbs, h, lede, photo, cta2, noCta, proof, float }) {
   return (
     <>
@@ -118,7 +121,7 @@ export function Hero({ eyebrow, crumbs, h, lede, photo, cta2, noCta, proof, floa
             {!noCta && (
               <div className="ctas">
                 <Pill href="/demo">Book a demo</Pill>
-                {cta2 ? <Pill kind="soft" href={cta2[1]}>{cta2[0]}</Pill> : <Pill kind="soft" href="/pricing">See pricing</Pill>}
+                {cta2 ? <Pill kind="soft" href={cta2[1]}>{cta2[0]}</Pill> : <Pill kind="soft" href="/signup">Start free</Pill>}
               </div>
             )}
             {proof && <div className="proof">{proof.map(p => <span key={p}>{p}</span>)}</div>}
@@ -229,14 +232,33 @@ export function Related({ slugs }) {
   return <Cards list={slugs.map(featureCard)} eb="Related" h="Works well <b>with these.</b>" />;
 }
 
+// LANDING-3 · the closing call to action, and the photo row that comes just
+// before it. Putting the row here is what makes section 6 automatic: every
+// page already ends with a FinalCta, so each one gains the three photographs
+// its section calls for, and the pages rowFor() excludes gain nothing.
 export function FinalCta() {
+  const { pathname } = useLocation();
   return (
-    <section style={{ paddingTop: 0 }}><div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
-      <div className="eyebrow">Ready to get started?</div>
-      <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b style={{ color: "var(--emerald-lt)" }}>Keep them.</b></h2>
-      <p>Book a 20-minute demo with your own file, or start free for 30 days.</p>
-      <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
-    </div></div></section>
+    <>
+      <PhotoRow row={rowFor(pathname)} />
+      <section style={{ paddingTop: 0 }}><div className="final"><div className="wrap" style={{ paddingBlock: 110 }}>
+        <div className="eyebrow">Ready to get started?</div>
+        <h2 className="mix h-l" style={{ marginTop: 22 }}>Every donor is a person. <b style={{ color: "var(--emerald-lt)" }}>Keep them.</b></h2>
+        <p>Book a 20-minute demo with your own file, or start free for 30 days.</p>
+        <div className="ctas" style={{ marginTop: 36 }}><Pill kind="white" href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
+      </div></div></section>
+    </>
+  );
+}
+
+// The homepage's own pair, which the reference splits in two: the demo on the
+// left, starting now on the right. No tour on either side.
+export function ReadyPair() {
+  return (
+    <section className="ready"><div className="wrap ready-g">
+      <div><div className="eyebrow">Ready to get started?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Twenty minutes, <b>your own file.</b></h2><Pill href="/demo" style={{ marginTop: 26 }}>Book a demo</Pill></div>
+      <div><div className="eyebrow">Rather start now?</div><h2 className="mix h-m" style={{ marginTop: 16 }}>Thirty days <b>free.</b></h2><Pill kind="soft" href="/signup" style={{ marginTop: 26 }}>Start free</Pill></div>
+    </div></section>
   );
 }
 
@@ -273,20 +295,69 @@ export function QuoteBand() {
   );
 }
 
-// The people reel: no buttons, it just moves. Three copies of the four make
-// the loop seamless; it pauses on hover, and for prefers-reduced-motion the
-// animation stops and the two duplicate copies are hidden (site.css).
-export function TeamReel() {
+// ── People ────────────────────────────────────────────────────────────────
+// LANDING-3 · the reel is gone. There is no people carousel anywhere on the
+// site, and tests/landing3-marketing.test.js proves no route renders one.
+//
+// The reference's person(): a portrait in a tinted frame, tilted, with an ink
+// pill naming the role. The frame straightens and lifts on hover (site.css).
+const TINTS = ["brass-tint", "emerald-tint", "cream-2", "brass-tint"];
+
+export function Person({ t, i }) {
+  const role = t[1].split(" \u00b7 ");
   return (
-    <section className="reel-s">
-      <div className="wrap"><div className="eyebrow">The people behind Steward</div><h2 className="mix h-l" style={{ marginTop: 22 }}>People who <b>pick up the phone.</b></h2></div>
-      <div className="reel" aria-label="Steward founder and advisors"><div className="track">
-        {[0, 1, 2].map(c => (
-          <div style={{ display: "contents" }} key={c} {...(c ? { "data-dup": "", "aria-hidden": "true" } : {})}>
-            {TEAM.map(t => <div className="tm" key={t[0]}><Portrait src={t[2]} name={t[0]} /><b>{t[0]}</b><span>{t[1]}</span></div>)}
-          </div>
-        ))}
-      </div></div>
+    <div className="pp" style={{ "--tint": "var(--" + TINTS[i % 4] + ")", "--tilt": i % 2 ? "1.6deg" : "-1.6deg" }}>
+      <div className="pp-frame">
+        <Portrait src={t[2]} name={t[0]} />
+        <span className="pp-tag">{role[0]}</span>
+      </div>
+      <b>{t[0]}</b><span>{role[1] || role[0]}</span>
+    </div>
+  );
+}
+
+export function People() {
+  return <div className="wrap lead-g">{TEAM.map((t, i) => <Person key={t[0]} t={t} i={i} />)}</div>;
+}
+
+// The homepage band that stands where the reel did: one line, one button.
+export function LeadBand() {
+  return (
+    <section style={{ paddingTop: 0 }}><div className="wrap"><div className="lead-band">
+      <div>
+        <div className="eyebrow">Leadership</div>
+        <h2 className="mix h-m" style={{ marginTop: 16 }}>A founder who answers, <b>advisors who've raised.</b></h2>
+        <p>Steward is led by its founder with advisors from nonprofit development, arts and philanthropy. Funded by angel investment.</p>
+      </div>
+      <Pill href="/leadership">Meet our leadership</Pill>
+    </div></div></section>
+  );
+}
+
+// ── Article covers ────────────────────────────────────────────────────────
+// The reference's cover(): a drawn block, never a photograph, so an article
+// card is legible at any size and costs nothing to load.
+const COVERS = [["ink", "brass"], ["emerald", "white"], ["brass-tint", "emerald"], ["ink", "emerald-lt"], ["emerald-tint", "emerald"], ["cream-2", "brass-text"]];
+
+export function Cover({ t, b, i }) {
+  const c = COVERS[i % COVERS.length];
+  return (
+    <div className="cover" style={{ "--bg": "var(--" + c[0] + ")", "--em": "var(--" + c[1] + ")" }}
+      data-cover={c[0]}>
+      <div className="t">{t}<br /><b>{b}</b></div><span className="leaf"></span>
+    </div>
+  );
+}
+
+// ── Photo rows ────────────────────────────────────────────────────────────
+// The reference's photoRow(): three real photographs before the closing call
+// to action. rowFor() in data/photos.js decides which three, and returns null
+// for the pages that take none.
+export function PhotoRow({ row }) {
+  if (!row) return null;
+  return (
+    <section className="photo-row-s" style={{ paddingTop: 0 }}>
+      <div className="wrap photo-row">{row.map((k, i) => <Photo k={k} key={k} cls={i === 1 ? "tall" : ""} />)}</div>
     </section>
   );
 }

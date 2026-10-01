@@ -49,3 +49,56 @@ export const PHOTOS = {
   "video-call": { w: 1000, h: 1250, alt: "A woman waving and smiling at a video call on her laptop" },
 };
 export const photoSrc = key => "/marketing/photos/" + key + ".webp";
+
+// ── LANDING-3 · photo rows ────────────────────────────────────────────────
+// The reference's ROWS: three photographs before the closing call to action,
+// picked by what the page is about. Each entry is the reference's caption
+// answered by a photo already in the library above, so no page gains a new
+// download and docs/landing/photo-credits.md stays the whole list.
+//
+// The middle one is the tall one (site.css .photo-row .tall).
+export const ROWS = {
+  // 'a development director laughing on a phone call at her desk' /
+  // 'volunteers in aprons smiling at a check-in table' /
+  // 'two staff at a laptop, one pointing at the screen, both grinning'
+  features: ["phone-laughing", "aprons-produce", "team-pointing"],
+  // 'a small team around a kitchen table with laptops, laughing' /
+  // 'an executive director and a donor shaking hands at an open house' /
+  // 'a volunteer coordinator high-fiving a teen volunteer'
+  platform: ["trainer-laptop", "handshake-welcome", "high-five-checkin"],
+  // 'volunteers handing out groceries' / 'a child grinning beside a therapy
+  // horse' / 'a mentor and a teenager laughing over homework'
+  for: ["groceries", "horse-child", "mentor-homework"],
+  // 'a director hugging a longtime donor' / 'a board member making a
+  // thank-you call' / 'gala guests toasting at a round table'
+  why: ["open-house-hug", "call-notepad", "gala-toast"],
+  // 'two staff at a kitchen table with a laptop, relieved and laughing' /
+  // 'an executive director leaning back in her chair' / 'a trainer and a
+  // staff member at a laptop, both laughing'
+  move: ["high-five-laptop", "leaning-back", "desk-notes"],
+  // 'two people over coffee in a bright café, mid-laugh' / 'a staff member
+  // writing a handwritten thank-you card' / 'a team stuffing envelopes at a
+  // long table, chatting'
+  resources: ["cafe-laugh", "writing-card", "table-papers"],
+  // 'a consultant and a nonprofit director shaking hands' / 'two development
+  // staff comparing notes over coffee' / 'a director presenting to a small
+  // board, everyone smiling'
+  company: ["handshake", "comparing-notes", "meeting-table"],
+};
+
+// The reference's rowFor(), on paths rather than hashes. null means the page
+// takes no row: Start, the legal drafts, the calculators, FAQ, the glossary,
+// templates, the demo booking, Contact, About and Leadership. About and
+// Leadership carry their own photographs and bands instead.
+export function rowFor(path) {
+  const h = path.replace(/^\//, "").replace(/\/$/, "");
+  if (!h) return null;
+  if (/^(signup|legal|tools|faq|glossary|templates|demo|contact|leadership|about|pricing)(\/|$)/.test(h)) return null;
+  if (/^features(\/|$)/.test(h)) return ROWS.features;
+  if (/^for(\/|$)/.test(h)) return ROWS.for;
+  if (/^(why|security)(\/|$)/.test(h)) return ROWS.why;
+  if (/^(move|onboarding)(\/|$)/.test(h)) return ROWS.move;
+  if (/^(resources|guides|articles|help|whats-new)(\/|$)/.test(h)) return ROWS.resources;
+  if (/^partners(\/|$)/.test(h)) return ROWS.company;
+  return ROWS.platform;
+}

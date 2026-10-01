@@ -64,9 +64,9 @@ export const ROUTES = [
 
   { path: "/tools", page: "tools", title: T("Free tools, no signup."), description: "Run them on your own numbers. Nothing you type leaves your browser." },
   { path: "/tools/lost-and-found", page: "toolLostAndFound", title: T("See who you're about to lose."), description: "Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored." },
-  { path: "/tools/retention", page: "toolRetention", title: T("What is your retention worth?"), description: "Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." },
-  { path: "/tools/lapsed-cost", page: "toolLapsed", title: T("What did last year's lapsed donors used to give?"), description: "A quick way to put a dollar figure on the people who quietly stopped." },
-  { path: "/tools/thermometer", page: "toolThermometer", title: T("A goal bar people want to fill."), description: "Set your goal and amount raised and see the bar." },
+  { path: "/tools/retention", page: "toolRetention", title: "Steward \u00b7 Keep Rate calculator", description: "Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." },
+  { path: "/tools/lapsed-cost", page: "toolLapsed", title: "Steward \u00b7 Lapse Ledger", description: "A quick way to put a dollar figure on the people who quietly stopped." },
+  { path: "/tools/thermometer", page: "toolThermometer", title: "Steward \u00b7 Goal Gauge", description: "Set your goal and amount raised and see the bar." },
 
   { path: "/legal/privacy", page: "legalPrivacy", title: "Steward · Privacy policy", description: "How Steward handles the information organizations put into it and the information about the people who sign in. Draft for attorney review." },
   { path: "/legal/terms", page: "legalTerms", title: "Steward · Terms of service", description: "The terms for using Steward, the donor management service. Draft for attorney review." },

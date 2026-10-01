@@ -162,7 +162,7 @@ export function WhatsNew() {
 export function Tools() {
   return <>
     <Hero eyebrow="Free tools" crumbs={[["Resources", "/resources"], ["Free tools"]]} h="Free tools, <b>no signup.</b>" lede="Run them on your own numbers. Nothing you type leaves your browser." noCta />
-    <Cards list={[["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"], ["/tools/retention", "Donor retention calculator", "Your retention rate, and what a few points are worth.", "reports"], ["/tools/lapsed-cost", "Lapsed donor cost calculator", "What last year's lapsed donors used to give.", "finance"], ["/tools/thermometer", "Fundraising thermometer", "A campaign goal bar for your website.", "events"]]} />
+    <Cards list={[["/tools/lost-and-found", "Lost & Found donor audit", "See who you are about to lose from your own giving export.", "drift"], ["/tools/retention", "Keep Rate calculator", "Your retention rate, and what a few points are worth.", "reports"], ["/tools/lapsed-cost", "Lapse Ledger", "What last year's lapsed donors used to give.", "finance"], ["/tools/thermometer", "Goal Gauge", "A campaign goal bar for your website.", "events"]]} />
     <FinalCta />
   </>;
 }
@@ -201,7 +201,7 @@ export function ToolRetention() {
   const [v, on] = useFields({ a: "1000", b: "420", c: "250" });
   const m = retentionMath(num(v.a), num(v.b), num(v.c));
   return <>
-    <Hero eyebrow="Donor retention calculator" crumbs={[["Free tools", "/tools"], ["Retention calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
+    <Hero eyebrow="Keep Rate calculator" crumbs={[["Free tools", "/tools"], ["Keep Rate calculator"]]} h="What is your <b>retention worth?</b>" lede="Enter last year's donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Donors last year<input type="number" min="1" value={v.a} onChange={on("a")} /></label>
@@ -222,7 +222,7 @@ export function ToolLapsed() {
   const [v, on] = useFields({ a: "580", b: "180", c: "15" });
   const m = lapsedMath(num(v.a), num(v.b), num(v.c));
   return <>
-    <Hero eyebrow="Lapsed donor cost calculator" crumbs={[["Free tools", "/tools"], ["Lapsed donor cost"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta />
+    <Hero eyebrow="Lapse Ledger" crumbs={[["Free tools", "/tools"], ["Lapse Ledger"]]} h="What did last year's lapsed donors <b>used to give?</b>" lede="A quick way to put a dollar figure on the people who quietly stopped." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Donors who did not give again<input type="number" min="0" value={v.a} onChange={on("a")} /></label>
@@ -242,7 +242,7 @@ export function ToolThermometer() {
   const [v, on] = useFields({ n: "Spring appeal", g: "50000", r: "31250" });
   const m = thermometerMath(num(v.g), num(v.r));
   return <>
-    <Hero eyebrow="Fundraising thermometer" crumbs={[["Free tools", "/tools"], ["Thermometer"]]} h="A goal bar <b>people want to fill.</b>" lede="Set your goal and amount raised and see the bar. The embeddable version comes with the live site." noCta />
+    <Hero eyebrow="Goal Gauge" crumbs={[["Free tools", "/tools"], ["Goal Gauge"]]} h="A goal bar <b>people want to fill.</b>" lede="Set your goal and amount raised and see the bar. The embeddable version comes with the live site." noCta />
     <section style={{ paddingTop: 0 }}><div className="wrap tool">
       <div className="form">
         <label>Campaign name<input value={v.n} onChange={on("n")} /></label>
