@@ -197,6 +197,8 @@ const SETUP_ITEM_META = {
   // done nothing). Logging a conversation is the real first act: it opens a
   // thread, and the next step comes back to you.
   conversation: { label: "Log your first conversation",  why: "log one call from a donor's record and the next step comes back to you",      cta: "Log",     nav: ["donors", undefined] },
+  // INT-BUILD-1 Part 0 — the viewer's OWN inbox, so it ticks per person.
+  inbox:      { label: "Connect your inbox",             why: "Gmail or Outlook; your conversations with people on file log themselves",     cta: "Connect", nav: ["settings", { section: "connections", focus: "inbox" }] },
   team:       { label: "Invite your team",               why: "portfolios and pipelines start when your gift officers are in",                cta: "Invite",  nav: ["settings", { section: "team" }] },
   // BUILD-83 Part 5.3 — the closer.
   sustainers: { label: "Move your monthly givers",        why: "your file's sustainers are here; the ones who stopped need a reconnect link", cta: "Open",    nav: ["fundraising", { frSection: "recurring" }] },
@@ -209,7 +211,7 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <button onClick={() => onSetCardState(null)}
-          aria-label={`Finish setting up Steward — ${doneCount} of ${totalCount} done`}
+          aria-label={`Finish setting up Steward: ${doneCount} of ${totalCount} done`}
           style={{ display: "inline-flex", alignItems: "center", gap: 8, background: T.white, border: "1px solid " + T.bg3, borderRadius: 99, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, color: T.ink2, cursor: "pointer" }}>
           <span aria-hidden style={{ color: T.gold500 }}>◈</span>
           Finish setup · {doneCount}/{totalCount}
@@ -260,13 +262,13 @@ function SetupChecklist({ status, onNavigate, isAdmin, onSetCardState }) {
         const giftGap = item.key === "donors" && item.needsGiftConfirm;
         return (
           <div key={item.key}>
-            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label} — ${meta.why}` })}
+            <div {...interactive(() => onNavigate(meta.nav[0], meta.nav[1]), { label: `${meta.label}: ${meta.why}` })}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 2px", borderTop: "1px solid " + T.bg2, borderRadius: 8 }}>
               <span aria-hidden style={{ width: 20, height: 20, borderRadius: "50%", border: "1.5px solid " + T.bg3, flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{meta.label}</span>
                 <span style={{ display: "block", fontSize: 11.5, color: T.ink3, lineHeight: 1.45 }}>
-                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving: an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine} — ${meta.why}` : meta.why)}
+                  {giftGap ? `${(item.count||0).toLocaleString()} donors are on file with $0 of giving: an import that dropped every dollar isn't done. Re-import with the gift columns mapped.` : (detailLine ? `${detailLine}. ${meta.why}` : meta.why)}
                 </span>
               </span>
               <span style={{ fontSize: 12, fontWeight: 700, color: T.green600, whiteSpace: "nowrap" }}>{giftGap ? "Re-import" : meta.cta} →</span>

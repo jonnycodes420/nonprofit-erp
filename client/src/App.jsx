@@ -335,6 +335,13 @@ function AppShell() {
       else navigateTo("fundraising",{frSection:params.get("fr")});
       window.history.replaceState({},"","/dashboard");
     }
+    // INT-BUILD-1 Part 0 — the OAuth landing sends the person back with
+    // ?tab=settings&sub=<section>. Nothing read it, so a finished connect
+    // dropped her on Home with no sign it had worked. A GET that changes nothing.
+    if(params.get("tab")==="settings"){
+      navigateTo("settings",{section:params.get("sub")||"connections"});
+      window.history.replaceState({},"","/dashboard");
+    }
     if(params.get("stripe_connected")==="true"){
       setStripeToast(true);
       window.history.replaceState({},"","/dashboard");
@@ -994,6 +1001,11 @@ function AppShell() {
           })}
         </div>)}
         <div style={{borderTop:"1px solid "+T.bg3,margin:"4px 0"}}/>
+        {/* INT-BUILD-1 Part 0 — the profile menu's inbox item, on the phone. */}
+        <button data-testid="mobile-connect-inbox" onClick={()=>{navigateTo("settings",{section:"connections",focus:"inbox"});setMoreOpen(false);}} className="mobile-more-row">
+          <span className="mob-icon" style={{fontSize:16,width:28,textAlign:"center"}}>@</span>
+          <span style={{flex:1}}>Connect your inbox</span>
+        </button>
         <button className="mobile-more-signout" onClick={()=>{logout();setMoreOpen(false);}}>
           <span className="mob-icon" style={{fontSize:18,width:28,textAlign:"center"}}>↩</span>
           Sign out

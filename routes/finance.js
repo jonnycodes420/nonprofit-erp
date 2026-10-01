@@ -559,6 +559,13 @@ app.post("/oauth/:provider/start", requireAuth, requireAdminUnlessMailbox, check
         .filter(([k]) => !values[k]).map(([, n]) => n),
       sentence: O.providerUnavailableSentence(O.PROVIDERS[key].label) });
   }
+  // INT-BUILD-1 Part 0 — a demo org shows the buttons and connects nothing.
+  if (O.PROVIDERS[key].kind === "mailbox") {
+    const ML = await mailboxMod();
+    const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+    if (ML.isDemoMailboxOrg(org))
+      return res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE });
+  }
   const nonce = crypto.randomBytes(16).toString("base64url");
   const raw = O.encodeState({ orgId: req.user.orgId, userId: req.user.userId, nonce });
   const state = `${raw}.${signState(raw)}`;
@@ -1006,10 +1013,21 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
     [req.user.userId, req.user.orgId]);
   const never = await query(
     `SELECT id, pattern, kind FROM mailbox_never_log WHERE user_id=? ORDER BY pattern`, [req.user.userId]);
+  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  const demo = ML.isDemoMailboxOrg(org);
+  // A demo's "connected" Gmail is built here, never stored: no row, no token,
+  // and the sync tick has nothing to find.
+  const exampleSync = new Date(); exampleSync.setHours(7, 0, 0, 0);
+  const example = demo ? { provider: "google", address: req.user.email || "you@example.org", paused: false,
+    last_synced_at: exampleSync.toISOString(), last_logged_count: null, example: true } : null;
   const byProvider = Object.fromEntries(mine.map(r => [r.provider, r]));
+  if (example && !byProvider.google) byProvider.google = example;
   const providers = O.PROVIDER_KEYS.filter(k => O.PROVIDERS[k].kind === "mailbox").map(k => {
     const p = O.PROVIDERS[k];
-    const row = byProvider[k] || null;
+    const row0 = byProvider[k] || null;
+    // On a demo org every connection is the example (Harborlight's seed
+    // writes one with no token), so it gets no Pause and no Disconnect.
+    const row = row0 && demo ? { ...row0, example: true } : row0;
     const { values, names } = oauthEnv(k, O.ENV_VARS);
     const missing = ["clientId", "clientSecret", "redirectUri"].filter(f => !values[f]).map(f => names[f]);
     return {
@@ -1017,17 +1035,44 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
       connected: !!row, address: row?.address || null, paused: row?.paused === true,
       lastSyncedAt: row?.last_synced_at || null, lastLoggedCount: row?.last_logged_count ?? null,
       lastError: row?.last_error || null,
-      reviewNote: p.reviewNote || null,
-      sentence: missing.length
-        ? `Steward cannot open ${p.label}'s consent screen yet: ${missing.join(", ")} ${missing.length === 1 ? "is" : "are"} not set.`
+      reviewNote: p.reviewNote || null, example: row?.example === true,
+      // Shown beside the Gmail button until GOOGLE_APP_VERIFIED is set.
+      unverifiedNote: k === "google" && process.env.GOOGLE_APP_VERIFIED !== "true" ? ML.GOOGLE_UNVERIFIED_SENTENCE : null,
+      sentence: row?.example
+        ? `An example connection. ${ML.DEMO_CONNECT_SENTENCE}`
+        : missing.length && !demo
+        ? O.providerUnavailableSentence(p.label)
         : row
           ? (row.paused ? `Paused. Nothing new is being read from ${row.address}.`
                         : `Connected to ${row.address}. Only messages to or from someone on file are kept.`)
           : `Connect your own ${p.label} and your conversations with people on file will log themselves.`,
     };
   });
+  // YOUR TEAM: who has connected, which provider, and when it last read.
+  // Names only. A colleague's address, list and switches stay hers.
+  const teamRows = await query(
+    `SELECT u.id, u.name, u.email, m.provider, m.status, m.paused, m.last_synced_at
+       FROM users u LEFT JOIN mailbox_connections m
+         ON m.user_id = u.id AND m.org_id = u.org_id AND m.status <> 'disconnected'
+      WHERE u.org_id = ? ORDER BY u.name, m.provider`, [req.user.orgId]);
+  const teamBy = new Map();
+  for (const r of teamRows) {
+    const t = teamBy.get(r.id) || { id: r.id, name: r.name || r.email, you: r.id === req.user.userId, connections: [] };
+    if (r.provider) t.connections.push({ provider: r.provider, label: O.PROVIDERS[r.provider]?.label || r.provider,
+      paused: r.paused === true, broken: r.status === "error", lastSyncedAt: r.last_synced_at || null, example: demo });
+    teamBy.set(r.id, t);
+  }
+  if (example) {
+    const me = teamBy.get(req.user.userId);
+    if (me && !me.connections.length)
+      me.connections.push({ provider: "google", label: "Gmail", paused: false, broken: false,
+        lastSyncedAt: example.last_synced_at, example: true });
+  }
   res.json({
-    providers, neverLog: never,
+    providers, neverLog: never, demo, demoSentence: demo ? ML.DEMO_CONNECT_SENTENCE : null,
+    connected: providers.some(p => p.connected),
+    team: [...teamBy.values()],
+    teamDefinition: "Everyone on your team, and whether their own inbox is connected. Each person connects their own; nobody can connect a colleague's.",
     fieldsLogged: ML.FIELDS_LOGGED, fieldsSentence: ML.FIELDS_SENTENCE,
     touchSentence: ML.TOUCH_SENTENCE,
     definition: "Your own mailbox. Steward logs only the messages to or from a person already in Steward, and keeps nothing at all about any other message.",

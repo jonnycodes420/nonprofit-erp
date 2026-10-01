@@ -33,6 +33,8 @@ export function TopBar({ auth, logout, onNavigate }) {
   const [open,setOpen] = useState(false);
   const [sel,setSel] = useState(0);
   const [helpOpen,setHelpOpen] = useState(false);
+  const [meOpen,setMeOpen] = useState(false);
+  const meRef = useRef(null);
   const inputRef = useRef(null);
   const rootRef = useRef(null);
   const helpRef = useRef(null);
@@ -63,6 +65,7 @@ export function TopBar({ auth, logout, onNavigate }) {
     const onDown = e => {
       if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
       if (helpRef.current && !helpRef.current.contains(e.target)) setHelpOpen(false);
+      if (meRef.current && !meRef.current.contains(e.target)) setMeOpen(false);
     };
     document.addEventListener("mousedown",onDown);
     return ()=>document.removeEventListener("mousedown",onDown);
@@ -151,7 +154,7 @@ export function TopBar({ auth, logout, onNavigate }) {
 
     {/* Wordmark — over the 240px sidebar rail zone (20px inset matches the
         old sidebar wordmark), links to Home */}
-    <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward — Home"
+    <button data-testid="topbar-wordmark" onClick={()=>onNavigate("dashboard")} title="Steward: Home"
       style={{width:240,flexShrink:0,textAlign:"left",padding:"0 20px",background:"transparent",border:"none",cursor:"pointer",boxSizing:"border-box"}}>
       <span style={{fontSize:21,fontWeight:400,color:T.inkInverse,fontFamily:"'DM Serif Display',Georgia,serif",letterSpacing:"-0.02em"}}>Steward</span>
     </button>
@@ -215,17 +218,30 @@ export function TopBar({ auth, logout, onNavigate }) {
       </div>}
     </div>
 
-    {/* User chip + sign out (moved from sidebar bottom). The chip (avatar + name)
-        is a REAL button → Settings › Account (BUILD-31 Part 2.2): it reads as one
-        and every user tries it, so it now behaves as one — keyboard-accessible. */}
+    {/* User chip + sign out (moved from sidebar bottom).
+        INT-BUILD-1 Part 0 — THE CHIP OPENS A MENU NOW. INT-4 said the inbox
+        connect was "in the profile menu"; there was no profile menu, only a
+        button straight to Account, which is half of why nobody found it. */}
     <div style={{display:"flex",alignItems:"center",gap:9}}>
-      <button onClick={()=>onNavigate("settings",{section:"account"})} title="Account settings"
-        style={{display:"flex",alignItems:"center",gap:9,background:"transparent",border:"none",padding:"3px 5px",borderRadius:8,cursor:"pointer"}}>
+      <div ref={meRef} style={{position:"relative"}}>
+      <button data-testid="topbar-me" onClick={()=>setMeOpen(v=>!v)} title="Your account" aria-expanded={meOpen} aria-haspopup="menu"
+        style={{display:"flex",alignItems:"center",gap:9,background:meOpen?T.bgElevated:"transparent",border:"none",padding:"3px 5px",borderRadius:8,cursor:"pointer"}}>
         <div style={{width:28,height:28,borderRadius:8,background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <span style={{fontSize:11,fontWeight:700,color:T.ink}}>{userName[0].toUpperCase()}</span>
         </div>
         <span style={{fontSize:12.5,fontWeight:600,color:T.inkInverse,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
       </button>
+      {meOpen && <div role="menu" style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:230,zIndex:130}}>
+        {[["Account settings","Your name, password and sign-in",()=>onNavigate("settings",{section:"account"})],
+          ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})]]
+          .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":undefined}
+            onClick={()=>{setMeOpen(false);go();}}
+            style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"8px 14px",cursor:"pointer",fontFamily:"inherit"}}>
+            <div style={{fontSize:13,color:T.inkInverse,fontWeight:600}}>{label}</div>
+            <div style={{fontSize:11,color:"rgba(240,237,230,0.7)"}}>{sub}</div>
+          </button>)}
+      </div>}
+      </div>
       <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
   </div>;

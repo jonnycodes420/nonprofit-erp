@@ -1589,6 +1589,9 @@ async function initSchema() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_import_merges_org ON import_merges (org_id)`);
+  // INT-BUILD-1 0e — who made the fold, so only they or an admin can split it.
+  await pool.query(`ALTER TABLE import_merges ADD COLUMN IF NOT EXISTS created_by TEXT`);
+  await pool.query(`ALTER TABLE import_merges ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
 
   // BUILD-87 Part 1 — EVERY IMPORT RUN GETS A ROW, AND THE ROW IS THE HISTORY.
   // Before this, an import existed only as a screen that disappeared when it

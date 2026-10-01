@@ -391,7 +391,7 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
       </div>
       {d.proposals.length === 0 ? (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
-          No proposal open. A proposal is one ask — what it's for, how much, and when you expect an answer.
+          No proposal open. A proposal is one ask: what it's for, how much, and when you expect an answer.
         </div>
       ) : (
         <>
