@@ -27,6 +27,7 @@ const {
   fireWorkflows, markVolunteer, orgOwns, orgTime, orgToday, orgTz, processSequences, processTrackedSequences,
   processWorkflowSweeps, query, recordGift, requireAdmin, requireAuth, requirePlan, run, runTx,
   sequenceMergeValues, sequenceTimezoneGate, thresholdsMod, uuid, withTransaction, wrap,
+  requireSuperAdmin, resend,   // HELP-1
 } = ctx;
 // server.js loads these ESM modules at boot and sets its own binding when each
 // arrives; the code below reads them only after awaiting the same promise, so
@@ -791,11 +792,118 @@ app.get("/agent/personas", requireAuth, wrap(async (req, res) => {
 
 // ── ROUTES ─────────────────────────────────────────────────────────────────
 // THE PLAN. Writes an instruction and a plan; runs NOTHING.
+// ═══ HELP-1 · ASK STEWARD, THE QUESTION LOG, AND ASK A PERSON ══════════════
+// Ask Steward is the engine's help persona (shared/agentPersonas.js HELP): it
+// has NO tools, and its prompt is built ONLY by buildHelpPrompt from the
+// question and the help articles search found. This route reads no table but
+// the question log it writes, and never a donor, org or user row.
+const helpArticlesMod = () => import("../shared/helpArticles.js");
+const helpSearchMod = () => import("../shared/helpSearch.js");
+const SUPPORT_EMAIL = () => process.env.SUPPORT_EMAIL || "support@stewardapp.dev";
+const REPLY_PROMISE = () => process.env.SUPPORT_REPLY_PROMISE || "within one business day";
+// The question, and only the question, kept twelve months for "what should we
+// build next". Never the answer, never anything the person did not type.
+async function logQuestion(surface, question, topic) {
+  await run(`INSERT INTO question_log (surface, question, topic) VALUES (?,?,?)`, [surface, String(question).slice(0, 1000), topic || null]).catch(() => {});
+  await run(`DELETE FROM question_log WHERE created_at < NOW() - INTERVAL '12 months'`).catch(() => {});
+}
+
+app.post("/help/ask", requireAuth, wrap(async (req, res) => {
+  const question = String(req.body?.question || "").trim().slice(0, 1000);
+  if (!question) return res.status(400).json({ error: "Ask a question in a few words." });
+  const { HELP_ARTICLES } = await helpArticlesMod();
+  const HS = await helpSearchMod();
+  const found = HS.searchArticles(HELP_ARTICLES, question, 3);
+  await logQuestion("help", question, found[0]?.slug || "not covered");
+  const cite = found.map(a => ({ slug: a.slug, title: a.title, summary: a.summary }));
+  if (!found.length) return res.json({ covered: false, answer: null, articles: [],
+    sentence: "The help centre does not cover that yet. Ask a person and we will answer " + REPLY_PROMISE() + "." });
+  const gate = await aiGate(req.user.orgId);
+  if (!gate.ok) return res.json({ covered: true, answer: null, articles: cite, sentence: "Here is what the help centre says." });
+  const PS = await agentPersonasMod();
+  const prompt = HS.buildHelpPrompt(question, found, PS.HELP.systemPrompt);
+  let answer = null;
+  try {
+    const client = new Anthropic();
+    // No `tools`: the help persona has none, so the model has nothing to call.
+    const r = await client.messages.create({ model: AGENT_MODEL, max_tokens: 700, system: prompt.system, messages: prompt.messages });
+    answer = (r.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").trim() || null;
+  } catch (e) { console.error("[help] ask:", e.message); }
+  res.json({ covered: true, answer, articles: cite, sentence: answer ? null : "Here is what the help centre says." });
+}));
+
+app.get("/help/settings", requireAuth, wrap(async (req, res) => {
+  res.json({ replyPromise: REPLY_PROMISE(), supportEmail: SUPPORT_EMAIL() });
+}));
+
+// "Did this help?" A slug and a yes or no. Nobody is identified.
+app.post("/help/feedback", wrap(async (req, res) => {
+  const slug = String(req.body?.slug || "").replace(/[^a-z0-9-]/g, "").slice(0, 80);
+  if (!slug || typeof req.body?.helpful !== "boolean") return res.status(400).json({ error: "slug and helpful are required" });
+  req.audit && req.audit.skip("anonymous article feedback");
+  await run(`INSERT INTO help_feedback (slug, helpful) VALUES (?,?)`, [slug, req.body.helpful]);
+  res.json({ ok: true });
+}));
+
+// ASK A PERSON. The ticket carries the screen and browser, never donor data.
+async function mailSupport(to, subject, text) {
+  if (!process.env.RESEND_API_KEY) { console.warn("[help] RESEND_API_KEY not set; not sent:", subject); return false; }
+  const { isBlockedAddress } = require("../mailBlock");
+  if (isBlockedAddress(to)) return false;
+  try { await resend.emails.send({ from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev", to, reply_to: SUPPORT_EMAIL(), subject, text }); return true; }
+  catch (e) { console.error("[help] mail:", e.message); return false; }
+}
+app.post("/help/tickets", requireAuth, wrap(async (req, res) => {
+  const body = String(req.body?.body || "").trim().slice(0, 6000);
+  if (!body) return res.status(400).json({ error: "Tell us what you need, in a sentence or two." });
+  const subject = (String(req.body?.subject || "").trim() || body.split("\n")[0]).slice(0, 140);
+  const screen = String(req.body?.screen || "").slice(0, 80) || null;
+  const browser = String(req.headers["user-agent"] || "").slice(0, 300);
+  const [u] = await query(`SELECT id, name, email FROM users WHERE id=?`, [req.user.userId]);
+  const [o] = await query(`SELECT name FROM orgs WHERE id=?`, [req.user.orgId]);
+  const id = "tkt_" + uuid().slice(0, 10), who = actor(req);
+  await run(`INSERT INTO support_tickets (id,org_id,user_id,user_email,user_name,subject,screen,browser,created_by,created_by_name) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.user.orgId, u.id, u.email, u.name, subject, screen, browser, who.id, who.name]);
+  await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
+    ["tkm_" + uuid().slice(0, 10), id, "customer", body, who.id, who.name]);
+  await mailSupport(SUPPORT_EMAIL(), `[${id}] ${subject}`,
+    `${u.name || u.email} at ${o?.name || req.user.orgId} asked:\n\n${body}\n\nScreen: ${screen || "not given"}\nBrowser: ${browser}\nReply from the super-admin ticket list so it reaches them.`);
+  res.status(201).json({ id, sentence: `Sent. A person will reply to ${u.email} ${REPLY_PROMISE()}.` });
+}));
+app.get("/admin/tickets", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const rows = await query(`SELECT t.*, o.name AS org_name FROM support_tickets t LEFT JOIN orgs o ON o.id=t.org_id ORDER BY (t.status='closed'), t.updated_at DESC LIMIT 200`);
+  for (const t of rows) t.messages = await query(`SELECT from_kind, body, created_at, created_by_name FROM support_ticket_messages WHERE ticket_id=? ORDER BY created_at`, [t.id]);
+  res.json({ tickets: rows });
+}));
+app.post("/admin/tickets/:id/reply", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const [t] = await query(`SELECT * FROM support_tickets WHERE id=?`, [req.params.id]);
+  if (!t) return res.status(404).json({ error: "No such ticket." });
+  const body = String(req.body?.body || "").trim().slice(0, 6000);
+  const status = ["open", "waiting", "closed"].includes(req.body?.status) ? req.body.status : (body ? "waiting" : t.status);
+  const who = actor(req);
+  if (body) {
+    await run(`INSERT INTO support_ticket_messages (id,ticket_id,from_kind,body,created_by,created_by_name) VALUES (?,?,?,?,?,?)`,
+      ["tkm_" + uuid().slice(0, 10), t.id, "support", body, who.id, who.name]);
+    await mailSupport(t.user_email, `Re: ${t.subject}`, `${body}\n\nReply to this email and it reaches us.`);
+  }
+  await run(`UPDATE support_tickets SET status=?, updated_at=NOW() WHERE id=?`, [status, t.id]);
+  res.json({ ok: true, status });
+}));
+app.get("/admin/questions", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const groups = await query(`SELECT surface, COALESCE(topic,'unsorted') AS topic, COUNT(*)::int AS n,
+                                     (ARRAY_AGG(question ORDER BY created_at DESC))[1:5] AS recent
+                                FROM question_log WHERE created_at > NOW() - INTERVAL '12 months'
+                               GROUP BY 1,2 ORDER BY n DESC LIMIT 200`);
+  res.json({ groups, sentence: "The question text people typed into Ask Steward, the Agent and the Analyst, grouped by topic, kept twelve months. Never answers, never donor data." });
+}));
+
 app.post("/agent/instructions", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const A = await agentShapeMod();
   const text = String(req.body?.text || "").trim();
   if (!text) return res.status(400).json({ error: "An instruction needs words." });
   if (text.length > 2000) return res.status(400).json({ error: "That instruction is too long to plan from." });
+  // HELP-1 — what people ask the Agent and the Analyst, the text only.
+  await logQuestion(req.body?.persona === "analyst" ? "analyst" : "agent", text, req.body?.persona || "general");
 
   // THE MONEY REFUSAL COMES FIRST, before the gate and before the model. It is
   // a sentence, not a route: "refund Margaret" is told no and told why, never

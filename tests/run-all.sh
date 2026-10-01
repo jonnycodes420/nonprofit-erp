@@ -137,6 +137,7 @@ CORE=(
   intb1-calendar-store
   sec1-two-factor
   trust2-erase
+  help1-ask
   fix11-inbound-resend
   int5-api-keys
   script-guards

@@ -31,6 +31,8 @@
 // executor and does not leave the building. It deliberately excludes
 // send_email, queue_for_send and enrol_sequence (a persona never reaches a
 // donor) and every money tool (nothing ever does).
+import { HELP_SYSTEM } from "./helpSearch.js";   // HELP-1
+
 export const PERSONA_TOOLS = [
   "find_people", "count",
   "draft_note", "create_task", "open_thread", "log_note",
@@ -119,6 +121,18 @@ export const GENERAL = P("general", "Steward",
   PERSONA_TOOLS,
   [],
   "Plan, then confirm. Every write is logged and undoable for thirty days.");
+
+// HELP-1 — ASK STEWARD. The engine's help-only persona: NO tools, so it can
+// plan nothing and call nothing, and a voice that answers only from the help
+// articles shared/helpSearch.js puts in front of it. Not in PERSONAS, for the
+// same reason as GENERAL: it is not a card anyone picks to plan work with.
+export const HELP = P("help", "Ask Steward",
+  "Answers how-to questions from the help centre.",
+  "Reads only the help articles and the question. It never sees your organisation's data and never takes an action.",
+  HELP_SYSTEM,
+  [],
+  [],
+  "No tools. It reads help articles and writes an answer; nothing else.");
 
 export const PERSONA_IDS = PERSONAS.map(p => p.id);
 

@@ -1235,6 +1235,45 @@ function TrustAdmin() {
   </div>;
 }
 
+// HELP-1 — the tickets "Ask a person" creates, replied to from here (the reply
+// is emailed from support), and the questions people ask, grouped by topic.
+function SupportAdmin() {
+  const [t, setT] = useState(null);
+  const [qs, setQs] = useState(null);
+  const [draft, setDraft] = useState({});
+  const [msg, setMsg] = useState("");
+  const load = () => {
+    adminFetch("/admin/tickets").then(d => setT(d.tickets || [])).catch(() => setT([]));
+    adminFetch("/admin/questions").then(setQs).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+  const reply = (id, status) => adminFetch(`/admin/tickets/${id}/reply`, { method: "POST", body: JSON.stringify({ body: draft[id] || "", status }) })
+    .then(() => { setDraft(d => ({ ...d, [id]: "" })); setMsg("Saved."); load(); }).catch(e => setMsg(errorMessage(e, "That did not send.")));
+  const box = { background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 16 };
+  const STATUS = { open: "Open", waiting: "Waiting on customer", closed: "Closed" };
+  return <div>
+    <div style={{ fontWeight: 700, marginBottom: 8 }}>Tickets</div>
+    {t && !t.length && <div style={box}>No tickets yet.</div>}
+    {(t || []).map(k => <div key={k.id} style={box}>
+      <div style={{ fontWeight: 700 }}>{k.subject} · {STATUS[k.status]}</div>
+      <div style={{ fontSize: 12, opacity: 0.75, margin: "4px 0 8px" }}>{k.user_name || k.user_email} at {k.org_name} · screen {k.screen || "not given"} · {new Date(k.created_at).toLocaleString()}</div>
+      {k.messages.map((m, i) => <div key={i} style={{ fontSize: 13, margin: "6px 0", whiteSpace: "pre-wrap" }}><b>{m.from_kind === "support" ? "Support" : "Customer"}:</b> {m.body}</div>)}
+      {k.status !== "closed" && <div style={{ marginTop: 8 }}>
+        <textarea style={{ width: "100%", boxSizing: "border-box", minHeight: 60, padding: 8, fontFamily: "inherit" }} placeholder="Reply (emailed to the customer from support)" value={draft[k.id] || ""} onChange={e => setDraft(d => ({ ...d, [k.id]: e.target.value }))} />
+        <button disabled={!draft[k.id]} onClick={() => reply(k.id, "waiting")} style={{ marginRight: 6 }}>Send reply</button>
+        <button onClick={() => reply(k.id, "closed")}>Close</button>
+      </div>}
+    </div>)}
+    <div style={{ fontWeight: 700, margin: "16px 0 8px" }}>What people ask</div>
+    {qs && <div style={{ fontSize: 12, opacity: 0.75, marginBottom: 8 }}>{qs.sentence}</div>}
+    {(qs?.groups || []).map((g, i) => <div key={i} style={box}>
+      <div style={{ fontWeight: 700 }}>{g.surface} · {g.topic} · {g.n}</div>
+      {(g.recent || []).map((r, k) => <div key={k} style={{ fontSize: 13 }}>{r}</div>)}
+    </div>)}
+    {msg && <div style={{ fontSize: 13 }}>{msg}</div>}
+  </div>;
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
@@ -1289,6 +1328,8 @@ export default function AdminDashboard() {
     { id: "network",  label: "Network Review", icon: "◫" },
     // TRUST-2 — incidents for /status, and which What's new entries show.
     { id: "trust",    label: "Status and What's new", icon: "◌" },
+    // HELP-1 — tickets from "Ask a person", and what people ask.
+    { id: "support",  label: "Support", icon: "◍" },
   ];
 
   const currentPage = NAV.find(n => n.id === page)?.label || "";
@@ -1361,6 +1402,7 @@ export default function AdminDashboard() {
           {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
           {page === "network"   && <NetworkReview />}
           {page === "trust"     && <TrustAdmin />}
+          {page === "support"   && <SupportAdmin />}
         </div>
       </div>
     </div>
