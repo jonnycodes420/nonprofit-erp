@@ -6004,7 +6004,12 @@ function importFindings(row, summary) {
   return out;
 }
 
-const IMPORT_SHAPES = new Set(["workbook", "transaction", "aggregate", "wide", "donors", "gifts", "deposit", "unknown"]);
+// FIX-11 Part 4 — `gift_file_with_donors` is a gift file imported against an
+// org where those donors did not exist, so the import created them too. It is
+// its own shape because it is the one import besides a deposit that reverses
+// as a whole (see WHOLE_IMPORT_SHAPES): everything in it came out of one file.
+const IMPORT_SHAPES = new Set(["workbook", "transaction", "aggregate", "wide", "donors", "gifts",
+                               "deposit", "gift_file_with_donors", "unknown"]);
 
 // Record a run. Called by the importer once the write has committed, with the
 // same object the receipt is rendering.
@@ -6953,17 +6958,52 @@ app.post("/deposits/commit", requireAuth, checkWriteAccess, wrap(async (req, res
 // stops matching. After the window it is history: correct it gift by gift, on
 // the record, where the correction is visible.
 const DEPOSIT_REVERSE_HOURS = 24;
+// FIX-11 Part 4 — THE SECOND SHAPE THAT REVERSES AS A WHOLE, and it is a
+// deliberate widening of the rule below it, so here is the reasoning.
+//
+// "An import is undone gift by gift, on the record" is right for an ordinary
+// import: those gifts landed on donors who already existed and have a history
+// of their own, so pulling the import out wholesale would reach into records
+// the import did not create. A gift file imported against an org where NONE of
+// those donors existed is the opposite case: every gift AND every person came
+// out of that one file, there is no prior history to disturb, and the thing a
+// customer needs when they have just imported the wrong file, or the right
+// file onto the wrong org, is one undo.
+//
+// The safety is the same machinery, unchanged: gifts by `import_id`, and
+// people only where `created_import_id` is this run AND they have no other
+// gift and no other interaction. A person who has acquired any history since
+// stays, and so do their gifts.
+const WHOLE_IMPORT_SHAPES = new Set(["deposit", "gift_file_with_donors"]);
+const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_donors: 24 * 7 };
 
-app.post("/imports/:id/reverse", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+// NOT requireAdmin any more, and that is the one gate this changes. Importing
+// takes checkWriteAccess, so a staff member can import a file; if undoing it
+// took an admin, the person who had just put forty gifts on the wrong org
+// would be shown an Undo button and refused by it. So: an admin may undo any
+// whole-import run, and anybody may undo THEIR OWN. A deposit's 24 hours and
+// its admin-only posture are otherwise untouched.
+app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
-  if (!imp) return res.status(404).json({ error: "Deposit not found" });
-  if (imp.shape !== "deposit") return res.status(400).json({ error: "only_deposits_reverse", message: "Only a deposit can be reversed as a whole. An import is undone gift by gift, on the record." });
+  if (!imp) return res.status(404).json({ error: "not_found", message: "That import is not on this organisation." });
+  if (!WHOLE_IMPORT_SHAPES.has(imp.shape)) {
+    return res.status(400).json({ error: "shape_not_reversible",
+      message: "A deposit and a gift file that created its own donors reverse as a whole. Any other import is undone gift by gift, on the record." });
+  }
+  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+  const mine = imp.actor_user_id && imp.actor_user_id === req.user.userId;
+  if (!(me && me.role === "admin") && !mine) {
+    return res.status(403).json({ error: "not_yours",
+      message: "You can undo an import you made. An admin can undo any of them." });
+  }
   if (imp.reversed_at) return res.status(409).json({ error: "already_reversed", reversedAt: imp.reversed_at });
+  const windowHours = SHAPE_REVERSE_HOURS[imp.shape] || DEPOSIT_REVERSE_HOURS;
   const ageHours = (Date.now() - new Date(imp.committed_at).getTime()) / 3600e3;
-  if (ageHours > DEPOSIT_REVERSE_HOURS) {
+  if (ageHours > windowHours) {
+    const what = imp.shape === "deposit" ? "deposit" : "import";
     return res.status(409).json({ error: "window_closed",
-      message: `This deposit was recorded ${Math.round(ageHours)} hours ago. A deposit reverses as a whole for ${DEPOSIT_REVERSE_HOURS} hours; after that, correct it gift by gift so the correction is visible on the record.` });
+      message: `This ${what} was recorded ${Math.round(ageHours)} hours ago. It reverses as a whole for ${Math.round(windowHours)} hours; after that, correct it gift by gift so the correction is visible on the record.` });
   }
 
   const gifts = await query("SELECT id, donor_id, pledge_id FROM gifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
@@ -6990,7 +7030,10 @@ app.post("/imports/:id/reverse", requireAuth, requireAdmin, checkWriteAccess, wr
   for (const did of donorIds) await recalcDonorSummary(did, orgId).catch(() => {});
   for (const pid of pledgeIds) await recalcPledgePayment(pid, orgId).catch(() => {});
   await run("UPDATE imports SET reversed_at=NOW(), reversed_by=? WHERE id=? AND org_id=?", [actor(req).name || actor(req).id, req.params.id, orgId]);
-  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length });
+  res.json({ reversed: true, gifts: giftIds.length, donorsRemoved: orphans.length,
+    sentence: `Undone. ${giftIds.length} ${giftIds.length === 1 ? "gift" : "gifts"} removed`
+      + (orphans.length ? ` and ${orphans.length} ${orphans.length === 1 ? "person" : "people"} this file created` : "")
+      + `. Nothing else was touched.` });
 }));
 
 // The merge review list — every fold the importer made, newest import first.

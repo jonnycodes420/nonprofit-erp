@@ -155,6 +155,7 @@ CORE=(
   upgrade-checkout
   close-link
   import-messy
+  fix11-gift-file-import
   import-workbook-v3
   import-columns
   palette

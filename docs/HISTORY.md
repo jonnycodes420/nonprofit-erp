@@ -24,6 +24,59 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-11 Part 4 — a gift file with no donors is not a dead end (2026-09-30)
+
+On 30 September Jonathan imported a 40-gift file into an org where those donors
+did not exist. The screen said "0 gifts ready to import, attaching to 0 donors ·
+40 unmatched (will skip)", offered a grey "Import 0 Gifts" button, and told him
+to "use combined mode later", which is not a place. A customer arriving with a
+gift file from another system hits exactly that, and the only answer the product
+had was: go away, split the file, come back.
+
+**It is an offer now.** The unmatched rows become a count of PEOPLE, named
+before anything is written, beside two buttons: "Create 5 new donors and import
+their gifts" in emerald, and "Import only the 3 that match" — which says "No
+gifts match somebody on file" and is disabled when nothing does, rather than
+reading "Import 0 Gifts" as the only button on the screen.
+
+One person per identity: by email where there is one, lower-cased, otherwise by
+exact normalised name. A row with neither a name nor an email is counted and
+left out rather than becoming a donor called "". It goes through
+`/donors/import-combined`, the combined import that already existed, under one
+run id. There is no second import path.
+
+**The whole thing undoes as one import**, and that is a deliberate widening of
+"only a deposit can be reversed as a whole. An import is undone gift by gift,
+on the record." That rule is right for an ordinary import: those gifts landed
+on donors who already existed and have a history of their own. A gift file
+imported where NONE of those donors existed is the opposite case: every gift
+and every person came out of one file, there is no prior history to disturb,
+and the thing a customer needs when they have imported the wrong file is one
+undo. The safety is the machinery that was already there, unchanged: gifts by
+`import_id`, and people only where `created_import_id` is this run AND they
+have no other gift and no other interaction. A created donor who has since
+acquired a gift is kept.
+
+The route stopped being admin-only, which is the one gate this changed.
+Importing takes `checkWriteAccess`, so a staff member can import; if undoing it
+took an admin, the person who had just put forty gifts on the wrong org would
+be shown an Undo button and refused by it. An admin may undo any whole-import
+run; anybody may undo their own.
+
+**THE GIFT-HISTORY IMPORTER WAS ROUNDING EVERY AMOUNT TO WHOLE DOLLARS.**
+`Math.round(amtVal || 0)`, in both parse paths, since the surface was written.
+A $250.50 gift was imported as $251.00 and a $33.33 one as $33.00, so every
+gift-history import had been quietly wrong by up to 49 cents a row and no file
+had ever reconciled against its own source. The browser walk found it: the
+server-side suite posts amounts directly to the route and could never have
+seen it. Widening the guard to the whole file then found a THIRD site, in the
+year-column branch of the recommended "Import + History" path, so the import
+Steward pushes hardest was rounding too.
+
+Also found: calling `onImported()` on success dismissed the result screen the
+instant the import finished, because the parent wires that callback to closing
+the modal. The undo went with it.
+
 ## FIX-11 Part 3 — a bookkeeper export a bookkeeper can use (2026-09-30)
 
 Jonathan exported `bookkeeper-2026-08.csv` from the demo org on 30 September.
