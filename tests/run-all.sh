@@ -134,6 +134,7 @@ CORE=(
   oauth-state
   int3-optout
   int4-mailbox
+  intb1-calendar-store
   fix11-inbound-resend
   int5-api-keys
   script-guards
