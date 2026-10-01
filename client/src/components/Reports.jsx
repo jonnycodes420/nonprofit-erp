@@ -1,3 +1,4 @@
+import { MeetingsByStaffCard } from "./MovesPanels";
 import { useState, useEffect } from "react";
 import { apiFetch, API, getToken } from "../api";
 import { T, fmtFull, Card, EmptyState, PageTitle, StartHere, LockedFeature, goToPricing, activeMark } from "./shared";
@@ -631,9 +632,12 @@ export function Reports({ appData, onNavigate, initialReport, initialParams, ini
     {/* First-visit signpost (BUILD-08 Phase D) — shown until "Got it". */}
     <div style={{ marginBottom: 14 }}>
       <StartHere dismissKey="reports_intro"
-        line="If you only ever open one report, make it LYBUNT — the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
+        line="If you only ever open one report, make it LYBUNT: the people who gave last year and haven't yet this year. It's where retention is won or lost, and every row clicks through to the donor."
         actionLabel="Open LYBUNT" onAction={() => pick("lybunt")} />
     </div>
+
+    {/* INT-BUILD-1 Part 6 — meetings per staff member per month. */}
+    <div style={{ marginBottom: 14 }}><MeetingsByStaffCard /></div>
 
     <div className="reports-layout">
       <ReportsRail groups={groups} active={active} activeLabel={label} onPick={pick} />

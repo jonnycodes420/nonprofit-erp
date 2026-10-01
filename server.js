@@ -8075,6 +8075,101 @@ async function syncMailbox(userId, orgId, providerKey) {
   return { logged, dropped };
 }
 
+// ── INT-BUILD-1 Part 1 · THE CALENDAR, ON THE SAME CONNECTION ──────────────
+//
+// Read a window of her own calendar, keep the meetings that have somebody on
+// file in them, and nothing else (shared/calendarLog.js holds the decision).
+// An event with nobody on file is dropped in memory: no row, no count, no log
+// line, and the return value says how many were KEPT, never how many were not.
+async function syncCalendar(userId, orgId, providerKey) {
+  const CL = await import("./shared/calendarLog.js");
+  const [conn] = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND provider=? AND status='active'`,
+    [userId, orgId, providerKey]);
+  if (!conn || conn.calendar_granted !== true || conn.paused === true || !conn.credentials_sealed) return { kept: 0 };
+  const token = await mailboxAccessToken(conn, orgId, providerKey);
+  if (!token) return { kept: 0 };
+
+  const people = await query(
+    `SELECT id, email FROM donors WHERE org_id=? AND email IS NOT NULL AND email <> '' AND deleted_at IS NULL`, [orgId]);
+  const donorsByEmail = new Map(people.map(d => [String(d.email).trim().toLowerCase(), d.id]));
+  const staffEmails = (await query(`SELECT email FROM users WHERE org_id=?`, [orgId]))
+    .map(r => String(r.email || "").trim().toLowerCase()).filter(Boolean);
+  const neverLog = (await query(`SELECT pattern FROM mailbox_never_log WHERE user_id=?`, [userId])).map(r => r.pattern);
+  const excludedIds = (await query(
+    `SELECT message_id FROM mailbox_exclusions WHERE org_id=? AND provider=?`, [orgId, providerKey + ":calendar"]))
+    .map(r => r.message_id);
+
+  const from = new Date(Date.now() - CL.WINDOW_PAST_DAYS * 864e5).toISOString();
+  const to = new Date(Date.now() + CL.WINDOW_AHEAD_DAYS * 864e5).toISOString();
+  const events = await fetchCalendarEvents(providerKey, token, from, to);
+  if (events === null) return { kept: 0 };   // the provider refused; leave what is stored alone
+
+  const actorId = `system:calendar/${providerKey}/${userId}`;
+  const ctx = { paused: false, neverLog, excludedIds, mailboxAddress: conn.address, staffEmails, donorsByEmail, ownerUserId: userId };
+  const seen = new Set();
+  let kept = 0;
+  for (const ev of events) {
+    const d = CL.classifyCalendarEvent(ev, ctx);
+    if (d.action !== "store") continue;
+    const r = d.row;
+    seen.add(String(ev.id));
+    await run(
+      `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,created_by,created_by_name)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT (org_id, owner_user_id, provider, provider_event_id)
+       DO UPDATE SET title=EXCLUDED.title, starts_at=EXCLUDED.starts_at, ends_at=EXCLUDED.ends_at,
+                     location=EXCLUDED.location, person_ids=EXCLUDED.person_ids, updated_at=NOW()`,
+      ["cal_" + uuid().slice(0, 12), orgId, userId, providerKey, String(ev.id), r.title, r.startsAt, r.endsAt,
+       r.location, r.personIds, actorId, "Calendar sync"]);
+    kept++;
+  }
+  // A meeting that left her calendar (cancelled, moved out of the window, the
+  // donor taken off it) leaves Steward too, UNLESS she already wrote down how
+  // it went: her note is hers and outlives the invite.
+  await run(
+    `DELETE FROM calendar_events WHERE org_id=? AND owner_user_id=? AND provider=? AND logged_at IS NULL
+        AND starts_at BETWEEN ? AND ? AND NOT (provider_event_id = ANY(?))`,
+    [orgId, userId, providerKey, from, to, [...seen]]);
+  await run(`UPDATE mailbox_connections SET calendar_synced_at=NOW() WHERE id=?`, [conn.id]);
+  return { kept };
+}
+
+// The provider is asked for the window, with the description masked out.
+// Returns null when the provider refuses, so a revoked calendar never reads
+// as "she has no meetings" and wipes what is stored.
+async function fetchCalendarEvents(providerKey, token, from, to) {
+  const CL = await import("./shared/calendarLog.js");
+  const out = [];
+  try {
+    if (providerKey === "google") {
+      let pageToken = "";
+      for (let i = 0; i < 5; i++) {
+        const q = new URLSearchParams({ timeMin: from, timeMax: to, singleEvents: "true", orderBy: "startTime",
+          maxResults: "250", fields: CL.GOOGLE_EVENT_FIELDS, ...(pageToken ? { pageToken } : {}) });
+        const r = await fetch(`${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?${q}`,
+          { headers: { Authorization: "Bearer " + token } });
+        if (!r.ok) { console.error(`[calendar] google answered ${r.status}`); return null; }
+        const body = await r.json();
+        for (const it of body.items || []) out.push(CL.fromGoogle(it));
+        if (!body.nextPageToken) break;
+        pageToken = body.nextPageToken;
+      }
+    } else {
+      let url = `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/calendarView?` + new URLSearchParams({
+        startDateTime: from, endDateTime: to, $select: CL.GRAPH_EVENT_SELECT, $top: "250" });
+      for (let i = 0; i < 5 && url; i++) {
+        const r = await fetch(url, { headers: { Authorization: "Bearer " + token, Prefer: 'outlook.timezone="UTC"' } });
+        if (!r.ok) { console.error(`[calendar] microsoft answered ${r.status}`); return null; }
+        const body = await r.json();
+        for (const it of body.value || []) out.push(CL.fromGraph(it));
+        url = body["@odata.nextLink"] || null;
+      }
+    }
+  } catch (e) { console.error(`[calendar] ${providerKey} fetch:`, e.message); return null; }
+  return out;
+}
+
 // A mailbox token, refreshed through the same seam every other connection
 // uses. Returns null rather than throwing so one broken mailbox never stops
 // the tick for everybody else.
@@ -9639,6 +9734,8 @@ require("./routes/billing").mount({
   checkActiveDonorBand,
 });
 require("./routes/finance").mount({
+  // INT-BUILD-1 — the first sync after a connect, and the calendar.
+  syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
   actor, checkWriteAccess, crypto, finPeriodBounds, grantBalanceFrom, grantMoneyRows, money, orgOwns,
   orgTime, orgToday, orgTz, orgUnrestrictedFundId, parseMoneyOrThrow, query, requireAdmin,
   requireAuth, restrictedMod, run, stripe, toDollars, uuid, wrap, writeAuditLog,
@@ -9755,6 +9852,8 @@ require("./routes/crm").mount({
 require("./routes/jobs").mount({
   // INT-5 — the webhook delivery pass, on the existing tick.
   deliverWebhooks,
+  // INT-BUILD-1 — every live mailbox, mail and calendar, on the 15-minute tick.
+  syncMailbox, syncCalendar,
   RECONCILE_INTERVAL_MIN, autoEnroll, autoLapseOrg, backgroundTicksDisabled, bulkSendAddressGate,
   checkWebhookSubscriptions, getOrgAccessState, monthBounds, notifyExpiringCards, orgTime,
   processDunning, processGeocodeQueue, processGivingSources, processGrantMilestones,

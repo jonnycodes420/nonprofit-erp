@@ -2700,6 +2700,14 @@ const PROFILE_FIGURE_BLANKS = {
     blank: "There is no ask in flight with this person. Open a proposal and what you are asking for sits here until they say yes or no.",
     short: "No open ask.",
   },
+  lastMet: {
+    blank: "Nobody here has met this person yet, on a connected calendar or logged by hand. The first meeting shows here the day it happens.",
+    short: "Not met yet.",
+  },
+  lastEmail: {
+    blank: "No email with this person is on the record. Connect your inbox, or BCC Steward, and the next one lands here.",
+    short: "No email yet.",
+  },
 };
 
 // The four, in one round trip. `today` is the ORGANISATION's civil date,
@@ -2712,6 +2720,9 @@ async function donorProfileFigures(orgId, donorId, today) {
     ["lastGift", { key: "donor-last-gift",   params: { donor: donorId } }],
     ["contact",  { key: "donor-contact-gap", params: { donor: donorId, today } }],
     ["openAsk",  { key: "donor-open-ask",    params: { donor: donorId } }],
+    // INT-BUILD-1 — the header reads Lifetime, Last gift, Last met, Last email.
+    ["lastMet",   { key: "donor-last-met",   params: { donor: donorId, today } }],
+    ["lastEmail", { key: "donor-last-email", params: { donor: donorId, today } }],
   ];
   const got = await Promise.all(wanted.map(async ([k, source]) => {
     const f = await figureSources.figureValue(orgId, source, deps);

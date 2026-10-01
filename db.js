@@ -804,6 +804,45 @@ async function initSchema() {
                     ON mailbox_exclusions (org_id, provider, message_id)`);
 
   // ── THE ONE-SHOT MIGRATION OFF PLAINTEXT ─────────────────────────────────
+  // INT-BUILD-1 Part 1 — THE CALENDAR. Whether this connection's consent
+  // included the calendar scope (INT-4 connections did not, and they keep
+  // logging mail until she adds it), and the meetings themselves.
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_granted BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE mailbox_connections ADD COLUMN IF NOT EXISTS calendar_synced_at TIMESTAMPTZ`);
+  // ONE ROW PER MEETING WITH SOMEBODY ON FILE, AND SIX FIELDS FROM THE
+  // PROVIDER (shared/calendarLog.js): title, start, end, location, the
+  // matched people, the owner. No description, no attendee addresses. The
+  // columns after those are HERS, written when she logs how it went.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      owner_user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      provider_event_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL,
+      location TEXT,
+      person_ids TEXT[] NOT NULL,
+      booked_in_steward BOOLEAN NOT NULL DEFAULT false,
+      note TEXT,
+      next_step TEXT,
+      logged_at TIMESTAMPTZ,
+      logged_by TEXT,
+      interaction_id TEXT,
+      dismissed_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      CONSTRAINT calendar_events_has_person CHECK (cardinality(person_ids) > 0)
+    )`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS calendar_events_once
+                    ON calendar_events (org_id, owner_user_id, provider, provider_event_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_calendar_events_org_start ON calendar_events (org_id, starts_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_calendar_events_people ON calendar_events USING GIN (person_ids)`);
+
   // Every live gmail_connections row is sealed into mailbox_connections and
   // its plaintext columns are then emptied, so a connected person keeps
   // working and the cleartext stops existing.

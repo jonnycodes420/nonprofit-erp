@@ -18,6 +18,7 @@ import { nextStepSuggestion, nextStepTypeForLabel, sanitizeStepLabel, NEXT_STEP_
 
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
+import { MorningBrief } from "./MeetingPanels";
 import { displayDateShort } from "../../../shared/displayDate";
 import { driftCounts, earlySignsPhrase, EARLY_SIGNS_HEADING, EARLY_SIGNS_MEANING, driftBadgeLabel } from "../../../shared/driftWords";
 
@@ -2847,7 +2848,10 @@ export function Dashboard({data,setData,onNavigate,isReadOnly=false,surface="hom
           )}
         </>);
         return{
-          top:<>{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
+          // INT-BUILD-1 Parts 4 and 5 — today's meetings with their briefs, and
+          // "how did it go" for a meeting that just ended. Not a layout row:
+          // it only exists on a day there is something on a connected calendar.
+          top:<>{surface==="home"&&!editMode&&<div className="home-block"><MorningBrief onOpenPerson={id=>onNavigate("donors",{selectDonorId:id})}/></div>}{topRows.map((row,i)=>renderRow(row,i))}{lowerRows.length?null:tail}</>,
           lower:lowerRows.length?<>{lowerRows.map((row,i)=>renderRow(row,splitAt+i))}{tail}</>:null,
         };
   })():null;

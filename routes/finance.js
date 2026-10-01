@@ -33,6 +33,8 @@ const {
   // INT-3 — the audience resolver the campaign sender uses, and the one
   // unsubscribe write. Both passed in rather than reimplemented.
   resolveSegmentSpec, filterBySegment, recordUnsubscribe,
+  // INT-BUILD-1 — the mailbox and calendar syncs, and the token seam.
+  syncMailbox, syncCalendar, mailboxAccessToken, closeThreadStepForContact,
 } = ctx;
 let app = routers.r0;
 // FIX-1 E — the payout reconciliation and the money-in sentences (pure, ESM).
@@ -462,6 +464,12 @@ const bookkeepingMod = () => import("../shared/bookkeeping.js");
 const oauthMod = () => import("../shared/oauth.js");
 const emailMarketingMod = () => import("../shared/emailMarketing.js");
 const mailboxMod = () => import("../shared/mailboxLog.js");
+// INT-BUILD-1 — the calendar's decision, the note reader, and the one place
+// every figure is computed (so the profile's year and the Reports grid cannot
+// disagree with the drawer behind them).
+const calendarMod = () => import("../shared/calendarLog.js");
+const meetingNoteMod = () => import("../shared/meetingNote.js");
+const figureSources = require("../figureSources");
 
 // The state is signed with the server's own secret. The signature is what
 // makes a state we did not issue useless; the row in oauth_states is what
@@ -689,20 +697,36 @@ app.post("/oauth/:provider/complete", requireAuth, requireAdminUnlessMailbox, ch
       return res.status(502).json({ error: "address_unknown",
         sentence: `${O.PROVIDERS[key].label} approved the connection but would not say which mailbox it is, so Steward cannot tell whose it is. Try connecting again.` });
     }
+    // INT-BUILD-1 — did this consent include the calendar? Read from what the
+    // provider says it granted, never assumed from what was asked: a person
+    // can untick the calendar on Google's screen and still connect mail.
+    const CL = await import("../shared/calendarLog.js");
+    const calendarOk = CL.calendarGranted(key, tokens.scope);
     await run(
       `INSERT INTO mailbox_connections
-         (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,created_by,created_by_name)
-       VALUES (?,?,?,?,?, 'active', ?,?,?,?)
+         (id,org_id,user_id,provider,address,status,credentials_sealed,token_expires_at,calendar_granted,created_by,created_by_name)
+       VALUES (?,?,?,?,?, 'active', ?,?,?,?,?)
        ON CONFLICT (user_id, provider) WHERE status <> 'disconnected'
        DO UPDATE SET address=EXCLUDED.address, credentials_sealed=EXCLUDED.credentials_sealed,
-                     token_expires_at=EXCLUDED.token_expires_at, status='active',
-                     last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
+                     token_expires_at=EXCLUDED.token_expires_at, calendar_granted=EXCLUDED.calendar_granted,
+                     status='active', last_error=NULL, last_error_at=NULL, updated_at=NOW()`,
       ["mbx_" + uuid().slice(0, 10), req.user.orgId, req.user.userId, key, address, sealed, expiresAt,
-       who_.id, who_.name]);
+       calendarOk, who_.id, who_.name]);
     await writeAuditLog(req.user.orgId, who_.id, who_.name, "mailbox_connected", "mailbox", key, {}).catch(() => {});
     const ML = await mailboxMod();
+    // The first sync runs now, so the connect page can show what it found.
+    // It never blocks the answer: a slow mailbox is a later number, not a
+    // failed connection.
+    const first = await Promise.race([
+      (async () => { const m = await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => null);
+                     const c = calendarOk ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => null) : null;
+                     return { m, c }; })(),
+      new Promise(r => setTimeout(() => r(null), 20000)),
+    ]);
     return res.json({ ok: true, provider: key, account: address, needsTenantChoice: false, tenants: null,
-      sentence: `${address} is connected, and Steward holds the permission encrypted. ${ML.FIELDS_SENTENCE}` });
+      calendarGranted: calendarOk, firstSync: !!first,
+      sentence: `${address} is connected, and Steward holds the permission encrypted. ${ML.FIELDS_SENTENCE}`
+        + (calendarOk ? "" : " The calendar was not included, so meetings will not appear until you add it.") });
   }
   if (O.PROVIDERS[key].kind === "email") {
     let prefix = null, accountName = null;
@@ -1036,6 +1060,10 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
       lastSyncedAt: row?.last_synced_at || null, lastLoggedCount: row?.last_logged_count ?? null,
       lastError: row?.last_error || null,
       reviewNote: p.reviewNote || null, example: row?.example === true,
+      // INT-BUILD-1 — mail can be connected without the calendar (every INT-4
+      // connection, or somebody who unticked it). That is a prompt, not an error.
+      calendarGranted: !!row && (row.example === true || row.calendar_granted === true),
+      calendarSyncedAt: row?.calendar_synced_at || (row?.example ? row.last_synced_at : null),
       // Shown beside the Gmail button until GOOGLE_APP_VERIFIED is set.
       unverifiedNote: k === "google" && process.env.GOOGLE_APP_VERIFIED !== "true" ? ML.GOOGLE_UNVERIFIED_SENTENCE : null,
       sentence: row?.example
@@ -1074,6 +1102,7 @@ app.get("/mailbox", requireAuth, wrap(async (req, res) => {
     team: [...teamBy.values()],
     teamDefinition: "Everyone on your team, and whether their own inbox is connected. Each person connects their own; nobody can connect a colleague's.",
     fieldsLogged: ML.FIELDS_LOGGED, fieldsSentence: ML.FIELDS_SENTENCE,
+    calendarSentence: (await import("../shared/calendarLog.js")).CALENDAR_FIELDS_SENTENCE,
     touchSentence: ML.TOUCH_SENTENCE,
     definition: "Your own mailbox. Steward logs only the messages to or from a person already in Steward, and keeps nothing at all about any other message.",
   });
@@ -1142,6 +1171,385 @@ app.post("/mailbox/forget", requireAuth, checkWriteAccess, wrap(async (req, res)
   await run(`DELETE FROM interactions WHERE id=? AND org_id=?`, [interactionId, req.user.orgId]);
   res.json({ ok: true,
     sentence: "Removed, and Steward will not log that message again." });
+}));
+
+// ═══ INT-BUILD-1 · MEETINGS ═════════════════════════════════════════════════
+//
+// The calendar is read by syncCalendar (server.js) under shared/calendarLog.js.
+// What follows is what the screens read and the three things a person can do
+// with a meeting: log how it went, move it, and book one. Every write here is
+// a POST from a page she is looking at, and every one is audited by the trail
+// mounted above every router; none of them sends anything to a donor.
+
+// SYNC NOW, hers. `what` is mail, calendar or both.
+app.post("/mailbox/:provider/sync", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const O = await oauthMod();
+  const key = String(req.params.provider || "");
+  if (!O.isProvider(key) || O.PROVIDERS[key].kind !== "mailbox") return res.status(404).json({ error: "unknown_provider" });
+  const what = ["mail", "calendar"].includes(req.body?.what) ? req.body.what : "both";
+  const mail = what !== "calendar" ? await syncMailbox(req.user.userId, req.user.orgId, key).catch(() => ({ logged: 0 })) : null;
+  const calendar = what !== "mail" ? await syncCalendar(req.user.userId, req.user.orgId, key).catch(() => ({ kept: 0 })) : null;
+  res.json({ ok: true, mail: mail ? { logged: mail.logged || 0 } : null, calendar: calendar ? { kept: calendar.kept || 0 } : null });
+}));
+
+const meetingTz = async orgId => { const org = await orgTz(orgId); return { org, tz: org.timezone || "America/New_York", today: orgToday(org) }; };   // ORG_TZ_SEAM_OK
+const monthName = d => new Date(String(d).slice(0, 10) + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", timeZone: "UTC" });
+const shortDay = d => new Date(String(d).slice(0, 10) + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
+// THE BRIEF. Four lines from her own record, each from a row that exists, and
+// a line is left out rather than filled when there is nothing true to say.
+async function meetingBrief(orgId, donorId, beforeIso) {
+  const before = new Date(beforeIso || Date.now()).toISOString();
+  const [d] = await query(`SELECT id, name, total_giving, first_gift_date, last_gift_amount, last_gift_date FROM donors WHERE id=? AND org_id=?`, [donorId, orgId]);
+  if (!d) return null;
+  const [cal] = await query(
+    `SELECT title, note, TO_CHAR(starts_at, 'YYYY-MM-DD') AS date FROM calendar_events
+      WHERE org_id=? AND ? = ANY(person_ids) AND starts_at < ? ORDER BY starts_at DESC LIMIT 1`, [orgId, donorId, before]);
+  const [met] = await query(
+    `SELECT note, date FROM interactions WHERE org_id=? AND donor_id=? AND type='meeting' AND date < ?
+      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, donorId, before.slice(0, 10)]);
+  let lastTime = null;
+  if (cal && (!met || cal.date >= met.date)) lastTime = { date: cal.date, text: [cal.title, cal.note].filter(Boolean).join(". ") };
+  else if (met) lastTime = { date: met.date, text: String(met.note || "").trim() };
+
+  const P = await import("../shared/proposalShape.js");
+  const [ask] = await query(
+    `SELECT o.id, o.name, o.target_amount, o.notes, o.created_at, f.name AS fund_name, o.fund_id
+       FROM opportunities o LEFT JOIN fin_funds f ON f.id = o.fund_id AND f.org_id = o.org_id
+      WHERE o.org_id=? AND o.donor_id=? AND o.proposal_stage = ANY(?::text[])
+      ORDER BY o.target_amount DESC NULLS LAST LIMIT 1`, [orgId, donorId, P.OPEN_STAGE_KEYS]).catch(() => []);
+  const openAsk = ask ? {
+    id: ask.id, amount: Number(ask.target_amount) || 0, fundId: ask.fund_id || null, fundName: ask.fund_name || null,
+    text: `$${(Number(ask.target_amount) || 0).toLocaleString("en-US")} for ${ask.fund_name || ask.name || "an open proposal"}, raised in ${monthName(new Date(ask.created_at).toISOString())}.${ask.notes ? " " + String(ask.notes).trim() : ""}`,
+  } : null;
+
+  const [em] = await query(
+    `SELECT note, date FROM interactions WHERE org_id=? AND donor_id=? AND type='email' AND metadata->>'direction'='inbound'
+      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, donorId]);
+  const quoteOf = note => { const body = String(note || "").split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim();
+    return body.length > 180 ? body.slice(0, 177).replace(/\s\S*$/, "") + "…" : body; };
+  const lastEmail = em && quoteOf(em.note) ? { date: em.date, quote: quoteOf(em.note) } : null;
+
+  const [g] = await query(
+    `SELECT id, amount, date FROM gifts WHERE org_id=? AND donor_id=? AND COALESCE(acknowledgement_sent,false)=false
+        AND amount > 0 AND date >= (CURRENT_DATE - 365)::text ORDER BY date DESC LIMIT 1`, [orgId, donorId]);
+  const unthanked = g ? { giftId: g.id, date: g.date, amount: Number(g.amount), text: `The ${shortDay(g.date)} gift hasn't been thanked yet.` } : null;
+
+  const years = d.first_gift_date ? Math.max(1, new Date().getUTCFullYear() - Number(String(d.first_gift_date).slice(0, 4)) + 1) : null;
+  const giving = Number(d.total_giving) > 0 ? {
+    lifetime: Number(d.total_giving),
+    text: `$${Number(d.total_giving).toLocaleString("en-US")}${years ? ` over ${years} year${years === 1 ? "" : "s"}` : ""}`
+      + (d.last_gift_amount && d.last_gift_date ? `, $${Number(d.last_gift_amount).toLocaleString("en-US")} in ${monthName(d.last_gift_date)}` : ""),
+  } : null;
+  return { donorId, name: d.name, lastTime, openAsk, lastEmail, unthanked, giving };
+}
+
+const eventOut = (c, extra = {}) => ({
+  id: c.id, title: c.title, startsAt: c.starts_at, endsAt: c.ends_at, location: c.location || null,
+  personIds: c.person_ids || [], ownerUserId: c.owner_user_id, ownerName: c.owner_name || null, provider: c.provider,
+  note: c.note || null, nextStep: c.next_step || null, loggedAt: c.logged_at || null, bookedInSteward: c.booked_in_steward === true,
+  ...extra,
+});
+
+// EVERYTHING THE PROFILE NEEDS FROM THE CALENDAR AND THE INBOX, in one read.
+app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId, donorId = req.params.id;
+  const [d] = await query(`SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const { today } = await meetingTz(orgId);
+  const events = await query(
+    `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
+      WHERE c.org_id=? AND ? = ANY(c.person_ids) ORDER BY c.starts_at DESC LIMIT 200`, [orgId, donorId]);
+  const peopleIds = [...new Set(events.flatMap(e => e.person_ids || []))];
+  const names = peopleIds.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, peopleIds])).map(r => [r.id, r.name])) : {};
+  const now = Date.now();
+  const upcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  const soon = upcoming.find(e => new Date(e.startsAt).getTime() - now <= 7 * 864e5) || null;
+  const nextMeeting = soon ? { ...soon, brief: await meetingBrief(orgId, donorId, soon.startsAt) } : null;
+
+  // THE RHYTHM: the last twelve calendar months, this one last, each month's
+  // count from the ONE meetings source. A month with a meeting still to come
+  // says so, which is what the dashed cell on the profile means.
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const first = orgTime.addDays(today.slice(0, 8) + "01", 0);
+    const dt = new Date(first + "T12:00:00Z"); dt.setUTCMonth(dt.getUTCMonth() - i);
+    const from = dt.toISOString().slice(0, 8) + "01";
+    const end = new Date(dt); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0);
+    months.push({ month: from.slice(0, 7), from, to: end.toISOString().slice(0, 10) });
+  }
+  const yearFrom = months[0].from, yearTo = months[11].to;
+  const meetingRows = (await figureSources.figure(orgId, { key: "meetings", params: { from: yearFrom, to: yearTo, donor: donorId } }, {}, { pageSize: 500 })).rows || [];
+  const rhythm = months.map(m => ({ ...m,
+    count: meetingRows.filter(r => r.date >= m.from && r.date <= m.to && r.date <= today).length,
+    upcoming: upcoming.some(e => new Date(e.startsAt).toISOString().slice(0, 7) === m.month) }));
+
+  // THIS YEAR, from the same sources the drawer opens.
+  const jan1 = today.slice(0, 4) + "-01-01";
+  const fv = (key, params) => figureSources.figureValue(orgId, { key, params }, {});
+  const [emails, fromThem, meetingsY, given] = await Promise.all([
+    fv("donor-emails", { donor: donorId, from: jan1, to: today }),
+    fv("donor-emails", { donor: donorId, from: jan1, to: today, direction: "inbound" }),
+    fv("meetings", { from: jan1, to: today, donor: donorId }),
+    fv("donor-gifts-between", { donor: donorId, from: jan1, to: today }),
+  ]);
+  const thisYear = {
+    from: jan1, to: today,
+    emails: { value: emails.value || 0, source: { key: "donor-emails", params: { donor: donorId, from: jan1, to: today } } },
+    fromThem: { value: fromThem.value || 0, source: { key: "donor-emails", params: { donor: donorId, from: jan1, to: today, direction: "inbound" } } },
+    meetings: { value: meetingsY.value || 0, source: { key: "meetings", params: { from: jan1, to: today, donor: donorId } } },
+    given: { value: given.value || 0, source: { key: "donor-gifts-between", params: { donor: donorId, from: jan1, to: today } } },
+  };
+
+  // EMAIL THREADS: messages grouped by subject (Re:/Fwd: stripped), newest
+  // first, each with its count, attachments and the last reply quoted.
+  const mails = await query(
+    `SELECT id, note, date, metadata FROM interactions WHERE org_id=? AND donor_id=? AND type='email'
+      ORDER BY date DESC, created_at DESC LIMIT 400`, [orgId, donorId]);
+  const threads = new Map();
+  for (const m of mails) {
+    const meta = typeof m.metadata === "string" ? JSON.parse(m.metadata || "{}") : (m.metadata || {});
+    const subject = String(meta.subject || String(m.note || "").split("\n")[0] || "Email").replace(/^\s*((re|fwd?|fw)\s*:\s*)+/i, "").trim() || "Email";
+    const k = subject.toLowerCase();
+    const t = threads.get(k) || { key: k, subject, count: 0, attachments: 0, lastDate: m.date, lastId: m.id, lastQuote: null, lastDirection: meta.direction || null, ids: [] };
+    t.count++; t.attachments += Number(meta.attachments) || 0; t.ids.push(m.id);
+    if (!t.lastQuote) t.lastQuote = String(m.note || "").split("\n").slice(1).join(" ").replace(/\s+/g, " ").trim().slice(0, 240) || null;
+    threads.set(k, t);
+  }
+
+  const [thread] = await query(
+    `SELECT id, next_step_label, due_date FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL LIMIT 1`, [orgId, donorId]);
+  res.json({
+    today, upcoming, past, nextMeeting, rhythm, thisYear,
+    emailThreads: [...threads.values()],
+    nextStep: thread ? { id: thread.id, label: thread.next_step_label, due: thread.due_date } : null,
+    rhythmSentence: "Each cell is a calendar month, this one last. Brass means at least one meeting with them that month; a dashed cell is a meeting still to come.",
+  });
+}));
+
+// WHO AM I SEEING TODAY. Her own calendar only, each meeting with its brief.
+app.get("/calendar/today", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { tz, today } = await meetingTz(orgId);
+  const rows = await query(
+    `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
+      WHERE c.org_id=? AND c.owner_user_id=? AND (c.starts_at AT TIME ZONE ?)::date = ?::date
+      ORDER BY c.starts_at`, [orgId, req.user.userId, tz, today]);
+  const ids = [...new Set(rows.flatMap(r => r.person_ids || []))];
+  const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
+  const out = [];
+  for (const r of rows) {
+    const people = (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name);
+    out.push(eventOut(r, { people, brief: people.length === 1 ? await meetingBrief(orgId, people[0].id, r.starts_at) : null }));
+  }
+  const [conn] = await query(`SELECT provider FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' AND calendar_granted = true LIMIT 1`, [req.user.userId, orgId]);
+  res.json({ today, meetings: out, provider: conn?.provider || null,
+    sentence: "From your own calendar. Only meetings with people in Steward show here." });
+}));
+
+// HOW DID IT GO. Her meetings that ended in the last seven days with nothing
+// written down yet, newest first.
+app.get("/calendar/to-log", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const rows = await query(
+    `SELECT c.* FROM calendar_events c WHERE c.org_id=? AND c.owner_user_id=? AND c.logged_at IS NULL AND c.dismissed_at IS NULL
+        AND c.ends_at <= NOW() AND c.ends_at >= NOW() - INTERVAL '7 days' ORDER BY c.ends_at DESC LIMIT 10`,
+    [orgId, req.user.userId]);
+  const ids = [...new Set(rows.flatMap(r => r.person_ids || []))];
+  const names = ids.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, ids])).map(r => [r.id, r.name])) : {};
+  res.json({ meetings: rows.map(r => eventOut(r, { people: (r.person_ids || []).map(id => ({ id, name: names[id] })).filter(p => p.name) })) });
+}));
+
+async function ownMeeting(req, res) {
+  const [c] = await query(`SELECT * FROM calendar_events WHERE id=? AND org_id=?`, [req.params.id, req.user.orgId]);
+  if (!c) { res.status(404).json({ error: "not_found", sentence: "That meeting is not on this organisation." }); return null; }
+  if (c.owner_user_id !== req.user.userId) {
+    const [me] = await query(`SELECT role FROM users WHERE id=? AND org_id=?`, [req.user.userId, req.user.orgId]);
+    if (!(me && me.role === "admin")) { res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is, or an admin, can log this meeting." }); return null; }
+  }
+  return c;
+}
+
+// WHAT STEWARD HEARD. Reads her note and offers chips. Writes nothing.
+app.post("/calendar/events/:id/suggest", requireAuth, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  const N = await meetingNoteMod();
+  const funds = await query(`SELECT id, name FROM fin_funds WHERE org_id=?`, [req.user.orgId]);
+  const brief = c.person_ids?.length === 1 ? await meetingBrief(req.user.orgId, c.person_ids[0], c.starts_at) : null;
+  res.json({ suggestions: N.suggestFromNote(String(req.body?.note || "").slice(0, 4000), { funds, openAsk: brief?.openAsk || null }),
+    sentence: "Read from your note. Nothing is recorded until you press save." });
+}));
+
+// SAVE. Her note goes on the meeting and on each person's record as a
+// meeting, which is a touch: it feeds Last met and Last contact and can close
+// a contact step. It never touches giving, drift, LYBUNT or SYBUNT; a pledge
+// or gift she confirmed is recorded by the page through the ordinary gift and
+// pledge routes, and the next step through the ordinary thread route.
+app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  if (c.logged_at) return res.status(409).json({ error: "already_logged", sentence: "This meeting already has a note." });
+  const note = String(req.body?.note || "").trim().slice(0, 8000);
+  const nextStep = String(req.body?.nextStep || "").trim().slice(0, 300) || null;
+  const who = actor(req);
+  const [u] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+  const date = new Date(c.starts_at).toISOString().slice(0, 10);
+  const firstId = "int_" + uuid().slice(0, 8);
+  let i = 0;
+  for (const donorId of c.person_ids || []) {
+    const intId = i === 0 ? firstId : "int_" + uuid().slice(0, 8);
+    await run(
+      `INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name, metadata)
+       VALUES (?,?,?,'meeting',?,?,?,?,?)`,
+      [intId, req.user.orgId, donorId, [c.title, note].filter(Boolean).join("\n\n"), date, who.id, u?.name || null,
+       JSON.stringify({ calendar_event_id: c.id, provider: c.provider, location: c.location || null,
+                        minutes: Math.round((new Date(c.ends_at) - new Date(c.starts_at)) / 60000), next_step: nextStep })]);
+    await closeThreadStepForContact(req.user.orgId, donorId, date, intId).catch(() => {});
+    i++;
+  }
+  await run(`UPDATE calendar_events SET note=?, next_step=?, logged_at=NOW(), logged_by=?, interaction_id=?, updated_at=NOW() WHERE id=?`,
+    [note || null, nextStep, who.id, firstId, c.id]);
+  req.audit && (req.audit.detail = { meeting: c.id, people: (c.person_ids || []).length });
+  res.json({ ok: true, interactionId: firstId, sentence: "Saved to the meeting and to the record." });
+}));
+
+app.post("/calendar/events/:id/dismiss", requireAuth, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  await run(`UPDATE calendar_events SET dismissed_at=NOW(), updated_at=NOW() WHERE id=?`, [c.id]);
+  res.json({ ok: true, sentence: "Fine. It stays on the record from your calendar, without a note." });
+}));
+
+// BOOK A VISIT and MOVE IT. Both write to HER OWN calendar through her own
+// connection. The donor is invited only if she ticked the box (off by
+// default), because an invite is mail from her calendar to the donor.
+async function myCalendarConn(req, res) {
+  const ML = await mailboxMod();
+  const [org] = await query("SELECT id, is_demo_org FROM orgs WHERE id=?", [req.user.orgId]);
+  if (ML.isDemoMailboxOrg(org)) { res.status(409).json({ error: "demo_org", sentence: ML.DEMO_CONNECT_SENTENCE }); return null; }
+  const [conn] = await query(
+    `SELECT * FROM mailbox_connections WHERE user_id=? AND org_id=? AND status='active' AND calendar_granted=true
+      ORDER BY provider LIMIT 1`, [req.user.userId, req.user.orgId]);
+  if (!conn) { res.status(409).json({ error: "no_calendar", sentence: "Connect your calendar first. Settings, Connections, Email and calendar." }); return null; }
+  const token = await mailboxAccessToken(conn, req.user.orgId, conn.provider);
+  if (!token) { res.status(409).json({ error: "calendar_broken", sentence: "Your calendar needs connecting again before Steward can add to it." }); return null; }
+  return { conn, token };
+}
+const validInstant = v => { const t = Date.parse(String(v || "")); return Number.isFinite(t) ? new Date(t).toISOString() : null; };
+
+app.post("/donors/:id/book-visit", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, name, email FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const startsAt = validInstant(req.body?.startsAt), endsAt = validInstant(req.body?.endsAt);
+  if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
+  const invite = req.body?.inviteDonor === true;
+  if (invite && !d.email) return res.status(400).json({ error: "no_email", sentence: `${d.name} has no email on file, so there is nobody to invite.` });
+  const got = await myCalendarConn(req, res); if (!got) return;
+  const CL = await calendarMod();
+  const title = String(req.body?.title || `Visit with ${d.name}`).trim().slice(0, 200);
+  const location = String(req.body?.location || "").trim().slice(0, 200) || null;
+  const body = CL.bookingBody(got.conn.provider, { title, startsAt, endsAt, location, inviteEmail: invite ? d.email : null });
+  const url = got.conn.provider === "google"
+    ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events?sendUpdates=${CL.googleSendUpdates(invite)}`
+    : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events`;
+  const r = await fetch(url, { method: "POST", headers: { Authorization: "Bearer " + got.token, "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  const made = r && r.ok ? await r.json().catch(() => null) : null;
+  if (!made?.id) return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the event. Nothing was added." });
+  const who = actor(req);
+  const id = "cal_" + uuid().slice(0, 12);
+  await run(
+    `INSERT INTO calendar_events (id,org_id,owner_user_id,provider,provider_event_id,title,starts_at,ends_at,location,person_ids,booked_in_steward,created_by,created_by_name)
+     VALUES (?,?,?,?,?,?,?,?,?,?,true,?,?)`,
+    [id, orgId, req.user.userId, got.conn.provider, String(made.id), title, startsAt, endsAt, location, [d.id], who.id, who.name]);
+  res.status(201).json({ ok: true, id, sentence: invite
+    ? `On your calendar, and ${d.name} was sent the invitation from it.`
+    : `On your calendar. ${d.name} was not invited; you can add them from your calendar if you want to.` });
+}));
+
+app.post("/calendar/events/:id/move", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  if (c.owner_user_id !== req.user.userId) return res.status(403).json({ error: "not_yours", sentence: "Only the person whose calendar it is can move it." });
+  const startsAt = validInstant(req.body?.startsAt), endsAt = validInstant(req.body?.endsAt);
+  if (!startsAt || !endsAt || endsAt <= startsAt) return res.status(400).json({ error: "bad_time", sentence: "Choose a start and an end, with the end after the start." });
+  const got = await myCalendarConn(req, res); if (!got) return;
+  const google = c.provider === "google";
+  const url = google
+    ? `${process.env.GOOGLE_CALENDAR_API_BASE || "https://www.googleapis.com"}/calendar/v3/calendars/primary/events/${encodeURIComponent(c.provider_event_id)}?sendUpdates=all`
+    : `${process.env.GRAPH_API_BASE || "https://graph.microsoft.com"}/v1.0/me/events/${encodeURIComponent(c.provider_event_id)}`;
+  const body = google ? { start: { dateTime: startsAt }, end: { dateTime: endsAt } }
+    : { start: { dateTime: startsAt.replace(/Z$/, ""), timeZone: "UTC" }, end: { dateTime: endsAt.replace(/Z$/, ""), timeZone: "UTC" } };
+  const r = await fetch(url, { method: "PATCH", headers: { Authorization: "Bearer " + got.token, "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+  if (!r || !r.ok) return res.status(502).json({ error: "calendar_refused", sentence: "Your calendar did not accept the change. Nothing moved." });
+  await run(`UPDATE calendar_events SET starts_at=?, ends_at=?, updated_at=NOW() WHERE id=?`, [startsAt, endsAt, c.id]);
+  res.json({ ok: true, sentence: "Moved on your calendar. Anyone already invited was told by your calendar." });
+}));
+
+// THE FIRST SYNC, AND WHAT IS WORTH A LOOK. Three numbers from the sources
+// the drawer opens, and three kinds of prompt, each from rows that exist.
+app.get("/calendar/first-sync", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId, me = req.user.userId;
+  const { today } = await meetingTz(orgId);
+  const since = orgTime.addDays(today, -730);
+  const CL = await calendarMod();
+  const winFrom = orgTime.addDays(today, -CL.WINDOW_PAST_DAYS), winTo = orgTime.addDays(today, CL.WINDOW_AHEAD_DAYS);
+  const fv = (key, params) => figureSources.figureValue(orgId, { key, params }, {});
+  const [emails, meetings, people] = await Promise.all([
+    fv("mailbox-emails", { staff: me, since }), fv("meetings", { from: winFrom, to: winTo, staff: me }), fv("mailbox-people", { staff: me, since }),
+  ]);
+  const look = [];
+  const [soon] = await query(
+    `SELECT c.id, c.starts_at, c.person_ids FROM calendar_events c WHERE c.org_id=? AND c.owner_user_id=?
+        AND c.starts_at > NOW() AND c.starts_at <= NOW() + INTERVAL '2 days' ORDER BY c.starts_at LIMIT 1`, [orgId, me]);
+  if (soon) {
+    const [p] = await query(`SELECT id, name FROM donors WHERE org_id=? AND id=?`, [orgId, soon.person_ids[0]]);
+    if (p) look.push({ kind: "meeting", donorId: p.id, name: p.name, startsAt: soon.starts_at, action: "Open the brief" });
+  }
+  const [waiting] = await query(
+    `SELECT i.donor_id, d.name, MAX(i.date) AS last_in, COUNT(*)::int AS n FROM interactions i JOIN donors d ON d.id=i.donor_id AND d.org_id=i.org_id
+      WHERE i.org_id=? AND i.type='email' AND i.metadata->>'direction'='inbound' AND i.metadata->>'logged_by'=? AND d.deleted_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM interactions o WHERE o.org_id=i.org_id AND o.donor_id=i.donor_id AND o.type='email'
+                          AND o.metadata->>'direction'='outbound' AND o.date >= i.date)
+      GROUP BY i.donor_id, d.name HAVING MAX(i.date) <= ? ORDER BY MAX(i.date) LIMIT 1`, [orgId, me, orgTime.addDays(today, -7)]);
+  if (waiting) look.push({ kind: "unanswered", donorId: waiting.donor_id, name: waiting.name, count: waiting.n,
+    days: orgTime.daysBetween(String(waiting.last_in).slice(0, 10), today), action: "Open thread" });
+  const [top] = (await figureSources.figure(orgId, { key: "no-recent-meeting", params: { since: orgTime.addDays(today, -365), owner: me } }, {}, { pageSize: 1 })).rows || [];
+  if (top && Number(top.amount) > 0) look.push({ kind: "no_meeting", donorId: top.donorId || top.donor_id || top.id, name: top.name, given: Number(top.amount), lastMet: top.date || null, action: "Book a visit" });
+  res.json({
+    emails: { value: emails.value || 0, source: { key: "mailbox-emails", params: { staff: me, since } } },
+    meetings: { value: meetings.value || 0, source: { key: "meetings", params: { from: winFrom, to: winTo, staff: me } } },
+    people: { value: people.value || 0, source: { key: "mailbox-people", params: { staff: me, since } } },
+    worthALook: look, since, today,
+  });
+}));
+
+// MOVES MANAGEMENT · MEETINGS PER STAFF MEMBER PER MONTH. Every cell is the
+// ONE `meetings` source with that person and that month, so a cell opens
+// exactly the rows it counts and the row total is the same source over the
+// whole year.
+app.get("/meetings/by-staff", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const { today } = await meetingTz(orgId);
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const dt = new Date(today.slice(0, 8) + "01T12:00:00Z"); dt.setUTCMonth(dt.getUTCMonth() - i);
+    const from = dt.toISOString().slice(0, 10);
+    const end = new Date(dt); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0);
+    months.push({ month: from.slice(0, 7), from, to: end.toISOString().slice(0, 10) });
+  }
+  const users = await query(`SELECT id, name, email FROM users WHERE org_id=? ORDER BY name`, [orgId]);
+  const staff = [];
+  for (const u of users) {
+    const cells = await Promise.all(months.map(async m => {
+      const params = { from: m.from, to: m.to, staff: u.id };
+      const f = await figureSources.figureValue(orgId, { key: "meetings", params }, {});
+      return { month: m.month, value: f.value || 0, source: { key: "meetings", params } };
+    }));
+    const totalParams = { from: months[0].from, to: months[11].to, staff: u.id };
+    const total = await figureSources.figureValue(orgId, { key: "meetings", params: totalParams }, {});
+    staff.push({ id: u.id, name: u.name || u.email, cells, total: { value: total.value || 0, source: { key: "meetings", params: totalParams } } });
+  }
+  res.json({ months, staff: staff.sort((a, b) => b.total.value - a.total.value),
+    sentence: "Meetings with someone on file, by the staff member who held them, month by month: meetings on that person's connected calendar, and meetings they logged by hand. A calendar meeting that was logged afterwards counts once." });
 }));
 
 // ═══ INT-3 · THE EMAIL TOOL SHE ALREADY PAYS FOR ═══════════════════════════

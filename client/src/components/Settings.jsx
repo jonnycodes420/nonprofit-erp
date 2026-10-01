@@ -2892,7 +2892,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* INT-BUILD-1 Part 0 — the one inbox card, Gmail AND Outlook. It used
           to be a Gmail-only card here and nowhere else. */}
-      <InboxConnectCard isReadOnly={isReadOnly}/>
+      <InboxConnectCard isReadOnly={isReadOnly} onNavigate={onNavigate}/>
 
       {/* BUILD-95 §4 — the OTHER half of setting up online giving, on the same
           screen as the processor rather than a tab away. The two answer the
@@ -2906,7 +2906,7 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       {/* ── INT-1 · Connections ───────────────────────────────────────────── */}
       {section==="connections"&&<>
-        <InboxConnectCard isReadOnly={isReadOnly} focused={initialFocus==="inbox"}/>
+        <InboxConnectCard isReadOnly={isReadOnly} focused={initialFocus==="inbox"} onNavigate={onNavigate}/>
         <ConnectionsView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}/>
       </>}
 

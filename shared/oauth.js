@@ -158,12 +158,23 @@ export const PROVIDERS = {
     // NOTE what is NOT here: `gmail.send`, which the first Gmail integration
     // asked for. Nothing in INT-4 sends, so asking for it bought a permission
     // this product must never exercise.
-    scopes: ["https://www.googleapis.com/auth/gmail.readonly", "openid", "email"],
+    //
+    // INT-BUILD-1 — AND THE CALENDAR, ON THE SAME CONSENT. `calendar.events`
+    // reads events and creates one when she presses "Book a visit"; it is the
+    // one Google scope that does both, and it is "sensitive", not
+    // "restricted". It cannot read or change her calendar settings or
+    // sharing, and Steward only ever reads the six fields shared/calendarLog.js
+    // names. It is the one write in this registry, and it writes only to her
+    // own calendar, only when she presses the button.
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly",
+             "https://www.googleapis.com/auth/calendar.events", "openid", "email"],
     pkce: true,
     tokenStyle: "body",
     // Google needs these two or a refresh token never arrives, and a mailbox
-    // connection without one stops working in an hour.
-    extraAuthParams: { access_type: "offline", prompt: "consent" },
+    // connection without one stops working in an hour. `include_granted_scopes`
+    // lets somebody who connected mail under INT-4 add the calendar without
+    // losing what she already granted.
+    extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
     restricted: true,
     reviewNote: "Gmail read scopes are restricted: Google requires app verification and an independent security assessment before more than 100 people can connect. Testing mode is capped at 100 users.",
     sandboxNote: "Google testing mode allows up to 100 connected accounts before verification.",
@@ -176,7 +187,9 @@ export const PROVIDERS = {
     tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
     // Mail.Read is read-only. `offline_access` is what makes a refresh token
     // exist. Nothing here is Mail.Send or Mail.ReadWrite.
-    scopes: ["offline_access", "openid", "email", "User.Read", "Mail.Read"],
+    // INT-BUILD-1 — Calendars.ReadWrite reads her events and creates the one
+    // she books from a profile. Microsoft has no narrower scope that can create.
+    scopes: ["offline_access", "openid", "email", "User.Read", "Mail.Read", "Calendars.ReadWrite"],
     pkce: true,
     tokenStyle: "body",
     restricted: true,

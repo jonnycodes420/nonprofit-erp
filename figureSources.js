@@ -395,6 +395,195 @@ const SOURCES = {
     },
   },
 
+  // INT-BUILD-1 — LAST MET and LAST EMAIL. Same shape as Last contact: the
+  // whole gap rides on the most recent row, so the drawer still foots.
+  //
+  // A MEETING is a calendar meeting with this person that has started, or a
+  // meeting somebody logged by hand. A calendar meeting that was logged
+  // afterwards wrote its own meeting interaction, so it is counted once, as
+  // that interaction, never twice.
+  "donor-last-met": {
+    label: "Last met",
+    measure: () => "sum",
+    amountKind: "days",
+    params: { donor: "id:required", today: "date:required" },
+    sentence: (p, dd) => `Every meeting with this person: the ones on a connected calendar that have happened, and the ones logged by hand, most recent first. The figure is the whole days from the most recent one to ${dd(p.today)}.`,
+    js: async (orgId, p) => {
+      const rows = await query(
+        `SELECT * FROM (
+           SELECT c.id, ? AS donor_id, c.title AS note, TO_CHAR(c.starts_at, 'YYYY-MM-DD') AS date,
+                  u.name AS who, 'calendar' AS kind
+             FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
+            WHERE c.org_id = ? AND ? = ANY(c.person_ids) AND c.starts_at <= NOW() AND c.interaction_id IS NULL
+           UNION ALL
+           SELECT i.id, i.donor_id, i.note, i.date, i.logged_by_name AS who, 'logged' AS kind
+             FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+            WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'meeting'
+              AND i.date IS NOT NULL AND i.date <> '') m
+          ORDER BY date DESC, id DESC LIMIT ?`,
+        [p.donor, orgId, p.donor, orgId, p.donor, CONTACT_ROWS_MAX]);
+      return rows.map((r, i) => {
+        const date = String(r.date).slice(0, 10);
+        const gap = Math.max(0, orgTime.daysBetween(date, p.today) ?? 0);
+        return { id: r.id, type: r.kind === "calendar" ? "meeting" : "interaction", donor_id: r.donor_id,
+          name: r.note || "Meeting", date, amount: i === 0 ? gap : null,
+          detail: [r.kind === "calendar" ? "From a calendar" : "Meeting", r.who ? `with ${r.who}` : null].filter(Boolean).join(" · ") };
+      });
+    },
+  },
+  "donor-last-email": {
+    label: "Last email",
+    measure: () => "sum",
+    amountKind: "days",
+    params: { donor: "id:required", today: "date:required" },
+    sentence: (p, dd) => `Every email with this person on the record, from a connected inbox, the BCC address or logged by hand, most recent first. The figure is the whole days from the most recent one to ${dd(p.today)}.`,
+    js: async (orgId, p) => {
+      const rows = await query(
+        `SELECT i.id, i.donor_id, i.note, i.date, i.logged_by_name, i.metadata->>'direction' AS direction
+           FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+          WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
+            AND i.date IS NOT NULL AND i.date <> ''
+          ORDER BY i.date DESC, i.id DESC LIMIT ?`,
+        [orgId, p.donor, CONTACT_ROWS_MAX]);
+      return rows.map((r, i) => {
+        const date = String(r.date).slice(0, 10);
+        const gap = Math.max(0, orgTime.daysBetween(date, p.today) ?? 0);
+        return { id: r.id, type: "interaction", donor_id: r.donor_id, name: String(r.note || "").split("\n")[0], date,
+          amount: i === 0 ? gap : null,
+          detail: [r.direction === "inbound" ? "From them" : r.direction === "outbound" ? "To them" : "Email",
+                   r.logged_by_name || null].filter(Boolean).join(" · ") };
+      });
+    },
+  },
+
+  // INT-BUILD-1 — MEETINGS. One definition, used by the profile's year, the
+  // connect page, the Reports grid and the morning brief: a meeting with
+  // somebody on file is a calendar meeting in the range that was not logged
+  // afterwards, or a meeting interaction (which is what a logged calendar
+  // meeting becomes). `staff` is whose calendar it was on or who logged it.
+  meetings: {
+    label: "Meetings",
+    measure: () => "count",
+    params: { from: "date:required", to: "date:required", staff: "id", donor: "id" },
+    sentence: (p, dd) => `Every meeting with someone on file from ${dd(p.from)} to ${dd(p.to)}${p.staff ? ", held by this staff member" : ""}${p.donor ? ", with this person" : ""}: meetings on a connected calendar, and meetings logged by hand. A calendar meeting that was logged afterwards is counted once.`,
+    sql: (orgId, p) => {
+      const args = [orgId, p.from, p.to];
+      let wc = "", wi = "";
+      if (p.staff) { wc += " AND c.owner_user_id = ?"; args.push(p.staff); }
+      if (p.donor) { wc += " AND ? = ANY(c.person_ids)"; args.push(p.donor); }
+      args.push(orgId, p.from, p.to);
+      if (p.staff) { wi += " AND i.created_by = ?"; args.push(p.staff); }
+      if (p.donor) { wi += " AND i.donor_id = ?"; args.push(p.donor); }
+      return {
+        sql: `SELECT c.id, 'meeting' AS type, c.person_ids[1] AS donor_id, c.title AS name,
+                     TO_CHAR(c.starts_at, 'YYYY-MM-DD') AS date, NULL::numeric AS amount,
+                     COALESCE(u.name, 'A colleague') || ' · from a calendar' AS detail
+                FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
+               WHERE c.org_id = ? AND c.interaction_id IS NULL
+                 AND c.starts_at >= ?::date AND c.starts_at < (?::date + 1)${wc}
+              UNION ALL
+              SELECT i.id, 'interaction' AS type, i.donor_id, d.name || COALESCE(': ' || NULLIF(LEFT(i.note, 80), ''), '') AS name,
+                     i.date, NULL::numeric AS amount, COALESCE(i.logged_by_name, 'A colleague') || ' · logged' AS detail
+                FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+               WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'meeting'
+                 AND i.date >= ? AND i.date <= ?${wi}`,
+        args, order: "date DESC, id",
+      };
+    },
+  },
+  // What a connected inbox put on the record, for the connect page.
+  "mailbox-emails": {
+    label: "Emails logged from your inbox",
+    measure: () => "count",
+    params: { staff: "id:required", since: "date:required" },
+    sentence: (p, dd) => `Every email with someone on file that this person's connected inbox logged, dated ${dd(p.since)} or later. Nothing else in the inbox is counted or kept.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT i.id, 'interaction' AS type, i.donor_id, d.name, i.date, NULL::numeric AS amount,
+                   COALESCE(i.metadata->>'subject', 'Email') AS detail
+              FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+             WHERE i.org_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
+               AND i.metadata->>'logged_by' = ? AND i.date >= ?`,
+      args: [orgId, p.staff, p.since], order: "date DESC, id",
+    }),
+  },
+  "mailbox-people": {
+    label: "People who now have a history",
+    measure: () => "count",
+    params: { staff: "id:required", since: "date:required" },
+    sentence: (p, dd) => `Each person on file with at least one email or meeting from this person's connected inbox or calendar, dated ${dd(p.since)} or later.`,
+    sql: (orgId, p) => ({
+      sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name, MAX(x.date) AS date, NULL::numeric AS amount,
+                   COUNT(*) || ' logged' AS detail
+              FROM (SELECT i.donor_id, i.date FROM interactions i
+                     WHERE i.org_id = ? AND i.type = 'email' AND i.metadata->>'logged_by' = ? AND i.date >= ?
+                    UNION ALL
+                    SELECT unnest(c.person_ids), TO_CHAR(c.starts_at, 'YYYY-MM-DD') FROM calendar_events c
+                     WHERE c.org_id = ? AND c.owner_user_id = ? AND c.starts_at >= ?::date) x
+              JOIN donors d ON d.id = x.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
+             GROUP BY d.id, d.name`,
+      args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC, id",
+    }),
+  },
+  // A person's emails in a range, and how many of them she wrote.
+  "donor-emails": {
+    label: "Emails",
+    measure: () => "count",
+    params: { donor: "id:required", from: "date:required", to: "date:required", direction: "word" },
+    sentence: (p, dd) => `Every email ${p.direction === "inbound" ? "from this person" : "with this person, either way,"} on the record from ${dd(p.from)} to ${dd(p.to)}.`,
+    sql: (orgId, p) => {
+      const args = [orgId, p.donor, p.from, p.to];
+      let w = "";
+      if (p.direction) { w = " AND i.metadata->>'direction' = ?"; args.push(p.direction); }
+      return {
+        sql: `SELECT i.id, 'interaction' AS type, i.donor_id, COALESCE(i.metadata->>'subject', split_part(i.note, E'\n', 1)) AS name,
+                     i.date, NULL::numeric AS amount,
+                     CASE i.metadata->>'direction' WHEN 'inbound' THEN 'From them' WHEN 'outbound' THEN 'To them' ELSE 'Email' END AS detail
+                FROM interactions i JOIN donors d ON d.id = i.donor_id AND d.org_id = i.org_id
+               WHERE i.org_id = ? AND i.donor_id = ? AND d.deleted_at IS NULL AND i.type = 'email'
+                 AND i.date >= ? AND i.date <= ?${w}`,
+        args, order: "date DESC, id",
+      };
+    },
+  },
+  "donor-gifts-between": {
+    label: "Given",
+    measure: () => "sum",
+    params: { donor: "id:required", from: "date:required", to: "date:required" },
+    sentence: (p, dd) => `Every gift this person gave from ${dd(p.from)} to ${dd(p.to)}, added up to the cent. A refund comes off the total.`,
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} AND g.date >= ? AND g.date <= ?`,
+      args: [orgId, p.donor, p.from, p.to], order: "date DESC, id",
+    }),
+  },
+  // MOVES MANAGEMENT — who has not been met. Owner and amount aware.
+  "no-recent-meeting": {
+    label: "No meeting since",
+    measure: () => "count",
+    params: { since: "date:required", owner: "id", min: "word" },
+    sentence: (p, dd) => `Every person on file${p.min ? ` who has given at least $${Number(p.min).toLocaleString("en-US")} in all` : ""}${p.owner ? ", owned by this staff member," : ""} with no meeting since ${dd(p.since)}, on a calendar or logged by hand. The amount is their lifetime giving.`,
+    sql: (orgId, p) => {
+      const args = [orgId];
+      let w = "";
+      if (p.owner) { w += " AND d.assigned_to = ?"; args.push(p.owner); }
+      if (p.min && /^\d+$/.test(p.min)) { w += " AND COALESCE(d.total_giving,0) >= ?"; args.push(Number(p.min)); }
+      args.push(orgId, p.since, orgId, p.since);
+      return {
+        sql: `SELECT d.id, 'person' AS type, d.id AS donor_id, d.name,
+                     (SELECT MAX(x) FROM (SELECT MAX(i.date) AS x FROM interactions i WHERE i.org_id = d.org_id AND i.donor_id = d.id AND i.type = 'meeting'
+                                            UNION ALL SELECT TO_CHAR(MAX(c.starts_at), 'YYYY-MM-DD') FROM calendar_events c
+                                             WHERE c.org_id = d.org_id AND d.id = ANY(c.person_ids) AND c.starts_at <= NOW()) m) AS date,
+                     ROUND(COALESCE(d.total_giving,0)::numeric, 2) AS amount,
+                     COALESCE(d.assigned_to_name, 'No owner') AS detail
+                FROM donors d
+               WHERE d.org_id = ? AND d.deleted_at IS NULL AND COALESCE(d.is_sample,false) = false${w}
+                 AND NOT EXISTS (SELECT 1 FROM interactions i WHERE i.org_id = ? AND i.donor_id = d.id AND i.type = 'meeting' AND i.date >= ?)
+                 AND NOT EXISTS (SELECT 1 FROM calendar_events c WHERE c.org_id = ? AND d.id = ANY(c.person_ids)
+                                   AND c.starts_at >= ?::date AND c.starts_at <= NOW())`,
+        args, order: "amount DESC, id",
+      };
+    },
+  },
+
   // ── MONTHLY GIVING ───────────────────────────────────────────────────────
   recurring: {
     label: "Monthly gifts",
