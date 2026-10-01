@@ -184,7 +184,8 @@ const PIXEL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS
 
   const settings = read("client/src/components/Settings.jsx");
   ok("Settings carries the one line, verbatim",
-     settings.includes("Cheque photographs are read by Anthropic to suggest an amount") &&
+     settings.includes("cheque photographs to suggest an") &&   // FIX-12: one switch for every AI feature, OpenAI named
+     settings.includes("Voice memos") && settings.includes("transcribed by OpenAI") &&
      settings.includes("Nothing is entered or sent until you confirm it."), true);
   ok("...with a switch beside it", /data-testid="settings-ai-toggle"/.test(settings), true);
   ok("...shown only when a key is configured — a switch for something Steward cannot do means nothing",

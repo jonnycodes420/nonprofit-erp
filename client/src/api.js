@@ -128,7 +128,9 @@ export async function streamAI(systemPrompt, userMessage, onChunk) {
     // console-error gate must stay a guard against real bugs. The status is
     // still here for a developer.
     console.warn(`[ai] /ai/stream answered ${res.status}`);
-    throw Object.assign(new Error("Steward couldn't reach drafting just now."),
+    // FIX-12 Part 3: the org's own AI switch says so in its own words.
+    const off = res.status === 403 && (await res.json().catch(() => ({}))).code === "ai_off";
+    throw Object.assign(new Error(off ? "AI is turned off for your organization." : "Steward couldn't reach drafting just now."),
       { status: res.status, aiUnavailable: true });
   }
   const reader = res.body.getReader();

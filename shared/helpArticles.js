@@ -125,7 +125,7 @@ export const HELP_ARTICLES = [
     summary: `Communications is where you write and send email campaigns, build sequences and approve milestone emails.`,
     sections: [
       { h: `What you see`, p: [
-        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool and Milestone Drafts. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
+        `The tabs are Overview, Campaigns, Templates, Audience, Analytics, Sequences, Your email tool and Drafts to review. Overview shows how many people you can reach, recent sends and your audiences. A campaign is a Draft, Scheduled, Sending or Sent.`,
       ]},
       { h: `Send a campaign`, steps: [
         `Open Campaigns and click "+ New Campaign". Start from a template with "Use this →" or from blank.`,
@@ -143,8 +143,9 @@ export const HELP_ARTICLES = [
         `Click "Save, and leave it off".`,
         `Click "Preview" to read it, then "Turn on" and "Turn it on" when you are ready. "Turn off" stops it.`,
       ]},
-      { h: `Milestone Drafts`, p: [
-        `Nothing here sends until you approve it. Each draft has "Approve & Send", "Edit" and "Dismiss".`,
+      { h: `Drafts to review`, p: [
+        `Steward drafts it. You send it. Emails Steward drafts for a giving milestone, an anniversary or a workflow you turned on wait here, and nothing goes to a donor until somebody sends it.`,
+        `Each draft has "Send", "Mark reviewed", "Edit" and "Dismiss". Saving an edit also marks it reviewed. "Send all reviewed" sends every draft marked reviewed, and only those.`,
       ]},
       { h: `Good to know`, p: [
         `Your email tool reports on sends from Mailchimp or Constant Contact once connected. It cannot resend them. "Email This Segment →" on Audience opens a blank campaign, so pick the segment again in the campaign.`,
@@ -374,7 +375,8 @@ export const HELP_ARTICLES = [
         `Click "Approve", or "Skip" and say why if you want.`,
       ]},
       { h: `Workflows`, p: [
-        `Workflows are ready-made recipes you switch on, such as a follow-up when a monthly card fails. Each has "Turn on", its own settings and "View activity". Read a recipe before turning it on: some send a fixed email from your organisation when they fire, without asking each time.`,
+        `Workflows are ready-made recipes you switch on, such as a follow-up when a monthly card fails. Each has "Turn on", its own settings and "View activity".`,
+        `Steward drafts it. You send it. A recipe never emails a donor. When a recipe writes an email (the first-gift thank-you, the failed-card note, the optional re-engagement email), the draft waits in Communications under Drafts to review until somebody reads it and sends it.`,
       ]},
       { h: `Guardrails`, p: [
         `Guardrails lists what Steward may and may not do, every instruction you have given, and every change it made, each with "Undo" for thirty days. "Pause everything" stops it at once. Admins can use "Turn drafting off" or "Turn on drafting".`,
@@ -616,7 +618,7 @@ export const HELP_ARTICLES = [
         `When it says "Your export is ready.", the file downloads. "Download it again" fetches it a second time.`,
       ]},
       { h: `Other things on Your Data`, p: [
-        `"Reading and drafting" turns Steward's AI help on or off for your organisation. Only admins can change it. "Demo Data" loads or clears sample donors so you can try things safely.`,
+        `"Reading and drafting" is the one switch for all of Steward's AI: cheque reading, drafts, briefs, scores, board summaries, Ask Steward and voice memos. Only admins can change it. When it is off, nothing is sent to Anthropic or OpenAI, and each of those features says "AI is turned off for your organization" and shows what it can without AI. "Demo Data" loads or clears sample donors so you can try things safely.`,
       ]},
       { h: `Account`, p: [
         `Billing shows your plan and card, with "Manage billing →", "Choose a plan →" and "Cancel subscription". "Email notifications" lets you choose which emails you get: gifts to your donors, task assignments, the daily reminder and The Thread. "Show other income on the board dashboard" adds one figure you keep elsewhere, shown beside giving and never added to it. "Sign out" is at the bottom.`,

@@ -4556,6 +4556,28 @@ async function initSchema() {
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS reviewed_by_name TEXT`);
   await pool.query(`ALTER TABLE agent_drafts ADD COLUMN IF NOT EXISTS skip_reason TEXT`);
 
+  // ── FIX-12 Part 2 · STEWARD DRAFTS IT. YOU SEND IT. ─────────────────────
+  // Workflow recipes used to email donors the moment they fired. Their words
+  // now land in milestone_drafts, the queue in Communications where a person
+  // reviews, edits and sends each one. `source` says which recipe wrote it;
+  // `reviewed_at` is the person saying the words are right, which is what
+  // "Send all reviewed" sends and nothing else.
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS source TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS workflow_run_id TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS reviewed_by_name TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS created_by TEXT`);
+  await pool.query(`ALTER TABLE milestone_drafts ADD COLUMN IF NOT EXISTS created_by_name TEXT`);
+  // Every saved recipe on every org switches to drafting, live ones included.
+  // The engine also treats a leftover send_email as a draft, so this is the
+  // tidy-up, not the guarantee.
+  await pool.query(`UPDATE workflows SET actions = REPLACE(actions::text, '"send_email"', '"draft_email"')::jsonb, updated_at = NOW()
+                     WHERE actions::text LIKE '%"send_email"%'`);
+  await pool.query(`UPDATE workflows SET name = 'Failed recurring gift → recovery note to review + task'
+                     WHERE recipe_key = 'failed_recurring_recovery' AND name = 'Failed recurring gift → recovery email + task'`);
+  await pool.query(`UPDATE workflows SET name = 'New donor''s first gift → thank-you to review + task'
+                     WHERE recipe_key = 'new_donor_welcome' AND name = 'New donor''s first gift → thank-you + task'`);
+
   // ── BUILD-97 Part 5 — EVERY MESSAGE THAT LEFT THE BUILDING ──────────────
   // Written by the ONE wrapper around the Resend client (server.js), so every
   // one of the 26 existing send sites and every future one lands here without

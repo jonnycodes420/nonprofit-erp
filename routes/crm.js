@@ -15,6 +15,8 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-12 Part 3: the one door to a model (asks the org's AI switch on every call).
+const { anthropicFor, requireAi, transcribeAudio, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../auditTrail");
@@ -37,7 +39,7 @@ const reportHooks = {};
 function mount(ctx) {
 const {
   ACK_READY, ACTIVITY_DEFINITIONS, FISCAL_READY, AGENT_MODEL, ALL_PIPELINE_STAGES, API_KEY_PREFIX, ASSET_ID_RE,
-  Anthropic, CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
+  CAL_READY, EV_READY, GC_READY, GEOCODE_TICK_BUDGET, GIVE_THEME_COLS,
   IMPORT_DONOR_BATCH, IMPORT_GIFT_BATCH, INBOUND_EMAIL_DOMAIN, INBOUND_EMAIL_ENABLED, LAPSE_DAYS,
   MB_READY, MEANINGFUL_CONTACT_TYPES, MILESTONE_THRESHOLDS, PHOTO_FETCH_BUDGET, PT_READY, RB_READY,
   SYS_AUTO, TOTP, VH_READY, _titleCaseWord, _tzCache, actor, agentGate, aiGate,
@@ -781,7 +783,7 @@ async function calcWealthScore(donorId, orgId) {
     const avgGiftAmt = gc > 0 ? Math.round(total / gc) : 0;
     let rationale = `${d.name} scored ${finalScore}/10 based on ${gc} gift${gc !== 1 ? "s" : ""} totaling $${total.toLocaleString()} and ${interactions.length} recorded touchpoints.`;
     try {
-      const client = new Anthropic();
+      const client = anthropicFor(orgId);
       const msg = await client.messages.create({
         model: "claude-sonnet-4-6",
         max_tokens: 130,
@@ -6873,7 +6875,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
       error: "reading_unavailable",
       reason: gate.reason,
       message: gate.reason === "ai_disabled"
-        ? "Reading cheque photographs is turned off for this organisation. You can turn it back on in Settings."
+        ? AI_OFF_MESSAGE + ". You can turn it back on in Settings, or type the cheques in."
         : "Reading cheque photographs is not enabled yet.",
     });
   }
@@ -6884,7 +6886,7 @@ app.post("/deposits/read-cheques", requireAuth, checkWriteAccess, wrap(async (re
     strict: true,
     input_schema: cr.CHEQUE_READ_SCHEMA,
   };
-  const client = new Anthropic();
+  const client = anthropicFor(req.user.orgId);
   const money = c => "$" + (c / 100).toFixed(2);
 
   async function readOne(item) {
@@ -10811,7 +10813,8 @@ app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess
   // THE ABSENCE HAS A NAME. No key configured is Steward's state, not the org's,
   // and the honest answer is that the control is unavailable — never a 500 and
   // never an invented brief.
-  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason });
+  if (!gate.ok) return res.status(503).json({ error: "brief_unavailable", reason: gate.reason,
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -10837,7 +10840,7 @@ app.post("/donors/:id/brief", requireAuth, requirePlan("team"), checkWriteAccess
 
   let raw = null, err = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: AGENT_MODEL, max_tokens: 2000, system,
       tools: [{ name: "brief", description: "The one-page brief she reads in the car.", strict: true, input_schema: B.BRIEF_SCHEMA }],
@@ -12710,7 +12713,8 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
   if (!ctx) return res.status(404).json({ error: "Grant not found" });
 
   const gate = await agentGate(orgId);
-  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason });
+  if (!gate.ok) return res.status(503).json({ error: "outline_unavailable", reason: gate.reason,
+    message: gate.reason === "ai_disabled" ? AI_OFF_MESSAGE : undefined });
 
   const runId = "arun_" + uuid().slice(0, 10);
   await run(`INSERT INTO agent_runs (id,org_id,status,plan,read_summary) VALUES (?,?,?,?,?)`,
@@ -12745,7 +12749,7 @@ app.post("/grants/:id/report-outline", requireAuth, checkWriteAccess, wrap(async
 
   let raw = null, err = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(orgId);
     const msg = await client.messages.create({
       model: AGENT_MODEL, max_tokens: 2000, system,
       tools: [{ name: "outline", description: "The report outline a human writes the report from.", strict: true, input_schema: O.OUTLINE_SCHEMA }],
@@ -17029,6 +17033,9 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
   const activeGrants    = allGrants.filter(g => g.status === "active");
   const pipelineGrants  = allGrants.filter(g => ["prospecting", "pending"].includes(g.status));
   const wonThisQ        = allGrants.filter(g => g.status === "active" && toDs(g.updated_at) >= qMs);
+  // FIX-12: `now` lived in server.js's scope before the FIX-1 split and was
+  // never brought across, so every board report died here with a ReferenceError.
+  const now             = new Date();
   const thirty          = new Date(now); thirty.setDate(thirty.getDate() + 30);
   const upcomingDL      = allGrants.filter(g => {
     if (!g.deadline || g.status === "closed") return false;
@@ -17056,7 +17063,7 @@ app.post("/reports/board", requireAuth, wrap(async (req, res) => {
 
   // AI Executive Summary
   console.log("[board-report] step 7: calling Claude API...");
-  const client = new Anthropic();
+  const client = anthropicFor(orgId);
   let execSummary = "";
   try {
     const msg = await client.messages.create({
@@ -19191,8 +19198,9 @@ app.put("/milestone-drafts/:id", requireAuth, checkWriteAccess, wrap(async (req,
   const { subject, body } = req.body;
   if (!subject || !body) return res.status(400).json({ error: "subject and body required" });
   const affected = await run(
-    "UPDATE milestone_drafts SET subject=?, body=? WHERE id=? AND org_id=? AND status='pending_review'",
-    [subject, body, req.params.id, req.user.orgId]
+    // Saving her own edit is reviewing it: she has just read every word.
+    "UPDATE milestone_drafts SET subject=?, body=?, reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [subject, body, actor(req).id, actor(req).name, req.params.id, req.user.orgId]
   );
   if (!affected.changes) return res.status(404).json({ error: "Not found or already sent" });
   const rows = await query("SELECT * FROM milestone_drafts WHERE id=?", [req.params.id]);
@@ -19208,47 +19216,78 @@ app.post("/milestone-drafts/:id/dismiss", requireAuth, wrap(async (req, res) => 
   res.json({ success: true });
 }));
 
-app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
-  const drafts = await query(
-    "SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'",
-    [req.params.id, req.user.orgId]
-  );
-  if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
-  const draft = drafts[0];
-
+// One send of one draft, by the person who pressed the button. Used by the
+// single "Send" and by "Send all reviewed", so the two cannot drift apart.
+// FIX-12 Part 2: workflow recipes' emails arrive here as drafts too.
+async function sendMilestoneDraft(req, draft) {
   const donorRows = await query("SELECT * FROM donors WHERE id=? AND org_id=?", [draft.donor_id, req.user.orgId]);
   const donor = donorRows[0];
-  if (!donor || !donor.email) return res.status(400).json({ error: "Donor has no email on file" });
+  if (!donor || !donor.email) return { status: 400, error: "Donor has no email on file" };
 
   const decision = await donorMailDecision("milestone", donor.email, req.user.orgId);
-  if (!decision.send) return res.status(400).json({ error: `Cannot send — ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` });
+  if (!decision.send) return { status: 400, error: `Cannot send: ${decision.reason === "deceased" ? "this donor is marked deceased" : decision.reason === "do_not_contact" ? "this donor is marked do-not-contact" : `this donor is suppressed (${decision.reason})`}` };
 
-  const smtpFrom = await donorFromAddress(req.user.orgId); // BUILD-64: org name in the inbox
   if (process.env.RESEND_API_KEY) {
-    const bodyHtml = `<p>${draft.body.replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
+    const bodyHtml = `<p>${escapeHtml(draft.body).replace(/\n\n+/g, "</p><p>").replace(/\n/g, "<br>")}</p>`
       + await unsubscribeEmailFooterHtml(donor.email, req.user.orgId, "sequence");
     try {
       const { error: sendErr } = await resend.emails.send({
         ...(await donorSendOpts(req.user.orgId, donor.email, "sequence")),
         to: donor.email, subject: draft.subject, html: bodyHtml,
       });
-      if (sendErr) return res.status(502).json({ error: `Send failed: ${sendErr.message}` });
+      if (sendErr) return { status: 502, error: `Send failed: ${sendErr.message}` };
     } catch (e) {
-      return res.status(502).json({ error: `Send failed: ${e.message}` });
+      return { status: 502, error: `Send failed: ${e.message}` };
     }
   }
 
+  const who = actor(req);
   await run(
-    "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=? WHERE id=?",
-    [req.user.userId, draft.id]
+    "UPDATE milestone_drafts SET status='sent', sent_at=NOW(), reviewed_by=?, reviewed_by_name=COALESCE(reviewed_by_name, ?) WHERE id=?",
+    [req.user.userId, who.name, draft.id]
   );
   const today = new Date().toISOString().slice(0, 10);
   await run(
-    "INSERT INTO interactions (id, org_id, donor_id, type, note, date) VALUES (?, ?, ?, 'email', ?, ?)",
-    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `Milestone email: ${draft.subject}`, today]
+    "INSERT INTO interactions (id, org_id, donor_id, type, note, date, created_by, logged_by_name) VALUES (?, ?, ?, 'email', ?, ?, ?, ?)",
+    ["i_" + uuid().slice(0, 8), req.user.orgId, draft.donor_id, `${draft.source ? "Email" : "Milestone email"}: ${draft.subject}`, today, who.id, who.name]
   ).catch(() => {});
+  return { status: 200 };
+}
 
+app.post("/milestone-drafts/:id/send", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const drafts = await query(
+    "SELECT * FROM milestone_drafts WHERE id=? AND org_id=? AND status='pending_review'",
+    [req.params.id, req.user.orgId]
+  );
+  if (!drafts.length) return res.status(404).json({ error: "Not found or already sent" });
+  const r = await sendMilestoneDraft(req, drafts[0]);
+  if (r.status !== 200) return res.status(r.status).json({ error: r.error });
   res.json({ success: true });
+}));
+
+// She read it and the words are right. Not sent: that is still her press.
+app.post("/milestone-drafts/:id/reviewed", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const who = actor(req);
+  const { changes } = await run(
+    "UPDATE milestone_drafts SET reviewed_at=NOW(), reviewed_by=?, reviewed_by_name=? WHERE id=? AND org_id=? AND status='pending_review'",
+    [who.id, who.name, req.params.id, req.user.orgId]);
+  if (!changes) return res.status(404).json({ error: "Not found or already sent" });
+  res.json({ success: true });
+}));
+
+// "Send all reviewed": every draft somebody marked reviewed, and nothing else.
+// One press by one person; each draft is still checked against the mail rules.
+app.post("/milestone-drafts/send-reviewed", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const drafts = await query(
+    "SELECT * FROM milestone_drafts WHERE org_id=? AND status='pending_review' AND reviewed_at IS NOT NULL ORDER BY created_at ASC LIMIT 200",
+    [req.user.orgId]);
+  let sent = 0; const failed = [];
+  for (const d of drafts) {
+    const r = await sendMilestoneDraft(req, d);
+    if (r.status === 200) sent++; else failed.push({ id: d.id, error: r.error });
+  }
+  req.audit && req.audit.action(`sent ${sent} reviewed draft${sent === 1 ? "" : "s"}`);
+  res.json({ sent, failed });
 }));
 
 // ── Personal-note reminders (non-AI-drafted sibling of milestone_drafts) ───
@@ -19319,17 +19358,14 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   if (!donorRows.length) return res.status(404).json({ error: "Donor not found" });
 
   let transcript;
+  // FIX-12 Part 3: the recording goes to OpenAI only through the one AI door,
+  // which refuses when the org has AI turned off.
+  try { await requireAi(req.user.orgId, "openai"); }
+  catch (e) { if (e instanceof AiOffError) return res.status(403).json({ error: AI_OFF_MESSAGE, code: "ai_off" }); throw e; }
   try {
     const audioBuffer = Buffer.from(audioBase64, "base64");
     const ext = (mimeType || "").includes("mp4") ? "mp4" : (mimeType || "").includes("wav") ? "wav" : "webm";
-    const form = new FormData();
-    form.append("file", new Blob([audioBuffer], { type: mimeType || "audio/webm" }), `memo.${ext}`);
-    form.append("model", "whisper-1");
-    const whisperResp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: form,
-    });
+    const whisperResp = await transcribeAudio(req.user.orgId, { audioBuffer, mimeType, ext });
     if (!whisperResp.ok) {
       const errText = await whisperResp.text();
       console.error("[voice-memo] Whisper error:", whisperResp.status, errText);
@@ -19347,7 +19383,7 @@ app.post("/voice-memos/transcribe", requireAuth, wrap(async (req, res) => {
   // Single narrow extraction pass — not a general chatbot, one specific job.
   let suggestedDetail = null, suggestedAction = null;
   try {
-    const client = new Anthropic();
+    const client = anthropicFor(req.user.orgId);
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 200,

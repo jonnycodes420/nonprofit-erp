@@ -138,6 +138,8 @@ CORE=(
   sec1-two-factor
   trust2-erase
   help1-ask
+  fix12-ai-switch
+  fix12-recipe-drafts
   fix11-inbound-resend
   int5-api-keys
   script-guards

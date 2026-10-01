@@ -1022,9 +1022,11 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
 
           // BUILD-13 workflows — recipe #1 (failed_recurring_recovery). Fire
           // only on a genuinely NEW failure cycle (not each Stripe retry),
-          // deduped per subscription cycle. If the recipe is ON and sent the
-          // recovery email, advance the dunning cadence past its own day-0 so
-          // the always-on dunning engine doesn't ALSO send a day-0 email.
+          // deduped per subscription cycle. FIX-12 Part 2: the recipe now
+          // DRAFTS its note for a person to send, so `sentRecovery` below is
+          // never true and the dunning engine's own day-0 email (transactional,
+          // carries the card link) always goes. The check stays so a recipe
+          // can never cause two day-0 sends if that ever changes.
           if (isNewCycle) {
             try {
               const [subRow] = await query("SELECT * FROM recurring_subscriptions WHERE stripe_subscription_id=?", [invSubId]);

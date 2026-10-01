@@ -3166,8 +3166,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
           style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:16,padding:"20px 24px"}}>
           <SectionLabel>Reading and drafting</SectionLabel>
           <div style={{fontSize:13,color:T.ink3,marginBottom:14,lineHeight:1.6,maxWidth:560}}>
-            Cheque photographs are read by Anthropic to suggest an amount, and Steward&apos;s agent drafts
-            from your records through Anthropic. Nothing is entered or sent until you confirm it.
+            Steward&apos;s AI features send what each one needs to Anthropic: cheque photographs to suggest an
+            amount, and your records for drafts, briefs, scores, board summaries and Ask Steward. Voice memos
+            are transcribed by OpenAI, which receives the recording only. Nothing is entered or sent until
+            you confirm it. This one switch covers all of them.
           </div>
           <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <button data-testid="settings-ai-toggle"
@@ -3180,8 +3182,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
             </button>
             <span style={{fontSize:12.5,color:T.ink3}}>
               {aiStatus.enabled
-                ? "Turn this off and Steward stops sending anything to Anthropic. Cheque photographs still attach to each line."
-                : "Off. Cheque photographs still attach to each line; Steward will not read them or draft from your records."}
+                ? "Turn this off and Steward sends nothing to Anthropic or OpenAI. Cheque photographs still attach to each line."
+                : "AI is turned off for your organization. Cheque photographs still attach to each line, and nothing is sent to Anthropic or OpenAI."}
             </span>
           </div>
           {!isAdmin&&(

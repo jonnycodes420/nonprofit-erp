@@ -13,7 +13,9 @@ const TRIGGER_LABEL = {
   donor_lapsed: "When a donor lapses",
 };
 const ACTION_LABEL = {
-  send_email: "Send email",
+  // FIX-12 Part 2: a recipe never sends to a donor. Both types are a draft.
+  send_email: "Draft email to review",
+  draft_email: "Draft email to review",
   create_task: "Create task",
   add_tag: "Add tag",
   notify_owner: "Alert owner",
@@ -51,7 +53,11 @@ export function Workflows({ isReadOnly, onNavigate, embedded = false }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {!embedded && <PageTitle main="Automations that do the" accent="quiet work." />}
       <div style={{ fontSize: 13.5, color: T.ink3, marginTop: embedded ? 0 : -8, maxWidth: 620, lineHeight: 1.6 }}>
-        Turn on a recipe and Steward watches for the moment, then acts in your name — a task, a branded email, a tag. Everything is logged, nothing double-sends, and a human always stays in the loop. <strong style={{ color: T.ink }}>{activeCount} of {rows.length} active.</strong>
+        Turn on a recipe and Steward watches for the moment, then does the groundwork: a task, a tag, or a draft email. Everything is logged and nothing runs twice. <strong style={{ color: T.ink }}>{activeCount} of {rows.length} active.</strong>
+      </div>
+      <div data-testid="workflows-draft-rule" style={{ fontSize: 13.5, color: T.ink, maxWidth: 620, lineHeight: 1.6, background: T.cream, borderRadius: 10, padding: "10px 14px" }}>
+        <strong>Steward drafts it. You send it.</strong> A recipe never emails a donor. Its email waits in Communications, under Drafts to review, until somebody reads it and sends it.
+        {onNavigate && <> <button onClick={() => onNavigate("communications", { subtab: "milestones" })} style={{ background: "none", border: "none", padding: 0, color: T.greenMid, fontWeight: 700, cursor: "pointer", fontSize: 13.5 }}>Open the drafts</button></>}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 4 }}>
@@ -129,7 +135,7 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
           <ConfigRow inline label="Lapse window (days)" value={w.config?.lapseDays ?? 365} isReadOnly={isReadOnly} onSave={v => onConfig({ lapseDays: Number(v) })} />
           <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12.5, color: T.ink3, cursor: isReadOnly ? "default" : "pointer" }}>
             <input type="checkbox" checked={!!w.config?.sendEmail} disabled={isReadOnly} onChange={e => onConfig({ sendEmail: e.target.checked })} />
-            Also send a re-engagement email
+            Also draft a re-engagement email for you to send
           </label>
         </div>
       )}
@@ -137,7 +143,7 @@ function RecipeCard({ w, isReadOnly, onToggle, onConfig, expanded, onOpenRuns, r
       {/* Run log */}
       <div style={{ marginTop: 14, borderTop: `1px solid ${T.bg2}`, paddingTop: 10, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ fontSize: 12, color: T.ink3 }}>
-          {w.runCount > 0 ? <><strong style={{ color: T.ink }}>{w.runCount}</strong> run{w.runCount === 1 ? "" : "s"} · last {fmtWhen(w.lastRun)}</> : "No runs yet — it'll act the next time the moment happens."}
+          {w.runCount > 0 ? <><strong style={{ color: T.ink }}>{w.runCount}</strong> run{w.runCount === 1 ? "" : "s"} · last {fmtWhen(w.lastRun)}</> : "No runs yet. It will act the next time the moment happens."}
         </div>
         {w.runCount > 0 && <button onClick={onOpenRuns} style={{ background: "none", border: "none", color: T.greenMid, fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{expanded ? "Hide activity" : "View activity"}</button>}
       </div>
