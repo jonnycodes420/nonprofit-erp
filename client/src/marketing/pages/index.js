@@ -3,6 +3,7 @@ import Home from "./home";
 import { Pricing } from "./pricing";
 import { Platform, Crm, Volunteer, Agent, Connections, Onboarding, Features, Feature } from "./product";
 import { Why, Move, MoveSpreadsheet, MoveCrm, For, Audience, Security, About, Leadership, Partners, Contact, Demo } from "./why";
+import { Status, Subprocessors, YourData, Dpa } from "./trust";
 import { Resources, Guides, Guide, Templates, Articles, Article, StateOfRetention, Glossary, Faq, Help, WhatsNew, Tools, ToolLostAndFound, ToolRetention, ToolLapsed, ToolThermometer, LegalPrivacy, LegalTerms, LegalAccessibility } from "./resources";
 
 export const PAGES = {
@@ -14,5 +15,6 @@ export const PAGES = {
   resources: Resources, guides: Guides, guide: Guide, templates: Templates, articles: Articles, article: Article, stateOfRetention: StateOfRetention,
   glossary: Glossary, faq: Faq, help: Help, whatsNew: WhatsNew,
   tools: Tools, toolLostAndFound: ToolLostAndFound, toolRetention: ToolRetention, toolLapsed: ToolLapsed, toolThermometer: ToolThermometer,
+  status: Status, subprocessors: Subprocessors, yourData: YourData, dpa: Dpa,
   legalPrivacy: LegalPrivacy, legalTerms: LegalTerms, legalAccessibility: LegalAccessibility,
 };

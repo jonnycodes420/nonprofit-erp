@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { errorMessage, rethrowProgrammerError } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
+import { CHANGELOG as CHANGELOG_ADMIN } from "../lib/changelog";
 
 const API = import.meta.env.VITE_API_URL || "https://nonprofit-erp-production.up.railway.app";
 
@@ -1187,6 +1188,53 @@ function CloseDeal({ target = null, onClearTarget = () => {} }) {
   );
 }
 
+// TRUST-2 — write an incident in plain language (what's affected, what we are
+// doing), post updates, resolve it; and hide a What's new entry.
+function TrustAdmin() {
+  const [sum, setSum] = useState(null);
+  const [hidden, setHidden] = useState(new Set());
+  const [form, setForm] = useState({ title: "", body: "", affected: [] });
+  const [upd, setUpd] = useState({});
+  const [msg, setMsg] = useState("");
+  const load = () => {
+    adminFetch("/status/summary").then(setSum).catch(() => {});
+    adminFetch("/changelog/hidden").then(d => setHidden(new Set(d.hidden || []))).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+  const go = async (fn) => { setMsg(""); try { await fn(); load(); } catch (e) { setMsg(errorMessage(e, "That did not save.")); } };
+  const box = { background: A.surface, border: "1px solid " + A.border, borderRadius: 12, padding: 16, marginBottom: 16 };
+  const field = { width: "100%", boxSizing: "border-box", padding: 8, marginBottom: 8, fontFamily: "inherit", fontSize: 13 };
+  return <div>
+    <div style={box}>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Open an incident</div>
+      <input style={field} placeholder="What is affected, in plain words" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+      <textarea style={{ ...field, minHeight: 70 }} placeholder="What we are doing about it" value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} />
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13, marginBottom: 8 }}>
+        {(sum?.services || []).map(s => <label key={s.key}><input type="checkbox" checked={form.affected.includes(s.key)}
+          onChange={e => setForm(f => ({ ...f, affected: e.target.checked ? [...f.affected, s.key] : f.affected.filter(k => k !== s.key) }))} /> {s.label}</label>)}
+      </div>
+      <button disabled={!form.title || !form.body} onClick={() => go(async () => { await adminFetch("/admin/incidents", { method: "POST", body: JSON.stringify(form) }); setForm({ title: "", body: "", affected: [] }); })}>Publish to /status</button>
+    </div>
+    {(sum?.incidents || []).map(i => <div key={i.id} style={box}>
+      <div style={{ fontWeight: 700 }}>{i.title} · {i.state}{i.resolved_at ? " (resolved)" : ""}</div>
+      {i.updates.map((u, k) => <div key={k} style={{ fontSize: 13, margin: "4px 0" }}>{new Date(u.created_at).toLocaleString()} · {u.body}</div>)}
+      {!i.resolved_at && <div style={{ marginTop: 8 }}>
+        <textarea style={{ ...field, minHeight: 50 }} placeholder="An update" value={upd[i.id] || ""} onChange={e => setUpd(x => ({ ...x, [i.id]: e.target.value }))} />
+        {["identified", "monitoring", "resolved"].map(st => <button key={st} style={{ marginRight: 6 }} disabled={!upd[i.id]}
+          onClick={() => go(async () => { await adminFetch(`/admin/incidents/${i.id}/update`, { method: "POST", body: JSON.stringify({ body: upd[i.id], state: st }) }); setUpd(x => ({ ...x, [i.id]: "" })); })}>Post as {st}</button>)}
+      </div>}
+    </div>)}
+    <div style={box}>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>What's new entries</div>
+      {CHANGELOG_ADMIN.map(e => <div key={e.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13, padding: "6px 0", borderTop: "1px solid " + A.border }}>
+        <span>{e.date} · {e.title}{hidden.has(e.id) ? " (hidden)" : ""}</span>
+        <button onClick={() => go(() => adminFetch(`/admin/changelog/${e.id}/hide`, { method: "POST", body: JSON.stringify({ hidden: !hidden.has(e.id) }) }))}>{hidden.has(e.id) ? "Show" : "Hide"}</button>
+      </div>)}
+    </div>
+    {msg && <div style={{ fontSize: 13 }}>{msg}</div>}
+  </div>;
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [page, setPage] = useState("overview");
@@ -1239,6 +1287,8 @@ export default function AdminDashboard() {
     { id: "orgs",     label: "Organizations",  icon: "◉" },
     { id: "metrics",  label: "Metrics",        icon: "▤" },
     { id: "network",  label: "Network Review", icon: "◫" },
+    // TRUST-2 — incidents for /status, and which What's new entries show.
+    { id: "trust",    label: "Status and What's new", icon: "◌" },
   ];
 
   const currentPage = NAV.find(n => n.id === page)?.label || "";
@@ -1310,6 +1360,7 @@ export default function AdminDashboard() {
                                      onCloseOrg={o => { setCloseTarget(o); setPage("close"); }} />}
           {page === "metrics"   && <Metrics metrics={metrics} orgs={orgs} />}
           {page === "network"   && <NetworkReview />}
+          {page === "trust"     && <TrustAdmin />}
         </div>
       </div>
     </div>

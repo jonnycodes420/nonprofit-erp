@@ -21622,6 +21622,30 @@ app.get("/donors/:id/events", requireAuth, async (req, res) => {
 });
 
 // ── Data export ────────────────────────────────────────────────────────────
+// ═══ TRUST-2 · ONE PERSON'S DATA ════════════════════════════════════════════
+// Owners and admins only. The export is a download, so the audit trail logs it
+// as a disclosure. The erasure is audited as WHO erased WHOM and WHEN, and the
+// row deliberately carries none of the erased details: the before/after the
+// trail would otherwise copy off the record is replaced with a marker.
+app.get("/donors/:id/export-data", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const PD = require("../personData");
+  const data = await PD.exportPerson(req.user.orgId, req.params.id);
+  if (!data) return res.status(404).json({ error: "Not found" });
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="person-${req.params.id}.json"`);
+  res.send(JSON.stringify(data, null, 2));
+}));
+app.post("/donors/:id/erase", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const PD = require("../personData");
+  if (req.body?.confirm !== "ERASE") return res.status(400).json({ error: "confirm_required", message: "Type ERASE to confirm. This cannot be undone." });
+  req.audit.before({ erased: true }); req.audit.after({ erased: true });
+  req.audit.entity("person", req.params.id, "A person (details erased)");
+  req.audit.action("erased a person at their request");
+  const out = await PD.erasePerson(req.user.orgId, req.params.id);
+  if (!out) return res.status(404).json({ error: "Not found" });
+  res.json({ ok: true, sentence: "Erased. Their gifts stay as anonymous gifts, so every total still matches. Nothing else about them is left." });
+}));
+
 app.get("/org/export", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId;
 

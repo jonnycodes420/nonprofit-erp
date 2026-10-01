@@ -84,6 +84,9 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
   the end, not a document per part. None of this loosens what protects money, donors or
   production: the actor stamp, one gift path, the mail rules, the prod-write guard and the
   deploy gate are unchanged and are not what a build is allowed to go faster through.
+- **Every build adds one What's new file.** `docs/changelog/YYYY-MM-DD-build.md`: date, title,
+  product, then two or three plain sentences for a customer (format in `docs/changelog/README.md`).
+  The public page and the in-app panel read only these files, never commit messages.
 - **The two-strikes rule for this file.** A new line goes into CLAUDE.md only when the same
   mistake has happened twice. Anything else goes into the decisions file for its area, or
   into `docs/HISTORY.md`. A new build's entry goes at the top of HISTORY.md, not here.
