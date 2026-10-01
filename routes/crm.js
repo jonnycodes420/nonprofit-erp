@@ -18,6 +18,12 @@ const express = require("express");
 // FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
 // The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
 const auditTrailMod = require("../auditTrail");
+// FIX-11 Part 3 — the bookkeeper's two files. Pure: grouping, the fee line,
+// the net and the assertion that the deposits foot (depositsFile.js), and the
+// column sets each tool wants (bookkeeper.js), declared once so the screen,
+// this router and routes/finance.js cannot disagree about any of them.
+const DEP = require("../depositsFile");
+const BK = require("../bookkeeper");
 
 const routers = {
   r0: express.Router(),
@@ -17616,9 +17622,25 @@ const BOOKKEEPER_COLUMNS = [
   { key: "donorName", label: "Donor" },
   { key: "donorId", label: "Donor ID" },
   { key: "amount", label: "Amount", money: true },
+  // FIX-11 Part 3 — THE FOUR COLUMNS A BOOKKEEPER COULD NOT RECONCILE
+  // WITHOUT. Jonathan's August file had the gross and nothing else: no fee,
+  // so its total could never equal what reached the bank; no net, so he had
+  // to work it out per row; nothing naming the deposit a gift arrived in, so
+  // tying rows to a bank line meant adding gifts up by hand; and stock and
+  // in-kind gifts mixed in with cash, which are revenue and are not a deposit.
+  { key: "fee", label: "Processing fee", money: true },
+  { key: "net", label: "Net", money: true },
+  { key: "deposit", label: "Deposit" },
+  { key: "depositedOn", label: "Deposited on" },
+  { key: "cashOrNot", label: "Cash or non-cash" },
   { key: "fund", label: "Fund or designation" },
   { key: "paymentMethod", label: "Payment method" },
-  { key: "reference", label: "Check or reference number" },
+  // The cheque number is its own column now. It used to be absent from the
+  // schema altogether: the deposit sheet wrote it into the gift's NOTES, and
+  // this file reads `reference`, which is an external or Stripe id. 0 of 51
+  // cheques in the August file carried a number.
+  { key: "checkNumber", label: "Check number" },
+  { key: "reference", label: "Reference" },
   { key: "pledgePayment", label: "Pledge payment" },
   { key: "recurring", label: "Recurring" },
   { key: "receiptNumber", label: "Receipt number" },
@@ -17644,6 +17666,12 @@ async function reportBookkeeper(orgId, p) {
             COALESCE(f.name, '') AS fund,
             COALESCE(g.payment_method, '') AS payment_method,
             COALESCE(NULLIF(g.external_id, ''), NULLIF(g.stripe_payment_id, ''), '') AS reference,
+            COALESCE(g.check_number, '') AS check_number,
+            COALESCE(g.processor_fee_amount, 0) AS processor_fee_amount,
+            COALESCE(g.deposit_ref, '') AS deposit_ref,
+            COALESCE(g.deposited_on, '') AS deposited_on,
+            COALESCE(g.type, '') AS gift_type,
+            COALESCE(g.notes, '') AS notes,
             (g.pledge_id IS NOT NULL) AS pledge_payment,
             (g.recurring_subscription_id IS NOT NULL) AS recurring,
             COALESCE(r.receipt_number, '') AS receipt_number,
@@ -17668,20 +17696,39 @@ async function reportBookkeeper(orgId, p) {
     `SELECT COUNT(*)::int AS n, COALESCE(SUM(g.amount * 100), 0)::text AS cents
        ${REPORT_GIFT_FROM} ${tWhere}`, tParams);
 
-  const out = rows.map(r => ({
-    date: r.date,
-    donorName: r.donor_name,
-    donorId: r.donor_id,
-    cents: bkCents(r.amount),
-    amount: bkDollars(bkCents(r.amount)),
-    fund: r.fund,
-    paymentMethod: r.payment_method,
-    reference: r.reference,
-    pledgePayment: r.pledge_payment ? "Yes" : "No",
-    recurring: r.recurring ? "Yes" : "No",
-    receiptNumber: r.receipt_number,
-    giftId: r.gift_id,
-  }));
+  const out = rows.map(r => {
+    const cents = bkCents(r.amount);
+    const feeCents = bkCents(r.processor_fee_amount);
+    const nonCash = DEP.isNonCash({ type: r.gift_type });
+    return {
+      date: r.date,
+      donorName: r.donor_name,
+      donorId: r.donor_id,
+      cents,
+      amount: bkDollars(cents),
+      // FIX-11 Part 3 — the processor's cut, the net, and which bank line this
+      // gift is part of. The fee is what the PROCESSOR took, never the
+      // donor-covers-the-fee amount above it (those are two different numbers
+      // and `cover_fee_amount` is the other one).
+      feeCents,
+      fee: bkDollars(feeCents),
+      netCents: cents - feeCents,
+      net: bkDollars(cents - feeCents),
+      deposit: r.deposit_ref || "",
+      depositedOn: r.deposited_on || "",
+      type: r.gift_type,
+      notes: r.notes,
+      cashOrNot: nonCash ? "Non-cash" : "Cash",
+      fund: r.fund,
+      paymentMethod: r.payment_method,
+      checkNumber: r.check_number,
+      reference: r.reference,
+      pledgePayment: r.pledge_payment ? "Yes" : "No",
+      recurring: r.recurring ? "Yes" : "No",
+      receiptNumber: r.receipt_number,
+      giftId: r.gift_id,
+    };
+  });
 
   // TOTALS BY FUND, over the same rows. A gift with no fund is its own line,
   // named for what it is — never silently dropped and never folded into
@@ -17700,6 +17747,31 @@ async function reportBookkeeper(orgId, p) {
   const rowCents = out.reduce((s, r) => s + r.cents, 0);
   const refusals = bookkeeperRefusals(out, byFund, Number(tot?.cents || 0), Number(tot?.n || 0));
 
+  // ── WHAT IS MISSING, BEFORE THE FILE IS WRITTEN ─────────────────────────
+  // FIX-11 Part 3 item 3. The August file had four gifts worth $57,500 with no
+  // payment method and one worth $25,000 with no fund, and nothing said so:
+  // the file was correct and quietly incomplete, which is the worst of the two
+  // ways a file can be wrong. Each count carries the gift ids behind it so the
+  // screen can open the rows rather than making somebody go looking.
+  const feeCents = out.reduce((s, r) => s + r.feeCents, 0);
+  const noMethod = out.filter(r => !String(r.paymentMethod || "").trim()
+    || /^(needs you|unknown)$/i.test(String(r.paymentMethod).trim()));
+  const noFund = out.filter(r => !String(r.fund || "").trim());
+  const chequesNoNumber = out.filter(r => /check|cheque/i.test(String(r.paymentMethod || ""))
+    && !String(r.checkNumber || "").trim());
+  const noDeposit = out.filter(r => !String(r.deposit || "").trim() && r.cashOrNot === "Cash");
+  const issue = (key, label, rows2, fix) => rows2.length
+    ? { key, label, count: rows2.length, cents: rows2.reduce((s, r) => s + r.cents, 0),
+        amount: bkDollars(rows2.reduce((s, r) => s + r.cents, 0)),
+        giftIds: rows2.map(r => r.giftId).slice(0, 2000), fix }
+    : null;
+  const issues = [
+    issue("no_method", "no payment method", noMethod, "Open each gift and say how the money arrived."),
+    issue("no_fund", "no fund", noFund, "Open each gift and designate it, or set a default unrestricted fund."),
+    issue("no_check_number", "a cheque with no number", chequesNoNumber, "Add the number from the cheque or the deposit slip."),
+    issue("no_deposit", "not matched to a deposit", noDeposit, "Record the deposit on the deposit sheet, or match the payout."),
+  ].filter(Boolean);
+
   return {
     from: p.from, to: p.to,
     columns: BOOKKEEPER_COLUMNS,
@@ -17707,16 +17779,105 @@ async function reportBookkeeper(orgId, p) {
     byFund,
     totalCents: rowCents,
     total: bkDollars(rowCents),
+    feeCents,
+    fee: bkDollars(feeCents),
+    netCents: rowCents - feeCents,
+    net: bkDollars(rowCents - feeCents),
+    nonCashCents: out.filter(r => r.cashOrNot === "Non-cash").reduce((s, r) => s + r.cents, 0),
     giftCount: out.length,
+    issues,
+    // A sentence, because a count with no sentence is a number nobody acts on.
+    issueSentence: issues.length
+      ? issues.map(i => `${i.count} ${i.count === 1 ? "gift has" : "gifts have"} ${i.label}`
+          + (i.cents ? ` (${i.amount})` : "")).join(", ")
+        + ". Fix them or export anyway."
+      : null,
     balanced: refusals.length === 0,
     exportRefused: bookkeeperRefusalMessage(refusals),
   };
 }
 
+// ── FIX-11 Part 3 — THE DEPOSITS FILE ────────────────────────────────────
+// One row per DEPOSIT LINE, which is the shape a bank statement has and the
+// shape QuickBooks' and Xero's bank-deposit imports take. The gift-detail file
+// above is one row per gift, and reconciling a statement from it meant adding
+// gifts up by hand until they matched a line.
+//
+// It reads THE SAME gifts through THE SAME query, so the two files cannot
+// disagree: `reportBookkeeper` is called and its rows are grouped. There is no
+// second query and no second set of exclusions.
+async function reportDeposits(orgId, p) {
+  const detail = await reportBookkeeper(orgId, p);
+
+  // The deposit account each kind of money lands in, from the accounting
+  // mapping the Connections screen already keeps, so the file names the
+  // bookkeeper's own account rather than a word Steward made up.
+  let depositAccounts = {};
+  try {
+    const [c] = await query(
+      `SELECT mapping FROM bookkeeping_connections
+        WHERE org_id=? AND status <> 'disconnected' ORDER BY created_at DESC LIMIT 1`, [orgId]);
+    const m = c && (typeof c.mapping === "string" ? JSON.parse(c.mapping || "{}") : c.mapping);
+    depositAccounts = (m && m.depositAccounts) || {};
+  } catch { depositAccounts = {}; }
+  const accountFor = r => depositAccounts[String(r.paymentMethod || "").toLowerCase()]
+    || depositAccounts.default || "";
+
+  const built = DEP.depositGroups(detail.rows.map(r => ({
+    cents: r.cents, feeCents: r.feeCents, type: r.type, fund: r.fund,
+    paymentMethod: r.paymentMethod, date: r.date,
+    depositedOn: r.depositedOn, depositRef: r.deposit,
+    depositAccount: accountFor(r),
+    donorName: r.donorName, description: r.notes,
+  })));
+
+  // THE ASSERTION, IN CENTS, BEFORE ANY FILE IS WRITTEN. The cash gifts and
+  // the non-cash gifts are counted independently of the grouping and the
+  // grouping is checked against them, so a gift that fell out of both lists
+  // cannot be silent.
+  const expectedCash = detail.rows.filter(r => r.cashOrNot === "Cash").reduce((s, r) => s + r.cents, 0);
+  const expectedNonCash = detail.rows.filter(r => r.cashOrNot === "Non-cash").reduce((s, r) => s + r.cents, 0);
+  const refusals = DEP.depositsRefusals(built, expectedCash, expectedNonCash);
+  // A gift-detail file that will not be written must not become a deposits
+  // file either: they are the same money.
+  const refusedMessage = detail.exportRefused || DEP.depositsRefusalMessage(refusals);
+
+  return {
+    from: p.from, to: p.to,
+    flavours: Object.entries(DEP.DEPOSIT_FLAVOURS).map(([key, f]) =>
+      ({ key, label: f.label, confidence: f.confidence, note: f.note, headers: f.headers })),
+    groups: built.groups.map(g => ({ ...g, gross: bkDollars(g.grossCents), feeAmount: bkDollars(g.feeCents), netAmount: bkDollars(g.netCents) })),
+    nonCash: built.nonCash.map(r => ({ ...r, amount: bkDollars(r.cents) })),
+    depositCount: built.groups.length,
+    grossCents: built.grossCents, gross: bkDollars(built.grossCents),
+    feeCents: built.feeCents, fee: bkDollars(built.feeCents),
+    netCents: built.netCents, net: bkDollars(built.netCents),
+    nonCashCents: built.nonCashCents, nonCashTotal: bkDollars(built.nonCashCents),
+    unmatchedCents: built.unmatchedCents, unmatched: bkDollars(built.unmatchedCents),
+    giftCount: detail.giftCount,
+    issues: detail.issues,
+    issueSentence: detail.issueSentence,
+    sentence: DEP.depositsSentence(built),
+    balanced: !refusedMessage,
+    exportRefused: refusedMessage,
+  };
+}
+
+// A NUMBER IS NOT A FORMULA, however it was typed.
+//
+// The guard's own comment always said numbers pass through untouched, but it
+// recognised a number only when the VALUE was a JS number — so a money column
+// that formats to two decimals (which is what a money column should do) sent
+// "-8.30" as a string, got an apostrophe, and arrived in QuickBooks as text.
+// The fee lines in the deposits file are the only negative money Steward
+// writes, which is why this surfaced here and not years ago.
+//
+// "-8.30" is a number. "-2+3" is not, and still gets the apostrophe.
+const CSV_PLAIN_NUMBER = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/;
 function reportCsvCell(v) {
   if (v === null || v === undefined) return "";
   let s = String(v);
-  if (typeof v === "string" && /^[=+\-@]/.test(s)) s = "'" + s;
+  if (typeof v === "string" && /^[=+\-@]/.test(s) && !CSV_PLAIN_NUMBER.test(s)) s = "'" + s;
   if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
   return s;
 }
@@ -17727,7 +17888,7 @@ function sendReportCsv(res, filename, headers, rows) {
   res.send(body);
 }
 
-function reportToCsv(key, data) {
+function reportToCsv(key, data, opts = {}) {
   switch (key) {
     case "giving-summary": {
       const headers = ["Month", "Gifts", "Total", "Unique donors"];
@@ -17813,28 +17974,40 @@ function reportToCsv(key, data) {
       return { headers, rows };
     }
     case "bookkeeper": {
-      // The fixed columns, then a totals row, then the SAME data a second way
-      // as a trailing section. One file, two views, one set of cents.
-      const headers = data.columns.map(c => c.label);
-      const rows = data.rows.map(r => data.columns.map(c => r[c.key]));
-      rows.push(new Array(headers.length).fill(""));
-      const totalRow = new Array(headers.length).fill("");
-      totalRow[0] = "TOTAL";
-      totalRow[3] = data.total;
-      rows.push(totalRow);
-      rows.push(new Array(headers.length).fill(""));
-      const head = new Array(headers.length).fill("");
-      head[0] = "TOTALS BY FUND"; head[1] = "Gifts"; head[3] = "Amount";
-      rows.push(head);
-      for (const f of data.byFund) {
-        const r = new Array(headers.length).fill("");
-        r[0] = f.name; r[1] = String(f.giftCount); r[3] = f.amount;
-        rows.push(r);
+      // FIX-11 Part 3 — NO TOTALS ROWS IN THE CSV BODY.
+      //
+      // This used to append a blank row, a TOTAL row, another blank, a
+      // "TOTALS BY FUND" heading, a line per fund and a second TOTAL — inside
+      // the same file, under the gift columns. It reads beautifully in a
+      // spreadsheet and it is the reason a QuickBooks import of the August
+      // file would have booked six phantom transactions, one of them for
+      // $240,853: an importer reads rows, not layout.
+      //
+      // The totals have not been lost. They are on the payload the screen
+      // shows above the button, and in the XLSX they are a SECOND SHEET. In
+      // the CSV there is one header row and then gifts, to the last line.
+      const flavour = BK.giftFlavour(opts && opts.flavour);
+      if (flavour && flavour.columns) {
+        return {
+          headers: flavour.columns.map(c => c[0]),
+          rows: data.rows.map(r => flavour.columns.map(([, get]) => get(r))),
+        };
       }
-      const fundTotal = new Array(headers.length).fill("");
-      fundTotal[0] = "TOTAL"; fundTotal[1] = String(data.giftCount); fundTotal[3] = data.total;
-      rows.push(fundTotal);
-      return { headers, rows };
+      const headers = data.columns.map(c => c.label);
+      return { headers, rows: data.rows.map(r => data.columns.map(c => r[c.key])) };
+    }
+    case "deposits": {
+      // One row per deposit line, in the column order the chosen tool wants.
+      // No totals rows, for the same reason: this file is imported, not read.
+      const f = DEP.DEPOSIT_FLAVOURS[String((opts && opts.flavour) || "steward").toLowerCase()]
+        || DEP.DEPOSIT_FLAVOURS.steward;
+      return { headers: f.headers, rows: f.rows({ groups: data.groups }) };
+    }
+    case "non-cash": {
+      // The non-cash gifts, as their own file. Never a section inside the
+      // deposits file: that file is imported as bank transactions, and a stock
+      // gift never reached a bank.
+      return { headers: DEP.NON_CASH_HEADERS, rows: DEP.nonCashRows({ nonCash: data.nonCash }) };
     }
     case "members-directory":
       return { headers: ["Name", "Email", "Phone", "Level", "Status", "Member since", "Expires"],
@@ -18076,6 +18249,11 @@ async function reportP2PTeams(orgId) {
 
 const REPORT_HANDLERS = {
   "giving-summary": reportGivingSummary,
+  // FIX-11 Part 3 — one row per deposit line, from the same gifts the
+  // bookkeeper file reads. `non-cash` is the same computation read from the
+  // other end: the gifts that are revenue and never reached a bank.
+  "deposits": reportDeposits,
+  "non-cash": reportDeposits,
   "by-group": reportByGroup,
   "lybunt": (orgId, p) => reportBuntList(orgId, p, "lybunt"),
   "sybunt": (orgId, p) => reportBuntList(orgId, p, "sybunt"),
@@ -18366,12 +18544,29 @@ app.get("/reports/:key", requireAuth, wrap(async (req, res) => {
       console.error("[report] export refused:", key, data.exportRefused);
       return res.status(409).json({ error: "export_unbalanced", message: data.exportRefused });
     }
-    const { headers, rows } = reportToCsv(key, data);
+    // THE FLAVOUR IS HONOURED HERE, which is the whole of item 0. The Monthly
+    // close screen offered Steward / QuickBooks / Xero as three `<span>`s and
+    // the download ignored them, because only routes/finance.js could see the
+    // column sets. A flavour Steward does not know is refused BY NAME rather
+    // than quietly falling back to one that looks similar.
+    const flavour = String(req.query.flavour || "").trim().toLowerCase();
+    if (flavour) {
+      const known = key === "deposits"
+        ? Object.prototype.hasOwnProperty.call(DEP.DEPOSIT_FLAVOURS, flavour)
+        : !!BK.giftFlavour(flavour);
+      if (!known) {
+        return res.status(400).json({ error: "unknown_flavour",
+          message: `Steward does not know a bookkeeping format called "${flavour}".` });
+      }
+    }
+    const asked = key === "deposits" || key === "non-cash" || key === "bookkeeper" ? { flavour } : {};
+    const { headers, rows } = reportToCsv(key, data, asked);
     const suffix = key === "retention" ? p.yearMode
       : key === "top-donors" && p.scope === "lifetime" ? "lifetime"
       : ["lybunt", "sybunt", "annual", "three-year"].includes(key) ? `${p.yearMode === "fiscal" ? "fy" : "cy"}${p.year}`
       : `${p.from}_${p.to}`;
-    return sendReportCsv(res, `${key}-${suffix}.csv`, headers, rows);
+    const flavourTag = flavour && flavour !== "steward" ? `-${flavour}` : "";
+    return sendReportCsv(res, `${key}${flavourTag}-${suffix}.csv`, headers, rows);
   }
   res.json(data);
 }));

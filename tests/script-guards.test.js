@@ -201,6 +201,10 @@ const LOOPBACK_HARDCODED = [
   // NAV-1 — the grouped-sidebar walk. Loopback :5631/:4193 by default,
   // hardcoded; APP/API are the per-worktree port block, never a remote host.
   "nav1-walk",
+  // FIX-11 Part 3 — the bookkeeper-export walk. Loopback :5821/:4293 by
+  // default, hardcoded. It READS the demo org (which is the only org with a
+  // month of money in it) and writes nothing: its only non-GET is the login.
+  "fix11-books-walk",
   // FIX-11 Part 1 — the audit-log and "+ Log → Gift" walk. Loopback
   // :5801/:4273 by default, hardcoded; APP/API are the per-worktree port
   // block, never a remote host. It registers its own throwaway org and
