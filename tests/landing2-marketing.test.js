@@ -224,7 +224,13 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     ok("the demo form builds its body from exactly name, email, organization and ref",
       !!body && JSON.stringify([...body[1].matchAll(/(\w+):/g)].map(m => m[1])) === JSON.stringify(["name", "email", "organization", "ref"]), body && body[1]);
     ok("…and posts it to the Lost & Found lead route, the table super-admin lists", /fetch\(API \+ "\/lost-and-found\/lead"/.test(why) && /DEMO_REF = "book-a-demo"/.test(why));
-    ok("the marketing source makes no other request (calculators compute in the browser)", (ALL.match(/fetch\(/g) || []).length === 1);
+    // TRUST-2 — the trust pages READ four public endpoints and send nothing:
+    // the status summary, which What's new entries are hidden, and the DPA
+    // (JSON and PDF). Named here one by one; any other request is still red.
+    const READS = ["/status/summary", "/changelog/hidden", "/legal/dpa`", "/legal/dpa.pdf"];
+    const fetches = [...ALL.matchAll(/fetch\(([^,)]*)/g)].map(m => m[1]);
+    const others = fetches.filter(f => !READS.some(r => f.includes(r)));
+    ok("the marketing source makes no other request (calculators compute in the browser)", others.length === 1, others);
     ok("the thank-you state is the reference's sentence", why.includes("Thank you. Jonathan will email you within one business day to pick a time."));
   }
 

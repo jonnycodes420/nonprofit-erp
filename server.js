@@ -2501,6 +2501,180 @@ app.get("/health", (req, res) => {
     guardsOk: guardsOk(),
   });
 });
+// ═══ TRUST-2 Part 1 · THE STATUS PAGE ═══════════════════════════════════════
+// Six services, each with a check that measures something real. A service is
+// only on the page because it is checked; a check with nothing to read yet
+// says "unknown" and is left out of the percentage rather than counted as up.
+// The page lives on this same Railway app, so it goes down with it: /health
+// is the endpoint an OUTSIDE monitor should call.
+const STATUS_SERVICES = [
+  { key: "app", label: "The app", says: "A database read, every minute." },
+  { key: "signin", label: "Sign-in", says: "Accounts readable and a session token signed and verified, every minute." },
+  { key: "stripe", label: "Stripe gift sync", says: "The reconciliation guard ran recently and found no charge without a gift." },
+  { key: "connections", label: "Other connection syncs", says: "The sync for PayPal, Square and the other giving sources ran recently without an error." },
+  { key: "email", label: "Email delivery", says: "Resend is configured and no staff notification is stuck waiting to retry." },
+  { key: "jobs", label: "Background jobs", says: "Every scheduled job ran within its window, and the latest run of each succeeded." },
+];
+async function statusCheckOnce() {
+  const results = [];
+  const put = (service, state, detail) => results.push({ service, state, detail: detail || null });
+  try { await query(`SELECT 1`); put("app", "up"); } catch (e) { put("app", "down", "The database did not answer."); }
+  try {
+    await query(`SELECT id FROM users LIMIT 1`);
+    const jwt = require("jsonwebtoken");
+    const t = signToken({ userId: "status-probe", orgId: "status-probe" });
+    jwt.verify(t, process.env.JWT_SECRET || "nonprofit_erp_secret_dev");
+    put("signin", "up");
+  } catch (e) { put("signin", "down", "Sign-in could not complete its own check."); }
+  {
+    const r = reconciliationHealth();
+    const interval = Number(process.env.RECONCILE_INTERVAL_MIN || 60);
+    if (!r.checkedAt) put("stripe", "unknown", "Not checked since the last restart.");
+    else if (Date.now() - new Date(r.checkedAt).getTime() > 3 * interval * 60000) put("stripe", "degraded", "The reconciliation guard is overdue.");
+    else if ((r.unrecordedCharges || 0) > 0) put("stripe", "degraded", "A charge reached Stripe without a gift; it is being looked at.");
+    else put("stripe", "up");
+  }
+  const lastTick = async name => (await query(`SELECT ok, COALESCE(finished_at, started_at) AS at FROM tick_log WHERE name=? ORDER BY started_at DESC LIMIT 1`, [name]).catch(() => []))[0] || null;
+  {
+    const t = await lastTick("processGivingSources");
+    if (!t) put("connections", "unknown", "No sync has run since the last restart.");
+    else if (t.ok === false) put("connections", "degraded", "The latest sync stopped with an error.");
+    else if (Date.now() - new Date(t.at).getTime() > 3 * 3600e3) put("connections", "degraded", "The sync is overdue.");
+    else put("connections", "up");
+  }
+  {
+    if (!process.env.RESEND_API_KEY) put("email", "down", "Email is not configured.");
+    else {
+      const [f] = await query(`SELECT COUNT(*)::int AS n FROM notification_failures WHERE created_at > NOW() - INTERVAL '1 hour'`).catch(() => [{ n: 0 }]);
+      put("email", f.n > 5 ? "degraded" : "up", f.n > 5 ? `${f.n} notifications are waiting to retry.` : null);
+    }
+  }
+  {
+    const rows = await query(`SELECT DISTINCT ON (name) name, ok, started_at, finished_at FROM tick_log
+                               WHERE started_at > NOW() - INTERVAL '2 hours' ORDER BY name, started_at DESC`).catch(() => []);
+    if (!rows.length) put("jobs", "unknown", "No scheduled job has run in the last two hours.");
+    else {
+      const bad = rows.filter(r => r.ok === false);
+      put("jobs", bad.length ? "degraded" : "up", bad.length ? `${bad.length} job${bad.length === 1 ? "" : "s"} stopped with an error.` : null);
+    }
+  }
+  for (const r of results) await run(`INSERT INTO status_checks (service,state,detail) VALUES (?,?,?)`, [r.service, r.state, r.detail]).catch(() => {});
+  await run(`DELETE FROM status_checks WHERE checked_at < NOW() - INTERVAL '95 days'`).catch(() => {});
+  return results;
+}
+if (!backgroundTicksDisabled()) {
+  setTimeout(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 20000);
+  setInterval(() => statusCheckOnce().catch(e => console.error("[status]", e.message)), 60 * 1000);
+}
+
+// PUBLIC. Current state, the last 90 days by day, the percentage computed from
+// stored checks (and the date it starts from), and the incidents.
+app.get("/status/summary", wrap(async (req, res) => {
+  const services = [];
+  for (const s of STATUS_SERVICES) {
+    const [latest] = await query(`SELECT state, detail, checked_at FROM status_checks WHERE service=? ORDER BY checked_at DESC LIMIT 1`, [s.key]);
+    const days = await query(
+      `SELECT TO_CHAR(checked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day,
+              COUNT(*) FILTER (WHERE state <> 'unknown')::int AS measured,
+              COUNT(*) FILTER (WHERE state = 'up')::int AS up,
+              COUNT(*) FILTER (WHERE state = 'down')::int AS down
+         FROM status_checks WHERE service=? AND checked_at > NOW() - INTERVAL '90 days' GROUP BY 1 ORDER BY 1`, [s.key]);
+    const [first] = await query(`SELECT MIN(checked_at) AS since FROM status_checks WHERE service=? AND state <> 'unknown'`, [s.key]);
+    const measured = days.reduce((a, d) => a + d.measured, 0), up = days.reduce((a, d) => a + d.up, 0);
+    services.push({ ...s, state: latest?.state || "unknown", detail: latest?.detail || null, checkedAt: latest?.checked_at || null,
+      days, uptime: measured ? Math.floor((up / measured) * 10000) / 100 : null, measuredChecks: measured,
+      since: first?.since || null });
+  }
+  const incidents = await query(`SELECT id, title, affected, state, created_at, resolved_at FROM status_incidents
+                                  WHERE resolved_at IS NULL OR resolved_at > NOW() - INTERVAL '14 days' ORDER BY created_at DESC LIMIT 20`);
+  for (const i of incidents) i.updates = await query(`SELECT body, state, created_at FROM status_incident_updates WHERE incident_id=? ORDER BY created_at DESC`, [i.id]);
+  res.set("Cache-Control", "no-store");
+  res.json({ services, incidents, open: incidents.filter(i => !i.resolved_at).length,
+    sentence: "Each bar is one day. The percentage is the share of checks that found the service working, counted from the first stored check; a check with nothing to measure is left out rather than counted as up." });
+}));
+
+// ═══ TRUST-2 Parts 2 and 3 · WHAT'S NEW AND THE DPA ═════════════════════════
+// The entries themselves are files in docs/changelog/ the client bundles;
+// the server keeps only which ones a super-admin hid.
+app.get("/changelog/hidden", wrap(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ hidden: (await query(`SELECT entry_id FROM changelog_hidden`)).map(r => r.entry_id) });
+}));
+app.post("/admin/changelog/:id/hide", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const id = String(req.params.id || "").replace(/[^a-z0-9-]/gi, "").slice(0, 120);
+  if (req.body?.hidden === false) await run(`DELETE FROM changelog_hidden WHERE entry_id=?`, [id]);
+  else await run(`INSERT INTO changelog_hidden (entry_id, hidden_by) VALUES (?,?) ON CONFLICT (entry_id) DO NOTHING`, [id, req.user.userId]);
+  res.json({ ok: true, hidden: req.body?.hidden !== false });
+}));
+// THE DPA. Published only when DPA_PUBLISHED=1, which is Jonathan's to set once
+// an attorney has read it. Before that, only a super-admin reads the draft.
+const dpaPublished = () => process.env.DPA_PUBLISHED === "1";
+async function dpaViewer(req) {
+  const h = String(req.headers.authorization || "");
+  if (!h.startsWith("Bearer ")) return false;
+  try {
+    const p = require("jsonwebtoken").verify(h.slice(7), process.env.JWT_SECRET || "nonprofit_erp_secret_dev");
+    const [u] = await query(`SELECT is_super_admin FROM users WHERE id=?`, [p.userId]);
+    return !!(u && u.is_super_admin);
+  } catch { return false; }
+}
+app.get("/legal/dpa", wrap(async (req, res) => {
+  const D = await import("./shared/dpa.js");
+  const preview = !dpaPublished() && await dpaViewer(req);
+  if (!dpaPublished() && !preview) return res.json({ published: false,
+    sentence: "Our data processing agreement is with our attorney for review. Write to us and we will send you the draft and tell you when it is final." });
+  res.json({ published: dpaPublished(), draft: !dpaPublished(), label: dpaPublished() ? null : D.DPA_DRAFT_LABEL, version: D.DPA_VERSION, sections: D.dpaSections() });
+}));
+app.get("/legal/dpa.pdf", wrap(async (req, res) => {
+  const preview = !dpaPublished() && (await dpaViewer(req));
+  if (!dpaPublished() && !preview) return res.status(404).json({ error: "The data processing agreement is not published yet." });
+  const D = await import("./shared/dpa.js");
+  const PDFDocument = require("pdfkit");
+  const doc = new PDFDocument({ margin: 56, size: "LETTER" });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="steward-data-processing-agreement.pdf"`);
+  doc.pipe(res);
+  doc.font("Times-Bold").fontSize(20).text("Data Processing Agreement");
+  doc.moveDown(0.3).font("Helvetica").fontSize(10).fillColor("#5a554f").text(`Steward · ${D.DPA_VERSION}${dpaPublished() ? "" : " · " + D.DPA_DRAFT_LABEL}`);
+  doc.fillColor("#0f1a12").moveDown(1);
+  for (const s of D.dpaSections()) {
+    doc.font("Helvetica-Bold").fontSize(12).text(s.h).moveDown(0.3);
+    for (const p of s.p || []) doc.font("Helvetica").fontSize(10.5).text(p, { lineGap: 2 }).moveDown(0.5);
+    for (const li of s.list || []) doc.font("Helvetica").fontSize(10).text("• " + li, { indent: 8, lineGap: 1.5 }).moveDown(0.25);
+    doc.moveDown(0.6);
+  }
+  doc.end();
+}));
+
+// SUPER-ADMIN: incidents in plain language, updates, and resolve. And a way to
+// run the checks now, for a deploy with the background ticks off.
+app.post("/admin/status/run-checks", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  req.audit && req.audit.skip("a health check");
+  res.json({ results: await statusCheckOnce() });
+}));
+app.post("/admin/incidents", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const title = String(req.body?.title || "").trim().slice(0, 200);
+  const body = String(req.body?.body || "").trim().slice(0, 4000);
+  const affected = (Array.isArray(req.body?.affected) ? req.body.affected : []).filter(k => STATUS_SERVICES.some(s => s.key === k));
+  if (!title || !body) return res.status(400).json({ error: "Say what is affected, and what we are doing about it." });
+  const id = "inc_" + uuid().slice(0, 10);
+  const who = actor(req);
+  await run(`INSERT INTO status_incidents (id,title,affected,created_by,created_by_name) VALUES (?,?,?,?,?)`, [id, title, affected, who.id, who.name]);
+  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, ["inu_" + uuid().slice(0, 10), id, body, "investigating", who.id, who.name]);
+  res.status(201).json({ id });
+}));
+app.post("/admin/incidents/:id/update", requireAuth, requireSuperAdmin, wrap(async (req, res) => {
+  const body = String(req.body?.body || "").trim().slice(0, 4000);
+  const state = ["investigating", "identified", "monitoring", "resolved"].includes(req.body?.state) ? req.body.state : null;
+  if (!body) return res.status(400).json({ error: "An update needs a sentence." });
+  const [i] = await query(`SELECT id FROM status_incidents WHERE id=?`, [req.params.id]);
+  if (!i) return res.status(404).json({ error: "No such incident." });
+  const who = actor(req);
+  await run(`INSERT INTO status_incident_updates (id,incident_id,body,state,created_by,created_by_name) VALUES (?,?,?,?,?,?)`, ["inu_" + uuid().slice(0, 10), i.id, body, state, who.id, who.name]);
+  if (state) await run(`UPDATE status_incidents SET state=?, resolved_at=${state === "resolved" ? "NOW()" : "NULL"} WHERE id=?`, [state, i.id]);
+  res.json({ ok: true });
+}));
+
 app.use(require("./routes/give").routers.r0);
 app.use(require("./routes/billing").routers.r0);
 

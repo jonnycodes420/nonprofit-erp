@@ -5214,6 +5214,28 @@ async function initSchema() {
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_admin_mfa BOOLEAN DEFAULT false`);
   // SEC-1 — two-factor for everyone, and the sessions it guards.
   await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS require_mfa BOOLEAN NOT NULL DEFAULT false`);
+  // TRUST-2 — the day a person was erased at their request (personData.js).
+  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS erased_at TIMESTAMPTZ`);
+  // TRUST-2 Part 2 — a What's new entry a super-admin has hidden.
+  await pool.query(`CREATE TABLE IF NOT EXISTS changelog_hidden (entry_id TEXT PRIMARY KEY, hidden_by TEXT NOT NULL, hidden_at TIMESTAMPTZ DEFAULT NOW())`);
+  // TRUST-2 Part 1 — the status page. One row per service per minute; the page
+  // reads ONLY these rows, so a percentage is never typed in by hand.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS status_checks (
+      id BIGSERIAL PRIMARY KEY, service TEXT NOT NULL, state TEXT NOT NULL, detail TEXT,
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT status_checks_state CHECK (state IN ('up','degraded','down','unknown')))`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_status_checks ON status_checks (service, checked_at)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS status_incidents (
+      id TEXT PRIMARY KEY, title TEXT NOT NULL, affected TEXT[] NOT NULL DEFAULT '{}',
+      state TEXT NOT NULL DEFAULT 'investigating', created_at TIMESTAMPTZ DEFAULT NOW(), resolved_at TIMESTAMPTZ,
+      created_by TEXT NOT NULL, created_by_name TEXT,
+      CONSTRAINT status_incidents_state CHECK (state IN ('investigating','identified','monitoring','resolved')))`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS status_incident_updates (
+      id TEXT PRIMARY KEY, incident_id TEXT NOT NULL REFERENCES status_incidents(id) ON DELETE CASCADE,
+      body TEXT NOT NULL, state TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), created_by TEXT NOT NULL, created_by_name TEXT)`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_method TEXT`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_failed_count INTEGER NOT NULL DEFAULT 0`);
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_locked_until TIMESTAMPTZ`);

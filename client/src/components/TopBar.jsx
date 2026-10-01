@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { apiFetch } from "../api";
 import { T, DriftBadge, firstNameOf, PersonMark } from "./shared";
 import { typeLabels, isDonor as personIsDonor } from "../../../shared/personType.js";
+import { CHANGELOG, LAST_SEEN_KEY } from "../lib/changelog";
+import { PRODUCT_WORDS } from "../../../shared/changelog.js";
 
 // ── Global top bar (desktop shell only, BUILD-08; full-width BUILD-10) ──────
 // Slim 52px bar spanning the FULL viewport width (fixed, top:0/left:0/right:0),
@@ -34,6 +36,14 @@ export function TopBar({ auth, logout, onNavigate }) {
   const [sel,setSel] = useState(0);
   const [helpOpen,setHelpOpen] = useState(false);
   const [meOpen,setMeOpen] = useState(false);
+  // TRUST-2 — What's new. A dot on the chip until the newest entry is opened.
+  const [wnOpen,setWnOpen] = useState(false);
+  const [wnHidden,setWnHidden] = useState(null);
+  const [wnSeen,setWnSeen] = useState(()=>{ try { return localStorage.getItem(LAST_SEEN_KEY)||""; } catch { return ""; } });
+  useEffect(()=>{ apiFetch("/changelog/hidden").then(d=>setWnHidden(new Set(d.hidden||[]))).catch(()=>setWnHidden(new Set())); },[]);
+  const wnEntries = CHANGELOG.filter(e=>!wnHidden||!wnHidden.has(e.id));
+  const wnUnseen = !!wnEntries[0] && wnEntries[0].id !== wnSeen && wnHidden!==null;
+  const openWn = () => { setWnOpen(true); const id=wnEntries[0]?.id||""; setWnSeen(id); try { localStorage.setItem(LAST_SEEN_KEY,id); } catch { /* private window */ } };
   const meRef = useRef(null);
   const inputRef = useRef(null);
   const rootRef = useRef(null);
@@ -230,11 +240,13 @@ export function TopBar({ auth, logout, onNavigate }) {
           <span style={{fontSize:11,fontWeight:700,color:T.ink}}>{userName[0].toUpperCase()}</span>
         </div>
         <span style={{fontSize:12.5,fontWeight:600,color:T.inkInverse,maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{userName}</span>
+        {wnUnseen && <span data-testid="whats-new-dot" aria-label="Something new" style={{width:7,height:7,borderRadius:99,background:T.gold,flexShrink:0}}/>}
       </button>
       {meOpen && <div role="menu" style={{position:"absolute",top:"calc(100% + 8px)",right:0,background:T.ink,border:"1px solid "+T.green650,borderRadius:12,boxShadow:"0 12px 40px rgba(0,0,0,0.45)",padding:"6px 0",width:230,zIndex:130}}>
         {[["Account settings","Your name, password and sign-in",()=>onNavigate("settings",{section:"account"})],
           ["Connect your inbox","Gmail or Outlook, so conversations log themselves",()=>onNavigate("settings",{section:"connections",focus:"inbox"})],
-          ["Two-factor and sessions","A code at sign-in, and every browser you're signed in on",()=>onNavigate("settings",{section:"security"})]]
+          ["Two-factor and sessions","A code at sign-in, and every browser you're signed in on",()=>onNavigate("settings",{section:"security"})],
+          ["What's new"+(wnUnseen?" ·":""),"What we shipped lately",openWn]]
           .map(([label,sub,go])=><button key={label} role="menuitem" data-testid={label==="Connect your inbox"?"topbar-connect-inbox":undefined}
             onClick={()=>{setMeOpen(false);go();}}
             style={{display:"block",width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"8px 14px",cursor:"pointer",fontFamily:"inherit"}}>
@@ -245,5 +257,20 @@ export function TopBar({ auth, logout, onNavigate }) {
       </div>
       <button onClick={logout} style={{background:"transparent",border:"1px solid "+T.green650,borderRadius:8,padding:"5px 11px",color:"rgba(240,237,230,0.7)",fontSize:12,cursor:"pointer"}}>Sign out</button>
     </div>
+    {wnOpen && <div role="dialog" aria-label="What's new" data-testid="whats-new-panel" onClick={()=>setWnOpen(false)}
+      style={{position:"fixed",inset:0,background:"rgba(15,26,18,0.5)",zIndex:400,display:"flex",justifyContent:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"min(440px,100%)",height:"100%",overflowY:"auto",background:T.bg,padding:"24px 22px",boxSizing:"border-box"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <span style={{fontFamily:"'DM Serif Display',serif",fontSize:26,color:T.ink}}>What's new</span>
+          <button onClick={()=>setWnOpen(false)} aria-label="Close" style={{background:"none",border:"none",fontSize:20,color:T.ink3,cursor:"pointer"}}>×</button>
+        </div>
+        {wnEntries.map(e=><div key={e.id} style={{background:T.white,borderRadius:14,padding:"14px 16px",marginBottom:10}}>
+          <div style={{fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",color:T.ink3}}>{PRODUCT_WORDS[e.product]||"New"} · {new Date(e.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"})}</div>
+          <div style={{fontSize:15,fontWeight:700,color:T.ink,margin:"4px 0"}}>{e.title}</div>
+          <div style={{fontSize:13.5,color:T.ink2,lineHeight:1.55}}>{e.body}</div>
+        </div>)}
+        <a href="/whats-new" target="_blank" rel="noreferrer" style={{fontSize:13,color:T.greenDk}}>The full list</a>
+      </div>
+    </div>}
   </div>;
 }

@@ -861,6 +861,26 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
   const [rel,setRel]=useState(null);
   const [logMeeting,setLogMeeting]=useState(null);
+  // TRUST-2 — export and erase.
+  const [eraseOpen,setEraseOpen]=useState(false);
+  const [eraseWord,setEraseWord]=useState("");
+  const [eraseBusy,setEraseBusy]=useState(false);
+  const [eraseMsg,setEraseMsg]=useState("");
+  const exportPersonData=async()=>{
+    try{
+      const r=await fetch(`${API}/donors/${donor.id}/export-data`,{headers:{Authorization:`Bearer ${getToken()}`}});
+      if(!r.ok)throw new Error("export failed");
+      const url=URL.createObjectURL(await r.blob()),a=document.createElement("a");
+      a.href=url;a.download=`${(donor.name||"person").replace(/[^a-z0-9]+/gi,"-").toLowerCase()}-data.json`;
+      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    }catch{ window.alert("The export did not download. Try again."); }
+  };
+  const erasePerson=async()=>{
+    setEraseBusy(true);setEraseMsg("");
+    try{ const r=await apiFetch(`/donors/${donor.id}/erase`,{method:"POST",body:JSON.stringify({confirm:"ERASE"})}); setEraseMsg(r.sentence); onInteractionAdded&&onInteractionAdded(); setTimeout(()=>onClose&&onClose(),1800); }
+    catch(e){ setEraseMsg(e?.message||"The erasure did not run. Nothing was changed."); }
+    setEraseBusy(false);
+  };
   const loadRel=()=>apiFetch(`/donors/${donor.id}/relationship`).then(setRel).catch(()=>setRel(null));
   useEffect(()=>{ setRel(null); loadRel(); },[donor.id]);
   const [sequences,setSequences]=useState([]);
@@ -1787,7 +1807,9 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                    link; they never see the token it carries, because somebody
                    who could read it could open somebody else's page. */
                 ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
-                ["Edit record",onEdit,false]].map(([label,fn,disabled])=>(
+                ["Edit record",onEdit,false],
+                // TRUST-2 — a person's own data, in one file, when they ask.
+                ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[])].map(([label,fn,disabled])=>(
                 <button key={label} role="menuitem" disabled={disabled} onClick={()=>{setDpMoreOpen(false);fn();}}
                   style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
               ))}
@@ -2350,8 +2372,24 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 Edit was a mis-tap risk). Quiet terracotta outline; the confirm
                 lives in the parent deleteDonor handler. */}
             {isAdmin&&(
-              <div style={{marginTop:8,paddingTop:16,borderTop:"1px solid "+T.bg3,display:"flex",justifyContent:"flex-end"}}>
+              <div style={{marginTop:8,paddingTop:16,borderTop:"1px solid "+T.bg3,display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+                {/* TRUST-2 — erase, for a person who asks to be forgotten. It
+                    asks twice: this button, then typing ERASE. */}
+                {!isReadOnly&&<button data-testid="dp-erase" onClick={()=>{setEraseOpen(o=>!o);setEraseMsg("");setEraseWord("");}} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:8,padding:"9px 16px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>Erase this person</button>}
                 <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:8,padding:"9px 16px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete donor</button>
+              </div>
+            )}
+            {isAdmin&&eraseOpen&&(
+              <div data-testid="dp-erase-confirm" style={{marginTop:10,background:T.white,border:"1px solid "+T.terracotta+"55",borderRadius:12,padding:"14px 16px",fontSize:13.5,color:T.ink,lineHeight:1.55}}>
+                <strong>Erase {donor.name}?</strong> Their name, contact details, notes, tags, photo and every logged email, meeting and conversation are removed for good. Their gifts stay as anonymous gifts, so your books, the receipts already issued and every total still match to the cent. If they asked not to be emailed, their address stays on your do-not-email list so they are never mailed again. This cannot be undone.
+                <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
+                  <input value={eraseWord} onChange={e=>setEraseWord(e.target.value)} placeholder="Type ERASE" aria-label="Type ERASE to confirm"
+                    style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"8px 10px",fontSize:13,fontFamily:"inherit",width:140}}/>
+                  <button disabled={eraseWord!=="ERASE"||eraseBusy} onClick={erasePerson}
+                    style={{background:eraseWord==="ERASE"?T.terracotta:T.bg3,border:"none",borderRadius:8,padding:"9px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:eraseWord==="ERASE"?"pointer":"not-allowed"}}>{eraseBusy?"Erasing…":"Erase for good"}</button>
+                  <button onClick={()=>setEraseOpen(false)} style={{background:"none",border:"none",color:T.ink3,fontSize:13,cursor:"pointer"}}>Cancel</button>
+                </div>
+                {eraseMsg&&<div role="status" style={{marginTop:8}}>{eraseMsg}</div>}
               </div>
             )}
           </div>}

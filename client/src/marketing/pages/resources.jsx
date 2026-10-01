@@ -4,7 +4,12 @@ import React, { useState } from "react";
 import { Hero, Crumbs, Cards, FaqS, FinalCta, StatBand, Steps, Photo, Pill, A, Cover, rich } from "../lib";
 import { GUIDES, GUIDE_SLUGS } from "../data/guides";
 import { TEMPL } from "../data/templates";
-import { ARTS, CHG } from "../data/articles";
+import { ARTS } from "../data/articles";
+import { API } from "../../api";
+import { PRODUCT_WORDS } from "../../../../shared/changelog.js";
+// TRUST-2: What's new is the files in docs/changelog/, one per build, never
+// generated from commit messages. A super-admin can hide an entry.
+import { CHANGELOG } from "../../lib/changelog";
 import { ART2, ART2_SLUGS } from "../data/articles2";
 import { GLOSS } from "../data/glossary";
 import { FAQ_PAGE } from "../data/faqs";
@@ -204,10 +209,13 @@ export function Help() {
 }
 
 export function WhatsNew() {
+  const [hidden, setHidden] = useState(null);
+  React.useEffect(() => { fetch(`${API}/changelog/hidden`).then(r => r.json()).then(d => setHidden(new Set(d.hidden || []))).catch(() => setHidden(new Set())); }, []);
+  const shown = CHANGELOG.filter(e => !hidden || !hidden.has(e.id));
   return <>
-    <Hero eyebrow="What's new" crumbs={[["Customers"], ["What's new"]]} h="What we <b>shipped lately.</b>" lede="Steward ships improvements every week. Here is the recent list, newest first." noCta />
-    <section style={{ paddingTop: 0 }}><div className="wrap chg"><h3>Autumn 2026</h3>
-      {CHG.map(c => <div key={c[0]}><span className="chip">New</span><div><b>{c[0]}</b><p>{c[1]}</p></div></div>)}
+    <Hero eyebrow="What's new" crumbs={[["Customers"], ["What's new"]]} h="What we <b>shipped lately.</b>" lede="One entry for each thing we ship, newest first, written for the people who use Steward." noCta />
+    <section style={{ paddingTop: 0 }}><div className="wrap chg">
+      {shown.map(c => <div key={c.id} data-entry={c.id}><span className="chip">{PRODUCT_WORDS[c.product] || "New"}</span><div><b>{c.title}</b><p>{new Date(c.date + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" })}. {c.body}</p></div></div>)}
     </div></section>
     <FinalCta />
   </>;

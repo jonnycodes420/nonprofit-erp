@@ -136,6 +136,7 @@ CORE=(
   int4-mailbox
   intb1-calendar-store
   sec1-two-factor
+  trust2-erase
   fix11-inbound-resend
   int5-api-keys
   script-guards

@@ -204,6 +204,9 @@ function AppShell() {
   // Saying the first sentence when only the second is true would be a promise
   // the product cannot keep.
   const [sampleStatus,setSampleStatus]=useState(null);
+  // TRUST-2 — an open incident on /status shows as one thin line under the bar.
+  const [incident,setIncident]=useState(null);
+  useEffect(()=>{ apiFetch("/status/summary").then(d=>{ const o=(d.incidents||[]).find(i=>!i.resolved_at); setIncident(o||null); }).catch(()=>{}); },[]);
   const loadSampleStatus=()=>apiFetch("/org/sample-data-status")
     .then(setSampleStatus).catch(()=>setSampleStatus(null));
   useEffect(()=>{ if(getToken()) loadSampleStatus(); },[]);
@@ -763,6 +766,11 @@ function AppShell() {
     {/* The demo/sample banner sits ABOVE the billing states deliberately: a
         billing problem is about this organisation's account, and "none of this
         is real" is about every number underneath it. It is NOT dismissible. */}
+    {incident&&<div data-testid="incident-line" role="status" style={{background:T.ink,color:T.inkInverse,borderBottom:"1px solid "+T.bgElevated,padding:"6px 24px",fontSize:12.5,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <span aria-hidden style={{width:7,height:7,borderRadius:99,background:T.gold}}/>
+      <span>We are working on something: {incident.title}.</span>
+      <a href="/status" target="_blank" rel="noreferrer" style={{color:T.inkInverse,textDecoration:"underline"}}>See status</a>
+    </div>}
     {(data.org?.isDemoOrg||sampleStatus?.hasSampleData)&&(
       <div data-testid="demo-data-banner" role="status" style={{background:T.gold700,borderBottom:"1px solid "+T.gold600,padding:"9px 24px",display:"flex",alignItems:"center",gap:12,fontSize:13,color:T.gold100,flexWrap:"wrap"}}>
         <span style={{flex:1,minWidth:240}}>
