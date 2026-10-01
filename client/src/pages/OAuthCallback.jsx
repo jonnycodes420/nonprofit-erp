@@ -85,7 +85,9 @@ export default function OAuthCallback() {
     }
   };
 
-  const back = () => nav("/dashboard?tab=settings&sub=integrations", { replace: true });
+  // A mailbox lands on Connections, where the inbox card is; the org
+  // connections land where they always did.
+  const back = () => nav(`/dashboard?tab=settings&sub=${provider === "google" || provider === "microsoft" ? "connections" : "integrations"}`, { replace: true });
   useEffect(() => {
     if (state.phase !== "done") return;
     const t = setTimeout(back, 2200);

@@ -1655,6 +1655,12 @@ app.get("/org/setup-status", requireAuth, wrap(async (req, res) => {
     // logged conversation (or a live gift) can create. The old workflow item
     // ticked on a fresh org that had done nothing.
     { key: "conversation", done: threadRow[0].n > 0 },
+    // INT-BUILD-1 Part 0 — CONNECT YOUR INBOX, and it is the VIEWER'S step:
+    // a mailbox is one person's, so it ticks for whoever connected their own.
+    // A demo org counts it done, because its example connection is the point.
+    { key: "inbox", done: org.is_demo_org === true || ["org_b72demo", "org_creo"].includes(orgId)
+        || (await query(`SELECT 1 FROM mailbox_connections WHERE user_id=? AND org_id=? AND status <> 'disconnected' LIMIT 1`,
+                        [req.user.userId, orgId]).catch(() => [])).length > 0 },
     // BUILD-83 Part 5.3 — MOVE YOUR MONTHLY DONORS, after the first
     // conversation. This is the closer from the Sept-6 positioning and it was
     // nowhere in the product: the org's file names its sustainers, Steward
@@ -5882,14 +5888,14 @@ app.post("/donors/import-semantics", requireAuth, checkWriteAccess, wrapImport(a
       const donorId = byEmail.get(String(m.survivingEmail || "").trim().toLowerCase())
         || byName.get(String(m.surviving || "").trim().toLowerCase()) || null;
       const id = importId("mrg_");
-      params.push(id, orgId, donorId, m.surviving, foldedJson);
-      tuples.push("(?,?,?,?,?)");
+      params.push(id, orgId, donorId, m.surviving, foldedJson, actor(req).id, actor(req).name);
+      tuples.push("(?,?,?,?,?,?,?)");
       rows.push({ id, surviving: m.surviving, folded: m.folded });
     }
     for (let i = 0; i < tuples.length; i += 500) {
       const slice = tuples.slice(i, i + 500);
-      await run(`INSERT INTO import_merges (id,org_id,donor_id,surviving,folded) VALUES ${slice.join(",")}`,
-                params.slice(i * 5, (i + slice.length) * 5));
+      await run(`INSERT INTO import_merges (id,org_id,donor_id,surviving,folded,created_by,created_by_name) VALUES ${slice.join(",")}`,
+                params.slice(i * 7, (i + slice.length) * 7));
     }
     counts.merges = rows.length;
     mergeRows.push(...rows);
@@ -6983,6 +6989,18 @@ const SHAPE_REVERSE_HOURS = { deposit: DEPOSIT_REVERSE_HOURS, gift_file_with_don
 // would be shown an Undo button and refused by it. So: an admin may undo any
 // whole-import run, and anybody may undo THEIR OWN. A deposit's 24 hours and
 // its admin-only posture are otherwise untouched.
+// INT-BUILD-1 0e — WHO MAY UNDO AN IMPORT, ONE ANSWER FOR EVERY UNDO ROUTE.
+// An admin, or the person who ran it. The role is re-read live (a demoted
+// admin loses it on the next request, as with requireAdmin), and a row with
+// no recorded runner is an admin's alone. The only Undo buttons are on the
+// result screen of the run itself, which only its runner ever sees.
+const UNDO_NOT_YOURS = "Only an admin, or the person who ran this import, can undo it.";
+async function mayUndoImport(req, ranBy) {
+  if (ranBy && ranBy === req.user.userId) return true;
+  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, req.user.orgId]);
+  return !!(me && me.role === "admin");
+}
+
 app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req, res) => {
   const orgId = req.user.orgId;
   const [imp] = await query("SELECT * FROM imports WHERE id=? AND org_id=?", [req.params.id, orgId]);
@@ -6991,12 +7009,8 @@ app.post("/imports/:id/reverse", requireAuth, checkWriteAccess, wrap(async (req,
     return res.status(400).json({ error: "shape_not_reversible",
       message: "A deposit and a gift file that created its own donors reverse as a whole. Any other import is undone gift by gift, on the record." });
   }
-  const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
-  const mine = imp.actor_user_id && imp.actor_user_id === req.user.userId;
-  if (!(me && me.role === "admin") && !mine) {
-    return res.status(403).json({ error: "not_yours",
-      message: "You can undo an import you made. An admin can undo any of them." });
-  }
+  if (!(await mayUndoImport(req, imp.actor_user_id)))
+    return res.status(403).json({ error: "not_yours", message: UNDO_NOT_YOURS });
   if (imp.reversed_at) return res.status(409).json({ error: "already_reversed", reversedAt: imp.reversed_at });
   const windowHours = SHAPE_REVERSE_HOURS[imp.shape] || DEPOSIT_REVERSE_HOURS;
   const ageHours = (Date.now() - new Date(imp.committed_at).getTime()) / 3600e3;
@@ -7051,6 +7065,11 @@ app.post("/import-merges/:id/undo", requireAuth, checkWriteAccess, wrap(async (r
   const orgId = req.user.orgId;
   const [m] = await query("SELECT * FROM import_merges WHERE id=? AND org_id=?", [req.params.id, orgId]);
   if (!m) return res.status(404).json({ error: "merge not found" });
+  // INT-BUILD-1 0e — the same wall as /imports/:id/reverse. A merge row
+  // written before it carried an actor has no "whoever ran it", so only an
+  // admin may split it.
+  if (!(await mayUndoImport(req, m.created_by)))
+    return res.status(403).json({ error: "not_yours", message: UNDO_NOT_YOURS });
   if (m.undone_at) return res.status(409).json({ error: "already undone" });
   const folded = typeof m.folded === "string" ? JSON.parse(m.folded) : m.folded;
   const label = String(req.body?.label || "").trim();

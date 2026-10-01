@@ -30,6 +30,23 @@
 // temptation is always the next one. Attachments are COUNTED, never stored:
 // "2 attachments" plus a link back to the message in her mailbox, so the file
 // itself stays in the system that already holds it under its own rules.
+// INT-BUILD-1 Part 0 — A DEMO ORG SHOWS THE CARD AND CONNECTS NOTHING.
+// Harborlight and Creo are public logins. A real mailbox behind one would be
+// somebody's inbox open to everyone who has the demo password, so the buttons
+// stay (a prospect has to SEE where this lives) and the server refuses the
+// handshake with this sentence. The "connected" example a demo shows is built
+// at read time and stores no row and no token.
+export const DEMO_MAILBOX_ORG_IDS = ["org_b72demo", "org_creo"];
+export const isDemoMailboxOrg = org =>
+  !!org && (org.is_demo_org === true || DEMO_MAILBOX_ORG_IDS.includes(org.id));
+export const DEMO_CONNECT_SENTENCE =
+  "In the demo, connecting is turned off so no real mailbox sits behind a public login. In your own account this connects Gmail or Outlook in about a minute.";
+// Before Google verifies the app, Google shows its own warning screen first.
+// Saying so before the click is the difference between a person who continues
+// and a person who thinks Steward is a scam.
+export const GOOGLE_UNVERIFIED_SENTENCE =
+  "Google will first show a screen saying it hasn't verified Steward yet. Choose Advanced, then Go to Steward, to continue. Steward still asks only to read your mail, never to send or delete it.";
+
 export const FIELDS_LOGGED = ["date", "direction", "people", "subject", "bodyText", "attachmentCount"];
 export const FIELDS_SENTENCE =
   "For a message to or from someone on file, Steward keeps the date, who it was between, the subject and the text of the message. It does not keep attachments, and it keeps nothing at all about any other message in your mailbox.";

@@ -382,6 +382,12 @@ app.post("/volunteer-hub/import/:id/undo", requireAuth, checkWriteAccess, wrap(a
   const [imp] = await query(
     "SELECT * FROM imports WHERE id=? AND org_id=? AND shape='volunteers'", [req.params.id, orgId]);
   if (!imp) return res.status(404).json({ error: "Not found", message: "There is no volunteer import by that id." });
+  // INT-BUILD-1 0e — an admin, or the person who ran it. Nobody else.
+  if (imp.actor_user_id !== req.user.userId) {
+    const [me] = await query("SELECT role FROM users WHERE id=? AND org_id=?", [req.user.userId, orgId]);
+    if (!(me && me.role === "admin"))
+      return res.status(403).json({ error: "not_yours", message: "Only an admin, or the person who ran this import, can undo it." });
+  }
 
   const shifts = await run("DELETE FROM volunteer_shifts WHERE org_id=? AND import_id=?", [orgId, req.params.id]);
   const creds = await run("DELETE FROM volunteer_credentials WHERE org_id=? AND import_id=?", [orgId, req.params.id]);

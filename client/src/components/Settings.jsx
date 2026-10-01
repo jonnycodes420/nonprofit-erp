@@ -18,6 +18,7 @@ import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
+import { InboxConnectCard } from "./InboxConnect";
 
 // Billing status badge styling, keyed by orgs.subscription_status.
 // "cancelled" (2 l's) is included alongside "canceled" (1 l) because old
@@ -1431,7 +1432,7 @@ function InboundEmailCard({isReadOnly}){
           </button>
         </div>
       ):(
-        <div style={{fontSize:13,color:T.ink3,marginBottom:12}}>No logging address yet — your organization needs a slug first.</div>
+        <div style={{fontSize:13,color:T.ink3,marginBottom:12}}>No logging address yet. Your organization needs a slug first.</div>
       )}
       {!state.enabled&&(
         <div style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:10,padding:"10px 14px",fontSize:12.5,color:T.ink2,marginBottom:12,lineHeight:1.6}}>
@@ -1445,7 +1446,7 @@ function InboundEmailCard({isReadOnly}){
             <div style={{fontSize:13,fontWeight:700,color:T.ink}}>{m.subject}</div>
             <div style={{fontSize:11.5,color:T.ink3,marginTop:3}}>
               {m.kind==="self_test"
-                ? "A test you sent to yourself — inbound logging reached Steward."
+                ? "A test you sent to yourself. Inbound logging reached Steward."
                 : m.kind==="multiple"
                   ? "More than one donor has that address."
                   : "No donor on file has that address."}
@@ -1486,7 +1487,7 @@ function InboundEmailCard({isReadOnly}){
       </>}
       {state.droppedCount>0&&(
         <div style={{fontSize:11.5,color:T.ink3,marginTop:10}}>
-          {state.droppedCount} message{state.droppedCount===1?"":"s"} refused — sent from an address that is not on your team.
+          {state.droppedCount} message{state.droppedCount===1?"":"s"} refused: sent from an address that is not on your team.
         </div>
       )}
     </div>
@@ -2274,100 +2275,6 @@ function StaffBoardList({onNavigate}){
   );
 }
 
-// ── INT-4 Part 3 · HER SWITCHES ────────────────────────────────────────────
-//
-// A pause, and a list of people Steward must never log. Both belong to the
-// person whose mailbox it is: every route behind them is scoped to her user id
-// and an admin colleague cannot reach them. That is the point. A fundraiser is
-// being asked to let a work system read her personal inbox, and the only
-// version of that anyone should accept is one where she can stop it at any
-// moment and name, in advance, who is none of its business.
-function MailboxControls() {
-  const [d, setD] = useState(null);
-  const [pattern, setPattern] = useState("");
-  const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
-  const load = () => apiFetch("/mailbox").then(setD).catch(() => {});
-  useEffect(() => { load(); }, []);
-  const google = (d?.providers || []).find(p => p.key === "google");
-  if (!d || !google) return null;
-
-  const togglePause = async () => {
-    setBusy(true);
-    try {
-      const r = await apiFetch("/mailbox/google/pause", { method: "POST", body: JSON.stringify({ paused: !google.paused }) });
-      setMsg(r.sentence); load();
-    } catch (e) { setMsg(e?.sentence || "That did not change."); }
-    setBusy(false);
-  };
-  const add = async () => {
-    const v = pattern.trim();
-    if (!v) return;
-    setBusy(true);
-    try {
-      const r = await apiFetch("/mailbox/never-log", { method: "POST", body: JSON.stringify({ pattern: v }) });
-      setMsg(r.sentence); setPattern(""); load();
-    } catch (e) { setMsg(e?.error || e?.sentence || "That did not save."); }
-    setBusy(false);
-  };
-  const remove = async id => {
-    setBusy(true);
-    try { const r = await apiFetch(`/mailbox/never-log/${id}`, { method: "DELETE" }); setMsg(r.sentence); load(); }
-    catch { setMsg("That did not change."); }
-    setBusy(false);
-  };
-
-  return (
-    <div data-testid="mailbox-controls" style={{marginTop:14,paddingTop:14,borderTop:"1px solid "+T.bg3}}>
-      <div style={{fontSize:12,color:T.ink3,lineHeight:1.55,marginBottom:10}}>{d.fieldsSentence}</div>
-
-      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
-        <button data-testid="mailbox-pause" onClick={togglePause} disabled={busy}
-          style={{background:google.paused?T.green:"transparent",border:"1px solid "+(google.paused?T.green:T.ink),
-                  borderRadius:8,padding:"7px 14px",color:google.paused?T.white:T.ink,
-                  fontSize:12,fontWeight:700,cursor:busy?"not-allowed":"pointer"}}>
-          {google.paused ? "Turn logging back on" : "Pause logging"}
-        </button>
-        <span style={{fontSize:12,color:T.ink3}}>
-          {google.paused
-            ? "Paused. Nothing new is being read from your mailbox."
-            : "On. Only messages to or from someone on file are kept."}
-        </span>
-      </div>
-
-      <div style={{fontSize:13,fontWeight:700,color:T.ink,marginBottom:4}}>Never log these</div>
-      <div style={{fontSize:12,color:T.ink3,lineHeight:1.5,marginBottom:8}}>
-        An email address, or a whole domain. Nobody here can see this list but you.
-      </div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
-        <input data-testid="mailbox-never-input" value={pattern} onChange={e=>setPattern(e.target.value)}
-          placeholder="doctor@surgery.example or surgery.example"
-          style={{flex:"1 1 260px",minWidth:0,padding:"8px 10px",fontFamily:"inherit",fontSize:13,
-                  border:"1px solid "+T.bg3,borderRadius:8,background:T.white,color:T.ink}}/>
-        <button data-testid="mailbox-never-add" onClick={add} disabled={busy||!pattern.trim()}
-          style={{background:T.ink,border:"none",borderRadius:8,padding:"8px 14px",color:T.white,
-                  fontSize:12,fontWeight:700,cursor:busy||!pattern.trim()?"not-allowed":"pointer",
-                  opacity:busy||!pattern.trim()?0.5:1}}>Add</button>
-      </div>
-      {(d.neverLog||[]).map(n=>(
-        <div key={n.id} data-testid="mailbox-never-row"
-          style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,
-                  padding:"6px 0",borderTop:"1px solid "+T.bg3}}>
-          <span style={{fontSize:13,color:T.ink}}>{n.pattern}</span>
-          <button onClick={()=>remove(n.id)} disabled={busy}
-            style={{background:"transparent",border:"none",fontSize:12,color:T.terra700,
-                    cursor:"pointer",fontWeight:600}}>Remove</button>
-        </div>
-      ))}
-      {!(d.neverLog||[]).length && (
-        <div style={{fontSize:12,color:T.ink3}}>Nothing on the list yet.</div>
-      )}
-      <div style={{fontSize:11.5,color:T.ink3,lineHeight:1.5,marginTop:12}}>{d.touchSentence}</div>
-      {msg && <div data-testid="mailbox-msg" style={{marginTop:10,fontSize:12.5,color:T.ink}}>{msg}</div>}
-    </div>
-  );
-}
-
 export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   // THE TDZ RULE. Every const the tab filter reads is declared above it: the
   // Audit log tab is admin-only, so `visibleTabs` now reads `isAdmin`, which
@@ -2531,9 +2438,6 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
   const [upgradeModal,setUpgradeModal]=useState(null);
   const isReadOnly=billing?.accessState==="read_only";
 
-  const [gmailStatus,setGmailStatus]=useState(null);
-  const [gmailSyncing,setGmailSyncing]=useState(false);
-  const [gmailToast,setGmailToast]=useState("");
 
   const [sampleStatus,setSampleStatus]=useState(null);
   // BUILD-96 Part 3 — the Anthropic disclosure and its per-org switch.
@@ -2567,62 +2471,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
     }
     reloadCf("donor");reloadCf("gift");
     apiFetch("/impact-metrics").then(setImpactMetrics).catch(()=>{});
-    apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
     apiFetch("/org/sample-data-status").then(setSampleStatus).catch(()=>{});
     apiFetch("/org/ai-status").then(setAiStatus).catch(()=>{});
-
-    const params=new URLSearchParams(window.location.search);
-    if(params.get("gmailConnected")==="true"){
-      setGmailToast("Gmail connected! Syncing donor emails now…");
-      setTimeout(()=>setGmailToast(""),4000);
-      window.history.replaceState({},"",window.location.pathname);
-      apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{});
-    }
-    if(params.get("gmailError")){
-      setGmailToast("Gmail connection failed. Please try again.");
-      setTimeout(()=>setGmailToast(""),4000);
-      window.history.replaceState({},"",window.location.pathname);
-    }
   },[]);
 
-  // INT-4 — the handshake runs through shared/oauth.js like every other
-  // provider now: a SIGNED state carrying the org, the user and a nonce, the
-  // provider landing on the app, and the app finishing with an authenticated
-  // POST. The old /gmail/auth-url sent the bare user id as the state and the
-  // public callback believed it.
-  async function connectGmail(){
-    try{
-      const r=await apiFetch("/oauth/google/start",{method:"POST"});
-      window.location.href=r.url;
-    }catch(e){ alert(e?.sentence || errorMessage(e, "Failed to start Gmail connect")); }
-  }
-
-  async function disconnectGmail(){
-    if(!window.confirm("Disconnect Gmail? Synced interactions will remain."))return;
-    await apiFetch("/gmail/disconnect",{method:"DELETE"}).catch(()=>{});
-    setGmailStatus({connected:false});
-  }
-
-  async function syncGmailNow(){
-    setGmailSyncing(true);
-    try{
-      await apiFetch("/gmail/sync",{method:"POST"});
-      setGmailToast("Sync started — new emails will appear shortly.");
-      setTimeout(()=>setGmailToast(""),3500);
-      setTimeout(()=>apiFetch("/gmail/status").then(setGmailStatus).catch(()=>{}),3000);
-    }catch(e){ alert(errorMessage(e, "Sync failed")); }
-    setGmailSyncing(false);
-  }
-
-  function fmtSynced(ts){
-    if(!ts)return"Never synced";
-    const mins=Math.floor((Date.now()-new Date(ts))/60000);
-    if(mins<1)return"Just now";
-    if(mins<60)return`${mins}m ago`;
-    const hrs=Math.floor(mins/60);
-    if(hrs<24)return`${hrs}h ago`;
-    return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"});
-  }
 
   // BUILD-90 90b — the cancel button's two outcomes, said plainly: before the
   // first charge nothing was ever billed; after one, access runs out with the
@@ -2892,11 +2744,11 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         if(atRisk>0&&quiet>0)clauses.push(<><strong style={{color:T.ink}}>{fmt(atRisk)}</strong> at risk across <strong style={{color:T.ink}}>{quiet.toLocaleString()}</strong> quiet donor{quiet===1?"":"s"}</>);
         let msg;
         if(clauses.length){
-          msg=<>{clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)} — no gift in over {quietPhrase(impact.quietSinceDays)}. <strong style={{color:T.ink}}>No platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
+          msg=<>{clauses.map((c,i)=><span key={i}>{i>0?(i===clauses.length-1?" and ":", "):""}{c}</span>)}, with no gift in over {quietPhrase(impact.quietSinceDays)}. <strong style={{color:T.ink}}>No platform fee and no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else if(watching>0){
-          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards — <strong style={{color:T.ink}}>no platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
+          msg=<>Steward is watching <strong style={{color:T.ink}}>{watching}</strong> recurring gift{watching===1?"":"s"} for failed cards. <strong style={{color:T.ink}}>No platform fee, no donor tip</strong>; gifts settle in your own Stripe.</>;
         }else{
-          msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip</strong> — your gifts settle in your own Stripe. Your at-risk giving appears here as donors go quiet.</>;
+          msg=<><strong style={{color:T.ink}}>No platform fee, no donor tip.</strong> Your gifts settle in your own Stripe. Your at-risk giving appears here as donors go quiet.</>;
         }
         return (
           <div style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"3px solid "+T.gold500,borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:10}}>
@@ -2992,8 +2844,8 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
         ):(
           <div style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:200}}>
-              <div style={{fontSize:13,color:T.ink2,marginBottom:4}}>Set up Stripe to accept online donations directly from your donors. Steward creates a Stripe Express account linked to your organization — you'll be guided through a short onboarding on Stripe's site.</div>
-              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Steward never touches your money — donors pay directly to your Stripe account.</div>
+              <div style={{fontSize:13,color:T.ink2,marginBottom:4}}>Set up Stripe to accept online donations directly from your donors. Steward creates a Stripe Express account linked to your organization, and you'll be guided through a short onboarding on Stripe's site.</div>
+              <div style={{fontSize:11,color:T.ink3,marginTop:4}}>Steward never touches your money. Donors pay directly to your Stripe account.</div>
             </div>
             {isAdmin&&<button onClick={connectStripe} disabled={stripeLoading}
               style={{background:T.green,border:"none",borderRadius:10,padding:"10px 20px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer",opacity:stripeLoading?0.7:1,flexShrink:0}}>
@@ -3038,66 +2890,9 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
 
       <InboundEmailCard isReadOnly={isReadOnly}/>
 
-      <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:16,padding:"24px 28px"}}>
-        <SectionLabel>Gmail</SectionLabel>
-        <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.5}}>Sync donor emails automatically to your interaction timeline.</div>
-        <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px",background:T.bg,borderRadius:12,border:"1px solid "+T.bg3,flexWrap:"wrap"}}>
-          <div style={{width:40,height:40,borderRadius:10,background:T.white,border:"1px solid "+T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
-            @
-          </div>
-          <div style={{flex:1,minWidth:180}}>
-            <div style={{fontSize:14,fontWeight:700,color:T.ink,marginBottom:2}}>Gmail</div>
-            <div style={{fontSize:12,color:T.ink3,lineHeight:1.5}}>
-              {gmailStatus?.disconnected
-                ? "Connection lost — please reconnect."
-                : gmailStatus?.connected
-                  ? `Connected as ${gmailStatus.email}`
-                  : "Sync donor emails automatically to your timeline."}
-            </div>
-            {gmailStatus?.connected&&(
-              <div style={{fontSize:11,color:T.ink3,marginTop:3}}>Synced {fmtSynced(gmailStatus.lastSyncedAt)}</div>
-            )}
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0,flexWrap:"wrap"}}>
-            {gmailStatus?.connected ? (
-              <>
-                <div style={{display:"flex",alignItems:"center",gap:5,background:T.green100,border:"1px solid "+T.green200,borderRadius:8,padding:"5px 10px"}}>
-                  <div style={{width:7,height:7,borderRadius:"50%",background:T.green600}}/>
-                  <span style={{fontSize:12,fontWeight:600,color:T.greenDk}}>Connected</span>
-                </div>
-                <button onClick={syncGmailNow} disabled={gmailSyncing}
-                  style={{background:T.green,border:"none",borderRadius:8,padding:"7px 14px",color:T.white,fontSize:12,fontWeight:700,cursor:gmailSyncing?"not-allowed":"pointer",opacity:gmailSyncing?0.7:1}}>
-                  {gmailSyncing?"Syncing…":"Sync now"}
-                </button>
-                <button onClick={disconnectGmail}
-                  style={{background:"transparent",border:"none",fontSize:12,color:T.terra700,cursor:"pointer",fontWeight:500,padding:"7px 4px"}}>
-                  Disconnect
-                </button>
-              </>
-            ) : gmailStatus?.disconnected ? (
-              <button onClick={connectGmail}
-                style={{background:T.green,border:"none",borderRadius:8,padding:"8px 16px",color:T.white,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                Reconnect Gmail →
-              </button>
-            ) : (
-              <button onClick={connectGmail}
-                style={{background:"transparent",border:"1px solid "+T.ink,borderRadius:8,padding:"8px 16px",color:T.ink,fontSize:13,fontWeight:700,cursor:"pointer"}}>
-                Connect Gmail →
-              </button>
-            )}
-          </div>
-        </div>
-        {gmailToast&&(
-          <div style={{marginTop:12,background:T.green100,border:"1px solid "+T.green200,borderRadius:8,padding:"10px 14px",fontSize:13,color:T.greenDk,fontWeight:600}}>
-            ✓ {gmailToast}
-          </div>
-        )}
-        {/* INT-4 Part 3 — HER SWITCHES, not the organisation's. A rule she
-            cannot override is a rule she will not turn on in the first place,
-            so the pause and the never-log list sit with the connection rather
-            than somewhere she has to go looking for them. */}
-        {gmailStatus?.connected && <MailboxControls/>}
-      </div>
+      {/* INT-BUILD-1 Part 0 — the one inbox card, Gmail AND Outlook. It used
+          to be a Gmail-only card here and nowhere else. */}
+      <InboxConnectCard isReadOnly={isReadOnly}/>
 
       {/* BUILD-95 §4 — the OTHER half of setting up online giving, on the same
           screen as the processor rather than a tab away. The two answer the
@@ -3110,8 +2905,10 @@ export function Settings({auth,logout,initialSection,initialFocus,onNavigate}) {
       </>}
 
       {/* ── INT-1 · Connections ───────────────────────────────────────────── */}
-      {section==="connections"&&
-        <ConnectionsView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}/>}
+      {section==="connections"&&<>
+        <InboxConnectCard isReadOnly={isReadOnly} focused={initialFocus==="inbox"}/>
+        <ConnectionsView isReadOnly={isReadOnly} isAdmin={isAdmin} onNavigate={onNavigate}/>
+      </>}
 
       {/* ── Giving Pages ──────────────────────────────────────────────────── */}
       {section==="giving"&&<>
