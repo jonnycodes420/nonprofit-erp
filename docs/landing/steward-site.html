@@ -1,4 +1,3 @@
-<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Steward Website</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -77,7 +76,7 @@ section{padding-block:112px}
 .promo .art .t{font:400 30px/1.05 var(--serif)}
 .promo .art .t b{font:800 26px var(--sans);color:var(--brass);text-transform:uppercase;letter-spacing:-.02em}
 .promo .art small{font-size:13px;opacity:.8;max-width:60%}
-.promo .art .leaf{position:absolute;right:-24px;bottom:-30px;width:160px;height:160px;border-radius:50% 0 50% 0;background:var(--emerald);transform:rotate(-12deg)}
+.promo .art .leaf{position:absolute;right:-18%;bottom:-38%;width:42%;aspect-ratio:1;height:auto;z-index:0;border-radius:50% 0 50% 0;background:var(--emerald);transform:rotate(-12deg)}
 .promo h6{margin:22px 0 14px;font:700 21px/1.25 var(--sans)}
 .promo a.go{font:800 16px var(--sans);text-transform:uppercase;letter-spacing:.02em;text-decoration:none;display:inline-flex;gap:12px;align-items:center}
 .go i{width:30px;height:30px;border-radius:50%;background:var(--emerald);display:inline-flex;align-items:center;justify-content:center}
@@ -393,6 +392,111 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
 .therm span{display:block;height:100%;background:var(--emerald-lt);border-radius:999px;transition:width .4s}
 .draft{margin-top:18px;display:inline-block;background:var(--brass-tint);color:var(--brass-text);font-weight:600;font-size:14px;padding:8px 14px;border-radius:999px}
 .lead-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:28px}.ld .photo{border-radius:6px}.ld b{display:block;font:400 28px/1.15 var(--serif);margin-top:18px}.ld span{display:block;color:var(--grey);font-size:16px;margin-top:6px}
+.promo .art .t,.promo .art small,.gb-art .t,.gb-art small{position:relative;z-index:1}
+.promo .art .t{font-size:26px}.promo .art .t b{font-size:26px}
+/* people with more life */
+.pp{width:300px;flex:none}
+.lead-g .pp{width:auto}
+.pp-frame{position:relative;background:var(--tint);border-radius:28px;padding:14px;transform:rotate(var(--tilt));transition:transform .3s ease}
+.pp:hover .pp-frame{transform:rotate(0) translateY(-6px)}
+.pp-frame .photo{border-radius:18px;filter:saturate(1.08) brightness(1.04)}
+.pp-tag{position:absolute;left:28px;bottom:28px;background:var(--ink);color:var(--white);font:600 13px var(--sans);padding:7px 12px;border-radius:999px}
+.pp b{display:block;font:400 30px/1.15 var(--serif);margin-top:22px}
+.pp span:not(.pp-tag){display:block;color:var(--grey);font-size:16px;margin-top:6px}
+.lead-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:40px 32px}
+.lead-band{display:flex;justify-content:space-between;align-items:center;gap:32px;flex-wrap:wrap;background:var(--brass-tint);border-radius:28px;padding:52px 56px}
+.lead-band p{font-size:19px;margin-top:14px;max-width:640px}
+.backed{background:var(--ink);color:var(--white);border-radius:28px;padding:56px;display:grid;gap:14px}
+.backed .eyebrow{color:var(--brass)}.backed .mix b{color:var(--emerald-lt)}.backed p{font-size:19px;color:rgba(255,255,255,.85);max-width:620px}
+/* article covers */
+.cover{position:relative;overflow:hidden;background:var(--bg);border-radius:6px;aspect-ratio:16/10;padding:28px;display:flex;align-items:flex-start}
+.cover .t{position:relative;z-index:1;font:400 clamp(26px,2.6vw,36px)/1.05 var(--serif);color:var(--cream)}
+.cover[style*="tint"] .t,.cover[style*="cream-2"] .t{color:var(--ink)}
+.cover .t b{font-style:italic;font-weight:400;color:var(--em)}
+.cover .leaf{position:absolute;right:-50px;bottom:-60px;width:170px;height:170px;border-radius:50% 0 50% 0;background:var(--em);opacity:.9;transform:rotate(-12deg)}
+.hero-g .cover{aspect-ratio:16/11}
+/* start free */
+.start{background:var(--paper);padding-block:64px 96px}
+.start-g{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:start}
+@media (max-width:1000px){.start-g{grid-template-columns:minmax(0,1fr)}}
+.start-l .lede{margin-top:22px}
+.start-why{list-style:none;padding:0;margin:30px 0 0;display:grid;gap:12px;font-size:18px}
+.start-why li{display:flex;gap:10px;align-items:center}
+.start-help{margin-top:26px;color:var(--grey)}.start-help a{color:var(--emerald);font-weight:700}
+.start-card{background:var(--white);border:1px solid var(--line);border-radius:28px;padding:40px;box-shadow:0 30px 60px -40px rgba(15,26,18,.4);margin-top:0}
+.start-card .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:600px){.start-card .two{grid-template-columns:1fr}.start-card{padding:26px}}
+.start-card .hint{font-size:14px;color:var(--grey);margin-top:-8px}
+.start-card .lbl{display:block;font-weight:600;font-size:16px;margin-bottom:8px}
+.plan{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;background:var(--emerald-tint);border-radius:16px;padding:16px 20px}
+.plan span{font-size:14px;color:var(--grey)}.plan b{font:400 28px var(--serif)}.plan em{font-style:normal;font-weight:700;color:var(--emerald)}
+.agree{display:flex!important;grid-template-columns:none;gap:12px!important;align-items:flex-start;font-weight:400!important;font-size:15px!important;color:var(--grey)}
+.agree input{margin-top:4px;width:18px;height:18px}
+.agree a{color:var(--emerald);font-weight:600}
+
+.price-page .pricing{padding-block:40px 80px;text-align:center}
+.price-page .pricing .lede{margin-inline:auto}
+.price-page .pricing .wrap>div:first-child{flex-direction:column;align-items:center!important}
+.price-page .pricing h2{font-size:clamp(34px,4vw,54px)}
+.price-page .tiers{margin-top:36px;text-align:left}
+.price-page .incl{text-align:left}
+.photo-row{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:20px;align-items:end}
+.photo-row .photo{border-radius:20px;min-height:280px}
+.photo-row .photo.tall{min-height:380px;aspect-ratio:auto}
+@media (max-width:800px){.photo-row{grid-template-columns:1fr}.photo-row .photo{min-height:220px}}
+.mission{background:var(--ink);color:var(--white);border-radius:28px;padding:64px 60px;display:grid;gap:18px}
+.mission .eyebrow{color:var(--brass)}
+.mission p{font:400 clamp(30px,3.4vw,48px)/1.2 var(--serif);max-width:1000px}
+.about-g{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:64px;align-items:start}
+@media (max-width:900px){.about-g{grid-template-columns:minmax(0,1fr)}}
+.beliefs{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:22px;margin-top:52px}
+.belief{background:var(--white);border:1px solid var(--line);border-radius:6px;padding:34px 32px}
+.belief .bn{font:400 40px/1 var(--serif);color:var(--brass-text)}
+.belief h4{font:700 23px/1.25 var(--sans);margin:18px 0 10px}
+.belief p{color:var(--grey);font-size:17px}
+.who-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:28px;margin-top:48px}
+.who-g>div{border-top:2px solid var(--emerald);padding-top:20px}
+.who-g b{font:400 26px/1.2 var(--serif)}
+.who-g p{color:var(--grey);font-size:17px;margin-top:8px}
+.about-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:20px}
+.about-facts>div{background:var(--brass-tint);border-radius:20px;padding:28px}
+.about-facts span{display:block;font-size:14px;color:var(--brass-text);font-weight:600}
+.about-facts b{display:block;font:400 28px/1.2 var(--serif);margin-top:8px}
+.crew{display:grid;grid-template-columns:330px minmax(0,1fr);gap:28px;margin-top:48px;align-items:start}
+@media (max-width:1000px){.crew{grid-template-columns:minmax(0,1fr)}.crew-tabs{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))}}
+.crew-tabs{display:flex;flex-direction:column;gap:10px}
+.crew-tab{display:flex;gap:14px;align-items:center;text-align:left;background:var(--white);border:1.5px solid var(--line);border-radius:18px;padding:14px 16px;cursor:pointer;font:inherit;color:var(--ink);transition:transform .2s,border-color .2s}
+.crew-tab:hover{transform:translateX(4px)}
+.crew-tab b{display:block;font:600 18px var(--sans)}.crew-tab em{display:block;font-style:normal;font-size:14px;color:var(--grey)}
+.crew-tab[aria-selected="true"]{border-color:var(--ink);box-shadow:0 14px 30px -20px rgba(15,26,18,.5)}
+.crew-ic{flex:none;width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.crew-ic.big{width:64px;height:64px;border-radius:18px}
+.c-emerald .crew-ic{background:var(--emerald);color:var(--white)}
+.c-brass .crew-ic{background:var(--brass);color:var(--ink)}
+.c-ink .crew-ic{background:var(--ink);color:var(--brass)}
+.crew-pane{background:var(--white);border:1px solid var(--line);border-radius:28px;padding:36px}
+.crew-pane[hidden]{display:none}
+.crew-head{display:flex;gap:18px;align-items:center}
+.crew-head h3{font:400 38px/1.1 var(--serif)}.crew-head p{color:var(--grey);font-size:17px;margin-top:4px}
+.crew-flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:28px}
+@media (max-width:800px){.crew-flow{grid-template-columns:minmax(0,1fr)}}
+.cf{border-radius:18px;padding:22px;position:relative}
+.cf span{display:block;font:700 13px var(--sans);margin-bottom:10px}
+.cf.say{background:var(--brass-tint)}.cf.say p{font:400 22px/1.3 var(--serif)}
+.cf.plan{background:var(--paper);border:1px solid var(--line)}
+.cf.plan ol{margin:0;padding-left:20px;display:grid;gap:8px;font-size:15.5px}
+.cf.ok{background:var(--ink);color:var(--white)}.cf.ok span{color:var(--brass)}.cf.ok p{font-size:17px}
+.crew-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px;font-size:13px}
+.crew-btns b{background:var(--emerald-lt);color:var(--ink);padding:7px 12px;border-radius:999px}
+.crew-btns i{font-style:normal;border:1px solid rgba(255,255,255,.3);padding:6px 11px;border-radius:999px}
+.crew-power{display:flex;gap:10px 26px;flex-wrap:wrap;margin-top:24px;font-size:16px}
+.crew-power span{display:flex;gap:8px;align-items:center}
+.crew-never{margin-top:28px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:16px}
+.crew-never b{margin-right:6px}
+.crew>*,.crew-tab span{min-width:0}
+@media (max-width:600px){.crew-tabs{grid-template-columns:minmax(0,1fr)!important}.crew-pane{padding:22px}.crew-head h3{font-size:30px}}
+.crew-never span{background:var(--white);border:1px dashed var(--grey);border-radius:999px;padding:8px 14px;text-decoration:line-through;text-decoration-color:var(--brass);text-decoration-thickness:2px}
+
 #page:focus{outline:none}
 .toggle button{text-transform:none;letter-spacing:0;font-size:14px}
 @media (max-width:1000px){.alt,.alt.flip{grid-template-columns:minmax(0,1fr)}}
@@ -435,7 +539,7 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
 .gb-art{background:var(--ink);color:var(--cream);padding:44px;position:relative;overflow:hidden;min-height:340px;display:flex;flex-direction:column;justify-content:space-between}
 .gb-art .t{font:400 44px/1.05 var(--serif)}.gb-art .t b{font-style:italic;font-weight:400;color:var(--brass)}
 .gb-art small{opacity:.8;font-size:15px}
-.gb-art .leaf{position:absolute;right:-30px;bottom:-40px;width:200px;height:200px;border-radius:50% 0 50% 0;background:var(--emerald);transform:rotate(-12deg)}
+.gb-art .leaf{position:absolute;right:-60px;bottom:-70px;width:180px;height:180px;z-index:0;border-radius:50% 0 50% 0;background:var(--emerald);transform:rotate(-12deg)}
 .gb-txt{padding:52px 56px;display:flex;flex-direction:column;gap:20px;align-items:flex-start;justify-content:center}
 .gb-txt p{font-size:19px;color:var(--grey);max-width:560px}
 @media (max-width:900px){.guide-band{grid-template-columns:minmax(0,1fr)}.gb-txt{padding:34px 28px}}
@@ -450,10 +554,11 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
   <div class="wrap bar">
     <a class="word" href="#/" aria-label="Steward home">Steward</a>
     <ul class="menu" role="list">
-      <li><button type="button" aria-expanded="false" aria-controls="m-plat" data-m>Platform <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
-      <li><button type="button" aria-expanded="false" aria-controls="m-why" data-m>Why Steward <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
+      <li><button type="button" aria-expanded="false" aria-controls="m-plat" data-m>Product <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
+      <li><button type="button" aria-expanded="false" aria-controls="m-why" data-m>Why switch <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
       <li><a href="#/pricing">Pricing</a></li>
-      <li><button type="button" aria-expanded="false" aria-controls="m-res" data-m>Resources <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
+      <li><a href="#/leadership">Leadership</a></li>
+      <li><button type="button" aria-expanded="false" aria-controls="m-res" data-m>Learn <svg width="12" height="8" viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button></li>
     </ul>
     <div class="right">
       <a class="login" href="https://stewardapp.dev/login">Log in</a>
@@ -557,9 +662,9 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
         <h5>Free tools</h5>
         <div class="feat2">
           <a class="mi" href="#/tools/lost-and-found" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><div><b>Lost &amp; Found donor audit</b><span>See who you're about to lose. Runs in your browser.</span></div></a>
-          <a class="mi" href="#/tools/retention" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h8"/></svg><div><b>Donor retention calculator</b><span>Your retention rate, and what a few points are worth.</span></div></a>
-          <a class="mi" href="#/tools/lapsed-cost" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><div><b>Lapsed donor cost calculator</b><span>What last year's lapsed donors used to give.</span></div></a>
-          <a class="mi" href="#/tools/thermometer" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.8V4a2 2 0 1 0-4 0v10.8a4 4 0 1 0 4 0z"/></svg><div><b>Fundraising thermometer</b><span>A campaign goal bar for your website.</span></div></a>
+          <a class="mi" href="#/tools/retention" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h2M12 11h2M16 11h0M8 15h2M12 15h2M8 18h8"/></svg><div><b>Keep Rate calculator</b><span>Your retention rate, and what a few points are worth.</span></div></a>
+          <a class="mi" href="#/tools/lapsed-cost" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg><div><b>Lapse Ledger</b><span>What last year's lapsed donors used to give.</span></div></a>
+          <a class="mi" href="#/tools/thermometer" style="align-items:start"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.8V4a2 2 0 1 0-4 0v10.8a4 4 0 1 0 4 0z"/></svg><div><b>Goal Gauge</b><span>A campaign goal bar for your website.</span></div></a>
         </div>
       </div>
       <div class="promo">
@@ -570,7 +675,7 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
     </div>
   </div>
 
-  <div class="drawer" id="drawer" hidden><details><summary>Platform</summary><a class="mi" href="#/platform"><span></span><div><b>Platform overview</b></div></a><a class="mi" href="#/crm"><span></span><div><b>Steward CRM</b></div></a><a class="mi" href="#/volunteer"><span></span><div><b>Steward Volunteer</b></div></a><a class="mi" href="#/agent"><span></span><div><b>Steward Agent</b></div></a><a class="mi" href="#/connections"><span></span><div><b>Connections</b></div></a><a class="mi" href="#/onboarding"><span></span><div><b>Onboarding and support</b></div></a><a class="mi" href="#/features"><span></span><div><b>All features</b></div></a></details><details><summary>Why Steward</summary><a class="mi" href="#/why"><span></span><div><b>The case for retention</b></div></a><a class="mi" href="#/move"><span></span><div><b>Moving to Steward</b></div></a><a class="mi" href="#/for"><span></span><div><b>Who it's for</b></div></a><a class="mi" href="#/security"><span></span><div><b>Security and trust</b></div></a><a class="mi" href="#/about"><span></span><div><b>About</b></div></a><a class="mi" href="#/leadership"><span></span><div><b>Leadership</b></div></a><a class="mi" href="#/partners"><span></span><div><b>Partners</b></div></a></details><details><summary>Resources</summary><a class="mi" href="#/guides"><span></span><div><b>Guides</b></div></a><a class="mi" href="#/templates"><span></span><div><b>Templates</b></div></a><a class="mi" href="#/articles"><span></span><div><b>Articles</b></div></a><a class="mi" href="#/glossary"><span></span><div><b>Glossary</b></div></a><a class="mi" href="#/tools"><span></span><div><b>Free tools</b></div></a><a class="mi" href="#/faq"><span></span><div><b>FAQ</b></div></a><a class="mi" href="#/help"><span></span><div><b>Help centre</b></div></a></details><details><summary><a href="#/pricing" style="text-decoration:none">Pricing</a></summary></details><p style="margin-top:26px"><a href="https://stewardapp.dev/login" style="font-weight:600">Log in</a></p>
+  <div class="drawer" id="drawer" hidden><details><summary>Product</summary><a class="mi" href="#/platform"><span></span><div><b>Platform overview</b></div></a><a class="mi" href="#/crm"><span></span><div><b>Steward CRM</b></div></a><a class="mi" href="#/volunteer"><span></span><div><b>Steward Volunteer</b></div></a><a class="mi" href="#/agent"><span></span><div><b>Steward Agent</b></div></a><a class="mi" href="#/connections"><span></span><div><b>Connections</b></div></a><a class="mi" href="#/onboarding"><span></span><div><b>Onboarding and support</b></div></a><a class="mi" href="#/features"><span></span><div><b>All features</b></div></a></details><details><summary>Why switch</summary><a class="mi" href="#/why"><span></span><div><b>The case for retention</b></div></a><a class="mi" href="#/move"><span></span><div><b>Moving to Steward</b></div></a><a class="mi" href="#/for"><span></span><div><b>Who it's for</b></div></a><a class="mi" href="#/security"><span></span><div><b>Security and trust</b></div></a><a class="mi" href="#/about"><span></span><div><b>About</b></div></a><a class="mi" href="#/leadership"><span></span><div><b>Leadership</b></div></a><a class="mi" href="#/partners"><span></span><div><b>Partners</b></div></a></details><details><summary>Learn</summary><a class="mi" href="#/guides"><span></span><div><b>Guides</b></div></a><a class="mi" href="#/templates"><span></span><div><b>Templates</b></div></a><a class="mi" href="#/articles"><span></span><div><b>Articles</b></div></a><a class="mi" href="#/glossary"><span></span><div><b>Glossary</b></div></a><a class="mi" href="#/tools"><span></span><div><b>Free tools</b></div></a><a class="mi" href="#/faq"><span></span><div><b>FAQ</b></div></a><a class="mi" href="#/help"><span></span><div><b>Help centre</b></div></a></details><details><summary><a href="#/pricing" style="text-decoration:none">Pricing</a></summary></details><p style="margin-top:26px"><a href="https://stewardapp.dev/login" style="font-weight:600">Log in</a></p>
   </div>
 </header>
 
@@ -583,7 +688,7 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
         <p class="lede">Steward shows you who is drifting while a phone call still fixes it, then runs the rest of your development office: gifts, events, volunteers, email and month end, in one calm place.</p>
         <div class="ctas">
           <a class="pill pill-ink" href="#/demo"><i></i>Book a demo</a>
-          <a class="pill pill-soft" href="#/platform"><i></i>Tour Steward</a>
+          <a class="pill pill-soft" href="#/start"><i></i>Start free</a>
         </div>
         <div class="proof">
           <span>Move in about a day</span><span>Month to month</span><span>No platform fee</span>
@@ -617,19 +722,19 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
       </div>
       <div class="panes">
         <div class="pane" data-pane="0">
-          <div><h3 class="mix h-m">See drift <b>while a call still fixes it.</b></h3><p>Each donor measured against their own rhythm, ranked by what is at stake, with the reason in plain words and a person named on the next step.</p><a class="pill pill-ink" href="#/features/drift"><i></i>Take a tour</a></div>
+          <div><h3 class="mix h-m">See drift <b>while a call still fixes it.</b></h3><p>Each donor measured against their own rhythm, ranked by what is at stake, with the reason in plain words and a person named on the next step.</p><a class="pill pill-ink" href="#/features/drift"><i></i>Learn more</a></div>
           <div class="stage"><div class="bg" style="background:var(--brass-tint)"></div><div class="ui" role="img" aria-label="Going quiet list"><div class="uh"><i><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></i>Going quiet</div><div class="row"><div class="av">MC</div><div><div class="nm">Margaret Chen</div><div class="mt">Gives $15,000 each August · <em>no gift yet</em></div></div><div class="act">Call</div></div><div class="row"><div class="av">WF</div><div><div class="nm">Walter Fairbanks</div><div class="mt">Monthly $250 · <em>card failed twice</em></div></div><div class="act">Fix card</div></div><div class="row"><div class="av">RT</div><div><div class="nm">Rosalind Thackeray</div><div class="mt">Gave $21,529 · <em>14 months since a visit</em></div></div><div class="act">Book visit</div></div></div></div>
         </div>
         <div class="pane" data-pane="1" hidden>
-          <div><h3 class="mix h-m">Give in <b>under a minute.</b></h3><p>Giving pages on your brand, events with tickets and seating, and peer-to-peer teams, all landing on the same donor record. Gifts go to your own Stripe account with no platform fee.</p><a class="pill pill-ink" href="#/features/forms"><i></i>Take a tour</a></div>
+          <div><h3 class="mix h-m">Give in <b>under a minute.</b></h3><p>Giving pages on your brand, events with tickets and seating, and peer-to-peer teams, all landing on the same donor record. Gifts go to your own Stripe account with no platform fee.</p><a class="pill pill-ink" href="#/features/forms"><i></i>Learn more</a></div>
           <div class="stage"><div class="bg" style="background:var(--emerald-tint)"></div><div class="ui" role="img" aria-label="Spring appeal results"><div class="uh"><i><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></i>Spring appeal</div><div class="tot"><span>Gifts</span><em>one-time and monthly</em><span>186</span></div><div class="tot"><span>Raised</span><em>to your Stripe</em><span class="ok">$24,610</span></div><div class="tot"><span>New monthly donors</span><em>this month</em><span>19</span></div><div class="tot"><span>Platform fee</span><em>on every gift</em><span>$0</span></div></div></div>
         </div>
         <div class="pane" data-pane="2" hidden>
-          <div><h3 class="mix h-m">Month end <b>without the scramble.</b></h3><p>Receipts and year-end statements in a batch, payouts matched to the cent and a gift file your bookkeeper trusts. Every change in the audit log.</p><a class="pill pill-ink" href="#/features/finance"><i></i>Take a tour</a></div>
+          <div><h3 class="mix h-m">Month end <b>without the scramble.</b></h3><p>Receipts and year-end statements in a batch, payouts matched to the cent and a gift file your bookkeeper trusts. Every change in the audit log.</p><a class="pill pill-ink" href="#/features/finance"><i></i>Learn more</a></div>
           <div class="stage"><div class="bg" style="background:var(--cream)"></div><div class="ui" role="img" aria-label="Month end"><div class="uh"><i><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M5 12l4 4 10-10"/></svg></i>Month end · September</div><div class="tot"><span>Gifts recorded</span><em>all sources</em><span>412</span></div><div class="tot"><span>Stripe payouts</span><em>matched</em><span class="ok">$31,204.55</span></div><div class="tot"><span>Letters ready</span><em>this week</em><span>64</span></div><div class="tot"><span>Bookkeeper file</span><em>ready</em><span>Download</span></div></div></div>
         </div>
         <div class="pane" data-pane="3" hidden>
-          <div><h3 class="mix h-m">Every number <b>opens.</b></h3><p>Retention, LYBUNT and SYBUNT, campaigns and board summaries. Click any figure and see the people behind it, so you always know where to spend the next hour.</p><a class="pill pill-ink" href="#/features/reports"><i></i>Take a tour</a></div>
+          <div><h3 class="mix h-m">Every number <b>opens.</b></h3><p>Retention, LYBUNT and SYBUNT, campaigns and board summaries. Click any figure and see the people behind it, so you always know where to spend the next hour.</p><a class="pill pill-ink" href="#/features/reports"><i></i>Learn more</a></div>
           <div class="stage"><div class="bg" style="background:var(--brass-tint)"></div><div class="ui" role="img" aria-label="Retention"><div class="uh"><i><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></i>Retention · this year</div><div class="tot"><span>Donors last year</span><em>2025</em><span>1,184</span></div><div class="tot"><span>Gave again</span><em>so far</em><span>702</span></div><div class="tot"><span>Retention</span><em>to date</em><span class="ok">59.3%</span></div><div class="tot"><span>LYBUNT</span><em>worth a call</em><span>482</span></div></div></div>
         </div>
       </div>
@@ -670,7 +775,10 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
     </div>
   </section>
 
-  <div id="reel-home"></div>
+  <section style="padding-top:0"><div class="wrap"><div class="lead-band">
+      <div><div class="eyebrow">Leadership</div><h2 class="mix h-m" style="margin-top:16px">A founder who answers, <b>advisors who've raised.</b></h2><p>Steward is led by its founder with advisors from nonprofit development, arts and philanthropy. Funded by angel investment.</p></div>
+      <a class="pill pill-ink" href="#/leadership"><i></i>Meet our leadership</a>
+    </div></div></section>
 
   <section style="padding-top:0">
     <div class="wrap">
@@ -700,7 +808,7 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
   <section class="ready">
     <div class="wrap ready-g">
       <div><div class="eyebrow">Ready to get started?</div><h2 class="mix h-m" style="margin-top:16px">Twenty minutes, <b>your own file.</b></h2><a class="pill pill-ink" style="margin-top:26px" href="#/demo"><i></i>Book a demo</a></div>
-      <div><div class="eyebrow">Want to see it first?</div><h2 class="mix h-m" style="margin-top:16px">Walk through <b>the platform.</b></h2><a class="pill pill-soft" style="margin-top:26px" href="#/platform"><i></i>Take a tour</a></div>
+      <div><div class="eyebrow">Rather start now?</div><h2 class="mix h-m" style="margin-top:16px">Thirty days <b>free.</b></h2><a class="pill pill-soft" style="margin-top:26px" href="#/start"><i></i>Start free</a></div>
     </div>
   </section>
 </div><div id="pricing-home" hidden><section class="pricing" id="pricing">
@@ -732,7 +840,7 @@ a.card:hover{border-color:var(--emerald);transform:translateY(-2px)}
 
 <footer>
   <div class="wrap">
-    <div class="fcols"><div><h5>Platform</h5><a href="#/platform">Platform overview</a><a href="#/crm">Steward CRM</a><a href="#/volunteer">Steward Volunteer</a><a href="#/agent">Steward Agent</a><a href="#/connections">Connections</a><a href="#/features">All features</a><a href="#/pricing">Pricing</a></div><div><h5>Resources</h5><a href="#/why">The case for retention</a><a href="#/articles">Articles</a><a href="#/guides">Guides</a><a href="#/templates">Templates</a><a href="#/tools">Free tools</a><a href="#/partners">Partners</a><a href="#/faq">FAQ</a></div><div><h5>Customer resources</h5><a href="https://stewardapp.dev/login">Log in</a><a href="#/help">Help centre</a><a href="#/developers">API documentation</a><a href="#/whats-new">What's new</a><a href="#/move">Moving to Steward</a></div><div><h5>Company</h5><a href="#/about">About us</a><a href="#/leadership">Leadership</a><a href="#/security">Security and trust</a><a href="#/for">Who it's for</a><a href="#/partners">Partner with us</a><a href="#/contact">Contact</a></div><div><h5>Featured guides</h5><a href="#/guides/first-year-retention">The first-year retention plan</a><a href="#/guides/major-donor-visits">Major donor visits for small shops</a><a href="#/articles/state-of-retention">The state of donor retention</a></div></div>
+    <div class="fcols"><div><h5>Product</h5><a href="#/platform">Platform overview</a><a href="#/crm">Steward CRM</a><a href="#/volunteer">Steward Volunteer</a><a href="#/agent">Steward Agent</a><a href="#/connections">Connections</a><a href="#/features">All features</a><a href="#/pricing">Pricing</a></div><div><h5>Learn</h5><a href="#/why">The case for retention</a><a href="#/articles">Articles</a><a href="#/guides">Guides</a><a href="#/templates">Templates</a><a href="#/tools">Free tools</a><a href="#/partners">Partners</a><a href="#/faq">FAQ</a></div><div><h5>Customer resources</h5><a href="https://stewardapp.dev/login">Log in</a><a href="#/help">Help centre</a><a href="#/developers">API documentation</a><a href="#/whats-new">What's new</a><a href="#/move">Moving to Steward</a></div><div><h5>Company</h5><a href="#/about">About us</a><a href="#/leadership">Leadership</a><a href="#/security">Security and trust</a><a href="#/for">Who it's for</a><a href="#/partners">Partner with us</a><a href="#/contact">Contact</a></div><div><h5>Featured guides</h5><a href="#/guides/first-year-retention">The first-year retention plan</a><a href="#/guides/major-donor-visits">Major donor visits for small shops</a><a href="#/articles/state-of-retention">The state of donor retention</a></div></div>
     <div class="legal"><span>© 2026 Steward Software LLC · Wilmore, Kentucky</span><span><a href="#/security">Security</a> / <a href="#/legal/terms">Terms</a> / <a href="#/legal/privacy">Privacy</a> / <a href="#/legal/accessibility">Accessibility</a></span></div>
   </div>
 </footer>
@@ -796,7 +904,7 @@ function crumbs(list){return '<nav class="crumbs wrap" aria-label="Breadcrumb"><
 function hero(o){
   return crumbs(o.crumbs||[[o.eyebrow]])+'<section class="hero phero"><div class="wrap hero-g'+(o.photo?'':' solo')+'"><div>'+
    '<div class="eyebrow">'+o.eyebrow+'</div><h1 class="mix h-xl">'+o.h+'</h1><p class="lede">'+o.lede+'</p>'+
-   (o.noCta?'':'<div class="ctas"><a class="pill pill-ink" href="#/demo"><i></i>Book a demo</a>'+(o.cta2?'<a class="pill pill-soft" href="'+o.cta2[1]+'"><i></i>'+o.cta2[0]+'</a>':'<a class="pill pill-soft" href="#/pricing"><i></i>See pricing</a>')+'</div>')+
+   (o.noCta?'':'<div class="ctas"><a class="pill pill-ink" href="#/demo"><i></i>Book a demo</a>'+'<a class="pill pill-soft" href="#/start"><i></i>Start free</a>'+'</div>')+
    (o.proof?'<div class="proof">'+o.proof.map(function(p){return '<span>'+p+'</span>';}).join('')+'</div>':'')+
    '</div>'+(o.photo?'<div class="collage one">'+ph(o.photo,'p1')+(o.float||'')+'</div>':'')+'</div></section>';
 }
@@ -837,7 +945,7 @@ function band(o){
 function finalCta(){
   return '<section style="padding-top:0"><div class="final"><div class="wrap" style="padding-block:110px"><div class="eyebrow">Ready to get started?</div>'+
    '<h2 class="mix h-l" style="margin-top:22px">Every donor is a person. <b style="color:var(--emerald-lt)">Keep them.</b></h2><p>Book a 20-minute demo with your own file, or start free for 30 days.</p>'+
-   '<div class="ctas" style="margin-top:36px"><a class="pill pill-white" href="#/demo"><i></i>Book a demo</a><a class="pill pill-soft" href="https://stewardapp.dev/signup"><i></i>Start free</a></div></div></div></section>';
+   '<div class="ctas" style="margin-top:36px"><a class="pill pill-white" href="#/demo"><i></i>Book a demo</a><a class="pill pill-soft" href="#/start"><i></i>Start free</a></div></div></div></section>';
 }
 function prose(html){return '<section style="padding-top:40px"><div class="wrap prose">'+html+'</div></section>';}
 
@@ -875,17 +983,16 @@ PAGES['agent']=function(){return hero({eyebrow:'Steward Agent',crumbs:[['Platfor
  block({tint:'brass-tint',h:'A plan you can read before anything happens.',p:'Ask for "thank-you drafts for everyone who gave over $500 this week" and the Agent shows the list, the drafts and the steps. You change what you want, then approve.',ui:ui('Agent · plan','spark',[['1','Find gifts over $500','Since Monday · 23 donors','Done','c'],['2','Draft thank-you letters','In your voice, signed by Dana','Review'],['3','Add a call task for 4 board prospects','Assigned to Dana','Review']])})+
  block({flip:1,tint:'emerald-tint',h:'Every action recorded, every action reversible.',p:'Whatever the Agent does is in the audit log with who approved it. Changed your mind? Undo it from the same screen.',photo:'two staff side by side at a desk, one pointing at the screen, both smiling.'})+
  '</div></section>'+
- '<section class="pricing"><div class="wrap"><div class="eyebrow">Six assistants</div><h2 class="mix h-l" style="margin-top:22px">One engine, <b>six jobs.</b></h2><div class="cards">'+
- [['Writer','Thank-yous, appeals and updates in your voice, from the donor\'s own history.'],['Researcher','Briefs before a visit: giving, notes, emails and what changed since you last met.'],['Analyst','Plain answers about your file, with every number linked to its rows.'],['Recurring','Finds failed cards and paused plans and drafts the note to fix them.'],['Onboarding','Builds a first-year journey for each new donor and names who owns each step.'],['Data','Finds duplicates, fixes addresses and tidies records, all shown before it changes anything.']].map(function(a){return '<div class="card"><span class="ci">'+ic('spark',26)+'</span><h4>'+a[0]+'</h4><p>'+a[1]+'</p></div>';}).join('')+'</div></div></section>'+
+ agentCrew()+
  faqS([['Will the Agent email our donors?','Never on its own. It drafts. Your staff review and send.'],['Can it move money or change a gift?','No. The Agent never touches payments, and gift changes go through the normal screens with the audit log.'],['Is the Agent included?','Yes, on every plan.']])+finalCta();};
 
 PAGES['connections']=function(){
  var L=[['Stripe','Gifts and payouts flow in; every payout matched to its gifts.','Live'],['Spreadsheets and CSV','Any export, mapped once and remembered.','Live'],['Bookkeeper file','A monthly gift file that foots to the cent.','Live'],['Open API','Scoped keys and webhooks for your own tools.','Live'],
-  ['Mailchimp','Audiences and tags kept in step with Steward.','Set up with you'],['Gmail and Outlook','Emails with donors land on their profile.','Set up with you'],['PayPal','Gifts come in and are watched for gaps.','Set up with you'],['Givebutter','Campaign gifts pulled in.','Set up with you'],['Donorbox','Gifts and recurring plans pulled in.','Set up with you'],['Square','Sales and donations read in.','Set up with you'],['Xero','Gift data shaped for your books.','Set up with you'],
+  ['Mailchimp','Audiences and tags kept in step with Steward.','Live'],['Gmail and Outlook','Emails with donors land on their profile. Until Google finishes verifying Steward, Gmail shows a one-time unverified-app screen.','Live'],['PayPal','Gifts come in and are watched for gaps.','Live'],['Givebutter','Campaign gifts pulled in.','Live'],['Donorbox','Gifts and recurring plans pulled in.','Live'],['Xero','Gift data shaped for your books.','Live'],
   ['QuickBooks Online','Direct connection.','Coming'],['Zapier','Connect hundreds of other tools.','Coming'],['Constant Contact','List sync.','Coming'],['Forward-to-log email','Copy a Steward address on any email to log it.','Coming']];
  return hero({eyebrow:'Connections',crumbs:[['Platform','#/platform'],['Connections']],h:'Keep your tools. <b>Steward watches them.</b>',lede:'Gifts flow in from the giving tools you already use. Steward checks every payout against its gifts and tells you the day a connection goes quiet, before a month of gifts goes missing.',photo:'a finance volunteer and a director comparing notes at a desk, both smiling.'})+
  '<section style="padding-top:0"><div class="wrap">'+block({tint:'cream',h:'A quiet connection is a warning.',p:'If a tool that usually sends four gifts a week sends none for twelve days, Steward flags it on Home. Most lost gifts are a broken connection nobody noticed.',ui:ui('Connections','link',[['St','Stripe','142 gifts · $18,240 this month','Healthy','c'],['Pp','PayPal','37 gifts · $2,915','Healthy','c'],['Gb','Givebutter','Usually 4 a week · none in 12 days','Quiet','q']])})+'</div></section>'+
- '<section class="pricing"><div class="wrap"><div class="eyebrow">Every connection, honestly labeled</div><h2 class="mix h-m" style="margin-top:22px">What works today, <b>and what is next.</b></h2><p class="lede" style="margin-top:18px">Live means you can switch it on yourself. Set up with you means it works and we connect it on your onboarding call. Coming means it is being built.</p><div class="conn">'+
+ '<section class="pricing"><div class="wrap"><div class="eyebrow">Every connection, honestly labeled</div><h2 class="mix h-m" style="margin-top:22px">What works today, <b>and what is next.</b></h2><p class="lede" style="margin-top:18px">Live means you can connect it today from Settings, and we will happily do it with you on your onboarding call. Coming means it is being built.</p><div class="conn">'+
  L.map(function(c){var k=c[2]==='Live'?'':c[2]==='Coming'?' soon':' q';return '<div class="cn"><div><b>'+c[0]+'</b><span>'+c[1]+'</span></div><span class="chip'+k+'">'+c[2]+'</span></div>';}).join('')+'</div></div></section>'+
  faqS([['Do we have to stop using our giving platform?','No. Keep it. Steward pulls the gifts in and watches the connection.'],['What does Steward read from my inbox?','Only emails with people who are already in Steward. Everything else is ignored, and you can pause or hide any thread.'],['Can our developer build on Steward?','Yes. The open API has scoped keys and webhooks. See the developer page.']])+finalCta();};
 
@@ -894,7 +1001,7 @@ PAGES['onboarding']=function(){return hero({eyebrow:'Onboarding and support',cru
  incl('What every organization <b>gets.</b>',['A named person for the move','Mapping of your old fields','Connections set up on a call','Thirty days free while you settle in','Staff training on a call','Email answers from a person','Your data exported any time','Undo the move for 30 days'],'Included')+
  finalCta();};
 
-PAGES['pricing']=function(){return crumbs([['Pricing']])+'<div id="pricing-slot"></div>'+
+PAGES['pricing']=function(){return crumbs([['Pricing']])+'<div id="pricing-slot" class="price-page"></div>'+
  '<section><div class="wrap"><div class="eyebrow">What counts as active</div><h2 class="mix h-l" style="margin-top:22px">You only pay for <b>people who are giving.</b></h2><p class="lede" style="margin-top:22px">An active donor is anyone with a gift or recorded activity in the last 24 months. Everyone else stays in Steward, searchable and reportable, at no cost.</p>'+
  '<div class="cards">'+[['Counts','Gave $50 in March last year.'],['Counts','No gifts, but volunteered last month.'],['Does not count','Last gave in 2021.'],['Does not count','A board member\'s spouse with no activity.']].map(function(c){return '<div class="card"><span class="k">'+c[0]+'</span><p style="color:var(--ink);font-size:19px">'+c[1]+'</p></div>';}).join('')+'</div></div></section>'+
  '<section class="pricing"><div class="wrap"><div class="eyebrow">Compare plans</div><h2 class="mix h-m" style="margin-top:22px">Same features. <b>Different file sizes.</b></h2><div class="tbl"><table><thead><tr><th></th><th>Seed</th><th>Sapling</th><th>Orchard</th><th>Forest</th></tr></thead><tbody>'+
@@ -967,10 +1074,10 @@ var FEAT={
   incl:['Ready-made first-year journey','Build your own journeys','Calls, letters, emails and visits','A person on every step','Steps on the Home screen','Drafts ready for review','Progress on each donor','Journeys started by gifts or events']},
  'inbox':{name:'Inbox logging',icon:'inbox',short:'Emails with donors land on their profile.',h:'Your inbox, <b>on the record.</b>',lede:'Connect Gmail or Outlook once and every email with a donor lands on their profile, replies included. Only people already in Steward. Nothing else is read.',photo:'a director reading an email reply on her laptop, delighted.',
   problem:'The most important donor conversations happen in one person\'s inbox. When they leave, the history leaves with them.',
-  steps:[['Connect your inbox','Gmail or Outlook, set up with you on a call.'],['Only donors are logged','Emails with people in Steward land on their profile. Everything else is ignored.'],['You stay in charge','Pause logging, hide a thread or keep an address off the record.']],
+  steps:[['Connect your inbox','Gmail or Outlook, connected in about a minute.'],['Only donors are logged','Emails with people in Steward land on their profile. Everything else is ignored.'],['You stay in charge','Pause logging, hide a thread or keep an address off the record.']],
   ui:['Margaret Chen · emails','inbox',[['MC','Re: Scholarship update','Thursday · replied in 2 hours','Open'],['MC','Coffee next week?','Last month · 4 messages','Open'],['DA','Thank you for August','Sent by Dana','Open']]],
   incl:['Gmail and Outlook','Only people already in Steward','Replies on the donor profile','Pause or hide any thread','Addresses you never log','Shared history when staff change'],
-  faq:[['Does Steward read all my email?','No. It only stores emails with people already in Steward.'],['Is this live today?','Yes. We set it up with you on your onboarding call.']]},
+  faq:[['Does Steward read all my email?','No. It only stores emails with people already in Steward.'],['Is this live today?','Yes. Connect it from Settings in about a minute.']]},
  'audit':{name:'Audit log and security',icon:'audit',short:'Every change recorded. Nobody can edit the log.',h:'Who changed what, <b>and when.</b>',lede:'Every gift, edit, export, download and sign-in is recorded with the before and after. The log cannot be edited by anyone, including us.',photo:'a treasurer and a director reviewing a report together, relaxed and smiling.',
   problem:'When a number changes and nobody knows why, trust goes with it. Auditors and boards want to see the trail.',
   steps:[['Everything is recorded','Every change and every download, with the person and the time.'],['Before and after','See exactly what changed on any record.'],['Agent actions included','Anything the Agent did shows who approved it.']],
@@ -985,7 +1092,7 @@ var FEAT={
   problem:'Development says one number, finance says another, and month end turns into a hunt for the difference.',
   steps:[['Gifts flow in','From Stripe and your other giving tools.'],['Payouts matched','Every payout checked against its gifts, fees included.'],['Hand off the file','A clean monthly file for your bookkeeper, by fund.']],
   ui:['Month end · September','finance',null,[['Gifts recorded','all sources','412'],['Stripe payouts','matched','$31,204.55',1],['Fees','card processing','$912.10'],['Bookkeeper file','ready','Download']]],
-  incl:['Stripe payouts matched','Fees shown per gift','Gifts by fund','Monthly bookkeeper file','Xero, set up with you','QuickBooks direct, coming']},
+  incl:['Stripe payouts matched','Fees shown per gift','Gifts by fund','Monthly bookkeeper file','Xero connection','QuickBooks direct, coming']},
  'receipts':{name:'Receipts and statements',icon:'receipts',short:'Thank-yous and year-end statements in a batch.',h:'Thank people properly, <b>in a batch.</b>',lede:'Acknowledgment letters, labels and year-end statements for everyone at once, in your own words and letterhead, with the deductible amount stated correctly.',photo:'volunteers folding letters at a long table, chatting and smiling.',
   problem:'Year-end statements take a week of mail merge. Thank-you letters wait until someone finds an afternoon.',
   steps:[['Write it once','Letters in your words, with merge fields from the donor record.'],['Batch the week','Everyone who gave this week, ready to print or email.'],['Year-end in an afternoon','Statements for every donor with the deductible amount correct.']],
@@ -1159,15 +1266,15 @@ PAGES['whats-new']=function(){return hero({eyebrow:'What\'s new',crumbs:[['Custo
 
 /* ---------- FREE TOOLS ---------- */
 PAGES['tools']=function(){return hero({eyebrow:'Free tools',crumbs:[['Resources','#/resources'],['Free tools']],h:'Free tools, <b>no signup.</b>',lede:'Run them on your own numbers. Nothing you type leaves your browser.',noCta:1})+
- cards([['#/tools/lost-and-found','Lost & Found donor audit','See who you are about to lose from your own giving export.','drift'],['#/tools/retention','Donor retention calculator','Your retention rate, and what a few points are worth.','reports'],['#/tools/lapsed-cost','Lapsed donor cost calculator','What last year\'s lapsed donors used to give.','finance'],['#/tools/thermometer','Fundraising thermometer','A campaign goal bar for your website.','events']])+finalCta();};
+ cards([['#/tools/lost-and-found','Lost & Found donor audit','See who you are about to lose from your own giving export.','drift'],['#/tools/retention','Keep Rate calculator','Your retention rate, and what a few points are worth.','reports'],['#/tools/lapsed-cost','Lapse Ledger','What last year\'s lapsed donors used to give.','finance'],['#/tools/thermometer','Goal Gauge','A campaign goal bar for your website.','events']])+finalCta();};
 PAGES['tools/lost-and-found']=function(){return hero({eyebrow:'Lost & Found · free tool',crumbs:[['Free tools','#/tools'],['Lost & Found']],h:'See who you\'re <b>about to lose.</b>',lede:'Drop in a giving export and Lost & Found shows your lapsing donors and what they used to give. It runs entirely in your browser. Nothing is uploaded and nothing is stored.',photo:'a smiling woman reading a handwritten thank-you card at her kitchen table.',cta2:['Run the free audit','https://stewardapp.dev/lost-and-found']})+
  steps('How it works','A minute, <b>start to finish.</b>',[['Export your gifts','Any spreadsheet with donor, date and amount.'],['Drop it in','The audit reads it in your browser. Nothing is uploaded.'],['See who is slipping','Lapsing donors ranked by what they used to give.']])+statBand(4)+finalCta();};
-PAGES['tools/retention']=function(){return hero({eyebrow:'Donor retention calculator',crumbs:[['Free tools','#/tools'],['Retention calculator']],h:'What is your <b>retention worth?</b>',lede:'Enter last year\'s donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean.',noCta:1})+
+PAGES['tools/retention']=function(){return hero({eyebrow:'Keep Rate calculator',crumbs:[['Free tools','#/tools'],['Keep Rate calculator']],h:'What is your <b>retention worth?</b>',lede:'Enter last year\'s donors and how many gave again. See your rate beside the national figure, and what a five-point lift would mean.',noCta:1})+
  '<section style="padding-top:0"><div class="wrap tool"><div class="form"><label>Donors last year<input type="number" id="rc-a" value="1000" min="1"></label><label>Of those, gave again this year<input type="number" id="rc-b" value="420" min="0"></label><label>Average yearly gift ($)<input type="number" id="rc-c" value="250" min="0"></label></div><div class="out" id="rc-out"></div></div></section>'+
  '<section style="padding-top:0"><div class="wrap"><p class="srcnote">National figure: 43.3% overall retention in 2025, <a href="'+SRC.fep25[1]+'" target="_blank" rel="noopener">'+SRC.fep25[0]+'</a>.</p></div></section>'+finalCta();};
-PAGES['tools/lapsed-cost']=function(){return hero({eyebrow:'Lapsed donor cost calculator',crumbs:[['Free tools','#/tools'],['Lapsed donor cost']],h:'What did last year\'s lapsed donors <b>used to give?</b>',lede:'A quick way to put a dollar figure on the people who quietly stopped.',noCta:1})+
+PAGES['tools/lapsed-cost']=function(){return hero({eyebrow:'Lapse Ledger',crumbs:[['Free tools','#/tools'],['Lapse Ledger']],h:'What did last year\'s lapsed donors <b>used to give?</b>',lede:'A quick way to put a dollar figure on the people who quietly stopped.',noCta:1})+
  '<section style="padding-top:0"><div class="wrap tool"><div class="form"><label>Donors who did not give again<input type="number" id="lc-a" value="580" min="0"></label><label>Their average yearly gift ($)<input type="number" id="lc-b" value="180" min="0"></label><label>Share who might give again after a call (%)<input type="number" id="lc-c" value="15" min="0" max="100"></label></div><div class="out" id="lc-out"></div></div></section>'+finalCta();};
-PAGES['tools/thermometer']=function(){return hero({eyebrow:'Fundraising thermometer',crumbs:[['Free tools','#/tools'],['Thermometer']],h:'A goal bar <b>people want to fill.</b>',lede:'Set your goal and amount raised and see the bar. The embeddable version comes with the live site.',noCta:1})+
+PAGES['tools/thermometer']=function(){return hero({eyebrow:'Goal Gauge',crumbs:[['Free tools','#/tools'],['Goal Gauge']],h:'A goal bar <b>people want to fill.</b>',lede:'Set your goal and amount raised and see the bar. The embeddable version comes with the live site.',noCta:1})+
  '<section style="padding-top:0"><div class="wrap tool"><div class="form"><label>Campaign name<input id="th-n" value="Spring appeal"></label><label>Goal ($)<input type="number" id="th-g" value="50000"></label><label>Raised so far ($)<input type="number" id="th-r" value="31250"></label></div><div class="out" id="th-out"></div></div></section>'+finalCta();};
 
 /* ---------- LEGAL (drafts) ---------- */
@@ -1184,6 +1291,179 @@ PAGES['resources']=function(){return hero({eyebrow:'Resources',crumbs:[['Resourc
 PAGES['leadership']=function(){return crumbs([['Company','#/about'],['Leadership']])+'<section class="hero phero" style="padding-bottom:40px"><div class="wrap"><div class="eyebrow">Leadership</div><h1 class="mix h-xl">The people <b>behind Steward.</b></h1><p class="lede" style="margin-top:22px">A founder who answers his own email, and advisors who have spent their careers in nonprofit development and giving.</p></div></section>'+
  '<section style="padding-top:0"><div class="wrap lead-g">'+TEAM.map(function(t){return '<div class="ld">'+ph(t[2],'tall')+'<b>'+t[0]+'</b><span>'+t[1]+'</span></div>';}).join('')+'</div></section>'+
  cards([['#/about','About Steward','What we believe and how we build.','people'],['#/partners','Partner with us','Bring Steward to the nonprofits you advise.','hand'],['#/contact','Contact','Email goes straight to the founder.','inbox']],'Company','More about <b>Steward.</b>')+finalCta();};
+
+/* ---------- people, with more life ---------- */
+var TINTS=['brass-tint','emerald-tint','cream-2','brass-tint'];
+function person(t,i){
+ var role=t[1].split(' · ');
+ return '<div class="pp" style="--tint:var(--'+TINTS[i%4]+');--tilt:'+(i%2?'1.6deg':'-1.6deg')+'"><div class="pp-frame">'+ph(t[2],'tall')+'<span class="pp-tag">'+role[0]+'</span></div><b>'+t[0]+'</b>'+(role[1]?'<span>'+role[1]+'</span>':'<span>'+role[0]+'</span>')+'</div>';
+}
+teamReel=function(){
+ var c=TEAM.map(person).join('');
+ return '<section class="reel-s"><div class="wrap"><div class="eyebrow">The people behind Steward</div><h2 class="mix h-l" style="margin-top:22px">People who <b>pick up the phone.</b></h2></div><div class="reel" aria-label="Steward founder and advisors"><div class="track">'+c+c+c+'</div></div></section>';
+};
+PAGES['leadership']=function(){return crumbs([['Company','#/about'],['Leadership']])+
+ '<section class="hero phero" style="padding-bottom:30px"><div class="wrap"><div class="eyebrow">Leadership</div><h1 class="mix h-xl">The people <b>behind Steward.</b></h1><p class="lede" style="margin-top:22px">A founder who answers his own email, and advisors who have spent their careers in nonprofit development, the arts and philanthropy.</p></div></section>'+
+ '<section style="padding-top:20px"><div class="wrap lead-g">'+TEAM.map(person).join('')+'</div></section>'+
+ '<section style="padding-top:0"><div class="wrap"><div class="backed"><span class="eyebrow">Backed by</span><h2 class="mix h-m">Funded by <b>angel investment.</b></h2><p>Steward is independent and founder-led, funded by angel investors who back small nonprofits doing big work.</p></div></div></section>'+
+ cards([['#/about','About Steward','What we believe and how we build.','people'],['#/partners','Partner with us','Bring Steward to the nonprofits you advise.','hand'],['#/contact','Contact','Email goes straight to the founder.','inbox']],'Company','More about <b>Steward.</b>')+finalCta();};
+
+/* ---------- articles with covers, and more of them ---------- */
+var COVERS=[['ink','brass'],['emerald','white'],['brass-tint','emerald'],['ink','emerald-lt'],['emerald-tint','emerald'],['cream-2','brass-text']];
+function cover(t,b,i){var c=COVERS[i%COVERS.length];return '<div class="cover" style="--bg:var(--'+c[0]+');--em:var(--'+c[1]+')"><div class="t">'+t+'<br><b>'+b+'</b></div><span class="leaf"></span></div>';}
+var ART2={
+ 'state-of-retention':null,
+ 'second-gift':{t:'The second gift',b:'matters most',k:'Retention',h:'Why the second gift <b>matters more than the first.</b>',d:'The gap between first-time and repeat donors is the most useful number in fundraising.',min:4,body:
+  '<p>Every development office celebrates new donors. The research says the real celebration should wait for their second gift.</p><h2>The numbers</h2><p>In the Fundraising Effectiveness Project\'s Q4 2024 report, 19.4% of new donors gave again the following year. Among repeat donors, 69.2% did. A donor who gives twice is more than three times as likely to keep giving.</p><h2>What changes after the second gift</h2><p>A first gift is often a response to a moment: an event, a friend\'s ask, a story in the news. A second gift is a decision. It means the donor heard back from you, felt it mattered and chose you again.</p><h2>How to earn it</h2><p>Thank them within two days, by phone if you can. Show them what the first gift did within a month. Invite them to see the work. Ask for the second gift on the anniversary of the first, for an amount close to what they gave.</p><h2>In Steward</h2><p>Every new donor can start a first-year journey with each step assigned to a person, and drift flags a first-time donor who goes quiet before the year is out.</p>',src:['fep24']},
+ 'lybunt-sybunt':{t:'LYBUNT',b:'and SYBUNT',k:'Lists',h:'LYBUNT and SYBUNT: <b>the two lists that pay for themselves.</b>',d:'Who they are, how to find them and what to say when you call.',min:4,body:
+  '<p>Two unlovely acronyms describe the most valuable people in your database.</p><h2>LYBUNT</h2><p>Last Year But Unfortunately Not This year. These people gave last year and have not given yet this year. They already know you and already said yes once. They are your best prospects for any appeal.</p><h2>SYBUNT</h2><p>Some Year But Unfortunately Not This year. Anyone who gave in any past year but not this one. A longer list, a colder one, and still warmer than any stranger.</p><h2>What to do with them</h2><p>Sort LYBUNT by last year\'s gift and call the top twenty before your next appeal. Do not open with an ask. Say thank you for last year, share one thing their gift made possible, and ask what they care about now. Then include them in the appeal with a note that mentions last year.</p><h2>In Steward</h2><p>Both lists are one click from Reports, and every count opens to the people behind it.</p>'},
+ 'read-retention':{t:'Your retention',b:'rate, read right',k:'Basics',h:'How to read <b>your retention rate.</b>',d:'One number, three ways to get it wrong, and what to compare it to.',min:5,body:
+  '<p>Donor retention is the share of last year\'s donors who gave again this year. It sounds simple. It is easy to get wrong.</p><h2>Count people, not gifts</h2><p>A donor who gave three times last year is one donor. Count each person or household once.</p><h2>Compare like with like</h2><p>New donors and repeat donors retain at very different rates, so a year with many new donors will look worse even if nothing changed. Look at first-year and repeat retention separately.</p><h2>Know the benchmark</h2><p>Across the sector, overall retention was 43.3% in 2025 according to the Fundraising Effectiveness Project. Your own trend over three years matters more than any single comparison.</p><h2>In Steward</h2><p>Retention, first-year retention and repeat retention are on the Reports screen, and every figure opens to the donors behind it. Try the free Keep Rate calculator to see what a five-point lift is worth.</p>',src:['fep25']},
+ 'thank-you-call':{t:'The thank-you',b:'call',k:'Stewardship',h:'Why the thank-you call <b>beats the letter.</b>',d:'A short look at the research on calling donors within 48 hours.',min:3,body:
+  '<p>A letter is expected. A call is remembered.</p><h2>What the research found</h2><p>In Penelope Burk\'s research for Donor-Centered Fundraising, donors who received a thank-you call from a board member within 48 hours of their gift gave 39% more the next time they were asked.</p><h2>Who should call</h2><p>Board members are ideal, because the call costs them nothing but a few minutes and means a great deal to the donor. Staff calls work too. What matters is speed and sincerity.</p><h2>What to say</h2><p>Thank them by name for the specific gift. Say one sentence about what it will do. Do not ask for anything. If you reach voicemail, keep it under thirty seconds and say there is no need to call back.</p><h2>In Steward</h2><p>New gifts can create a call task for a named person the same day, and the call is logged on the donor when it is done.</p>',src:['burk']},
+ 'monthly-donors':{t:'Monthly',b:'donors',k:'Recurring',h:'Monthly donors are <b>the quiet engine.</b>',d:'Why recurring gifts deserve their own care, and the one problem that ends most of them.',min:4,body:
+  '<p>A monthly donor gives without being asked twelve times a year. That makes them easy to forget.</p><h2>Why they matter</h2><p>Recurring gifts arrive in every month, including the quiet ones, and make budgeting less of a guess. They also tend to come from people who feel part of the work.</p><h2>The problem that ends most plans</h2><p>Many monthly gifts stop not because the donor changed their mind but because a card expired or failed. If nobody notices, the relationship ends by accident.</p><h2>What to do</h2><p>Watch for failed and expiring cards every week and reach out personally the same day. Thank monthly donors on their own schedule, with a quarterly update just for them and a call once a year.</p><h2>In Steward</h2><p>Failed cards and missed recurring gifts show on Home as drift, with the donor, the amount and a next step.</p>'},
+ 'january-week':{t:'The first week',b:'of January',k:'Year end',h:'What to do in <b>the first week of January.</b>',d:'The year-end rush is over. These five tasks set up the whole year.',min:3,body:
+  '<p>The busiest giving season just ended. Before the inbox fills up again, a few hours in the first week of January make the rest of the year easier.</p><h2>Send statements early</h2><p>Donors appreciate getting their year-end statement before they need it.</p><h2>Thank every December donor</h2><p>Many gave on the last two days of the year. Make sure every gift got a thank-you, and call the largest.</p><h2>Start first-year plans</h2><p>Every first-time December donor should begin a first-year plan now, not in March.</p><h2>Pull your LYBUNT list</h2><p>Last year\'s donors who did not give in December are this year\'s first calls.</p><h2>Look at retention</h2><p>Compare last year\'s retention to the year before, and pick one thing to improve.</p>'}
+};
+function artCards(keys){return '<div class="res">'+keys.map(function(k,i){
+ if(k==='state-of-retention')return '<a class="rc" href="#/articles/state-of-retention">'+cover('The state of','donor retention',i)+'<span class="k">Research</span><h4>The state of donor retention, in plain words</h4><p>What the latest sector data says about who gives again.</p><span class="go">Read →</span></a>';
+ var a=ART2[k];return '<a class="rc" href="#/articles/'+k+'">'+cover(a.t,a.b,i)+'<span class="k">'+a.k+' · '+a.min+' min</span><h4>'+a.h.replace(/<\/?b>/g,'')+'</h4><p>'+a.d+'</p><span class="go">Read →</span></a>';}).join('')+'</div>';}
+PAGES['articles']=function(){return hero({eyebrow:'Articles',crumbs:[['Resources','#/resources'],['Articles']],h:'Ideas worth <b>a coffee break.</b>',lede:'Short reads on retention, stewardship and running a calm development office.',noCta:1})+
+ '<section style="padding-top:0"><div class="wrap">'+artCards(Object.keys(ART2))+'</div></section>'+finalCta();};
+Object.keys(ART2).forEach(function(k){if(!ART2[k])return;var a=ART2[k];PAGES['articles/'+k]=function(){
+ return crumbs([['Resources','#/resources'],['Articles','#/articles'],[a.h.replace(/<\/?b>/g,'')]])+
+ '<section class="hero phero" style="padding-bottom:40px"><div class="wrap hero-g"><div><div class="eyebrow">'+a.k+' · '+a.min+' minute read</div><h1 class="mix h-l">'+a.h+'</h1><p class="lede">'+a.d+'</p></div>'+cover(a.t,a.b,Object.keys(ART2).indexOf(k))+'</div></section>'+
+ '<section style="padding-top:0"><div class="wrap prose narrow">'+a.body+(a.src?'<p class="srcnote">Source: '+a.src.map(function(s){return '<a href="'+SRC[s][1]+'" target="_blank" rel="noopener">'+SRC[s][0]+'</a>';}).join(' · ')+'</p>':'')+
+ '<div class="callout"><b>See it in Steward.</b><p>Bring your own file to a 20-minute demo.</p><a class="pill pill-ink" href="#/demo"><i></i>Book a demo</a></div></div></section>'+
+ '<section style="padding-top:0"><div class="wrap"><div class="eyebrow">Keep reading</div>'+artCards(Object.keys(ART2).filter(function(x){return x!==k;}).slice(0,3))+'</div></section>'+finalCta();};});
+
+/* ---------- start free, in the new brand ---------- */
+PAGES['start']=function(){return '<section class="start"><div class="wrap start-g"><div class="start-l"><div class="eyebrow">Start free</div><h1 class="mix h-l">Start with <b>one conversation.</b></h1><p class="lede">Your card goes in now and nothing is charged for thirty days. We email you a week before the first charge, and cancelling takes two clicks.</p>'+
+ '<ul class="start-why"><li>'+TICK+'Thirty days free, then month to month</li><li>'+TICK+'Unlimited users and every feature</li><li>'+TICK+'No platform fee on any gift</li><li>'+TICK+'Your move done with you</li></ul>'+
+ '<p class="start-help">Rather talk first? <a href="#/demo">Book a 20-minute demo</a></p></div>'+
+ '<form class="start-card form" onsubmit="event.preventDefault()"><label>Your organization<input placeholder="Harborlight Youth Collective"></label><div class="two"><label>Your name<input placeholder="Maria Alvarez"></label><label>Your email<input type="email" placeholder="you@yourorg.org"></label></div>'+
+ '<label>Roughly how many active donors?<input type="number" id="st-n" value="850" min="0"></label><p class="hint">Anyone with a gift or a logged conversation in the last 24 months. An estimate is fine. Steward counts for itself after your import and tells you before anything about your price changes.</p>'+
+ '<div class="plan" id="st-plan"></div>'+
+ '<div><span class="lbl">Billing</span><div class="toggle" role="group"><button type="button" aria-pressed="true" data-b="m">Monthly</button><button type="button" aria-pressed="false" data-b="y">Yearly, 2 months free</button></div></div>'+
+ '<label class="agree"><input type="checkbox"> <span>I have read and accept the <a href="#/legal/terms">Steward Customer Agreement</a>. Your acceptance is recorded with your name, the time and the exact words you agreed to.</span></label>'+
+ '<button class="pill pill-ink" type="submit" style="justify-self:stretch;justify-content:center"><i></i>Continue to card details</button><p class="hint" style="text-align:center">Nothing is charged for 30 days.</p></form></div></section>';};
+(function(){
+ function initStart(){var n=document.getElementById('st-n');if(!n)return;var yearly=false;
+  function draw(){var v=+n.value||0,t=v<=1000?['Seed',199]:v<=5000?['Sapling',299]:v<=10000?['Orchard',499]:null;
+   document.getElementById('st-plan').innerHTML=t?'<span>Your plan</span><b>'+t[0]+'</b><em>$'+(yearly?(t[1]*10).toLocaleString()+' a year':t[1]+' a month')+'</em>':'<span>Your plan</span><b>Forest</b><em>We will price it with you</em>';}
+  n.addEventListener('input',draw);
+  [].forEach.call(document.querySelectorAll('.start-card [data-b]'),function(b){b.addEventListener('click',function(){yearly=b.getAttribute('data-b')==='y';[].forEach.call(document.querySelectorAll('.start-card [data-b]'),function(x){x.setAttribute('aria-pressed',String(x===b));});draw();});});draw();}
+ addEventListener('hashchange',function(){setTimeout(initStart,0);});setTimeout(initStart,0);
+})();
+
+/* ---------- photos as you scroll, on every page ---------- */
+var ROWS={
+ features:['a development director laughing on a phone call at her desk','volunteers in aprons smiling at a check-in table','two staff at a laptop, one pointing at the screen, both grinning'],
+ platform:['a small team around a kitchen table with laptops, laughing','an executive director and a donor shaking hands at an open house','a volunteer coordinator high-fiving a teen volunteer'],
+ for:['volunteers handing out groceries, everyone smiling','a child grinning beside a therapy horse','a mentor and a teenager laughing over homework'],
+ why:['a director hugging a longtime donor at an open house','a board member making a thank-you call, smiling','gala guests toasting at a round table'],
+ move:['two staff at a kitchen table with a laptop, relieved and laughing','an executive director leaning back in her chair, smiling','a trainer and a staff member at a laptop, both laughing'],
+ resources:['two people over coffee in a bright café, mid-laugh','a staff member writing a handwritten thank-you card','a team stuffing envelopes at a long table, chatting'],
+ company:['a consultant and a nonprofit director shaking hands','two development staff comparing notes over coffee','a director presenting to a small board, everyone smiling']
+};
+function rowFor(h){
+ if(/^(start|legal|tools\/|faq|glossary|templates|demo|contact|leadership|about)/.test(h))return null;
+ if(/^features/.test(h))return ROWS.features;
+ if(/^for/.test(h))return ROWS.for;
+ if(/^(why|security)/.test(h))return ROWS.why;
+ if(/^(move|onboarding)/.test(h))return ROWS.move;
+ if(/^(resources|guides|articles|help|whats-new|developers)/.test(h))return ROWS.resources;
+ if(/^(about|leadership|partners)/.test(h))return ROWS.company;
+ return ROWS.platform;
+}
+function photoRow(c){return '<section class="photo-row-s" style="padding-top:0"><div class="wrap photo-row">'+c.map(function(x,i){return ph(x+'.',i===1?'tall':'');}).join('')+'</div></section>';}
+addEventListener('hashchange',function(){setTimeout(function(){
+ var h=location.hash.replace(/^#\/?/,'').replace(/\/$/,''),page=document.getElementById('page');
+ if(!h||page.hidden||page.querySelector('.photo-row'))return;
+ var r=rowFor(h);if(!r)return;
+ var fin=page.querySelector('.final');var sec=fin&&fin.closest('section');
+ if(sec)sec.insertAdjacentHTML('beforebegin',photoRow(r));else page.insertAdjacentHTML('beforeend',photoRow(r));
+},0);});
+
+
+/* ---------- About, with depth. No carousel anywhere. ---------- */
+teamReel=function(){return '';};
+PAGES['about']=function(){
+ return crumbs([['Company'],['About']])+
+ '<section class="hero phero"><div class="wrap hero-g"><div><div class="eyebrow">About Steward</div><h1 class="mix h-xl">Small shops deserve <b>great software.</b></h1><p class="lede">Most nonprofits are run by a handful of people doing the work of twenty. Steward exists so the few people raising the money can spend their time on donors, not on software.</p><div class="ctas"><a class="pill pill-ink" href="#/demo"><i></i>Book a demo</a><a class="pill pill-soft" href="#/start"><i></i>Start free</a></div></div>'+ph('a small development team laughing around a table covered in thank-you cards.','p1 tall')+'</div></section>'+
+
+ '<section style="padding-top:0"><div class="wrap"><div class="mission"><span class="eyebrow">Our mission</span><p>Help every nonprofit keep the donors it already has, and raise more from the people who already believe in it.</p></div></div></section>'+
+
+ '<section><div class="wrap about-g"><div><div class="eyebrow">Why we exist</div><h2 class="mix h-l" style="margin-top:22px">Donors don\'t leave in anger. <b>They drift.</b></h2></div><div class="prose"><p>Across the sector, fewer than half of last year\'s donors give again, and most first-time donors never make a second gift. Almost none of them decided to leave. A card expired. A thank-you came late. A visit kept getting pushed to next month.</p><p>Large organizations hire data teams to catch that drift. Small ones find out at year end, when the moment has passed. Steward puts the handful of people worth a call on the Home screen every morning, with the reason in plain words and a person named on the next step.</p><p class="srcnote">Retention figures: <a href="'+SRC.fep25[1]+'" target="_blank" rel="noopener">'+SRC.fep25[0]+'</a> · <a href="'+SRC.fep24[1]+'" target="_blank" rel="noopener">'+SRC.fep24[0]+'</a></p></div></div></section>'+
+
+ '<section class="pricing"><div class="wrap"><div class="eyebrow">What we believe</div><h2 class="mix h-l" style="margin-top:22px">Six things <b>we won\'t compromise on.</b></h2><div class="beliefs">'+
+ [['Calm over clever','One clear next step beats a dashboard of forty charts. If a screen doesn\'t help someone decide what to do, it doesn\'t ship.'],
+  ['Every number opens','A total you can\'t trace is a total nobody trusts. Click any figure in Steward and see the gifts and people behind it.'],
+  ['People send, software helps','The Agent drafts and organizes, then waits. Nothing reaches a donor until a person decides it should.'],
+  ['Honest by default','Prices on the website. Month to month. Only claims that are true today, and a plain label on anything that isn\'t built yet.'],
+  ['Your data is yours','Export everything whenever you like, in a standard format. Leave and we delete it on request. No lock-in, ever.'],
+  ['No cut of your gifts','Steward never takes a percentage of a donation. Your processor\'s card fee is the only fee on a gift.']]
+ .map(function(b,i){return '<div class="belief"><span class="bn">'+(i<9?'0':'')+(i+1)+'</span><h4>'+b[0]+'</h4><p>'+b[1]+'</p></div>';}).join('')+'</div></div></section>'+
+
+ '<section><div class="wrap"><div class="eyebrow">Who we build for</div><h2 class="mix h-l" style="margin-top:22px">Teams of one to five, <b>with missions bigger than their budgets.</b></h2>'+
+ '<div class="who-g">'+[['Development directors','who carry a portfolio, run the gala and write the appeal in the same week.'],['Executive directors','who are also the fundraiser, the bookkeeper\'s contact and the board\'s first call.'],['Volunteer coordinators','who need hours for the grant report and a thank-you list by Friday.'],['Board members','who want numbers they can trust and a list of people to call.']].map(function(w){return '<div><b>'+w[0]+'</b><p>'+w[1]+'</p></div>';}).join('')+'</div>'+
+ '<p style="margin-top:30px"><a href="#/for" style="font-weight:700;color:var(--emerald)">See who Steward is for →</a></p></div></section>'+
+
+ '<section style="padding-top:0"><div class="wrap">'+block({tint:'emerald-tint',h:'How we build.',p:'Small releases, every week, each one tested before it reaches you. Every change is recorded in the audit log, and every release is listed on our What\'s new page. When we get something wrong we say so and fix it.',sh:'Built with the people who use it.',sp:'Every feature starts from a real nonprofit\'s week: a gala that needed seating, a bookkeeper who needed a clean file, a director who couldn\'t find the inbox button.',photo:'two staff at a laptop reviewing a screen together, both smiling.'})+'</div></section>'+
+
+ '<section class="pricing"><div class="wrap"><div class="eyebrow">Our promises to customers</div><h2 class="mix h-m" style="margin-top:22px">What you can <b>hold us to.</b></h2><div class="incl">'+
+ ['A real person answers your email','Your move done with you, checked to the cent','Thirty days free, then month to month','Unlimited users on every plan','Every feature on every plan','No platform fee on any gift','Export everything, any time','Plain warning before any price change','We never sell or share donor data'].map(function(x){return '<span>'+TICK+x+'</span>';}).join('')+'</div></div></section>'+
+
+ '<section><div class="wrap about-facts">'+[['Based in','Wilmore, Kentucky'],['Built for','Teams of one to five'],['Company','Steward Software LLC'],['Funded by','Angel investment']].map(function(f){return '<div><span>'+f[0]+'</span><b>'+f[1]+'</b></div>';}).join('')+'</div></section>'+
+
+ cards([['#/leadership','Leadership','The founder and advisors behind Steward.','people'],['#/security','Security and trust','What we protect, and how.','audit'],['#/whats-new','What\'s new','Every improvement we ship.','spark'],['#/partners','Partner with us','Bring Steward to the nonprofits you advise.','hand'],['#/contact','Contact','Email goes straight to the founder.','inbox']],'Keep exploring','More about <b>Steward.</b>')+finalCta();
+};
+
+
+/* ---------- the Agent crew: six assistants, each with room to show off ---------- */
+var CREW=[
+ {n:'Writer',tag:'Your voice, on a deadline',c:'emerald',i:'<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
+  say:'Draft thank-you letters for everyone who gave over $500 this week.',
+  does:['Finds 23 gifts since Monday','Reads each donor\'s history and past letters','Drafts each letter in your voice, signed by Dana','Flags 4 first-time donors for a phone call instead'],
+  out:'23 drafts ready to review, edit and print.',power:['Thank-yous within a day, not a week','Appeals and updates from one story','Knows who gave what, so no "Dear Friend"']},
+ {n:'Researcher',tag:'Walk in prepared',c:'brass',i:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  say:'Brief me on Margaret Chen before coffee tomorrow.',
+  does:['Pulls 9 years of giving and the open ask','Reads your last meeting note and her last email','Spots the August gift not yet hand-thanked','Writes a four-line brief and three questions to ask'],
+  out:'A brief on your phone the morning of the visit.',power:['Briefs before every visit','What changed since you last met','Questions worth asking']},
+ {n:'Analyst',tag:'Answers, not charts',c:'ink',i:'<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  say:'Who gave last year but hasn\'t given yet this year?',
+  does:['Finds 482 donors from last year with no gift yet','Totals what they gave last year','Sorts them by amount and relationship owner','Links every number to the people behind it'],
+  out:'A plain answer, every number opening its rows, and who to call first.',power:['Ask in plain words','Every number opens to the people','Ends with who to call']},
+ {n:'Recurring',tag:'Keeps monthly gifts alive',c:'emerald',i:'<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
+  say:'Which monthly donors need attention?',
+  does:['Finds 6 failed cards and 3 expiring next month','Spots 2 paused plans','Drafts a personal note for each','Puts the calls on Home with a name on each'],
+  out:'Nine donors, nine drafted notes, before the gifts stop.',power:['Failed and expiring cards','Paused plans','A personal note, not a dunning email']},
+ {n:'Onboarding',tag:'A first year that runs on time',c:'brass',i:'<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/>',
+  say:'Set up first-year plans for everyone new from the gala.',
+  does:['Finds 31 first-time guests and donors','Builds a twelve-month journey for each','Names who owns every call, letter and visit','Schedules step one for this week'],
+  out:'31 journeys, every step with an owner.',power:['A plan for every new donor','A person on every step','Toward the second gift']},
+ {n:'Data',tag:'A clean file, shown first',c:'ink',i:'<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/>',
+  say:'Clean up duplicates before the year-end mailing.',
+  does:['Finds 46 likely duplicates','Fixes 112 addresses with missing pieces','Flags 18 bounced emails','Shows every change before making it'],
+  out:'One list to approve. One click to undo.',power:['Duplicates found, never merged without you','Addresses tidied','Every change reversible']}
+];
+function agentCrew(){
+ var tabs=CREW.map(function(a,i){return '<button role="tab" aria-selected="'+(i===0)+'" data-crew="'+i+'" class="crew-tab c-'+a.c+'"><span class="crew-ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+a.i+'</svg></span><span><b>'+a.n+'</b><em>'+a.tag+'</em></span></button>';}).join('');
+ var panes=CREW.map(function(a,i){return '<div class="crew-pane c-'+a.c+'" data-crew-pane="'+i+'"'+(i?' hidden':'')+'>'+
+  '<div class="crew-head"><span class="crew-ic big"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">'+a.i+'</svg></span><div><h3>The '+a.n+'</h3><p>'+a.tag+'</p></div></div>'+
+  '<div class="crew-flow"><div class="cf say"><span>You say</span><p>"'+a.say+'"</p></div>'+
+  '<div class="cf plan"><span>It shows you the plan</span><ol>'+a.does.map(function(d){return '<li>'+d+'</li>';}).join('')+'</ol></div>'+
+  '<div class="cf ok"><span>You approve</span><p>'+a.out+'</p><div class="crew-btns"><b>Approve</b><i>Change</i><i>Undo any time</i></div></div></div>'+
+  '<div class="crew-power">'+a.power.map(function(p){return '<span>'+TICK+p+'</span>';}).join('')+'</div></div>';}).join('');
+ return '<section class="pricing" id="crew"><div class="wrap"><div class="eyebrow">Meet the crew</div><h2 class="mix h-l" style="margin-top:22px">Six assistants. <b>One rule: you decide.</b></h2><p class="lede" style="margin-top:20px">Each one reads your whole file, shows you exactly what it plans to do and waits. Pick one to see it work. Examples use demo data.</p>'+
+  '<div class="crew"><div class="crew-tabs" role="tablist">'+tabs+'</div><div class="crew-panes">'+panes+'</div></div>'+
+  '<div class="crew-never"><b>None of them ever</b><span>sends to a donor</span><span>moves money</span><span>changes a gift behind your back</span><span>acts without a person\'s yes</span></div></div></section>';
+}
+addEventListener('click',function(e){var b=e.target.closest('[data-crew]');if(!b)return;var i=b.getAttribute('data-crew');
+ [].forEach.call(document.querySelectorAll('[data-crew]'),function(x){x.setAttribute('aria-selected',String(x===b));});
+ [].forEach.call(document.querySelectorAll('[data-crew-pane]'),function(p){p.hidden=p.getAttribute('data-crew-pane')!==i;});});
+
 /* ---------- ROUTER ---------- */
 (function(){
  var home=document.getElementById('home'),page=document.getElementById('page');
@@ -1211,7 +1491,7 @@ PAGES['leadership']=function(){return crumbs([['Company','#/about'],['Leadership
  addEventListener('hashchange',go);go();
 })();
 
-(function(){var r=document.getElementById('reel-home');if(r)r.outerHTML=teamReel();})();
+(function(){})();
 </script>
 <script>
 (function(){
@@ -1243,5 +1523,3 @@ PAGES['leadership']=function(){return crumbs([['Company','#/about'],['Leadership
  document.getElementById('faq-list').innerHTML=F.map(function(x,i){return '<details><summary><span class="n">[ '+(i+1)+' ]</span>'+x[0]+PLUS+'</summary><p>'+x[1]+'</p></details>';}).join('');
 })();
 </script>
-
-</body></html>
