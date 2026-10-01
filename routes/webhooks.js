@@ -2462,6 +2462,38 @@ function inboundSecretOk(req) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// FIX-11 Part 5 — A SIGNATURE WHERE THERE IS ONE, THE SHARED SECRET WHERE
+// THERE IS NOT.
+//
+// The shared secret is what is wired live (the webhook URL carries
+// `?secret=…`), and it works, and it puts the secret in every proxy log
+// between Resend and here. Resend signs with Svix, over the exact bytes, and
+// `RESEND_WEBHOOK_SECRET` is already set for the delivery webhook — so a
+// signed request is verified properly and an unsigned one still gets in on the
+// secret. Nothing that is working stops working, and the better door opens.
+//
+// Returns: true (authenticated), false (refused), null (not configured at all).
+function inboundAuthOk(req) {
+  const signed = req.headers["svix-signature"] || req.headers["svix-id"];
+  if (signed && process.env.RESEND_WEBHOOK_SECRET && req.rawInbound) {
+    try {
+      new SvixWebhook(process.env.RESEND_WEBHOOK_SECRET).verify(req.rawInbound, {
+        "svix-id": req.headers["svix-id"],
+        "svix-timestamp": req.headers["svix-timestamp"],
+        "svix-signature": req.headers["svix-signature"],
+      });
+      return true;
+    } catch (e) {
+      // A request that CLAIMS to be signed and is not is refused outright. It
+      // must never fall through to the shared secret: that would let anybody
+      // who learned the URL bypass the signature by sending a bad one.
+      console.error("[inbound-email] a signed request failed verification:", e.message);
+      return false;
+    }
+  }
+  return inboundSecretOk(req);
+}
+
 async function recordInboundDrop(orgId, reason) {
   try {
     await run("INSERT INTO inbound_email_drops (id, org_id, reason) VALUES (?,?,?)",
@@ -2474,20 +2506,69 @@ async function recordInboundDrop(orgId, reason) {
 // are also read when a provider sends them — a BCC is invisible in the headers,
 // so the logging address usually arrives only as an envelope recipient).
 app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, res) => {
-  const authed = inboundSecretOk(req);
+  const authed = inboundAuthOk(req);
   if (authed === null) return res.status(503).json({ error: "Inbound email not configured" });
   if (!authed) return res.status(401).json({ error: "Unauthorized" });
   if (!INBOUND_EMAIL_DOMAIN) return res.status(503).json({ error: "Inbound email not configured" });
 
   const IE = await inboundMod();
-  const payload = req.body || {};
+  let payload = req.body || {};
+
+  // ── THE RESEND ADAPTER ──────────────────────────────────────────────────
+  // Resend nests everything under `data` and sends NO BODY: only metadata and
+  // an `email_id`. Without this, `orgSlugFromPayload` finds no recipient on a
+  // real Resend payload, every message is dropped as "no_org", and the drop
+  // counter is the only trace. Proven in tests/fix11-inbound-resend.test.js by
+  // asking the unadapted payload for its org and getting null.
+  if (IE.isResendInbound(payload)) {
+    const adapted = IE.adaptResendInbound(payload);
+    let body = null;
+    if (adapted.providerEmailId && process.env.RESEND_API_KEY) {
+      try {
+        const r = await fetch(
+          // RESEND_RECEIVING_BASE_URL, not RESEND_BASE_URL. Sending and
+          // receiving are two different APIs, and a suite needs to stand in
+          // for one without standing in for the other: RESEND_BASE_URL
+          // already points every outbound call at the local mail sink, which
+          // knows nothing about /emails/receiving. Falls back to
+          // RESEND_BASE_URL and then to Resend itself, so nothing already
+          // configured has to change.
+          IE.resendReceivedUrl(adapted.providerEmailId,
+            process.env.RESEND_RECEIVING_BASE_URL || process.env.RESEND_BASE_URL),
+          { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}` } });
+        if (r.ok) body = await r.json();
+        else console.error("[inbound-email] Resend would not give us the body:", r.status);
+      } catch (e) {
+        console.error("[inbound-email] could not fetch the body from Resend:", e.message);
+      }
+    }
+    payload = IE.mergeResendBody(adapted, body);
+    // A MESSAGE WITH NO BODY IS NOT STORED. Resend's webhook arrives before
+    // the body is fetchable, or the fetch failed, or the key is missing: in
+    // every one of those cases logging a subject with an empty note would put
+    // a half-record on a donor's timeline that nobody can tell from a donor
+    // who wrote nothing. It is counted as a drop and said out loud.
+    if (!body) {
+      await recordInboundDrop(null, "empty");
+      console.error("[inbound-email] Resend sent metadata and the body could not be fetched; nothing stored");
+      return res.json({ received: true, action: "drop", reason: "no_body" });
+    }
+  }
 
   // 1 · the org, from the plus-address only.
   const slug = IE.orgSlugFromPayload(payload, INBOUND_EMAIL_DOMAIN);
   if (!slug) { await recordInboundDrop(null, "no_org"); return res.json({ received: true, action: "drop" }); }
-  const orgRows = await query("SELECT id, org_slug FROM orgs WHERE org_slug = ?", [slug]);
+  const orgRows = await query(
+    "SELECT id, org_slug, inbound_email_enabled FROM orgs WHERE org_slug = ?", [slug]);
   if (!orgRows.length) { await recordInboundDrop(null, "unknown_org"); return res.json({ received: true, action: "drop" }); }
   const org = orgRows[0];
+  // FIX-11 Part 5 — AND THIS ORGANISATION HAS TO WANT IT. The env flag is the
+  // deployment's gate; this is the org's. It is how the demo org, whose people
+  // are fictional and whose screens strangers look at, receives nothing.
+  if (org.inbound_email_enabled === false) {
+    await recordInboundDrop(org.id, "unknown_org");
+    return res.json({ received: true, action: "drop", reason: "org_off" });
+  }
 
   // 2 · the sender must be a user of THAT org. Scoped by org_id in the query
   //     itself, so org B's staff mailing org A's address never even resolves.

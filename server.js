@@ -538,6 +538,27 @@ app.use((req, res, next) =>
   /^\/grants\/[^/]+\/documents$/.test(req.path)
     ? express.json({ limit: "30mb" })(req, res, next)
     : next());
+// ── FIX-11 Part 5 — THE INBOUND WEBHOOK'S RAW BODY ────────────────────────
+// Resend signs its webhooks the way every other Resend webhook here is
+// verified: an Svix signature over the EXACT bytes. /inbound-email is mounted
+// after this parser, so by the time it ran the bytes were gone and the only
+// authentication it could offer was a shared secret in the URL — which works,
+// and which lands in every proxy log between here and Resend.
+//
+// So the bytes are kept for this one path, and the route verifies the
+// signature when one is present and falls back to the shared secret when it is
+// not (which is what is wired live today, and what a provider that does not
+// sign would use). Same pattern as /stripe/webhook and /resend/webhook, scoped
+// to one path so nothing else changes.
+app.use("/inbound-email", express.raw({ type: "*/*", limit: "5mb" }), (req, res, next) => {
+  req.rawInbound = Buffer.isBuffer(req.body) ? req.body : null;
+  if (req.rawInbound) {
+    try { req.body = JSON.parse(req.rawInbound.toString("utf8") || "{}"); }
+    catch { req.body = {}; }        // a malformed body is a dropped message, never a 500
+  }
+  next();
+});
+
 app.use(express.json({ limit: "5mb" }));
 
 // Gzip the heavy whole-org read payloads (BUILD-06 Phase A). Scoped to the

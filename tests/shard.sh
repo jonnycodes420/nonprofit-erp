@@ -41,6 +41,10 @@ KEEP_DB="${SHARD_KEEP_DB:-0}"
 
 api=$((PORT_BASE + 10 * N))
 sink=$((api + 1)); stripe=$((api + 2)); billing=$((api + 3)); preview=$((api + 4))
+# FIX-11 Part 5 — the stand-in for Resend's RECEIVING api, which is a different
+# API from the one RESEND_BASE_URL points at (that is the mail sink). Inside
+# this shard's own block, so three shards do not fight over one port.
+recv=$((api + 7))
 mkdir -p "$OUT"
 LOGDIR="${SUITE_LOG_DIR:-/tmp/steward-suite-logs}/shard-$N"
 mkdir -p "$LOGDIR"
@@ -84,6 +88,9 @@ start_server() {
   STRIPE_BILLING_API_BASE="http://localhost:$billing" \
   STRIPE_PRICE_FOUNDING=price_test_founding \
   STRIPE_PRICE_CORE=price_test_core STRIPE_PRICE_TEAM=price_test_team \
+  INBOUND_EMAIL_ENABLED=1 INBOUND_EMAIL_DOMAIN=log.stewardapp.dev \
+  INBOUND_EMAIL_SECRET=local-inbound-secret \
+  RESEND_RECEIVING_BASE_URL="http://localhost:$recv" \
   node server.js >"$SERVER_LOG" 2>&1 &
   echo $!
 }
@@ -129,6 +136,13 @@ fi
 export BASE="http://localhost:$api"
 export APP_URL="http://localhost:$preview"
 export DATABASE_URL="$DBURL"
+# FIX-11 Part 5 — the inbound suite stands up its own Resend-receiving mock and
+# binds THIS port, which is the one the server above was told to call. Without
+# these three the suite skips, and a suite that skips in CI is coverage that is
+# not there (GTM-1a A).
+export INBOUND_EMAIL_SECRET=local-inbound-secret
+export INBOUND_EMAIL_DOMAIN=log.stewardapp.dev
+export RESEND_RECV_PORT="$recv"
 export DB_SSL="${DB_SSL:-disable}"
 export SINK_PORT="$sink"
 export STRIPE_MOCK_PORT="$stripe"

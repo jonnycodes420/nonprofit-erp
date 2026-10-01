@@ -40,10 +40,12 @@ export const LOG_LOCAL_PREFIX = "log";
 
 // Why a message was dropped. These are the COUNTED outcomes: nothing is
 // stored from the message itself, only that one arrived and was refused.
-export const DROP_REASONS = ["no_org", "unknown_org", "sender_not_user", "empty"];
+// FIX-11 Part 5 — `no_match` moved here from HOLD_KINDS. A message that names
+// nobody on file is dropped, not held: see the note where it is returned.
+export const DROP_REASONS = ["no_org", "unknown_org", "sender_not_user", "empty", "no_match"];
 
 // Why a message is being held for a human instead of logged.
-export const HOLD_KINDS = ["no_match", "multiple", "self_test"];
+export const HOLD_KINDS = ["multiple", "self_test"];
 
 // ── addresses ───────────────────────────────────────────────────────────────
 
@@ -149,6 +151,84 @@ export function recipientAddresses(payload) {
     for (const a of parseAddressList(v)) if (!out.includes(a)) out.push(a);
   }
   return out;
+}
+
+// ── FIX-11 Part 5 — THE RESEND ADAPTER ────────────────────────────────────
+//
+// BUILD-87 built this route provider-agnostic and left the provider unchosen,
+// which was right. On 30 September Muse wired Resend inbound at
+// log.stewardapp.dev and pointed `email.received` at /inbound-email. It would
+// have received nothing, for two reasons, and both were silent:
+//
+//   1. RESEND NESTS EVERYTHING UNDER `data`. The payload is
+//      { type: "email.received", created_at, data: { email_id, from, to, cc,
+//      bcc, message_id, subject, attachments } }. This route reads `to` and
+//      `from` at the TOP level, so `orgSlugFromPayload` found no recipient,
+//      every message was dropped as "no_org", and the drop counter would have
+//      been the only trace.
+//   2. RESEND'S WEBHOOK CARRIES NO BODY. Not the text, not the html, not the
+//      headers — only metadata and an `email_id`. The body is a second call,
+//      GET https://api.resend.com/emails/receiving/{id}. So even a flattened
+//      payload would have logged a subject and an empty note.
+//
+// `adaptResendInbound` is the FLATTENING, which is pure and therefore testable
+// without a server or a network. Fetching the body is the route's job, because
+// only the route has the API key.
+export function isResendInbound(payload) {
+  const p = payload || {};
+  return String(p.type || "") === "email.received" && !!p.data && typeof p.data === "object";
+}
+
+export function adaptResendInbound(payload) {
+  const p = payload || {};
+  const d = p.data || {};
+  return {
+    // Resend sends `to`, `cc` and `bcc` as ARRAYS of display-name strings
+    // ("Acme <ada@x.org>"); parseAddressList already reads both shapes, so
+    // they are passed through rather than pre-parsed here.
+    to: d.to, cc: d.cc, bcc: d.bcc,
+    from: d.from,
+    subject: d.subject,
+    // The body is not in the webhook. It arrives from the Receiving API and is
+    // merged in by the caller; adapting a payload that never had one must not
+    // invent an empty string that reads as "the donor wrote nothing".
+    text: d.text, html: d.html,
+    date: d.created_at || p.created_at,
+    messageId: d.message_id,
+    // What the caller needs to go and get the body.
+    providerEmailId: d.email_id || null,
+    provider: "resend",
+    attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : 0,
+  };
+}
+
+// The URL the body comes from. A function so the local test seam
+// (RESEND_BASE_URL, the same one every other Resend call uses) applies here
+// too, and so no suite needs the internet.
+export function resendReceivedUrl(emailId, base) {
+  const root = String(base || "https://api.resend.com").replace(/\/+$/, "");
+  return `${root}/emails/receiving/${encodeURIComponent(String(emailId))}`;
+}
+
+// What the Receiving API hands back, merged onto the adapted payload. Pure, so
+// a malformed response is a dropped message rather than a thrown webhook.
+export function mergeResendBody(adapted, body) {
+  const b = body && typeof body === "object" ? body : {};
+  return {
+    ...adapted,
+    text: typeof b.text === "string" ? b.text : adapted.text,
+    html: typeof b.html === "string" ? b.html : adapted.html,
+    // The Receiving API's `to`/`cc`/`bcc` are more complete than the webhook's
+    // (a BCC is invisible in the headers and arrives as an envelope
+    // recipient), so they WIN where present. This is the field the whole
+    // org-routing turns on.
+    to: b.to !== undefined ? b.to : adapted.to,
+    cc: b.cc !== undefined ? b.cc : adapted.cc,
+    bcc: b.bcc !== undefined ? b.bcc : adapted.bcc,
+    from: b.from !== undefined ? b.from : adapted.from,
+    subject: b.subject !== undefined ? b.subject : adapted.subject,
+    headers: b.headers,
+  };
 }
 
 // ── the quoted-reply stripper ───────────────────────────────────────────────
@@ -307,6 +387,8 @@ export function classifyInbound(payload, ctx) {
   const held = { subject, body, date, from, to: targets.join(", ") };
   if (matched.length === 1) return { action: "log", donorId: matched[0].id, ...held };
   if (matched.length > 1) {
+    // Everybody involved IS on file; the only question is which of them, and
+    // that is a question for a human. Holding it is within the rule.
     return { action: "hold", kind: "multiple", candidates: matched.map(d => ({ id: d.id, name: d.name, email: normalizeEmail(d.email) })), ...held };
   }
 
@@ -317,5 +399,24 @@ export function classifyInbound(payload, ctx) {
   const onlyStaff = targets.length === 0 || targets.every(t => userEmails.includes(t));
   if (onlyStaff) return { action: "hold", kind: "self_test", candidates: [], ...held };
 
-  return { action: "hold", kind: "no_match", candidates: [], ...held };
+  // ── FIX-11 Part 5 — A MESSAGE ABOUT NOBODY ON FILE IS NOT STORED AT ALL ──
+  //
+  // This used to HOLD, with its subject, its body and its addresses, on the
+  // Unmatched list for a human to place. The other half of INT-4 — the Gmail
+  // and Outlook sync, shared/mailboxLog.js — does the opposite for the same
+  // case: it drops, and its decision carries no subject, no body and no
+  // address, which tests/int4-mailbox.test.js §1 pins byte-wise. Two paths
+  // handling the same kind of data disagreed, and the BCC one was the looser.
+  //
+  // The reason the strict one is right: a message that names nobody on file is
+  // correspondence with somebody Steward has no relationship with. A vendor, a
+  // friend, a journalist, a doctor. Keeping its subject and body so that staff
+  // MIGHT file it later means a donor CRM holding the contents of mail about
+  // people who never consented to be in it, on the chance it turns out to be
+  // useful. The count is kept, because "eleven messages arrived that Steward
+  // stored nothing from" is a true and useful thing to be able to say.
+  //
+  // The decision deliberately carries no `held` fields, so there is nothing
+  // for a caller to write down even by accident.
+  return { action: "drop", reason: "no_match", slug };
 }

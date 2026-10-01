@@ -74,8 +74,11 @@ in plaintext, and it held a `gmail.send` scope this product must never use.
 sealed automatically on the first boot after this ships.
 
 **Google, to go past 100 connected people.** Gmail read scopes are RESTRICTED.
-  · Testing mode works today and is capped at 100 connected accounts, which is
-    plenty for CKRH and the next several customers.
+  · The consent screen is **In production**, not Testing (corrected 2026-09-30;
+    this entry said Testing). Publishing it is not the same as passing
+    verification: unverified restricted scopes still show the "Google hasn't
+    verified this app" screen and are capped at 100 users, which is plenty for
+    CKRH and the next several customers.
   · Production needs OAuth app verification AND an independent security
     assessment (a CASA assessment through a Google-approved lab). It is a real
     cost and a several-week process, so it is worth starting only when the
@@ -96,22 +99,41 @@ sealed automatically on the first boot after this ships.
     people, and a customer whose own tenant requires admin consent will need
     their IT to approve Steward once.
 
-**The BCC path, which is built and switched off.** BUILD-87 built the whole
-inbound route provider-agnostic and deliberately left the provider unchosen,
-because receiving mail is a new subprocessor and a DNS change. Resend does
-support inbound. To turn it on:
-  · Pick a subdomain that carries no mail today, so existing delivery is
-    untouched. `log.stewardapp.dev` is the one the code assumes.
-  · In Resend → Domains, add that subdomain for RECEIVING. Resend shows you an
-    MX record for it; the value is specific to your account and region, so copy
-    it from their dashboard rather than from anywhere else. It must be the
-    lowest-priority MX on that subdomain.
-  · In Resend → Webhooks, add `https://nonprofit-erp-production.up.railway.app/resend/inbound`
-    and subscribe it to **`email.received`**. It is verified with the same Svix
-    signature the existing Resend webhook uses, so there is no new secret.
-  · Railway variables: **`INBOUND_EMAIL_ENABLED=1`** and
-    **`INBOUND_EMAIL_DOMAIN=log.stewardapp.dev`**.
-  · Each org then BCCs `log+<org-slug>@log.stewardapp.dev`.
+**The BCC path, wired on 30 September and corrected by FIX-11 Part 5.** This
+entry previously named the wrong route and the wrong authentication, and
+described the adapter as done when it was not. What is true now:
+  · The route is **`/inbound-email`**, not `/resend/inbound`. There is no
+    `/resend/inbound`; `/resend/webhook` is the DELIVERY webhook and is a
+    different thing.
+  · It accepts **either** an Svix signature (`RESEND_WEBHOOK_SECRET`, already
+    set for the delivery webhook) **or** the shared secret
+    `INBOUND_EMAIL_SECRET`, sent as `?secret=…` in the webhook URL or as an
+    `x-inbound-secret` header. FIX-11 Part 5 added the signature path, because
+    a secret in a URL lands in every proxy log between Resend and here. A
+    request that claims to be signed and is not is refused outright rather than
+    falling through to the secret.
+  · **The Resend adapter now exists, and it had to.** Resend nests the whole
+    message under `data`, so the route's recipient lookup found nothing and
+    every message would have been dropped as "no_org" with only the drop
+    counter to show it. And Resend's webhook carries **no body at all** —
+    metadata and an `email_id` only — so the body is a second call to
+    `GET https://api.resend.com/emails/receiving/{id}` with the Resend API key.
+    A message whose body cannot be fetched is stored nowhere rather than filed
+    as a subject with an empty note.
+  · Subdomain: `log.stewardapp.dev`, which carries no other mail. In
+    Resend → Domains, add it for RECEIVING and use the MX record Resend shows
+    for your account and region; it must be the lowest-priority MX there.
+  · In Resend → Webhooks, point `email.received` at
+    `https://nonprofit-erp-production.up.railway.app/inbound-email`.
+  · Railway variables: **`INBOUND_EMAIL_ENABLED=1`**,
+    **`INBOUND_EMAIL_DOMAIN=log.stewardapp.dev`** and
+    **`INBOUND_EMAIL_SECRET`** (or rely on the Svix signature alone).
+  · Each org BCCs `log+<org-slug>@log.stewardapp.dev`, and that address is now
+    shown to every staff member on Settings → Account with a copy button. It is
+    ONE address per organisation: Steward knows which staff member sent a
+    message because the sender has to be one of its users.
+  · BCC logging is per organisation (`orgs.inbound_email_enabled`), on by
+    default and **off for the demo org**, whose people are fictional.
 
 ## 0-EMAIL · THE TWO EMAIL TOOLS NEED THEIR APPS REGISTERED (2026-09-30)
 
