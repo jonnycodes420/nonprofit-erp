@@ -97,9 +97,10 @@ async function revokeSessions(where, args, by) {
 // Ten codes like "k7m2-9qx4". Shown once; only the hash is kept.
 const RC_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789";
 function newRecoveryCode() {
-  const b = crypto.randomBytes(8);
+  // randomInt, not a byte modulo the alphabet: 256 is not a multiple of 31,
+  // so the modulo would favour the first letters (CodeQL caught it).
   let s = "";
-  for (let i = 0; i < 8; i++) s += RC_ALPHABET[b[i] % RC_ALPHABET.length];
+  for (let i = 0; i < 8; i++) s += RC_ALPHABET[crypto.randomInt(RC_ALPHABET.length)];
   return s.slice(0, 4) + "-" + s.slice(4);
 }
 const normaliseRecovery = c => String(c || "").toLowerCase().replace(/[^a-z0-9]/g, "");
