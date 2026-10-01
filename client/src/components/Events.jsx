@@ -3,7 +3,7 @@ import { apiFetch } from "../api";
 import { T, fmtFull, SC, Pill, Card, PageTitle, Modal } from "./shared";
 import { errorMessage } from "../lib/domainError";
 import { displayDate } from "../../../shared/displayDate";
-import { eventProgress, attendanceRate, seatingChart, nameTags, EVENT_FIGURES } from "../../../shared/eventShape";
+import { eventProgress, attendanceRate, seatingChart, nameTags, parties, seatFit, EVENT_FIGURES } from "../../../shared/eventShape";
 
 const EVENT_TYPES = {
   gala:          { label: "Gala",           icon: "•", color: T.ink },
@@ -338,27 +338,131 @@ function EventReport({ eventId, onOpenRows }) {
 }
 
 // ── item 4 · THE SEATING CHART ────────────────────────────────────────────
-// Drag a guest onto a table. The unseated stay in their own column rather than
-// being hidden, because the people without a seat are the ones this screen
-// exists to find. Printing gives the chart and the name tags, and a name tag
-// carries a name and a table and nothing else: a badge that prints somebody's
-// giving level is a badge that tells the room what they gave.
+// FIX-11 Part 2 — REWRITTEN, because on a real gala this card said "Drag a
+// name onto a table to seat them" over a single "No seat yet" box and two
+// Print buttons. There were no tables, no way to make one, and a guest called
+// Jon had nowhere to go. Drag was also the only way to seat anybody, which is
+// no way at all on a phone.
+//
+// A table is a row now, with a number of seats, so a table can be empty and
+// still exist. What changed on the screen:
+//   · empty states that say the next thing to do rather than describing a
+//     gesture there is nothing to perform it on
+//   · tables added, renamed, resized and removed in place
+//   · seat by TAP: pick guests, "Seat at…" lists the tables with room. Drag
+//     stays as a desktop shortcut, and both go through the same route
+//   · a party on one ticket moves together and only where they all fit
+//   · "Seat everyone", shown as a plan before it touches anything, with undo
+//   · the Print buttons say why they are off instead of printing nothing
 function EventSeating({ eventId }) {
   const [data, setData] = useState(null);
   const [drag, setDrag] = useState(null);
   const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [picked, setPicked] = useState([]);       // guests ticked for "Seat at…"
+  const [seatMenu, setSeatMenu] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ count: 10, seats: 8 });
+  const [namedForm, setNamedForm] = useState({ label: "", seats: 8, sponsorName: "" });
+  const [editing, setEditing] = useState(null);    // { id, label, seats, sponsorName }
+  const [plan, setPlan] = useState(null);          // the Seat everyone preview
+  const [undo, setUndo] = useState(null);          // { label, moves }
+  const [busy, setBusy] = useState(false);
+
   const load = () => apiFetch(`/events/${eventId}/guests`).then(setData).catch(() => setData(null));
   useEffect(() => { load(); }, [eventId]);
-  const move = async (attendeeId, table) => {
-    setMsg("");
+
+  // Every write lands here, so one place clears the message, keeps the undo
+  // the server handed back, and refreshes from the response rather than
+  // guessing what the new state is.
+  const write = async (path, opts, { undoLabel } = {}) => {
+    setErr(""); setMsg(""); setBusy(true);
     try {
-      await apiFetch(`/events/${eventId}/attendees/${attendeeId}/table`, { method: "PUT", body: JSON.stringify({ table }) });
-      load();
-    } catch (e) { setMsg(errorMessage(e, "That guest did not move.")); }
+      const r = await apiFetch(path, opts);
+      if (r && r.guests) setData(d => ({ ...(d || {}), guests: r.guests, tables: r.tables || (d && d.tables) || [] }));
+      else await load();
+      if (r && r.sentence) setMsg(r.sentence);
+      if (undoLabel && r && Array.isArray(r.undo) && r.undo.length) setUndo({ label: undoLabel, moves: r.undo });
+      setBusy(false);
+      return r;
+    } catch (e) { setErr(errorMessage(e, "That did not go through.")); setBusy(false); return null; }
   };
+
+  const move = (attendeeId, table) =>
+    write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: [attendeeId], table }) },
+      { undoLabel: table ? "Put them back" : "Seat them again" });
+
+  const seatPicked = table => {
+    setSeatMenu(false);
+    const ids = picked.slice();
+    setPicked([]);
+    return write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ attendeeIds: ids, table }) },
+      { undoLabel: "Undo" });
+  };
+
+  const addTables = () =>
+    write(`/events/${eventId}/tables`, { method: "POST", body: JSON.stringify({ count: addForm.count, seats: addForm.seats }) })
+      .then(r => { if (r) { setAddOpen(false); setMsg(`${r.created} ${r.created === 1 ? "table" : "tables"} of ${addForm.seats} seats.`); } });
+
+  const addNamed = () => {
+    if (!namedForm.label.trim()) return;
+    return write(`/events/${eventId}/tables`, { method: "POST", body: JSON.stringify(namedForm) })
+      .then(r => { if (r) { setNamedForm({ label: "", seats: 8, sponsorName: "" }); setMsg("Added."); } });
+  };
+
+  const saveTable = () => {
+    if (!editing) return;
+    return write(`/events/${eventId}/tables/${editing.id}`, { method: "PUT", body: JSON.stringify(editing) })
+      .then(r => { if (r) setEditing(null); });
+  };
+
+  const removeTable = t =>
+    write(`/events/${eventId}/tables/${t.id}`, { method: "DELETE" }, { undoLabel: "Put the table back" })
+      .then(r => { if (r && Array.isArray(r.undo) && r.undo.length) setUndo({ label: "Put the table back", restore: { ...r.undo[0] }, moves: r.undo }); });
+
+  const previewEveryone = () =>
+    apiFetch(`/events/${eventId}/seat-everyone`, { method: "POST", body: JSON.stringify({}) })
+      .then(setPlan).catch(e => setErr(errorMessage(e, "Could not work out a plan.")));
+
+  const applyEveryone = () => {
+    setPlan(null);
+    return write(`/events/${eventId}/seat-everyone`, { method: "POST", body: JSON.stringify({ apply: true }) },
+      { undoLabel: "Undo seating everyone" });
+  };
+
+  const doUndo = async () => {
+    if (!undo) return;
+    const u = undo; setUndo(null);
+    // A removed table has to come back before its guests can sit at it again.
+    if (u.restore && u.restore.label) {
+      await write(`/events/${eventId}/tables`, { method: "POST",
+        body: JSON.stringify({ label: u.restore.label, seats: u.restore.seats, sponsorName: u.restore.sponsorName || "" }) });
+    }
+    await write(`/events/${eventId}/seat`, { method: "POST", body: JSON.stringify({ moves: u.moves, withParty: false }) });
+    setMsg("Put back.");
+  };
+
   if (!data) return null;
-  const chart = seatingChart(data.guests || []);
+  const guests = (data.guests || []).filter(g => g.status !== "cancelled");
+  const tableRows = data.tables || [];
+  const chart = seatingChart(data.guests || [], { tables: tableRows });
   const tags = nameTags(data.guests || []);
+  const pickedGuests = guests.filter(g => picked.includes(g.id));
+  // A party moves together, so the count the button shows is the count that
+  // will actually move.
+  const partyOf = ids => {
+    const keys = new Set(ids);
+    for (const g of guests) if (keys.has(g.id) && g.guest_of) keys.add(g.guest_of);
+    return guests.filter(g => keys.has(g.id) || (g.guest_of && keys.has(g.guest_of)));
+  };
+  const movingParty = picked.length ? partyOf(picked) : [];
+
+  const card = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 };
+  const label = { fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 };
+  const btn = { background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" };
+  const go = { ...btn, background: T.greenDk, border: "none", color: T.white };
+  const inp = { background: T.bg, border: "1px solid " + T.bg3, borderRadius: 8, padding: "7px 10px", color: T.ink, fontSize: 12.5, outline: "none", fontFamily: "inherit" };
+
   const print = (title, rows) => {
     const w = window.open("", "_blank");
     if (!w) return;
@@ -375,48 +479,264 @@ function EventSeating({ eventId }) {
     </style>${rows}`);
     w.document.close(); w.focus(); w.print();
   };
-  const printChart = () => print(`${data.event.name} — seating`,
+  const printChart = () => print(`${data.event.name} seating`,
     `<h1>${data.event.name}</h1><div class="sub">${chart.sentence}</div>`
-    + chart.tables.map(t => `<div class="t"><h2>${t.label} · ${t.count}</h2>${t.seats.map(g => `<div>${g.name}${g.dietary ? ` <span style="color:#8a6d1f">(${g.dietary})</span>` : ""}</div>`).join("")}</div>`).join("")
+    + chart.tables.map(t => `<div class="t"><h2>${t.sentence}</h2>${t.seats.map(g => `<div>${g.name}${g.dietary ? ` <span style="color:#8a6d1f">(${g.dietary})</span>` : ""}</div>`).join("") || "<div style='color:#5a554f'>Empty</div>"}</div>`).join("")
     + (chart.unseated.length ? `<div class="t"><h2>Not yet seated · ${chart.unseated.length}</h2>${chart.unseated.map(g => `<div>${g.name}</div>`).join("")}</div>` : ""));
-  const printTags = () => print(`${data.event.name} — name tags`,
+  // A name tag carries a name and the table to find, and nothing else: a badge
+  // that prints somebody's giving level is a badge that tells the room what
+  // they gave.
+  const printTags = () => print(`${data.event.name} name tags`,
     tags.map(t => `<div class="tag"><b>${t.name}</b><span>${t.table || "Please see the desk"}</span></div>`).join(""));
 
+  // THE PRINT BUTTONS SAY WHY THEY ARE OFF. Printing a chart with no tables on
+  // it produced a blank page, which reads as a broken button.
+  const chartWhy = !guests.length ? "There are no guests to print yet."
+    : !chart.tables.length ? "There are no tables yet, so there is no chart to print."
+    : chart.seated === 0 ? "Nobody has a seat yet, so the chart would be empty."
+    : null;
+  const tagsWhy = !guests.length ? "There are no guests to print tags for yet." : null;
+
+  const registrationUrl = data.event && data.event.public_slug
+    ? `${window.location.origin}/e/${encodeURIComponent(data.event.public_slug)}` : null;
+
+  // ── THE TWO EMPTY STATES ────────────────────────────────────────────────
+  if (!guests.length) {
+    return (
+      <div data-testid="ev-seating" style={card}>
+        <div style={{ ...label, marginBottom: 10 }}>Tables and seating</div>
+        <div data-testid="ev-seating-empty-guests" style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 4 }}>No guests yet.</div>
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 14, maxWidth: 420 }}>
+          Guests show up here once people register or you add them.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button data-testid="ev-add-guest" onClick={() => {
+            const panel = document.querySelector('[data-testid="ev-guest-panel"]') || document.querySelector('[data-testid="ev-attendees"]');
+            if (panel) panel.scrollIntoView({ behavior: "smooth", block: "center" });
+            setMsg("Add a guest in the panel on the right.");
+          }} style={go}>Add a guest</button>
+          {registrationUrl
+            ? <button data-testid="ev-share-reg" onClick={() => {
+                navigator.clipboard?.writeText(registrationUrl).then(() => setMsg("The registration link is on your clipboard."),
+                  () => setMsg(registrationUrl));
+              }} style={btn}>Share the registration page</button>
+            : <span style={{ fontSize: 12, color: T.ink3, alignSelf: "center" }}>
+                Give this event a public page to take registrations.
+              </span>}
+        </div>
+        {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>{msg}</div>}
+      </div>
+    );
+  }
+
+  const TableAdder = ({ testid }) => (
+    <div data-testid={testid} style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "12px 14px" }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 12.5, color: T.ink }}>How many</span>
+        <input data-testid="ev-tables-count" type="number" min="1" max="60" value={addForm.count}
+          onChange={e => setAddForm(f => ({ ...f, count: e.target.value }))} style={{ ...inp, width: 68 }} aria-label="How many tables" />
+        <span style={{ fontSize: 12.5, color: T.ink }}>seats each</span>
+        <input data-testid="ev-tables-seats" type="number" min="1" max="60" value={addForm.seats}
+          onChange={e => setAddForm(f => ({ ...f, seats: e.target.value }))} style={{ ...inp, width: 68 }} aria-label="Seats at each table" />
+        <button data-testid="ev-tables-add" onClick={addTables} disabled={busy} style={go}>Add tables</button>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+        <input value={namedForm.label} onChange={e => setNamedForm(f => ({ ...f, label: e.target.value }))}
+          placeholder="Or name one: Sponsor table, Smith Co." style={{ ...inp, flex: "1 1 220px" }} aria-label="Name one table" />
+        <input type="number" min="1" max="60" value={namedForm.seats}
+          onChange={e => setNamedForm(f => ({ ...f, seats: e.target.value }))} style={{ ...inp, width: 68 }} aria-label="Seats" />
+        <input value={namedForm.sponsorName} onChange={e => setNamedForm(f => ({ ...f, sponsorName: e.target.value }))}
+          placeholder="Held for (optional)" style={{ ...inp, width: 150 }} aria-label="Held for" />
+        <button onClick={addNamed} disabled={busy || !namedForm.label.trim()} style={btn}>Add</button>
+      </div>
+    </div>
+  );
+
+  if (!chart.tables.length) {
+    return (
+      <div data-testid="ev-seating" style={card}>
+        <div style={{ ...label, marginBottom: 10 }}>Tables and seating</div>
+        <div data-testid="ev-seating-empty-tables" style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 4 }}>
+          You have {guests.length} {guests.length === 1 ? "guest" : "guests"} and no tables yet.
+        </div>
+        <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6, marginBottom: 14, maxWidth: 440 }}>
+          Lay the room out first. Ten tables of eight is the usual shape for a gala.
+        </div>
+        <TableAdder testid="ev-tables-adder" />
+        {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginTop: 10 }}>{err}</div>}
+        {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginTop: 10 }}>{msg}</div>}
+      </div>
+    );
+  }
+
+  // ── THE CHART ───────────────────────────────────────────────────────────
+  const openTables = chart.tables.filter(t => seatFit({ table: t, party: Math.max(1, movingParty.length) }).ok);
+
   return (
-    <div data-testid="ev-seating" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px", marginBottom: 14 }}>
+    <div data-testid="ev-seating" style={card}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.12em", textTransform: "uppercase", color: T.ink3 }}>Tables and seating</div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={printChart} data-testid="ev-print-chart" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Print the chart</button>
-          <button onClick={printTags} data-testid="ev-print-tags" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>Print name tags</button>
+        <div style={label}>Tables and seating</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={previewEveryone} disabled={busy || !chart.unseated.length}
+            data-testid="ev-seat-everyone"
+            title={chart.unseated.length ? undefined : "Everybody already has a seat."}
+            style={{ ...btn, opacity: chart.unseated.length ? 1 : 0.45, cursor: chart.unseated.length ? "pointer" : "not-allowed" }}>
+            Seat everyone
+          </button>
+          <button onClick={chartWhy ? undefined : printChart} data-testid="ev-print-chart"
+            disabled={!!chartWhy} title={chartWhy || undefined}
+            style={{ ...btn, opacity: chartWhy ? 0.45 : 1, cursor: chartWhy ? "not-allowed" : "pointer" }}>Print the chart</button>
+          <button onClick={tagsWhy ? undefined : printTags} data-testid="ev-print-tags"
+            disabled={!!tagsWhy} title={tagsWhy || undefined}
+            style={{ ...btn, opacity: tagsWhy ? 0.45 : 1, cursor: tagsWhy ? "not-allowed" : "pointer" }}>Print name tags</button>
         </div>
       </div>
-      <div style={{ fontSize: 13, color: T.ink3, marginBottom: 12 }}>{chart.sentence} Drag a name onto a table to seat them.</div>
-      {msg && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 8 }}>{msg}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 10 }}>
-        {chart.tables.map(t => (
-          <div key={t.label} data-testid="ev-table"
-            onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, t.label)}
-            style={{ background: T.bg, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
-            <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink, marginBottom: 6 }}>{t.label} · {t.count}</div>
-            {t.seats.map(g => (
-              <div key={g.id} draggable onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)}
-                style={{ fontSize: 12.5, color: T.ink, padding: "2px 0", cursor: "grab" }}>
-                {g.name}{g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
-              </div>
+      <div style={{ fontSize: 13, color: T.ink3, marginBottom: 4 }} data-testid="ev-seating-sentence">{chart.sentence}</div>
+      {(chartWhy || tagsWhy) && (
+        <div data-testid="ev-print-why" style={{ fontSize: 12, color: T.ink3, marginBottom: 8 }}>{chartWhy || tagsWhy}</div>
+      )}
+      <div style={{ fontSize: 12, color: T.ink3, marginBottom: 12 }}>
+        Tap a guest, then Seat at. On a computer you can also drag a name onto a table.
+      </div>
+
+      {err && <div role="alert" style={{ fontSize: 12.5, color: T.terra700, marginBottom: 8 }}>{err}</div>}
+      {msg && <div role="status" style={{ fontSize: 12.5, color: T.ink3, marginBottom: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span>{msg}</span>
+        {undo && <button data-testid="ev-undo" onClick={doUndo} style={{ ...btn, padding: "4px 10px" }}>{undo.label}</button>}
+      </div>}
+
+      {/* THE PLAN, BEFORE IT TOUCHES ANYTHING. A chart somebody has worked on
+          for an hour is not a thing to rearrange without asking. */}
+      {plan && (
+        <div data-testid="ev-plan" style={{ background: T.bg, border: "1px solid " + T.greenDk + "40", borderRadius: 11, padding: "12px 14px", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 6 }}>{plan.sentence}</div>
+          <div style={{ maxHeight: 160, overflowY: "auto", fontSize: 12.5, color: T.ink, lineHeight: 1.7, marginBottom: 8 }}>
+            {plan.moves.map(m => <div key={m.attendeeId}>{m.name} to {m.table}</div>)}
+            {plan.refused.map((r, i) => (
+              <div key={"r" + i} style={{ color: T.gold700 }}>{r.name} ({r.size}): {r.reason}</div>
             ))}
           </div>
-        ))}
+          <div style={{ display: "flex", gap: 8 }}>
+            <button data-testid="ev-plan-apply" onClick={applyEveryone} disabled={!plan.moves.length} style={go}>Seat them</button>
+            <button onClick={() => setPlan(null)} style={btn}>Leave it as it is</button>
+          </div>
+        </div>
+      )}
+
+      {/* SEAT AT… the tables that have room for everyone picked. */}
+      {picked.length > 0 && (
+        <div data-testid="ev-seat-bar" style={{ background: T.bg2, border: "1px solid " + T.bg3, borderRadius: 11, padding: "10px 12px", marginBottom: 12 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, color: T.ink, fontWeight: 700 }}>
+              {movingParty.length} {movingParty.length === 1 ? "guest" : "guests"} picked
+              {movingParty.length > picked.length ? " (a party moves together)" : ""}
+            </span>
+            <button data-testid="ev-seat-at" onClick={() => setSeatMenu(v => !v)} aria-expanded={seatMenu} style={go}>Seat at…</button>
+            <button onClick={() => seatPicked("")} style={btn}>Not seated</button>
+            <button onClick={() => { setPicked([]); setSeatMenu(false); }} style={{ ...btn, border: "none", background: "transparent", color: T.ink3 }}>Clear</button>
+          </div>
+          {seatMenu && (
+            <div data-testid="ev-seat-menu" role="menu" style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {openTables.length === 0
+                ? <span style={{ fontSize: 12.5, color: T.gold700 }}>
+                    No table has {movingParty.length} {movingParty.length === 1 ? "seat" : "seats"} open together. Add a table or make one bigger.
+                  </span>
+                : openTables.map(t => (
+                    <button key={t.label} role="menuitem" onClick={() => seatPicked(t.label)} style={btn}>
+                      {t.label} · {t.open} open
+                    </button>
+                  ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,2fr)", gap: 12 }} className="ev-seating-grid">
+        {/* NOT SEATED, on the left, because the people without a seat are the
+            ones this screen exists to find. */}
         <div data-testid="ev-unseated" onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, "")}
           style={{ background: T.white, border: "1.5px dashed " + T.bg3, borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>No seat yet · {chart.unseated.length}</div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: T.ink3, marginBottom: 6 }}>Not seated · {chart.unseated.length}</div>
+          {chart.unseated.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>Everybody has a seat.</div>}
           {chart.unseated.map(g => (
-            <div key={g.id} draggable onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)}
-              style={{ fontSize: 12.5, color: T.ink, padding: "2px 0", cursor: "grab" }}>{g.name}</div>
+            <GuestChip key={g.id} g={g} picked={picked.includes(g.id)}
+              onToggle={() => setPicked(p => p.includes(g.id) ? p.filter(x => x !== g.id) : [...p, g.id])}
+              onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)} />
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(190px,1fr))", gap: 10, alignContent: "start" }}>
+          {chart.tables.map(t => (
+            <div key={t.label} data-testid="ev-table" data-table-full={t.full ? "1" : "0"}
+              onDragOver={e => e.preventDefault()} onDrop={() => drag && move(drag, t.label)}
+              style={{ background: T.bg, border: "1px solid " + (t.full ? T.gold500 : T.bg3), borderRadius: 11, padding: "10px 12px", minHeight: 96 }}>
+              {editing && editing.id === t.id ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <input value={editing.label} onChange={e => setEditing(v => ({ ...v, label: e.target.value }))} style={inp} aria-label="Table name" />
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ fontSize: 11.5, color: T.ink3 }}>Seats</span>
+                    <input type="number" min="1" max="60" value={editing.seats}
+                      onChange={e => setEditing(v => ({ ...v, seats: e.target.value }))} style={{ ...inp, width: 64 }} aria-label="Seats" />
+                  </div>
+                  <input value={editing.sponsorName || ""} onChange={e => setEditing(v => ({ ...v, sponsorName: e.target.value }))}
+                    placeholder="Held for (optional)" style={inp} aria-label="Held for" />
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button onClick={saveTable} disabled={busy} style={{ ...go, padding: "5px 10px" }}>Save</button>
+                    <button onClick={() => setEditing(null)} style={{ ...btn, padding: "5px 10px" }}>Cancel</button>
+                    <button data-testid="ev-table-delete" onClick={() => { setEditing(null); removeTable(t); }}
+                      style={{ ...btn, padding: "5px 10px", color: T.terra700, marginLeft: "auto" }}>Remove</button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6, marginBottom: 6 }}>
+                    <div data-testid="ev-table-head" style={{ fontSize: 11.5, fontWeight: 800, color: t.full ? T.gold700 : T.ink }}>
+                      {t.sentence}
+                    </div>
+                    {t.id && <button onClick={() => setEditing({ id: t.id, label: t.label, seats: t.capacity, sponsorName: t.sponsorName || "" })}
+                      aria-label={`Edit ${t.label}`}
+                      style={{ background: "none", border: "none", color: T.ink3, fontSize: 11, cursor: "pointer", padding: 0 }}>Edit</button>}
+                  </div>
+                  {t.sponsorName && <div style={{ fontSize: 11, color: T.gold700, marginBottom: 4 }}>Held for {t.sponsorName}</div>}
+                  {t.seats.length === 0 && <div style={{ fontSize: 12.5, color: T.ink3, fontStyle: "italic" }}>Empty</div>}
+                  {t.seats.map(g => (
+                    <GuestChip key={g.id} g={g} picked={picked.includes(g.id)}
+                      onToggle={() => setPicked(p => p.includes(g.id) ? p.filter(x => x !== g.id) : [...p, g.id])}
+                      onDragStart={() => setDrag(g.id)} onDragEnd={() => setDrag(null)} />
+                  ))}
+                  {!t.declared && (
+                    <div style={{ fontSize: 10.5, color: T.gold700, marginTop: 4 }}>From an older chart. Edit to give it seats.</div>
+                  )}
+                </>
+              )}
+            </div>
           ))}
         </div>
       </div>
+
+      <div style={{ marginTop: 12 }}><TableAdder testid="ev-tables-adder" /></div>
     </div>
+  );
+}
+
+// A guest, tappable and draggable and reachable by keyboard. It is a BUTTON so
+// the phone, the mouse and the Tab key all reach it the same way; drag is an
+// extra on top rather than the only means.
+function GuestChip({ g, picked, onToggle, onDragStart, onDragEnd }) {
+  return (
+    <button type="button" data-testid="ev-guest" aria-pressed={picked}
+      draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onToggle}
+      style={{
+        display: "block", width: "100%", textAlign: "left", font: "inherit",
+        background: picked ? T.greenDk + "16" : "transparent",
+        border: picked ? "1px solid " + T.greenDk : "1px solid transparent",
+        borderRadius: 7, padding: "3px 6px", margin: "1px 0",
+        fontSize: 12.5, color: T.ink, cursor: "pointer",
+      }}>
+      {g.name}
+      {g.guest_of ? <span style={{ color: T.ink3 }}> · guest</span> : null}
+      {g.dietary ? <span style={{ color: T.gold700 }}> · {g.dietary}</span> : null}
+    </button>
   );
 }
 

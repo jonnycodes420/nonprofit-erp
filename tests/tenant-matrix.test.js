@@ -215,6 +215,12 @@ async function seedOrg(o, tag) {
   await q(`INSERT INTO fin_audit_log (id,org_id,user_id,user_name,action,entity_type,entity_id,entity_label,changes)
            VALUES ($1,$2,$3,$4,'updated','gift',$5,'Hidden Donor','{}'::jsonb)`,
     [`al_${o}`, o, `u_${o}_staff`, `staff-${o}@mx.local`, `g_${o}`]).catch(() => {});
+  // FIX-11 Part 2 — one table at each org's event, so the table routes are
+  // probed against a REAL row of the other org's room rather than a missing
+  // one (which would 404 for the wrong reason and prove nothing).
+  await q(`INSERT INTO event_tables (id,org_id,event_id,label,seats,sort,created_by,created_by_name)
+           VALUES ($1,$2,$3,'Table 1',8,1,'system:test','matrix')
+           ON CONFLICT (event_id,label) DO NOTHING`, [`etb_${o}`, o, `ev_${o}`]).catch(() => {});
   // INT-2 — an accounting connection per org, so the four /bookkeeping routes
   // have a real row to fail against rather than 404ing for a missing fixture.
   await q(`INSERT INTO bookkeeping_connections (id,org_id,vendor,status,realm_id,mapping,created_by,created_by_name)
@@ -412,6 +418,10 @@ function bResolver(routePath, param) {
     // FIX-9 — the check-in board names its param `slotId`, and the path
     // prefixes below are only consulted for `:id`, so it needs a name here.
     slotId: `vslot_${B}`,
+    // FIX-11 Part 2 — a table at org B's gala. Org A renaming or removing it
+    // would rearrange a room it has nothing to do with, and seating somebody
+    // at it would put a stranger's name on another organisation's chart.
+    tableId: `etb_${B}`,
   };
   if (byParam[param]) return byParam[param];
   if (param !== "id") return null;
