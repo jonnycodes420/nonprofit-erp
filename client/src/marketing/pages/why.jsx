@@ -101,14 +101,13 @@ export function Security() {
 export function About() {
   return <>
     <Crumbs list={[["Company"], ["About"]]} />
-    <section className="hero phero"><div className="wrap hero-g">
+    <section className="hero phero"><div className="wrap hero-g solo">
       <div>
         <div className="eyebrow">About Steward</div>
         <h1 className="mix h-xl">Small shops deserve <b>great software.</b></h1>
         <p className="lede">Most nonprofits are run by a handful of people doing the work of twenty. Steward exists so the few people raising the money can spend their time on donors, not on software.</p>
         <div className="ctas"><Pill href="/demo">Book a demo</Pill><Pill kind="soft" href="/signup">Start free</Pill></div>
       </div>
-      <div className="collage one"><Photo k="table-papers" cls="p1 tall" eager /></div>
     </div></section>
 
     <section style={{ paddingTop: 0 }}><div className="wrap"><div className="mission">
@@ -157,7 +156,7 @@ export function About() {
         p="Small releases, every week, each one tested before it reaches you. Every change is recorded in the audit log, and every release is listed on our What's new page. When we get something wrong we say so and fix it."
         sh="Built with the people who use it."
         sp="Every feature starts from a real nonprofit's week: a gala that needed seating, a bookkeeper who needed a clean file, a director who couldn't find the inbox button."
-        photo="review-report" />
+        ui={<Ui t="What's new" k="spark" rows={[["1", "Audit log for everything", "Every change, with the before and after", "Shipped", "c"], ["2", "Grouped sidebar", "Navigation by job, and a Customize option", "Shipped", "c"], ["3", "Connections and watching", "A warning the day a tool goes quiet", "Shipped", "c"]]} />} />
     </div></section>
 
     <section className="pricing"><div className="wrap">

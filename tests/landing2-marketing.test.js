@@ -25,6 +25,19 @@
 //      person's portrait swapped for anything but the repo's own files
 //  10. a demo form that sends anything but the three fields the lead route
 //      accepts, or sends anywhere but that route
+//
+// LANDING-3 added four, each one a thing that was on the site before it:
+//  11. the word "tour" on any button. There is no tour: every hero offers
+//      Book a demo and Start free, and the Why tabs say Learn more.
+//  12. a people carousel. TeamReel, .reel, .track-of-people and .tm are
+//      deleted, not hidden, and no route may render one. The research
+//      marquee (.marq) is not a people carousel and is deliberately allowed.
+//  13. a stock photograph on About, Leadership or Contact. Those three pages
+//      show real people or no people: Leadership and Contact use the repo's
+//      own portraits, and About shows none.
+//  14. a "Live" connection label that production cannot honour. The table
+//      must not promise a provider that shared/givingSources.js has no
+//      adapter for and oauth.js has no provider entry for.
 
 const fs = require("fs");
 const path = require("path");
@@ -55,6 +68,7 @@ const ALL = Object.values(SRC_TEXT).join("\n");
   const research = await import(path.join(MK, "data", "research.js"));
   const { PHOTOS } = await import(path.join(MK, "data", "photos.js"));
   const { TEAM } = await import(path.join(MK, "data", "team.js"));
+  const { CONNECTIONS } = await import(path.join(MK, "data", "connections.js"));
 
   console.log("\n— 1–4 · the copy rules —");
   {
@@ -119,6 +133,8 @@ const ALL = Object.values(SRC_TEXT).join("\n");
         const v = m[1];
         if (/^\/(marketing|landing)\//.test(v)) continue;           // asset paths
         if (/^\/lost-and-found\/(lead|benchmark)$/.test(v)) continue; // the API route the demo form posts to
+        if (v === "/billing/create-checkout") continue;              // LANDING-3: the API route /pricing posts a signed-in upgrade to
+        if (v === "/public/agreement" || v === "/public/signup") continue; // the signup page's own API routes
         linkish.push([f, v]);
       }
     }
@@ -146,7 +162,15 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     const toRe = p => new RegExp("^" + p.replace(/:[^/]+/g, "[^/]+") + "$");
     const clash = ROUTES.filter(r => appPaths.some(a => toRe(a).test(r.path))).map(r => r.path);
     ok("no marketing route shadows an app route in main.jsx (" + appPaths.length + " app routes)", appPaths.length > 20 && clash.length === 0, clash);
-    ok("/pricing stays the app's page", appPaths.includes("/pricing") && !ROUTES.some(r => r.path === "/pricing"));
+    // LANDING-3 part 1 turned this one around. /pricing was pinned to the app
+    // because the app page carried the signed-in Stripe checkout. It is a
+    // marketing route now, and the checkout moved with it, so what has to hold
+    // is the opposite: the marketing page owns the path AND still posts to
+    // /billing/create-checkout, or a paying organisation cannot change plan.
+    ok("/pricing is the marketing page now", !appPaths.includes("/pricing") && ROUTES.some(r => r.path === "/pricing"));
+    ok("…and it kept the signed-in checkout the app page had",
+      /\/billing\/create-checkout/.test(SRC_TEXT["client/src/marketing/pages/pricing.jsx"])
+      && /useAuth/.test(SRC_TEXT["client/src/marketing/pages/pricing.jsx"]));
     ok("/lost-and-found stays the app's audit", appPaths.includes("/lost-and-found") && !ROUTES.some(r => r.path === "/lost-and-found"));
     const vj = JSON.parse(fs.readFileSync(path.join(ROOT, "vercel.json"), "utf8"));
     const rw = (vj.rewrites || []).map(r => r.source).filter(s => s !== "/(.*)");
@@ -202,6 +226,50 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     ok("…and posts it to the Lost & Found lead route, the table super-admin lists", /fetch\(API \+ "\/lost-and-found\/lead"/.test(why) && /DEMO_REF = "book-a-demo"/.test(why));
     ok("the marketing source makes no other request (calculators compute in the browser)", (ALL.match(/fetch\(/g) || []).length === 1);
     ok("the thank-you state is the reference's sentence", why.includes("Thank you. Jonathan will email you within one business day to pick a time."));
+  }
+
+  console.log("\n— 11 · LANDING-3 —");
+  {
+    // 11 · no tour on a button. Prose may say "a tour of the facility"; a
+    // button may not say "Take a tour".
+    const btn = [];
+    for (const [f, t] of Object.entries(SRC_TEXT)) {
+      for (const m of t.matchAll(/<(Pill|button)\b[^>]*>([^<]*)</gi)) if (/tour/i.test(m[2])) btn.push(f + " " + m[2].trim());
+      for (const m of t.matchAll(/className="[^"]*\b(pill|go)\b[^"]*"[^>]*>([^<]*)</gi)) if (/tour/i.test(m[2])) btn.push(f + " " + m[2].trim());
+    }
+    ok("no button anywhere says tour", btn.length === 0, btn);
+    ok("every hero's second call to action is Start free", /href="\/signup">Start free/.test(SRC_TEXT["client/src/marketing/lib.jsx"]));
+
+    // 12 · no people carousel, and the component is gone rather than unused.
+    const css = SRC_TEXT["client/src/marketing/site.css"];
+    ok("the people reel component is deleted", !/TeamReel/.test(ALL));
+    ok("…and so are its CSS rules", !/\.mk \.reel\b/.test(css) && !/\.mk \.tm\{/.test(css));
+    ok("the research marquee is untouched", /\.mk \.marq/.test(css) && /className="marq"/.test(ALL));
+
+    // 13 · no stock photograph of a person on the three people pages.
+    const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
+    const sliceOf = n => { const i = why.indexOf("export function " + n); const j = why.indexOf("export function ", i + 10); return why.slice(i, j < 0 ? undefined : j); };
+    const stock = ["About", "Leadership", "Contact"].filter(n => /<Photo\b/.test(sliceOf(n)));
+    ok("no stock photo on About, Leadership or Contact", stock.length === 0, stock);
+    ok("…and Leadership and Contact still show the repo's own portraits", /<People \/>/.test(sliceOf("Leadership")) && /<Portrait\b/.test(sliceOf("Contact")));
+
+    // 14 · a Live label production can honour.
+    const src = fs.readFileSync(path.join(ROOT, "shared", "givingSources.js"), "utf8");
+    const oauth = fs.readFileSync(path.join(ROOT, "shared", "oauth.js"), "utf8");
+    const NEEDS_ADAPTER = { PayPal: "paypal", Givebutter: "givebutter", Square: "square", Stripe: "stripe", Donorbox: "donorbox" };
+    const NEEDS_OAUTH = { Mailchimp: "mailchimp", Xero: "xero", "QuickBooks Online": "intuit" };
+    const lies = [];
+    for (const [name, , state] of CONNECTIONS) {
+      if (state !== "Live") continue;
+      const a = NEEDS_ADAPTER[name];
+      if (a && !new RegExp('key: "' + a + '"').test(src)) lies.push(name + " has no adapter");
+      const o = NEEDS_OAUTH[name];
+      if (o && !new RegExp("^\\s*" + o + ": \\{", "m").test(oauth)) lies.push(name + " has no oauth provider");
+    }
+    ok("no connection is labelled Live that production cannot honour", lies.length === 0, lies);
+    ok("Donorbox is honestly Coming (there is no Donorbox adapter)",
+      CONNECTIONS.some(c => c[0] === "Donorbox" && c[2] === "Coming") && !/key: "donorbox"/.test(src));
+    ok("the retired label is gone from every page", !/Set up with you/.test(ALL.replace(/^\s*\/\/.*$/gm, "")));
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -37,7 +37,7 @@ export const ROUTES = [
   { path: "/features", page: "features", title: T("Everything included, nothing to unlock."), description: "Every feature is on every plan. No add-ons, no premium tier and no surprise invoice when you grow." },
   ...FEATURE_SLUGS.map(s => ({ path: "/features/" + s, page: "feature", slug: s, title: T(FEAT[s].h), description: FEAT[s].lede })),
 
-  // LANDING-3 part 1 — /pricing moved here from the app router. The page
+  // LANDING-3 part 1: /pricing moved here from the app router. The page
   // still carries the signed-in Stripe checkout, so the upgrade path from
   // UpgradeModal, goToPricing() and Settings is unchanged.
   { path: "/pricing", page: "pricing", title: T("Pricing that respects your budget."), description: "Every feature on every plan, priced by active donors. Seed $199, Sapling $299, Orchard $499 a month, and a conversation above ten thousand donors. Thirty days free, then month to month." },
