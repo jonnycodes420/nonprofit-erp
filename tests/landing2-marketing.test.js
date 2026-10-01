@@ -244,7 +244,19 @@ const ALL = Object.values(SRC_TEXT).join("\n");
     const css = SRC_TEXT["client/src/marketing/site.css"];
     ok("the people reel component is deleted", !/TeamReel/.test(ALL));
     ok("…and so are its CSS rules", !/\.mk \.reel\b/.test(css) && !/\.mk \.tm\{/.test(css));
+    // This one was too weak and it cost a regression. It proved the selector
+    // still existed, not that the strip still LAID OUT: `.marq .track` only
+    // set the duration, and the display:flex, the width:max-content and the
+    // keyframes all came from the reel's `.mk .track`. Deleting the reel
+    // collapsed the research strip into one narrow column and this passed.
     ok("the research marquee is untouched", /\.mk \.marq/.test(css) && /className="marq"/.test(ALL));
+    const trackRule = (css.match(/\.mk \.marq \.track\{([^}]*)\}/) || [, ""])[1];
+    ok("…and the marquee track still lays out as a strip",
+      /display:\s*flex/.test(trackRule) && /width:\s*max-content/.test(trackRule) && /animation:/.test(trackRule), trackRule);
+    const anim = (trackRule.match(/animation:\s*([a-z-]+)/) || [])[1];
+    ok("…and the animation it names has keyframes", !!anim && new RegExp("@keyframes " + anim + "\\b").test(css), anim);
+    ok("…and reduced motion stops it and lets the cards wrap",
+      /@media \(prefers-reduced-motion:reduce\)\{[^}]*\.mk \.marq \.track\{[^}]*flex-wrap:\s*wrap/.test(css.replace(/\s*\n\s*/g, "")));
 
     // 13 · no stock photograph of a person on the three people pages.
     const why = SRC_TEXT["client/src/marketing/pages/why.jsx"];
