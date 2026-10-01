@@ -36,6 +36,10 @@ Dashboards folded into Reports and Donor Portal is hidden from the CRM: hidden, 
 - **One gift path.** A gift is written by `recordGift` (server.js). The bulk writers that
   predate it (the two import routes, sample data, one webhook branch) are the only
   exceptions. Add no new ones.
+- **One audit write.** Every change is recorded by `middleware/auditTrail.js`, mounted above
+  every router. A route never writes an audit row; it may improve the one being written
+  (`req.audit.*`). Audit rows are append-only to the application, enforced by a trigger. A new
+  route is logged by default: do not add an audit call to one.
 - **One person record.** Donors, organisations and non-donor people are rows in `donors`
   (`person_types`), with one timeline. Never fork a second table or profile for a kind of person.
 - **Every number has a sentence.** A number on a screen, report or PDF comes with the one

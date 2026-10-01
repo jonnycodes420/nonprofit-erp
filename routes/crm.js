@@ -15,6 +15,9 @@
 //     against this file, one folder down (readSource reads it back as "./x").
 // Tests read this file through readSource("server.js") (scripts/lib/readSource.js).
 const express = require("express");
+// FIX-11 Part 1 — the audit log's own vocabulary (the sentence a row reads as).
+// The WRITING of a row happens in middleware/auditTrail.js and nowhere else.
+const auditTrailMod = require("../auditTrail");
 
 const routers = {
   r0: express.Router(),
@@ -2722,7 +2725,14 @@ app.get("/donors/:id", requireAuth, wrap(async (req, res) => {
   const d = rows[0];
   d.tags = JSON.parse(d.tags || "[]");
   d.interactions = await query("SELECT * FROM interactions WHERE donor_id = ? AND org_id = ? ORDER BY date DESC", [d.id, req.user.orgId]);
-  d.gifts = await query("SELECT * FROM gifts WHERE donor_id = ? ORDER BY date DESC", [d.id]);
+  // FIX-11 Part 1 — the gift carries its fund's NAME, not just its id. The
+  // timeline line reads "$100,000.00 · General Operating · ACH", and a screen
+  // that only had `fund_id` had to either print an id at a fundraiser or load
+  // the fund list a second time to translate it.
+  d.gifts = await query(
+    `SELECT g.*, f.name AS fund_name
+       FROM gifts g LEFT JOIN fin_funds f ON f.id = g.fund_id AND f.org_id = g.org_id
+      WHERE g.donor_id = ? ORDER BY g.date DESC`, [d.id]);
   d.matching_gift = lookupMatchingGift(d.employer);
   // BUILD-76 — the donor record shows the drift reason inline; same
   // computation as the list and every badge.
@@ -4711,6 +4721,13 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   // the Add-Gift form sends `fund_id`. Same for the campaign reference.
   const fundId = req.body.fundId || req.body.fund_id || null;
   const campaignId = req.body.campaignId || req.body.campaign_id || null;
+  // FIX-11 Part 1 — and the payment method, in BOTH spellings, for the same
+  // reason as the two above. This route read only `paymentMethod`, while the
+  // gift form, the gift EDIT route and the bookkeeper export all speak
+  // `payment_method` — so a gift typed with a method chosen was stored with
+  // none, and came out of the export as one of the blank-method rows Part 3
+  // is about. Found by walking the browser, not by any test of the route.
+  const paymentMethodIn = req.body.paymentMethod || req.body.payment_method || null;
   if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
     return res.status(400).json({ error: "A positive amount is required" });
   }
@@ -4809,7 +4826,7 @@ app.post("/donors/:id/gifts", requireAuth, checkWriteAccess, wrap(async (req, re
   const written = await recordGift({
     orgId: req.user.orgId, donorId: req.params.id, giftId, amount: amt, date: giftDate,
     type: type || "cash", campaign: campaignName || "", campaignId: effectiveCampaignId || null,
-    notes: notes || "", fundId: fundId || null, paymentMethod: req.body.paymentMethod,
+    notes: notes || "", fundId: fundId || null, paymentMethod: paymentMethodIn,
     pledgeId: pledgeRow ? pledgeRow.id : null, idempotencyKey: idemKey, conflict: "idempotency",
     actorId: actor(req).id, actorName: actor(req).name, source: "gift_form",
     extras: giftExtras,
@@ -12818,6 +12835,145 @@ app.delete("/api-keys/:id", requireAuth, requireAdmin, wrap(async (req, res) => 
   const r = await query(`UPDATE api_keys SET revoked_at=COALESCE(revoked_at, NOW()) WHERE id=? AND org_id=? RETURNING id`, [req.params.id, req.user.orgId]);
   if (!r.length) return res.status(404).json({ error: "Not found" });
   res.json({ ok: true });
+}));
+
+// ── FIX-11 Part 1 — THE AUDIT LOG SCREEN'S ROUTES ─────────────────────────
+// One read for the whole organisation's history, newest first, and one CSV of
+// the same rows. The old /finance/audit-log stays where it is and keeps the
+// Finance tab working; it is the same table, filtered to nothing in
+// particular, and this is the screen that covers everything.
+//
+// OWNERS AND ADMINS ONLY, and that is a boundary rather than a preference: the
+// log names who signed in, whose role changed and who downloaded a donor file.
+// Showing it to everybody would turn an accountability record into a
+// surveillance feed.
+const AUDIT_COLS = `id, created_at, user_id, user_name, actor_kind, action, entity_type, entity_id,
+  entity_label, summary, record_count, request_method, request_path, status_code, changes,
+  before_fields, after_fields`;
+
+// What the log covers, in one sentence, at the top of the screen. It lives
+// here so the screen, the CSV header and anything printed later say the same
+// thing: every number has a sentence, and so does a history.
+const AUDIT_COVERAGE = "Every change anyone makes in Steward: gifts, pledges and refunds; donors, "
+  + "people and merges; receipts and emails sent; funds, campaigns and pages; events, volunteers and "
+  + "shifts; imports and undos; downloads of donor data; users, roles and sign-ins; connections, API "
+  + "keys and settings; and every action an agent took and who approved it. Rows cannot be edited or "
+  + "removed, and they are kept for at least seven years.";
+
+async function auditQuery(req) {
+  const { actor, entityType, action, from, to, q: search } = req.query;
+  const limit = Math.max(1, Math.min(2000, parseInt(req.query.limit, 10) || 200));
+  const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+  let sql = `SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE org_id = ?`;
+  const params = [req.user.orgId];
+  if (actor) { sql += " AND (user_id = ? OR user_name = ?)"; params.push(actor, actor); }
+  if (entityType) { sql += " AND entity_type = ?"; params.push(entityType); }
+  if (action) { sql += " AND action = ?"; params.push(action); }
+  if (from) { sql += " AND created_at >= ?::date"; params.push(from); }
+  // `to` is inclusive of the whole day somebody typed, which is what a person
+  // filtering "up to the 30th" means. An exclusive bound silently drops that
+  // day's rows and reads as a missing record.
+  if (to) { sql += " AND created_at < (?::date + INTERVAL '1 day')"; params.push(to); }
+  // SEARCH BY DONOR NAME is the one a fundraiser actually needs, so it matches
+  // the label the row carries (the donor's name) as well as the person who
+  // acted and the record id, rather than making her know which field it is in.
+  if (search && String(search).trim()) {
+    sql += ` AND (entity_label ILIKE ? OR user_name ILIKE ? OR entity_id = ? OR summary ILIKE ?
+                  OR after_fields::text ILIKE ? OR before_fields::text ILIKE ?)`;
+    const like = "%" + String(search).trim() + "%";
+    params.push(like, like, String(search).trim(), like, like, like);
+  }
+  sql += " ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?";
+  params.push(limit, offset);
+  return query(sql, params);
+}
+
+// Which record a row opens. A voided gift and a deleted donor still open,
+// read-only, because the row whose history this is may well be the one
+// somebody is trying to account for.
+function auditRecordLink(r) {
+  const t = String(r.entity_type || "");
+  const id = r.entity_id;
+  if (!id) return null;
+  if (/^(donor|person|people|organisation|organization)$/.test(t)) return { tab: "donors", donorId: id };
+  if (/^(gift|pledge|receipt|refund|soft credit)$/.test(t)) return { tab: "donors", giftId: id };
+  if (/^(user|invite|role)$/.test(t)) return { tab: "settings", section: "team" };
+  if (/^(fund|account|transaction|budget)$/.test(t)) return { tab: "finance", recordId: id };
+  if (/^(campaign|appeal|giving page|form|widget)$/.test(t)) return { tab: "fundraising", recordId: id };
+  if (/^(event|ticket|guest|table|seat)$/.test(t)) return { tab: "events", recordId: id };
+  if (/^(volunteer|shift|hour|waiver)$/.test(t)) return { tab: "volunteers", recordId: id };
+  if (/^(grant|funder|milestone)$/.test(t)) return { tab: "grants", recordId: id };
+  if (/^(import|export)$/.test(t)) return { tab: "settings", section: "imports" };
+  if (/^(connection|api key|webhook|mailbox)$/.test(t)) return { tab: "settings", section: "connections" };
+  return { tab: "settings", section: "audit", recordId: id };
+}
+
+const auditRowOut = r => ({
+  ...r,
+  changes: typeof r.changes === "string" ? JSON.parse(r.changes || "{}") : (r.changes || {}),
+  before: typeof r.before_fields === "string" ? JSON.parse(r.before_fields || "null") : (r.before_fields || null),
+  after: typeof r.after_fields === "string" ? JSON.parse(r.after_fields || "null") : (r.after_fields || null),
+  sentence: auditTrailMod.rowSentence(r),
+  link: auditRecordLink(r),
+});
+
+app.get("/audit/log", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const rows = await auditQuery(req);
+  // The filter choices come from the rows that exist, so a dropdown never
+  // offers a type this organisation has never produced.
+  const [facets] = await query(
+    `SELECT
+       (SELECT COALESCE(JSON_AGG(DISTINCT entity_type), '[]') FROM fin_audit_log WHERE org_id=? AND entity_type IS NOT NULL) AS types,
+       (SELECT COALESCE(JSON_AGG(DISTINCT action),      '[]') FROM fin_audit_log WHERE org_id=? AND action IS NOT NULL) AS actions,
+       (SELECT COALESCE(JSON_AGG(DISTINCT user_name),   '[]') FROM fin_audit_log WHERE org_id=? AND user_name IS NOT NULL) AS actors`,
+    [req.user.orgId, req.user.orgId, req.user.orgId]);
+  res.json({
+    coverage: AUDIT_COVERAGE,
+    rows: rows.map(auditRowOut),
+    facets: {
+      entityTypes: (facets?.types || []).filter(Boolean).sort(),
+      actions: (facets?.actions || []).filter(Boolean).sort(),
+      actors: (facets?.actors || []).filter(Boolean).sort(),
+    },
+  });
+}));
+
+// ONE ROW of history, for the "what changed?" panel. Scoped to the org like
+// everything else.
+app.get("/audit/log/:id", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const rows = await query(`SELECT ${AUDIT_COLS} FROM fin_audit_log WHERE id=? AND org_id=?`,
+    [req.params.id, req.user.orgId]);
+  if (!rows.length) return res.status(404).json({ error: "Not found" });
+  res.json(auditRowOut(rows[0]));
+}));
+
+// The export of the log is itself a download of who-did-what, so it is logged
+// like any other download: the middleware sees Content-Disposition and writes
+// the row. Nothing here calls the audit layer by hand.
+app.get("/audit/log.csv", requireAuth, requireAdmin, wrap(async (req, res) => {
+  const rows = await auditQuery(req);
+  const cell = v => {
+    const s = v === null || v === undefined ? ""
+      : typeof v === "object" ? JSON.stringify(v) : String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const head = ["When", "Who", "In what capacity", "Action", "Record type", "Record",
+                "Record id", "What changed (before)", "What changed (after)", "Summary",
+                "Records touched", "Request", "Result"];
+  const lines = [head.join(",")];
+  for (const r of rows) {
+    const o = auditRowOut(r);
+    lines.push([
+      new Date(r.created_at).toISOString(), r.user_name || "System", r.actor_kind || "",
+      r.action || "", r.entity_type || "", r.entity_label || "", r.entity_id || "",
+      o.before, o.after, r.summary || "", r.record_count == null ? "" : r.record_count,
+      `${r.request_method || ""} ${r.request_path || ""}`.trim(), r.status_code == null ? "" : r.status_code,
+    ].map(cell).join(","));
+  }
+  const name = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+  res.send("﻿" + lines.join("\n") + "\n");
 }));
 
 // ── Key side: /api/v1, read only ───────────────────────────────────────────

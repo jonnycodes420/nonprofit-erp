@@ -461,6 +461,21 @@ const invitationLimiter = rateLimit({
   handler: rateLimitHandler,
   skip: rateLimitDisabled,
 });
+// ── FIX-11 Part 1 — THE AUDIT TRAIL, MOUNTED BEFORE EVERY ROUTER ──────────
+// This line is the whole mechanism. It sits above the FIRST router mount in
+// the file — above the raw-body webhook routers, which are mounted before
+// express.json() — so there is no route in the application that a change can
+// reach without passing through it. A route added tomorrow is logged by
+// default and its author does nothing.
+//
+// It reads req.body only inside the res.on("finish") handler, which runs after
+// the route, by which time whichever json parser applies has run. That is why
+// mounting it here, before the parsers, costs nothing.
+//
+// Everything about WHAT a row says lives in auditTrail.js and
+// middleware/auditTrail.js. Nothing about it lives in a route.
+app.use(require("./middleware/auditTrail").auditTrail());
+
 app.use(require("./routes/webhooks").routers.r0);
 
 // Billing webhook (platform subscriptions) must also receive raw body — same
@@ -2712,14 +2727,31 @@ async function recalcDonorSummary(donorId, orgId) {
   );
 }
 
-// ── Finance audit log helper ───────────────────────────────────────────────
+// ── The audit log helper the hand-placed calls still use ───────────────────
+// FIX-11 Part 1 — it no longer inserts a row while a request is in flight.
+// The middleware above (mounted before every router) is already writing one
+// for that request, and a second insert is how one action came to appear
+// twice. So inside a request this ENRICHES: the hand-written action name
+// ("api_key_created", "oauth_tenant_chosen") replaces the one derived from the
+// route pattern, and whatever the caller passed as `changes` rides along with
+// the before/after the middleware read off the row.
+//
+// Outside a request there is nothing to enrich, which is the case for a
+// background sweep, and then it inserts exactly as it always did. That is the
+// seam the periodic jobs use: a sweep that writes data says so here.
 async function writeAuditLog(orgId, userId, userName, action, entityType, entityId, changes) {
   try {
-    const id = "al_" + uuid().slice(0, 8);
-    await run(
-      "INSERT INTO fin_audit_log (id,org_id,user_id,user_name,action,entity_type,entity_id,changes) VALUES (?,?,?,?,?,?,?,?)",
-      [id, orgId, userId, userName, action, entityType, entityId, JSON.stringify(changes || {})]
-    );
+    const M = require("./middleware/auditTrail");
+    if (M.enrichFromLegacyCall(orgId, userId, userName, action, entityType, entityId, changes)) return;
+    await M.insertAuditRow({
+      orgId, actorId: userId, actorName: userName,
+      actorKind: String(userId || "").startsWith("system:") ? "system" : (userId ? "user" : "system"),
+      action: String(action || "changed").replace(/_/g, " "),
+      entityType: String(entityType || "record").replace(/_/g, " "),
+      entityId: entityId === undefined ? null : entityId,
+      entityLabel: null, changes: changes || {}, before: null, after: null,
+      summary: null, recordCount: null, method: null, path: null, status: null, ip: null,
+    });
   } catch(e) { console.error("Audit log write:", e.message); }
 }
 app.use(require("./routes/billing").routers.r1);

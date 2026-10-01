@@ -52,6 +52,11 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
   const[search,setSearch]=useState("");
   const[selected,setSelected]=useState(()=>initialSelectDonorId?data.donors.find(d=>d.id===initialSelectDonorId)||null:null);
   const[logTarget,setLogTarget]=useState(()=>initialLogDonorId?data.donors.find(d=>d.id===initialLogDonorId)||null:null);
+  // FIX-11 Part 1 — "+ Log → Gift" hands the person to the real gift form on
+  // the donor's profile rather than collecting an amount in the touchpoint
+  // modal, which produced a note and no gift. Cleared once the profile has
+  // opened on it, so re-selecting the donor later does not reopen the form.
+  const[giftHandoff,setGiftHandoff]=useState(null);
   // BUILD-81 — the "Log a conversation" picker (directory toolbar) + target.
   const[convoPickerOpen,setConvoPickerOpen]=useState(false);
   const[convoTarget,setConvoTarget]=useState(null);
@@ -464,7 +469,9 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
           the recommended path gets the good path. */}
       {showCombinedImport&&<DonorImport withHistory org={data.org} onOpenHome={onNavigate?()=>onNavigate("dashboard"):null} onClose={()=>setShowCombinedImport(false)} onImported={()=>{reloadDonors();setShowCombinedImport(false);}}/>}
       {upgradeModal&&<UpgradeModal open={true} onClose={()=>setUpgradeModal(null)} reason={upgradeModal.reason} current={upgradeModal.current} limit={upgradeModal.limit} plan={upgradeModal.plan}/>}
-      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)} onClose={()=>setLogTarget(null)}/>}
+      {logTarget&&<LogTouchpointModal donor={logTarget} onSave={int=>handleLogged(logTarget,int)}
+        onRecordGift={opts=>{const d=logTarget;setLogTarget(null);selectDonor(d);setGiftHandoff({donorId:d.id,date:opts&&opts.date});}}
+        onClose={()=>setLogTarget(null)}/>}
       {convoPickerOpen&&(
         <Modal onClose={()=>setConvoPickerOpen(false)} width={420} zIndex={300} align="top" padding={0}
           ariaLabel="Log a conversation" dialogStyle={{borderRadius:16,border:"1px solid "+T.bg3,maxHeight:"70vh"}}>
@@ -492,7 +499,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
       {followUpTarget&&<FollowUpTaskModal donor={followUpTarget} onClose={()=>setFollowUpTarget(null)} onSave={task=>{setData(prev=>({...prev,tasks:[task,...prev.tasks]}));setFollowUpTarget(null);}}/>}
       {editTarget&&<EditDonorModal donor={editTarget} onSave={handleEditSaved} onClose={()=>setEditTarget(null)}/>}
       {selected ? (
-      <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>setSelected(null)}
+      <ErrorBoundary key={selected.id}><DonorProfile donor={selected} onClose={()=>{setSelected(null);setGiftHandoff(null);}}
         onStageChange={moveToStage} onLogTouchpoint={()=>{setLogTarget(selected);}}
         aiMap={aiMap} aiErr={aiErr} loadingKey={loadingKey} getAI={getAI}
         isAdmin={isAdmin} onEdit={()=>setEditTarget(selected)} onDelete={deleteDonor}
@@ -500,6 +507,7 @@ export function Donors({data,setData,isReadOnly=false,onNavigate,initialView,ini
         orgName={data.org?.name||""} org={data.org} orgTeam={orgTeam} onReassign={handleAssign} onCfSaved={reloadCfValues} onInteractionAdded={reloadDonors}
         onNavigate={onNavigate}
         initialOpenConversation={!!initialOpenConversation&&selected.id===initialSelectDonorId}
+        initialAddGift={giftHandoff&&giftHandoff.donorId===selected.id?giftHandoff:null}
         isReadOnly={isReadOnly} allDonors={data.donors} onSelectRelatedDonor={id=>{const d=data.donors.find(x=>x.id===id);if(d)selectDonor(d);}}/></ErrorBoundary>
       ) : (<>
 

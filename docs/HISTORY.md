@@ -24,6 +24,90 @@ The note that headed the old CLAUDE.md, kept because the entries below still cit
 
 
 
+## FIX-11 Part 1 — everything leaves a trail (2026-09-30)
+
+On 30 September Jonathan recorded a $100,000 gift by hand on the Creo demo
+record and the audit log did not mention it. The cause was not a filter, a
+delay or the demo org: **no gift path wrote an audit row at all.** Thirty-three
+`writeAuditLog(...)` calls existed, every one hand-placed in a finance or
+settings route, and the other four hundred and thirty-four mutating routes
+wrote nothing. A list of audit calls is a list somebody forgets to add to, and
+what they forget is a record of whose money moved.
+
+**The shared layer.** `middleware/auditTrail.js`, mounted above every one of
+the app's routers in `server.js` — above the raw-body webhook routers, so there
+is no route a change can reach without passing through it. A route does not opt
+in; a route written tomorrow is logged with its author doing nothing. 467
+mutating routes, 0 uncovered, 1 declared read-only
+(`auditTrail.READ_ONLY_POSTS`), and `tests/fix11-audit-trail.test.js` reads
+that off the live Express router rather than a hand-kept list.
+
+**Before and after, with nothing written per route.** The middleware reads the
+record before the handler and again after, and stores only the fields that
+moved. Two things about that cost a silent half-feature each, and both were
+found by verifying rather than by reasoning:
+
+- The before-read happens before `requireAuth`, so there is no `req.user` and
+  no org to scope it to. The first version scoped it to the org anyway, got
+  null every time, and recorded no before/after on a single edit in the
+  application. It now reads by primary key and checks the org at finish time.
+- The resource name does not identify a table. `/finance/funds/:id` is
+  `fin_funds`, and there is ALSO a table called `funds`. Picking by name picked
+  the wrong one. The name now only proposes candidates and the right table is
+  the one that actually holds the id.
+
+**The thirty-three hand-placed calls are not deleted.** Several of them know
+something a route pattern cannot ("api_key_created", "oauth_tenant_chosen").
+`writeAuditLog` now finds the request it is inside (an `AsyncLocalStorage`) and
+*improves* the row the middleware is already writing instead of inserting a
+second one beside it. One action, one row, and the better name wins. Outside a
+request — a background sweep — it inserts as it always did.
+
+**Append-only, enforced by the database, on the application's own connections.**
+Every connection `db.js` opens carries `steward.app_connection=on` as a startup
+option, and a trigger refuses UPDATE and DELETE from such a connection. The
+polarity is deliberate: refusing everything and letting the one legitimate
+purge announce itself would also stop twenty test teardowns and every
+maintenance script clearing a scratch database, for no extra safety — a psql
+session can drop the trigger either way. What matters is that no screen and no
+route can touch history, and that is what this enforces. The one path that may
+is closing an organisation's account, which sets `steward.audit_purge`
+transaction-locally and says so out loud (`routes/billing.js`). The org foreign
+key became `ON DELETE CASCADE` in the same breath: an org's history goes with
+the org, said once where the relationship is declared rather than in four test
+teardowns.
+
+**"+ Log → Gift" made a note and no gift.** The modal posted the typed fields
+as a key:value blob to `/donors/:id/interactions` AND posted a gift whose
+`notes` was that same blob; `recordGift` writes one linked timeline entry of
+its own, so the record carried two entries, identical text, same day — which is
+exactly what Jonathan saw. The Amount, Designation and Payment Method he typed
+were prose in a note rather than a fund and a method on the gift, so the money
+reached no total, no receipt, no bookkeeper export and no audit row. The gift
+type now collects nothing and hands off to the gift form on the Giving tab: one
+gift path, a real fund, a real method, an acknowledgement flag, one timeline
+entry. A gift reads as `$100,000 · General Operating · ACH · not yet thanked`,
+from one formatter both timeline modes call.
+
+**What only the browser caught** (`scripts/fix11-audit-walk.js`, 25 assertions
+at 1440 and 390):
+
+- The hand-off did nothing when the profile was already open. React keys the
+  profile by donor id, nothing remounted, and the initial state that opens the
+  gift form never ran again. No test of the modal in isolation could see it.
+- A gift posted with `payment_method` — the spelling the form, the gift EDIT
+  route and the bookkeeper export all use — was stored with NO method, because
+  the create route read only `paymentMethod`. That is one of the blank-method
+  rows Part 3 is about, and it was being created on the way in.
+- The timeline printed "Needs you", the sentinel for a missing method, as
+  though it were a payment method.
+- An audit row for a CREATE showed nothing about what was created, so a
+  recorded $100,000 gift was a row with no amount in it.
+
+Also noted, older than this build and not touched: reaching `/settings` by URL
+at 390 lands on Home, which is why the phone leg of the walk goes through the
+More drawer.
+
 ## NAV-1 — a sidebar you can scan (2026-09-30)
 
 Thirteen items in one flat list, plus a "More" fold. Events and Volunteers shared
