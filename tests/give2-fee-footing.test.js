@@ -65,6 +65,8 @@ function startStripeMock(port = STRIPE_MOCK_PORT) {
             pinnedMethods: [...p.keys()].filter(k => k.startsWith("payment_method_types")),
             setupFutureUsage: p.get("payment_intent_data[setup_future_usage]") || "",
             customerCreation: p.get("customer_creation") || "",
+            customer: p.get("customer") || "",
+            customerEmail: p.get("customer_email") || "",
             rememberMe: p.get("metadata[remember_me]") || "",
             baseAmount: p.get("metadata[base_amount_cents]") || "",
             coverFees: p.get("metadata[cover_fees]") || "",
@@ -248,6 +250,27 @@ async function footingOf(piId) {
     });
     ok("without the box, nothing is saved and no customer is made",
       seen[0] && !seen[0].setupFutureUsage && !seen[0].customerCreation && !seen[0].rememberMe, seen[0]);
+
+    // (e) THE SAME PERSON IS THE SAME STRIPE CUSTOMER. A donor who already has
+    // one (the recurring layer put it there) must not be given a second for the
+    // same organisation, and `donors.stripe_customer_id` must not be overwritten
+    // by a path that did not know about the first.
+    // The donor row exists because they have given before — which is the only
+    // way they could have a saved customer in the first place.
+    await q(`INSERT INTO donors (id,org_id,name,email,stripe_customer_id,created_by,created_by_name)
+             VALUES ($1,$2,'Fee Footing',$3,'cus_already_theirs','system:test','Test')
+             ON CONFLICT (id) DO UPDATE SET stripe_customer_id='cus_already_theirs'`,
+      ["d_g2fee_known", ORG, "g2fee-donor@example.org"]);
+    seen.length = 0;
+    await fetch(`${BASE}/donate/${SLUG}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: "100", frequency: "once", rememberMe: true,
+                             firstName: "Fee", lastName: "Footing", email: "g2fee-donor@example.org" }),
+    });
+    ok("a donor Steward already has a Stripe customer for keeps that customer",
+      seen[0] && seen[0].customer === "cus_already_theirs" && !seen[0].customerCreation, seen[0]);
+    ok("…and no customer_email rides beside it (Stripe refuses both)",
+      seen[0] && !seen[0].customerEmail, seen[0]);
   }
 
   // ════════════════════════════════════════════════════════════════════════

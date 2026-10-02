@@ -2416,6 +2416,13 @@ const donateHandler = async (req, res) => {
   // a purchase: neither is a reason to keep somebody's card.
   const rememberMe = req.body.rememberMe === true && frequency !== "monthly" && frequency !== "annual"
     && !req.body.eventLevelId && !req.body.membershipLevelId;
+  // THE SAME PERSON IS THE SAME STRIPE CUSTOMER. `donors.stripe_customer_id`
+  // already exists on this row for the recurring layer, so a one-time gift that
+  // asks to be remembered attaches to THAT customer rather than minting a
+  // second one for the same human on the same connected account — which would
+  // also overwrite the column another path wrote. Filled in below, once the org
+  // is known; declared here, above every line that reads it (the TDZ rule).
+  let rememberCustomerId = null;
   // BUILD-98 (switch) Part 4 — a TICKET is priced by the SERVER from the level,
   // never by the amount the page sent. One-time only, and no fee gross-up: the
   // receipt's deductible split is computed on exactly what the level costs.
@@ -2458,6 +2465,16 @@ const donateHandler = async (req, res) => {
     if (!appRows.length || appRows[0].status !== "approved") {
       return res.status(400).json({ error: "This organization is not set up to accept online donations yet." });
     }
+  }
+
+  if (rememberMe) {
+    // Exact email, org-scoped — the one way this codebase links a person.
+    const [known] = await query(
+      `SELECT stripe_customer_id FROM donors
+        WHERE org_id = ? AND LOWER(email) = LOWER(?) AND deleted_at IS NULL
+          AND stripe_customer_id IS NOT NULL
+        ORDER BY updated_at DESC LIMIT 1`, [org.id, email]);
+    rememberCustomerId = known ? known.stripe_customer_id : null;
   }
 
   let baseCents = toCents(amount);                       // BUILD-73: the money seam
@@ -2757,7 +2774,8 @@ const donateHandler = async (req, res) => {
   // can SEE what will appear, and it is a report, never a gate.
   const sessionParams = {
     mode: isRecurring ? "subscription" : "payment",
-    customer_email: email,
+    // Stripe refuses `customer` and `customer_email` together.
+    ...(rememberMe && rememberCustomerId ? {} : { customer_email: email }),
     line_items: [{
       price_data: {
         currency: "usd",
@@ -2792,8 +2810,12 @@ const donateHandler = async (req, res) => {
             ...(rememberMe ? { setup_future_usage: "off_session" } : {}),
           },
           // A customer is created only when there is something to attach to
-          // it. Stripe will not accept `setup_future_usage` without one.
-          ...(rememberMe ? { customer_creation: "always" } : {}),
+          // it. Stripe will not accept `setup_future_usage` without one, and it
+          // will not accept `customer` and `customer_email` together — so a
+          // donor Steward already has a customer for gets that customer, and a
+          // donor it does not gets a new one.
+          ...(rememberMe && rememberCustomerId ? { customer: rememberCustomerId } : {}),
+          ...(rememberMe && !rememberCustomerId ? { customer_creation: "always" } : {}),
         }
     ),
   };

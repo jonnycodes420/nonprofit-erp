@@ -5830,7 +5830,9 @@ async function initSchema() {
   // giving to two organisations is two donor rows and two Stripe customers on
   // two accounts, which is right — one org may not charge a card saved with
   // another.
-  await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  // `donors.stripe_customer_id` already exists (added for the recurring layer),
+  // and express giving reuses it rather than minting a second customer for the
+  // same person on the same connected account.
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_id TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_brand TEXT`);
   await pool.query(`ALTER TABLE donors ADD COLUMN IF NOT EXISTS express_pm_last4 TEXT`);
