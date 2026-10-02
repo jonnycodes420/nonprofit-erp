@@ -497,8 +497,8 @@ const SOURCES = {
               FROM (SELECT i.donor_id, i.date FROM interactions i
                      WHERE i.org_id = ? AND i.type = 'email' AND i.metadata->>'logged_by' = ? AND i.date >= ?
                     UNION ALL
-                    SELECT unnest(c.person_ids), TO_CHAR(c.starts_at, 'YYYY-MM-DD') FROM calendar_events c
-                     WHERE c.org_id = ? AND c.owner_user_id = ? AND c.starts_at >= ?::date) x
+                    SELECT unnest(c.person_ids), ${meetings.CAL_DATE} FROM calendar_events c
+                     WHERE c.org_id = ? AND c.owner_user_id = ? AND ${meetings.CAL_DATE} >= ?) x
               JOIN donors d ON d.id = x.donor_id AND d.org_id = ? AND d.deleted_at IS NULL
              GROUP BY d.id, d.name`,
       args: [orgId, p.staff, p.since, orgId, p.staff, p.since, orgId], order: "date DESC, id",

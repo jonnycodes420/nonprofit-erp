@@ -23,7 +23,7 @@ import { apiFetch } from "../api";
 import { T, firstNameOf, fmtFull } from "./shared";
 import { Figure } from "./Figure";
 import { errorMessage } from "../lib/domainError";
-import { civilDaysAgo } from "../lib/orgToday";
+import { civilDaysAgo, civilDayOf, orgTodayPlus } from "../lib/orgToday";
 import { noteFields } from "../../../shared/meetingNote.js";
 
 const DARK_BRASS = T.gold700;      // the artboards' #8A6D1F
@@ -452,7 +452,8 @@ export function RelationshipRail({ rel, donor, onReload }) {
 }
 
 // ── HOW DID IT GO ───────────────────────────────────────────────────────────
-const plus = (iso, days) => { const d = new Date(iso); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+// FIX-14 Part 1 — the org's calendar (this was the UTC day of a local instant).
+const plus = (iso, days) => orgTodayPlus(days, new Date(iso));
 const FREQ_FOR = { 2: "semiannual", 4: "quarterly", 12: "monthly" };
 
 export function AfterMeetingForm({ meeting, onDone }) {
@@ -494,7 +495,7 @@ export function AfterMeetingForm({ meeting, onDone }) {
     try {
       await apiFetch(`/calendar/events/${meeting.id}/log`, { method: "POST", body: JSON.stringify({ note, nextStep: next.trim() || null }) });
       const done = ["the note"];
-      const meetingDay = new Date(meeting.startsAt).toISOString().slice(0, 10);
+      const meetingDay = civilDayOf(meeting.startsAt);   // FIX-14 Part 1 — the org-local day, not the UTC day
       if (person && pledge) {
         const count = pledge.payments > 1 ? pledge.payments : null;
         await apiFetch(`/donors/${person.id}/pledges`, { method: "POST", body: JSON.stringify({
