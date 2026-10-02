@@ -683,6 +683,93 @@ const SOURCES = {
       args: [orgId, p.donor, p.from, p.to], order: "date DESC, id",
     }),
   },
+  // PARITY-1 Part 1b · AT A GLANCE. Each figure in the profile's glance block
+  // is one of these, so each opens the gift (or gifts) it is.
+  "donor-first-gift": {
+    label: "First gift",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "The first gift this person ever gave, on its own: what it was, when it came in and what it went to.",
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.date ASC, g.id ASC LIMIT 1`,
+      args: [orgId, p.donor],
+    }),
+  },
+  "donor-largest-gift": {
+    label: "Largest gift",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "The largest single gift this person has given. When two gifts are the same size, the more recent one.",
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0 ORDER BY g.amount DESC, g.date DESC, g.id DESC LIMIT 1`,
+      args: [orgId, p.donor],
+    }),
+  },
+  "donor-average-gift": {
+    label: "Average gift",
+    measure: () => "mean",
+    params: { donor: "id:required" },
+    sentence: () => "Every gift this person has given, added up and divided by how many there are, to the cent. A refund is not a gift and is left out.",
+    sql: (orgId, p) => ({
+      sql: `${DONOR_GIFT_SELECT} AND g.amount > 0`,
+      args: [orgId, p.donor], order: "date DESC, id",
+    }),
+  },
+  // PARITY-1 Part 1a · EACH TAG OPENS ITS DONORS. The tag's rule is
+  // donorStatus.js statusSql, the same one the profile and the lists use; the
+  // amount on each row is what they gave in the last 12 months.
+  "donors-by-status": {
+    label: "Donors with this tag",
+    measure: () => "count",
+    params: { tag: "word:required", today: "date:required" },
+    sentence: p => {
+      const DS = require("./donorStatus");
+      return `Everyone tagged ${DS.tagLabel(p.tag)}. ${DS.tagSentence(p.tag, DS.DEFAULT_CUTS).replace(/^Giving level is what they gave.*?: /, "Giving level is what they gave in the last 12 months, against your cut points. ")} The amount is what each gave in the last 12 months, refunds taken off.`;
+    },
+    sql: async (orgId, p) => {
+      const DS = require("./donorStatus");
+      if (!DS.TAG_KEYS.includes(p.tag)) throw new FigureParamError("tag is not a tag Steward knows.");
+      const cuts = await DS.cutsFor(orgId);
+      const st = DS.statusSql(orgId, p.today, cuts);
+      const col = DS.LEVELS[p.tag] ? "s.level = ?" : DS.LIFECYCLES[p.tag] ? "s.lifecycle = ?" : "s.retained";
+      return {
+        sql: `SELECT d.id, 'donor' AS type, d.id AS donor_id, d.name, s.last_date AS date, s.last12 AS amount,
+                     'Given in the last 12 months' AS detail
+                FROM (${st.sql}) s JOIN donors d ON d.id = s.donor_id AND d.org_id = ?
+               WHERE ${col}`,
+        args: [...st.args, orgId, ...(col.endsWith("?") ? [p.tag] : [])],
+        order: "amount DESC NULLS LAST, id",
+      };
+    },
+  },
+  // PARITY-1 Part 1e · two of the closeness facts that had no source.
+  "donor-membership": {
+    label: "Membership",
+    measure: () => "count",
+    params: { donor: "id:required" },
+    sentence: () => "This person's current membership: the level, the day they joined and when it runs to. A member in their grace period still counts.",
+    sql: (orgId, p) => ({
+      sql: `SELECT m.id, 'membership' AS type, m.donor_id, l.name, m.joined_on AS date, l.price AS amount,
+                   CASE WHEN m.expires_on IS NULL THEN 'No end date' ELSE 'Runs to ' || m.expires_on END AS detail
+              FROM memberships m JOIN membership_levels l ON l.id = m.level_id AND l.org_id = m.org_id
+             WHERE m.org_id = ? AND m.donor_id = ? AND m.status IN ('active','grace')`,
+      args: [orgId, p.donor],
+    }),
+  },
+  "donor-fundraising": {
+    label: "Raised as a fundraiser",
+    measure: () => "sum",
+    params: { donor: "id:required" },
+    sentence: () => "Every gift given through a peer-to-peer page this person runs, added up to the cent.",
+    sql: (orgId, p) => ({
+      sql: `SELECT g.id, 'gift' AS type, g.donor_id, COALESCE(gd.name, 'A supporter') AS name, g.date,
+                   ROUND(g.amount::numeric, 2) AS amount, 'Peer-to-peer page: ' || pf.name AS detail
+              FROM gifts g JOIN peer_fundraisers pf ON pf.id = g.peer_fundraiser_id AND pf.org_id = g.org_id
+              LEFT JOIN donors gd ON gd.id = g.donor_id AND gd.org_id = g.org_id
+             WHERE g.org_id = ? AND pf.person_id = ?`,
+      args: [orgId, p.donor], order: "date DESC, id",
+    }),
+  },
   // MOVES MANAGEMENT — who has not been met. Owner and amount aware.
   "no-recent-meeting": {
     label: "No meeting since",
@@ -1022,14 +1109,14 @@ const SOURCES = {
     label: "Volunteer hours",
     measure: () => "sum",
     amountKind: "hours",
-    params: { from: "date:required", to: "date:required" },
-    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}, with the hours recorded on it.`,
+    params: { from: "date:required", to: "date:required", donor: "id" },
+    sentence: (p, dd) => `Every volunteer shift dated ${dd(p.from)} to ${dd(p.to)}${p.donor ? " by this person" : ""}, with the hours recorded on it.`,
     sql: (orgId, p) => ({
       sql: `SELECT v.id, 'shift' AS type, v.person_id AS donor_id, d.name, v.date,
                    ROUND(v.hours::numeric, 2) AS amount, NULLIF(v.role, '') AS detail
               FROM volunteer_shifts v JOIN donors d ON d.id = v.person_id AND d.org_id = v.org_id
-             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?`,
-      args: [orgId, p.from, p.to],
+             WHERE v.org_id = ? AND d.deleted_at IS NULL AND v.date >= ? AND v.date <= ?${p.donor ? " AND v.person_id = ?" : ""}`,
+      args: p.donor ? [orgId, p.from, p.to, p.donor] : [orgId, p.from, p.to],
       order: "amount DESC NULLS LAST, id DESC",
     }),
   },
@@ -1147,6 +1234,13 @@ function shapeRow(r, dd) {
 function valueOf(measure, agg) {
   if (measure === "sum") { const c = money.toCents(String(agg.s ?? "0")) ?? 0; return { value: money.toDollars(c), cents: c }; }
   if (measure === "avg") return { value: agg.n > 0 ? Math.round(Number(agg.a) || 0) : 0, cents: null };
+  // PARITY-1 — an average of MONEY, to the cent: the rows' own sum in cents
+  // divided by their count, so the drawer's total over its count is the figure.
+  if (measure === "mean") {
+    const c = money.toCents(String(agg.s ?? "0")) ?? 0;
+    const m = agg.n > 0 ? Math.round(c / Number(agg.n)) : 0;
+    return { value: money.toDollars(m), cents: m };
+  }
   return { value: Number(agg.n) || 0, cents: null };
 }
 function orderClause(o) { return o || "date DESC NULLS LAST, id DESC"; }

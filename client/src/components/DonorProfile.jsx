@@ -32,6 +32,7 @@ import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   /
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 import { WhyPanel } from "./WhyAnswer";
+import { useDonorStatus, StatusTags, ClosenessLine, ProfileGlance } from "./ProfileStatus";
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
 // profile it is drawn in brass (deep brass on a light ground), never terracotta.
 const stageTone=(s,onDark)=>s&&s.id==="lapsed"?(onDark?T.gold:T.gold700):s&&s.color;
@@ -915,6 +916,8 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [rel,setRel]=useState(null);
   // ENGAGE-1 — the two scores and the suggested ask, one read.
   const scores=useScores(donor.id);
+  // PARITY-1 — tags, closeness, at a glance, highlights and the next action, one read.
+  const status=useDonorStatus(donor.id, figs);
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
@@ -1894,6 +1897,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 facts, so the header said what this person IS and what you
                 could do to them in the same breath, in the same shape. */}
             <RoleLine donor={donor} isReadOnly={isReadOnly}/>
+            {/* PARITY-1 — the giving level, lifecycle and Retained, each
+                opening its donors, and the closeness word with its facts. */}
+            <StatusTags status={status}/>
+            <ClosenessLine status={status}/>
             {/* PROFILE-1 — ONE LIFETIME NUMBER ON THIS SCREEN. This line used
                 to read donors.total_giving while the tile below it now reads
                 the gifts themselves (figureSources donor-lifetime), and on the
@@ -2125,6 +2132,32 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </div>
           )}
 
+          {/* PARITY-1 — AT A GLANCE is one block: the four tiles above, then
+              first, largest and average gift, the highlights and the next
+              action with its suggested ask. Lifetime and Last gift are the
+              tiles above, never repeated here. */}
+          <ProfileGlance status={status}/>
+          <div style={{padding:"10px 20px 4px 24px",flexShrink:0}}>
+          {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
+              other empty sections (FIX-14 Part 3), instead of an empty chart. */}
+          {!giftLoading&&!(giftsFull.length||gifts.length)
+          ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
+            <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
+            {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>{setDpTab("gifts");setAddGiftOpen(true);}}
+              style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
+          </div>
+          :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
+            <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
+            {giftLoading
+              ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
+              :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
+            <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
+              Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
+            </div>
+          </div>}
+          </div>
+
           {/* FIX-8 Part A.1 — the profile's own tab strip wraps rather than
               scrolls, for the same reason the section strip does: it
               overflowed by a rounding pixel and drew a bar. `.dp-tabs` keeps
@@ -2310,24 +2343,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 rail, with the rest of how-we-manage-them. The reading column
                 keeps what she came to read. */}
 
-            {/* FIX-15 Part 4 — no gifts: one line with its add button, like the
-                other empty sections (FIX-14 Part 3), instead of an empty chart. */}
-            {!giftLoading&&!(giftsFull.length||gifts.length)
-            ?<div data-testid="dp-giving-by-year" data-empty="1" style={{padding:"4px 2px",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Giving by year</span>
-              <span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No gifts yet</span>
-              {!isReadOnly&&<button data-testid="dp-giving-by-year-add" onClick={()=>{setDpTab("gifts");setAddGiftOpen(true);}}
-                style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenDk,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Add a gift</button>}
-            </div>
-            :<div data-testid="dp-giving-by-year" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:12}}>Giving by year</div>
-              {giftLoading
-                ?<div style={{height:80,display:"flex",alignItems:"center",justifyContent:"center",color:T.ink3,fontSize:12}}><Spin/></div>
-                :<GivingByYearChart gifts={giftsFull.length?giftsFull:gifts} onOpenYear={y=>setYearDrill(y)}/>}
-              <div style={{fontSize:11.5,color:T.ink3,marginTop:8,lineHeight:1.5}}>
-                Every gift recorded against this record, added by the calendar year it was given in. A bar opens the gifts behind it.
-              </div>
-            </div>}
+            {/* PARITY-1 — Giving by year moved up into the at-a-glance block. */}
             {yearDrill&&(
               <MetricBreakdownPanel open onClose={()=>setYearDrill(null)}
                 title={`Giving in ${yearDrill}`}

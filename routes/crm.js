@@ -1241,6 +1241,8 @@ async function orgStewardStart(orgId) {
 const figureSources = require("../figureSources");
 // FIX-19: every user id that comes from the request is checked against the org here.
 const OU = require("../orgUsers");
+// PARITY-1: giving level, lifecycle, retained and closeness, defined once.
+const DS = require("../donorStatus");
 
 // The money in a sentence: whole dollars when there are no cents.
 function sentenceMoney(v) {
@@ -3327,9 +3329,15 @@ const DONOR_SCORE_COLS = `,
 // empty list at it, and turning any role on replaces it.
 const PEOPLE_ROLES = ["donor", "volunteer", "staff_board"];
 const UNKNOWN_ROLE = { error: "unknown_role", sentence: "A role is Donor, Volunteer, or Staff and board." };
-function buildDonorListFilter(req) {
+const UNKNOWN_STATUS = { error: "unknown_status", sentence: "A tag is General, Mid, Major, New, Current, Recaptured, Lapsed or Retained, and closeness is Close, Warm, Cooling or New." };
+// PARITY-1 — the filters a Group rule can also use: giving level, lifecycle,
+// retained, closeness, and "has never given". Each is donorStatus.js's one
+// definition, so a list, a Group and a profile tag cannot disagree.
+async function buildDonorListFilter(req) {
   const where = ["org_id = ?", "deleted_at IS NULL"];
   const params = [req.user.orgId];
+  const today = await DS.todayFor(req.user.orgId);
+  const cl = DS.closenessSql(today);
   const { search, stage, status, assignedTo, designation, household, role } = req.query;
   // FIX-1 D — DONORS SHOWS DONORS. The Directory asks for role=donor; search
   // and every older caller leave it off and still see everyone. An unknown
@@ -3359,9 +3367,27 @@ function buildDonorListFilter(req) {
   if (household === "none")      { where.push("household_id IS NULL"); }
   else if (household === "any")  { where.push("household_id IS NOT NULL"); }
   else if (household)            { where.push("household_id = ?"); params.push(String(household)); }
+  const statusTags = [req.query.level, req.query.lifecycle, req.query.retained === "1" ? "retained" : null].filter(Boolean).map(String);
+  if (statusTags.length) {
+    const cuts = await DS.cutsFor(req.user.orgId);
+    for (const t of statusTags) {
+      const c = DS.tagCondition(t, req.user.orgId, today, cuts);
+      if (!c) return { badStatus: true };
+      where.push(c.sql); params.push(...c.args);
+    }
+  }
+  if (req.query.closeness) {
+    const c = DS.closenessCondition(String(req.query.closeness), today);
+    if (!c) return { badStatus: true };
+    where.push(c.sql); params.push(...c.args);
+  }
+  if (req.query.given === "never") where.push("NOT EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
+  else if (req.query.given === "ever") where.push("EXISTS (SELECT 1 FROM gifts gv WHERE gv.org_id = donors.org_id AND gv.donor_id = donors.id AND gv.amount > 0)");
   // ", id" tiebreak keeps page boundaries stable when many donors share a value
   const orderBy = (DONOR_SORTS[req.query.sort] || DONOR_SORTS.total_giving) + ", id";
-  return { whereSql: where.join(" AND "), params, orderBy };
+  // The closeness word rides on every row as a column (selectCols), its
+  // arguments ahead of the WHERE's.
+  return { whereSql: where.join(" AND "), params, orderBy, selectCols: `${DONOR_SCORE_COLS}, ${cl.sql} AS closeness`, selectArgs: cl.args };
 }
 
 // GET /donors — unpaginated legacy shape (plain array) when `limit` is
@@ -3369,10 +3395,11 @@ function buildDonorListFilter(req) {
 // when `limit` is present. Filters (search/stage/status/assignedTo/sort)
 // are honored in both modes.
 app.get("/donors", requireAuth, wrap(async (req, res) => {
-  const filter = buildDonorListFilter(req);
+  const filter = await buildDonorListFilter(req);
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
-  const { whereSql, params, orderBy } = filter;
+  const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
   // BUILD-76 Part 2 — every donor row carries the drift badge field, computed
   // fresh by the same function as the home list (one computation, one truth).
   const mapDonor = (tpMap, driftMap) => d => ({
@@ -3392,7 +3419,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
 
   if (req.query.limit === undefined) {
     const [donors, touchpoints, { map: driftMap }] = await Promise.all([
-      query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params),
+      query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]),
       query("SELECT donor_id, MAX(date) AS last_touchpoint FROM interactions WHERE org_id = ? GROUP BY donor_id", [req.user.orgId]),
       computeDriftForDonors(req.user.orgId),
     ]);
@@ -3403,7 +3430,7 @@ app.get("/donors", requireAuth, wrap(async (req, res) => {
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
   const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const [donors, cnt] = await Promise.all([
-    query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...params, limit, offset]),
+    query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy} LIMIT ? OFFSET ?`, [...selectArgs, ...params, limit, offset]),
     query(`SELECT COUNT(*) AS c FROM donors WHERE ${whereSql}`, params),
   ]);
   // Touchpoints + drift only for the page's donors — not the org-wide GROUP BY
@@ -3542,11 +3569,12 @@ app.get("/donors/duplicates", requireAuth, wrap(async (req, res) => {
 // GET /donors, exports EVERY matching row. Staff-level (it's data staff
 // already see), never checkWriteAccess-gated (export-routes convention).
 app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
-  const filter = buildDonorListFilter(req);
+  const filter = await buildDonorListFilter(req);
   if (filter.badRole) return res.status(400).json(UNKNOWN_ROLE);
+  if (filter.badStatus) return res.status(400).json(UNKNOWN_STATUS);
   if (!(await OU.orgUser(req.user.orgId, req.query.assignedTo, { allowInactive: true })).ok) return OU.refuse(res, "assignedTo");
-  const { whereSql, params, orderBy } = filter;
-  const donors = await query(`SELECT donors.*${DONOR_SCORE_COLS} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, params);
+  const { whereSql, params, orderBy, selectCols, selectArgs } = filter;
+  const donors = await query(`SELECT donors.*${selectCols} FROM donors WHERE ${whereSql} ORDER BY ${orderBy}`, [...selectArgs, ...params]);
   // BUILD-78 6.1 — every non-archived donor custom field is its own column,
   // headed with the CURRENT label, rendered per the type table.
   const cfDonorDefs = await loadCfDefs("donor", req.user.orgId);
@@ -3557,6 +3585,7 @@ app.get("/donors/export/csv", requireAuth, wrap(async (req, res) => {
     ["Total giving", "total_giving"], ["Last gift date", "last_gift_date"],
     ["Last gift amount", "last_gift_amount"], ["Gift count", "gift_count"],
     ["Assigned to", d => d.assigned_to_name || ""],
+    ["Closeness", d => (d.closeness ? d.closeness.charAt(0).toUpperCase() + d.closeness.slice(1) : "")],
     ["City", d => d.city || ""], ["State", d => d.state || ""],
     ["Tags", d => JSON.parse(d.tags || "[]").join("|")],
     ...cfDonorDefs.map(f => [f.label, d => renderCustomValue(f, (d.custom_fields || {})[f.key])]),

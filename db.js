@@ -6126,6 +6126,11 @@ async function initSchema() {
       PRIMARY KEY (org_id, starter_key)
     )`);
 
+  // PARITY-1 Part 1 · giving levels. The two cut points between General, Mid
+  // and Major, on what a person gave in the last 12 months (donorStatus.js).
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS giving_level_mid_cents INTEGER`);
+  await pool.query(`ALTER TABLE orgs ADD COLUMN IF NOT EXISTS giving_level_major_cents INTEGER`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

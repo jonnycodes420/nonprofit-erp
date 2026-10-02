@@ -1,0 +1,218 @@
+// routes/profileStatus.js · PARITY-1 Part 1. The donor profile's top block.
+//
+//   GET /donors/:id/status   the tags under the name, the closeness line, the
+//                            at-a-glance figures, the highlights and the next
+//                            action with a suggested ask. Read only.
+//   GET /settings/giving-levels, PUT /settings/giving-levels (admin)
+//                            the two cut points between General, Mid and Major.
+//
+// Every number here is a figure with a source (figureSources.js), so each tag,
+// fact and highlight opens the rows it came from. Nothing is stored: the tags
+// are computed from the gifts every time (donorStatus.js).
+const express = require("express");
+const DS = require("../donorStatus");
+const FS = require("../figureSources");
+const drift = require("../drift");
+const E = require("../engagement");
+
+const routers = { r0: express.Router() };
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const fmt = d => DS.dollars(Math.round(Number(d || 0) * 100));
+const times = n => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
+function ago(days) {
+  if (days == null) return null;
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 14) return `${days} days ago`;
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+  if (days < 365) return `${Math.round(days / 30)} months ago`;
+  const y = Math.round(days / 365);
+  return y === 1 ? "a year ago" : `${y} years ago`;
+}
+
+function mount(ctx) {
+const { actor, checkWriteAccess, orgTime, query, requireAdmin, requireAuth, run, wrap } = ctx;
+const app = routers.r0;
+let W = null;
+const weights = async () => (W = W || await import("../shared/engagementWeights.js"));
+
+// The closeness word and the facts that put them there. The word comes from
+// the stored ENGAGE-1 band (closenessFor), the facts each from a source.
+async function closeness(orgId, d, today, w) {
+  const Wt = await weights();
+  const [score] = await query(`SELECT engagement, band FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]);
+  // The same "first seen" the list column uses (donorStatus.firstSeenSql).
+  const [fs] = await query(`SELECT ${DS.firstSeenSql("d.")} AS first FROM donors d WHERE d.id = ? AND d.org_id = ?`, [d.id, orgId]);
+  const isNew = !!(fs && fs.first && fs.first >= w.newFrom);
+  const key = Wt.closenessFor(score ? score.band : "distant", { isNew });
+  const facts = [];
+  const add = async (source, text) => {
+    const v = await FS.figureValue(orgId, source);
+    const t = text(v);
+    if (t) facts.push({ text: t, source, value: v.value });
+  };
+  const ytd = { key: "donor-gifts-between", params: { donor: d.id, from: w.cyFrom, to: today } };
+  const [ytdRows] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0 AND LEFT(date,10) BETWEEN ? AND ?`,
+    [orgId, d.id, w.cyFrom, today]);
+  if (ytdRows.n > 0) facts.push({ text: `gave ${times(ytdRows.n)} this year`, source: ytd });
+  await add({ key: "volunteer-hours", params: { from: w.w0From, to: today, donor: d.id } },
+    v => (v.value > 0 ? `${Number(v.value).toLocaleString("en-US")} volunteer hours in the last 12 months` : null));
+  const evSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "events" } };
+  const ev = await FS.figure(orgId, evSrc, {}, { pageSize: 5 });
+  if (ev && ev.totalRows === 1) {
+    const [e] = await query(`SELECT e.name FROM event_attendees a JOIN events e ON e.id = a.event_id AND e.org_id = a.org_id
+       WHERE a.org_id = ? AND a.donor_id = ? ORDER BY e.date DESC NULLS LAST LIMIT 1`, [orgId, d.id]).catch(() => []);
+    facts.push({ text: e && e.name ? `came to ${e.name}` : "came to an event", source: evSrc });
+  } else if (ev && ev.totalRows > 1) facts.push({ text: `came to ${ev.totalRows} events`, source: evSrc });
+  await add({ key: "donor-membership", params: { donor: d.id } }, v => (v.value > 0 ? "a member" : null));
+  await add({ key: "donor-fundraising", params: { donor: d.id } }, v => (v.value > 0 ? `raised ${fmt(v.value)} as a fundraiser` : null));
+  await add({ key: "donor-engagement-part", params: { donor: d.id, part: "surveys" } }, v => (v.value > 0 ? "answered a survey" : null));
+  const emailSrc = { key: "donor-engagement-part", params: { donor: d.id, part: "email" } };
+  const em = await FS.figure(orgId, emailSrc, {}, { pageSize: 1 });
+  if (em && em.totalRows > 0) facts.push({ text: `opened or clicked ${em.totalRows === 1 ? "an email" : `${em.totalRows} emails`}`, source: emailSrc });
+  const gapSrc = { key: "donor-contact-gap", params: { donor: d.id, today } };
+  const gap = await FS.figureValue(orgId, gapSrc);
+  if (gap.totalRows > 0) facts.push({ text: `last conversation ${ago(Number(gap.value))}`, source: gapSrc });
+  const label = DS.CLOSENESS[key].label;
+  const why = {
+    close: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
+    warm: "Close and Warm are the engagement score's own bands: 67 and above is Close, 34 to 66 is Warm.",
+    cooling: "Their engagement score is 33 or below and their first gift, conversation or shift was more than 90 days ago.",
+    new: "Their engagement score is 33 or below, and their first gift, conversation or shift was in the last 90 days.",
+  }[key];
+  return { key, label, engagement: score ? Number(score.engagement) : null, sentence: why, facts };
+}
+
+// Plain facts from the record. Each is true from the data and opens its rows.
+async function highlights(orgId, d, today, w) {
+  const gifts = await query(`SELECT id, LEFT(date,10) AS date, amount::text AS amount, campaign_id, event_id
+      FROM gifts WHERE org_id = ? AND donor_id = ? AND LEFT(date,10) <= ? ORDER BY date ASC, id ASC`, [orgId, d.id, today]);
+  const pos = gifts.filter(g => Number(g.amount) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(g.date));
+  if (!pos.length) return [];
+  const out = [];
+  const between = (from, to) => ({ key: "donor-gifts-between", params: { donor: d.id, from, to } });
+  const thisY = Number(today.slice(0, 4));
+  const byYear = new Map();
+  for (const g of gifts) {
+    const y = Number(String(g.date).slice(0, 4));
+    if (!y) continue;
+    byYear.set(y, (byYear.get(y) || 0) + Math.round(Number(g.amount) * 100));
+  }
+  // Upgraded: the last full year they gave against the year before it, or this
+  // year once it has already passed last year.
+  const cmp = [[thisY - 1, thisY], [thisY - 2, thisY - 1]].find(([a, b]) => (byYear.get(a) || 0) > 0 && (byYear.get(b) || 0) > (byYear.get(a) || 0));
+  if (cmp) {
+    const [a, b] = cmp;
+    out.push({ key: "upgraded", text: `Upgraded from ${DS.dollars(byYear.get(a))} in ${a} to ${DS.dollars(byYear.get(b))}${b === thisY ? " so far this year" : ` in ${b}`}`,
+      source: between(`${a}-01-01`, b === thisY ? today : `${b}-12-31`) });
+  }
+  // Years in a row, ending this year or last.
+  const gaveIn = new Set(pos.map(g => Number(g.date.slice(0, 4))));
+  let end = gaveIn.has(thisY) ? thisY : gaveIn.has(thisY - 1) ? thisY - 1 : null;
+  if (end) {
+    let n = 0;
+    while (gaveIn.has(end - n)) n++;
+    if (n >= 2) out.push({ key: "streak", text: `Has given ${n} years in a row`, source: between(`${end - n + 1}-01-01`, end === thisY ? today : `${end}-12-31`) });
+  }
+  // Where the first gift came from.
+  const first = pos[0];
+  const firstSrc = { key: "donor-first-gift", params: { donor: d.id } };
+  if (first.event_id) {
+    const [e] = await query(`SELECT name, LEFT(date::text,4) AS y FROM events WHERE id = ? AND org_id = ?`, [first.event_id, orgId]);
+    if (e) out.push({ key: "first-at", text: `First gift was at ${/\b(19|20)\d{2}\b/.test(e.name) || !e.y ? e.name : `the ${e.y} ${e.name}`}`, source: firstSrc });
+  } else if (first.campaign_id) {
+    const [c] = await query(`SELECT name FROM campaigns WHERE id = ? AND org_id = ?`, [first.campaign_id, orgId]);
+    if (c) out.push({ key: "first-at", text: `First gift came from ${c.name}`, source: firstSrc });
+  }
+  // A season: drift.js's own definition (three years or more, 80% of gifts in
+  // one month).
+  const season = drift.detectSeasonalCluster(pos.map(g => ({ date: g.date })));
+  if (season && season.kind === "month") {
+    out.push({ key: "season", text: `Gives every ${MONTHS[season.month - 1]}`, source: between(pos[0].date, today) });
+  }
+  // The largest gift is the latest one.
+  if (pos.length >= 2) {
+    const last = pos[pos.length - 1];
+    const maxC = Math.max(...pos.map(g => Math.round(Number(g.amount) * 100)));
+    if (Math.round(Number(last.amount) * 100) === maxC && pos.filter(g => Math.round(Number(g.amount) * 100) === maxC).length === 1) {
+      out.push({ key: "largest-latest", text: `Their latest gift, ${DS.dollars(maxC)}, is their largest`, source: { key: "donor-largest-gift", params: { donor: d.id } } });
+    }
+  }
+  return out.slice(0, 4);
+}
+
+// The next action, in one line, from the same facts WHY-1's journey suggestion
+// reads, and the suggested ask from ENGAGE-1 (engagement.suggestedAsk).
+async function nextAction(orgId, d, today, status, glanceLast) {
+  const [[thread], [sub], [score], [unthanked]] = await Promise.all([
+    query(`SELECT next_step_label, due_date FROM threads WHERE org_id = ? AND donor_id = ? AND closed_at IS NULL LIMIT 1`, [orgId, d.id]),
+    query(`SELECT 1 AS y FROM recurring_subscriptions WHERE org_id = ? AND donor_id = ? AND status IN ('active','past_due','recovering','recovered') LIMIT 1`, [orgId, d.id]),
+    query(`SELECT generosity FROM donor_scores WHERE org_id = ? AND donor_id = ?`, [orgId, d.id]),
+    query(`SELECT 1 AS y FROM thank_you_drafts WHERE org_id = ? AND donor_id = ? AND sent_at IS NULL AND skipped_at IS NULL LIMIT 1`, [orgId, d.id]).catch(() => []),
+  ]);
+  let drifting = false;
+  try { drifting = !!(ctx.computeDriftForDonors && (await ctx.computeDriftForDonors(orgId, { donorIds: [d.id] })).map.get(d.id)?.state === "drifting"); } catch { drifting = false; }
+  const lc = status.row ? status.row.lifecycle : null;
+  const [{ n: giftCount }] = await query(`SELECT COUNT(*)::int AS n FROM gifts WHERE org_id = ? AND donor_id = ? AND amount > 0`, [orgId, d.id]);
+  let step, why;
+  if (thread) { step = thread.next_step_label; why = `This is the open next step, due ${thread.due_date}.`; }
+  else if (unthanked) { step = `thank them for their ${glanceLast ? fmt(glanceLast) + " " : ""}gift`; why = "Their latest gift has a thank-you waiting to be sent."; }
+  else if (lc === "lapsed" || drifting) { step = "ask them back"; why = lc === "lapsed" ? DS.LIFECYCLES.lapsed.sentence : "They are past their usual gap between gifts."; }
+  else if (lc === "new" && giftCount === 1) { step = "ask for a second gift"; why = "Their first gift was in the last 12 months and they have not given again."; }
+  else if (sub) { step = "thank them for giving every month"; why = "They have a monthly gift running."; }
+  else if (score && Number(score.generosity) >= 80) { step = "invite them to a visit"; why = "Their giving puts them among your most generous (generosity 80 or more)."; }
+  else if (giftCount >= 2) { step = "ask about monthly giving"; why = "They have given more than once and do not give monthly yet."; }
+  else if (giftCount === 1) { step = "ask for a second gift"; why = "They have given once."; }
+  else { step = "get to know them"; why = "They have not given yet."; }
+  const ask = giftCount > 0 ? await E.suggestedAsk(query, orgId, d.id) : null;
+  const said = String(step).trim().replace(/[.!?]+$/, "");
+  const text = `Next: ${said}.` + (ask ? ` Suggested ask: ${DS.dollars(ask.askCents)}.` : "");
+  return { step, text, why, ask: ask ? { cents: ask.askCents, sentence: ask.sentence } : null };
+}
+
+app.get("/donors/:id/status", requireAuth, wrap(async (req, res) => {
+  const orgId = req.user.orgId;
+  const [d] = await query(`SELECT id, name, created_at FROM donors WHERE id = ? AND org_id = ? AND deleted_at IS NULL`, [req.params.id, orgId]);
+  if (!d) return res.status(404).json({ error: "Donor not found" });
+  const today = await DS.todayFor(orgId);
+  const w = DS.windowsFor(today);
+  const status = await DS.statusFor(orgId, d.id, { today });
+  // At a glance. Each value is the figure's own, from its source.
+  const src = k => ({ key: k, params: { donor: d.id } });
+  const [lifetime, first, latest, largest, average] = await Promise.all(
+    ["donor-lifetime", "donor-first-gift", "donor-latest-gift-alias", "donor-largest-gift", "donor-average-gift"].map(async k => {
+      const key = k === "donor-latest-gift-alias" ? "donor-last-gift" : k;
+      const f = await FS.figure(orgId, src(key), {}, { pageSize: 1 });
+      return { source: src(key), label: f.label, sentence: f.sentence, value: f.totalRows ? f.value : null, date: f.rows[0] ? f.rows[0].date : null, count: f.totalRows };
+    }));
+  const glance = { lifetime, first, latest, largest, average };
+  const [hl, close, next] = await Promise.all([
+    highlights(orgId, d, today, w),
+    closeness(orgId, d, today, w),
+    nextAction(orgId, d, today, status, latest.value),
+  ]);
+  res.json({ today, tags: status.tags, closeness: close, glance, highlights: hl, next, cuts: status.cuts });
+}));
+
+app.get("/settings/giving-levels", requireAuth, wrap(async (req, res) => {
+  const cuts = await DS.cutsFor(req.user.orgId);
+  res.json({ ...cuts, defaults: DS.DEFAULT_CUTS, sentence: DS.levelSentence(cuts) });
+}));
+
+app.put("/settings/giving-levels", requireAuth, requireAdmin, checkWriteAccess, wrap(async (req, res) => {
+  const toCents = v => {
+    const n = Number(String(v ?? "").replace(/[$,\s]/g, ""));
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  };
+  const mid = toCents(req.body && req.body.mid);
+  const major = toCents(req.body && req.body.major);
+  if (!mid || !major) return res.status(400).json({ error: "invalid_levels", message: "Both cut points are dollar amounts above zero." });
+  if (major <= mid) return res.status(400).json({ error: "invalid_levels", message: "Major has to start above Mid." });
+  await run(`UPDATE orgs SET giving_level_mid_cents = ?, giving_level_major_cents = ? WHERE id = ?`, [mid, major, req.user.orgId]);
+  const cuts = await DS.cutsFor(req.user.orgId);
+  res.json({ ...cuts, defaults: DS.DEFAULT_CUTS, sentence: DS.levelSentence(cuts) });
+}));
+}
+
+module.exports = { routers, mount };
