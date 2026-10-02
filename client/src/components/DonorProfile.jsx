@@ -14,7 +14,9 @@ import { dueBadge } from "../lib/taskDue";
 import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
-import { InboxNudge } from "./InboxConnect";
+import { InboxNudge, useMailbox } from "./InboxConnect";
+import { RecordLink } from "./RecordLink";
+import { householdHref } from "../lib/appUrls";
 import { MeetingCard, RelationshipTimeline, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
@@ -896,6 +898,46 @@ function RailSection({ title, actionNode, children, fold=false, foldOpenLabel="H
   );
 }
 
+// ── FIX-14 Part 3 — RHYTHM ────────────────────────────────────────────────
+// One strip: the last 12 months (a filled box is a month with any touch,
+// coloured by its kind) and the next 6 (an outlined box is a planned step).
+// Four colours only, on the ink rail: a meeting or visit is cream, a call is
+// emerald, an email is a cream tint, a gift is brass. The legend says so.
+const RHYTHM_KIND={
+  meeting:{label:"Meeting or visit",bg:"#F0EDE6"},
+  call:{label:"Call",bg:"#0D5C3A",edge:"rgba(240,237,230,0.55)"},
+  email:{label:"Email",bg:"rgba(240,237,230,0.42)"},
+  gift:{label:"Gift",bg:"#C9A84C"},
+};
+const RHYTHM_ORDER=["meeting","call","email","gift"];
+function RhythmStrip({rhythm}){
+  if(!rhythm)return null;
+  const monthName=m=>new Date(m+"-15T12:00:00Z").toLocaleDateString("en-US",{month:"long",year:"numeric",timeZone:"UTC"});
+  const usedKinds=RHYTHM_ORDER.filter(k=>rhythm.past.some(m=>m.kinds.includes(k)));
+  return <div style={{display:"flex",flexDirection:"column",gap:9}}>
+    {!rhythm.empty&&<div role="img" aria-label={rhythm.sentence} data-testid="dp-rhythm-strip"
+      style={{display:"grid",gridTemplateColumns:"repeat(12, minmax(0, 1fr)) 6px repeat(6, minmax(0, 1fr))",gap:4}}>
+      {rhythm.past.map(m=>{const k=RHYTHM_ORDER.find(x=>m.kinds.includes(x));const st=k?RHYTHM_KIND[k]:null;
+        return <div key={m.month} data-month={m.month} data-kind={k||""} data-past="1"
+          title={`${monthName(m.month)}: ${m.kinds.length?m.kinds.map(x=>RHYTHM_KIND[x].label.toLowerCase()).join(", "):"no touch"}`}
+          style={{height:26,borderRadius:4,boxSizing:"border-box",background:st?st.bg:"rgba(240,237,230,0.10)",border:st&&st.edge?"1.5px solid "+st.edge:"none"}}/>;})}
+      <div/>
+      {rhythm.future.map(m=>(
+        <div key={m.month} data-month={m.month} data-planned={m.planned.length?"1":"0"}
+          title={`${monthName(m.month)}: ${m.planned.length?m.planned.map(x=>x.label).join(", "):"nothing planned"}`}
+          style={{height:26,borderRadius:4,boxSizing:"border-box",background:"transparent",
+            border:m.planned.length?"1.5px solid #C9A84C":"1px dashed rgba(240,237,230,0.18)"}}/>
+      ))}
+    </div>}
+    {!rhythm.empty&&<div data-testid="dp-rhythm-legend" style={{display:"flex",gap:"6px 12px",flexWrap:"wrap",fontSize:11.5,color:"rgba(240,237,230,0.72)"}}>
+      {(usedKinds.length?usedKinds:RHYTHM_ORDER).map(k=><span key={k} style={{display:"inline-flex",alignItems:"center",gap:5}}>
+        <span style={{width:10,height:10,borderRadius:2,boxSizing:"border-box",background:RHYTHM_KIND[k].bg,border:RHYTHM_KIND[k].edge?"1.5px solid "+RHYTHM_KIND[k].edge:"none"}}/>{RHYTHM_KIND[k].label}</span>)}
+      <span style={{display:"inline-flex",alignItems:"center",gap:5}}><span style={{width:10,height:10,borderRadius:2,boxSizing:"border-box",border:"1.5px solid #C9A84C"}}/>Planned</span>
+    </div>}
+    <div data-testid="dp-rhythm-sentence" style={{fontSize:14,color:"rgba(240,237,230,0.72)",lineHeight:1.5}}>{rhythm.sentence}</div>
+  </div>;
+}
+
 function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={},loadingKey,getAI,isAdmin,onEdit,onDelete,tasks=[],onTaskToggle,onAddTask,orgName="",orgTeam=[],onReassign,onCfSaved,onInteractionAdded,isReadOnly=false,allDonors=[],onSelectRelatedDonor,onNavigate,initialOpenConversation=false,initialAddGift=null,org=null}){
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
@@ -909,6 +951,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [logMeeting,setLogMeeting]=useState(null);
   // TRUST-2 — export and erase.
   const [eraseOpen,setEraseOpen]=useState(false);
+  // FIX-14 Part 3 — the one next step's edit, planned giving's add line, and
+  // the two panels that moved under More (Suggested, Brief me).
+  const [stepEdit,setStepEdit]=useState(null);
+  const [stepBusy,setStepBusy]=useState(false);
+  const [pgOpen,setPgOpen]=useState(false);
+  const [suggestOpen,setSuggestOpen]=useState(false);
+  const [briefOpen,setBriefOpen]=useState(false);
+  const [mailbox]=useMailbox();
+  const inboxConnected=!mailbox||mailbox.failed||!!mailbox.connected;
   const [eraseWord,setEraseWord]=useState("");
   const [eraseBusy,setEraseBusy]=useState(false);
   const [eraseMsg,setEraseMsg]=useState("");
@@ -1724,6 +1775,75 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // HOTFIX-1 — the open threads, tasks and proposals this screen already
   // holds, shaped for shared/nextMove.js: a label and a date that is already
   // a person's date, most urgent first (the list arrives due-date ascending).
+  // FIX-14 Part 3 — the next step's Edit (PUT /threads/:id) and Delete, which
+  // moves it to deleted_records and offers the same Undo as a conversation.
+  const saveStep=async()=>{
+    if(!stepEdit)return;
+    setStepBusy(true);
+    try{
+      await apiFetch(`/threads/${stepEdit.id}`,{method:"PUT",body:JSON.stringify({label:stepEdit.label.trim(),...(stepEdit.due?{due:stepEdit.due}:{})})});
+      setStepEdit(null);loadDpThread();loadRel&&loadRel();
+    }catch(e){alert(errorMessage(e,"The next step could not be saved."));}
+    setStepBusy(false);
+  };
+  const deleteStep=async it=>{
+    try{
+      const r=await apiFetch(`/threads/${it.id}`,{method:"DELETE"});
+      loadDpThread();loadRel&&loadRel();
+      offerUndo(r,"next step",()=>{loadDpThread();loadRel&&loadRel();});
+    }catch(e){alert(errorMessage(e,"The next step could not be deleted."));}
+  };
+  // FIX-14 Part 3 — RHYTHM, from the same sources as the timeline: the one
+  // meetings source (rel.meetings), the interactions and the gifts.
+  const rhythm=useMemo(()=>{
+    const today=orgTodayCivil();
+    const y0=Number(today.slice(0,4)),m0=Number(today.slice(5,7))-1;
+    const mk=off=>new Date(Date.UTC(y0,m0+off,15)).toISOString().slice(0,7);
+    const past=[];for(let k=-11;k<=0;k++)past.push({month:mk(k),kinds:[]});
+    const future=[];for(let k=1;k<=6;k++)future.push({month:mk(k),planned:[]});
+    const add=(date,kind)=>{const d=String(date||"").slice(0,10);if(!d||d>today)return;const m=past.find(x=>x.month===d.slice(0,7));if(m&&!m.kinds.includes(kind))m.kinds.push(kind);};
+    const ints=localInts??donor.interactions??[];
+    const meetingIds=new Set();
+    for(const m of (rel&&Array.isArray(rel.meetings)?rel.meetings:[])){add(m.date,"meeting");if(m.kind!=="calendar")meetingIds.add(m.id);}
+    for(const i of ints){
+      if(!i||meetingIds.has(i.id))continue;
+      const t=String(i.type||"");
+      if(t==="meeting"||t==="visit"||t==="site_visit")add(i.date,"meeting");
+      else if(t.startsWith("call"))add(i.date,"call");
+      else if(t==="email")add(i.date,"email");
+    }
+    for(const g of giftsFull||[])add(g.date,"gift");
+    const planned=[];
+    if(journey&&journey.status==="active")for(const st of journey.steps||[])
+      if((st.status==="open"||st.status==="pending")&&st.dueDate)planned.push({date:String(st.dueDate).slice(0,10),label:st.label||"A journey step"});
+    for(const it of dpItems)if(it.nextStep&&it.nextStep.due)planned.push({date:String(it.nextStep.due).slice(0,10),label:it.nextStep.label||"A next step"});
+    for(const pl of planned){const f=future.find(x=>x.month===pl.date.slice(0,7));if(f)f.planned.push(pl);}
+    const ahead=planned.filter(x=>x.date>=today).sort((a,b)=>a.date.localeCompare(b.date))[0];
+    const touched=past.filter(m=>m.kinds.length).length;
+    const inJourney=!!(journey&&journey.status==="active");
+    const empty=!touched&&!inJourney&&!planned.length;
+    // "Coffee tomorrow. Bring the schedule." reads as "coffee tomorrow" in the sentence.
+    const lower=w=>{const t=String(w||"").split(/(?<=[.!?])\s/)[0].replace(/[.!?]+$/,"");return /^[A-Z][a-z]/.test(t)?t.charAt(0).toLowerCase()+t.slice(1):t;};
+    const sentence=empty?"No touches yet. Pick a journey to plan them."
+      :`Touched ${touched} of the last 12 months.${ahead?` Next planned: ${lower(ahead.label)} in ${new Date(ahead.date+"T12:00:00Z").toLocaleDateString("en-US",{month:"long",timeZone:"UTC"})}.`:" Nothing planned yet."}`;
+    return {past,future,sentence,empty};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[rel,localInts,donor.interactions,giftsFull,journey,dpItems]);
+  // FIX-14 Part 3 (from Part 5) — /donors/<id>#gift-<gid> scrolls to that gift
+  // and marks it; a gift older than the timeline's first page opens Gifts.
+  useEffect(()=>{
+    const h=typeof window!=="undefined"?window.location.hash:"";
+    if(!/^#gift-/.test(h)||!giftsFull.length)return undefined;
+    const el=document.getElementById(h.slice(1));
+    if(!el){ if(dpTab==="overview"&&giftsFull.some(g=>"gift-"+g.id===h.slice(1)))setDpTab("gifts"); return undefined; }
+    if(el.dataset.marked)return undefined;
+    el.dataset.marked="1";
+    el.scrollIntoView({block:"center",behavior:"smooth"});
+    el.style.outline="3px solid "+T.gold;el.style.outlineOffset="2px";
+    const t=setTimeout(()=>{el.style.outline="";el.style.outlineOffset="";},4000);
+    return ()=>clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[giftsFull,dpTab,rel]);
   const openForNextMove=useMemo(()=>{
     const today=new Date();
     const steps=dpItems.map(it=>({
@@ -1885,6 +2005,14 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           {dpMoreOpen&&(
             <div className="dph-more-menu" role="menu" data-testid="dp-more-menu" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:60,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,boxShadow:"0 12px 32px rgba(15,26,18,0.18)",minWidth:210,overflow:"hidden",padding:6}}>
               {[["Request a gift",()=>setShowGiftModal(true),false],
+                // FIX-14 Part 3 — the quick actions, Suggested and Brief me live here now.
+                ...(isTeam?[["Draft the next move",()=>{setSuggestOpen(true);getAI(donor,"nextmove",openForNextMove);},false],
+                  ["Draft outreach",()=>{setSuggestOpen(true);getAI(donor,"outreach");},false],
+                  ["Draft an email",()=>{setSuggestOpen(true);getAI(donor,"email");},false],
+                  ["Call script",()=>{setSuggestOpen(true);getAI(donor,"callscript");},false]]:[]),
+                [`Suggested${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length?` (${SUGGEST_KINDS.filter(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`]).length})`:""}`,()=>setSuggestOpen(true),false],
+                ["Brief me",()=>setBriefOpen(true),false],
+                ...(onAddTask?[["Add a task",onAddTask,isReadOnly]]:[]),
                 [impactPdfLoading?"Generating…":"Impact summary",downloadImpactSummary,impactPdfLoading],
                 /* MEMBERS-2 — the one page this person has: their membership,
                    their tickets, their shifts and their giving. Staff send the
@@ -1893,9 +2021,12 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 ["Send their page link",sendYourPageLink,isReadOnly||!donor.email],
                 ["Edit record",onEdit,false],
                 // TRUST-2 — a person's own data, in one file, when they ask.
-                ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[])].map(([label,fn,disabled])=>(
-                <button key={label} role="menuitem" disabled={disabled} onClick={()=>{setDpMoreOpen(false);fn();}}
-                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderRadius:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
+                ...(isAdmin?[["Export this person's data",exportPersonData,false]]:[]),
+                // FIX-14 Part 3 — Erase and Delete, at the bottom of More, never on the page.
+                ...(isAdmin&&!isReadOnly?[["Erase this person",()=>{setEraseOpen(true);setEraseMsg("");setEraseWord("");},false,"dp-erase",true]]:[]),
+                ...(isAdmin?[["Delete donor",()=>onDelete(donor.id),false,"dp-delete",!(!isReadOnly)]]:[])].map(([label,fn,disabled,tid,sep])=>(
+                <button key={label} role="menuitem" disabled={disabled} data-testid={tid} onClick={()=>{setDpMoreOpen(false);fn();}}
+                  style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",borderTop:sep?"1px solid "+T.bg3:"none",marginTop:sep?4:0,borderRadius:sep?0:6,padding:"9px 10px",color:T.ink,fontSize:13.5,fontWeight:600,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.6:1,fontFamily:"inherit"}}>{label}</button>
               ))}
             </div>
           )}
@@ -1911,6 +2042,54 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               // source: the header's figures, the rail, the rhythm, the timeline.
               loadRel();loadGiftsFull();}}
             onClose={()=>setConvoOpen(false)}/>}
+          {suggestOpen&&<Modal onClose={()=>setSuggestOpen(false)} width={640} title="Suggested">
+            <div data-testid="dp-suggested" style={{display:"flex",flexDirection:"column",gap:12}}>
+              {!SUGGEST_KINDS.some(t=>aiMap[`${donor.id}_${t}`]||aiErr[`${donor.id}_${t}`])&&<div style={{fontSize:13,color:T.ink3}}>{loadingKey&&String(loadingKey).startsWith(donor.id+"_")?<Spin/>:"Nothing drafted yet. Pick a draft from More."}</div>}
+              {/* ── SUGGESTED ────────────────────────────────────────────
+                  What Steward drafted, beside the step it is about. Every
+                  line came through the HOTFIX-1 checker: a sentence naming
+                  somebody, stating a number or making a claim the record does
+                  not carry is dropped SILENTLY (the count goes to the
+                  console), timing that is already behind today is refused,
+                  and when nothing survives this renders nothing at all. */}
+              {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
+                <div key={t} data-testid={`dp-suggested-${t}`}>
+                  <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
+                  <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
+                    From <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
+                    {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
+                  </div>
+                </div>
+              ):null)}
+
+              {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
+                  to be written into aiMap and rendered as though Steward had
+                  suggested it, carrying the HTTP status ("Stream failed: 503")
+                  into a panel headed "Suggested". It is its own row now, in the
+                  Agent room's voice, with the one control that helps. */}
+              {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
+                <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
+                  style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
+                    background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
+                    borderRadius:14,padding:"12px 16px",marginTop:12}}>
+                  <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
+                    {aiErr[`${donor.id}_${t}`]}
+                  </span>
+                  <button data-testid={`dp-suggested-retry-${t}`}
+                    onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
+                    disabled={loadingKey===`${donor.id}_${t}`}
+                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
+                      padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
+                      cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
+                    {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
+                  </button>
+                </div>
+              ):null)}
+            </div>
+          </Modal>}
+          {briefOpen&&<Modal onClose={()=>setBriefOpen(false)} width={640} title="Brief me">
+            <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
+          </Modal>}
           {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
             onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
         </div>
@@ -2029,143 +2208,112 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   onInteractionAdded&&onInteractionAdded();}}/>
               </section>;
             })()}
-            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
+            {rel&&<RelationshipTimeline inboxConnected={inboxConnected} onConnect={onNavigate?()=>onNavigate("settings",{section:"connections",focus:"inbox"}):null} rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} renderActions={intActions} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
               <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
-            {/* ── WHAT DO I DO NEXT (PROFILE-1) ──────────────────────────
-                BUILD-81 put the donor's thread above giving history and
-                BUILD-88a A.2 folded every other open item into it, ranked by
-                the one ranking. PROFILE-1 gives it the question as its
-                heading and two plain verbs on the row: Mark done, which is
-                the conversation that closes it, and Snooze, which moves the
-                promise to a date and keeps it.
+            {/* FIX-14 Part 3 — ONE OF EVERYTHING. One timeline (above), then the
+                ask, the giving, the household, planned giving, membership and
+                sequences, in that order. The next step lives once, in the rail;
+                drafting, Suggested, Brief me, Erase and Delete are under More. */}
+            {/* ── THE ASK ── the stage, the open ask and its history, in one place. */}
+            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}
+              title="The ask" addLabel="+ New ask" testid="dp-the-ask">
+          {/* The stage, and the smart moves that argue for changing it. Both
+              are the major-gifts layer, so a Core org sees the one frosted
+              preview — and, until the plan is KNOWN, the pending state and
+              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
+          {isTeam&&<div data-testid="dp-move-stage" style={{marginBottom:14,paddingBottom:12,borderBottom:"1px solid "+T.bg3}}>
+            <div style={{fontSize:11.5,fontWeight:700,color:T.ink3,marginBottom:7}}>Stage</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {STAGES.map(s=>{
+                const on=(donor.stage||"cultivate")===s.id;
+                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
+                  style={{background:on?T.greenDk:T.bg,border:"1px solid "+(on?T.greenDk:T.bg3),borderRadius:8,padding:"6px 11px",color:on?T.white:T.ink,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
+                  {s.label}
+                </button>;
+              })}
+            </div>
+            <div style={{marginTop:9,fontSize:11.5,color:T.ink3,lineHeight:1.55}}>
+              {STAGE_ACTION[donor.stage||"cultivate"]}
+            </div>
+            {(() => {
+              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
+              // Lapsed is set automatically elsewhere; these are the judgment
+              // moves the officer owns, offered one-click. They sit WITH the
+              // stage now, because that is the only thing they are about.
+              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
+              if(!shown.length) return null;
+              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
+                {shown.map(s=>(
+                  <div key={s.signal} style={{background:T.bg,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
+                    <div style={{fontSize:12,color:T.ink,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {s.toStage&&!isReadOnly&&(
+                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
+                        </button>
+                      )}
+                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"5px 12px",color:T.ink3,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
+                    </div>
+                  </div>
+                ))}
+              </div>;
+            })()}
+          </div>}
 
-                HOTFIX-1's rule holds here and is the reason this block is
-                first: when there IS an open proposal or an open thread, this
-                section names the next real step. It only ever says nothing is
-                open when nothing is. */}
-            <section data-testid="dp-next">
-              <div style={{fontSize:10.5,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.14em",color:T.ink3,marginBottom:10}}>What do I do next</div>
-              {dpItems.length>0?(
-                <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
-                  {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
-                  {dpItems.map(it=>(
-                    <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-                      <div style={{flex:"1 1 240px",minWidth:0}}>
-                        <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{it.nextStep.label}</div>
-                        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
-                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
-                          {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
-                          {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
-                          {" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
-                          {" "}
-                          <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
-                            {it.overdue?"Overdue":"Due"} {displayDateShort(it.nextStep.due,new Date())}
+              {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
+                  panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
+              {lockMajor(
+                <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
+                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Moves and pipeline asks</div>
+                    <div style={{display:"flex",gap:6}}>
+                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
+                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Pipeline ask"}</button>}
+                    </div>
+                  </div>
+                  {askOpen&&(
+                    <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+                      <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
+                      <button onClick={addAsk} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.white,cursor:"pointer"}}>Save</button>
+                    </div>
+                  )}
+                  {opps.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
+                      {opps.map(o=>(
+                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?T.gold500+"14":T.bg2}}>
+                          <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
+                          <span style={{color:T.gold600,fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
+                          {o.status==="won"&&<span style={{color:T.greenDk,fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
+                          {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
+                          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+                            {o.status==="open"&&isTeam&&!isReadOnly&&<>
+                              <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
+                              <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
+                            </>}
+                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
                           </span>
                         </div>
-                      </div>
-                      {it.kind!=="task"&&(
-                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                          {/* PROFILE-1 follow-up — an INK OUTLINE, not a second
-                              emerald. The mockup drew this filled, and the
-                              standing rule it did not account for is that
-                              emerald is the ONE action colour and exactly one
-                              control on a screen may mean "this is the
-                              button" (BUILD-86 C.1). The header's Log a
-                              conversation is that control. Caught by
-                              tests/fix2-c-cream §2c, which had been skipping
-                              in CI for want of a browser. */}
-                          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
-                            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
-                          <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
-                            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
-                          {/* BUILD-94 Part 5 — the same three outputs as the
-                              Home row, from the same builder. */}
-                          {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
-                          <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
+                      ))}
+                    </div>
+                  )}
+                  {moves.length>0&&(
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {moves.slice(0,6).map(m=>(
+                        <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
+                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"no officer"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
+                          {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                  {snoozeErr&&<div style={{fontSize:12,color:T.terra700}}>{snoozeErr}</div>}
-                </div>
-              ):openProposals.length>0?(
-                /* HOTFIX-1's RULE, AND THE REASON IT IS A RULE. A donor can
-                   have no thread and no task and still have an ask in flight,
-                   and the first draft of this very section answered "nothing
-                   is open" on exactly that record — with the proposal sitting
-                   four inches below it. An open proposal IS the next step, so
-                   it is named here, with what it asks for and when an answer
-                   is expected. (tests/profile1-screen §6 is the guard.) */
-                <div data-testid="dp-open-items" data-open-item="proposal" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+T.greenDk,borderRadius:10,padding:"16px 18px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 240px",minWidth:0}}>
-                    <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{openProposals[0].purpose||"An open ask"}</div>
-                    <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
-                      {openProposals[0].askAmount!=null?<>{fmtFull(openProposals[0].askAmount)} · </>:null}
-                      {PROPOSAL_STAGE_LABEL[openProposals[0].stage]||openProposals[0].stage}
-                      {openProposals[0].expectedClose?<> · <span style={{fontWeight:700,color:T.greenDk}}>An answer is expected {displayDateShort(openProposals[0].expectedClose,new Date())}</span></>:null}
-                      {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
-                    </div>
-                  </div>
-                  {!isReadOnly&&<button onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:"pointer"}}>Plan a follow-up</button>}
-                </div>
-              ):(
-                <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
-                    Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan the next step and it appears here, with the day you promised it.
-                  </div>
-                  {!isReadOnly&&<button onClick={()=>setPlanOpen(true)} style={{background:T.greenDk,border:"none",borderRadius:9,padding:"9px 14px",color:T.white,fontSize:13,fontWeight:800,cursor:"pointer"}}>Plan a follow-up</button>}
-                </div>
+                  )}
+                  {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves logged yet. Move this donor on the Pipeline board.</div>}
+                </div>,
+                {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
               )}
-
-              {/* ── SUGGESTED ────────────────────────────────────────────
-                  What Steward drafted, beside the step it is about. Every
-                  line came through the HOTFIX-1 checker: a sentence naming
-                  somebody, stating a number or making a claim the record does
-                  not carry is dropped SILENTLY (the count goes to the
-                  console), timing that is already behind today is refused,
-                  and when nothing survives this renders nothing at all. */}
-              {SUGGEST_KINDS.map(t=>aiMap[`${donor.id}_${t}`]?(
-                <div key={t} data-testid={`dp-suggested-${t}`}>
-                  <AIPanel text={aiMap[`${donor.id}_${t}`]} onClose={()=>{}}/>
-                  <div style={{fontSize:12,color:T.ink3,marginTop:6}}>
-                    From <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>this record</button>
-                    {t==="email"&&aiMap[`${donor.id}_email`]?<> · <button onClick={()=>copyDraftEmail(aiMap[`${donor.id}_email`])} data-testid="dp-copy-draft" style={{background:"none",border:"none",padding:0,color:T.greenDk,fontWeight:700,textDecoration:"underline dotted",cursor:"pointer",fontFamily:"inherit",fontSize:12}}>{draftCopied?"Copied ✓":"Copy the draft"}</button></>:null}
-                  </div>
-                </div>
-              ):null)}
-
-              {/* FIX-10 D — WHEN DRAFTING DID NOT COME BACK. The failure used
-                  to be written into aiMap and rendered as though Steward had
-                  suggested it, carrying the HTTP status ("Stream failed: 503")
-                  into a panel headed "Suggested". It is its own row now, in the
-                  Agent room's voice, with the one control that helps. */}
-              {SUGGEST_KINDS.map(t=>aiErr[`${donor.id}_${t}`]?(
-                <div key={t+"-err"} data-testid={`dp-suggested-error-${t}`}
-                  style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",
-                    background:T.gold50,border:"1px solid "+T.bg2,borderLeft:"3px solid "+T.gold500,
-                    borderRadius:14,padding:"12px 16px",marginTop:12}}>
-                  <span style={{fontSize:13,color:T.ink,lineHeight:1.6,flex:"1 1 240px"}}>
-                    {aiErr[`${donor.id}_${t}`]}
-                  </span>
-                  <button data-testid={`dp-suggested-retry-${t}`}
-                    onClick={()=>getAI(donor,t,t==="nextmove"?openForNextMove:undefined)}
-                    disabled={loadingKey===`${donor.id}_${t}`}
-                    style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:8,
-                      padding:"6px 13px",fontSize:12.5,fontWeight:700,color:T.ink,
-                      cursor:loadingKey===`${donor.id}_${t}`?"wait":"pointer",fontFamily:"inherit"}}>
-                    {loadingKey===`${donor.id}_${t}`?"Trying…":"Try again"}
-                  </button>
-                </div>
-              ):null)}
-            </section>
-            {/* BUILD-99 Part 1 / PROFILE-1 — PROPOSALS SIT DIRECTLY UNDER THE NEXT
-                STEP, because an open ask IS the next step in most of the
-                records an officer opens, and the giving below is the evidence
-                behind it. Team-locked for Core along with
-                the rest of the major-gifts layer (the 2026-07-19 split). */}
-            {lockMajor(<ProposalsPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam} onOpenProposals={setOpenProposals}/>)}
+            </ProposalsPanel>)}
 
             {/* ── BUILD-97 Part 2 — THE SCORE TILE IS OFF THIS SCREEN ─────
                 BUILD-100 renamed it ("Score 77/99" → "Giving strength") and
@@ -2196,31 +2344,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>
             )}
 
-            {householdTotal!=null&&(
-              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
-                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
-              </div>
-            )}
-
-            {/* Matching-gift flag — from a curated static list (matchingGifts.js
-                on the backend), not a live vendor feed; source/last-verified
-                is surfaced on hover so this reads as informed, not magic. */}
-            {donor.matchingGift&&(
-              <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
-                style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
-                <div>
-                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio}. Ask {donor.name.split(" ")[0]} to submit a match request.</div>
-                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed. Verify current terms before outreach.</div>
-                </div>
-              </div>
-            )}
-
-            {/* BUILD-100 Part 7 — A FUNDER IS AN ORGANISATION ON FILE, so its
-                type, its EIN, its grants and every document signed with it
-                live on its own record rather than a second one. */}
-            {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
-              onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
-
             {/* PROFILE-1 — the cultivation plan and "Brief me" moved to the
                 rail, with the rest of how-we-manage-them. The reading column
                 keeps what she came to read. */}
@@ -2241,32 +2364,73 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 source={{key:"gifts",params:{donor:donor.id,from:`${yearDrill}-01-01`,to:`${yearDrill}-12-31`}}}/>
             )}
 
-            {/* ── RECENT CONVERSATIONS (PROFILE-1) ────────────────────────
-                The last three, where an officer looks for them: under the
-                giving, above everything she manages. The full timeline is
-                still at the bottom of the record and on the Activity tab —
-                this is the glance, not a second copy of the truth. */}
-            {(() => {
-              const ints=(localInts??donor.interactions??[]).filter(i=>i&&i.type!=="gift").slice(0,3);
-              if(!ints.length) return null;
-              return <div data-testid="dp-recent-conversations" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:14,padding:"16px 18px"}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,gap:10}}>
-                  <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Recent conversations</div>
-                  <button onClick={()=>setDpTab("activity")} style={{background:"none",border:"none",padding:0,color:T.greenDk,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>All activity →</button>
-                </div>
-                <ul style={{listStyle:"none",margin:0,padding:0}}>
-                  {ints.map((i,n)=>(
-                    <li key={i.id||n} style={{display:"grid",gridTemplateColumns:"92px 1fr",gap:12,padding:"10px 0",borderTop:n?"1px solid "+T.bg2:"none"}}>
-                      <span style={{fontSize:12,color:T.ink3}}>{displayDateShort(i.date,new Date())}</span>
-                      <span style={{fontSize:13,color:T.ink,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{i.note}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>;
-            })()}
-
-            {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
-            {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+            {/* Household and relationships (BUILD-14; FIX-14 Part 3: one line when there is none) */}
+            <div data-testid="dp-household" style={household?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}:{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household and relationships</span>
+                {household
+                  ?<RecordLink to={householdHref(household.id)} data-record-link="household" style={{fontSize:12,color:T.ink,fontWeight:700,textDecoration:"underline dotted"}}>{household.name}</RecordLink>
+                  :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
+                {household
+                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
+                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
+              </div>
+              {household&&(
+                <>
+                  <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
+                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
+                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(household.combined_giving)}</div></div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                    {household.members.map(m=>(
+                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
+                        {/* BUILD-94 Part 1 — a household is the one place a
+                            row names several people at once; faces are what
+                            tell them apart at a glance. */}
+                        <PersonMark id={m.id} name={m.name} size={22}/>
+                        <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
+                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
+                        <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
+                </>
+              )}
+              {hhModalOpen&&(
+                <Modal onClose={()=>setHhModalOpen(false)} width={440} zIndex={1000}
+                  backdrop="rgba(15,26,18,0.5)" blur={false} padding={20}
+                  ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
+                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
+                    <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
+                    <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
+                      {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
+                        const picked=hhPick.has(x.id);
+                        return(
+                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
+                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
+                            <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
+                            <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
+                      <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
+                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?T.greenDk:T.bg3,color:T.white,border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
+                    </div>
+                  </div>
+                </Modal>
+              )}
+            </div>
+            {householdTotal!=null&&(
+              <div style={{background:T.gold+"12",border:"1px solid "+T.gold+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,cursor:"pointer"}} onClick={()=>setDpTab("related")}>
+                <strong>{fmtFull(donor.total)}</strong> individually · <strong style={{color:T.gold700}}>{fmtFull(householdTotal)}</strong> household total. <span style={{color:T.greenDk,fontWeight:700}}>See who's linked →</span>
+              </div>
+            )}
 
             {/* BUILD-98 Part 1 — soft credit on OTHER people's gifts. Hard
                 credit is their own money and stays the headline; "with soft
@@ -2307,47 +2471,13 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               </div>
             )}
 
-            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
-            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
-            <MembershipPanel donor={donor} isReadOnly={isReadOnly}/>
-
-            {/* Household & planned giving (BUILD-14) */}
-            <div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px",display:"flex",flexDirection:"column",gap:12}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Household</span>
-                {household
-                  ?<span style={{fontSize:12,color:T.ink,fontWeight:700}}>{household.name}</span>
-                  :<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Not in a household</span>}
-                {household
-                  ?!isReadOnly&&<button onClick={removeFromHousehold} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.terracotta,fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>
-                  :!isReadOnly&&<button onClick={()=>setHhModalOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Group into household</button>}
-              </div>
-              {household&&(
-                <>
-                  <div style={{display:"flex",gap:18,flexWrap:"wrap"}}>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Hard credit</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(softCredit?.hardCredit||0)}</div></div>
-                    <div><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Soft credit</div><div style={{fontSize:16,fontWeight:800,color:T.gold600}}>{fmtFull(softCredit?.softCredit||0)}</div></div>
-                    <div style={{borderLeft:"1px solid "+T.bg3,paddingLeft:18}}><div style={{fontSize:10,color:T.ink3,textTransform:"uppercase",letterSpacing:".05em"}}>Household combined</div><div style={{fontSize:16,fontWeight:800,color:T.ink}}>{fmtFull(household.combined_giving)}</div></div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                    {household.members.map(m=>(
-                      <div key={m.id} onClick={()=>m.id!==donor.id&&onSelectRelatedDonor&&onSelectRelatedDonor(m.id)} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:m.id===donor.id?T.greenDk+"10":"transparent",cursor:m.id!==donor.id?"pointer":"default"}}>
-                        {/* BUILD-94 Part 1 — a household is the one place a
-                            row names several people at once; faces are what
-                            tell them apart at a glance. */}
-                        <PersonMark id={m.id} name={m.name} size={22}/>
-                        <span style={{fontWeight:m.id===donor.id?800:600,color:T.ink}}>{m.name}</span>
-                        {m.is_primary&&<span style={{background:T.gold500,color:T.ink,borderRadius:99,padding:"1px 7px",fontSize:9,fontWeight:800,textTransform:"uppercase"}}>Primary</span>}
-                        <span style={{marginLeft:"auto",color:T.ink3}}>{fmtFull(m.total_giving)}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{fontSize:11,color:T.ink3}}>Combined view only: each gift's hard credit stays with the donor who gave it.</div>
-                </>
-              )}
-              <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:7}}>Planned giving & designations</div>
-                <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+            {/* FIX-14 Part 3 — planned giving is its own line, one line until something is marked. */}
+            {(()=>{const anyOn=DESIGNATION_OPTS.some(([k])=>hasDesignation(k));const open=anyOn||pgOpen;return(
+              <div data-testid="dp-planned-giving" style={open?{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 16px"}:{padding:"4px 2px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:open?7:0}}>Planned giving</div>
+                {!open&&<span style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>Nothing noted</span>}
+                {!open&&!isReadOnly&&<button onClick={()=>setPgOpen(true)} style={{marginLeft:"auto",background:"transparent",border:"1px solid "+T.bg3,borderRadius:7,padding:"3px 9px",color:T.greenMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Note planned giving</button>}
+                {open&&<div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
                   {DESIGNATION_OPTS.map(([k,label])=>{const on=hasDesignation(k);return(
                     <button key={k} onClick={()=>!isReadOnly&&toggleDesignation(k)} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":undefined}
                       aria-pressed={on} data-designation={k} data-on={on?"1":"0"}
@@ -2355,146 +2485,71 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                       {on?"✓ ":""}{label}
                     </button>
                   );})}
+                </div>}
+              </div>);})()}
+            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
+            <MembershipPanel donor={donor} isReadOnly={isReadOnly}/>
+
+                    {/* Folded by default: the things she opens when she needs them, and
+              not before. Each one says how much is inside on its own label,
+              so folding never hides a count. */}
+          {isTeam&&sequences.length>0&&(
+            <div data-testid="dp-sequences" style={{padding:"4px 2px",display:"flex",flexDirection:"column",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Sequences</span>
+              </div>
+              {seqToast&&<div style={{background:T.bg,borderLeft:"3px solid "+T.green500,borderRadius:8,padding:"8px 12px",fontSize:12,color:T.ink,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"transparent",border:"1px dashed "+T.bg3,borderRadius:8,padding:"6px 12px",fontSize:12,color:T.ink,cursor:"pointer"}}>+ Enroll in sequence</button>
+                :<>
+                  <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 10px",color:T.ink,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
+                    <option value="">Select sequence…</option>
+                    {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <button disabled={!seqId||seqLoading} onClick={async()=>{
+                    if(!seqId)return;setSeqLoading(true);
+                    try{
+                      await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
+                      const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
+                      setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
+                      setSeqOpen(false);setSeqId("");
+                    }catch(e){alert(errorMessage(e, "Could not enroll"));}
+                    setSeqLoading(false);
+                  }} style={{background:seqId?T.greenDk:T.bg3,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:T.ink3,fontSize:12,fontWeight:700,cursor:seqId?"pointer":"not-allowed"}}>
+                    {seqLoading?"…":"Enroll"}
+                  </button>
+                  <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:T.ink3,fontSize:12,cursor:"pointer"}}>✕</button>
+                </>}
+              </div>
+            </div>
+          )}
+
+
+            {/* BUILD-98 (switch) Part 5 — hours, on the person. */}
+            <VolunteerPanel donor={donor} isReadOnly={isReadOnly}/>
+            {/* Matching-gift flag — from a curated static list (matchingGifts.js
+                on the backend), not a live vendor feed; source/last-verified
+                is surfaced on hover so this reads as informed, not magic. */}
+            {donor.matchingGift&&(
+              <div title={`${donor.matchingGift.sourceNote} List curated ${donor.matchingGift.lastVerified}.`}
+                style={{background:T.greenDk+"12",border:"1px solid "+T.greenDk+"40",borderRadius:12,padding:"10px 14px",fontSize:12,color:T.ink,display:"flex",alignItems:"flex-start",gap:8}}>
+                <div>
+                  <div><strong>{donor.matchingGift.companyName}</strong> matches employee gifts {donor.matchingGift.ratio}. Ask {donor.name.split(" ")[0]} to submit a match request.</div>
+                  <div style={{fontSize:10,color:T.ink3,marginTop:2}}>Curated list, not a live feed. Verify current terms before outreach.</div>
                 </div>
-              </div>
-              {/* Pipeline: Moves & Asks (BUILD-15, Team plan). Core sees the real
-                  panel behind glass + an Unlock-with-Team CTA (lockMajor). */}
-              {lockMajor(
-                <div style={{borderTop:"1px solid "+T.bg3,paddingTop:10}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7}}>
-                    <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Pipeline: moves & asks</div>
-                    <div style={{display:"flex",gap:6}}>
-                      {isTeam&&!isReadOnly&&<button onClick={addToPipeline} disabled={pipelineAdded} style={{background:pipelineAdded?"transparent":T.gold500,border:pipelineAdded?"1px solid "+T.bg3:"none",borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:pipelineAdded?T.ink3:T.ink,cursor:pipelineAdded?"default":"pointer"}}>{pipelineAdded?"✓ In pipeline":"+ Add to pipeline"}</button>}
-                      {isTeam&&!isReadOnly&&<button onClick={()=>setAskOpen(v=>!v)} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:99,padding:"3px 10px",fontSize:11,fontWeight:700,color:T.gold600,cursor:"pointer"}}>{askOpen?"Cancel":"+ Add ask"}</button>}
-                    </div>
-                  </div>
-                  {askOpen&&(
-                    <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
-                      <input value={askName} onChange={e=>setAskName(e.target.value)} placeholder="What's the ask? (optional)" style={{flex:"1 1 140px",border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <input value={askAmt} onChange={e=>setAskAmt(e.target.value)} placeholder="$ target" style={{width:100,border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 9px",fontSize:12}}/>
-                      <button onClick={addAsk} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"6px 14px",fontSize:12,fontWeight:700,color:T.white,cursor:"pointer"}}>Save</button>
-                    </div>
-                  )}
-                  {opps.length>0&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:moves.length?10:0}}>
-                      {opps.map(o=>(
-                        <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:12,padding:"6px 8px",borderRadius:8,background:o.status==="open"?T.gold500+"14":T.bg2}}>
-                          <span style={{fontWeight:700,color:T.ink}}>{o.name}</span>
-                          <span style={{color:T.gold600,fontWeight:800}}>{fmtFull(o.target_amount)} ask</span>
-                          {o.status==="won"&&<span style={{color:T.greenDk,fontWeight:700}}>→ {fmtFull(o.gift_amount||0)} gift</span>}
-                          {o.status==="lost"&&<span style={{color:T.terracotta,fontWeight:700}}>lost</span>}
-                          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
-                            {o.status==="open"&&isTeam&&!isReadOnly&&<>
-                              <button onClick={()=>closeAsk(o,"won")} style={{background:T.greenDk,border:"none",borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.white,cursor:"pointer"}}>Won</button>
-                              <button onClick={()=>closeAsk(o,"lost")} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:6,padding:"2px 9px",fontSize:11,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Lost</button>
-                            </>}
-                            {o.status!=="open"&&<span style={{fontSize:10,color:T.ink3,textTransform:"uppercase"}}>{o.status}</span>}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {moves.length>0&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      {moves.slice(0,6).map(m=>(
-                        <div key={m.id} style={{fontSize:12,color:T.ink2,paddingLeft:10,borderLeft:"2px solid "+T.bg3}}>
-                          <div><span style={{fontWeight:700,color:T.ink}}>{cap(m.from_stage)} → {cap(m.to_stage)}</span> <span style={{color:T.ink3}}>· {m.officer_name||"no officer"} · {new Date(m.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span></div>
-                          {m.description&&<div style={{color:T.ink3,fontSize:11}}>{m.description}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {isTeam&&moves.length===0&&opps.length===0&&<div style={{fontSize:11,color:T.ink3}}>No moves or asks logged yet. Move this donor on the Pipeline board, or add an ask above.</div>}
-                </div>,
-                {title:"Track asks & moves",blurb:"Log every ask against the gift it closes and keep this donor's full move history. Part of the Team major-gifts toolkit.",minHeight:170}
-              )}
-              {hhModalOpen&&(
-                <Modal onClose={()=>setHhModalOpen(false)} width={440} zIndex={1000}
-                  backdrop="rgba(15,26,18,0.5)" blur={false} padding={20}
-                  ariaLabel="Group into a household" dialogStyle={{background:T.bg,borderRadius:16,maxHeight:"80vh"}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                    <div style={{fontFamily:"'DM Serif Display',Georgia,serif",fontSize:19,color:T.ink}}>Group {donor.name} into a household</div>
-                    <div style={{fontSize:12,color:T.ink3}}>Pick the spouse/partner(s) to combine with. {donor.name} becomes the primary. Hard credit stays with each donor; only the relationship view combines.</div>
-                    <input value={hhSearch} onChange={e=>setHhSearch(e.target.value)} placeholder="Search donors…" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 12px",fontSize:13,color:T.ink,outline:"none"}}/>
-                    <div style={{overflowY:"auto",display:"flex",flexDirection:"column",gap:4,flex:1}}>
-                      {allDonors.filter(x=>x.id!==donor.id&&!x.householdId&&(!hhSearch.trim()||(x.name+(x.email||"")).toLowerCase().includes(hhSearch.toLowerCase()))).slice(0,40).map(x=>{
-                        const picked=hhPick.has(x.id);
-                        return(
-                          <label key={x.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:9,background:picked?T.greenDk+"12":T.white,border:"1px solid "+(picked?T.greenDk+"55":T.bg3),cursor:"pointer"}}>
-                            <input type="checkbox" checked={picked} onChange={()=>{const n=new Set(hhPick);n.has(x.id)?n.delete(x.id):n.add(x.id);setHhPick(n);}} style={{accentColor:T.greenDk}}/>
-                            <span style={{fontSize:13,fontWeight:600,color:T.ink}}>{x.name}</span>
-                            <span style={{marginLeft:"auto",fontSize:11,color:T.ink3}}>{fmtFull(x.total||0)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                    <div style={{display:"flex",justifyContent:"flex-end",gap:8}}>
-                      <button onClick={()=>{setHhModalOpen(false);setHhPick(new Set());}} style={{background:"transparent",border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 16px",fontSize:13,fontWeight:700,color:T.ink3,cursor:"pointer"}}>Cancel</button>
-                      <button onClick={createHousehold} disabled={hhPick.size===0} style={{background:hhPick.size?T.greenDk:T.bg3,color:T.white,border:"none",borderRadius:9,padding:"9px 18px",fontSize:13,fontWeight:700,cursor:hhPick.size?"pointer":"not-allowed"}}>Create household</button>
-                    </div>
-                  </div>
-                </Modal>
-              )}
-            </div>
-
-            <div>
-              <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-                Follow-up Tasks
-                {tasks.filter(t=>!t.done).length>0&&<span style={{background:T.greenDk,color:T.white,borderRadius:99,padding:"1px 6px",fontSize:9,fontWeight:800}}>{tasks.filter(t=>!t.done).length}</span>}
-                {onAddTask&&<button onClick={onAddTask} disabled={isReadOnly} title={isReadOnly?"Reactivate your subscription to make changes.":"Add a follow-up task"} style={{marginLeft:"auto",background:"transparent",border:`1px solid ${T.bg3}`,borderRadius:7,padding:"3px 9px",color:isReadOnly?T.ink3:T.greenMid,fontSize:11,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",letterSpacing:0,textTransform:"none",opacity:isReadOnly?0.5:1}}>+ Add task</button>}
-              </div>
-              {tasks.length===0
-                ?<div style={{fontSize:12,color:T.ink3,fontStyle:"italic"}}>No tasks yet. Add a follow-up so nothing slips.</div>
-                :<div style={{display:"flex",flexDirection:"column",gap:6}}>
-                  {[...tasks].sort((a,b)=>a.done-b.done||(a.due||"").localeCompare(b.due||"")).map(t=>{
-                    // Due-date badge: overdue ONLY when strictly before today
-                    // (local/org tz, calendar dates). Future → warm grey "Due X",
-                    // today → brass "Due today", past → terracotta "Overdue · was due X".
-                    const badge=t.due&&!t.done?dueBadge(t.due):null;
-                    const overdue=badge?.state==="overdue";
-                    const badgeColor=overdue?T.gold700:badge?.state==="today"?T.gold500:T.ink3;
-                    return <div key={t.id} onClick={()=>onTaskToggle(t)} style={{background:T.white,border:`1px solid ${t.done?T.greenDk+"30":overdue?T.gold500+"55":T.bg3}`,borderRadius:10,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${t.done?T.greenDk:SC[t.priority]}`,background:t.done?T.greenDk:"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                        {t.done&&<span style={{color:T.white,fontSize:10,lineHeight:1}}>✓</span>}
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:500,color:t.done?T.ink3:T.ink,textDecoration:t.done?"line-through":"none",lineHeight:1.3}}>{t.title}</div>
-                        {badge&&<div style={{fontSize:11,color:badgeColor,marginTop:2,fontWeight:overdue?700:400}}>
-                          {badge.label}
-                        </div>}
-                        {t.due&&t.done&&<div style={{fontSize:11,color:T.ink3,marginTop:2}}>
-                          {new Date(t.due).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}
-                        </div>}
-                      </div>
-                      <Pill label={t.priority} color={SC[t.priority]}/>
-                    </div>;
-                  })}
-                </div>
-              }
-            </div>
-
-            <div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-                <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",color:T.ink3}}>Touchpoint Timeline</div>
-                <button onClick={onLogTouchpoint} style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:7,padding:"4px 11px",color:T.ink,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Log</button>
-              </div>
-              <TouchpointTimeline interactions={localInts??donor.interactions??[]} onDelete={deleteInteraction} renderActions={intActions}/>
-            </div>
-
-            {/* BUILD-41: Delete lives at the BOTTOM of the record, not in the
-                top action row (a destructive action at thumb height beside
-                Edit was a mis-tap risk). Quiet terracotta outline; the confirm
-                lives in the parent deleteDonor handler. */}
-            {isAdmin&&(
-              <div style={{marginTop:8,paddingTop:16,borderTop:"1px solid "+T.bg3,display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
-                {/* TRUST-2 — erase, for a person who asks to be forgotten. It
-                    asks twice: this button, then typing ERASE. */}
-                {!isReadOnly&&<button data-testid="dp-erase" onClick={()=>{setEraseOpen(o=>!o);setEraseMsg("");setEraseWord("");}} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:8,padding:"9px 16px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>Erase this person</button>}
-                <button onClick={()=>onDelete(donor.id)} style={{background:"transparent",border:"1px solid "+T.terracotta+"55",borderRadius:8,padding:"9px 16px",color:T.terracotta,fontSize:13,fontWeight:600,cursor:"pointer"}}>Delete donor</button>
               </div>
             )}
-            {isAdmin&&eraseOpen&&(
-              <div data-testid="dp-erase-confirm" style={{marginTop:10,background:T.white,border:"1px solid "+T.terracotta+"55",borderRadius:12,padding:"14px 16px",fontSize:13.5,color:T.ink,lineHeight:1.55}}>
+
+            {/* BUILD-100 Part 7 — A FUNDER IS AN ORGANISATION ON FILE, so its
+                type, its EIN, its grants and every document signed with it
+                live on its own record rather than a second one. */}
+            {donor.kind==="organisation"&&<FunderPanel donorId={donor.id} isReadOnly={isReadOnly} isTeam={isTeam}
+              onOpenGrant={onNavigate?(id=>onNavigate("grants",{grantId:id})):undefined}/>}
+
+            {donor.tags?.length>0&&<div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{donor.tags.map(t=><Pill key={t} label={t}/>)}</div>}
+            {donor.notes&&<div style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"12px 14px",fontSize:13,color:T.ink3,lineHeight:1.6}}>{donor.notes}</div>}
+
+            {isAdmin&&eraseOpen&&(<Modal onClose={()=>setEraseOpen(false)} width={520} title="Erase this person">
+              <div data-testid="dp-erase-confirm" style={{fontSize:13.5,color:T.ink,lineHeight:1.55}}>
                 <strong>Erase {donor.name}?</strong> Their name, contact details, notes, tags, photo and every logged email, meeting and conversation are removed for good. Their gifts stay as anonymous gifts, so your books, the receipts already issued and every total still match to the cent. If they asked not to be emailed, their address stays on your do-not-email list so they are never mailed again. This cannot be undone.
                 <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
                   <input value={eraseWord} onChange={e=>setEraseWord(e.target.value)} placeholder="Type ERASE" aria-label="Type ERASE to confirm"
@@ -2505,7 +2560,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                 </div>
                 {eraseMsg&&<div role="status" style={{marginTop:8}}>{eraseMsg}</div>}
               </div>
-            )}
+            </Modal>)}
           </div>}
 
           {/* Gifts & Pledges tab */}
@@ -2667,7 +2722,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </thead>
                   <tbody>
                     {[...giftsFull].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(g=>(
-                      <tr key={g.id} style={{borderBottom:"1px solid "+T.bg3}}>
+                      <tr key={g.id} id={`gift-${g.id}`} style={{borderBottom:"1px solid "+T.bg3}}>
                         {giftEditId===g.id?(
                           <td colSpan={8} style={{padding:"10px 12px"}}>
                             <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -3181,47 +3236,96 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             rail's greys are cream at reduced opacity (T.sage400/600), which
             is the design system's own answer for secondary text on ink. */}
         <div data-testid="dp-right-rail" style={{overflowY:"auto",padding:"24px 22px 48px",display:"flex",flexDirection:"column",background:RAIL.bg,color:RAIL.text,borderLeft:"1px solid "+RAIL.bg}}>
-          {/* INT-BUILD-1 Part 3 — next step, rhythm, coming up, this year, book a visit. */}
-          {rel&&<RelationshipRail rel={rel} donor={donor} onReload={loadRel}/>}
+          {/* INT-BUILD-1 Part 3, FIX-14 Part 3 — the ONE next step (with Edit and
+              Delete), then Rhythm: past touches and planned steps on one strip,
+              and the journey chosen or changed in the same panel. */}
+          {(()=>{
+            const nextNode=<div data-testid="dp-next" style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.gold}}>Next step</div>
+              {dpItems.length>0?(
+                <div data-testid="dp-open-items" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+(dpItems.some(x=>x.overdue)?T.gold500:T.greenDk),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+                  {dpThread?.snoozedUntil&&<div style={{fontSize:11,color:T.ink3}}>Set aside until {displayDateShort(dpThread.snoozedUntil,new Date())}</div>}
+                  {dpItems.map(it=>(
+                    <div key={it.id} data-open-item={it.kind} style={{display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                      <div style={{flex:"1 1 240px",minWidth:0}}>
+                        <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{it.nextStep.label}</div>
+                        <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                          {it.lastTouch?.line?<>&ldquo;{it.lastTouch.line}&rdquo;</>:it.lastTouch?.kind==="gift"&&it.lastTouch.amount!=null?<>{fmtFull(it.lastTouch.amount)} received</>:it.rank?.why||null}
+                          {it.lastTouch?.date&&it.kind!=="task"?<> · {displayDateShort(it.lastTouch.date,new Date())}</>:null}
+                          {it.lastTouch?.actor?<> · {firstNameOf(it.lastTouch.actor)}</>:null}
+                          {" · "}{it.daysOpen>=1?`day ${it.daysOpen}`:"opened today"}
+                          {" "}
+                          <span style={{fontWeight:700,color:it.overdue?T.gold700:T.greenDk}}>
+                            {it.overdue?"Overdue":"Due"} {displayDateShort(it.nextStep.due,new Date())}
+                          </span>
+                        </div>
+                        {stepEdit&&stepEdit.id===it.id&&(
+                          <div data-testid="dp-step-edit" style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                            <input aria-label="Next step" value={stepEdit.label} onChange={e=>setStepEdit({...stepEdit,label:e.target.value})} style={{flex:"1 1 160px",border:"1px solid "+T.bg3,borderRadius:8,padding:"7px 9px",fontSize:13,fontFamily:"inherit"}}/>
+                            <input aria-label="Due" type="date" value={stepEdit.due} onChange={e=>setStepEdit({...stepEdit,due:e.target.value})} style={{border:"1px solid "+T.bg3,borderRadius:8,padding:"6px 8px",fontSize:13,fontFamily:"inherit"}}/>
+                            <button onClick={saveStep} disabled={stepBusy||!stepEdit.label.trim()} style={{background:T.greenDk,border:"none",borderRadius:8,padding:"7px 12px",color:T.white,fontSize:12.5,fontWeight:700,cursor:"pointer"}}>{stepBusy?"Saving…":"Save"}</button>
+                            <button onClick={()=>setStepEdit(null)} style={{background:"none",border:"none",color:T.ink3,fontSize:12.5,cursor:"pointer"}}>Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                      {it.kind!=="task"&&(
+                        <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                          {/* PROFILE-1 follow-up — an INK OUTLINE, not a second
+                              emerald. The mockup drew this filled, and the
+                              standing rule it did not account for is that
+                              emerald is the ONE action colour and exactly one
+                              control on a screen may mean "this is the
+                              button" (BUILD-86 C.1). The header's Log a
+                              conversation is that control. Caught by
+                              tests/fix2-c-cream §2c, which had been skipping
+                              in CI for want of a browser. */}
+                          <button onClick={()=>setConvoOpen(true)} disabled={isReadOnly} data-testid="dp-mark-done"
+                            style={{background:T.white,border:"1.5px solid "+T.ink,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>Mark done</button>
+                          <button onClick={()=>snoozeThread(it)} disabled={isReadOnly||snoozing===it.id} data-testid="dp-snooze"
+                            style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:9,padding:"9px 14px",color:T.ink,fontSize:13,fontWeight:700,cursor:isReadOnly?"not-allowed":"pointer",opacity:isReadOnly?0.5:1}}>{snoozing===it.id?"Snoozing…":"Snooze"}</button>
+                          {/* BUILD-94 Part 5 — the same three outputs as the
+                              Home row, from the same builder. */}
+                          {it.kind==="thread"&&<PutItOnMyCalendar threadId={it.id} compact/>}
+                          <ThreadDismissMenu thread={it} onDone={loadDpThread}/>
+                          {/* FIX-14 Part 3 — the one next step is edited and deleted here. */}
+                          {it.kind==="thread"&&!isReadOnly&&<ItemMenu label="next step" onEdit={()=>setStepEdit({id:it.id,label:it.nextStep.label||"",due:String(it.nextStep.due||"").slice(0,10)})} onDelete={()=>deleteStep(it)}/>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {snoozeErr&&<div style={{fontSize:12,color:T.terra700}}>{snoozeErr}</div>}
+                </div>
+              ):openProposals.length>0?(
+                /* HOTFIX-1's RULE, AND THE REASON IT IS A RULE. A donor can
+                   have no thread and no task and still have an ask in flight,
+                   and the first draft of this very section answered "nothing
+                   is open" on exactly that record — with the proposal sitting
+                   four inches below it. An open proposal IS the next step, so
+                   it is named here, with what it asks for and when an answer
+                   is expected. (tests/profile1-screen §6 is the guard.) */
+                <div data-testid="dp-open-items" data-open-item="proposal" style={{background:T.white,border:"1px solid "+T.bg3,borderLeft:"4px solid "+T.greenDk,borderRadius:10,padding:"16px 18px",display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",minWidth:0}}>
+                    <div style={{fontSize:16,fontWeight:700,color:T.ink,marginBottom:4}}>{openProposals[0].purpose||"An open ask"}</div>
+                    <div style={{fontSize:13,color:T.ink3,lineHeight:1.5}}>
+                      {openProposals[0].askAmount!=null?<>{fmtFull(openProposals[0].askAmount)} · </>:null}
+                      {PROPOSAL_STAGE_LABEL[openProposals[0].stage]||openProposals[0].stage}
+                      {openProposals[0].expectedClose?<> · <span style={{fontWeight:700,color:T.greenDk}}>An answer is expected {displayDateShort(openProposals[0].expectedClose,new Date())}</span></>:null}
+                      {openProposals.length>1?<> · and {openProposals.length-1} more open {openProposals.length-1===1?"ask":"asks"}</>:null}
+                    </div>
+                  </div>
+                </div>
+              ):(
+                <div data-testid="dp-next-empty" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"16px 18px",display:"flex",gap:14,alignItems:"center",flexWrap:"wrap"}}>
+                  <div style={{flex:"1 1 240px",fontSize:13.5,color:T.ink3,lineHeight:1.6}}>
+                    Nothing is open for {firstNameOf(donor.name)||donor.name}. Plan a follow-up and it appears here, with the day you promised it.
+                  </div>
+                </div>
+              )}
 
-          {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
-              email lived in the header's name row, competing with the name
-              for the first read, while this section, which already held the
-              email, the phone, the named contact and an honest empty state,
-              sat below the stage picker and the quick actions. Nothing here
-              is new: the section is the one that already existed, moved to
-              where somebody looks when they are about to pick up the phone. */}
-          <RailSection title="Contact" testid="dp-rail-contact" first>
-            <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
-              {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
-              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
-              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
-              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
-              {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
-            </dl>
-          </RailSection>
-
-          <RailSection title="Relationship owner" testid="dp-rail-owner"
-            actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
-              style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":"Reassign"}</button>}>
-            <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:32,height:32,borderRadius:"50%",background:RAIL.line,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:RAIL.text,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
-                {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
-                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.white}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
-              </div>
-              {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
-                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer"}}>
-                  <option value="">Select team member…</option>
-                  {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
-                </select>
-                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:reassignId?"pointer":"not-allowed"}}>
-                  {reassignLoading?"Saving…":"Confirm reassignment"}
-                </button>
-              </div>}
-            </div>
-          </RailSection>
-
+            </div>;
+            const rhythmNode=<div data-testid="dp-rail-rhythm" style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div style={{fontSize:12,letterSpacing:"0.12em",textTransform:"uppercase",color:T.sage400}}>Rhythm</div>
+              <RhythmStrip rhythm={rhythm}/>
           {/* ── THREAD-2b 5 · THEIR JOURNEY (Direction A) ──────────────
               "Step 3 of 7 · Impact report · due Jan 3" and a small
               done / today / upcoming timeline, exactly as the direction
@@ -3233,7 +3337,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             const doneCount=steps.filter(x=>x.status==="done"||x.status==="skipped").length;
             const pos=cur?cur.seq:steps.length;
             const late=cur&&cur.dueDate&&String(cur.dueDate).slice(0,10)<orgTodayCivil();
-            return <RailSection title="Their journey" testid="dp-rail-journey">
+            return <div data-testid="dp-rail-journey">
               {/* FIX-4 2 — THE CHIP. It names the journey and it OPENS it,
                   because the next question after "which journey is she in"
                   is always "and what is in that journey" — and the answer
@@ -3354,7 +3458,15 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </div>
                 </div>
               )}
-            </RailSection>;
+              {/* FIX-14 Part 3 — changing the journey happens here too: stop this one, pick another. */}
+              {!isReadOnly&&<button type="button" data-testid="dp-journey-change" disabled={journeyBusy} onClick={async()=>{
+                  if(!window.confirm(`Stop "${journey.templateName||journey.name||"this journey"}" for ${firstNameOf(donor.name)||donor.name}? The steps already done stay on the record.`))return;
+                  setJourneyBusy(true);
+                  try{await apiFetch(`/plans/${journey.id}/stop`,{method:"POST",body:JSON.stringify({})});setJourney(null);}
+                  catch(e){alert(errorMessage(e,"The journey could not be stopped."));}
+                  setJourneyBusy(false);}}
+                style={{marginTop:10,background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,textDecoration:"underline",cursor:"pointer",fontFamily:"inherit"}}>Change journey</button>}
+            </div>;
           })()}
 
           {/* ── FIX-4 2 · ADD TO A JOURNEY ─────────────────────────────
@@ -3363,7 +3475,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               teaches people to distrust controls. Pick one, see the first
               step and the real date it falls on, then confirm. */}
           {!isReadOnly&&!(journey&&journey.status==="active")&&Array.isArray(journeyList)&&(
-            <RailSection title="Add to a journey" testid="dp-rail-add-journey">
+            <div data-testid="dp-rail-add-journey">
               {journeyList.length===0?(
                 <div style={{fontSize:12.5,color:RAIL.dim,lineHeight:1.55}}>
                   There are no journeys yet.{" "}
@@ -3420,99 +3532,51 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   </div>
                 </>
               )}
-            </RailSection>
+            </div>
           )}
 
-          {/* The stage, and the smart moves that argue for changing it. Both
-              are the major-gifts layer, so a Core org sees the one frosted
-              preview — and, until the plan is KNOWN, the pending state and
-              never a lock (FIX-3 finding 9, kept by HOTFIX-1). */}
-          {isTeam&&<RailSection title="Stage" testid="dp-move-stage">
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {STAGES.map(s=>{
-                const on=(donor.stage||"cultivate")===s.id;
-                return <button key={s.id} onClick={()=>onStageChange(donor.id,s.id)} aria-pressed={on}
-                  style={{background:on?T.greenDk:RAIL.panel,border:"1px solid "+(on?T.greenDk:RAIL.line),borderRadius:8,padding:"6px 11px",color:on?T.white:RAIL.text,fontSize:12,fontWeight:on?700:500,cursor:"pointer"}}>
-                  {s.label}
-                </button>;
-              })}
-            </div>
-            <div style={{marginTop:9,fontSize:11.5,color:RAIL.dim,lineHeight:1.55}}>
-              {STAGE_ACTION[donor.stage||"cultivate"]}
-            </div>
-            {(() => {
-              // Smart-move suggestions (BUILD-22) — surfaced, never auto-applied.
-              // Lapsed is set automatically elsewhere; these are the judgment
-              // moves the officer owns, offered one-click. They sit WITH the
-              // stage now, because that is the only thing they are about.
-              const shown=moveSuggestions.filter(s=>!dismissedSug.includes(s.signal));
-              if(!shown.length) return null;
-              return <div style={{marginTop:12,display:"flex",flexDirection:"column",gap:8}}>
-                {shown.map(s=>(
-                  <div key={s.signal} style={{background:RAIL.panel,borderLeft:"3px solid "+T.gold500,borderRadius:8,padding:"10px 12px"}}>
-                    <div style={{fontSize:12,color:RAIL.text,lineHeight:1.5,marginBottom:8}}>{s.reason}</div>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                      {s.toStage&&!isReadOnly&&(
-                        <button onClick={()=>acceptSuggestion(s)} style={{background:T.gold500,border:"none",borderRadius:7,padding:"5px 12px",color:T.ink,fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                          Accept → {STAGES.find(st=>st.id===s.toStage)?.label||s.toStage}
-                        </button>
-                      )}
-                      <button onClick={()=>dismissSuggestion(s)} style={{background:"transparent",border:"1px solid "+RAIL.line,borderRadius:7,padding:"5px 12px",color:RAIL.dim,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Dismiss</button>
-                    </div>
-                  </div>
-                ))}
-              </div>;
-            })()}
-          </RailSection>}
+            </div>;
+            return rel?<RelationshipRail rel={rel} donor={donor} onReload={loadRel} nextSlot={nextNode} rhythmSlot={rhythmNode} inboxConnected={inboxConnected}/>
+              :<div style={{display:"flex",flexDirection:"column",gap:30,paddingBottom:24}}>{nextNode}{rhythmNode}</div>;
+          })()}
 
-          {/* The Stage strip above is ABSENT for Core, not frosted (BUILD-88a
-              A.4): a Core org has no pipeline, and showing them the strip
-              teaches them the product is not for them. What these four write
-              appears in Suggested, on the Overview, beside the record it came
-              from. */}
-          {/* Major-gifts rail — locked as ONE preview for Core. */}
-          {lockMajor(<>
-          <RailSection title="Quick actions" testid="dp-rail-quick">
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <AIBtn onClick={()=>getAI(donor,"nextmove",openForNextMove)} loading={loadingKey===`${donor.id}_nextmove`} label="+ Next move" small/>
-              <AIBtn onClick={()=>getAI(donor,"outreach")} loading={loadingKey===`${donor.id}_outreach`} label="+ Outreach" small/>
-              <AIBtn onClick={()=>getAI(donor,"email")} loading={loadingKey===`${donor.id}_email`} label="+ Draft email" small/>
-              <AIBtn onClick={()=>getAI(donor,"callscript")} loading={loadingKey===`${donor.id}_callscript`} label="+ Call script" small/>
+          {/* FIX-8 Part B.1 — CONTACT MOVES TO THE TOP OF THE RAIL. The
+              email lived in the header's name row, competing with the name
+              for the first read, while this section, which already held the
+              email, the phone, the named contact and an honest empty state,
+              sat below the stage picker and the quick actions. Nothing here
+              is new: the section is the one that already existed, moved to
+              where somebody looks when they are about to pick up the phone. */}
+          <RailSection title="Contact" testid="dp-rail-contact" first>
+            <dl style={{display:"grid",gridTemplateColumns:"104px 1fr",gap:"7px 10px",fontSize:12.5,margin:0}}>
+              {contactPerson&&<><dt style={{color:RAIL.dim}}>Contact</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{contactPerson}</dd></>}
+              {donor.email&&<><dt style={{color:RAIL.dim}}>Email</dt><dd style={{margin:0,overflowWrap:"anywhere"}}>{donor.email}</dd></>}
+              {donor.phone&&<><dt style={{color:RAIL.dim}}>Phone</dt><dd style={{margin:0}}>{donor.phone}</dd></>}
+              {donor.stripeSubscriptionStatus==="active"&&<><dt style={{color:RAIL.dim}}>Recurring</dt><dd style={{margin:0}}>Active {donor.stripeSubscriptionId?"subscription":"recurring gift"}</dd></>}
+              {!donor.email&&!donor.phone&&!contactPerson&&<><dt style={{color:RAIL.dim}}>Nothing yet</dt><dd style={{margin:0,color:RAIL.dim}}>Add an email or a phone number with Edit, and it shows here.</dd></>}
+            </dl>
+          </RailSection>
+
+          <RailSection title="Relationship owner" testid="dp-rail-owner"
+            actionNode={isAdmin&&isTeam&&<button onClick={()=>setShowReassign(v=>!v)}
+              style={{background:"none",border:"none",padding:0,color:RAIL.dim,fontSize:12,fontWeight:600,letterSpacing:0,textTransform:"none",cursor:"pointer",fontFamily:"inherit"}}>{showReassign?"Cancel":"Reassign"}</button>}>
+            <div style={{background:RAIL.panel,borderRadius:10,padding:"10px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:32,height:32,borderRadius:"50%",background:RAIL.line,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:RAIL.text,flexShrink:0}}>{(donor.assignedToName||"?")[0]}</div>
+                {/* BUILD-88a A.4 — a colleague is a FIRST NAME here too. */}
+                <div style={{flex:1,fontSize:13,fontWeight:700,color:T.white}}>{firstNameOf(donor.assignedToName)||"Unassigned"}</div>
+              </div>
+              {showReassign&&isAdmin&&isTeam&&<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:8}}>
+                <select value={reassignId} onChange={e=>setReassignId(e.target.value)} style={{width:"100%",background:RAIL.bg,border:"1px solid "+RAIL.line,borderRadius:8,padding:"8px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer"}}>
+                  <option value="">Select team member…</option>
+                  {orgTeam.map(u=><option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+                </select>
+                <button onClick={handleReassign} disabled={reassignLoading||!reassignId} style={{background:reassignId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"8px",color:reassignId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:reassignId?"pointer":"not-allowed"}}>
+                  {reassignLoading?"Saving…":"Confirm reassignment"}
+                </button>
+              </div>}
             </div>
           </RailSection>
-          </>,{title:"Major-gift tools",blurb:"Outreach drafting and the suggested next move, from the Team major-gifts layer. This preview shows your own donor; unlock the tools with the Team plan.",minHeight:180})}
-
-          {/* How to reach them: what an officer copies out of this screen. */}
-          {/* Folded by default: the things she opens when she needs them, and
-              not before. Each one says how much is inside on its own label,
-              so folding never hides a count. */}
-          {isTeam&&sequences.length>0&&(
-            <RailSection title="Sequences" testid="dp-sequences" fold foldOpenLabel="Hide" foldShutLabel="Show">
-              {seqToast&&<div style={{background:RAIL.panel,borderLeft:"3px solid "+T.green500,borderRadius:8,padding:"8px 12px",fontSize:12,color:RAIL.text,fontWeight:600,marginBottom:8}}>{seqToast}</div>}
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                {!seqOpen?<button onClick={()=>{setSeqOpen(true);setSeqId("");}} style={{background:"transparent",border:"1px dashed "+RAIL.line,borderRadius:8,padding:"6px 12px",fontSize:12,color:RAIL.text,cursor:"pointer"}}>+ Enroll in sequence</button>
-                :<>
-                  <select value={seqId} onChange={e=>setSeqId(e.target.value)} style={{background:RAIL.panel,border:"1px solid "+RAIL.line,borderRadius:8,padding:"6px 10px",color:RAIL.text,fontSize:12,outline:"none",cursor:"pointer",flex:1}}>
-                    <option value="">Select sequence…</option>
-                    {sequences.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <button disabled={!seqId||seqLoading} onClick={async()=>{
-                    if(!seqId)return;setSeqLoading(true);
-                    try{
-                      await apiFetch(`/sequences/${seqId}/enroll`,{method:"POST",body:JSON.stringify({donorId:donor.id})});
-                      const seqName=sequences.find(s=>s.id===seqId)?.name||"sequence";
-                      setSeqToast(`Enrolled in "${seqName}"`);setTimeout(()=>setSeqToast(""),3500);
-                      setSeqOpen(false);setSeqId("");
-                    }catch(e){alert(errorMessage(e, "Could not enroll"));}
-                    setSeqLoading(false);
-                  }} style={{background:seqId?T.greenDk:RAIL.line,border:"none",borderRadius:8,padding:"6px 12px",color:seqId?T.white:RAIL.dim,fontSize:12,fontWeight:700,cursor:seqId?"pointer":"not-allowed"}}>
-                    {seqLoading?"…":"Enroll"}
-                  </button>
-                  <button onClick={()=>{setSeqOpen(false);setSeqId("");}} style={{background:"transparent",border:"none",padding:"6px 8px",color:RAIL.dim,fontSize:12,cursor:"pointer"}}>✕</button>
-                </>}
-              </div>
-            </RailSection>
-          )}
 
           {cfData.length>0&&(()=>{
             // BUILD-78 5.1 — custom fields in position order, empty fields
@@ -3675,12 +3739,6 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             </RailSection>
           )}
 
-          {/* BUILD-99 Part 4 — "Brief me". The page she reads in the car, and
-              the last thing in the rail because it is the last thing she does
-              before she leaves. */}
-          <RailSection title="Before you go" testid="dp-rail-brief">
-            <div>{lockMajor(<BriefPanel donorId={donor.id} donorName={donor.name} isReadOnly={isReadOnly} canWrite={isTeam}/>,{minHeight:120})}</div>
-          </RailSection>
         </div>
       </div>
     </div>

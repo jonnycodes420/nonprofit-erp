@@ -360,7 +360,7 @@ export function ProposalsView({ isReadOnly, onNavigate }) {
 // ── THE PROFILE PANEL (above giving history) ───────────────────────────────
 // The brief puts proposals above giving history because an open ask is what an
 // officer is here to look at; the history is the evidence behind it.
-export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals }) {
+export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpenProposals, title = "Proposals", addLabel = "+ New proposal", testid = "donor-proposals-panel", children = null }) {
   const [d, setD] = useState(null);
   const [adding, setAdding] = useState(false);
   const [moving, setMoving] = useState(null);
@@ -382,14 +382,15 @@ export function ProposalsPanel({ donorId, donorName, isReadOnly, canWrite, onOpe
   const openOnes = d.proposals.filter(p => OPEN_PROPOSAL_STAGES.includes(p.stage));
 
   return (
-    <div data-testid="donor-proposals-panel" style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
+    <div data-testid={testid} style={{ background: T.white, border: "1px solid " + T.bg3, borderRadius: 14, padding: "16px 18px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>Proposals</div>
+        <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: T.ink3 }}>{title}</div>
         {canWrite && !isReadOnly && (
           <button onClick={() => setAdding(true)}
-            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>+ New proposal</button>
+            style={{ background: T.gold, border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, color: T.ink, cursor: "pointer" }}>{addLabel}</button>
         )}
       </div>
+      {children}
       {d.proposals.length === 0 ? (
         <div style={{ fontSize: 13, color: T.ink3, lineHeight: 1.6 }}>
           No proposal open. A proposal is one ask: what it's for, how much, and when you expect an answer.

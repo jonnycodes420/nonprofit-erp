@@ -20,7 +20,6 @@ import { SecurityPanel } from "./SecurityPanel";
 import JourneyBuilder from "./JourneyBuilder";
 import { displayDate } from "../../../shared/displayDate";
 import { RecordLink } from "./RecordLink";
-import { tabHref } from "../lib/appUrls";
 import { fmtInZone } from "./EditHistory";
 import { planDisplayName, planDisplayBand } from "../lib/planNames";
 

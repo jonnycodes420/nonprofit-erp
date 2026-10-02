@@ -175,9 +175,12 @@ const ICON = {
   email: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>,
   meeting: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>,
 };
-const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2 };
+const TILE_BG = { email: T.bg, meeting: T.ink, gift: T.bg2, talk: T.white };
+// FIX-14 Part 3 — calls, notes, asks and stewardship touches join the one
+// timeline (the old Touchpoint timeline is gone), with a speech-mark tile.
+ICON.talk = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
 
-export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null }) {
+export function RelationshipTimeline({ rel, donor, gifts = [], interactions = [], onLog, onChanged, renderActions = null, inboxConnected = true, onConnect = null }) {
   const [filter, setFilter] = useState("all");
   const [openId, setOpenId] = useState(null);
   const [limit, setLimit] = useState(12);
@@ -205,9 +208,20 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
     }
   }
   for (const g of gifts || []) items.push({ kind: "gift", id: "g:" + g.id, date: String(g.date).slice(0, 10), g });
+  // FIX-14 Part 3 — every other hand-logged touch (a call, a note, an ask, a
+  // stewardship touch, an email typed in by hand) is on this one timeline too.
+  const inThreads = new Set((rel.emailThreads || []).flatMap(t => t.ids || []));
+  const meetingIds = new Set(items.filter(i => i.kind === "meeting" && i.logged).map(i => i.logged.id));
+  for (const i of interactions || []) {
+    if (!i || !i.id || i.type === "gift" || i.type === "meeting" || meetingIds.has(i.id) || inThreads.has(i.id)) continue;
+    items.push({ kind: "talk", id: "n:" + i.id, date: String(i.date || "").slice(0, 10), logged: i });
+  }
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const counts = { email: (rel.emailThreads || []).reduce((s, t) => s + t.count, 0),
-    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length };
+    meeting: items.filter(i => i.kind === "meeting").length, gift: items.filter(i => i.kind === "gift").length,
+    talk: items.filter(i => i.kind === "talk").length };
+  // FIX-14 Part 3 — no emails, no meetings and no inbox: one quiet line, not two zeros.
+  const quietInbox = !inboxConnected && !counts.email && !counts.meeting;
   const shown = items.filter(i => filter === "all" || i.kind === filter);
   const chip = (key, label) => (
     <button key={key} type="button" onClick={() => setFilter(key)} aria-pressed={filter === key}
@@ -220,9 +234,12 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 13, letterSpacing: "0.12em", fontWeight: 600, textTransform: "uppercase" }}>Everything with {first}</h2>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {chip("all", "All")}{chip("email", `Emails ${counts.email}`)}{chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
+          {chip("all", "All")}{counts.talk > 0 && chip("talk", `Conversations ${counts.talk}`)}{!quietInbox && chip("email", `Emails ${counts.email}`)}{!quietInbox && chip("meeting", `Meetings ${counts.meeting}`)}{chip("gift", `Gifts ${counts.gift}`)}
         </div>
       </div>
+      {quietInbox && <div data-testid="dp-connect-inbox" style={{ fontSize: 13, color: T.ink3 }}>
+        {onConnect ? <button type="button" onClick={onConnect} style={{ background: "none", border: "none", padding: 0, color: T.greenDk, fontWeight: 700, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Connect your inbox</button> : "Connect your inbox"} to see emails and meetings.
+      </div>}
       {!shown.length && <div style={{ fontSize: 14, color: T.ink3 }}>Nothing here yet.</div>}
       {shown.slice(0, limit).map(it => {
         const isOpen = openId === it.id;
@@ -253,6 +270,11 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
             <div>{whenLabel(m.startsAt)} · from {ownerFirst(m)}'s {PROVIDER_CAL[m.provider] || "calendar"}</div>
             {!m.loggedAt && onLog && <button type="button" onClick={e => { e.stopPropagation(); onLog(m); }} style={{ ...btnOutline, marginTop: 10, padding: "8px 14px", minHeight: 36, fontSize: 14 }}>Log how it went</button>}
           </div>;
+        } else if (it.kind === "talk") {
+          const i = it.logged;
+          title = conversationTitle(i);
+          body = <NoteBody note={i.note}/>;
+          meta = (i.logged_by_name || i.ownerName || i.created_by_name) ? `Logged by ${i.logged_by_name || i.ownerName || i.created_by_name}` : null;
         } else if (it.kind === "meeting") {
           // FIX-14 Part 1 — a logged meeting is titled by its type and place,
           // and its note keeps its lines: "Label: value" lines are rows.
@@ -267,10 +289,11 @@ export function RelationshipTimeline({ rel, donor, gifts = [], interactions = []
           if (isOpen) extra = <div style={{ fontSize: 14, color: T.ink3, marginTop: 8 }}>{g.type ? `${g.type} · ` : ""}{g.date}{g.notes ? ` · ${g.notes}` : ""}</div>;
         }
         return (
-          <div key={it.id} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
+          <div key={it.id} id={it.kind === "gift" ? `gift-${it.g.id}` : undefined} role="button" tabIndex={0} aria-expanded={isOpen} data-kind={it.kind}
             onClick={() => setOpenId(isOpen ? null : it.id)} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(isOpen ? null : it.id); } }}
             style={{ background: T.white, borderRadius: 16, padding: "22px 26px", display: "grid", gridTemplateColumns: "44px minmax(0, 1fr) auto", gap: 18, alignItems: "start", cursor: "pointer" }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: TILE_BG[it.kind], color: it.kind === "meeting" ? T.inkInverse : T.ink,
+              border: it.kind === "talk" ? "1px solid " + T.bg3 : "none", boxSizing: "border-box",
               display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SERIF, fontSize: 20 }}>{it.kind === "gift" ? "$" : ICON[it.kind]}</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 600 }}>{title}</div>
@@ -375,7 +398,7 @@ export function ConversationChips({ interactionId, onChanged }) {
 }
 
 // ── THE RAIL ────────────────────────────────────────────────────────────────
-export function RelationshipRail({ rel, donor, onReload }) {
+export function RelationshipRail({ rel, donor, onReload, nextSlot = null, rhythmSlot = null, inboxConnected = true }) {
   const [booking, setBooking] = useState(false);
   const [invite, setInvite] = useState(false);
   const [title, setTitle] = useState("");
@@ -401,12 +424,12 @@ export function RelationshipRail({ rel, donor, onReload }) {
   const Row = ({ k, v }) => <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 15 }}><span>{k}</span><span style={{ textAlign: "right" }}>{v}</span></div>;
   return (
     <div data-testid="dp-rail-relationship" style={{ display: "flex", flexDirection: "column", gap: 30, paddingBottom: 24, marginBottom: 8, borderBottom: "1px solid " + T.green650 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {nextSlot || <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <H gold>Next step</H>
         <div style={{ fontFamily: SERIF, fontSize: 26, lineHeight: 1.2 }}>{rel.nextStep?.label || "Nothing planned yet."}</div>
         {rel.nextStep?.due && <div style={{ fontSize: 14, color: T.sage400 }}>Due {relDay(rel.nextStep.due)}</div>}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      </div>}
+      {rhythmSlot || <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <H>Meeting rhythm · last 12 months</H>
         <div role="img" aria-label={rel.rhythmSentence} title={rel.rhythmSentence}
           style={{ display: "grid", gridTemplateColumns: "repeat(12, minmax(0, 1fr))", gap: 5 }}>
@@ -422,16 +445,17 @@ export function RelationshipRail({ rel, donor, onReload }) {
           {n ? `${n} meeting${n === 1 ? "" : "s"} this year${n > 1 ? `, about every ${Math.max(1, Math.round(monthsElapsed / n))} month${Math.round(monthsElapsed / n) === 1 ? "" : "s"}` : ""}.` : "No meetings yet this year."}
           {next ? ` The next one is ${relDay(next.date || next.startsAt).toLowerCase() === "tomorrow" ? "tomorrow" : relDay(next.date || next.startsAt)}.` : ""}
         </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      </div>}
+      {(inboxConnected || (rel.upcoming || []).length > 0) && <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <H>Coming up</H>
         {(rel.upcoming || []).slice(0, 4).map(e => <Row key={e.id} k={e.title} v={<span style={{ color: T.sage400 }}>{relDay(e.date || e.startsAt)}</span>}/>)}
         {!(rel.upcoming || []).length && <div style={{ fontSize: 14, color: T.sage400 }}>Nothing coming up, on a calendar or logged ahead.</div>}
-      </div>
+      </div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <H>This year</H>
-        <Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
-        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/>
+        {(inboxConnected || y.emails?.value || n) ? <><Row k="Emails" v={<><Figure value={y.emails?.value || 0} kind="count" label="Emails this year" definition="Every email with this person on the record this year, either way." source={y.emails?.source} variant="inline"/>{" · "}<Figure value={y.fromThem?.value || 0} kind="count" label={`Emails from ${first} this year`} definition={`Every email from ${first} on the record this year.`} source={y.fromThem?.source} variant="inline"/> from {first}</>}/>
+        <Row k="Meetings" v={<Figure value={n} kind="count" label="Meetings this year" definition="Every meeting with this person this year, from a connected calendar or logged by hand." source={y.meetings?.source} variant="inline"/>}/></>
+          : <div data-testid="dp-rail-connect-inbox" style={{ fontSize: 14, color: T.sage400 }}>Connect your inbox to see emails and meetings.</div>}
         <Row k="Given" v={<Figure value={y.given?.value || 0} kind="money" label="Given this year" definition="Every gift from this person this year, to the cent." source={y.given?.source} variant="inline"/>}/>
       </div>
       {!booking && <button type="button" data-testid="dp-book-visit" onClick={() => setBooking(true)}
