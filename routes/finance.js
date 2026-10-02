@@ -1448,6 +1448,42 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   res.json({ ok: true, interactionId: firstId, sentence: "Saved to the meeting and to the record." });
 }));
 
+// FIX-14 Part 2 — EDIT STEWARD'S OWN PARTS of a calendar meeting: the note,
+// the next step and who it is about. The time, the title and the place belong
+// to the calendar it came from; Steward never edits the event, and says where
+// to change it instead.
+app.put("/calendar/events/:id", requireAuth, checkWriteAccess, wrap(async (req, res) => {
+  const c = await ownMeeting(req, res); if (!c) return;
+  const b = req.body || {};
+  const day = new Date(c.starts_at).toISOString().slice(0, 10).replace(/-/g, "/");
+  const calendarUrl = c.provider === "google" ? `https://calendar.google.com/calendar/r/day/${day}`
+    : `https://outlook.office.com/calendar/view/day/${day}`;
+  for (const k of ["title", "startsAt", "endsAt", "location"]) {
+    if (b[k] !== undefined) return res.status(409).json({ error: "calendar_owned", calendarUrl,
+      sentence: "The time and place come from your calendar. Change it in your calendar." });
+  }
+  const sets = [], vals = [];
+  if (b.note !== undefined) { sets.push("note=?"); vals.push(String(b.note || "").trim().slice(0, 8000) || null); }
+  if (b.nextStep !== undefined) { sets.push("next_step=?"); vals.push(String(b.nextStep || "").trim().slice(0, 300) || null); }
+  if (b.personIds !== undefined) {
+    const ids = [...new Set((Array.isArray(b.personIds) ? b.personIds : []).map(String))];
+    if (!ids.length) return res.status(400).json({ error: "no_person", sentence: "A meeting is about at least one person." });
+    const ok = await query(`SELECT id FROM donors WHERE org_id=? AND id = ANY(?) AND deleted_at IS NULL`, [req.user.orgId, ids]);
+    if (ok.length !== ids.length) return res.status(404).json({ error: "Donor not found" });
+    sets.push("person_ids=?"); vals.push(ids);
+  }
+  if (!sets.length) return res.json({ ok: true, unchanged: true });
+  await run(`UPDATE calendar_events SET ${sets.join(", ")}, updated_at=NOW() WHERE id=? AND org_id=?`, [...vals, c.id, req.user.orgId]);
+  // The logged note on the record says the same thing as the meeting.
+  if (b.note !== undefined && c.interaction_id) {
+    const [u] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
+    await run(`UPDATE interactions SET note=?, edited_at=NOW(), edited_by=?, edited_by_name=? WHERE id=? AND org_id=?`,
+      [[c.title, String(b.note || "").trim()].filter(Boolean).join("\n\n"), req.user.userId, u?.name || req.user.email || "", c.interaction_id, req.user.orgId]);
+  }
+  const [out] = await query(`SELECT * FROM calendar_events WHERE id=?`, [c.id]);
+  res.json({ ok: true, meeting: out, sentence: "Saved. The event on your calendar is unchanged." });
+}));
+
 app.post("/calendar/events/:id/dismiss", requireAuth, wrap(async (req, res) => {
   const c = await ownMeeting(req, res); if (!c) return;
   await run(`UPDATE calendar_events SET dismissed_at=NOW(), updated_at=NOW() WHERE id=?`, [c.id]);
