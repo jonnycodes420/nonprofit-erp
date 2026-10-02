@@ -180,8 +180,9 @@ export function starterText(html) {
   return normalizeMergeFields(html)
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&rsquo;|&#8217;/g, "\u2019")
+    // &amp; last, so "&amp;nbsp;" becomes the text "&nbsp;", never a space.
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
 }
