@@ -160,6 +160,11 @@ function sig(payload) {
       ok(`${label}: step two's fields are not on screen`, await pg.locator(".give-first").count() === 0);
 
       // ── THE UPSELL, TAKEN ───────────────────────────────────────────────
+      // PARITY-1 E: the dedication is asked on step one, beside the amount.
+      await pg.locator(".give-tribute-type").selectOption("memory");
+      await pg.locator(".give-tribute-name").fill("Arthur Fenwick");
+      await pg.locator(".give-notify-name").fill("Ruth Fenwick");
+      await pg.locator(".give-notify-email").fill(`ruth.${label}.${stamp}@example.org`);
       await pg.locator('.give-amt[data-cents="15000"]').click();
       await pg.locator(".give-next").click();
       await pg.locator(".give-upsell").waitFor({ timeout: 10000 });
@@ -175,10 +180,6 @@ function sig(payload) {
       await pg.locator(".give-first").fill("Mabel");
       await pg.locator(".give-last").fill("Fenwick");
       await pg.locator(".give-email").fill(`walk.${label}.${stamp}@example.org`);
-      await pg.locator(".give-tribute-type").selectOption("memory");
-      await pg.locator(".give-tribute-name").fill("Arthur Fenwick");
-      await pg.locator(".give-notify-name").fill("Ruth Fenwick");
-      await pg.locator(".give-notify-email").fill(`ruth.${label}.${stamp}@example.org`);
       await pg.locator(".give-employer").fill("Acme Manufacturing " + stamp);
       await pg.locator(".give-question select").selectOption("Our newsletter");
       await pg.locator(".give-next").click();

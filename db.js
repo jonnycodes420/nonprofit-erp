@@ -6111,6 +6111,21 @@ async function initSchema() {
       UNIQUE (org_id, kind)
     )`);
 
+  // ── PARITY-1 E · STARTER EMAILS SOMEBODY HAS READ ──────────────────────
+  // One row per org per starter key (shared/emailTemplates.js) once a person
+  // has saved a campaign from that starter with its body changed. No row means
+  // the gallery and the editor still say "Not yet reviewed".
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_starter_reviews (
+      org_id TEXT NOT NULL REFERENCES orgs(id),
+      starter_key TEXT NOT NULL,
+      campaign_id TEXT,
+      reviewed_at TIMESTAMPTZ DEFAULT NOW(),
+      created_by TEXT NOT NULL,
+      created_by_name TEXT,
+      PRIMARY KEY (org_id, starter_key)
+    )`);
+
   // Record this file's hash LAST — only a fully-completed init marks the
   // schema current, so a crash mid-init re-runs the whole thing next boot.
   await pool.query(

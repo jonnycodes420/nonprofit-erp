@@ -5,7 +5,7 @@
 // nothing, in a box, with a send button underneath, is the hardest thing on the
 // screen and Steward was asking for it first.
 //
-// So it opens on six real emails. Not "templates" in the sense of a skeleton
+// So it opens on real emails (six, and the monthly giving appeal since PARITY-1). Not "templates" in the sense of a skeleton
 // full of shouted placeholders — each one is a message somebody could send
 // today, with the org's name, its colours and its logo already in it, written
 // the way a small shop writes. She changes the parts that are hers and presses
@@ -74,7 +74,7 @@ export function emailTemplates({ orgName = "your organisation", t = (k) => DEFAU
   const all = [
     {
       key: "appeal",
-      label: "Appeal",
+      label: "General appeal",
       blurb: "The ask, in four sentences. Send it to the people who have given before.",
       subject: `A short ask from ${org}`,
       body: [
@@ -83,6 +83,21 @@ export function emailTemplates({ orgName = "your organisation", t = (k) => DEFAU
         p(`We are raising money for the year ahead at ${org}, and we are asking the people who have given before to go first. Whatever you can do makes the next ask easier to make.`),
         p("If now is not the time, that is genuinely all right. Reply and tell me and I will not ask again this year."),
         p("Thank you for reading this far."),
+      ].join("\n"),
+    },
+    {
+      // PARITY-1 E — the monthly ask. Plain and warm, and honest about what a
+      // monthly gift does for a small organisation: it lets them plan.
+      key: "monthly_appeal",
+      label: "Monthly giving appeal",
+      blurb: "Asks someone who has given once to give a little every month instead.",
+      subject: `Would you give to ${org} every month?`,
+      body: [
+        p("Hello {{first_name}},"),
+        p(`Thank you for giving to ${org}. I am writing to ask whether you would think about giving a small amount every month.`),
+        p("A monthly gift, even a modest one, lets us plan the year instead of guessing at it. It is the steadiest help a small organisation can have."),
+        p("You can change the amount or stop at any time, and you only need to tell us once."),
+        p("If it is not right for you, thank you all the same. Your last gift mattered, and so do you."),
       ].join("\n"),
     },
     {
@@ -156,6 +171,25 @@ export function emailTemplates({ orgName = "your organisation", t = (k) => DEFAU
     },
   ];
   return all;
+}
+
+// PARITY-1 E — the WORDS of an email, for asking "has anybody changed this?".
+// The editor re-serialises HTML (a `<br />` comes back as `<br>`, the newlines
+// between paragraphs vanish), so markup is not a fair comparison: the text is.
+export function starterText(html) {
+  return normalizeMergeFields(html)
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&rsquo;|&#8217;/g, "\u2019")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// True when `body` differs in its words from the starter's own body.
+export function starterEdited(tpl, body) {
+  if (!tpl) return false;
+  return starterText(body) !== starterText(tpl.body);
 }
 
 const DEFAULT_WORDS = { monthly_giver: "monthly donor" };

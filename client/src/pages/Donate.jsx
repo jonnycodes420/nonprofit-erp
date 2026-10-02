@@ -342,6 +342,109 @@ function MembershipPage({ orgSlug, levelId, th, BASE, card }) {
   );
 }
 
+// ── PARITY-1 E · SIGN IN, FOR A RETURNING DONOR ─────────────────────────────
+// The portal's own magic link (POST /portal/:slug/request-link), asked for from
+// the form. Shown only when this organisation's donor portal is switched on:
+// with the portal off there is nothing to sign in to, and a link that leads
+// nowhere is worse than no link. A donor already signed in sees their own name
+// instead. The answer is the same sentence for every address, known or not.
+function DonorSignIn({ orgSlug, enabled, signedInAs, th }) {
+  const [open, setOpen] = useState(false);
+  const [addr, setAddr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  if (signedInAs) {
+    return (
+      <div className="give-signed-in" style={{ fontSize: 13, color: T.ink2, marginBottom: 14 }}>
+        Signed in as <strong>{signedInAs}</strong>
+      </div>
+    );
+  }
+  if (!enabled) return null;
+  async function send(e) {
+    if (e) e.preventDefault();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr.trim())) { setMsg("Please type the email you give with."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const r = await fetch(`${PORTAL_BASE}/${orgSlug}/request-link`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: addr.trim() }),
+      });
+      const d = await r.json().catch(() => ({}));
+      setMsg(r.ok ? (d.message || "If we have this address on file, a sign-in link is on its way.") : "That did not go through. Please try again in a minute.");
+    } catch { setMsg("That did not go through. Please try again in a minute."); }
+    setBusy(false);
+  }
+  return (
+    <div className="give-signin" style={{ fontSize: 13, color: T.ink2, marginBottom: 14 }}>
+      {!open ? (
+        <span>Given before?{" "}
+          <button type="button" className="give-signin-open" onClick={() => setOpen(true)}
+            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: th.primary,
+                     fontSize: 13, fontWeight: 700, textDecoration: "underline", fontFamily: th.sans }}>
+            Sign in
+          </button>
+        </span>
+      ) : (
+        <div>
+          <label style={{ display: "block" }}>
+            <span style={{ fontWeight: 600 }}>Your email</span>
+            <span style={{ display: "flex", gap: 8, marginTop: 4 }}>
+              <input className="give-signin-email" type="email" value={addr} onChange={ev => setAddr(ev.target.value)}
+                onKeyDown={ev => { if (ev.key === "Enter") send(ev); }}
+                style={{ ...baseInp, fontFamily: th.sans, flex: 1, marginBottom: 0 }} />
+              <button type="button" className="give-signin-send" onClick={send} disabled={busy}
+                style={{ border: "none", borderRadius: 8, padding: "0 14px", cursor: busy ? "default" : "pointer",
+                         background: th.primary, color: th.primaryFg, fontWeight: 700, fontSize: 13, fontFamily: th.sans, opacity: busy ? 0.6 : 1 }}>
+                {busy ? "Sending" : "Send link"}
+              </button>
+            </span>
+          </label>
+          <div style={{ fontSize: 12, color: T.ink3, marginTop: 6, lineHeight: 1.5 }}>
+            {msg || "We email you a link that signs you in. No password."}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PARITY-1 E · SHARE THIS PAGE ────────────────────────────────────────────
+// Plain links and nothing else: no share widget, no third-party script, nothing
+// that tells another company who gave. Each one opens the network's own page
+// with the giving page's address in it, and the donor decides from there.
+function ShareRow({ url, orgName, th }) {
+  const [copied, setCopied] = useState(false);
+  const text = `I just gave to ${orgName}. Join me:`;
+  const enc = encodeURIComponent;
+  const links = [
+    ["Email", `mailto:?subject=${enc(`Give to ${orgName}`)}&body=${enc(`${text} ${url}`)}`],
+    ["Facebook", `https://www.facebook.com/sharer/sharer.php?u=${enc(url)}`],
+    ["X", `https://twitter.com/intent/tweet?url=${enc(url)}&text=${enc(text)}`],
+    ["LinkedIn", `https://www.linkedin.com/sharing/share-offsite/?url=${enc(url)}`],
+  ];
+  function copy() {
+    try {
+      navigator.clipboard.writeText(url).then(() => setCopied(true), () => setCopied(false));
+    } catch { setCopied(false); }
+  }
+  const pill = { display: "inline-block", padding: "8px 14px", borderRadius: 99, border: `1px solid ${T.bg3}`,
+                 background: T.white, color: T.ink, fontSize: 13, fontWeight: 600, textDecoration: "none",
+                 cursor: "pointer", fontFamily: th.sans };
+  return (
+    <div className="thanks-share" style={{ marginTop: 26, maxWidth: 420 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.ink, marginBottom: 10 }}>Ask a friend to give too</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+        <button type="button" className="thanks-share-copy" onClick={copy} style={pill}>{copied ? "Link copied" : "Copy link"}</button>
+        {links.map(([label, href]) => (
+          <a key={label} className="thanks-share-link" data-net={label} href={href}
+             target={label === "Email" ? undefined : "_blank"} rel="noopener noreferrer" style={pill}>{label}</a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Donate() {
   const { orgSlug, pageSlug, fundraiserSlug } = useParams();
   // BUILD-98 (switch) Part 4 — ?event=<id> turns this page into its tickets.
@@ -396,6 +499,8 @@ export default function Donate() {
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
   const [returning, setReturning] = useState(false); // signed-in donor prefill applied
+  // PARITY-1 E — who the portal session says is here, for "Signed in as".
+  const [signedInAs, setSignedInAs] = useState("");
 
   const th = resolveTheme(org?.theme);
 
@@ -573,13 +678,18 @@ export default function Donate() {
   // cookie via the /portal-api proxy); this is a donor reading THEIR OWN
   // history. Anonymous visitors get 401 here → no change, so the public page
   // is byte-identical whether or not the email behind it has ever given.
+  // PARITY-1 E — asked on every giving page now, only so the form can say who is
+  // signed in; the ARRANGEMENT is still applied on the org-wide page only, since
+  // a built page has its own amounts. Not asked at all when the portal is off.
   useEffect(() => {
-    if (!org || pageSlug) return; // org-wide give page only
+    if (!org || !org.portalSignIn) return;
     let cancelled = false;
     fetch(`${PORTAL_BASE}/${orgSlug}/give-default`, { credentials: "include", headers: { "Content-Type": "application/json" } })
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (cancelled || !d || !d.arrangement) return;
+        if (cancelled || !d) return;
+        if (d.signedInAs) setSignedInAs(String(d.signedInAs).slice(0, 120));
+        if (pageSlug || !d.arrangement) return;
         const { frequency: f, amount } = d.arrangement;
         const ladder = f === "monthly" ? (org.theme?.monthlyAmounts || MONTHLY_FALLBACK) : (org.theme?.onetimeAmounts || ONETIME_FALLBACK);
         setFrequency(f);
@@ -841,6 +951,7 @@ export default function Donate() {
           Taking you back to <a href={thanks.redirectUrl} style={{ color: T.greenDk }}>{new URL(thanks.redirectUrl).hostname}</a> in a moment.
         </div>
       ) : null}
+      <ShareRow url={`${window.location.origin}${basePath}`} orgName={org.name} th={th} />
       {/* ── GIVE-2 §8 · DOES YOUR EMPLOYER MATCH? ─────────────────────────
           The employers THIS organisation knows match, each with the company's
           own form link. Typed by staff: no vendor, no lookup service, no
@@ -1172,6 +1283,7 @@ export default function Donate() {
             submitErr={submitErr}
             onSubmit={postDonation}
             apiBase={API}
+            signIn={<DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />}
             styles={{
               card,
               inp,
@@ -1193,6 +1305,7 @@ export default function Donate() {
 
         {/* Frequency — FIRST, above the amount. Monthly is pre-selected. */}
         <div style={card}>
+          <DonorSignIn orgSlug={orgSlug} enabled={!!org?.portalSignIn} signedInAs={signedInAs} th={th} />
           <div style={{ fontSize: 11, fontWeight: 700, color: T.ink3, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>How often</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[["monthly", "Monthly"], ["one-time", "One-time"], ["annual", "Annual"]].map(([v, l]) => (

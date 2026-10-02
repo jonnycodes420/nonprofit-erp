@@ -67,6 +67,17 @@ function rememberDecline(formId) {
   try { window.sessionStorage.setItem(declineKey(formId), "1"); } catch { /* a private window is still allowed to give */ }
 }
 
+// PARITY-1 E — THE EXIT NUDGE IS SHOWN ONCE PER VISIT, per form. The same
+// session discipline as the upsell above: a donor reminded once has been
+// reminded, and a second reminder is nagging.
+const nudgeKey = formId => `steward_give_exit_nudged_${formId || "form"}`;
+function alreadyNudged(formId) {
+  try { return window.sessionStorage.getItem(nudgeKey(formId)) === "1"; } catch { return false; }
+}
+function rememberNudge(formId) {
+  try { window.sessionStorage.setItem(nudgeKey(formId), "1"); } catch { /* a private window still gets the form */ }
+}
+
 // ── BUILD-102 Part 6 — TWO BEACONS, AND NOTHING ELSE ───────────────────────
 // A view when the form is opened and a start when the donor gets past choosing an
 // amount. No identifier travels: the server's `form_events` table has nowhere to
@@ -98,6 +109,9 @@ export default function GiveSteps({
   // name on a page that lists nobody is a question with no consequence.
   showsRecentGifts,
   onSubmit, submitting, submitErr, grossUpCents, styles, apiBase,
+  // PARITY-1 E — the "Sign in" line for a returning donor, drawn by the page
+  // (it knows whether this org's portal is on). Null on an embedded form.
+  signIn,
 }) {
   const { card, inp, btn, quiet } = styles;
   const [step, setStep] = useState(0);
@@ -131,6 +145,12 @@ export default function GiveSteps({
   // One view per mount, and one start per form — a donor who goes Back and
   // forward again has not started twice.
   const startedRef = useRef(false);
+  // PARITY-1 E — whether the donor has actually CHOSEN an amount (tapped one,
+  // typed one, or moved on). A pre-selected button is the form's suggestion,
+  // not the donor's choice, and the nudge only speaks to a choice.
+  const choseRef = useRef(false);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
+  const rootRef = useRef(null);
 
   useEffect(() => {
     if (!apiBase || !formId) return;
@@ -141,6 +161,30 @@ export default function GiveSteps({
   const feeCents = chosenCents >= 100 && typeof grossUpCents === "function" ? grossUpCents(chosenCents) - chosenCents : 0;
   const showCoverFees = coverFeesEnabled && chosenCents >= 100;
   const chargedCents = showCoverFees && coverFees ? chosenCents + feeCents : chosenCents;
+
+  // PARITY-1 E — THE EXIT NUDGE. Off unless the organisation switched it on
+  // (form_config.exitNudge). Desktop only: the pointer leaving through the top
+  // of the window is a real signal there, and on a phone there is no honest
+  // equivalent, so a phone never sees it.
+  useEffect(() => {
+    if (!spec.exitNudge || submitting) return;
+    let fine = false;
+    try { fine = window.matchMedia && window.matchMedia("(pointer: fine)").matches; } catch { fine = false; }
+    if (!fine) return;
+    function onOut(e) {
+      if (e.relatedTarget || e.clientY > 0) return;
+      if (!choseRef.current || chosenCents < 100 || alreadyNudged(formId)) return;
+      rememberNudge(formId);
+      setNudgeOpen(true);
+    }
+    document.addEventListener("mouseout", onOut);
+    return () => document.removeEventListener("mouseout", onOut);
+  }, [spec.exitNudge, submitting, chosenCents, formId]);
+
+  function finishFromNudge() {
+    setNudgeOpen(false);
+    try { rootRef.current && rootRef.current.scrollIntoView({ behavior: "smooth", block: "start" }); } catch { /* still open */ }
+  }
 
   const upsell = useMemo(
     () => upsellFor(chosenCents, {
@@ -176,6 +220,7 @@ export default function GiveSteps({
     }
     // A START is the moment the donor commits to an amount and moves on, counted
     // ONCE per form: going Back and forward again is not a second start.
+    choseRef.current = true;
     if (!startedRef.current) {
       startedRef.current = true;
       if (apiBase) countFormEvent(apiBase, formId, "start", spec.variant);
@@ -243,7 +288,19 @@ export default function GiveSteps({
   const on = th.primary, onFg = th.primaryFg;
 
   return (
-    <div className="give-steps" style={{ ...card, width: "100%", maxWidth: 480 }}>
+    <div className="give-steps" ref={rootRef} style={{ ...card, width: "100%", maxWidth: 480 }}>
+      {nudgeOpen ? (
+        <div className="give-exit-nudge" role="dialog" aria-label="Before you go"
+          style={{ position: "relative", border: "1px solid " + on, borderRadius: 10, padding: "14px 40px 14px 16px", marginBottom: 16 }}>
+          <button type="button" className="give-exit-nudge-close" aria-label="Close" onClick={() => setNudgeOpen(false)}
+            style={{ position: "absolute", top: 8, right: 10, background: "none", border: "none", cursor: "pointer",
+                     fontSize: 18, lineHeight: 1, color: MUTED, padding: 4 }}>&times;</button>
+          <div style={{ fontFamily: th.serif, fontSize: 18, lineHeight: 1.3, marginBottom: 10 }}>
+            Your {fmtCents(chosenCents)}{frequency === "monthly" ? " monthly" : ""} gift will make an impact.
+          </div>
+          <button type="button" className="give-exit-nudge-finish" onClick={finishFromNudge} style={btn}>Finish my gift</button>
+        </div>
+      ) : null}
       {/* THE PROGRESS IS THREE WORDS, NOT A PERCENTAGE. A donor does not need a
           number; they need to know how much is left. */}
       <div style={{ display: "flex", gap: 6, marginBottom: 18 }} aria-hidden="true">
@@ -263,6 +320,7 @@ export default function GiveSteps({
       {/* ── STEP 1 · THE GIFT ───────────────────────────────────────────── */}
       {step === 0 && !upsellOpen ? (
         <>
+          {signIn || null}
           {spec.amount.frequencies.length > 1 ? (
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {spec.amount.frequencies.map(f => (
@@ -284,7 +342,7 @@ export default function GiveSteps({
               {spec.amount.amountsCents.map(c => (
                 <button key={c} type="button" className="give-amt" data-cents={c}
                   aria-pressed={!isCustom && amountCents === c}
-                  onClick={() => { setIsCustom(false); setAmountCents(c); }}
+                  onClick={() => { choseRef.current = true; setIsCustom(false); setAmountCents(c); }}
                   style={{ padding: "12px 0", borderRadius: 8, cursor: "pointer", fontSize: 16, fontWeight: 700,
                            border: "1px solid " + (!isCustom && amountCents === c ? on : HAIRLINE),
                            background: !isCustom && amountCents === c ? on : "transparent",
@@ -313,7 +371,7 @@ export default function GiveSteps({
                 <label style={{ display: "block" }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Your amount</span>
                   <input className="give-custom" inputMode="decimal" value={customAmt}
-                    onChange={e => setCustomAmt(e.target.value.replace(/[^0-9.]/g, ""))}
+                    onChange={e => { choseRef.current = true; setCustomAmt(e.target.value.replace(/[^0-9.]/g, "")); }}
                     placeholder="0.00" style={{ ...inp, marginTop: 4 }} />
                 </label>
               ) : null}
@@ -332,6 +390,47 @@ export default function GiveSteps({
           {spec.designation.mode === "fixed" && spec.designation.fundName ? (
             <div className="give-fixed-fund" style={{ fontSize: 13, color: MUTED, marginBottom: 12 }}>
               Your gift goes to {spec.designation.fundName}.
+            </div>
+          ) : null}
+
+          {/* PARITY-1 E — THE DEDICATION SITS WITH THE GIFT. Whether a gift is in
+              someone's honour is part of deciding the gift, so it is asked here,
+              beside the amount, rather than among the name and email. The server's
+              acceptance rules are unchanged. */}
+          {spec.details.tribute ? (
+            <div className="give-tribute" style={{ marginBottom: 10 }}>
+              <label style={{ display: "block" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>Is this gift in someone's honour?</span>
+                <select className="give-tribute-type" value={tributeType} onChange={e => setTributeType(e.target.value)} style={{ ...inp, marginTop: 4 }}>
+                  <option value="">No</option>
+                  <option value="honor">In honour of</option>
+                  <option value="memory">In memory of</option>
+                </select>
+              </label>
+              {tributeType ? (
+                <>
+                  <label style={{ display: "block", marginTop: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Their name</span>
+                    <input className="give-tribute-name" value={tributeName} onChange={e => setTributeName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                  </label>
+                  {/* OPTIONAL, and it stays optional: a donor may dedicate a gift
+                      without telling a family about it, and Steward never sends
+                      this — it writes a draft somebody at the org reads first. */}
+                  <label style={{ display: "block", marginTop: 8 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Should we let someone know? (optional)</span>
+                    <input className="give-notify-name" value={notifyName} placeholder="Their name"
+                      onChange={e => setNotifyName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                  </label>
+                  {notifyName ? (
+                    <label style={{ display: "block", marginTop: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>Their email</span>
+                      <input className="give-notify-email" type="email" value={notifyEmail}
+                        onChange={e => setNotifyEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
+                      <span style={{ fontSize: 12, color: MUTED }}>Someone at the organisation writes to them; this is never sent automatically.</span>
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           ) : null}
 
@@ -373,43 +472,6 @@ export default function GiveSteps({
             <input className="give-email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
             <span style={{ fontSize: 12, color: MUTED }}>Your receipt goes here.</span>
           </label>
-
-          {spec.details.tribute ? (
-            <div className="give-tribute" style={{ marginBottom: 10 }}>
-              <label style={{ display: "block" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Is this gift in someone's honour?</span>
-                <select className="give-tribute-type" value={tributeType} onChange={e => setTributeType(e.target.value)} style={{ ...inp, marginTop: 4 }}>
-                  <option value="">No</option>
-                  <option value="honor">In honour of</option>
-                  <option value="memory">In memory of</option>
-                </select>
-              </label>
-              {tributeType ? (
-                <>
-                  <label style={{ display: "block", marginTop: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>Their name</span>
-                    <input className="give-tribute-name" value={tributeName} onChange={e => setTributeName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-                  </label>
-                  {/* OPTIONAL, and it stays optional: a donor may dedicate a gift
-                      without telling a family about it, and Steward never sends
-                      this — it writes a draft somebody at the org reads first. */}
-                  <label style={{ display: "block", marginTop: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>Should we let someone know? (optional)</span>
-                    <input className="give-notify-name" value={notifyName} placeholder="Their name"
-                      onChange={e => setNotifyName(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-                  </label>
-                  {notifyName ? (
-                    <label style={{ display: "block", marginTop: 8 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>Their email</span>
-                      <input className="give-notify-email" type="email" value={notifyEmail}
-                        onChange={e => setNotifyEmail(e.target.value)} style={{ ...inp, marginTop: 4 }} />
-                      <span style={{ fontSize: 12, color: MUTED }}>Someone at the organisation writes to them; this is never sent automatically.</span>
-                    </label>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
-          ) : null}
 
           {spec.details.employerMatch ? (
             <label className="give-employer-wrap" style={{ display: "block", marginBottom: 10 }}>

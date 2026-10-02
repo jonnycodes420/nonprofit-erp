@@ -150,15 +150,40 @@ app.get("/campaigns/templates", requireAuth, wrap(async (req, res) => {
   const theme = await resolveOrgBrandTheme(orgId).catch(() => null);
   const dfName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
   const list = T.templatesFor({ orgName: dfName, t });
+  // PARITY-1 E — which starters a person here has already made their own.
+  const reviewedRows = await query("SELECT starter_key FROM email_starter_reviews WHERE org_id=?", [orgId]).catch(() => []);
+  const reviewed = new Set(reviewedRows.map(r => r.starter_key));
   res.json({
     orgName: dfName,
     // The org's own colours and logo, so the gallery is THEIR email and not a
     // stock one with their name pasted in.
     brand: theme ? { band: theme.band, bandFg: theme.bandFg, logo: theme.logoDataUri || theme.logoAbsUrl || null, displayName: theme.displayName } : null,
     mergeFields: T.MERGE_FIELDS,
-    templates: list.map(x => ({ key: x.key, label: x.label, blurb: x.blurb, subject: x.subject, body: x.body })),
+    templates: list.map(x => ({ key: x.key, label: x.label, blurb: x.blurb, subject: x.subject, body: x.body, reviewed: reviewed.has(x.key) })),
   });
 }));
+
+// PARITY-1 E — A STARTER BECOMES THE ORG'S OWN when somebody saves a campaign
+// from it with its words changed. The comparison is against the starter as
+// THIS org is offered it (its name, its vocabulary), by text rather than markup,
+// so an editor's re-serialised HTML is not mistaken for an edit. A key that is
+// not one of the org's starters is ignored, never stored.
+async function markStarterReviewed(req, starterKey, body, campaignId) {
+  const key = String(starterKey || "").slice(0, 60);
+  if (!key) return;
+  const orgId = req.user.orgId;
+  const T = await templatesMod();
+  const [org] = await query("SELECT name, vocabulary_json FROM orgs WHERE id=?", [orgId]);
+  const V = await import("../shared/vocabulary.js");
+  const vocab = (() => { try { return org?.vocabulary_json ? JSON.parse(org.vocabulary_json) : null; } catch { return null; } })();
+  const dfName = await donorFacingOrgName(orgId, org?.name || "").catch(() => org?.name || "");
+  const tpl = T.templatesFor({ orgName: dfName, t: V.makeT(vocab) }).find(x => x.key === key);
+  if (!tpl || !T.starterEdited(tpl, body)) return;
+  await run(
+    `INSERT INTO email_starter_reviews (org_id, starter_key, campaign_id, created_by, created_by_name)
+     VALUES (?,?,?,?,?) ON CONFLICT (org_id, starter_key) DO NOTHING`,
+    [orgId, key, campaignId || null, actor(req).id, actor(req).name]);
+}
 
 // The segment, as PEOPLE. "17 recipients" is a number; "17 sponsors, including
 // Margaret Chen and Bob Harmon" is a group — and a name that should not be on
@@ -17056,6 +17081,7 @@ app.post("/campaigns", requireAuth, checkWriteAccess, wrap(async (req, res) => {
      scheduledAt ? "scheduled" : "draft", JSON.stringify(segment || {}),
      await scheduledInstant(req.user.orgId, scheduledAt), actor(req).id, actor(req).name]
   );
+  await markStarterReviewed(req, req.body.starterKey, body, id).catch(e => console.error("[campaigns] starter review:", e.message));
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [id]);
   res.status(201).json(rows[0]);
 }));
@@ -17080,6 +17106,7 @@ app.put("/campaigns/:id", requireAuth, checkWriteAccess, wrap(async (req, res) =
      await scheduledInstant(req.user.orgId, scheduledAt),
      req.params.id, req.user.orgId]
   );
+  await markStarterReviewed(req, req.body.starterKey, body, req.params.id).catch(e => console.error("[campaigns] starter review:", e.message));
   const rows = await query("SELECT * FROM campaigns WHERE id = ?", [req.params.id]);
   res.json(rows[0]);
 }));
@@ -18057,7 +18084,7 @@ app.get("/org/:orgSlug/public", wrap(async (req, res) => {
   // Listing is already public via the directory, so this reveals nothing new.
   const gaEntry = await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug });
   // BUILD-60 — the give page is the ORG's page: it carries the org's own theme.
-  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org) }, funds });
+  res.json({ org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!gaEntry, theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true }, funds });
 }));
 
 // Public — org info + giving page + real live progress. Same shape as
@@ -18139,7 +18166,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   );
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true },
     givingPage: {
       id: page.id, slug: page.slug, title: page.title, story: page.story, imageUrl: page.image_url,
       goalAmount: page.goal_amount != null ? parseFloat(page.goal_amount) : null,
@@ -18453,7 +18480,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/fundraiser/:fundraiserSlug/public",
   const f = fRows[0];
 
   res.json({
-    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org) },
+    org: { name: org.donor_facing_name, mission: org.mission, slug: req.params.orgSlug, coverFeesEnabled: org.cover_fees_enabled !== false, ...(await coverFeePayload(org)), givingAccount: !!(await givingAccountEntry({ id: org.id, org_slug: req.params.orgSlug })), theme: giveThemePayload(org), portalSignIn: org.portal_enabled === true },
     givingPage: { id: page.id, slug: page.slug, title: page.title, fundId: page.fund_id, fundName: page.fund_name || null },
     peerFundraiser: {
       id: f.id, slug: f.slug, name: f.name, story: f.story, imageUrl: f.image_url,
