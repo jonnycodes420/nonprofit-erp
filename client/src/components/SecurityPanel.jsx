@@ -156,6 +156,10 @@ export function SecurityPanel({ isAdmin }) {
             <input type="checkbox" data-testid="require-mfa" checked={!!st.orgRequires} disabled={busy} onChange={e => setRule("requireMfa", e.target.checked)} />
             Require two-factor for everyone on the team
           </label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, color: T.ink }}>
+            <input type="checkbox" data-testid="require-admin-mfa" checked={!!st.orgRequiresForAdmins} disabled={busy} onChange={e => setRule("requireAdminMfa", e.target.checked)} />
+            Require two-factor for admins
+          </label>
           <div style={small}>Anyone without it is sent to set it up at their next sign-in, and sees nothing else until they have. Turn it on for yourself first.</div>
         </div>}
       </div>
