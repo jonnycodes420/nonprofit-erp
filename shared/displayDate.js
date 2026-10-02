@@ -47,3 +47,17 @@ export function displayMonth(value) {
   const p = parts(/^\d{4}-\d{2}$/.test(String(value)) ? value + "-01" : value);
   return p ? `${MON[p.mo - 1]} ${p.y}` : "";
 }
+
+// FIX-14 Part 1 — THE CIVIL DAY AN INSTANT FALLS ON, IN A ZONE. The client's
+// one way to ask "what day is it for this organisation": the caller passes
+// the zone and the instant, so this stays pure. `toISOString().slice(0, 10)`
+// is the UTC day, which after 8pm in New York is already tomorrow.
+export function civilDateIn(tz, instant) {
+  const at = instant instanceof Date ? instant : new Date(instant);
+  if (isNaN(at.getTime())) return "";
+  let zone = tz || "America/New_York";
+  try { new Intl.DateTimeFormat("en-CA", { timeZone: zone }); } catch { zone = "America/New_York"; }
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(at).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}

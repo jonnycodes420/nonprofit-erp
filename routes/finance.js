@@ -17,6 +17,7 @@
 const express = require("express");
 // FIX-12 Part 7b: the after-meeting chips reach the model only through here.
 const { anthropicFor, AiOffError, AI_OFF_MESSAGE } = require("../aiClient");
+const meetingsSrc = require("../meetings");   // FIX-14 Part 1 — meetings with a person, defined once
 
 const routers = {
   r0: express.Router(),
@@ -1208,15 +1209,15 @@ async function meetingBrief(orgId, donorId, beforeIso) {
   const before = new Date(beforeIso || Date.now()).toISOString();
   const [d] = await query(`SELECT id, name, total_giving, first_gift_date, last_gift_amount, last_gift_date FROM donors WHERE id=? AND org_id=?`, [donorId, orgId]);
   if (!d) return null;
-  const [cal] = await query(
-    `SELECT title, note, TO_CHAR(starts_at, 'YYYY-MM-DD') AS date FROM calendar_events
-      WHERE org_id=? AND ? = ANY(person_ids) AND starts_at < ? ORDER BY starts_at DESC LIMIT 1`, [orgId, donorId, before]);
-  const [met] = await query(
-    `SELECT note, date FROM interactions WHERE org_id=? AND donor_id=? AND type='meeting' AND date < ?
-      ORDER BY date DESC, created_at DESC LIMIT 1`, [orgId, donorId, before.slice(0, 10)]);
+  // FIX-14 Part 1 — the last time is the newest HELD meeting from the one
+  // source (meetings.js), before this one, on the org's calendar day.
+  const beforeDay = orgToday(await orgTz(orgId), new Date(before));   // ORG_TZ_SEAM_OK
+  const prior = (await meetingsSrc.meetingsWith(orgId, donorId, { held: true, to: beforeDay, limit: 20 }))
+    .filter(m => m.kind === "logged" ? m.date < beforeDay : new Date(m.starts_at).getTime() < new Date(before).getTime());
+  const last = prior[0] || null;
   let lastTime = null;
-  if (cal && (!met || cal.date >= met.date)) lastTime = { date: cal.date, text: [cal.title, cal.note].filter(Boolean).join(". ") };
-  else if (met) lastTime = { date: met.date, text: String(met.note || "").trim() };
+  if (last && last.kind === "calendar") lastTime = { date: last.date, text: [last.title, last.note].filter(Boolean).join(". ") };
+  else if (last) lastTime = { date: last.date, text: String(last.note || "").trim() };
 
   const P = await import("../shared/proposalShape.js");
   const [ask] = await query(
@@ -1262,16 +1263,33 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const orgId = req.user.orgId, donorId = req.params.id;
   const [d] = await query(`SELECT id, name FROM donors WHERE id=? AND org_id=? AND deleted_at IS NULL`, [donorId, orgId]);
   if (!d) return res.status(404).json({ error: "Donor not found" });
-  const { today } = await meetingTz(orgId);
+  const { today, org: tzOrg } = await meetingTz(orgId);
   const events = await query(
     `SELECT c.*, u.name AS owner_name FROM calendar_events c LEFT JOIN users u ON u.id = c.owner_user_id
       WHERE c.org_id=? AND ? = ANY(c.person_ids) ORDER BY c.starts_at DESC LIMIT 200`, [orgId, donorId]);
   const peopleIds = [...new Set(events.flatMap(e => e.person_ids || []))];
   const names = peopleIds.length ? Object.fromEntries((await query(`SELECT id, name FROM donors WHERE org_id=? AND id = ANY(?)`, [orgId, peopleIds])).map(r => [r.id, r.name])) : {};
   const now = Date.now();
-  const upcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
-  const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
-  const soon = upcoming.find(e => new Date(e.startsAt).getTime() - now <= 7 * 864e5) || null;
+  // FIX-14 Part 1 — each calendar event carries its org-local day, so the
+  // screen never dates it by UTC.
+  const civilOf = e => orgToday(tzOrg, new Date(e.starts_at));   // ORG_TZ_SEAM_OK
+  const calUpcoming = events.filter(e => new Date(e.starts_at).getTime() > now).reverse().map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  const past = events.filter(e => new Date(e.starts_at).getTime() <= now).map(e => eventOut(e, { date: civilOf(e), people: (e.person_ids || []).map(id => names[id]).filter(Boolean) }));
+  const soon = calUpcoming.find(e => new Date(e.startsAt).getTime() - now <= 7 * 864e5) || null;
+
+  // THE ONE SOURCE (meetings.js): every meeting with this person, calendar
+  // and logged by hand. The timeline's Meetings chip counts `meetings` (held
+  // ones), and Coming up is the calendar's future events plus any logged
+  // meeting dated ahead.
+  const allMeetings = await meetingsSrc.meetingsWith(orgId, donorId, { limit: 500 });
+  const loggedOut = m => ({ id: m.id, kind: "logged", interactionId: m.id, title: m.location ? `Meeting at ${m.location}` : "Meeting",
+    date: m.date, startsAt: null, location: m.location || null, note: m.note || null, ownerName: m.who || null, held: m.held });
+  const meetings = allMeetings.filter(m => m.held).map(m => m.kind === "calendar"
+    ? { ...(past.find(e => e.id === m.id) || { id: m.id, title: m.title, startsAt: m.starts_at }), kind: "calendar", date: m.date, held: true }
+    : loggedOut(m));
+  const upcoming = [...calUpcoming.map(e => ({ ...e, kind: "calendar" })),
+    ...allMeetings.filter(m => !m.held && m.kind === "logged").map(loggedOut)]
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const nextMeeting = soon ? { ...soon, brief: await meetingBrief(orgId, donorId, soon.startsAt) } : null;
 
   // THE RHYTHM: the last twelve calendar months, this one last, each month's
@@ -1286,10 +1304,10 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
     months.push({ month: from.slice(0, 7), from, to: end.toISOString().slice(0, 10) });
   }
   const yearFrom = months[0].from, yearTo = months[11].to;
-  const meetingRows = (await figureSources.figure(orgId, { key: "meetings", params: { from: yearFrom, to: yearTo, donor: donorId } }, {}, { pageSize: 500 })).rows || [];
+  const meetingRows = allMeetings.filter(r => r.date >= yearFrom && r.date <= yearTo);
   const rhythm = months.map(m => ({ ...m,
     count: meetingRows.filter(r => r.date >= m.from && r.date <= m.to && r.date <= today).length,
-    upcoming: upcoming.some(e => new Date(e.startsAt).toISOString().slice(0, 7) === m.month) }));
+    upcoming: upcoming.some(e => String(e.date).slice(0, 7) === m.month) }));
 
   // THIS YEAR, from the same sources the drawer opens.
   const jan1 = today.slice(0, 4) + "-01-01";
@@ -1327,7 +1345,7 @@ app.get("/donors/:id/relationship", requireAuth, wrap(async (req, res) => {
   const [thread] = await query(
     `SELECT id, next_step_label, due_date FROM threads WHERE org_id=? AND donor_id=? AND closed_at IS NULL LIMIT 1`, [orgId, donorId]);
   res.json({
-    today, upcoming, past, nextMeeting, rhythm, thisYear,
+    today, upcoming, past, meetings, nextMeeting, rhythm, thisYear,
     emailThreads: [...threads.values()],
     nextStep: thread ? { id: thread.id, label: thread.next_step_label, due: thread.due_date } : null,
     rhythmSentence: "Each cell is a calendar month, this one last. Brass means at least one meeting with them that month; a dashed cell is a meeting still to come.",
@@ -1428,7 +1446,9 @@ app.post("/calendar/events/:id/log", requireAuth, checkWriteAccess, wrap(async (
   const nextStep = String(req.body?.nextStep || "").trim().slice(0, 300) || null;
   const who = actor(req);
   const [u] = await query(`SELECT name FROM users WHERE id=?`, [req.user.userId]);
-  const date = new Date(c.starts_at).toISOString().slice(0, 10);
+  // FIX-14 Part 1 — the meeting's day in the ORG's zone. toISOString gave its
+  // UTC day, so a 9pm meeting in New York was logged as the next day.
+  const date = orgToday(await orgTz(req.user.orgId), new Date(c.starts_at));   // ORG_TZ_SEAM_OK
   const firstId = "int_" + uuid().slice(0, 8);
   let i = 0;
   for (const donorId of c.person_ids || []) {

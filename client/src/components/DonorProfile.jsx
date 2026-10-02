@@ -15,7 +15,7 @@ import { PERSON_TYPES } from "../../../shared/personType.js";
 import { censusById } from "../../../shared/numberCensus.js";
 import { renderCustomValue } from "../../../shared/customFieldShape";
 import { InboxNudge } from "./InboxConnect";
-import { MeetingCard, RelationshipTimeline, RelationshipRail, AfterMeetingForm } from "./MeetingPanels";
+import { MeetingCard, RelationshipTimeline, RelationshipRail, AfterMeetingForm, ConversationChips, conversationTitle } from "./MeetingPanels";
 import { T, activeMark, fmtFull, daysDiff, SC, STAGES, STAGE_ACTION, TIER_COLOR, donorScore, moveUrgency, Spin, Pill, AIBtn, AIPanel, GivingHistoryChart, GivingByYearChart, TpField, TpYesNo, TouchpointTimeline, LockedFeature, PlanPending, goToPricing, DriftBadge, Modal, firstNameOf, PersonMark, PhotoContext } from "./shared";
 import { PLAN_UNKNOWN, planKnown } from "../lib/entitlement";
 import { ProposalsPanel, PlanPanel, BriefPanel } from "./MajorGifts";
@@ -24,6 +24,7 @@ import { LogConversationModal, ThreadDismissMenu, PutItOnMyCalendar } from "./Lo
 import { PlanFollowUpModal } from "./PlanFollowUp";
 import { DESIGNATION_OPTS } from "./donorShared";
 import { displayDate, displayDateShort } from "../../../shared/displayDate";
+import { orgTodayCivil, orgTodayPlus, civilDaysAgo } from "../lib/orgToday";   // FIX-14 Part 1 — the org's today, never the UTC day
 import MetricBreakdownPanel from "./MetricBreakdownPanel";
 import { Figure } from "./Figure";
 // FIX-2 finding 11 — Lapsed is a stage, not a destructive confirm: on this
@@ -80,14 +81,13 @@ const giftTimelineLine = (g, fundName) => {
 
 // ── Follow-up Task Modal ───────────────────────────────────────────────────
 function FollowUpTaskModal({donor,onSave,onClose}){
-  const due7=new Date();due7.setDate(due7.getDate()+7);
   // BUILD-88a A.2 — the box no longer opens on "Follow up: <name>". The donor's
   // name is already on the screen, and a list where every row starts with the
   // same two words is a list nobody can scan. It opens EMPTY, with the step the
   // box is asking for as its placeholder; the server refuses a "Follow up:"
   // prefix too, so a saved shortcut cannot put it back.
   const[title,setTitle]=useState("");
-  const[due,setDue]=useState(due7.toISOString().split("T")[0]);
+  const[due,setDue]=useState(()=>orgTodayPlus(7));
   const[priority,setPriority]=useState("medium");
   const[loading,setLoading]=useState(false);
   const inp={width:"100%",background:T.bg,border:"1px solid "+T.bg3,borderRadius:8,padding:"10px 12px",color:T.ink,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"};
@@ -150,7 +150,7 @@ function FollowUpTaskModal({donor,onSave,onClose}){
 // one timeline entry recordGift already writes.
 function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
   const[type,setType]=useState("call");
-  const[date,setDate]=useState(new Date().toISOString().split("T")[0]);
+  const[date,setDate]=useState(orgTodayCivil());
   const[loading,setLoading]=useState(false);
   const[kt1,setKt1]=useState("");const[kt2,setKt2]=useState("");const[kt3,setKt3]=useState("");
   const[history,setHistory]=useState("");const[spouse,setSpouse]=useState("");const[nextStep,setNextStep]=useState("");
@@ -214,8 +214,12 @@ function LogTouchpointModal({donor,onSave,onClose,onRecordGift}){
     setLoading(true);
     try{
       const saveType=type==="meeting"?"meeting":type;
-      await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date})});
-      onSave({type:saveType,note,date,amount:0});
+      // FIX-14 Part 1 — the template's own fields travel with the note, so the
+      // timeline titles a meeting by its place and reads its next step
+      // without re-parsing prose.
+      const metadata=type==="meeting"&&location.trim()?{location:location.trim()}:undefined;
+      const saved=await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({type:saveType,note,date,...(metadata?{metadata}:{})})});
+      onSave({id:saved&&saved.id,type:saveType,note,date,amount:0,metadata:metadata||null});
     }catch(e){console.error(e);}
     setLoading(false);
   };
@@ -858,6 +862,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [gifts,setGifts]=useState([]);
   const [giftLoading,setGiftLoading]=useState(true);
   const [localInts,setLocalInts]=useState(null); // loaded lazily from GET /donors/:id
+  // FIX-14 Part 1 — the header's figures, refreshed from the same read after a
+  // conversation is logged. They were the values from when the record opened,
+  // so "Last met" still said "Not met yet" beside a meeting just logged.
+  const [figs,setFigs]=useState(null);
   // INT-BUILD-1 — meetings, threads, rhythm and this year, in one read.
   const [rel,setRel]=useState(null);
   const [logMeeting,setLogMeeting]=useState(null);
@@ -1008,7 +1016,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       await apiFetch(`/donors/${donor.id}/assign`,{method:"PATCH",body:JSON.stringify({assignedTo:member.id,assignedToName:member.name})});
       await apiFetch(`/donors/${donor.id}/interactions`,{method:"POST",body:JSON.stringify({
         type:"other",note:`Reassigned from ${prevOwner} to ${member.name}`,
-        date:new Date().toISOString().split("T")[0]
+        date:orgTodayCivil()
       })});
       if(onReassign)onReassign(donor.id,member.id,member.name);
       setShowReassign(false);
@@ -1037,7 +1045,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const [giftsFull,setGiftsFull]=useState([]);
   const [giftEditId,setGiftEditId]=useState(null);
   const [giftEditForm,setGiftEditForm]=useState({});
-  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+  const [addGiftForm,setAddGiftForm]=useState({amount:"",date:(initialAddGift&&initialAddGift.date)||orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
   const [giftErr,setGiftErr]=useState("");
   const [giftMoreOpen,setGiftMoreOpen]=useState(false);
   // BUILD-45 §1.1 F-3 — idempotency key minted lazily per submit attempt and
@@ -1060,7 +1068,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   // cadence as the recurring-gift dunning system (see processPledgeReminders
   // in server.js).
   const [pledges,setPledges]=useState([]);
-  const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
+  const [pledgeForm,setPledgeForm]=useState({amount:"",dueDate:orgTodayCivil(),notes:"",campaignId:""});
   const [addPledgeOpen,setAddPledgeOpen]=useState(false);
   const [pledgeSaving,setPledgeSaving]=useState(false);
   const [pledgeResendBusyId,setPledgeResendBusyId]=useState(null);
@@ -1084,7 +1092,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
 
   // Stewardship log form
   const [stwOpen,setStwOpen]=useState(false);
-  const [stwForm,setStwForm]=useState({type:"thank_you",detail:"",date:new Date().toISOString().split("T")[0],note:""});
+  const [stwForm,setStwForm]=useState({type:"thank_you",detail:"",date:orgTodayCivil(),note:""});
   const [stwSaving,setStwSaving]=useState(false);
 
   // Campaigns for gift attribution
@@ -1289,6 +1297,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       setGiftsFull(g);
       setGifts(g.map(x=>({amount:x.amount,date:x.date})));
       setGiftLoading(false);
+      if(raw.figures)setFigs(raw.figures);
       // Capture full interactions from the profile fetch so the timeline works
       // without the list endpoint needing to embed them.
       if(raw.interactions) setLocalInts(raw.interactions.map(i=>({
@@ -1296,6 +1305,18 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       })));
     }).catch(()=>setGiftLoading(false));
   };
+
+  // FIX-14 Part 1 — a touchpoint logged from the list's form lands on this
+  // record as a new interaction; the rail, the rhythm and the header re-read
+  // the one source then too, not only when the record is reopened.
+  const touchSeen=useRef(null);
+  const touchKey=`${donor.lastTouchpoint||""}|${(donor.interactions||[]).length}`;
+  useEffect(()=>{
+    if(touchSeen.current===null){touchSeen.current=touchKey;return;}
+    if(touchSeen.current===touchKey)return;
+    touchSeen.current=touchKey;loadRel();loadGiftsFull();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[touchKey]);
 
   const loadPlannedGifts=()=>{
     apiFetch(`/donors/${donor.id}/planned-gifts`).then(rows=>setPlannedGifts(Array.isArray(rows)?rows:[])).catch(()=>{});
@@ -1339,7 +1360,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
         metadata:{stewardship_type:stwForm.type,detail:stwForm.detail},
       })});
       setStwOpen(false);
-      setStwForm({type:"thank_you",detail:"",date:new Date().toISOString().split("T")[0],note:""});
+      setStwForm({type:"thank_you",detail:"",date:orgTodayCivil(),note:""});
       if(onInteractionAdded)onInteractionAdded();
     }catch(e){console.error(e);}
     setStwSaving(false);
@@ -1489,7 +1510,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       })});
       addGiftIdemRef.current=null;
       setAddGiftOpen(false);
-      setAddGiftForm({amount:"",date:new Date().toISOString().split("T")[0],type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
+      setAddGiftForm({amount:"",date:orgTodayCivil(),type:"cash",payment_method:"",notes:"",fund_id:"",acknowledgement_sent:false,pledgeId:""});
       loadGiftsFull();
       if(addGiftForm.pledgeId)loadPledges();
     }catch(e){setGiftErr(errorMessage(e,"The gift could not be saved."));}
@@ -1507,7 +1528,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
       await apiFetch(`/donors/${donor.id}/pledges`,{method:"POST",body:JSON.stringify({...pledgeForm,idempotencyKey:addPledgeIdemRef.current})});
       addPledgeIdemRef.current=null;
       setAddPledgeOpen(false);
-      setPledgeForm({amount:"",dueDate:new Date().toISOString().split("T")[0],notes:"",campaignId:""});
+      setPledgeForm({amount:"",dueDate:orgTodayCivil(),notes:"",campaignId:""});
       loadPledges();
     }catch(e){alert(errorMessage(e, "Could not save pledge"));}
     setPledgeSaving(false);
@@ -1678,8 +1699,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
   const snoozeThread=async it=>{
     if(snoozing)return;
     setSnoozing(it.id);setSnoozeErr("");
-    const d=new Date();d.setDate(d.getDate()+7);
-    const on=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const on=orgTodayPlus(7);   // FIX-14 Part 1 — the org's calendar, not the browser's
     try{
       await apiFetch(`/threads/${it.id}/dismiss`,{method:"POST",body:JSON.stringify({reason:"revisit",revisitOn:on})});
       loadDpThread();
@@ -1817,7 +1837,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
           )}
           {yourPageMsg&&<div role="status" data-testid="dp-your-page-msg" style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:61,background:T.white,border:"1px solid "+T.bg3,borderRadius:10,padding:"9px 12px",fontSize:12.5,color:T.ink,maxWidth:320,boxShadow:"0 12px 32px rgba(15,26,18,0.18)"}}>{yourPageMsg}</div>}
           {convoOpen&&<LogConversationModal donor={{id:donor.id,name:donor.name}} thread={dpThread} org={org} onNavigate={onNavigate}
-            onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":"meeting",note:r.line,date:r.date,metadata:null},...prev]:prev);}}
+            onSaved={r=>{loadDpThread();if(onInteractionAdded)onInteractionAdded();setLocalInts(prev=>prev?[{id:r.interactionId,type:r.touch==="gift"?"gift":r.touch.startsWith("call")?"call":r.touch==="email"?"email":r.touch==="note_only"?"note":r.touch==="ask"?"ask":"meeting",note:r.line,date:r.date,metadata:r.place?{location:r.place}:null},...prev]:prev);
+              // FIX-14 Part 1 — every count on the record re-reads the one
+              // source: the header's figures, the rail, the rhythm, the timeline.
+              loadRel();loadGiftsFull();}}
             onClose={()=>setConvoOpen(false)}/>}
           {planOpen&&<PlanFollowUpModal donor={{id:donor.id,name:donor.name}}
             onSaved={()=>loadDpThread()} onClose={()=>setPlanOpen(false)}/>}
@@ -1844,10 +1867,10 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
               the label is the census definition, unchanged and still keyboard
               reachable — the definition and the drill-through are different
               affordances and each keeps its own. */}
-          {donor.figures&&(
+          {(figs||donor.figures)&&(
             <div className="donor-stat-grid" data-testid="dp-figures" style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:10,padding:"18px 20px 4px 24px",flexShrink:0}}>
               {PROFILE_FIGURES.map(({key,label,kind,suffix,def})=>{
-                const f=donor.figures[key];
+                const f=(figs||donor.figures)[key];
                 if(!f)return null;
                 return (
                   <div key={key} style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"12px 14px"}}>
@@ -1915,9 +1938,31 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             {/* INT-BUILD-1 Part 3 — the next meeting with its brief, then one
                 timeline of every email thread, meeting and gift. */}
             {rel?.nextMeeting&&<MeetingCard meeting={rel.nextMeeting} donor={donor} onReload={loadRel}/>}
-            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} onChanged={()=>{loadRel();onInteractionAdded&&onInteractionAdded();}}/>}
+            {/* FIX-14 Part 1 — what Steward heard in the newest conversation
+                logged by hand: a next step with its date, the spouse named,
+                a planned gift mentioned. Each is a chip; nothing changes until
+                a person presses one. */}
+            {(()=>{
+              const ints=localInts??donor.interactions??[];
+              const handLogged=ints.filter(i=>{
+                if(!["meeting","call","note","ask","email"].includes(i.type)||!String(i.note||"").trim())return false;
+                let m={};try{m=typeof i.metadata==="string"?JSON.parse(i.metadata||"{}"):(i.metadata||{});}catch{}
+                if(m.provider||m.message_id||m.gmail_message_id||m.calendar_event_id||m.via==="inbound_email")return false;
+                const ago=civilDaysAgo(String(i.date||"").slice(0,10));
+                return ago!=null&&ago<=30&&ago>=-90;
+              }).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.created_at||"").localeCompare(String(a.created_at||"")));
+              const last=handLogged[0];
+              if(!last||!last.id||isReadOnly)return null;
+              return <section data-testid="dp-heard" style={{background:T.white,border:"1px solid "+T.bg3,borderRadius:12,padding:"14px 18px",display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{fontSize:13,fontWeight:700,color:T.ink}}>From your note: {conversationTitle(last)}, {displayDateShort(last.date,orgTodayCivil())}</div>
+                <ConversationChips interactionId={last.id} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();refreshSoftCredit();
+                  apiFetch(`/donors/${donor.id}/designations`).then(d=>setDesignations(Array.isArray(d)?d:[])).catch(()=>{});
+                  onInteractionAdded&&onInteractionAdded();}}/>
+              </section>;
+            })()}
+            {rel&&<RelationshipTimeline rel={rel} donor={donor} gifts={giftsFull} interactions={localInts??donor.interactions??[]} onLog={m=>setLogMeeting(m)} onChanged={()=>{loadRel();loadGiftsFull();loadDpThread();onInteractionAdded&&onInteractionAdded();}}/>}
             {logMeeting&&<Modal onClose={()=>setLogMeeting(null)} width={560} title="">
-              <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();onInteractionAdded&&onInteractionAdded();}}/>
+              <AfterMeetingForm meeting={{...logMeeting,people:[{id:donor.id,name:donor.name}]}} onDone={()=>{setLogMeeting(null);loadRel();loadGiftsFull();onInteractionAdded&&onInteractionAdded();}}/>
             </Modal>}
             {/* ── WHAT DO I DO NEXT (PROFILE-1) ──────────────────────────
                 BUILD-81 put the donor's thread above giving history and
@@ -2144,7 +2189,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   {ints.map((i,n)=>(
                     <li key={i.id||n} style={{display:"grid",gridTemplateColumns:"92px 1fr",gap:12,padding:"10px 0",borderTop:n?"1px solid "+T.bg2:"none"}}>
                       <span style={{fontSize:12,color:T.ink3}}>{displayDateShort(i.date,new Date())}</span>
-                      <span style={{fontSize:13,color:T.ink,lineHeight:1.5}}>{i.note}</span>
+                      <span style={{fontSize:13,color:T.ink,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{i.note}</span>
                     </li>
                   ))}
                 </ul>
@@ -2994,9 +3039,11 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
                   color:T.gold500,big:!!m});
               }
               if(firstGiftDate){
-                const ann=new Date(firstGiftDate);ann.setFullYear(ann.getFullYear()+1);
-                const annStr=ann.toISOString().split("T")[0];
-                if(new Date(annStr)<=new Date())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:T.gold500,big:true});
+                // FIX-14 Part 1 — civil arithmetic on the date's own text, compared
+                // with the org's today (this round-tripped through UTC).
+                const fg=String(firstGiftDate).slice(0,10);
+                const annStr=/^\d{4}-\d{2}-\d{2}$/.test(fg)?(Number(fg.slice(0,4))+1)+fg.slice(4):"";
+                if(annStr&&annStr<=orgTodayCivil())milestones.push({date:annStr,icon:"✦",label:"1-year anniversary",desc:"One year as a donor",color:T.gold500,big:true});
               }
               let cumulative=0;
               sortedGiftsForTimeline.forEach(g=>{
@@ -3112,7 +3159,7 @@ function DonorProfile({donor,onClose,onStageChange,onLogTouchpoint,aiMap,aiErr={
             const cur=steps.find(x=>x.status==="open")||steps.find(x=>x.status==="pending");
             const doneCount=steps.filter(x=>x.status==="done"||x.status==="skipped").length;
             const pos=cur?cur.seq:steps.length;
-            const late=cur&&cur.dueDate&&String(cur.dueDate).slice(0,10)<new Date().toISOString().slice(0,10);
+            const late=cur&&cur.dueDate&&String(cur.dueDate).slice(0,10)<orgTodayCivil();
             return <RailSection title="Their journey" testid="dp-rail-journey">
               {/* FIX-4 2 — THE CHIP. It names the journey and it OPENS it,
                   because the next question after "which journey is she in"

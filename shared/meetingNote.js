@@ -137,4 +137,155 @@ export function suggestFromNote(note, ctx = {}) {
   return out;
 }
 
+// ── FIX-14 Part 1 — A CONVERSATION LOGGED BY HAND ───────────────────────────
+// "Log a conversation" (and the touchpoint form) write a note on the record.
+// The same reading offers what the record has a place for, each as a chip
+// that does nothing until a person says yes:
+//   next     "Follow up around Nov 1": sets the profile's next step, a Thread
+//            step with that date
+//   spouse   "Link Clementine to the household": the person named as a
+//            spouse or partner, matched by name or added, in one household
+//   planned  "Mark as a planned-giving prospect": the note mentions a planned
+//            or estate gift
+// `date` is the conversation's own civil day; a relative phrase ("in a
+// month", "next week") is counted from it, never from a clock.
+
+const MON3 = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const civil = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+function addDaysCivil(date, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ""));
+  if (!m) return null;
+  const t = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+  return civil(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
+}
+function addMonthsCivil(date, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ""));
+  if (!m) return null;
+  const idx = +m[1] * 12 + (+m[2] - 1) + n, y = Math.floor(idx / 12), mo = idx % 12 + 1;
+  const dim = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  return civil(y, mo, Math.min(+m[3], dim));
+}
+export function shortCivil(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(date || ""));
+  return m ? `${MON3[+m[2] - 1]} ${+m[3]}` : "";
+}
+const N_WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, couple: 2, few: 3 };
+// "follow up in a month" → the date a month after `date`; null when the text
+// names no time at all (the chip then proposes two weeks, and says so).
+export function dueFromText(text, date) {
+  const t = String(text || "").toLowerCase();
+  let m = t.match(/\b(?:in|within|after)\s+(?:a\s+)?(\d+|a|an|one|two|three|four|five|six|couple(?:\s+of)?|few)\s+(day|week|month|year)s?\b/);
+  if (m) {
+    const n = Number(m[1]) || N_WORDS[m[1].replace(/\s+of$/, "")] || 1;
+    if (m[2] === "day") return addDaysCivil(date, n);
+    if (m[2] === "week") return addDaysCivil(date, 7 * n);
+    if (m[2] === "month") return addMonthsCivil(date, n);
+    return addMonthsCivil(date, 12 * n);
+  }
+  if (/\btomorrow\b/.test(t)) return addDaysCivil(date, 1);
+  if (/\bnext week\b/.test(t)) return addDaysCivil(date, 7);
+  if (/\bnext month\b/.test(t)) return addMonthsCivil(date, 1);
+  if (/\bnext year\b/.test(t)) return addMonthsCivil(date, 12);
+  return null;
+}
+
+// "Label: value" lines, as the touchpoint form writes them. Shared with the
+// timeline, which shows them as labelled rows.
+export function noteFields(note) {
+  return String(note || "").split(/\r?\n/).map(line => {
+    const m = /^\s*([A-Z][A-Za-z0-9 /&'()-]{0,40}?)\s*:\s*(.+)$/.exec(line);
+    return m ? { label: m[1].trim(), value: m[2].trim() } : null;
+  }).filter(Boolean);
+}
+const fieldOf = (fields, re) => (fields.find(f => re.test(f.label)) || {}).value || null;
+
+const PLANNED_RE = /\b(planned gift|planned giving|planned-giving|estate gift|estate plan(?:ning)?|bequest|in (?:his|her|their|my) will|legacy gift|leave (?:us|something) in)\b/i;
+const NAME = String.raw`([A-Z][a-z'’-]+(?:[ ]+[A-Z][a-z'’-]+)?)`;
+const SPOUSE_RES = [
+  new RegExp(String.raw`\b(?:[Hh]is|[Hh]er|[Tt]heir)[ ]+(?:wife|husband|spouse|partner)[ ]*,?[ ]+` + NAME),
+  new RegExp(String.raw`\b(?:[Ww]ife|[Hh]usband|[Ss]pouse|[Pp]artner)[ ]*,[ ]*` + NAME),
+  new RegExp(String.raw`\b` + NAME + String.raw`[ ]*\((?:his|her|their)[ ]+(?:wife|husband|spouse|partner)\)`),
+];
+
+export function suggestFromConversation(note, { date = null, funds = [] } = {}) {
+  const text = String(note || "");
+  const out = [];
+  if (!text.trim()) return out;
+  const fields = noteFields(text);
+
+  // NEXT: the form's own Next Step field first, then a sentence that asks for
+  // something to happen.
+  const nextField = fieldOf(fields, /^next steps?$/i);
+  let nextText = nextField, quote = nextField;
+  if (!nextText) {
+    const lines = text.split(/\r?\n|(?<=[.!?])\s+/).map(s => s.trim()).filter(Boolean);
+    const ask = lines.find(s => /\b(follow up|follow-up|send|invite|call|schedule|introduce|meet|visit|check in|next)\b/i.test(s));
+    if (ask) { nextText = ask.replace(/^[^:]{1,40}:\s*/, ""); quote = ask; }
+  }
+  if (nextText) {
+    const due = dueFromText(nextText, date);
+    const label = /\bfollow[ -]?up\b/i.test(nextText) ? "Follow up" : nextText.replace(/\.$/, "").slice(0, 80);
+    if (due) out.push({ kind: "next", text: nextText.replace(/\.$/, "").slice(0, 300), stepLabel: label, due,
+      label: `${label.length > 40 ? "Next step" : label} around ${shortCivil(due)}`, quote });
+  }
+
+  // SPOUSE: the form's Spouse / Partner field, or "his wife Clementine".
+  const spouseField = fieldOf(fields, /^(spouse|partner|spouse \/ partner)$/i);
+  let spouse = null, sq = null;
+  if (spouseField) { const m = new RegExp("^" + NAME).exec(spouseField.trim()); if (m) { spouse = m[1]; sq = spouseField; } }
+  if (!spouse) for (const re of SPOUSE_RES) { const m = re.exec(text); if (m) { spouse = m[1]; sq = m[0]; break; } }
+  if (spouse) out.push({ kind: "spouse", name: spouse, label: `Link ${spouse} to the household`, quote: sq });
+
+  // PLANNED: a planned or estate gift is mentioned.
+  const pm = PLANNED_RE.exec(text);
+  if (pm) out.push({ kind: "planned", label: "Mark as a planned-giving prospect", quote: pm[0] });
+  return out;
+}
+
+// The engine's version of the same three, held to the reader's rule: every
+// chip quotes the note, and a date is counted from the note's own words.
+export const CONVERSATION_CHIP_TOOL = {
+  name: "suggest_conversation_chips",
+  description: "Return the chips this conversation note supports. Every chip quotes the note.",
+  input_schema: {
+    type: "object",
+    properties: {
+      chips: { type: "array", items: { type: "object", properties: {
+        kind: { type: "string", enum: ["next", "spouse", "planned"] },
+        quote: { type: "string", description: "The exact words from the note this chip comes from." },
+        text: { type: "string", description: "For next: the step, in the note's words." },
+        name: { type: "string", description: "For spouse: the spouse or partner's name as written." },
+      }, required: ["kind", "quote"] } },
+    },
+    required: ["chips"],
+  },
+};
+export const CONVERSATION_CHIP_SYSTEM =
+  "You read a note a fundraiser logged after talking with a donor, and pick out only what the note itself says: the next step she wrote down (kind next, with the step's words in text), the donor's spouse or partner if one is named (kind spouse, with the name), and whether a planned gift, an estate gift or a bequest is mentioned (kind planned). For every item, quote the exact words from the note it comes from. If the note does not say it, leave it out. Never guess a name or a step.";
+
+export function validateConversationChips(chips, note, { date = null } = {}) {
+  const text = String(note || ""), lower = text.toLowerCase();
+  const out = [];
+  for (const c of Array.isArray(chips) ? chips : []) {
+    const quote = String(c && c.quote || "").trim();
+    if (!quote || !lower.includes(quote.toLowerCase())) continue;
+    if (c.kind === "next") {
+      const t = String(c.text || quote).trim().replace(/\.$/, "").slice(0, 300);
+      const due = dueFromText(quote, date) || dueFromText(t, date);
+      if (!t || !due) continue;
+      const label = /\bfollow[ -]?up\b/i.test(t) ? "Follow up" : t.slice(0, 80);
+      out.push({ kind: "next", text: t, stepLabel: label, due, label: `${label.length > 40 ? "Next step" : label} around ${shortCivil(due)}`, quote });
+    } else if (c.kind === "spouse") {
+      const name = String(c.name || "").trim();
+      if (!name || !lower.includes(name.toLowerCase()) || !/^[A-Z]/.test(name) || name.length > 60) continue;
+      out.push({ kind: "spouse", name, label: `Link ${name} to the household`, quote });
+    } else if (c.kind === "planned") {
+      if (!PLANNED_RE.test(quote)) continue;
+      out.push({ kind: "planned", label: "Mark as a planned-giving prospect", quote });
+    }
+  }
+  const seen = new Set();
+  return out.filter(c => (seen.has(c.kind) ? false : (seen.add(c.kind), true)));
+}
+
 export default { suggestFromNote, parseAmount };

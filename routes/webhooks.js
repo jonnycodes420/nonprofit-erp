@@ -2603,9 +2603,11 @@ app.post("/inbound-email", requireFlag(INBOUND_EMAIL_ENABLED), wrap(async (req, 
     "SELECT id, name, email FROM donors WHERE org_id = ? AND deleted_at IS NULL AND email IS NOT NULL AND email <> ''",
     [org.id]);
 
+  const inboundTzOrg = await orgTz(org.id);
   const decision = IE.classifyInbound(payload, {
     domain: INBOUND_EMAIL_DOMAIN,
-    today: orgToday(await orgTz(org.id)),
+    today: orgToday(inboundTzOrg),   // ORG_TZ_SEAM_OK
+    tz: inboundTzOrg.timezone,       // FIX-14 Part 1 — a sent-at time is dated in the org's zone
     orgSlug: org.org_slug,
     senderIsUser: true,
     donors: donorRows,

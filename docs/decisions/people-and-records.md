@@ -133,6 +133,15 @@ Read this when you touch the person record: donors, organisations, non-donors, h
   example) waits in Unmatched. (BUILD-87)
 - **Give each profile panel its own "couldn't load" state.** Do not swallow a failed fetch into an empty
   read (`.catch(()=>setX([]))`). Report a failed async stream in its panel. (BUILD-84, BUILD-98)
+- **"Meetings with this person" is `meetings.js` and nothing else.** Calendar meetings not logged
+  afterwards plus meeting interactions, each dated by its civil day in the ORG's zone (never the UTC
+  day), held when it has happened. Last met, Meetings this year, the rhythm strip, the timeline's
+  Meetings chip, Coming up, No meeting since, meetings per staff, Visits YTD and the meeting brief
+  all read it. A conversation date is the day the person chose, and a client "today" is
+  `client/src/lib/orgToday.js`, never `toISOString()`. (FIX-14, `tests/fix14-meeting-counts`)
+- **A note's suggestion is a chip, never a write.** Next step, spouse to household and planned-giving
+  prospect come from the after-meeting engine (AI switch, the simple reader as fallback) and change
+  nothing until a person presses one (`POST /interactions/:id/chips`). (FIX-14)
 
 ## Gotchas
 - **An `<img>` backend path missing from vercel.json fails exactly like "no photo uploaded".** Proxy

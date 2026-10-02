@@ -158,8 +158,14 @@ export function interactive(onClick, opts = {}) {
 // donor profile with "Can't find variable: fmt" (the BUILD-21 fmt regression).
 import { fmt, fmtFull, quietPhrase } from "../lib/money";
 import { errorMessage } from "../lib/domainError";
+import { civilDaysAgo } from "../lib/orgToday";
 export { fmt, fmtFull, quietPhrase };
-export const daysDiff = d => Math.floor((new Date()-new Date(d))/86400000);
+// FIX-14 Part 1 — a civil date ("2026-10-01") is counted on the ORG's calendar.
+// `new Date("2026-10-02")` is UTC midnight, which is 8pm the day before in New
+// York, so a meeting stored a day ahead read "(Today)" at 11pm.
+export const daysDiff = d => (/^\d{4}-\d{2}-\d{2}$/.test(String(d||""))
+  ? civilDaysAgo(d)
+  : Math.floor((new Date()-new Date(d))/86400000));
 // BUILD-87 F.3.7 — A COLLEAGUE IS A FIRST NAME. "Admin User" on a row tells a
 // prospect they are looking at a fixture; "Margaret Chen · Admin User" tells a
 // real office that the software does not know who they are. Inside one org
@@ -1325,7 +1331,7 @@ export function TouchpointTimeline({interactions,onDelete}){
                   {emailSnippet&&<div style={{fontSize:12,color:T.ink3,lineHeight:1.5,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{emailSnippet}</div>}
                 </div>
               ):(
-                <div style={{fontSize:13,color:T.ink2,lineHeight:1.5}}>{int.note}</div>
+                <div style={{fontSize:13,color:T.ink2,lineHeight:1.5,whiteSpace:"pre-wrap"}}>{int.note}</div>
               )}
             </div>
             {onDelete&&int.id&&(

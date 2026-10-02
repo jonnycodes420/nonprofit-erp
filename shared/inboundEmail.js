@@ -309,16 +309,27 @@ export function cleanSubject(raw) {
  * absent header falls back to `today` — an activity with no date is worse than
  * one dated the day it arrived, and the arrival date is a fact we do have.
  */
-export function activityDate(raw, today) {
+// FIX-14 Part 1 — a header carrying a TIME is an instant, and its day is the
+// day in the ORG's zone (`tz`). It was read as the UTC day, so an email sent
+// at 9pm in New York was filed under the next day. A bare date stays as it is.
+export function activityDate(raw, today, tz = null) {
   const s = String(raw == null ? "" : raw).trim();
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  if (iso && !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:/.test(s)) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   if (s) {
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
+      if (tz) {
+        try {
+          const f = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" })
+            .formatToParts(d).map(x => [x.type, x.value]));
+          return `${f.year}-${f.month}-${f.day}`;
+        } catch { /* an unknown zone reads as UTC, below */ }
+      }
       const p = (n) => String(n).padStart(2, "0");
       return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`;
     }
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   }
   return today;
 }
@@ -334,7 +345,7 @@ export function activityDate(raw, today) {
  *   { action: "hold", kind, candidates, subject, body, date, from }
  *
  * @param payload  { to, from, subject, text, html, date, ... } normalized
- * @param ctx      { domain, today, orgSlug, senderIsUser, senderName,
+ * @param ctx      { domain, today, tz, orgSlug, senderIsUser, senderName,
  *                   donors: [{ id, name, email }], userEmails: [string] }
  */
 export function classifyInbound(payload, ctx) {
@@ -355,7 +366,7 @@ export function classifyInbound(payload, ctx) {
 
   const subject = cleanSubject(p.subject);
   const body = bodyText(p);
-  const date = activityDate(p.date, today);
+  const date = activityDate(p.date, today, c.tz || null);
   if (!body && subject === "(no subject)") return { action: "drop", reason: "empty", slug };
 
   // 3 · match the ORIGINAL recipients against this org's donors. The logging

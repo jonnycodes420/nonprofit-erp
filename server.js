@@ -8238,6 +8238,11 @@ async function syncMailbox(userId, orgId, providerKey) {
   const excludedIds = exRows.map(r => r.message_id).filter(Boolean);
 
   const messages = await fetchMailboxMessages(providerKey, token, [...donorsByEmail.keys()]);
+  // FIX-14 Part 1 — an email is filed under the day it arrived IN THE ORG's
+  // zone. The normalizers sliced the UTC day, so mail after 8pm in New York
+  // landed on tomorrow.
+  { const tzOrg = await orgTz(orgId);
+    for (const m of messages) if (m && m.receivedAt && !isNaN(new Date(m.receivedAt).getTime())) m.date = orgToday(tzOrg, new Date(m.receivedAt)); }   // ORG_TZ_SEAM_OK
   const today = orgToday(await orgTz(orgId));                          // ORG_TZ_SEAM_OK
   const actorId = `system:mailbox/${providerKey}/${userId}`;
   const [me] = await query(`SELECT name FROM users WHERE id=?`, [userId]);
