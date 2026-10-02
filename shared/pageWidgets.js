@@ -46,6 +46,31 @@ export const WIDGETS = [
   { key: "video",    label: "Video",            hint: "YouTube or Vimeo link",       surfaces: ["portal", "give"], full: true,
     defaults: { url: "", caption: "" } },
 
+  // ── CAMPAIGN-2 · THE THREE A CAMPAIGN PAGE NEEDS ─────────────────────────
+  // GIVE-ONLY, each for a reason the portal cannot satisfy: a countdown and a
+  // matching challenge are about ONE campaign with a deadline, and a portal is
+  // a donor's permanent home with neither.
+  //
+  // RECENT GIFTS is the one that carries a rule rather than a setting. A name
+  // appears only when that donor chose to show it, gift by gift, and the
+  // default is off — the BUILD-103 rule (`show_name_to_fundraiser`) applied to
+  // a public page, for the same reason: a gift to an organisation is not a
+  // public act unless the person giving it says so. AMOUNTS are off by default
+  // too, and that is the org's setting rather than the donor's, because the
+  // size of a gift beside a name is a second disclosure.
+  { key: "recentgifts", label: "Recent gifts",  hint: "Who has given, as each donor chose", surfaces: ["give"], full: false,
+    defaults: { count: 8, showAmounts: false, heading: "Recent gifts" } },
+  // A countdown reads the CAMPAIGN's end date. It has no date of its own, so
+  // there is one answer to "when does this close" and the page cannot contradict
+  // the record.
+  { key: "countdown",  label: "Countdown",      hint: "Days left, from the campaign's end date", surfaces: ["give"], full: false,
+    defaults: { heading: "" } },
+  // The matching challenge, which renders NOTHING until the organisation has
+  // entered one on the campaign. A match on a page that nobody has funded is a
+  // claim about somebody else's money.
+  { key: "matchchallenge", label: "Matching challenge", hint: "Shown only when you have entered one", surfaces: ["give"], full: false,
+    defaults: {} },
+
   // PORTAL ONLY, and each for a reason a giving page cannot satisfy.
   //
   // `give` sends somebody TO a giving page; on the giving page they are already

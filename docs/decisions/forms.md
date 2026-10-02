@@ -149,6 +149,48 @@ Read this when you touch giving pages, the giving-page builder, widgets, peer-to
 - **The org may name the monthly suggestion (`orgs.form_upsell_monthly_cents`).** NULL keeps a third
   of the gift, which is every org today. (GIVE-2 §6)
 
+### CAMPAIGN-2 — a campaign's public page
+- **A campaign's page IS a giving page.** `giving_pages.campaign_id` already makes the thermometer the
+  campaign's and peer-to-peer fundraisers already roll into the page's own total, so linking the page is
+  what makes every one of those gifts count toward the same bar with no aggregation written anywhere.
+  There is no second page system and no second thermometer. (CAMPAIGN-2 §1, §4)
+- **`giving_pages.is_campaign_page` is the ONE page**, with a partial unique index on (org, campaign). A
+  campaign may legitimately have several linked pages (an appeal page and a walk's p2p page); only one is
+  the page the campaign screen opens and the template creates. (CAMPAIGN-2 §1)
+- **The goal bar carries the sentence that says what it counts**, computed from the same two figures the
+  bar is drawn from so the two cannot disagree. It names the two things people assume it leaves out: a
+  cheque somebody posted, and a gift given through a supporter's own page. (CAMPAIGN-2 §2)
+- **A template's steps are TASKS, not Threads.** A Thread is one person's list and requires a donor by
+  construction (`threads.donor_id NOT NULL`); "write the three social posts" belongs to the campaign and
+  to nobody in particular until somebody takes it. `tasks.campaign_id` is what lets the plan be read back
+  as a plan. Nothing a template creates sends anything. (CAMPAIGN-2 §3)
+- **GivingTuesday is computed, never listed.** It is the Tuesday after the fourth Thursday of November and
+  it moves every year; a hard-coded table is a thing that silently stops being true, and this one would
+  stop being true on the date the whole campaign is about. A template whose day has gone rolls to next
+  year's. (CAMPAIGN-2 §3)
+- **One campaign per template per year.** Pressing the button twice is the likeliest thing to happen to
+  that route, and two GivingTuesday 2026 campaigns is two thermometers measuring the same money.
+  (CAMPAIGN-2 §3)
+- **A template-created page gets a CONFIGURED form** (`form_config`), because the name-on-the-page
+  question only exists on the three-step form. A template that left it null stood up a page with a
+  recent-gifts list and no way for a donor to join it; the browser walk found exactly that. (CAMPAIGN-2 §1)
+- **`gifts.show_name_publicly` is FALSE by default and the default IS the decision** — BUILD-103's rule
+  applied to a public page. It is a SEPARATE column from `show_name_to_fundraiser` because they are two
+  different audiences: a donor may be happy for the friend whose page they gave through to know, and not
+  for the internet. `publicGiftLine` in `shared/campaignPage.js` is the ONE function that turns a gift row
+  into something a stranger reads, and with amounts off it emits no number at all, so a page cannot leak
+  one by rendering a field it was handed. (CAMPAIGN-2 §1)
+- **A matching challenge renders nothing until the org enters one**, and what is left of it is counted
+  from gifts recorded SINCE it began (`campaigns.match_started_at`). A gift on the day it began counts:
+  `gifts.date` is a civil date, and counting the whole day can only say LESS is left than really is, which
+  errs against the organisation rather than against a donor deciding whether their gift will be doubled.
+  (CAMPAIGN-2 §2)
+- **A suggested-amount ladder may not span more than ten times its first rung** (`MAX_LADDER_SPREAD`), and
+  the padding rungs obey the ceiling too. Harborlight's median is $126 and its 90th percentile is in the
+  thousands, so the uncapped ladder read $150 / $500 / $3,500 / $5,000 — four unrelated asks rather than a
+  ladder. Capping the percentiles and then padding past the cap caps nothing. (CAMPAIGN-2, found on the
+  GIVE-2 ladder by the campaign page's own walk)
+
 ## Gotchas
 - **A browser assertion on the builder can pass for the wrong reason.** A widget's chrome label carries its
   name, so open the palette and read the palette. (BUILD-95 §5B)

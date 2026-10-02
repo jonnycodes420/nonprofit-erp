@@ -115,6 +115,9 @@ export function ladderFromLastGift(lastGiftCents) {
 // the honest answer is to say so and let the default ladder stand.
 export const MIN_SAMPLE = 8;
 
+// The top suggested amount is at most this many times the first one.
+export const MAX_LADDER_SPREAD = 10;
+
 export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
   const sorted = (giftCentsList || []).map(c => Math.round(Number(c) || 0)).filter(c => c > 0).sort((a, b) => a - b);
   if (sorted.length < MIN_SAMPLE) {
@@ -129,12 +132,31 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
   // rung past the top of those. Duplicates collapse, which is correct: an org
   // whose gifts are nearly all $25 gets $25 / $35 / $50 / $75 from the rungs
   // rather than $25 four times.
-  const wanted = uniqAscending([base, toFriendlyCents(at(0.75)), toFriendlyCents(at(0.9))]);
+  // ── THE LADDER MAY NOT SPAN THE WHOLE DISTRIBUTION ───────────────────────
+  // The 90th percentile of a real nonprofit's gifts is a long way from the
+  // middle one: Harborlight's median is $126 and its p90 is in the thousands,
+  // so the first cut of this offered $150 / $500 / $3,500 / $5,000. That is not
+  // a ladder, it is a list of four unrelated asks, and a donor meeting it
+  // presses "Another amount". The browser walk on the year-end campaign page
+  // found it.
+  //
+  // So the top rung is capped at ten times the first. Ten is the widest spread
+  // that still reads as one ladder, and an org whose big gifts really are
+  // thirty times its middle one is better served by the ask being plausible
+  // than by the ask being its own 90th percentile.
+  const ceiling = base * MAX_LADDER_SPREAD;
+  const capped = c => (c != null && c > ceiling ? toFriendlyCents(ceiling, { snapDown: true }) : c);
+  const wanted = uniqAscending([base, capped(toFriendlyCents(at(0.75))), capped(toFriendlyCents(at(0.9)))]);
   const amounts = [...wanted];
   let guard = 0;
   while (amounts.length < count && guard++ < 20) {
     const next = rungAbove(amounts[amounts.length - 1], 1);
-    if (!next || amounts.includes(next)) break;
+    // AND THE FILLER OBEYS THE CEILING TOO. Capping the percentiles and then
+    // padding past the cap is capping nothing: it produced $150 / $500 /
+    // $1,500 / $2,000 off a $126 median, a thirteen-fold spread, on the first
+    // run after the cap went in. Three buttons inside the ceiling beat four
+    // that leave it.
+    if (!next || amounts.includes(next) || next > ceiling) break;
     amounts.push(next);
   }
   return {
@@ -142,7 +164,7 @@ export function ladderFromDistribution(giftCentsList, { count = 4 } = {}) {
     source: "org_distribution",
     sampleSize: sorted.length,
     medianCents: median,
-    sentence: `Chosen from this organisation's own gifts: the middle gift of the last ${sorted.length} was ${dollars(median)}.`,
+    sentence: `Chosen from this organisation's own gifts: the middle gift of the last ${sorted.length.toLocaleString("en-US")} was ${dollars(median)}.`,
     defaultIndex: 1,
   };
 }

@@ -147,6 +147,56 @@ export function WidgetView({ w, ctx }) {
         </div>
       );
     }
+    // ── CAMPAIGN-2 · THE THREE A CAMPAIGN PAGE NEEDS ──────────────────────
+    // Each renders NOTHING when the server had nothing true to hand it: the
+    // `campaign` branch above's rule ("never fabricate — no content, no
+    // widget"), applied to a deadline nobody set, a match nobody funded and a
+    // list with no gifts in it yet.
+    case "countdown": {
+      if (!w.sentence) return null;
+      return (
+        <div style={{ ...cardStyle, textAlign: "center" }}>
+          {w.heading ? <div style={{ ...h2, marginBottom: 6 }}>{w.heading}</div> : null}
+          <div className="w-countdown" style={{ fontSize: 20, fontWeight: 800, color: PAL.bodyDark }}>{w.sentence}</div>
+        </div>
+      );
+    }
+    case "matchchallenge": {
+      const m = w.match;
+      if (!m) return null;           // nobody has entered one
+      const pct = m.potCents > 0 ? Math.min(100, Math.round((m.claimedCents / m.potCents) * 100)) : 0;
+      return (
+        <div className="w-match" style={{ ...cardStyle }}>
+          <div style={{ ...h2, marginBottom: 6 }}>Your gift is doubled</div>
+          <p style={{ fontSize: 14, lineHeight: 1.7, margin: "0 0 10px", color: PAL.bodyDark }}>{m.sentence}</p>
+          <div style={{ height: 10, background: PAL.wash, borderRadius: 5, overflow: "hidden" }}>
+            <div style={{ width: `${Math.max(2, pct)}%`, height: "100%", background: "var(--pt-primary)" }} />
+          </div>
+        </div>
+      );
+    }
+    case "recentgifts": {
+      const gifts = Array.isArray(w.gifts) ? w.gifts : [];
+      if (!gifts.length) return null;   // an empty list says nothing worth a card
+      return (
+        <div className="w-recentgifts" style={{ ...cardStyle }}>
+          <div style={{ ...h2, marginBottom: 8 }}>{w.heading || "Recent gifts"}</div>
+          <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+            {gifts.map((g, i) => (
+              <li key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10,
+                                   fontSize: 14, padding: "6px 0", borderTop: i ? `1px solid ${PAL.wash}` : "none" }}>
+                <span style={{ color: PAL.bodyDark, fontWeight: 600 }}>{g.who}</span>
+                {/* THE AMOUNT IS ONLY HERE WHEN THE ORGANISATION TURNED IT ON.
+                    With it off the server sends no number at all, so this page
+                    cannot leak one by rendering a field it was handed. */}
+                {g.amount ? <span style={muted}>{g.amount}</span> : null}
+              </li>
+            ))}
+          </ul>
+          <div style={{ ...muted, fontSize: 12, marginTop: 10, lineHeight: 1.5 }}>{w.definition}</div>
+        </div>
+      );
+    }
     case "impact": {
       // Donor-matched feed when the signed-in donor HAS matches; otherwise the
       // resolved org-wide published updates (BUILD-55 — a signed-in donor with

@@ -454,6 +454,12 @@ app.post("/stripe/webhook", express.raw({ type: "application/json" }), async (re
             if (peerFundraiserId && pi.metadata?.show_name_to_fundraiser === "1") {
               await run(`UPDATE gifts SET show_name_to_fundraiser = true WHERE id=? AND org_id=?`, [giftId, orgId]).catch(() => {});
             }
+            // CAMPAIGN-2 — and the donor's own choice about the PUBLIC page,
+            // written the same way and never defaulted on. Two different
+            // audiences, two different answers, two columns.
+            if (pi.metadata?.show_name_publicly === "1") {
+              await run(`UPDATE gifts SET show_name_publicly = true WHERE id=? AND org_id=?`, [giftId, orgId]).catch(() => {});
+            }
             if (evLevel) {
               // EVENTS-2 — THE REGISTRATION IS CONFIRMED HERE AND NOWHERE ELSE.
               // The page held a seat; this is what turns the hold into a place

@@ -55,7 +55,7 @@ const {
   donorSendOpts, driftEngine, enrollInSequences, enrollMembership, ensureOrgLedger, escapeHtml,
   filterBySegment, finPeriodBounds, fireWorkflows, formConfigMod, geocode, getOrgAccessState,
   // GIVE-2 — see routes/give.js's note on the same four.
-  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload,
+  footingMod, employerMatchMod, ratesMod, smartAmountsMod, coverFeePayload, campaignPageMod,
   signReconnectToken, verifyReconnectToken, withSmartAmounts,
   getThemeAsset, giveThemePayload, givingAccountEntry, givingSourcesMod, google, grantBalanceFrom,
   grantDocs, grantMoneyRows, grantMsMod, hashApiKey, imageBytesMatchMime, inboundMod, insertShift,
@@ -17217,6 +17217,7 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   // concept — the page never maintains a second goal system beside it).
   const pageRows = await query(
     `SELECT gp.*, f.name AS fund_name, c.name AS campaign_name, c.goal_amount AS campaign_goal,
+       to_char(c.end_date,'YYYY-MM-DD') AS campaign_end_date, c.match_cents AS campaign_match_cents,
        COALESCE((SELECT SUM(amount - COALESCE(cover_fee_amount,0)) FROM gifts WHERE giving_page_id = gp.id), 0) AS raised_amount,
        CASE WHEN gp.campaign_id IS NOT NULL THEN
          COALESCE((SELECT SUM(g.amount - COALESCE(g.cover_fee_amount,0)) FROM gifts g WHERE g.org_id = gp.org_id AND (g.campaign_id = gp.campaign_id OR g.campaign = c.name)), 0)
@@ -17234,8 +17235,16 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
   // BUILD-95 §5B — the built page, if she has published one.
   const { normalizeFormPosition } = await widgetMod();
   const formPos = normalizeFormPosition(page.form_position);
+  // CAMPAIGN-2 — the page's own id and its campaign's end date travel with the
+  // widgets, so a countdown, a match and a recent-gifts list resolve against the
+  // campaign this page IS rather than against a date somebody typed twice.
   const builtWidgets = Array.isArray(page.published) && page.published.length
-    ? await resolveWidgetsPublic(org, page.published)
+    ? await resolveWidgetsPublic(org, page.published, {
+        pageId: page.id,
+        campaignId: page.campaign_id || null,
+        campaignEndDate: page.campaign_end_date || null,
+        today: orgToday(await orgTz(org.id)),           // ORG_TZ_SEAM_OK — a countdown is the org's own day
+      })
     : null;
 
   // Rollup + leaderboard — cheap once peer gifts always carry the parent's
@@ -17265,6 +17274,26 @@ app.get("/org/:orgSlug/giving-page/:pageSlug/public", wrap(async (req, res) => {
       campaignName: page.campaign_name || null,
       campaignGoal: page.campaign_goal != null ? parseFloat(page.campaign_goal) : null,
       campaignRaised: page.campaign_raised != null ? parseFloat(page.campaign_raised) : null,
+      // ── CAMPAIGN-2 · THE SENTENCE UNDER THE GOAL BAR ─────────────────────
+      // Every number has a sentence, and a thermometer is the number a stranger
+      // is most likely to doubt. It says WHAT IT COUNTS, including the two
+      // things people assume it does not: a cheque somebody posted (an offline
+      // gift counts the moment staff record it, like any other) and a gift given
+      // through a supporter's own fundraising page.
+      //
+      // It is computed from the same two figures the bar is drawn from, in one
+      // function, so the bar and its sentence cannot disagree.
+      goalSentence: await (async () => {
+        const CP = await campaignPageMod();
+        const linked = !!page.campaign_id;
+        const raised = linked && page.campaign_raised != null ? parseFloat(page.campaign_raised) : parseFloat(page.raised_amount || 0);
+        const goal = linked ? (page.campaign_goal != null ? parseFloat(page.campaign_goal) : 0) : parseFloat(page.goal_amount || 0);
+        return CP.goalBarSentence({
+          raisedCents: Math.round((raised || 0) * 100),
+          goalCents: Math.round((goal || 0) * 100),
+          hasPeerPages: page.p2p_enabled === true,
+        });
+      })(),
       // BUILD-95 §5B — the BUILT page, resolved through the ONE pipeline the
       // portal uses. PUBLISHED only: a draft is what she is still arranging,
       // and a donor arriving from a QR code must never land in the middle of
