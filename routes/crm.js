@@ -15147,6 +15147,8 @@ async function composeThreads(orgId, { donorId = null, scope = "mine", userId = 
       // numbers for one fact, on one screen. There is one now and both read it.
       overdueDays: t.due_date < today ? (orgTime.daysBetween(t.due_date, today) ?? 0) : 0,
       daysOpen, openedOn: t.opened_on,
+      // FIX-14: the rail's next step shows "Edited" from these.
+      edited_at: t.edited_at || null, edited_by_name: t.edited_by_name || null,
       owner: t.owner_id ? { id: t.owner_id, name: t.owner_name } : null,
       lastTouch, snoozedUntil: snoozedOut ? t.snoozed_until : null,
       followon: t.followon_type ? { type: t.followon_type, label: t.followon_label, due: t.followon_due } : null,
