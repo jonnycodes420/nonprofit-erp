@@ -1026,7 +1026,7 @@ app.post("/volunteer-hub/magic-link", requireAuth, checkWriteAccess, wrap(async 
   // the coordinator's clipboard: she knows how she talks to her volunteers.
   if (req.body?.send === true) {
     const decision = await orgMaySendEmail(orgId);
-    if (!decision.allowed) {
+    if (!decision.send) {
       return res.json({ url, sent: false,
         message: `Here is the link. Steward did not email it: ${decision.reason || "this organisation has email turned off"}.` });
     }
@@ -1435,7 +1435,7 @@ async function runVolunteerReminders() {
     // too, and this refuses it before the question is even asked.
     if (org.is_demo_org === true) { out.orgsOff++; continue; }
     const decision = await orgMaySendEmail(org.id);
-    if (!decision.allowed) { out.orgsOff++; continue; }
+    if (!decision.send) { out.orgsOff++; continue; }
     const today = orgToday(await orgTz(org.id));                   // ORG_TZ_SEAM_OK
     const tomorrow = new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10) + 1))
       .toISOString().slice(0, 10);
@@ -1457,12 +1457,17 @@ async function runVolunteerReminders() {
       await resend.emails.send({
         from: process.env.DEMO_SMTP_FROM || "noreply@stewardapp.dev",
         to: r.email,
+        _stewardOrgId: org.id, _stewardKind: "volunteer_reminder",
         subject: `Tomorrow: ${r.opp_name}`,
         html: `<p>A reminder that you are signed up for <strong>${escapeHtml(r.opp_name)}</strong> tomorrow, `
           + `${escapeHtml(VS.timeRangeWords(r.start_time, r.end_time))}.</p>`
           + (r.location ? `<p>${escapeHtml(r.location)}</p>` : "")
           + `<p style="font-size:13px;color:#5a554f">${escapeHtml(brand.displayName || org.name)}</p>`,
-      }).then(() => { out.sent++; })
+      }).then(resp => {
+        // A refusal (the permanent block, mail off) comes back as an error, not a throw.
+        if (resp && resp.error) { out.skipped++; console.error("[volunteer] reminder refused:", resp.error.message); }
+        else out.sent++;
+      })
         .catch(e => { out.skipped++; console.error("[volunteer] reminder:", e.message); });
     }
   }
